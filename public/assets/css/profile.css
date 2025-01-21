@@ -1,0 +1,201 @@
+.user-avatar {
+    display: flex;
+    align-items: center;
+}
+
+.avatar-text {
+    background-color: #d3d3d3;
+    width: 74.5px;
+    height: 74.5px;
+    margin-right: 18px;
+    color: #9b9b9b;
+    float: left;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    text-transform: uppercase;
+}
+
+.role_lable {
+    background-color: #23B9F9;
+    border-radius: 20px;
+}
+
+.item-info-left {
+    min-width: 220px;
+}
+
+.item-info-left svg {
+    margin-right: 10px;
+}
+
+.item-info-right {
+    width: 100%;
+}
+
+.item-info-right span {
+    width: 100%;
+}
+
+.item-info-right button {
+    max-width: 77px;
+}
+
+.note_2fa {
+    color: #9D9DA1;
+    font-size: 14px;
+}
+
+.item-info-right .bootstrap-switch {
+    height: 38px;
+    border-radius: 20px;
+    width: 77px !important;
+    border-color: #176bd9;
+}
+
+.item-info-right .bootstrap-switch-handle-off,
+.item-info-right .bootstrap-switch-handle-on {
+    border-radius: 50%;
+    padding: 8px;
+    height: 33px;
+    width: 33px !important;
+}
+
+.item-info-right .bootstrap-switch-container {
+    width: 110px !important;
+    background: #176bd9;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+.item-info-right .bootstrap-switch-label {
+    width: 42px !important;
+}
+
+.box-tool {
+    /*min-width: 260px;*/
+}
+
+.time_countdown {
+    background-color: #BAEAFF;
+    margin-left: 1px;
+    margin-right: 1px;
+}
+
+.btn-send-sms {
+    background-color: #176bd9;
+    border-color: #000;
+    color: #fff;
+    font-weight: 600;
+    border-radius: 20px;
+    min-width: 160px;
+    height: 38px;
+}
+
+.btn-change-phone {
+    background-color: #176bd9 !important;
+    width: 165.68px;
+    height: 27.14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-change-phone:hover,
+.btn-send-sms:hover {
+    background-color: rgb(45 65 154 / 75%);
+}
+
+.label_timedown {
+    background-color: #BAEAFF;
+    min-width: 93px;
+    border-radius: 20px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    height: 38px;
+}
+
+.btn-border-radius {
+    border-radius: 20px;
+}
+
+.mypage {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 80px 0;
+    font-size: 18px;
+    min-height: calc(100vh - calc(12rem + 1px));
+}
+
+.mypage .info_contact li:first-child,
+.mypage .info_change li:first-child {
+    border-top: 0;
+}
+
+.mypage .btn-cllapse {
+    background: #176bd9;
+    border-radius: 20px;
+    color: #fff;
+    height: 37.87px;
+}
+
+.mypage .btn-cllapse:hover,
+.btn-change-password:hover,
+.btn-clear-2fa:hover,
+.btn-cancel-password:hover,
+.btn-close-modal:hover {
+    background-color: #176bd9(45 65 154 / 75%);
+}
+
+.mypage .info_change li i {
+    margin-right: 10px;
+}
+
+.btn-change-password {
+    background: #176bd9;
+    border-radius: 5px;
+    border-color: #176bd9;
+    width: 165.68px;
+    height: 27.14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-clear-2fa,
+.btn-cancel-password {
+    width: 165.68px;
+    height: 27.14px;
+    background: #CECECE;
+    box-shadow: 0px 0px 2px rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.input-box {
+    width: 245px;
+}
+
+.btn-close-modal {
+    width: 195px;
+    height: 35px;
+    background: #176bd9;
+    border: 2px solid #EBEBEB;
+    border-radius: 90px;
+    color: #fff;
+}
+.bootstrap-switch-off{
+    border: 1px solid #CECECE !important;
+}
+.bootstrap-switch-off .bootstrap-switch-container {
+    background-color: #CECECE !important;
+}
+.btn-back{
+    border-radius: 6px;
+    color: #007bff;
+    height: 37.87px;
+}

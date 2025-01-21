@@ -1,0 +1,135 @@
+.content-wrapper {
+    height: auto !important;
+}
+p.lable_reservation{
+    width: 82px;
+    height: 30px;
+    left: 727px;
+    top: 755px;
+    border: 1px solid #C4C4C4;
+    border-radius: 5px;
+    text-align: center;
+    display: inline-block;
+    margin: 0 5px;
+}
+
+p.lable_reservation--violet{
+    background: rgba(72, 22, 179, 0.4);
+}
+
+p.lable_reservation--grey{
+    background: rgba(107, 107, 107, 0.4);
+}
+
+p.lable_reservation--white{
+    background: rgba(255, 255, 255, 1);
+}
+
+label.label_check_status{
+    font-weight: 400 !important;
+    font-size: 14px !important;
+    line-height: 22px !important;
+}
+
+.container-fluid--style {
+    background-color: #FFFFFF;
+    padding: 30px;
+    border-radius: 5px;
+}
+
+/*Custome button*/
+.btn-save-station {
+    background-color: rgba(12, 71, 161, 1);
+    color: #FFFFFF;
+    width: 165px;
+    border-radius: 4px;
+    margin-top: 40px;
+    margin-right: 30px;
+    margin-bottom: 23px;
+}
+
+.btn-save-station:hover {
+    color: #FFFFFF;
+}
+
+.btn-delete-station {
+    background-color: #FF0000;
+    color: #FFFFFF;
+    width: 165px;
+    margin-top: 40px;
+    margin-right: 18px;
+    margin-bottom: 23px;
+}
+
+.btn-delete-station:hover {
+    color: #FFFFFF;
+}
+
+.btn-back-station {
+    background-color: rgba(206, 206, 206, 1);
+    color: black;
+    width: 165px;
+    border-radius: 4px;
+    margin-top: 40px;
+    margin-right: 18px;
+    margin-bottom: 23px;
+}
+
+/*Custom table*/
+.table th {
+    color: #FFFFFF;
+    background-color: #0d47a1;
+}
+
+.view-table th {
+    width: 288px;
+}
+
+.table thead {
+    background-color: #0d47a1;
+}
+
+.btn.btn-white-custom {
+    background: #FFFFFF;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+}
+
+.view-table td {
+    background-color: rgba(217, 217, 217, 1);
+}
+
+.stations {
+    min-height: calc(100vh - calc(12rem + 1px));
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.form-group {
+    margin-bottom: unset;
+}
+
+p.station {
+    margin-top: 8px;
+}
+
+.bg-pd-white{
+    width: 100%;
+    background-color: #fff;
+    padding: 5px 10px;
+    border-radius: 0.25rem;
+    font-size: 14px;
+}
+
+.bg-pd-white--h31 {
+    height: 31px;
+}
+
+.text-dark {
+    margin-top:8px;
+}
+
+.button-delete {
+    background-color: #FF0000;
+}

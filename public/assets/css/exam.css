@@ -1,0 +1,107 @@
+
+.custom {
+    padding: 10px;
+    border: 1px solid gray;
+    border-radius: 10px;
+}
+
+.custom.checkbox>label,
+.custom.radio>label {
+    position: relative;
+    cursor: pointer;
+    margin: 0;
+}
+
+.custom input[type="checkbox"],
+.custom input[type="radio"] {
+    position: relative;
+    margin-right: 12px;
+    cursor: pointer;
+}
+
+.custom input[type="checkbox"]:after,
+.custom input[type="radio"]:after {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: -4px;
+    width: 20px;
+    height: 20px;
+    background: #fff;
+    border: 2px solid #ddd;
+    cursor: pointer;
+}
+
+.custom input[type="checkbox"]:before {
+    transition: transform 0.4s cubic-bezier(0.45, 1.8, 0.5, 0.75);
+    transform: rotate(-45deg) scale(0, 0);
+    content: "";
+    position: absolute;
+    left: -1px;
+    z-index: 1;
+    width: 13px;
+    height: 7.5px;
+    border: 2px solid #176bd9;
+    border-top-style: none;
+    border-right-style: none;
+}
+
+.custom input[type="checkbox"]:checked:before {
+    transform: rotate(-45deg) scale(1, 1);
+}
+
+.custom input[type="checkbox"]:after {
+    border-radius: 2px;
+}
+
+.custom input[type="radio"]:checked+label {
+    color: #176bd9;
+}
+
+.custom input[type="radio"]:before {
+    transition: transform 0.4s cubic-bezier(0.45, 1.8, 0.5, 0.75);
+    transform: scale(0, 0);
+    content: "";
+    position: absolute;
+    top: 1px;
+    left: 0;
+    z-index: 1;
+    width: 12px;
+    height: 12px;
+    background: #176bd9;
+    border-radius: 50%;
+}
+
+.custom input[type="radio"]:checked:before {
+    transform: scale(1, 1);
+}
+
+.custom input[type="radio"]:after {
+    border-radius: 50%;
+    top: -3px;
+}
+
+.number-question {
+    border-radius: 50px;
+    background: black;
+    color: white;
+    width: 35px;
+    text-align: center;
+    justify-content: center;
+    align-self: center;
+    padding: 4px 0;
+    font-size: 18px;
+}
+
+label:not(.form-check-label):not(.custom-file-label) {
+    font-weight: 500;
+}
+
+.cout-question {
+    width: 100%;
+    background: white !important;
+    /* border: 1px solid black; */
+    position: fixed;
+    top: 0;
+    right: 0;
+}

@@ -1,0 +1,325 @@
+.btn-edit-user {
+    width: 165px;
+    border-radius: 4px;
+    background-color: #176bd9;
+    font-size: 14px;
+    line-height: 22px;
+    color: #ffffff;
+    margin-left:20px;
+}
+.btn-user-back {
+    width: 165px;
+    border-radius: 4px;
+    background-color: #CECECE;
+    color: #000000;
+    border: 0.5px solid rgb(223, 221, 221);
+    line-height: 22px;
+    font-size: 14px;
+}
+
+input:focus::-webkit-input-placeholder {
+    background-color: #EFEFEF;
+  }
+
+.p_20 {
+    padding:30px;
+    /* padding-top: 30px; */
+    margin-top: 20px;
+    display:flex;
+   align-items:center;
+   justify-content:center;
+}
+
+.p_202 {
+    padding:30px;
+    /* padding-top: 30px; */
+    /* margin-top: 20px; */
+    display:flex;
+   align-items:center;
+   /* justify-content:center; */
+}
+.bg_text {
+    background-color:  #2D419A;
+    color: white;
+    text-align: center;
+    font-size: 14px;
+    line-height: 22px;
+}
+.center_text {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 20px;
+}
+.bg_data {
+    background-color: #D9D9D9;
+    padding: 15px 20px;
+    margin-top: 20px;
+    min-height:82px;;
+}
+
+.form-group2 {
+    margin-bottom: 0.1rem;
+}
+
+.bg_data2 {
+    background-color: #D9D9D9;
+    padding: 10px 20px;
+    /* margin-top: 20px; */
+    min-height:82px;;
+}
+
+.bg_data3 {
+    /* background-color: #D9D9D9;
+    padding: 15px 20px; */
+    /* margin-top: 20px; */
+    min-height:62px;
+}
+
+.buttom1 {
+    margin-top: 15px;
+}
+.remarks {
+    width:100%; border-radius:9px;
+    font-size: 14px;
+    line-height: 22px;
+    padding: 20px 0px 0px 20px;
+    background-color:#ffffff !important;
+    
+}
+
+.license_date {
+    background-color: #ffffff;
+    border: 0;
+}
+
+.license_date1 {
+    background-color: #ffffff;
+}
+
+.remarks2 {
+    width:100%; border-radius:9px;
+    font-size: 14px;
+    line-height: 22px;
+    /* padding: 20px 0px 0px 20px; */
+    background-color:#ffffff !important;
+}
+
+.form-update-remarks{
+    margin-top: 20px;
+}
+.created_at__time {
+    margin-right: 20px;
+    font-size: 14px;
+    line-height: 22px;
+    color: #000000;
+}
+table thead {
+    background-color: #2D419A;
+    color: white;
+    font-size: 14px;
+    line-height: 22px;
+    text-align: center;
+}
+.form-control{
+    background-color: #EFEFEF;
+    font-size: 18px;
+    line-height: 22px;
+    color: #000000;
+}
+.form-control::placeholder {
+    color: #000000;
+}
+
+.form-control2 {
+    display: block;
+    width: 100%;
+    /* height: calc(2.25rem + 22px); */
+    padding: 0.375rem 0.75rem;
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: #495057;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    box-shadow: inset 0 0 0 rgba(0, 0, 0, 0);
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.btn_create {
+    border-radius: 4px;
+    background-color: #ffffff;
+    color: #000000;
+    box-shadow: 1px;
+    padding: 10px 40px;
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+    border: 0.5px solid rgb(223, 221, 221);
+}
+#form-search{
+    box-shadow: 0px 0px 1px #000000;
+    border-radius: 5px;
+    border: 1px solid #e5e5e5;
+    /* border-radius: 10px; */
+    margin-bottom: 20px;
+    padding: 30px !important;
+    align-items: center;
+    width: 100%;
+}
+.btn-search {
+    width: 120px;
+    padding: 5px;
+    text-align: center;
+    background-color: #176bd9;
+    align-items: center;
+    margin-top: 50%;
+    justify-content: center;
+    letter-spacing: 15px;
+    border-radius: 4px;
+    font-size: 14px;
+    line-height: 22px;
+    /* height: 27px; */
+}
+.bg_data input{
+    width: 100%;
+    border-radius: 4px;
+    border: 0.5px solid rgb(223, 221, 221);
+    background-color: #ffffff;
+    height: 52px;
+    font-size: 14px;
+    line-height: 22px;
+    color: #000000;
+}
+.ekYC {
+    padding:34px;
+}
+.btn-register-user {
+    background-color: #176bd9;
+    width: 165px;
+    border-radius: 4px;
+    color: #ffffff;
+}
+table tbody tr td {
+    font-size: 14px;
+    line-height: 22px;
+}
+.created_at {
+    font-size: 14px;
+    line-height: 22px;
+    color: #000000;
+}
+.updated_at, .updated_at__time {
+    font-size: 14px;
+    line-height: 22px;
+    color: #000000;
+}
+.card {
+    min-height: calc(100vh - calc(11rem + 1px));
+}
+.btn-action {
+    display: flex;
+    justify-content: flex-end;
+}
+.customer input {
+    background-color: #EFEFEF;
+    box-shadow: 0px 0px 1px rgba(0, 0, 0, 0.25);
+    border-radius: 3px;
+    border: none;
+    width: 269px;
+    height: 27.14px;
+    font-weight: 400;
+    font-size: 18px;
+    line-height: 22px;
+    padding-left: 14px;
+    color: #000;
+    margin-right: 30px;
+}
+.customer button.submit-search {
+    box-shadow: 0px 0px 5px rgb(0 0 0 / 25%);
+    border-radius: 4px;
+    min-width: 120px;
+    height: 27.14px;
+    line-height: 0;
+    align-items: center;
+    justify-content: center;
+    display: flex;
+    background-color: #2D419A;
+    color: #ffffff;
+}
+.text_eKYC {
+    min-height:82px;
+}
+.text_remarks {
+    padding:0px 30px;
+    min-height:223.96px;
+}
+.modal-footer{
+    border-top:none;
+}
+.modal-header {
+    border-bottom:none;
+}
+.modal-text-center {
+    margin:auto;
+}
+table tbody tr td {
+    text-overflow: ellipsis;
+    max-width: 150px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.modal-dialog-detail{
+    max-width: 982px;
+    max-height: 580px;
+}
+.modal-content-detail {
+    border-radius: 20px;
+}
+.ekYC-title {
+   margin-top: 7px;
+   letter-spacing: 10px;
+   align-items: center;
+   justify-content: center;
+}
+.ekYC-title .modal-title {
+    font-size: 40px;
+}
+.btn-ok {
+    width: 280px;
+    height: 57px;
+    border-radius: 90px;
+    background-color: #176bd9;
+    font-size: 20px;
+    font-weight: bold;
+    color: #ffffff;
+    letter-spacing: 20px;
+}
+.modal-body {
+    font-size: 40px;
+    letter-spacing: 17px;
+    margin-left: 37px;
+}
+.bg_data2 span {
+    font-size: 14px;
+    line-height: 22px;
+    color: #000000;
+}
+#btn-detail{
+    background-color: #176bd9;
+    color: #ffffff;
+    font-size: 14px;
+    line-height: 15px;
+    width: 78px;
+    height: 36px;
+    border-radius: 4px;
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    margin-left: 17px;
+}
+.modal-title {
+    font-size: 14px;
+}

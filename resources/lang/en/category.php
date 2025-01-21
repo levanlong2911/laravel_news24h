@@ -1,0 +1,27 @@
+<?php
+
+return [
+    'category_management' => 'Category',
+    'category_name' => 'Name',
+    'category_id' => 'ID',
+    'category_detail' => 'Detail',
+    'category_edit' => 'Edit',
+    'update' => 'Update',
+    'delete' => 'Delete',
+    'add' => 'Add',
+    'back' => 'Back',
+    'update' => 'Update',
+    'delete' => 'Delete',
+    'create_new_category' => 'Add',
+    'action' => 'Action',
+    'input_name_required' => 'Name is required',
+    'input_exam_time_required' => 'Exam time is required',
+    'input_total_question_required' => 'Total question is required',
+    'input_number_question' => 'Total question is number integer',
+    'input_number_exam_time' => 'Exam time is number integer',
+    'detail' => 'Detail',
+    'detail_level' => 'Detail Level',
+    'edit' => 'Edit',
+    'edit_level' => 'Edit Level',
+    'delete_selected' => 'Delete all',
+];

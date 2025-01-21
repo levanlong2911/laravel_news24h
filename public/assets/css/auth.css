@@ -1,0 +1,134 @@
+ol.breadcrumb{
+    margin: 0px !important;
+}
+.login-page {
+    background-color: #FFFFFF !important;
+    font-family: 'Noto Sans' !important;
+    font-size: 14px !important;
+}
+.login-box {
+    align-content: center;
+    display: contents;
+}
+.login-card-body {
+    width: 446.25px;
+    background: #FFFFFF;
+    border: 0.35px solid #9C9C9C !important;
+    border-radius: 4px;
+}
+
+.title_login {
+    font-family: 'Roboto' !important;
+    font-style: normal !important;
+    font-weight: 400 !important;
+    font-size: 14px !important;
+    line-height: 22px !important;
+}
+.input-mail-login {
+    background: #FFFFFF;
+    border: 1px solid #616161;
+    border-radius: 2px;
+    padding: 2px;
+}
+.login-card-body .input-group .input-group-text, .register-card-body .input-group .input-group-text {
+    border-right: 0;
+    border-left: solid 1px #616161 !important;
+    border-bottom: solid 1px #616161 !important;
+    border-top: solid 1px #616161 !important;
+    border-radius: 2px 0 0 2px !important;
+}
+.login-card-body .input-group .form-control, .register-card-body .input-group .form-control {
+    border: solid 0.35px #9C9C9C !important;
+    border-radius: 0 2px 2px 0 !important;
+}
+label:not(.form-check-label):not(.custom-file-label) {
+    font-weight: 400 !important;
+}
+.login-logo, .register-logo {
+    text-align: center;
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 700;
+    font-size: 30px;
+    line-height: 36px;
+    letter-spacing: -0.017em;
+}
+.flash--error {
+    --tw-bg-opacity: 1;
+    background-color: rgba(220, 38, 38, var(--tw-bg-opacity));
+    --tw-text-opacity: 1;
+    color: rgba(255, 255, 255, var(--tw-text-opacity));
+}
+.flash--show {
+    display: flex;
+    opacity: 1;
+    visibility: visible;
+}
+.lable-login {
+    font-style: normal !important;
+    font-weight: 400 !important;
+    font-size: 14px !important;
+}
+.lable-login-remember-me {
+    padding-left: 24px !important;
+    font-weight: 400;
+    line-height: 23px !important;
+    color: rgba(0, 0, 0, 0.85);
+}
+
+[class*=icheck-]>input:first-child+input[type=hidden]+label::before, [class*=icheck-]>input:first-child+label::before {
+    content: "";
+    width: 12px !important;
+    height: 12px !important;
+    margin-top: 5px;
+    margin-left: -24px;
+}
+p.auth-title {
+    font-weight: 700;
+    font-size: 30px;
+}
+.icheck-primary>input:first-child:checked+label::before {
+    background-color: #176bd9;
+}
+
+[class*=icheck-]>input:first-child:checked+input[type=hidden]+label::after, [class*=icheck-]>input:first-child:checked+label::after {
+    content: "";
+    left: -5px !important;
+    width: 6px !important;
+    height: 9px !important;
+}
+.btn-auth-custom {
+    background: #176bd9 !important;
+    border-color: #176bd9 !important;
+}
+.custom-form-auth {
+    width: 344.58px;
+    margin: 0 auto;
+}
+
+.forgot-password {
+    font-size: 12px !important;
+    color: #1877f2 !important;
+    font-weight: 500;
+}
+
+@media screen and (max-width: 800px) {
+    .login-card-body {
+        width: 350px !important;
+    }
+}
+@media screen and (max-width: 350px) {
+    .login-card-body {
+        width: 265px !important
+    }
+}
+
+[class*=icheck-]>label {
+    padding-left: 24px!important;
+
+}
+
+.login-card-body .input-group .form-control, .register-card-body .input-group .form-control {
+
+    border-radius: 4px !important;
+}

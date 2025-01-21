@@ -1,0 +1,292 @@
+#search-vehicle-model{
+    box-shadow: 0px 0px 1px #000000;
+    border-radius: 5px;
+    border: 1px solid #ffffff;
+    margin-bottom: 20px;
+    padding: 30px !important;
+    align-items: center;
+    background-color: #ffffff;
+}
+
+.bg_header_table thead td {
+    background-color: #E6EFFC;
+    color: #4c6c9a;
+}
+
+#search-vehicle-model select{
+    background-color: #EFEFEF;
+    box-shadow: 0px 0px 1px rgba(0, 0, 0, 0.25);
+    border-radius: 3px;
+    border: none;
+    width: 269px;
+    height: 27.14px;
+    font-weight: 400;
+    font-size: 18px;
+    line-height: 22px;
+    padding-left: 14px;
+    margin-right: 70px;
+}
+
+#search-vehicle-model  button.submit-search {
+    min-width: 120px;
+}
+
+.vehicle select{
+    margin-right: 70px !important;
+}
+
+.vehicle button{
+    padding: 7px 30px;
+}
+
+.vehicle .d-flex{
+    align-items: center;
+}
+
+.border-white {
+    border-bottom-color: #ffffff;
+    border-bottom-style: solid;
+    border-bottom-width: thin;
+}
+
+.border-div-white {
+    /* border-bottom-color: #ffffff;
+    border-bottom-style: solid;
+    border-bottom-width: thin; */
+    margin-top: 10px;
+}
+
+#search-vehicle-model button, #create{
+    box-shadow: 0px 0px 5px rgb(0 0 0 / 25%);
+    border-radius: 4px;
+    min-width: 120px;
+    height: 27.14px;
+    line-height: 0;
+    align-items: center;
+    justify-content: center;
+    display: flex;
+}
+
+.img{
+    max-width: 100px;
+}
+
+.content-header button{
+    border-radius: 10px !important;
+    min-width: 200px;
+}
+
+.vehicle-model table p{
+    margin-bottom: 2px !important;
+}
+
+.vehicle-model .quantity{
+    color:  #77a7ea;
+}
+
+.vehicle-model select{
+    width: 200px;
+}
+
+.title-vehicle button a{
+    color: #fff !important;
+    cursor: pointer;
+}
+
+.text-in-screen {
+    font-style: normal;
+    font-weight: 400 !important;
+    font-size: 14px;
+    line-height: 22px;
+}
+
+.btn-custom {
+    box-shadow: 0px 0px 5px rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    background-color: white;
+}
+
+.submit-search{
+    background: #2D419A;
+    color: #FFFFFF;
+}
+
+.table thead td {
+    vertical-align: revert !important;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.bg_header_table thead td {
+    background-color: #2D419A;
+    color: #fff !important;
+}
+
+.border-header {
+    border: 1px solid;
+    border-color: #fff;
+}
+
+.table tbody td {
+    vertical-align: middle !important;
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.table td, .table th {
+    padding: 0.75rem;
+    vertical-align: top;
+    border-top: 1px solid #dee2e6;
+}
+
+.lable-form-vehicle-model .row .col-3{
+    background-color: #0C47A1;
+    color: #fff;
+    margin-bottom: 2px;
+    padding-left: 28px;
+}
+
+.lable-form-vehicle-model .row .col-3{
+    display: flex;
+    align-items: center;
+}
+
+.lable-form-vehicle-model .col-9{
+    margin-bottom: 2px !important;
+}
+
+.lable-form-vehicle-model .col-9 input{
+    min-height: 38px;
+    width: 50%;
+}
+
+.lable-form-vehicle-model .input {
+    background-color: transparent;
+    padding: 10px;
+    margin-left: 2px;
+    padding: 7px;
+}
+
+.button-create-update{
+    background-color: #2D419A;
+    color: #fff;
+    margin-bottom: 0px !important;
+}
+
+.button-delete{
+    background-color: #FF0000;
+    margin-bottom: 0px !important;
+    color : #fff;
+}
+
+.button-back{
+    background-color: #CECECE;
+}
+
+.button-center{
+    margin-right: 20px;
+    text-align: center;
+    width: 200px;
+    box-shadow:  1px 1px 1px 1px #c7c7c7;
+}
+
+.button{
+    text-align: center;
+    width: 200px;
+    background-color: #fff;
+    box-shadow:  1px 1px 1px 1px #c7c7c7;
+    margin-right: 20px;
+}
+
+.button-right{
+    text-align: center;
+    width: 200px;
+    margin-right: 20px;
+    box-shadow:  1px 1px 1px 1px #c7c7c7;
+}
+
+.button-left{
+    text-align: center;
+    width: 200px;
+    margin-right: 20px;
+    box-shadow:  1px 1px 1px 1px #c7c7c7;
+}
+
+.tab-content-custom>.active {
+    background: #E2E2E2 !important;
+}
+
+.tab-content>.active .text-input{
+    background: #FFFFFF;
+    padding: 10px;
+    margin: 0px;
+}
+
+.tab-content>.active .text-input-area{
+    background: #FFFFFF;
+    padding: 10px;
+    margin: 0px;
+    min-height: 40px;
+    max-height: 250px;
+    overflow: auto;
+}
+
+.tab-content {
+    padding-bottom: 20px;
+}
+
+.vehicle input, .vehicle select {
+    background-color: #EFEFEF;
+    box-shadow: 0px 0px 1px rgba(0, 0, 0, 0.25);
+    border-radius: 3px;
+    border: none;
+    width: 269px;
+    height: 28px;
+    font-weight: 400;
+    font-size: 18px;
+    line-height: 22px;
+    padding-left: 14px;
+    color: #000;
+}
+
+form.vehicle {
+    box-shadow: 0px 0px 1px #000000;
+    border-radius: 5px;
+    border: 1px solid #e5e5e5;
+    margin-bottom: 20px;
+    padding: 30px !important;
+    align-items: center;
+}
+
+form.vehicle  button.btn-custom, #create-vehicle {
+    box-shadow: 0px 0px 5px rgb(0 0 0 / 25%);
+    border-radius: 4px;
+    min-width: 120px;
+    height: 27.14px;
+    line-height: 0;
+    align-items: center;
+    justify-content: center;
+    display: flex;
+}
+
+.lable-form-vehicle-model .text-input{
+    background: #FFFFFF;
+    padding: 10px;
+    margin: 0px;
+    width: 100%;
+    word-break: break-word;
+}
+
+.lable-form-vehicle-model .text-input-area{
+    background: #FFFFFF;
+    padding: 10px;
+    margin: 0px;
+    min-height: 40px;
+    max-height: 250px;
+    overflow: auto;
+    width: 100%;
+    resize: none;
+    word-break: break-word;
+}

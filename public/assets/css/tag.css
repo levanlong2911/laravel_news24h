@@ -1,0 +1,122 @@
+#div1{
+    display: inline-block;
+    border: 2px solid black;
+    border-radius: 5px;
+    z-index:5;
+    margin: 5px;
+}
+.tb{
+    border: none;
+    opacity: 0.5;
+    z-index:10;
+}
+.btn-add-question {
+    background-color: #176bd9;
+    color: white;
+}
+.btn-add-question:hover {
+    background-color: #1e82de;
+    color: white;
+}
+.form_question {
+    justify-content: center;
+}
+.child-item:first-child .remove-child,
+.child-item:nth-child(2) .remove-child,
+.child-item:nth-child(3) .remove-child  {
+    display: none;
+}
+.remove-child a {
+    font-size: 20px;
+    color: #FF0F0F !important;
+}
+.child-list .card-header .form-control.form-error {
+    margin-bottom: 10px !important;
+    border: 1px solid red !important;
+}
+.child-list span.help-block-error {
+    display: block;
+    color: red !important;
+    font-size: 14px;
+}
+.reference {
+    position: absolute;
+    right: 24px;
+    bottom: 24px;
+    padding: 10px;
+    color: #fff;
+    font-family: arial;
+    text-decoration: none;
+    background: #323262;
+    box-shadow: 0 0 20px rgba(66, 50, 98, 0.35);
+    border-radius: 10px;
+}
+.container {
+    padding: 25px;
+    box-shadow: 0 0 20px rgba(66, 50, 98, 0.35);
+    border: 1px solid #eaeaea;
+    border-radius: 3px;
+    background: white;
+}
+
+.fileUploadInput {
+    display: grid;
+    grid-gap: 10px;
+    position: relative;
+    z-index: 1;
+}
+.fileUploadInput label {
+    display: flex;
+    align-items: center;
+    color: setColor(primary, 0.5);
+    background: setColor(white);
+    transition: 0.4s ease;
+    font-family: arial, sans-serif;
+    font-size: 0.75em;
+    font-weight: regular;
+}
+.fileUploadInput input {
+    position: relative;
+    z-index: 1;
+    padding: 0 gap(m);
+    width: 100%;
+    height: 50px;
+    border: 1px solid #176bd9;
+    border-radius: 3px;
+    font-family: arial, sans-serif;
+    font-size: 1rem;
+    font-weight: regular;
+}
+.fileUploadInput input[type=file] {
+    padding: 0 gap(m);
+}
+.fileUploadInput input[type=file]::-webkit-file-upload-button {
+    visibility: hidden;
+    margin-left: 10px;
+    padding: 0;
+    height: 50px;
+    width: 0px;
+}
+.fileUploadInput button {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    height: 50px;
+    width: 50px;
+    line-height: 0;
+    -webkit-user-select: none;
+       -moz-user-select: none;
+        -ms-user-select: none;
+            user-select: none;
+    color: white;
+    background-color: #176bd9;
+    border-radius: 0 3px 3px 0;
+    font-family: arial, sans-serif;
+    font-size: 1rem;
+    font-weight: 800;
+}
+@-moz-document url-prefix() {
+    .fileUploadInput button {
+        display: none;
+    }
+}

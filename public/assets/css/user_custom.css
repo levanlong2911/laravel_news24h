@@ -1,0 +1,126 @@
+.lable-form-add-policy .col-2{
+    background-color: #0C47A1;
+    color: #fff;
+    margin-bottom: 2px;
+    padding-left: 16px;
+}
+.lable-form-add-policy .row:first-child p{
+    margin-top: 10px !important;
+}
+
+.lable-form-add-policy .input {
+    background-color: #D9D9D9;
+    padding: 10px;
+    margin-left: 2px;
+}
+.lable-form-add-policy .col-9 {
+    margin-bottom: 2px;
+}
+.lable-form-add-policy .col-10{
+    margin-bottom: 2px !important;
+}
+.lable-form-add-policy .col-10 input{
+    height: 100%;
+    width: 50%;
+}
+.policy-name{
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    max-width: 50ch;
+}
+
+.background-title-table{
+    background-color: #2D419A;
+    color: #fff;
+}
+.policy .button{
+    text-align: center;
+    width: 200px;
+    background-color: #fff;
+    /* border: 1px solid rgb(0, 0, 0); */
+    box-shadow:  1px 1px 1px 1px #c7c7c7;
+    margin-right: 20px;
+}
+.button-right{
+    /* position: fixed; */
+    /* bottom: 60px; */
+    /* right: 60px; */
+    text-align: center;
+    width: 200px;
+    margin-right: 20px;
+    /* border: 1px solid rgb(0, 0, 0); */
+    box-shadow:  1px 1px 1px 1px #c7c7c7;
+
+}
+.policy{
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.policy thead{
+    text-align: center;
+}
+.button-left{
+    /* position: fixed; */
+    /* bottom: 60px; */
+    /* right: 500px; */
+    text-align: center;
+    width: 200px;
+    margin-right: 20px;
+    /* border: 1px solid rgb(0, 0, 0); */
+    box-shadow:  1px 1px 1px 1px #c7c7c7;
+}
+.button-create-update{
+    background-color: #007bff;
+    color: #fff;
+    margin-bottom: 0px !important;
+}
+.button-delete{
+    background-color: #FF0000;
+    margin-bottom: 0px !important;
+    color : #fff;
+}
+.button-back{
+    background-color: #CECECE;
+}
+.button-center{
+    /* position: fixed; */
+    /* bottom: 60px; */
+    /* right: 280px; */
+    margin-right: 20px;
+    text-align: center;
+    width: 200px;
+    box-shadow:  1px 1px 1px 1px #c7c7c7;
+}
+
+.lable-form-detail-policy .col-2{
+    background-color: #0C47A1;
+    color: #fff;
+    margin-bottom: 2px;
+    padding-left: 16px;
+}
+
+.lable-form-detail-policy .col-2 p:first-child{
+    margin-top: 10px !important;
+}
+.lable-form-detail-policy p{
+    margin-top: 10px !important;
+}
+
+.policy {
+    min-height: calc(100vh - calc(13rem + 1px));
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.input-text-custom {
+    padding: 7px;
+    max-width: 40%;
+    background: #FFF;
+    border-radius: 3px;
+    min-height: 35px;
+}
+.custom-email-text {
+    max-width: 100% !important;
+}

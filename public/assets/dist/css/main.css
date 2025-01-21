@@ -1,0 +1,750 @@
+.content-wrapper {
+    margin-bottom: 20px;
+}
+
+button {
+    padding: 0px;
+}
+
+#background_layer {
+    width: 200px;
+    display: block;
+    /* background-color: green; */
+    height: 100%;
+}
+
+#background_layer table td {
+    border: 1px solid #7f7f85;
+    text-align: center;
+    font-weight: bold;
+}
+
+#background_layer table {
+    width: 248px;
+    height: 55px;
+}
+
+.header-calendar {
+    padding: 30px 50px;
+}
+
+.title-calendar {
+    display: flex;
+    float: left;
+}
+
+.title-calendar h2 {
+    margin-right: 52px;
+    font-size: 30px;
+    font-weight: bold;
+}
+
+.title-calendar div {
+    width: 300px;
+}
+
+.title-calendar div button {
+    margin-right: 27px;
+    border-radius: 25px;
+    padding: 4px 10px;
+    border: 1px solid #8b8591;
+    box-shadow: 0.5px 0.5px 4px #8b8591;
+}
+
+.title-calendar div .rental-reservation-table {
+    background-color: #86868B;
+}
+
+.card-footer nav{
+    float: right;
+}
+
+.layer-vehicle-number {
+    background:  #d9d9d9;
+}
+
+.title-calendar button {
+    border-radius: 20px;
+    width: 118px;
+    height: 30px;
+}
+
+.color-reservations {
+    display: flex;
+    float: right;
+}
+
+.color-reservations div {
+    width: 35px;
+    height: 19px;
+    font-size: 8px;
+    color: #000000;
+    border: 1px solid #8b8591;
+    text-align: center;
+    padding: 2px;
+}
+
+.inspection-items {
+    border-color: #a6a6a6 !important;
+    background-color: #a6a6a6 !important;
+}
+
+.reserved-items {
+    border-color: #dcdcdc !important;
+    background-color: #dcdcdc !important;
+}
+
+.on-loan-items {
+    border-color: #f9a323 !important;
+    background-color: #f9a323 !important;
+}
+
+.returned-items {
+    border-color: #2d419a !important;
+    background-color: #2d419a !important;
+}
+
+.color-reservations .inspection {
+    background-color: #a6a6a6;
+}
+
+.color-reservations .reserved {
+    background-color: #dcdcdc;
+}
+
+.color-reservations .on-loan {
+    background-color: #f9a323;
+}
+
+.color-reservations .returned {
+    color: #ffffff;
+    background-color: #2d419a;
+}
+
+.calendar {
+    width: 100%;
+    /* padding: 50px !important; */
+    margin-bottom: 10px;
+}
+
+.calendar-border {
+    margin: 25px 50px !important;
+    border-top: 1px solid #C4C4C4;
+}
+
+.calendar-header {
+    margin: 10px 50px 0px !important;
+}
+
+.container-calendar {
+    min-height: 862px;
+    height: auto;
+    margin: 0px 50px 10px !important;
+    background-color: #ffffff;
+}
+
+.vis-inner > div > div div:first-child {
+    text-align: center;
+    display: block;
+}
+
+
+.vis-inner > div > div div:last-child {
+    color : #235df8;
+    display: block;
+}
+
+.container-calendar-child {
+    padding: 0px 70px 40px 40px;
+}
+
+.div-button-submit {
+    padding-top: 28px;
+    text-align: center;
+    float: right;
+    height: 100px;
+    padding-right: 10px;
+}
+
+.div-button-submit button {
+    width: 70px;
+    height: 30px;
+    border: none;
+    color: #ffffff;
+    background-color: #225DF9 !important;
+    border-radius: 25px;
+    padding: 2px 6px;
+    font-size: 13px;
+    box-shadow: 0.5px 1px 4px #8b8591;
+}
+
+.calendar .navbar {
+    width: 100%;
+    float: none;
+    font-size: 13px;
+}
+
+.calendar .calendar-search {
+    width: 100%;
+    float: none;
+    font-size: 13px;
+    padding: 10px 0px;
+}
+
+.div-search {
+    width: 100%;
+    margin: 10px 0;
+}
+
+.div-search select,
+.div-search input {
+    width: 100%;
+    height: 30px;
+    border: #cccccc solid 1px;
+    background-color: #ffffff;
+}
+
+#submit-search-calendar {
+    background-color: #c4c4c4;
+    color: #ffffff;
+    font-size: 12px;
+}
+
+.submit-inactive {
+    background-color: #c4c4c4;
+    color: #ffffff;
+    font-size: 12px;
+}
+
+.submit-active {
+    background-color: #2d419a !important;
+    color: #ffffff !important;
+    font-size: 12px !important;
+}
+
+/* .div-search button {
+    background-color: #c4c4c4;
+    color: #ffffff;
+    font-size: 12px;
+} */
+
+.div-search .search-date .search-title {
+    display: flex;
+}
+
+.div-search .search-date .search-title,
+.div-search .div-search-child .search-title {
+    margin-bottom: 8px;
+}
+
+.div-search .search-title {
+    height: 30px;
+}
+
+.div-search select{
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+    width: 100%;
+    height: 30px;
+    background: url("data:image/svg+xml,<svg height='10px' width='10px' viewBox='0 0 16 16' fill='%23000000' xmlns='http://www.w3.org/2000/svg'><path d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/></svg>") no-repeat !important;
+    background-position: calc(100% - 0.75rem) center !important;
+    -moz-appearance:none !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    padding-right: 3rem !important;
+    padding-left: 4px;
+}
+
+.div-search select option {
+    height: 30px;
+}
+
+#col-1 {
+    width: 120px;
+}
+
+.calendar-select {
+    float: right;
+    width: 33.33%;
+}
+
+.calendar-select table tr th {
+    font-size: 14px;
+    padding: 2px;
+    margin-left:5px;
+}
+
+.calendar-select table tr th {
+    font-size: 14px;
+    padding: 2px;
+    margin-left:5px;
+}
+
+.calendar-select table tr td select {
+    width: 120px;
+    height: 30px;
+    border: 1px solid #000000;
+    background-color: white;
+    text-align: center;
+}
+
+.calendar-select table tr td input {
+    width: 120px;
+    height: 30px;
+}
+
+.calendar-select .button-submit {
+    border: 1px solid #7f7f85;
+    background-color: #235df9;
+    color: white;
+    width: 90px;
+    height: 30px;
+    border-radius: 10px;
+}
+
+
+
+#submit-month, #submit-day {
+    border: none;
+    padding: 5px;
+    width: 46px;
+    height: 30px;
+    color: white;
+    border : 1px solid #000000;
+    border-radius: 5px !important;
+}
+
+#submit-month {
+    background-color: #849bda !important;
+}
+
+#submit-day {
+    background-color: #235df8;
+}
+
+.red-items {
+    border-color: red !important;
+    background-color: red !important;
+}
+  .green-items {
+    border-color: green !important;
+    background-color: green !important;
+  }
+  .vis-inner {
+    width: 248px;
+    padding: 0 !important;
+  }
+/*
+#visualization {
+  width: 600px;
+  height: 400px;
+  border: 1px solid lightgray;
+} */
+
+.vis-inner > div {
+    display: flex !important;
+    width: 100%;
+    border: 1px solid #7f7f85 !important;
+}
+
+.vis-inner > div div:first-child{
+    width: 158px;
+    border-right: 1px solid #7f7f85;
+}
+
+.vis-inner > div div:first-child > div:first-child{
+    padding: 5px;
+    border-bottom: 1px solid #7f7f85;
+}
+
+.vis-inner > div div:first-child > div:last-child{
+    width: 158px;
+    padding: 5px;
+    text-align: center;
+}
+
+.vis-inner > div div:last-child{
+    width: 90px;
+    padding: 5px;
+    display: flex;
+    align-items: center
+}
+
+.vis-item.vis-range{
+    height: 30px;
+}
+
+.content-dashboard div{
+    /* margin: 10px; */
+    background-color:#666666;
+    width: 100%;
+    height: 1000px;
+}
+
+@media screen and (max-width: 1000px) {
+    .calendar-search
+    .calendar-select,
+    .calendar-franchise{
+      width: 100%;
+    }
+}
+
+
+.can-toggle {
+    position: relative;
+  }
+  .can-toggle *, .can-toggle *:before, .can-toggle *:after {
+    box-sizing: border-box;
+  }
+  .can-toggle input[type=checkbox] {
+    opacity: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  .can-toggle input[type=checkbox][disabled] ~ label {
+    pointer-events: none;
+  }
+  .can-toggle input[type=checkbox][disabled] ~ label .can-toggle__switch {
+    opacity: 0.4;
+  }
+  .can-toggle input[type=checkbox]:checked ~ label .can-toggle__switch:before {
+    content: attr(data-unchecked);
+    left: 0;
+  }
+  .can-toggle input[type=checkbox]:checked ~ label .can-toggle__switch:after {
+    content: attr(data-checked);
+  }
+  .can-toggle label {
+    -webkit-user-select: none;
+       -moz-user-select: none;
+        -ms-user-select: none;
+            user-select: none;
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .can-toggle label .can-toggle__label-text {
+    flex: 1;
+    padding-left: 32px;
+  }
+  .can-toggle label .can-toggle__switch {
+    position: relative;
+  }
+  .can-toggle label .can-toggle__switch:before {
+    content: attr(data-checked);
+    position: absolute;
+    top: 0;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .can-toggle label .can-toggle__switch:after {
+    height: 26px;
+    content: attr(data-unchecked);
+    position: absolute;
+    z-index: 5;
+    text-transform: uppercase;
+    text-align: center;
+    background: white;
+    transform: translate3d(0, 0, 0);
+  }
+  .can-toggle input[type=checkbox][disabled] ~ label {
+    color: rgba(119, 119, 119, 0.5);
+  }
+  .can-toggle input[type=checkbox]:focus ~ label .can-toggle__switch, .can-toggle input[type=checkbox]:hover ~ label .can-toggle__switch {
+    background-color: #777;
+  }
+  .can-toggle input[type=checkbox]:focus ~ label .can-toggle__switch:after, .can-toggle input[type=checkbox]:hover ~ label .can-toggle__switch:after {
+    color: #000000;
+  }
+  .can-toggle input[type=checkbox]:hover ~ label {
+    color: #6a6a6a;
+  }
+  .can-toggle input[type=checkbox]:checked ~ label:hover {
+    color: #55bc49;
+  }
+  .can-toggle input[type=checkbox]:checked ~ label .can-toggle__switch {
+    background-color: #2d419a;
+  }
+  .can-toggle input[type=checkbox]:checked ~ label .can-toggle__switch:after {
+    color: #4fb743;
+  }
+  .can-toggle input[type=checkbox]:checked:focus ~ label .can-toggle__switch, .can-toggle input[type=checkbox]:checked:hover ~ label .can-toggle__switch {
+    background-color: #5fc054;
+  }
+  .can-toggle input[type=checkbox]:checked:focus ~ label .can-toggle__switch:after, .can-toggle input[type=checkbox]:checked:hover ~ label .can-toggle__switch:after {
+    color: #47a43d;
+  }
+  .can-toggle label .can-toggle__label-text {
+    flex: 1;
+  }
+  .can-toggle label .can-toggle__switch {
+    transition: background-color 0.3s cubic-bezier(0, 1, 0.5, 1);
+    background: #848484;
+  }
+  .can-toggle label .can-toggle__switch:before {
+    color: rgba(255, 255, 255, 0.5);
+  }
+  .can-toggle label .can-toggle__switch:after {
+    transition: transform 0.3s cubic-bezier(0, 1, 0.5, 1);
+    color: #777;
+  }
+  .can-toggle input[type=checkbox]:focus ~ label .can-toggle__switch:after, .can-toggle input[type=checkbox]:hover ~ label .can-toggle__switch:after {
+    box-shadow: 0 3px 3px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle input[type=checkbox]:checked ~ label .can-toggle__switch:after {
+    transform: translate3d(35px, 0, 0);
+  }
+  .can-toggle input[type=checkbox]:checked:focus ~ label .can-toggle__switch:after, .can-toggle input[type=checkbox]:checked:hover ~ label .can-toggle__switch:after {
+    box-shadow: 0 3px 3px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle label {
+    font-size: 14px;
+  }
+  .can-toggle label .can-toggle__switch {
+    height: 30px;
+    flex: 0 0 80px;
+    border-radius: 20px;
+    font-weight: bold;
+  }
+  .can-toggle label .can-toggle__switch:before {
+    color: white !important;
+    left: 40px;
+    font-size: 12px;
+    line-height: 30px;
+    width: 40px;
+    padding: 0 12px;
+  }
+  .can-toggle label .can-toggle__switch:after {
+    border-bottom-left-radius: 20px;
+    border-top-left-radius: 20px;
+    top: 2px;
+    left: 2px;
+    border-radius: 2px;
+    width: 40px;
+    line-height: 30px;
+    font-size: 12px;
+  }
+  .can-toggle label .can-toggle__switch:hover:after {
+    box-shadow: 0 3px 3px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle.can-toggle--size-small input[type=checkbox]:focus ~ label .can-toggle__switch:after, .can-toggle.can-toggle--size-small input[type=checkbox]:hover ~ label .can-toggle__switch:after {
+    box-shadow: 0 2px 2px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle.can-toggle--size-small input[type=checkbox]:checked ~ label .can-toggle__switch:after {
+    transform: translate3d(44px, 0, 0);
+  }
+  .can-toggle.can-toggle--size-small input[type=checkbox]:checked:focus ~ label .can-toggle__switch:after, .can-toggle.can-toggle--size-small input[type=checkbox]:checked:hover ~ label .can-toggle__switch:after {
+    box-shadow: 0 2px 2px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle.can-toggle--size-small label {
+    font-size: 13px;
+  }
+  .can-toggle.can-toggle--size-small label .can-toggle__switch {
+    height: 28px;
+    flex: 0 0 90px;
+    border-radius: 2px;
+  }
+  .can-toggle.can-toggle--size-small label .can-toggle__switch:before {
+    left: 45px;
+    font-size: 10px;
+    line-height: 28px;
+    width: 45px;
+    padding: 0 12px;
+  }
+  .can-toggle.can-toggle--size-small label .can-toggle__switch:after {
+    top: 1px;
+    left: 1px;
+    border-radius: 1px;
+    width: 44px;
+    line-height: 26px;
+    font-size: 10px;
+  }
+  .can-toggle.can-toggle--size-small label .can-toggle__switch:hover:after {
+    box-shadow: 0 2px 2px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle.can-toggle--size-large input[type=checkbox]:focus ~ label .can-toggle__switch:after, .can-toggle.can-toggle--size-large input[type=checkbox]:hover ~ label .can-toggle__switch:after {
+    box-shadow: 0 4px 4px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle.can-toggle--size-large input[type=checkbox]:checked ~ label .can-toggle__switch:after {
+    transform: translate3d(78px, 0, 0);
+  }
+  .can-toggle.can-toggle--size-large input[type=checkbox]:checked:focus ~ label .can-toggle__switch:after, .can-toggle.can-toggle--size-large input[type=checkbox]:checked:hover ~ label .can-toggle__switch:after {
+    box-shadow: 0 4px 4px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle.can-toggle--size-large label {
+    font-size: 14px;
+  }
+  .can-toggle.can-toggle--size-large label .can-toggle__switch {
+    height: 50px;
+    flex: 0 0 160px;
+    border-radius: 4px;
+  }
+  .can-toggle.can-toggle--size-large label .can-toggle__switch:before {
+    left: 80px;
+    font-size: 14px;
+    line-height: 50px;
+    width: 80px;
+    padding: 0 12px;
+  }
+  .can-toggle.can-toggle--size-large label .can-toggle__switch:after {
+    top: 2px;
+    left: 2px;
+    border-radius: 2px;
+    width: 78px;
+    line-height: 46px;
+    font-size: 14px;
+  }
+  .can-toggle.can-toggle--size-large label .can-toggle__switch:hover:after {
+    box-shadow: 0 4px 4px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle.demo-rebrand-1 input[type=checkbox][disabled] ~ label {
+    color: rgba(181, 62, 116, 0.5);
+  }
+  .can-toggle.demo-rebrand-1 input[type=checkbox]:focus ~ label .can-toggle__switch, .can-toggle.demo-rebrand-1 input[type=checkbox]:hover ~ label .can-toggle__switch {
+    background-color: #2d419a;
+  }
+  .can-toggle.demo-rebrand-1 input[type=checkbox]:focus ~ label .can-toggle__switch:after, .can-toggle.demo-rebrand-1 input[type=checkbox]:hover ~ label .can-toggle__switch:after {
+    color: #000000;
+  }
+  .can-toggle.demo-rebrand-1 input[type=checkbox]:hover ~ label {
+    color: #a23768;
+  }
+  .can-toggle.demo-rebrand-1 input[type=checkbox]:checked ~ label:hover {
+    color: #39916a;
+  }
+  .can-toggle.demo-rebrand-1 input[type=checkbox]:checked ~ label .can-toggle__switch {
+    background-color: #2d419a;
+  }
+  .can-toggle.demo-rebrand-1 input[type=checkbox]:checked ~ label .can-toggle__switch:after {
+    color: #2d419a;
+  }
+  .can-toggle.demo-rebrand-1 input[type=checkbox]:checked:focus ~ label .can-toggle__switch, .can-toggle.demo-rebrand-1 input[type=checkbox]:checked:hover ~ label .can-toggle__switch {
+    background-color: #2d419a;
+  }
+  .can-toggle.demo-rebrand-1 input[type=checkbox]:checked:focus ~ label .can-toggle__switch:after, .can-toggle.demo-rebrand-1 input[type=checkbox]:checked:hover ~ label .can-toggle__switch:after {
+    color: #000000;
+  }
+  .can-toggle.demo-rebrand-1 label .can-toggle__label-text {
+    flex: 1;
+  }
+  .can-toggle.demo-rebrand-1 label .can-toggle__switch {
+    transition: background-color 0.3s ease-in-out;
+    background: #2d419a;
+  }
+  .can-toggle.demo-rebrand-1 label .can-toggle__switch:before {
+    color: rgba(255, 255, 255, 0.6);
+  }
+  .can-toggle.demo-rebrand-1 label .can-toggle__switch:after {
+    transition: transform 0.3s ease-in-out;
+    color: #000000;
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox][disabled] ~ label {
+    color: rgba(68, 68, 68, 0.5);
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:focus ~ label .can-toggle__switch, .can-toggle.demo-rebrand-2 input[type=checkbox]:hover ~ label .can-toggle__switch {
+    background-color: #444;
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:focus ~ label .can-toggle__switch:after, .can-toggle.demo-rebrand-2 input[type=checkbox]:hover ~ label .can-toggle__switch:after {
+    color: #2b2b2b;
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:hover ~ label {
+    color: #373737;
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:checked ~ label:hover {
+    color: #62b125;
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:checked ~ label .can-toggle__switch {
+    background-color: #75d32d;
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:checked ~ label .can-toggle__switch:after {
+    color: #5da924;
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:checked:focus ~ label .can-toggle__switch, .can-toggle.demo-rebrand-2 input[type=checkbox]:checked:hover ~ label .can-toggle__switch {
+    background-color: #69be28;
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:checked:focus ~ label .can-toggle__switch:after, .can-toggle.demo-rebrand-2 input[type=checkbox]:checked:hover ~ label .can-toggle__switch:after {
+    color: #52941f;
+  }
+  .can-toggle.demo-rebrand-2 label .can-toggle__label-text {
+    flex: 1;
+  }
+  .can-toggle.demo-rebrand-2 label .can-toggle__switch {
+    transition: background-color 0.3s cubic-bezier(0.86, 0, 0.07, 1);
+    background: #515151;
+  }
+  .can-toggle.demo-rebrand-2 label .can-toggle__switch:before {
+    color: rgba(255, 255, 255, 0.7);
+  }
+  .can-toggle.demo-rebrand-2 label .can-toggle__switch:after {
+    transition: transform 0.3s cubic-bezier(0.86, 0, 0.07, 1);
+    color: #444;
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:focus ~ label .can-toggle__switch:after, .can-toggle.demo-rebrand-2 input[type=checkbox]:hover ~ label .can-toggle__switch:after {
+    box-shadow: 0 4px 4px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:checked ~ label .can-toggle__switch:after {
+    transform: translate3d(58px, 0, 0);
+  }
+  .can-toggle.demo-rebrand-2 input[type=checkbox]:checked:focus ~ label .can-toggle__switch:after, .can-toggle.demo-rebrand-2 input[type=checkbox]:checked:hover ~ label .can-toggle__switch:after {
+    box-shadow: 0 4px 4px rgba(0, 0, 0, 0.4);
+  }
+  .can-toggle.demo-rebrand-2 label {
+    font-size: 13px;
+  }
+  .can-toggle.demo-rebrand-2 label .can-toggle__switch {
+    height: 60px;
+    flex: 0 0 120px;
+    border-radius: 60px;
+  }
+  .can-toggle.demo-rebrand-2 label .can-toggle__switch:before {
+    left: 60px;
+    font-size: 13px;
+    line-height: 60px;
+    width: 60px;
+    padding: 0 12px;
+  }
+  .can-toggle.demo-rebrand-2 label .can-toggle__switch:after {
+    top: 2px;
+    left: 2px;
+    border-radius: 30px;
+    width: 58px;
+    line-height: 56px;
+    font-size: 13px;
+  }
+  .can-toggle.demo-rebrand-2 label .can-toggle__switch:hover:after {
+    box-shadow: 0 4px 4px rgba(0, 0, 0, 0.4);
+  }
+
+
+  .can-toggle__submit-month:after{
+    border-bottom-left-radius: 20px !important;
+    border-top-left-radius: 20px !important;
+    border-bottom-right-radius: 4px !important;
+    border-top-right-radius: 4px !important;
+  }
+
+  .can-toggle__submit-date:after{
+    border-bottom-left-radius: 4px !important;
+    border-top-left-radius: 4px !important;
+    border-bottom-right-radius: 20px !important;
+    border-top-right-radius: 20px !important;
+  }
+
+ .can-toggle__submit-date:after {
+    transform: translate3d(35px, 0, 0) !important;
+    content: attr(data-checked) !important;
+}
+
+.can-toggle__submit-date::before {
+    content: attr(data-unchecked) !important;
+    left: 0 !important;
+}
+
+#collapsePassword .form-group {
+    min-height: calc(2.25rem + 20px);
+}
+
+#collapsePassword .col-sm-8 {
+    min-height: calc(2.25rem + 2px);
+}
