@@ -7,7 +7,6 @@ use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
-use UniSharp\LaravelFilemanager\Lfm;
 
 /*
 |--------------------------------------------------------------------------
