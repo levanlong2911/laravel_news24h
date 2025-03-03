@@ -20,6 +20,7 @@
                 messages: {
                     name: {
                         required: "{{ __('category.input_name_required') }}",
+                        maxlength: "{{ __('category.input_max_required') }}",
                     },
                 },
                 errorElement: 'span',

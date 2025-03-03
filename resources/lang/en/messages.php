@@ -23,4 +23,5 @@ return [
     'too_many_attempts' => 'Đăng nhập sai 5 lần, vui lòng thử lại trong vài phút',
     'login_fail' => 'Email hoặc password không đúng',
     'login_success' => 'Đăng nhập thành công',
+    'domain_already_exists' => 'Domain đã tồn tại',
 ];

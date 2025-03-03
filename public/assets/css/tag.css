@@ -120,3 +120,11 @@
         display: none;
     }
 }
+
+#cke_1_contents {
+    height: 500px !important;
+}
+
+.get-link {
+    padding-bottom: 10px;
+}

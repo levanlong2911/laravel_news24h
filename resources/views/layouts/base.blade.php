@@ -25,6 +25,7 @@
     <link rel="stylesheet" href="{{ asset('assets/css/common.css') }}">
     {{-- <script src="//cdnjs.cloudflare.com/ajax/libs/ckeditor/4.5.11/ckeditor.js"></script>
     <script src="//cdnjs.cloudflare.com/ajax/libs/ckeditor/4.5.11/adapters/jquery.js"></script> --}}
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
     @yield('css')
 </head>

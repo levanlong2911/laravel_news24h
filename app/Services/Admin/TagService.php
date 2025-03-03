@@ -100,4 +100,9 @@ class TagService
             return false;
         }
     }
+
+    public function getListTagByCategoryId($categoryId)
+    {
+        return $this->tagRepository->getTagByCategoryId($categoryId);
+    }
 }

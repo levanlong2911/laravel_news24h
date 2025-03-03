@@ -5,10 +5,14 @@ namespace App\Providers;
 use App\Repositories\Eloquent\AdminRepository;
 use App\Repositories\Eloquent\BaseRepository;
 use App\Repositories\Eloquent\CategoryRepository;
+use App\Repositories\Eloquent\InforDomainRepository;
+use App\Repositories\Eloquent\PostRepository;
 use App\Repositories\Eloquent\RoleRepository;
 use App\Repositories\Eloquent\TagRepository;
 use App\Repositories\Interfaces\AdminRepositoryInterface;
 use App\Repositories\Interfaces\CategoryRepositoryInterface;
+use App\Repositories\Interfaces\InforDomainRepositoryInterface;
+use App\Repositories\Interfaces\PostRepositoryInterface;
 use App\Repositories\Interfaces\RepositoryInterface;
 use App\Repositories\Interfaces\RoleRepositoryInterface;
 use App\Repositories\Interfaces\TagRepositoryInterface;
@@ -41,6 +45,14 @@ class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(
             TagRepositoryInterface::class,
             TagRepository::class
+        );
+        $this->app->bind(
+            InforDomainRepositoryInterface::class,
+            InforDomainRepository::class
+        );
+        $this->app->bind(
+            PostRepositoryInterface::class,
+            PostRepository::class
         );
     }
 

@@ -33,7 +33,15 @@
                     <a href="{{ route('post.index') }}" class="nav-link d-inline-flex {{ ($action == 'post-index') ? $active ?? '' : '' }}">
                         <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
                         <p>
-                            {{ __('sidebar.post.management') }}
+                            {{ __('sidebar.post_management') }}
+                        </p>
+                    </a>
+                </li>
+                <li class="nav-item {{ ($route == 'domain') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('domain.index') }}" class="nav-link d-inline-flex {{ ($action == 'domain-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
+                        <p>
+                            {{ __('sidebar.domain_management') }}
                         </p>
                     </a>
                 </li>

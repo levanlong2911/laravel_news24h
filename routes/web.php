@@ -3,10 +3,17 @@
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\GetLinkController;
+use App\Http\Controllers\GetTagController;
+use App\Http\Controllers\InforDomainsController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
+<<<<<<< HEAD
+=======
+
+>>>>>>> c8ee5e0 (update 3 3 25)
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -25,11 +32,16 @@ Route::group(['prefix' => '/'], function () {
         ->name('login');
     // Logout
     Route::get('/logout', [AuthController::class, 'logout'])
+        ->middleware('auth')
         ->name('logout');
 });
 
-Route::prefix('admin')->group(function()
-{
+Route::group(
+    [
+        "prefix" => "admin",
+        "middleware" => "auth",
+    ],
+    function() {
     // Admin
     Route::get('/', [AdminController::class, 'index'])->name('admin.index');
     Route::match(['get', 'post'], '/add', [AdminController::class, 'add'])->name('admin.add');
@@ -56,12 +68,25 @@ Route::prefix('admin')->group(function()
     Route::group(["prefix" => "post"], function () {
         Route::get("/", [PostController::class, "index"])->name("post.index");
         Route::match(["get", "post"], "/add", [PostController::class, "add"])->name("post.add");
+        // Route::match(["get", "post"], "/addpost", [PostController::class, "addPost"])->name("post.addpost");
         Route::match(["get", "post"], "/update/{id}", [PostController::class, "update"])->name("post.update");
         Route::match(["get", "post"], "/delete", [PostController::class, "delete"])->name("post.delete");
         Route::match(["get", "post"], "/detail/{id}", [PostController::class, "detail"])->name("post.detail");
     });
+
+    // infor domain
+    Route::group(["prefix" => "domain"], function () {
+        Route::get("/", [InforDomainsController::class, "index"])->name("domain.index");
+        Route::match(["get", "post"], "/add", [InforDomainsController::class, "add"])->name("domain.add");
+        Route::match(["get", "post"], "/update/{id}", [InforDomainsController::class, "update"])->name("domain.update");
+        Route::match(["get", "post"], "/delete", [InforDomainsController::class, "delete"])->name("domain.delete");
+        Route::match(["get", "post"], "/detail/{id}", [InforDomainsController::class, "detail"])->name("domain.detail");
+    });
+
+    Route::post("/getlink", [GetLinkController::class, "getLink"]);
+    Route::get("/get-tags", [GetTagController::class, "getTags"]);
 });
 
-Route::group(['prefix' => 'laravel-filemanager', 'middleware'], function () {
+Route::group(['prefix' => 'laravel-filemanager', 'middleware' => ['web', 'auth']], function () {
     \UniSharp\LaravelFilemanager\Lfm::routes();
 });

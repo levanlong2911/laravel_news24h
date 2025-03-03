@@ -2,10 +2,11 @@
 
 return [
     'admin_management' => 'Admin',
+    'title' => 'Title:',
+    'content' => 'Content:',
+    'link' => 'Link:',
     'name' => 'Name',
     'email' => 'Email',
-    'address' => 'Address',
-    'phone' => 'Phone',
     'birthday' => 'Birthday',
     'action' => 'Action',
     'create_new_account' => 'Add',

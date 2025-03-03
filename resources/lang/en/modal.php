@@ -11,7 +11,7 @@
         "close" => "Close",
         "submit_mail_model" => "Send Mail",
         "content_mail_submit" => "Are you sure you want to send mail it?",
-        "send_mail" => "Send mail",
+        "get_link" => "Get data",
         "content_import_submit" => "Are you sure you want to import it?",
         "import" => "Import",
     ];

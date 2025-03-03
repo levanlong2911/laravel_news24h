@@ -19,6 +19,7 @@ return [
     'user' => 'User Management',
     'category_management' => 'Categorys',
     'tag_management' => 'Tags',
-    'post.management' => 'Posts',
+    'post_management' => 'Posts',
+    'domain_management' => 'Domain',
     'spin' => 'Spin Management',
 ];

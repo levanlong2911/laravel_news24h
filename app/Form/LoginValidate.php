@@ -36,7 +36,6 @@ class LoginValidate
             "password.min" => __("messages.minlength"),
             "password.regex" => __("messages.pattern"),
         ]);
-        // dd($validator);
 
         return $validator->validate();
     }

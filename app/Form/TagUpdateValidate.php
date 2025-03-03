@@ -19,14 +19,6 @@ class TagUpdateValidate
             'category_id' => 'required|exists:categories,id',
             'tags' => 'required|string',
         ]);
-        // [
-        //     "email.required" => __("messages.user_id_required"),
-        //     "email.email" => __("messages.email_invalid"),
-        //     "password.required" => __("messages.password_required"),
-        //     "password.min" => __("messages.minlength"),
-        //     "password.regex" => __("messages.pattern"),
-        // ]);
-        // dd($validator->validate());
 
         return $validator->validate();
     }

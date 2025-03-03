@@ -18,4 +18,9 @@ class TagRepository extends BaseRepository implements TagRepositoryInterface
                 ->whereIn("id", $ids)
                 ->get();
     }
+
+    public function getTagByCategoryId($categoryId)
+    {
+        return Tag::where('category_id', $categoryId)->pluck('name');
+    }
 }
