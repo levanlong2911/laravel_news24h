@@ -10,20 +10,6 @@ use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
-<<<<<<< HEAD
-=======
-
->>>>>>> c8ee5e0 (update 3 3 25)
-/*
-|--------------------------------------------------------------------------
-| Web Routes
-|--------------------------------------------------------------------------
-|
-| Here is where you can register web routes for your application. These
-| routes are loaded by the RouteServiceProvider and all of them will
-| be assigned to the "web" middleware group. Make something great!
-|
-*/
 
 Route::group(['prefix' => '/'], function () {
     // Login
