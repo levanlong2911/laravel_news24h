@@ -190,10 +190,9 @@ return [
 
     // 'base_folder' => 'public/photos',
 
-    'base_directory' => [
-        'images' => 'public/photos/images',
-        'files' => 'public/photos/files',
-    ],
+    'base_directory' => 'public',
+    'images_folder_name' => 'photos',  // Thư mục chứa ảnh
+
 
 
 

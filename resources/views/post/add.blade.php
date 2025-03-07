@@ -21,8 +21,8 @@
                 rules: {
                     title: {
                         required: true,
-                        maxlength: 250,
-                        minlength: 50,
+                        maxlength: 500,
+                        minlength: 25,
                     },
                     editor_content: {
                         required: true,
@@ -36,7 +36,7 @@
                     },
                     image: {
                         required: true,
-                        // url: true,
+                        url: true,
                     },
                 },
                 messages: {
@@ -57,7 +57,7 @@
                     },
                     image: {
                         required: "{{ __('post.validate_image_required') }}",
-                        // url: "{{ __('post.validate_url_required') }}",
+                        url: "{{ __('post.validate_url_required') }}",
                     },
                 },
                 errorElement: 'span',
@@ -160,6 +160,73 @@
             if (!CKEDITOR.instances[editorContentId]) {
                 CKEDITOR.replace(editorContentId, {
                     entities: false, // Tắt auto encode HTML entities
+                    entities_latin: false // Ngăn mã hóa các ký tự Latin như "ι"
+                });
+            }
+
+            let titleInput = document.getElementById("title");
+
+            function getEditorContent() {
+                return CKEDITOR.instances[editorContentId].getData();
+            }
+
+            function setEditorContent(content) {
+                let editor = CKEDITOR.instances[editorContentId];
+                if (editor) {
+                    editor.setData(content, function() {
+                        editor.updateElement(); // Cập nhật lại dữ liệu trong form
+                    });
+                }
+            }
+
+            function replaceText(find, replace) {
+                // Thay thế trong input title
+                if (titleInput) {
+                    titleInput.value = titleInput.value.replace(new RegExp(find, "g"), replace);
+                }
+
+                // Thay thế trong CKEditor (content)
+                let content = getEditorContent();
+
+                // Chuyển nội dung HTML thành DOM để tránh lỗi phá vỡ cấu trúc
+                let tempDiv = document.createElement("div");
+                tempDiv.innerHTML = content;
+
+                function replaceInNode(node) {
+                    if (node.nodeType === 3) { // Chỉ thay đổi trong text node
+                        node.nodeValue = node.nodeValue.replace(new RegExp(find, "g"), replace);
+                    } else if (node.nodeType === 1) { // Nếu là element, duyệt tất cả con của nó
+                        for (let i = 0; i < node.childNodes.length; i++) {
+                            replaceInNode(node.childNodes[i]);
+                        }
+                    }
+                }
+
+                replaceInNode(tempDiv);
+
+                setEditorContent(tempDiv.innerHTML);
+            }
+
+            // Nút thay thế "i" → "ι"
+            document.getElementById("replaceToGreekI").addEventListener("click", function() {
+                replaceText("(?<!&)i(?!ota;)", "ι"); // Đảm bảo không thay "&iota;"
+            });
+
+            // Nút thay thế "ι" → "i"
+            document.getElementById("replaceToLatinI").addEventListener("click", function() {
+                replaceText("ι", "i");
+            });
+        });
+    </script>
+
+    {{-- <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            let editorContentId = 'editor_content';
+
+            // Kiểm tra CKEditor đã tồn tại chưa
+            if (!CKEDITOR.instances[editorContentId]) {
+                CKEDITOR.replace(editorContentId, {
+                    entities: false, // Tắt auto encode HTML entities
                     entities_latin: false, // Ngăn mã hóa các ký tự Latin như "ι"
                 });
             }
@@ -208,7 +275,7 @@
                 replaceText("ι", "i"); //  Đúng: thay "ι" bằng "i"
             });
         });
-    </script>
+    </script> --}}
     <script>
         $(document).ready(function () {
             $('#category').change(function () {
@@ -221,9 +288,14 @@
                         data: { category_id: categoryId },
                         success: function (data) {
                             if (data.length > 0) {
-                                $('#tag').val(data.join(', ')); // Gộp tags thành chuỗi
+                                let tagNames = data.map(tag => tag.name).join(', '); // Chuỗi tag name
+                                let tagIds = data.map(tag => tag.id).join(', '); // Chuỗi tag id
+
+                                $('#tag').val(tagNames); // Hiển thị tag name trong input
+                                $('#tag-hidden').val(tagIds); // Lưu ID để submit form
                             } else {
                                 $('#tag').val('');
+                                $('#tag-hidden').val('');
                             }
                         },
                         error: function () {
@@ -232,6 +304,7 @@
                     });
                 } else {
                     $('#tag').val('');
+                    $('#tag-hidden').val('');
                 }
             });
         });
@@ -323,8 +396,8 @@
                                             name="category" id="category">
                                             <option value>Select category</option>
                                             @foreach ($listsCate as $item)
-                                                    <option value="{{ $item->id }}" {{ (old('category') == $item->id) ? 'selected' : '' }}>{{  $item->name }}</option>
-                                                @endforeach
+                                                <option value="{{ $item->id }}" {{ (old('category') == $item->id) ? 'selected' : '' }}>{{  $item->name }}</option>
+                                            @endforeach
                                         </select>
                                         @error('name')
                                             <span class="invalid-feedback" role="alert">
@@ -341,15 +414,16 @@
                                     </p>
                                 </div>
                                 <div class="col-12 pl-0">
-                                    <div class="input inputMessage">
+                                    <div id="tag-container">
                                         <input type="text" value="{{ old('tag') ?? old('tag') }}"
                                             class="form-control{{ $errors->has('tag') ? ' is-invalid' : '' }} col-12"
-                                            name="tag" id="tag" placeholder="">
-                                        @error('tag')
+                                            name="tag" id="tag" readonly>
+                                        {{-- @error('tag')
                                             <span class="invalid-feedback" role="alert">
                                                 <strong>{{ $message }}</strong>
                                             </span>
-                                        @enderror
+                                        @enderror --}}
+                                        <input type="hidden" name="tag" id="tag-hidden">
                                     </div>
                                 </div>
                             </div>

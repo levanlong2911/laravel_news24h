@@ -34,14 +34,8 @@ class PostAddForm
             ],
             'image' => [
                 'required',
-                // 'file',
-                'max:5120',
-                'mimes:png,jpg,jpeg,webp,avif'
+                'url',
             ],
-        ],
-        [
-            "file.max" => __("exam_resuilt.validate_file_max"),
-            "file.mimes" => __("exam_resuilt.validate_file_mimes"),
         ]);
         // dd($validator->validate());
 
