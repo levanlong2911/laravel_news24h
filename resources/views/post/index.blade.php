@@ -99,45 +99,48 @@
                                                     </th>
                                                     <th class="text-center">{{ __('post.title') }}</th>
                                                     <th class="text-center">{{ __('post.category') }}</th>
-                                                    {{-- <th class="text-center">{{ __('post.name_category') }}</th> --}}
+                                                    <th class="text-center">{{ __('post.day') }}</th>
                                                     <th class="text-center">{{ __('post.detail') }}</th>
                                             </thead>
-                                            {{-- <tbody>
-                                                @foreach ($listTag as $tag)
-                                                    <tr id="id_tr_{{ $tag->id }}" data-id="{{ $tag->id }}">
+                                            <tbody>
+                                                @foreach ($listsPost as $post)
+                                                    <tr id="id_tr_{{ $post->id }}" data-id="{{ $post->id }}">
                                                         <td class="pl-0 pr-0" style="vertical-align: middle !important;">
                                                             <div
                                                                 class="d-flex align-items-center justify-content-center form-check">
-                                                                <input id="id_tag{{ $tag->id }}" type="checkbox"
+                                                                <input id="id_tag{{ $post->id }}" type="checkbox"
                                                                     class="check-select is-edit is-choose form-check-input"
-                                                                    value="{{ $tag->id }}">
-                                                                <label for="id_tag{{ $tag->id }}"
+                                                                    value="{{ $post->id }}">
+                                                                <label for="id_tag{{ $post->id }}"
                                                                     class="form-check-label form-checkbox text-box-label"></label>
                                                             </div>
-                                                            <input type="text" hidden name="id[{{ $tag->id }}]"
-                                                                value="{{ $tag->id }}">
+                                                            <input type="text" hidden name="id[{{ $post->id }}]"
+                                                                value="{{ $post->id }}">
+                                                        </td>
+                                                        <td>
+                                                            {{ $post->title }}
                                                         </td>
                                                         <td class="text-center">
-                                                            {{ $tag->id }}
+                                                            {{ data_get($post, 'category.name') }}
                                                         </td>
                                                         <td class="text-center">
-                                                            {{ $tag->name }}
+                                                            {{ $post->created_at->format('d-m-Y') }}
                                                         </td>
                                                         <td class="text-center">
-                                                            {{ data_get($tag, 'category.name') }}
-                                                        </td>
-                                                        <td class="text-center">
-                                                            <a href="{{ route('post.detail', ['id' => $tag->id]) }}">
+                                                            <a href="{{ route('post.detail', ['id' => $post->id]) }}">
                                                                 {{ __('post.detail') }}
+                                                            </a>
+                                                            <a href="{{ route('post.update', ['id' => $post->id]) }}">
+                                                                {{ __('post.update') }}
                                                             </a>
                                                         </td>
                                                     </tr>
                                                 @endforeach
-                                            </tbody> --}}
+                                            </tbody>
                                         </table>
                                     </div>
                                     <div class="card-footer clearfix">
-                                        {{-- {{ $listTag->appends(request()->except('page'))->links('pagination::bootstrap-4') }} --}}
+                                        {{ $listsPost->appends(request()->except('page'))->links('pagination::bootstrap-4') }}
                                     </div>
                                     <div class="row">
                                         <div class="col-12">

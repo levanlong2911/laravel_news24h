@@ -9,11 +9,12 @@ class Tag extends Model
 {
     use HasFactory;
 
+    protected $table = 'tags';
     protected $keyType = 'string'; // UUID là chuỗi
     public $incrementing = false; // Tắt tự động tăng ID
 
     // Các cột có thể được gán giá trị
-    protected $fillable = ['name', 'category_id'];
+    protected $fillable = ['id', 'name', 'category_id'];
 
     /**
      * Quan hệ n-1 với bảng categories
@@ -25,6 +26,6 @@ class Tag extends Model
 
     public function posts()
     {
-        return $this->belongsToMany(Post::class, 'post_tag', 'tag_id', 'post_id');
+        return $this->belongsToMany(Post::class, 'post_tags', 'tag_id', 'post_id');
     }
 }

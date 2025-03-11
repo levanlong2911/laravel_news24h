@@ -25,7 +25,7 @@ class InforDomainService
      */
     public function getListDomain()
     {
-        return $this->domainRepository->paginate(Paginate::PAGE->value);
+        return $this->domainRepository->getListDomain();
     }
 
     public function checkDomain($domain)

@@ -3,6 +3,7 @@
 return [
     'list_post' => 'List post',
     'category' => 'Category',
+    'update_post' => 'Update post',
     'title' => 'Title',
     'add' => 'Add',
     'placeholder_url' => 'https://domain.com',
@@ -12,6 +13,7 @@ return [
     'hobby' => 'Hobby',
     'add_post' => 'Add post',
     'tag' => 'Tag',
+    'slug' => 'Slug',
     'url' => 'URL:',
     'convert_font' => 'Convert font:',
     'submit' => 'SUBMIT',

@@ -4,6 +4,7 @@ namespace App\Repositories\Eloquent;
 
 use App\Models\InforDomain;
 use App\Repositories\Interfaces\InforDomainRepositoryInterface;
+use App\Enums\Paginate;
 
 class InforDomainRepository extends BaseRepository implements InforDomainRepositoryInterface
 {
@@ -25,5 +26,12 @@ class InforDomainRepository extends BaseRepository implements InforDomainReposit
 
     public function getByDomain($domain) {
         return $this->model->where('domain', $domain)->first();
+    }
+
+    public function getListDomain()
+    {
+        return $this->model->newQuery()
+                ->orderBy('created_at', 'desc')
+                ->paginate(Paginate::PAGE->value);
     }
 }

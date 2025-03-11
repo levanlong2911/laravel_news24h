@@ -6,9 +6,11 @@ use App\Models\Admin;
 use App\Repositories\Interfaces\AdminRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Model;
+use App\Enums\Paginate;
 
 class AdminRepository extends BaseRepository implements AdminRepositoryInterface
 {
+
     public function getModel(): string
     {
         return Admin::class;
@@ -28,6 +30,13 @@ class AdminRepository extends BaseRepository implements AdminRepositoryInterface
     {
         $admin = Admin::findOrFail($id);
         return $admin->delete();
+    }
+
+    public function getListAdmin()
+    {
+        return Admin::query()
+                ->orderBy('created_at', 'desc')
+                ->paginate(Paginate::PAGE->value);
     }
 
 }

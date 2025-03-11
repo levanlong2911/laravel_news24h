@@ -18,4 +18,10 @@ class Category extends Model
     {
         return $this->hasMany(Tag::class);
     }
+
+    // Thiết lập quan hệ ngược lại với Post
+    public function posts()
+    {
+        return $this->hasMany(Post::class, 'category_id');
+    }
 }

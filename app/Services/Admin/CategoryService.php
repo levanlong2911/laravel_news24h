@@ -32,7 +32,7 @@ class CategoryService
      */
     public function getListCategory()
     {
-        return $this->categoryRepository->paginate(Paginate::PAGE->value);
+        return $this->categoryRepository->getListCategory();
     }
 
     public function getInfoCate($id)

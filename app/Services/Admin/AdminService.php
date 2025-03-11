@@ -29,7 +29,7 @@ class AdminService
 
     public function getListAcc()
     {
-        return $this->adminRepository->paginate(Paginate::PAGE->value);
+        return $this->adminRepository->getListAdmin();
     }
 
     public function getListRole()

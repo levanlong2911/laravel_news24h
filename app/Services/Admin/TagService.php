@@ -19,7 +19,7 @@ class TagService
 
     public function getListTag()
     {
-        return $this->tagRepository->paginate(Paginate::PAGE->value);
+        return $this->tagRepository->getListTag();
     }
 
     public function addTag($request)

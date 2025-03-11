@@ -37,16 +37,13 @@ class PostController extends Controller
 
     public function index()
     {
-        // $listsDomain = $this->domainService->getListDomain();
-        // $result = $this->domainService->getListDomainIds()->pluck('id');
-        // dd($result);
+        $listsPost = $this->postService->getListPost();
         return view("post.index", [
             "route" => "post",
             "action" => "admin-post",
             "menu" => "menu-open",
             "active" => "active",
-            // 'listsDomain' => $listsDomain,
-            // "domainIds" => $this->domainService->getListDomainIds()->pluck('id'),
+            'listsPost' => $listsPost,
         ]);
     }
 
@@ -56,17 +53,41 @@ class PostController extends Controller
         if($request->isMethod('post')) {
             $this->form->validate($request, 'PostAddForm');
             $addPost = $this->postService->create($request);
-            dd($addPost);
             if ($addPost) {
-                return redirect()->route('admin.index')->with('success', __('messages.add_success'));
+                return redirect()->route('post.index')->with('success', __('messages.add_success'));
             }
-            return redirect()->route('admin.index')->with('error', __('messages.add_error'));
+            return redirect()->route('post.index')->with('error', __('messages.add_error'));
         }
         return view("post.add", [
             "route" => "post",
             "action" => "post-index",
             "menu" => "menu-open",
             "active" => "active",
+            "listsCate" => $listsCate,
+        ]);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $listPost = $this->postService->getPostById($id);
+        $listsCate = $this->categoryService->getListCategory();
+        // dd($request->method());
+        if($request->isMethod('post')) {
+            // dd($request->all());
+            $this->form->validate($request, 'PostAddForm');
+            $upPost = $this->postService->update($id, $request);
+            if ($upPost) {
+                return redirect()->route('post.index')->with('success', __('messages.add_success'));
+            }
+            return redirect()->route('post.index')->with('error', __('messages.add_error'));
+        }
+        // dd($listPost);
+        return view("post.update", [
+            "route" => "post",
+            "action" => "post-index",
+            "menu" => "menu-open",
+            "active" => "active",
+            "listPost" => $listPost,
             "listsCate" => $listsCate,
         ]);
     }

@@ -9,7 +9,7 @@ class Post extends Model
 {
     use HasFactory;
     protected $fillable = [
-        'title', 'content', 'slug', 'category_id', 'author_id', 'thumbnail', 'published_at', 'is_active'
+        'id', 'title', 'content', 'slug', 'category_id', 'author_id', 'thumbnail',
     ];
 
     public $incrementing = false;
@@ -18,6 +18,12 @@ class Post extends Model
     public $timestamps = true; // Giữ cho Eloquent tự động cập nhật created_at và updated_at
     public function tags()
     {
-        return $this->belongsToMany(Tag::class, 'post_tag', 'post_id', 'tag_id');
+        return $this->belongsToMany(Tag::class, 'post_tags', 'post_id', 'tag_id');
+    }
+
+    // Thiết lập quan hệ với Category
+    public function category()
+    {
+        return $this->belongsTo(Category::class, 'category_id');
     }
 }

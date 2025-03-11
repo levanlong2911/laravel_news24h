@@ -102,9 +102,6 @@
         });
     </script>
     <script>
-        {!! \File::get(base_path('vendor/unisharp/laravel-filemanager/public/js/stand-alone-button.js')) !!}
-    </script>
-    <script>
         $('#lfm').filemanager('image', {
             prefix: route_prefix
         });
@@ -277,13 +274,43 @@
         });
     </script> --}}
     <script>
-        $(document).ready(function () {
-            $('#category').change(function () {
-                var categoryId = $(this).val();
+        // $(document).ready(function () {
+        //     $('#category').change(function () {
+        //         var categoryId = $(this).val();
 
+        //         if (categoryId) {
+        //             $.ajax({
+        //                 url: '{{ url("admin/get-tags") }}', // Route AJAX lấy tags
+        //                 type: 'GET',
+        //                 data: { category_id: categoryId },
+        //                 success: function (data) {
+        //                     if (data.length > 0) {
+        //                         let tagNames = data.map(tag => tag.name).join(', '); // Chuỗi tag name
+        //                         let tagIds = data.map(tag => tag.id).join(', '); // Chuỗi tag id
+
+        //                         $('#tag').val(tagNames); // Hiển thị tag name trong input
+        //                         $('#tag-hidden').val(tagIds); // Lưu ID để submit form
+        //                     } else {
+        //                         $('#tag').val('');
+        //                         $('#tag-hidden').val('');
+        //                     }
+        //                 },
+        //                 error: function () {
+        //                     alert('Không thể lấy danh sách tags!');
+        //                 }
+        //             });
+        //         } else {
+        //             $('#tag').val('');
+        //             $('#tag-hidden').val('');
+        //         }
+        //     });
+        // });
+
+        $(document).ready(function () {
+            function loadTags(categoryId) {
                 if (categoryId) {
                     $.ajax({
-                        url: '{{ url("admin/get-tags") }}', // Route AJAX lấy tags
+                        url: '{{ url("admin/get-tags") }}',
                         type: 'GET',
                         data: { category_id: categoryId },
                         success: function (data) {
@@ -291,8 +318,8 @@
                                 let tagNames = data.map(tag => tag.name).join(', '); // Chuỗi tag name
                                 let tagIds = data.map(tag => tag.id).join(', '); // Chuỗi tag id
 
-                                $('#tag').val(tagNames); // Hiển thị tag name trong input
-                                $('#tag-hidden').val(tagIds); // Lưu ID để submit form
+                                $('#tag').val(tagNames); // Hiển thị tên tag trong input
+                                $('#tag-hidden').val(tagIds); // Lưu ID vào input hidden
                             } else {
                                 $('#tag').val('');
                                 $('#tag-hidden').val('');
@@ -306,6 +333,17 @@
                     $('#tag').val('');
                     $('#tag-hidden').val('');
                 }
+            }
+
+            // Khi trang load lại, nếu có dữ liệu cũ => tự động load tags
+            var oldCategory = $('#category').val();
+            if (oldCategory) {
+                loadTags(oldCategory);
+            }
+
+            // Khi chọn category mới, load lại tags
+            $('#category').change(function () {
+                loadTags($(this).val());
             });
         });
     </script>
@@ -415,7 +453,7 @@
                                 </div>
                                 <div class="col-12 pl-0">
                                     <div id="tag-container">
-                                        <input type="text" value="{{ old('tag') ?? old('tag') }}"
+                                        <input type="text" value="{{ old('tag_names') ?? old('tag_names') }}"
                                             class="form-control{{ $errors->has('tag') ? ' is-invalid' : '' }} col-12"
                                             name="tag" id="tag" readonly>
                                         {{-- @error('tag')
@@ -423,7 +461,7 @@
                                                 <strong>{{ $message }}</strong>
                                             </span>
                                         @enderror --}}
-                                        <input type="hidden" name="tag" id="tag-hidden">
+                                        <input type="hidden" name="tag" id="tag-hidden" value="{{ old('tag') }}">
                                     </div>
                                 </div>
                             </div>
@@ -472,8 +510,9 @@
                             </div>
                             <div class="row">
                                 <div class="col-12">
-                                    <a href="#" class="btn btn-secondary">Cancel</a>
-                                    <input type="submit" value="Create new Project" class="btn btn-success float-right">
+                                    <a href="{{ route('post.index') }}"
+                                        class="btn button-center button-back btn-detail-custom">{{ __('admin.back') }}</a>
+                                    <input type="submit" value="Create Post" class="btn btn-success float-right">
                                 </div>
                             </div>
                         </div>
