@@ -44,6 +44,7 @@ class PostController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             'listsPost' => $listsPost,
+            "listIdPost" => $this->postService->getListPost()->pluck('id'),
         ]);
     }
 
@@ -90,6 +91,19 @@ class PostController extends Controller
             "listPost" => $listPost,
             "listsCate" => $listsCate,
         ]);
+    }
+
+    public function delete(Request $request)
+    {
+        $del = $this->postService->delete($request);
+        if ($del) {
+            return redirect()
+                ->route('post.index')
+                ->with("success", __("messages.delete_success"));
+        }
+        return redirect()
+        ->route('post.index')
+        ->with("error", __("messages.delete_error"));
     }
 
     // public function addPost(Request $request)

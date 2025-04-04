@@ -66,3 +66,14 @@
     </div>
     {{-- </section> --}}
 @endsection
+@section('script')
+    <script src="{{ asset('assets/dist/js/commonHandleList.js') }}"></script>
+    <script>
+        // const
+        var STORAGE_NAME = "level_selected_storage";
+        var DELETE_URL = "{{ route('post.delete') }}";
+        // get list client init
+        var listIds = <?php echo json_encode($listIdPost); ?>;
+        listIds = listIds.map(String);
+    </script>
+@endsection

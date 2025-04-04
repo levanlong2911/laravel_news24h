@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Enums\Paginate;
 use App\Repositories\Interfaces\PostRepositoryInterface;
+use App\Repositories\Interfaces\PostTagRepositoryInterface;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
@@ -17,11 +18,18 @@ use Illuminate\Support\Facades\Storage;
 class PostService
 {
     private PostRepositoryInterface $postRepository;
+    private PostTagRepositoryInterface $postTagRepository;
+    private PostTagService $postTagService;
 
     public function __construct(
-        PostRepositoryInterface $postRepository
-    ) {
+        PostRepositoryInterface $postRepository,
+        PostTagRepositoryInterface $postTagRepository,
+        PostTagService $postTagService,
+    )
+    {
         $this->postRepository = $postRepository;
+        $this->postTagRepository = $postTagRepository;
+        $this->postTagService = $postTagService;
     }
 
 
@@ -289,27 +297,28 @@ class PostService
      * @param \Illuminate\Http\Request $request
      * @return bool
      */
-    // public function delete($request)
-    // {
-    //     DB::beginTransaction();
-    //     try {
-    //         $dataCate = $this->categoryRepository->getDataListIds($request->ids);
-    //         foreach ($dataCate as $cate) {
-    //             // Delete tag
-    //             $tags = $this->tagRepositoryInterface->findBy(['category_id' => $cate->id]);
-    //             if ($tags) {
-    //                 foreach ($tags as $tag) {
-    //                     $this->tagService->deletetagByIds(['ids' => $tag['id']]);
-    //                 }
-    //             }
-    //             $cate->delete();
-    //         }
-    //         DB::commit();
-    //         return true;
-    //     } catch (Exception $e) {
-    //         DB::rollback();
-    //         return false;
-    //     }
-    // }
+    public function delete($request)
+    {
+        DB::beginTransaction();
+        try {
+            $dataPost = $this->postRepository->getDataListIds($request->ids);
+            foreach ($dataPost as $post) {
+                // Delete post_tag
+                $posttags = $this->postTagRepository->getListByPostId($post->id);
+                // dd($posttags->toArray());
+                if ($posttags) {
+                    foreach ($posttags as $posttag) {
+                        $this->postTagRepository->delete($posttag);
+                    }
+                }
+                $post->delete();
+            }
+            DB::commit();
+            return true;
+        } catch (Exception $e) {
+            DB::rollback();
+            return false;
+        }
+    }
 
 }

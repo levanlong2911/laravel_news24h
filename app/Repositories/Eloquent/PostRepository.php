@@ -35,4 +35,11 @@ class PostRepository extends BaseRepository implements PostRepositoryInterface
         }
         return $post->update($data);
     }
+
+    public function getDataListIds($ids)
+    {
+        return Post::query()
+                ->whereIn("id", $ids)
+                ->get();
+    }
 }

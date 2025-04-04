@@ -57,7 +57,7 @@ class AuthController extends Controller
             // dd($response);
 
             if ($response === true) {
-                return redirect()->route("admin.index");
+                return redirect()->route("post.index");
                 // if (Gate::allows('admin')) {
                 //     return redirect()->route('admin.index')->with('success', 'Welcome, Admin!');
                 // }

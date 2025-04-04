@@ -133,12 +133,17 @@
                                                             <a href="{{ route('post.update', ['id' => $post->id]) }}">
                                                                 {{ __('post.update') }}
                                                             </a>
+                                                            <a id="delete_form" class="btn button-del btn-danger">
+                                                                {{ __('category.delete') }}
+                                                            </a>
                                                         </td>
+                                                        @include('modal.delete', ['url' => route('post.delete'), 'id' => $post->id])
                                                     </tr>
                                                 @endforeach
                                             </tbody>
                                         </table>
                                     </div>
+
                                     <div class="card-footer clearfix">
                                         {{ $listsPost->appends(request()->except('page'))->links('pagination::bootstrap-4') }}
                                     </div>

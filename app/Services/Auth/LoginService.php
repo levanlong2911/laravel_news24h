@@ -9,6 +9,8 @@ use Illuminate\Support\Str;
 
 class LoginService
 {
+    private AdminRepositoryInterface $adminRepository;
+
     public function __construct
     (
         AdminRepositoryInterface $adminRepository
@@ -20,12 +22,11 @@ class LoginService
     public function loginAccount(Request $request)
     {
         // Kiểm tra email tồn tại và email đã được xác minh
-        // dd($this->adminRepository);
         $admin = $this->adminRepository
-        ->clearQuery()
-        ->where("email", $request->email)
-        ->whereNotNull("email_verified_at")
-        ->first();
+            ->clearQuery()
+            ->where("email", $request->email)
+            ->whereNotNull("email_verified_at")
+            ->first();
 
         if (!$admin) {
             return __("messages.login_fail");

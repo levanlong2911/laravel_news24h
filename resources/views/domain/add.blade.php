@@ -98,8 +98,8 @@
                                     </div>
                                     <div class="text-right">
                                         <a href="{{ route('domain.index') }}"
-                                            class="btn button-center button-back">{{ __('domain.domain_back') }}</a>
-                                        <button type="submit" class="btn button-right button-create-update" id="create_form">{{ __('domain.domain_add') }}</button>
+                                            class="btn button-center button-back">{{ __('domain.back') }}</a>
+                                        <button type="submit" class="btn button-right button-create-update" id="create_form">{{ __('domain.add') }}</button>
                                     </div>
                                 </form>
                             </div>

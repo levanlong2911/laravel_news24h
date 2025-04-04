@@ -12,16 +12,16 @@ class CategoryService
 {
     private CategoryRepositoryInterface $categoryRepository;
     private TagService $tagService;
-    private TagRepositoryInterface $tagRepositoryInterface;
+    private TagRepositoryInterface $tagRepository;
 
     public function __construct(
         CategoryRepositoryInterface $categoryRepository,
         TagService $tagService,
-        TagRepositoryInterface $tagRepositoryInterface
+        TagRepositoryInterface $tagRepository
     ) {
         $this->categoryRepository = $categoryRepository;
         $this->tagService = $tagService;
-        $this->tagRepositoryInterface = $tagRepositoryInterface;
+        $this->tagRepository = $tagRepository;
     }
 
 
@@ -53,7 +53,7 @@ class CategoryService
             $dataCate = $this->categoryRepository->getDataListIds($request->ids);
             foreach ($dataCate as $cate) {
                 // Delete tag
-                $tags = $this->tagRepositoryInterface->findBy(['category_id' => $cate->id]);
+                $tags = $this->tagRepository->findBy(['category_id' => $cate->id]);
                 if ($tags) {
                     foreach ($tags as $tag) {
                         $this->tagService->deletetagByIds(['ids' => $tag['id']]);
