@@ -26,4 +26,9 @@ class Post extends Model
     {
         return $this->belongsTo(Category::class, 'category_id');
     }
+    // Thiết lập quan hệ với Category
+    public function admin()
+    {
+        return $this->belongsTo(Admin::class, 'author_id');
+    }
 }
