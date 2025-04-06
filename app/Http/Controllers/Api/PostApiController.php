@@ -15,10 +15,10 @@ class PostApiController extends Controller
         return response()->json($posts);
     }
 
-    public function show($id)
+    public function show($slug)
     {
         // Lấy chi tiết bài viết theo ID
-        $post = Post::findOrFail($id);
+        $post = Post::with(['admin', 'category'])->where('slug', $slug)->firstOrFail();
         return response()->json($post);
     }
 }
