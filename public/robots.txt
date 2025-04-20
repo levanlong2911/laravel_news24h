@@ -1,2 +1,5 @@
 User-agent: *
-Disallow:
+Disallow: /admin/
+Disallow: /login/
+Allow: /post/
+Sitemap: https://lifennew.com/sitemap.xml

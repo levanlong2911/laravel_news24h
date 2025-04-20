@@ -24,9 +24,6 @@ class GetLinkController extends Controller
 
     public function getLink(Request $request)
     {
-        // $request->validate([
-        //     'url' => 'required|url',
-        // ]);
         $this->form->validate($request, 'GetLinkForm');
 
         $url = $request->input('url');
@@ -41,12 +38,16 @@ class GetLinkController extends Controller
             $client = new Client([
                 'timeout' => 10,
                 'headers' => [
-                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
                     'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
                     'Accept-Language' => 'en-US,en;q=0.9',
+                    'Accept-Encoding' => 'gzip, deflate',
                     'Connection' => 'keep-alive',
+                    'Upgrade-Insecure-Requests' => '1',
                     'Referer' => 'https://www.google.com/',
-                ]
+                ],
+                'allow_redirects' => true,
+                'cookies' => true,
             ]);
             $response = $client->request('GET', $url);
 
@@ -152,7 +153,16 @@ class GetLinkController extends Controller
 
     private function cleanNode($xpath, $node, $dom)
     {
-        $tagsToRemove = ['div', 'section', 'figure', 'img'];
+        // Xử lý thẻ div: giữ lại div có class "table-container", xóa các div khác
+        $divs = $xpath->query('.//div', $node);
+        foreach ($divs as $div) {
+            $classAttr = $div->getAttribute('class');
+            if (strpos($classAttr, 'table-container') === false) {
+                $div->parentNode->removeChild($div);
+            }
+        }
+
+        $tagsToRemove = ['section', 'figure', 'img'];
         foreach ($tagsToRemove as $tag) {
             $elements = $xpath->query(".//{$tag}", $node);
             foreach ($elements as $element) {

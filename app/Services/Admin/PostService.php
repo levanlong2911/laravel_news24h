@@ -299,26 +299,42 @@ class PostService
      */
     public function delete($request)
     {
+        $ids = is_array($request->ids) ? $request->ids : [$request->ids];
+
         DB::beginTransaction();
+
         try {
-            $dataPost = $this->postRepository->getDataListIds($request->ids);
-            foreach ($dataPost as $post) {
-                // Delete post_tag
-                $posttags = $this->postTagRepository->getListByPostId($post->id);
-                // dd($posttags->toArray());
-                if ($posttags) {
-                    foreach ($posttags as $posttag) {
-                        $this->postTagRepository->delete($posttag);
-                    }
-                }
-                $post->delete();
+            // Lấy danh sách bài viết cần xóa
+            $posts = $this->postRepository->getDataListIds($ids);
+
+            foreach ($posts as $post) {
+                $this->deletePostWithRelations($post);
             }
+
             DB::commit();
             return true;
-        } catch (Exception $e) {
-            DB::rollback();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            // Có thể log lỗi ở đây nếu cần: Log::error($e);
             return false;
         }
     }
+
+    /**
+     * Xử lý xóa post kèm các mối liên hệ
+     */
+    protected function deletePostWithRelations($post)
+    {
+        // Xóa post_tag liên quan
+        $postTags = $this->postTagRepository->getListByPostId($post->id);
+
+        foreach ($postTags as $tag) {
+            $this->postTagRepository->delete($tag);
+        }
+
+        // Xóa post
+        $post->delete(); // Hoặc forceDelete() nếu dùng soft delete
+    }
+
 
 }

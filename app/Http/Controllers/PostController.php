@@ -72,9 +72,7 @@ class PostController extends Controller
     {
         $listPost = $this->postService->getPostById($id);
         $listsCate = $this->categoryService->getListCategory();
-        // dd($request->method());
         if($request->isMethod('post')) {
-            // dd($request->all());
             $this->form->validate($request, 'PostAddForm');
             $upPost = $this->postService->update($id, $request);
             if ($upPost) {
@@ -82,7 +80,6 @@ class PostController extends Controller
             }
             return redirect()->route('post.index')->with('error', __('messages.add_error'));
         }
-        // dd($listPost);
         return view("post.update", [
             "route" => "post",
             "action" => "post-index",
