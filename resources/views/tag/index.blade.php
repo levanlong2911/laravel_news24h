@@ -163,6 +163,7 @@
     <script src="{{ asset('assets/dist/js/commonHandleList.js') }}"></script>
     <script>
         // const
+        const MODAL_CONFIRM_URL = "{{ route('modal.confirm') }}";
         var STORAGE_NAME = "tag_selected_storage";
         var DELETE_URL = "{{ route('tag.delete') }}";
         // get list client init

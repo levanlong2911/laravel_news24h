@@ -17,7 +17,7 @@
                     },
                     key_class: {
                         required: true,
-                        maxlength: 50
+                        maxlength: 200
                     },
                 },
                 messages: {

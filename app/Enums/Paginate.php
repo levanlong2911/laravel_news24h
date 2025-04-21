@@ -8,5 +8,5 @@ enum Paginate: int
 {
 
     use EnumTrait;
-    case PAGE = 10; // Số lượng mục trên mỗi trang
+    case PAGE = 20; // Số lượng mục trên mỗi trang
 }

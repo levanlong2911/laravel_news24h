@@ -96,6 +96,7 @@
     <script src="{{ asset('assets/dist/js/commonHandleList.js') }}"></script>
     <script>
         // const
+        const MODAL_CONFIRM_URL = "{{ route('modal.confirm') }}";
         var STORAGE_NAME = "level_selected_storage";
         var DELETE_URL = "{{ route('domain.delete') }}";
         // get list client init

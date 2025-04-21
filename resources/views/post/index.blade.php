@@ -133,11 +133,7 @@
                                                             <a href="{{ route('post.update', ['id' => $post->id]) }}">
                                                                 {{ __('post.update') }}
                                                             </a>
-                                                            <a id="delete_form" class="btn button-del btn-danger">
-                                                                {{ __('category.delete') }}
-                                                            </a>
                                                         </td>
-                                                        @include('modal.delete', ['url' => route('post.delete'), 'id' => $post->id])
                                                     </tr>
                                                 @endforeach
                                             </tbody>
@@ -167,4 +163,15 @@
 
     {{-- </section> --}}
 @endsection
-
+@section('script')
+    <script src="{{ asset('assets/dist/js/commonHandleList.js') }}"></script>
+    <script>
+        // const
+        const MODAL_CONFIRM_URL = "{{ route('modal.confirm') }}";
+        var STORAGE_NAME = "level_selected_storage";
+        var DELETE_URL = "{{ route('post.delete') }}";
+        // get list client init
+        var listIds = <?php echo json_encode($listIdPost); ?>;
+        listIds = listIds.map(String);
+    </script>
+@endsection

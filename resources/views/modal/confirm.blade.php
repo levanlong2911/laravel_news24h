@@ -12,9 +12,9 @@
                             <input type="hidden" name="memos[]" value="{{$memo[$id]}}">
                         @endif
                     @endforeach
-                    @if ($userId != '')
+                    {{-- @if ($userId != '')
                         <input type="hidden" name="userId" value="{{$userId}}">
-                    @endif
+                    @endif --}}
                     <p class="p-3 text-center">{{ $content }}</p>
                     {{-- end row --}}
                     <div class="modal-footer justify-content-between">

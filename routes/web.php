@@ -6,6 +6,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\GetLinkController;
 use App\Http\Controllers\GetTagController;
 use App\Http\Controllers\InforDomainsController;
+use App\Http\Controllers\ModalConfirmController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
 use Illuminate\Routing\Middleware\ThrottleRequests;
@@ -71,6 +72,7 @@ Route::group(
 
     Route::post("/getlink", [GetLinkController::class, "getLink"]);
     Route::get("/get-tags", [GetTagController::class, "getTags"]);
+    Route::get("/modal-confirm", [ModalConfirmController::class, "modalConfirm"])->name("modal.confirm");
 });
 
 Route::group(['prefix' => 'laravel-filemanager', 'middleware' => ['web', 'auth']], function () {
