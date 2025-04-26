@@ -6,8 +6,8 @@
              <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars text-white"></i></a>
          </li>
          <li class="nav-item">
-             <a class="nav-link text-light pl-0 pt-1" href="{{ route('admin.index') }}">
-                <img style="width: 150px" src="{{ asset('assets/admin/img/logo_light.png') }}" alt="Goline globle">
+             <a class="nav-link d-inline-flex" href="{{ route('admin.index') }}">
+                <b>GENERAL MANAGEMENT</b>
              </a>
          </li>
      </ul>

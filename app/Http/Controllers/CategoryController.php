@@ -80,7 +80,7 @@ class CategoryController extends Controller
             if ($updateCate) {
                 return redirect()->route('admin.category.index')->with('success', __('messages.add_success'));
             }
-            return redirect()->route('admin.category.index')->with('error', __('messages.add_error'));
+            return back()->with("error",__('messages.add_error'));
         }
         return view("category.update", [
             "route" => "category",

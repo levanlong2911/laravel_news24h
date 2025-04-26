@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AdvertisementController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\GetLinkController;
@@ -68,6 +69,15 @@ Route::group(
         Route::match(["get", "post"], "/update/{id}", [InforDomainsController::class, "update"])->name("domain.update");
         Route::match(["get", "post"], "/delete", [InforDomainsController::class, "delete"])->name("domain.delete");
         Route::match(["get", "post"], "/detail/{id}", [InforDomainsController::class, "detail"])->name("domain.detail");
+    });
+
+    // ads
+    Route::group(["prefix" => "ads"], function () {
+        Route::get("/", [AdvertisementController::class, "index"])->name("ads.index");
+        Route::match(["get", "post"], "/add", [AdvertisementController::class, "add"])->name("ads.add");
+        Route::match(["get", "post"], "/update/{id}", [AdvertisementController::class, "update"])->name("ads.update");
+        Route::match(["get", "post"], "/delete", [AdvertisementController::class, "delete"])->name("ads.delete");
+        Route::match(["get", "post"], "/detail/{id}", [AdvertisementController::class, "detail"])->name("ads.detail");
     });
 
     Route::post("/getlink", [GetLinkController::class, "getLink"]);

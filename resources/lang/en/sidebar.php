@@ -21,5 +21,6 @@ return [
     'tag_management' => 'Tags',
     'post_management' => 'Posts',
     'domain_management' => 'Domain',
+    'ads_management' => 'Ads',
     'spin' => 'Spin Management',
 ];

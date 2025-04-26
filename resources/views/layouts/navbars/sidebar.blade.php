@@ -45,30 +45,14 @@
                         </p>
                     </a>
                 </li>
-                {{-- <li class="nav-item {{ ($route == 'question') ? $menu ?? '' : '' }}">
-                    <a href="{{ route('question.index') }}" class="nav-link d-inline-flex {{ ($action == 'question-index') ? $active ?? '' : '' }}">
-                        <p class="icon"><img src="{{ asset('assets/admin/img/question.svg') }}" /></p>
+                <li class="nav-item {{ ($route == 'ads') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('ads.index') }}" class="nav-link d-inline-flex {{ ($action == 'ads-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
                         <p>
-                            {{ __('sidebar.question') }}
+                            {{ __('sidebar.ads_management') }}
                         </p>
                     </a>
                 </li>
-                <li class="nav-item {{ ($route == 'exam_resuilt') ? $menu ?? '' : '' }}">
-                    <a href="{{ route('exam_resuilt.index') }}" class="nav-link d-inline-flex {{ ($action == 'exam_resuilt-index') ? $active ?? '' : '' }}">
-                        <p class="icon"><img src="{{ asset('assets/admin/img/exam.svg') }}" /></p>
-                        <p>
-                            {{ __('exam_resuilt.title') }}
-                        </p>
-                    </a>
-                </li>
-                <li class="nav-item {{ ($route == 'spin') ? $menu ?? '' : '' }}">
-                    <a href="{{ route('job-fair.spin.magagement') }}" class="nav-link d-inline-flex {{ ($action == 'job-fair.spin') ? $active ?? '' : '' }}">
-                        <p class="icon"><img src="{{ asset('assets/admin/img/spin.svg') }}" /></p>
-                        <p>
-                            {{ __('sidebar.spin') }}
-                        </p>
-                    </a>
-                </li> --}}
             </ul>
         </nav>
         <!-- /.sidebar-menu -->
