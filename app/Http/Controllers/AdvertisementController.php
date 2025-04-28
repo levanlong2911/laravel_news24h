@@ -76,10 +76,8 @@ class AdvertisementController extends Controller
     {
         $inforAds = $this->adsService->getByIdAds($id);
         if ($request->isMethod('post')) {
-            // dd($id);
             $this->form->validate($request, 'AdsAddForm');
             $updateAds = $this->adsService->updateAds($id, $request);
-            // dd($updateTag);
             if ($updateAds) {
                 return redirect()->route('ads.index')->with("success",__('messages.add_success'));
             }

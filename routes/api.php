@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ApiAdvertisementController;
 use App\Http\Controllers\Api\PostApiController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -17,3 +18,4 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/posts', [PostApiController::class, 'index']);
 Route::get('/posts/{slug}', [PostApiController::class, 'show']);
+Route::get('/ads', [ApiAdvertisementController::class, 'index']);
