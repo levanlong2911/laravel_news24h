@@ -59,7 +59,7 @@ Route::group(
         // Route::match(["get", "post"], "/addpost", [PostController::class, "addPost"])->name("post.addpost");
         Route::match(["get", "post"], "/update/{id}", [PostController::class, "update"])->name("post.update");
         Route::match(["get", "post"], "/delete", [PostController::class, "delete"])->name("post.delete");
-        Route::match(["get", "post"], "/detail/{id}", [PostController::class, "detail"])->name("post.detail");
+        Route::match(["get", "post"], "/post/{slug}", [PostController::class, "detail"])->name("post.detail");
     });
 
     // infor domain
