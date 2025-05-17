@@ -19,14 +19,14 @@ use Illuminate\Support\Facades\Response;
 //     return view('welcome');
 // });
 
-Route::fallback(function () {
+Route::get('/{any}', function () {
     $path = public_path('astro/index.html');
     if (File::exists($path)) {
-        return Response::file($path);
+        return response()->file($path);
     } else {
         abort(404);
     }
-});
+})->where('any', '^(?!api).*$'); // Chỉ fallback nếu KHÔNG phải /api
 
 Route::group(['prefix' => '/'], function () {
     // Login
