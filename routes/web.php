@@ -12,6 +12,21 @@ use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Response;
+
+// Route::get('/', function () {
+//     return view('welcome');
+// });
+
+Route::fallback(function () {
+    $path = public_path('astro/index.html');
+    if (File::exists($path)) {
+        return Response::file($path);
+    } else {
+        abort(404);
+    }
+});
 
 Route::group(['prefix' => '/'], function () {
     // Login
