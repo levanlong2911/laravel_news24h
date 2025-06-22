@@ -29,11 +29,11 @@ class GetLinkController extends Controller
         $url = $request->input('url');
         $domain = str_replace("www.", "", parse_url($url, PHP_URL_HOST)); // Lấy domain từ URL
         $result = $this->domainService->checkDomain($domain);
-        if ($result) {
-            $class = sprintf('//div[contains(@class, "%s")]', $result->key_class);
-        } else {
-            $class = '//article | //div[contains(@class, "content") or contains(@class, "post-content") or contains(@class, "entry-content")]';
-        }
+        // if ($result) {
+        //     $class = sprintf('//div[contains(@class, "%s")]', $result->key_class);
+        // } else {
+        //     $class = '//article | //div[contains(@class, "content") or contains(@class, "post-content") or contains(@class, "entry-content")]';
+        // }
         try {
             $client = new Client([
                 'timeout' => 10,
@@ -45,6 +45,8 @@ class GetLinkController extends Controller
                     'Connection' => 'keep-alive',
                     'Upgrade-Insecure-Requests' => '1',
                     'Referer' => 'https://www.google.com/',
+                    'X-Forwarded-For' => '66.249.66.1',
+                    'Cookie' => 'CONSENT=YES+1;',
                 ],
                 'allow_redirects' => true,
                 'cookies' => true,
@@ -73,14 +75,38 @@ class GetLinkController extends Controller
             // Lấy tiêu đề từ <title>
             $title = $this->getTitleFromHtml($dom);
 
+            // Ưu tiên lấy <article>//p nếu có
+            $paragraphNodes = $xpath->query('//article//p');
+            $isParagraphMode = false;
+
+            if ($paragraphNodes->length > 0) {
+                $nodesToUse = $paragraphNodes;
+                $isParagraphMode = true;
+            } else {
+                if ($result) {
+                    $query = sprintf('//div[contains(@class, "%s")]', $result->key_class);
+                } else {
+                    $query = '//article | //div[contains(@class, "content") or contains(@class, "post-content") or contains(@class, "entry-content")]';
+                }
+                $nodesToUse = $xpath->query($query);
+            }
+
             // Tìm div có class "content-block-regular"
-            $contentNodes = $xpath->query($class);
+            // $contentNodes = $xpath->query($class);
 
             $content = [];
-            if ($contentNodes->length > 0) {
-                foreach ($contentNodes as $node) {
+            if ($nodesToUse->length > 0) {
+                foreach ($nodesToUse as $node) {
                     $this->cleanNode($xpath, $node, $dom);
-                    $content[] = $this->cleanHtmlContent(trim($dom->saveHTML($node)));
+                    // $content[] = $this->cleanHtmlContent(trim($dom->saveHTML($node)));
+                    if ($isParagraphMode) {
+                        $text = trim($node->textContent);
+                        if (!empty($text)) {
+                            $content[] = $this->cleanHtmlContent(trim($dom->saveHTML($node)));
+                        }
+                    } else {
+                        $content[] = $this->cleanHtmlContent(trim($dom->saveHTML($node)));
+                    }
                 }
             }
 
