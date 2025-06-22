@@ -99,7 +99,3 @@ Route::group(
     Route::get("/get-tags", [GetTagController::class, "getTags"]);
     Route::get("/modal-confirm", [ModalConfirmController::class, "modalConfirm"])->name("modal.confirm");
 });
-
-Route::group(['prefix' => 'laravel-filemanager', 'middleware' => ['web', 'auth']], function () {
-    \UniSharp\LaravelFilemanager\Lfm::routes();
-});
