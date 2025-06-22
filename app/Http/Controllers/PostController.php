@@ -110,13 +110,13 @@ class PostController extends Controller
     //     // ]);
     //     // $this->form->validate($request, 'GetLinkForm');
 
-    //     $url = "https://racingnews365.com/lewis-hamilton-wows-ferrari-f1-fans-with-donuts-in-milan";
+    //     $url = "https://www.express.co.uk/sport/f1-autosport/2066877/Arvid-Lindblad-Max-Verstappen-FIA-Red-Bull";
     //     $domain = str_replace("www.", "", parse_url($url, PHP_URL_HOST)); // Lấy domain từ URL
     //     $result = $this->domainService->checkDomain($domain);
     //     if ($result) {
     //         $class = sprintf('//div[contains(@class, "%s")]', $result->key_class);
     //     } else {
-    //         $class = '//article | //div[contains(@class, "content") or contains(@class, "post-content") or contains(@class, "entry-content")]';
+    //         $class = '//article//p | //div[contains(@class, "content") or contains(@class, "post-content") or contains(@class, "entry-content")]';
     //     }
     //     try {
     //         $client = new Client([
@@ -257,7 +257,7 @@ class PostController extends Controller
     //         '/&acirc;/u' => '”', // Fix lỗi "and the league.&acirc; In" -> "and the league.” In"
     //         '/[\x00-\x1F\x7F-\x9F]/u' => '', // Xóa ký tự điều khiển ẩn
     //     ];
-    //     dd(preg_replace(array_keys($replacePatterns), array_values($replacePatterns), $html));
+    //     // dd(preg_replace(array_keys($replacePatterns), array_values($replacePatterns), $html));
 
 
     //     return preg_replace(array_keys($replacePatterns), array_values($replacePatterns), $html);
