@@ -53,6 +53,14 @@
                         </p>
                     </a>
                 </li>
+                <li class="nav-item {{ ($route == 'font') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('font.index') }}" class="nav-link d-inline-flex {{ ($action == 'font-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
+                        <p>
+                            {{ __('sidebar.font_management') }}
+                        </p>
+                    </a>
+                </li>
             </ul>
         </nav>
         <!-- /.sidebar-menu -->

@@ -4,6 +4,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdvertisementController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\FontController;
 use App\Http\Controllers\GetLinkController;
 use App\Http\Controllers\GetTagController;
 use App\Http\Controllers\InforDomainsController;
@@ -71,7 +72,7 @@ Route::group(
     Route::group(["prefix" => "post"], function () {
         Route::get("/", [PostController::class, "index"])->name("post.index");
         Route::match(["get", "post"], "/add", [PostController::class, "add"])->name("post.add");
-        // Route::match(["get", "post"], "/addpost", [PostController::class, "addPost"])->name("post.addpost");
+        Route::match(["get", "post"], "/addpost", [PostController::class, "addPost"])->name("post.addpost");
         Route::match(["get", "post"], "/update/{id}", [PostController::class, "update"])->name("post.update");
         Route::match(["get", "post"], "/delete", [PostController::class, "delete"])->name("post.delete");
         Route::match(["get", "post"], "/post/{slug}", [PostController::class, "detail"])->name("post.detail");
@@ -93,6 +94,15 @@ Route::group(
         Route::match(["get", "post"], "/update/{id}", [AdvertisementController::class, "update"])->name("ads.update");
         Route::match(["get", "post"], "/delete", [AdvertisementController::class, "delete"])->name("ads.delete");
         Route::match(["get", "post"], "/detail/{id}", [AdvertisementController::class, "detail"])->name("ads.detail");
+    });
+
+    // convert font
+    Route::group(["prefix" => "font"], function () {
+        Route::get("/", [FontController::class, "index"])->name("font.index");
+        Route::match(["get", "post"], "/add", [FontController::class, "add"])->name("font.add");
+        Route::match(["get", "post"], "/update/{id}", [FontController::class, "update"])->name("font.update");
+        Route::match(["get", "post"], "/delete", [FontController::class, "delete"])->name("font.delete");
+        Route::match(["get", "post"], "/detail/{id}", [FontController::class, "detail"])->name("font.detail");
     });
 
     Route::post("/getlink", [GetLinkController::class, "getLink"]);

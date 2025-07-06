@@ -65,6 +65,9 @@ class TagController extends Controller
     public function detail(Request $request)
     {
         $infoTag = $this->tagService->getByIdTag($request->id);
+        if(!$infoTag) {
+            return redirect()->back()->with('error', __('messages.account_not_found'));
+        }
         return view("tag.detail", [
             "route" => "tag",
             "action" => "tag-detail",
@@ -79,6 +82,9 @@ class TagController extends Controller
     {
         $listsCate = $this->categoryService->getListCategory();
         $infoTag = $this->tagService->getByIdTag($id);
+        if(is_null($infoTag)) {
+            return redirect()->back()->with('error', __('messages.account_not_found'));
+        }
         if ($request->isMethod('post')) {
             // dd($request->all());
             $this->form->validate($request, 'TagUpdateValidate');

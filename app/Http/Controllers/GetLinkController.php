@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Form\AdminCustomValidator;
+use App\Services\Admin\FontService;
 use App\Services\Admin\InforDomainService;
 use GuzzleHttp\Client;
 use Illuminate\Http\Request;
@@ -13,13 +14,17 @@ class GetLinkController extends Controller
 {
     private InforDomainService $domainService;
     private AdminCustomValidator $form;
+    private FontService $fontService;
 
     public function __construct(
         InforDomainService $domainService,
-        AdminCustomValidator $form
-    ) {
+        AdminCustomValidator $form,
+        FontService $fontService
+    )
+    {
         $this->domainService = $domainService;
         $this->form = $form;
+        $this->fontService = $fontService;
     }
 
     public function getLink(Request $request)
@@ -124,33 +129,59 @@ class GetLinkController extends Controller
     private function cleanHtmlContent($html)
     {
         // Phát hiện mã hóa
-    $encoding = mb_detect_encoding($html, ['UTF-8', 'ISO-8859-1', 'Windows-1252', 'ISO-8859-15'], true);
+        $encoding = mb_detect_encoding($html, ['UTF-8', 'ISO-8859-1', 'Windows-1252', 'ASCII'], true);
 
-    // Chuyển sang UTF-8 nếu cần
-    if ($encoding !== 'UTF-8') {
-        $html = mb_convert_encoding($html, 'UTF-8', $encoding);
-    }
+        // Chuyển sang UTF-8 nếu cần
+        if ($encoding !== 'UTF-8') {
+            $html = mb_convert_encoding($html, 'UTF-8', $encoding);
+        }
 
-    // Giải mã thực thể HTML nhiều lần để loại bỏ lỗi ký tự đặc biệt
-    $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        // Bước 2: Dùng iconv để chuyển đổi encoding chuẩn hơn (tùy môi trường)
+        $html = @iconv('UTF-8', 'UTF-8//IGNORE', $html);
 
-    // Xử lý lỗi mã hóa ký tự phổ biến
-    $replacePatterns = [
-        '/Â£/u' => '£',    // Sửa lỗi "Â£" thành "£"
-        '/â€™|â€˜/u' => "'", // Dấu nháy đơn
-        '/â€œ|â€/u' => '"', // Dấu nháy kép
-        '/â€“|â€”/u' => '-', // Gạch ngang
-        '/â€¢/u' => '•',   // Bullet point
-        '/â€¦/u' => '...', // Dấu ba chấm
-        '/Â/u' => '',      // Xóa ký tự "Â" thừa
-        '/â /u' => '',     // Xóa lỗi "â" bị dư
-        '/â/u' => '”',
-        '/&acirc;/u' => '”',
-        '/[\x00-\x1F\x7F-\x9F]/u' => '', // Xóa ký tự điều khiển ẩn
-    ];
+        // Bước 3: Decode HTML entities nhiều lần
+        for ($i = 0; $i < 3; $i++) {
+            $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
 
-    return preg_replace(array_keys($replacePatterns), array_values($replacePatterns), $html);
+        // Bước 4: Regex thay thế lỗi mã hóa thường gặp
+        $replacePatterns = [
+            // Em dash hoặc dash
+            '/€”|â€”|Ã¢â‚¬â€œ|Ã¢€”|Ã¢â‚¬”|â€"|' . preg_quote('Ã¢â€”', '/') . '/u' => '—',
+
+            // Dấu nháy đơn cong
+            '/€™|â€™|â€˜|Ã¢â‚¬â„¢|Ã¢€™|â€˜/u' => '’',
+
+            // Dấu nháy kép cong
+            '/â€œ|â€|Ã¢â‚¬Å“|Ã¢â‚¬Â|“|”/u' => '"',
+
+            // Dấu ba chấm
+            '/â€¦|Ã¢â‚¬Â¦/u' => '...',
+
+            // Bullet
+            '/â€¢|Ã¢â‚¬Â¢/u' => '•',
+
+            // Ký hiệu tiền tệ
+            '/Â£/u' => '£',
+
+            // Loại bỏ byte lỗi
+            '/Â/u' => '',
+            '/â /u' => '',
+            '/Ã¢/u' => '',
+            '/[\x00-\x1F\x7F-\x9F]/u' => '', // Xóa ký tự điều khiển ẩn
+        ];
+
+        $html = preg_replace(array_keys($replacePatterns), array_values($replacePatterns), $html);
+
+        // 5. Thay thế theo DB nếu có
+        if (isset($this->fontService)) {
+            $replacements = $this->fontService->getListFont();
+            foreach ($replacements as $rep) {
+                $html = preg_replace('/' . preg_quote($rep->find, '/') . '/u', $rep->replace, $html);
+            }
+        }
+
+        return $html;
     }
 
     private function cleanNode($xpath, $node, $dom)

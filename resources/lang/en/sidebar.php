@@ -22,5 +22,6 @@ return [
     'post_management' => 'Posts',
     'domain_management' => 'Domain',
     'ads_management' => 'Ads',
+    'font_management' => 'Font',
     'spin' => 'Spin Management',
 ];

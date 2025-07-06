@@ -4,24 +4,20 @@ namespace App\Http\Controllers;
 
 use App\Enums\Ads;
 use App\Form\AdminCustomValidator;
-use App\Repositories\Interfaces\AdsRepositoryInterface;
 use App\Services\Admin\AdsService;
 use Illuminate\Http\Request;
 
 class AdvertisementController extends Controller
 {
-    private AdsRepositoryInterface $adsRepository;
     private AdminCustomValidator $form;
     private AdsService $adsService;
 
     public function __construct
     (
-        AdsRepositoryInterface $adsRepository,
         AdminCustomValidator $form,
         AdsService $adsService
     )
     {
-        $this->adsRepository = $adsRepository;
         $this->form = $form;
         $this->adsService = $adsService;
     }

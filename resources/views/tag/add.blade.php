@@ -52,14 +52,14 @@
                                 <form id="quickForm" action="{{ route('tag.add') }}" method="post">
                                     @csrf
                                     <div class="card-body lable-form-add-policy pt-0" id="card-add">
-                                        <div class="row row mb-3">
-                                            <div class="col-2 d-flex align-items-center">
+                                        <div class="row">
+                                            <div class="col-2 d-flex align-items-center lable-form-detail">
                                                 <p class="align-middle p-0 m-0">
                                                     {{ __('tag.category') }}<span style="color: red; ">
                                                         *</span></p>
                                             </div>
                                             <div class="col-10 pl-0">
-                                                <div class="input inputMessage">
+                                                <div class="input inputMessage text-form-detail">
                                                     <select
                                                         class="form-control {{ $errors->has('category_id') ? ' is-invalid' : '' }} col-6"
                                                         name="category_id" id="category_id">
@@ -76,13 +76,13 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="row row mb-3">
-                                            <div class="col-2 d-flex align-items-center">
+                                        <div class="row">
+                                            <div class="col-2 d-flex align-items-center lable-form-detail">
                                                 <p class="align-middle p-0 m-0">{{ __('tag.name') }}<span
                                                         style="color: red; "> *</span></p>
                                             </div>
                                             <div class="col-10 pl-0">
-                                                <div class="input inputMessage">
+                                                <div class="input inputMessage text-form-detail">
                                                     <input type="text" value="{{ old('tags') ?? old('tags') }}"
                                                         class="form-control{{ $errors->has('tags') ? ' is-invalid' : '' }} col-6"
                                                         name="tags" id="tags" placeholder="">

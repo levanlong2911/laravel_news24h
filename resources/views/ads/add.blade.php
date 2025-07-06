@@ -58,13 +58,13 @@
                                 <form id="quickForm" action="{{ route('ads.add') }}" method="post">
                                     @csrf
                                     <div class="card-body lable-form-add-policy pt-0" id="card-add">
-                                        <div class="row row mb-3">
-                                            <div class="col-2 d-flex align-items-center">
+                                        <div class="row">
+                                            <div class="col-2 d-flex align-items-center lable-form-detail">
                                                 <p class="align-middle p-0 m-0">{{ __('ads.name') }}<span
                                                         style="color: red; "> *</span></p>
                                             </div>
                                             <div class="col-10 pl-0">
-                                                <div class="input inputMessage">
+                                                <div class="input inputMessage text-form-detail">
                                                     <input type="text" value="{{ old('name') ?? old('name') }}"
                                                         class="form-control{{ $errors->has('name') ? ' is-invalid' : '' }} col-6"
                                                         name="name" id="name" placeholder="">
@@ -76,14 +76,14 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="row row mb-3">
-                                            <div class="col-2 d-flex align-items-center">
+                                        <div class="row">
+                                            <div class="col-2 d-flex align-items-center lable-form-detail">
                                                 <p class="align-middle p-0 m-0">
                                                     {{ __('ads.position') }}<span style="color: red; ">
                                                         *</span></p>
                                             </div>
                                             <div class="col-10 pl-0">
-                                                <div class="input inputMessage">
+                                                <div class="input inputMessage text-form-detail">
                                                     <select
                                                         class="form-control {{ $errors->has('position') ? ' is-invalid' : '' }} col-6"
                                                         name="position" id="position">
@@ -100,13 +100,13 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="row row mb-3">
-                                            <div class="col-2 d-flex align-items-center">
+                                        <div class="row">
+                                            <div class="col-2 d-flex align-items-center lable-form-detail">
                                                 <p class="align-middle p-0 m-0">{{ __('ads.code') }}<span
                                                         style="color: red; "> *</span></p>
                                             </div>
                                             <div class="col-10 pl-0">
-                                                <div class="input inputMessage">
+                                                <div class="input inputMessage text-form-detail">
                                                     <textarea
                                                         class="form-control{{ $errors->has('code') ? ' is-invalid' : '' }} col-6"
                                                         name="code" id="code" rows="4" placeholder="">
