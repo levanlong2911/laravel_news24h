@@ -72,7 +72,7 @@ Route::group(
     Route::group(["prefix" => "post"], function () {
         Route::get("/", [PostController::class, "index"])->name("post.index");
         Route::match(["get", "post"], "/add", [PostController::class, "add"])->name("post.add");
-        Route::match(["get", "post"], "/addpost", [PostController::class, "addPost"])->name("post.addpost");
+        // Route::match(["get", "post"], "/addpost", [PostController::class, "addPost"])->name("post.addpost");
         Route::match(["get", "post"], "/update/{id}", [PostController::class, "update"])->name("post.update");
         Route::match(["get", "post"], "/delete", [PostController::class, "delete"])->name("post.delete");
         Route::match(["get", "post"], "/post/{slug}", [PostController::class, "detail"])->name("post.detail");
