@@ -11,4 +11,6 @@ enum Ads: string
     case Top = "top";
     case Middle = "middle";
     case Bottom = "bottom";
+    case Header = "header";
+    case InPost = "in-post";
 }

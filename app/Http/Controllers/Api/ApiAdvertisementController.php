@@ -16,7 +16,7 @@ class ApiAdvertisementController extends Controller
             ->where('active', true);
 
         if ($position) {
-            $query->where('position', $position);
+            $query->whereRaw('TRIM(position) = ?', [trim($position)]);
         }
 
         $ads = $query->orderBy('created_at', 'desc')->get(['id', 'position', 'script']);
