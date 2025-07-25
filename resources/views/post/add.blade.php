@@ -22,7 +22,7 @@
                     title: {
                         required: true,
                         maxlength: 500,
-                        minlength: 25,
+                        minlength: 5,
                     },
                     editor_content: {
                         required: true,

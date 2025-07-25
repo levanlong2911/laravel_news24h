@@ -18,4 +18,9 @@ class Advertisement extends Model
         'script',
         'active',
     ];
+
+    public static function positions()
+    {
+        return ['top', 'middle', 'bottom', 'header', 'in-post'];
+    }
 }

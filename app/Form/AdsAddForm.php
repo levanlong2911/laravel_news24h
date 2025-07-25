@@ -2,8 +2,10 @@
 
 namespace App\Form;
 
+use App\Models\Advertisement;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class AdsAddForm
 {
@@ -25,7 +27,7 @@ class AdsAddForm
             "position" => [
                 "bail",
                 "required",
-                "in:top,middle,bottom"
+                // Rule::in(Advertisement::positions()),
             ],
             "code" => [
                 "bail",
