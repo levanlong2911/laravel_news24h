@@ -10,7 +10,7 @@
                 rules: {
                     find: {
                         required: true,
-                        maxlength: 200s
+                        maxlength: 200
                     },
                     replace: {
                         required: true,
