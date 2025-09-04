@@ -10,11 +10,11 @@
                 rules: {
                     find: {
                         required: true,
-                        maxlength: 10
+                        maxlength: 200s
                     },
                     replace: {
                         required: true,
-                        maxlength: 10
+                        maxlength: 200
                     },
                 },
                 messages: {
