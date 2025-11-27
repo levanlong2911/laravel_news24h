@@ -11,7 +11,7 @@ class PostApiController extends Controller
     public function index()
     {
         // Lấy danh sách bài viết
-        $posts = Post::with(['admin', 'category'])->latest()->paginate(10);
+        $posts = Post::with(['admin', 'category'])->latest()->paginate(20);
         return response()->json($posts);
     }
 

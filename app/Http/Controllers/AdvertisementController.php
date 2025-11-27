@@ -40,7 +40,6 @@ class AdvertisementController extends Controller
         if ($request->isMethod('post')) {
             $this->form->validate($request, 'AdsAddForm');
             $addAds = $this->adsService->addAds($request);
-            dd($addAds);
             if ($addAds) {
                 return redirect()->route('ads.index')->with('success', __('messages.add_success'));
             }

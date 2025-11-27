@@ -68,11 +68,17 @@ class GetLinkController extends Controller
             // Chuyển đổi mã hóa để tránh lỗi ký tự đặc biệt
             $html = $this->cleanHtmlContent($html);
 
+            // --- Loại bỏ tất cả comment qv trước khi load DOM ---
+            $html = $this->removeQVBlocks($html);
+
             // Tạo đối tượng DOMDocument
             $dom = new DOMDocument();
             libxml_use_internal_errors(true);
             $dom->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
             libxml_clear_errors();
+
+            // Remove comment qv trực tiếp từ DOM (an toàn)
+            $this->removeQVCommentsFromDOM($dom);
 
             // Tạo đối tượng DOMXPath
             $xpath = new DOMXPath($dom);
@@ -103,6 +109,30 @@ class GetLinkController extends Controller
             ]);
         }
     }
+
+    private function removeQVBlocks($html)
+    {
+        // Xóa tất cả comment kiểu <!--qv ...-->
+        $html = preg_replace('/<!--\s*\/?qv[\s\S]*?-->/i', '', $html);
+
+        // Xóa mọi dạng <!-- qv ... --> lồng nhiều tầng
+        $html = preg_replace('/<!--\s*qv[^>]*-->/i', '', $html);
+
+        return $html;
+    }
+
+    private function removeQVCommentsFromDOM($dom)
+    {
+        $xpath = new DOMXPath($dom);
+        $comments = $xpath->query('//comment()');
+
+        foreach ($comments as $comment) {
+            if (stripos($comment->nodeValue, 'qv') !== false) {
+                $comment->parentNode->removeChild($comment);
+            }
+        }
+    }
+
 
     private function getTitleFromHtml($dom)
     {
@@ -169,6 +199,9 @@ class GetLinkController extends Controller
             '/â /u' => '',
             '/Ã¢/u' => '',
             '/[\x00-\x1F\x7F-\x9F]/u' => '', // Xóa ký tự điều khiển ẩn
+            '/\s*q:key="[^"]*"/i' => '',
+            '/\s*q:id="[^"]*"/i' => '',
+            '/\s*on:qvisible="[^"]*"/i' => '',
         ];
 
         $html = preg_replace(array_keys($replacePatterns), array_values($replacePatterns), $html);
@@ -221,3 +254,5 @@ class GetLinkController extends Controller
         }
     }
 }
+
+

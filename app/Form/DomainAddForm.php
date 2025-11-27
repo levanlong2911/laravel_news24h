@@ -17,7 +17,7 @@ class DomainAddForm
         $validator = Validator::make($request->all(),
         [
             'domain' => 'bail|required',
-            'key_class' => 'bail|required|max:50',
+            'key_class' => 'bail|required|max:500',
         ]);
         // dd($validator->validate());
         return $validator->validate();
