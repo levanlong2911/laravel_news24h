@@ -20,14 +20,13 @@ class PostApiController extends Controller
     {
         // Lấy bài viết chính và 6 bài cùng category bằng relationship
         $post = Post::with(['admin', 'category', 'category.posts' => function($query) {
-            $query->latest()->take(6);
+            $query->latest()->take(7);
         }])
         ->where('slug', $slug)
         ->firstOrFail();
 
         // Lọc bài chính ra khỏi related posts
         $relatedPosts = $post->category->posts->where('id', '!=', $post->id)->values();
-
         return response()->json([
             'post' => $post,
             'related_posts' => $relatedPosts
