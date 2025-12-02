@@ -2,6 +2,7 @@
 @section('title', __('post.add_post'))
 @section('css')
     <link rel="stylesheet" href="{{ asset('assets/css/tag.css') }}">
+    {{-- <link rel="stylesheet" href="{{ asset('assets/css/content_addPost.css') }}"> --}}
 @endsection
 @section('script')
     <script src="{{ asset('assets/plugins/jquery-validation/jquery.validate.min.js') }}"></script>
@@ -206,12 +207,12 @@
 
             // Nút thay thế "i" → "ι"
             document.getElementById("replaceToGreekI").addEventListener("click", function() {
-                replaceText("(?<!&)i(?!ota;)", "ι"); // Đảm bảo không thay "&iota;"
+                replaceText("(?<!&)h(?!ota;)", "Һ"); // Đảm bảo không thay "&iota;"
             });
 
             // Nút thay thế "ι" → "i"
             document.getElementById("replaceToLatinI").addEventListener("click", function() {
-                replaceText("ι", "i");
+                replaceText("Һ", "h");
             });
         });
     </script>
@@ -257,6 +258,15 @@
             });
         });
     </script>
+    {{-- <script>
+        // let editorContentadd = 'editor_content';
+        CKEDITOR.replace('editor_content', {
+            contentsCss: [
+                CKEDITOR.basePath + 'contents.css', // file mặc định
+                '{{ asset("assets/css/content_addPost.css") }}'          // file custom của bạn
+            ]
+        });
+    </script> --}}
 @endsection
 @section('content')
     <section class="content">
