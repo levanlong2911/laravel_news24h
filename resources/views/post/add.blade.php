@@ -207,12 +207,12 @@
 
             // Nút thay thế "i" → "ι"
             document.getElementById("replaceToGreekI").addEventListener("click", function() {
-                replaceText("(?<!&)i(?!ota;)", "ι"); // Đảm bảo không thay "&iota;"
+                replaceText("(?<!&)h(?!ota;)", "Һ"); // Đảm bảo không thay "&iota;"
             });
 
             // Nút thay thế "ι" → "i"
             document.getElementById("replaceToLatinI").addEventListener("click", function() {
-                replaceText("ι", "i");
+                replaceText("Һ", "h");
             });
         });
     </script>
