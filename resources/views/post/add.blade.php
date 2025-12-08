@@ -387,7 +387,7 @@
                                                 <strong>{{ $message }}</strong>
                                             </span>
                                         @enderror --}}
-                                        {{-- <input type="hidden" name="tag" id="tag-hidden" value="{{ old('tag') }}"> --}}
+                                        <input type="hidden" name="tag" id="tag-hidden" value="{{ old('tag') }}">
                                     </div>
                                 </div>
                             </div>
