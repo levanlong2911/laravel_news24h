@@ -12,13 +12,14 @@ class PostAddForm
      *
      * @param \Illuminate\Http\Request $request
      */
-    public function validate(Request $request)
+    public function validate(Request $request, $id = null)
     {
         $validator = Validator::make($request->all(),
         [
             "title" => [
                 "bail",
-                "required"
+                "required",
+                "unique:posts,title," . ($id ?? 'NULL') . ",id"
             ],
             "editor_content" => [
                 "bail",
