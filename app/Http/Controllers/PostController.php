@@ -95,7 +95,7 @@ class PostController extends Controller
         $listPost = $this->postService->getPostById($id);
         $listsCate = $this->categoryService->getListCategory();
         if($request->isMethod('post')) {
-            $this->form->validate($request, 'PostAddForm');
+            $this->form->validate($request, 'PostUpdateForm');
             $upPost = $this->postService->update($id, $request);
             if ($upPost) {
                 return redirect()->route('post.index')->with('success', __('messages.add_success'));
