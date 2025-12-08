@@ -90,6 +90,7 @@
                 success: function(response) {
                     if (response.success) {
                         $('#title').val(response.title); // Gán tiêu đề
+                        $('#slug').val(response.slug); // Gán tiêu đề
                         $('#editor_content').val(response.content); // Gán nội dung
                         $('#getLink').modal('hide'); // Đóng modal
                     } else {

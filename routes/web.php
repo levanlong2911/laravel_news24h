@@ -15,6 +15,7 @@ use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Http\Request;
 
 // Route::get('/', function () {
 //     return view('welcome');
@@ -72,10 +73,11 @@ Route::group(
     Route::group(["prefix" => "post"], function () {
         Route::get("/", [PostController::class, "index"])->name("post.index");
         Route::match(["get", "post"], "/add", [PostController::class, "add"])->name("post.add");
-        // Route::match(["get", "post"], "/addpost", [PostController::class, "addPost"])->name("post.addpost");
+        Route::match(["get", "post"], "/addpost", [PostController::class, "addPost"])->name("post.addpost");
         Route::match(["get", "post"], "/update/{id}", [PostController::class, "update"])->name("post.update");
         Route::match(["get", "post"], "/delete", [PostController::class, "delete"])->name("post.delete");
         Route::match(["get", "post"], "/post/{slug}", [PostController::class, "detail"])->name("post.detail");
+        // Route::match(["get", "post"], "/detail/{slug}", [PostController::class, "detail"])->name("post.detail");
     });
 
     // infor domain
@@ -108,4 +110,8 @@ Route::group(
     Route::post("/getlink", [GetLinkController::class, "getLink"]);
     Route::get("/get-tags", [GetTagController::class, "getTags"]);
     Route::get("/modal-confirm", [ModalConfirmController::class, "modalConfirm"])->name("modal.confirm");
+});
+
+Route::middleware('auth:sanctum')->get('/posts', function (Request $request) {
+    return \App\Models\Post::latest()->get();
 });
