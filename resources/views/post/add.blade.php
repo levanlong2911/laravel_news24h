@@ -25,9 +25,9 @@
                         maxlength: 500,
                         minlength: 5,
                     },
-                    slug: {
-                        required: true,
-                    },
+                    // slug: {
+                    //     required: true,
+                    // },
                     editor_content: {
                         required: true,
                         minlength: 200,
@@ -49,9 +49,9 @@
                         maxlength: "{{ __('post.validate_max_required') }}",
                         minlength: "{{ __('post.validate_min_title_required') }}",
                     },
-                    slug: {
-                        required: "{{ __('post.validate_editor_content_required') }}",
-                    },
+                    // slug: {
+                    //     required: "{{ __('post.validate_editor_content_required') }}",
+                    // },
                     editor_content: {
                         required: "{{ __('post.validate_editor_content_required') }}",
                         minlength: "{{ __('post.validate_editor_content_required') }}",
@@ -306,15 +306,15 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="form-group">
+                            {{-- <div class="form-group">
                                 <div>
                                     <p class="align-middle p-0 m-0">{{ __('admin.link') }}<span style="color: red; ">
                                             *</span></p>
                                 </div>
                                 <div class="col-12 pl-0">
                                     <div class="input inputMessage">
-                                        <input type="text" value="{{ old('slug') ?? old('slug') }}"
-                                            class="form-control{{ $errors->has('link') ? ' is-invalid' : '' }} col-12"
+                                        <input type="text" value="{{ old('slug') ?? (old('title') ? Str::slug(old('title')) : '') }}"
+                                            class="form-control{{ $errors->has('slug') ? ' is-invalid' : '' }} col-12"
                                             name="slug" id="slug" placeholder="">
                                         @error('slug')
                                             <span class="invalid-feedback" role="alert">
@@ -323,7 +323,7 @@
                                         @enderror
                                     </div>
                                 </div>
-                            </div>
+                            </div> --}}
                             <div class="form-group">
                                 <div>
                                     <p class="align-middle p-0 m-0">{{ __('admin.content') }}<span style="color: red; ">
@@ -387,7 +387,7 @@
                                                 <strong>{{ $message }}</strong>
                                             </span>
                                         @enderror --}}
-                                        <input type="hidden" name="tag" id="tag-hidden" value="{{ old('tag') }}">
+                                        {{-- <input type="hidden" name="tag" id="tag-hidden" value="{{ old('tag') }}"> --}}
                                     </div>
                                 </div>
                             </div>
