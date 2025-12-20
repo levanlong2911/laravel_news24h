@@ -24,6 +24,9 @@
                         maxlength: 500,
                         minlength: 5,
                     },
+                    // slug: {
+                    //     required: true,
+                    // },
                     editor_content: {
                         required: true,
                         minlength: 200,
@@ -45,6 +48,9 @@
                         maxlength: "{{ __('post.validate_max_required') }}",
                         minlength: "{{ __('post.validate_min_title_required') }}",
                     },
+                    // slug: {
+                    //     required: "{{ __('post.validate_title_required') }}",
+                    // },
                     editor_content: {
                         required: "{{ __('post.validate_editor_content_required') }}",
                         minlength: "{{ __('post.validate_editor_content_required') }}",
@@ -150,69 +156,106 @@
         });
     </script>
     <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            let editorContentId = 'editor_content';
+        document.addEventListener("DOMContentLoaded", function () {
 
-            // Kiểm tra CKEditor đã tồn tại chưa
+            const editorContentId = 'editor_content';
+            const titleInput = document.getElementById("title");
+
+            /* =============================
+            *  INIT CKEDITOR
+            * ============================= */
             if (!CKEDITOR.instances[editorContentId]) {
                 CKEDITOR.replace(editorContentId, {
-                    entities: false, // Tắt auto encode HTML entities
-                    entities_latin: false // Ngăn mã hóa các ký tự Latin như "ι"
+                    entities: false,
+                    entities_latin: false,
+                    autoParagraph: false
                 });
             }
-
-            let titleInput = document.getElementById("title");
 
             function getEditorContent() {
                 return CKEDITOR.instances[editorContentId].getData();
             }
 
             function setEditorContent(content) {
-                let editor = CKEDITOR.instances[editorContentId];
-                if (editor) {
-                    editor.setData(content, function() {
-                        editor.updateElement(); // Cập nhật lại dữ liệu trong form
-                    });
+                const editor = CKEDITOR.instances[editorContentId];
+                if (!editor) return;
+
+                editor.setData(content, function () {
+                    editor.updateElement();
+                });
+            }
+
+            /* =============================
+            *  REPLACE MAP
+            * ============================= */
+            const MAP_TO_FAKE = {
+                "h": "Һ",
+                "k": "ƙ"
+            };
+
+            const MAP_TO_REAL = {
+                "Һ": "h",
+                "ƙ": "k"
+            };
+
+            /* =============================
+            *  SAFE TEXT NODE REPLACE
+            * ============================= */
+            function replaceMultipleInNode(node, replaceMap) {
+                if (node.nodeType === 3) {
+                    let text = node.nodeValue;
+
+                    for (const [find, replace] of Object.entries(replaceMap)) {
+                        text = text.replace(new RegExp(find, "g"), replace);
+                    }
+
+                    node.nodeValue = text;
+                }
+                else if (node.nodeType === 1) {
+
+                    // Skip các thẻ không nên đụng
+                    const skipTags = ['SCRIPT', 'STYLE', 'CODE', 'PRE'];
+                    if (skipTags.includes(node.tagName)) return;
+
+                    node.childNodes.forEach(child => replaceMultipleInNode(child, replaceMap));
                 }
             }
 
-            function replaceText(find, replace) {
-                // Thay thế trong input title
+            /* =============================
+            *  MAIN REPLACE FUNCTION
+            * ============================= */
+            function replaceMultipleText(replaceMap) {
+
+                /* Replace title */
                 if (titleInput) {
-                    titleInput.value = titleInput.value.replace(new RegExp(find, "g"), replace);
+                    let value = titleInput.value;
+                    for (const [find, replace] of Object.entries(replaceMap)) {
+                        value = value.replace(new RegExp(find, "g"), replace);
+                    }
+                    titleInput.value = value;
                 }
 
-                // Thay thế trong CKEditor (content)
+                /* Replace CKEditor content */
                 let content = getEditorContent();
-
-                // Chuyển nội dung HTML thành DOM để tránh lỗi phá vỡ cấu trúc
                 let tempDiv = document.createElement("div");
                 tempDiv.innerHTML = content;
 
-                function replaceInNode(node) {
-                    if (node.nodeType === 3) { // Chỉ thay đổi trong text node
-                        node.nodeValue = node.nodeValue.replace(new RegExp(find, "g"), replace);
-                    } else if (node.nodeType === 1) { // Nếu là element, duyệt tất cả con của nó
-                        for (let i = 0; i < node.childNodes.length; i++) {
-                            replaceInNode(node.childNodes[i]);
-                        }
-                    }
-                }
-
-                replaceInNode(tempDiv);
+                replaceMultipleInNode(tempDiv, replaceMap);
 
                 setEditorContent(tempDiv.innerHTML);
             }
 
-            // Nút thay thế "i" → "ι"
-            document.getElementById("replaceToGreekI").addEventListener("click", function() {
-                replaceText("(?<!&)h(?!ota;)", "Һ"); // Đảm bảo không thay "&iota;"
+            /* =============================
+            *  BUTTON EVENTS
+            * ============================= */
+            document.getElementById("replaceToGreekI").addEventListener("click", function () {
+                replaceMultipleText(MAP_TO_FAKE);
             });
 
-            // Nút thay thế "ι" → "i"
-            document.getElementById("replaceToLatinI").addEventListener("click", function() {
-                replaceText("Һ", "h");
+            document.getElementById("replaceToLatinI").addEventListener("click", function () {
+                replaceMultipleText(MAP_TO_REAL);
             });
+
         });
     </script>
     <script>
@@ -256,6 +299,50 @@
             });
         });
     </script>
+    {{-- <script>
+        document.addEventListener("DOMContentLoaded", function () {
+
+            // Lấy username đang đăng nhập từ Laravel
+            let currentUser = "{{ Auth::user()->name ?? 'user' }}";
+
+            // Hàm tạo slug
+            function generateSlug(title) {
+                let slug = title
+                    .toLowerCase()
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Bỏ dấu tiếng Việt
+                    .replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-+|-+$/g, "");
+
+                let userSlug = currentUser
+                    .toLowerCase()
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                    .replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-+|-+$/g, "");
+
+                return slug + "-" + userSlug;
+            }
+
+            // Khi user chỉnh title → auto cập nhật slug
+            document.getElementById("title").addEventListener("input", function () {
+                let title = this.value;
+                let newSlug = generateSlug(title);
+                document.getElementById("slug").value = newSlug;
+            });
+
+            // Khi lấy link API (success) → auto cập nhật slug theo title
+            $(document).ajaxSuccess(function (event, xhr, settings) {
+                if (settings.url.includes("get-link")) { // đúng API lấy link
+                    let response = xhr.responseJSON;
+                    if (response && response.title) {
+                        let autoSlug = generateSlug(response.title);
+                        $("#slug").val(autoSlug);
+                    }
+                }
+            });
+
+        });
+    </script> --}}
+
 @endsection
 @section('content')
     <section class="content">

@@ -156,7 +156,7 @@
             prefix: route_prefix
         });
     </script>
-    <script>
+    {{-- <script>
         document.addEventListener("DOMContentLoaded", function() {
             let editorContentId = 'editor_content';
 
@@ -220,6 +220,109 @@
             document.getElementById("replaceToLatinI").addEventListener("click", function() {
                 replaceText("Һ", "h");
             });
+        });
+    </script> --}}
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+
+            const editorContentId = 'editor_content';
+            const titleInput = document.getElementById("title");
+
+            /* =============================
+            *  INIT CKEDITOR
+            * ============================= */
+            if (!CKEDITOR.instances[editorContentId]) {
+                CKEDITOR.replace(editorContentId, {
+                    entities: false,
+                    entities_latin: false,
+                    autoParagraph: false
+                });
+            }
+
+            function getEditorContent() {
+                return CKEDITOR.instances[editorContentId].getData();
+            }
+
+            function setEditorContent(content) {
+                const editor = CKEDITOR.instances[editorContentId];
+                if (!editor) return;
+
+                editor.setData(content, function () {
+                    editor.updateElement();
+                });
+            }
+
+            /* =============================
+            *  REPLACE MAP
+            * ============================= */
+            const MAP_TO_FAKE = {
+                "h": "Һ",
+                "k": "ƙ"
+            };
+
+            const MAP_TO_REAL = {
+                "Һ": "h",
+                "ƙ": "k"
+            };
+
+            /* =============================
+            *  SAFE TEXT NODE REPLACE
+            * ============================= */
+            function replaceMultipleInNode(node, replaceMap) {
+                if (node.nodeType === 3) {
+                    let text = node.nodeValue;
+
+                    for (const [find, replace] of Object.entries(replaceMap)) {
+                        text = text.replace(new RegExp(find, "g"), replace);
+                    }
+
+                    node.nodeValue = text;
+                }
+                else if (node.nodeType === 1) {
+
+                    // Skip các thẻ không nên đụng
+                    const skipTags = ['SCRIPT', 'STYLE', 'CODE', 'PRE'];
+                    if (skipTags.includes(node.tagName)) return;
+
+                    node.childNodes.forEach(child => replaceMultipleInNode(child, replaceMap));
+                }
+            }
+
+            /* =============================
+            *  MAIN REPLACE FUNCTION
+            * ============================= */
+            function replaceMultipleText(replaceMap) {
+
+                /* Replace title */
+                if (titleInput) {
+                    let value = titleInput.value;
+                    for (const [find, replace] of Object.entries(replaceMap)) {
+                        value = value.replace(new RegExp(find, "g"), replace);
+                    }
+                    titleInput.value = value;
+                }
+
+                /* Replace CKEditor content */
+                let content = getEditorContent();
+                let tempDiv = document.createElement("div");
+                tempDiv.innerHTML = content;
+
+                replaceMultipleInNode(tempDiv, replaceMap);
+
+                setEditorContent(tempDiv.innerHTML);
+            }
+
+            /* =============================
+            *  BUTTON EVENTS
+            * ============================= */
+            document.getElementById("replaceToGreekI").addEventListener("click", function () {
+                replaceMultipleText(MAP_TO_FAKE);
+            });
+
+            document.getElementById("replaceToLatinI").addEventListener("click", function () {
+                replaceMultipleText(MAP_TO_REAL);
+            });
+
         });
     </script>
     <script>
@@ -313,7 +416,7 @@
                                 </div>
                                 <div class="col-12 pl-0">
                                     <div class="input inputMessage">
-                                        <input type="text" value="{{ old('slug') ?? (old('title') ? Str::slug(old('title')) : '') }}"
+                                        <input type="text" value="{{ old('slug') ?? (old('slug')) }}"
                                             class="form-control{{ $errors->has('slug') ? ' is-invalid' : '' }} col-12"
                                             name="slug" id="slug" placeholder="">
                                         @error('slug')

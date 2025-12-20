@@ -40,23 +40,43 @@ class GetLinkController extends Controller
             $class = '//article//p | //div[contains(@class, "content") or contains(@class, "post-content") or contains(@class, "entry-content")]';
         }
         try {
+            // $client = new Client([
+            //     'timeout' => 10,
+            //     'headers' => [
+            //         'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            //         'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            //         'Accept-Language' => 'en-US,en;q=0.9',
+            //         'Accept-Encoding' => 'gzip, deflate',
+            //         'Connection' => 'keep-alive',
+            //         'Upgrade-Insecure-Requests' => '1',
+            //         'Referer' => 'https://www.google.com/',
+            //         'X-Forwarded-For' => '66.249.66.1',
+            //         'Cookie' => 'CONSENT=YES+1;',
+            //     ],
+            //     'allow_redirects' => true,
+            //     'cookies' => true,
+            // ]);
             $client = new Client([
-                'timeout' => 10,
-                'headers' => [
-                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-                    'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                    'Accept-Language' => 'en-US,en;q=0.9',
-                    'Accept-Encoding' => 'gzip, deflate',
-                    'Connection' => 'keep-alive',
-                    'Upgrade-Insecure-Requests' => '1',
-                    'Referer' => 'https://www.google.com/',
-                    'X-Forwarded-For' => '66.249.66.1',
-                    'Cookie' => 'CONSENT=YES+1;',
+                'timeout' => 15,
+                'connect_timeout' => 10,
+                'http_errors' => false,
+                'allow_redirects' => [
+                    'max' => 5,
+                    'track_redirects' => true,
                 ],
-                'allow_redirects' => true,
-                'cookies' => true,
+                'headers' => $this->getStealthHeaders(),
+                'version' => 2.0, // HTTP/2
             ]);
-            $response = $client->request('GET', $url);
+            // $response = $client->request('GET', $url);
+            $response = null;
+
+            for ($i = 0; $i < 2; $i++) {
+                $response = $client->get($url);
+                if ($response->getStatusCode() === 200) {
+                    break;
+                }
+                sleep(1);
+            }
 
             if ($response->getStatusCode() !== 200) {
                 return response()->json([
@@ -74,7 +94,12 @@ class GetLinkController extends Controller
             // Tạo đối tượng DOMDocument
             $dom = new DOMDocument();
             libxml_use_internal_errors(true);
-            $dom->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+            // $dom->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+            $dom->loadHTML(
+                '<?xml encoding="UTF-8">' . $html,
+                LIBXML_NOERROR | LIBXML_NOWARNING
+            );
+
             libxml_clear_errors();
 
             // Remove comment qv trực tiếp từ DOM (an toàn)
@@ -109,6 +134,32 @@ class GetLinkController extends Controller
             ]);
         }
     }
+
+    private function getStealthHeaders(): array
+    {
+        $userAgents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+        ];
+
+        return [
+            'User-Agent' => $userAgents[array_rand($userAgents)],
+            'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language' => 'en-US,en;q=0.9',
+
+            // ❌ KHÔNG br
+            'Accept-Encoding' => 'gzip, deflate',
+
+            'Cache-Control' => 'no-cache',
+            'Pragma' => 'no-cache',
+            'Upgrade-Insecure-Requests' => '1',
+            'Sec-Fetch-Site' => 'none',
+            'Sec-Fetch-Mode' => 'navigate',
+            'Sec-Fetch-User' => '?1',
+            'Sec-Fetch-Dest' => 'document',
+        ];
+    }
+
 
     private function removeQVBlocks($html)
     {
