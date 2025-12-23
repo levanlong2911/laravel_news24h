@@ -3,6 +3,7 @@
 return [
     'list_post' => 'List post',
     'category' => 'Category',
+    'domain' => 'Website',
     'day' => 'Day',
     'update_post' => 'Update post',
     'title' => 'Title',

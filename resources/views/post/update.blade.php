@@ -24,9 +24,9 @@
                         maxlength: 500,
                         minlength: 5,
                     },
-                    // slug: {
-                    //     required: true,
-                    // },
+                    slug: {
+                        required: true,
+                    },
                     editor_content: {
                         required: true,
                         minlength: 200,
@@ -48,9 +48,9 @@
                         maxlength: "{{ __('post.validate_max_required') }}",
                         minlength: "{{ __('post.validate_min_title_required') }}",
                     },
-                    // slug: {
-                    //     required: "{{ __('post.validate_title_required') }}",
-                    // },
+                    slug: {
+                        required: "{{ __('post.validate_title_required') }}",
+                    },
                     editor_content: {
                         required: "{{ __('post.validate_editor_content_required') }}",
                         minlength: "{{ __('post.validate_editor_content_required') }}",
@@ -299,7 +299,7 @@
             });
         });
     </script>
-    {{-- <script>
+    <script>
         document.addEventListener("DOMContentLoaded", function () {
 
             // Lấy username đang đăng nhập từ Laravel
@@ -341,7 +341,7 @@
             });
 
         });
-    </script> --}}
+    </script>
 
 @endsection
 @section('content')
@@ -370,7 +370,7 @@
                                     </div>
                                 </div>
                             </div>
-                            {{-- <div class="form-group">
+                            <div class="form-group">
                                 <div>
                                     <p class="align-middle p-0 m-0">{{ __('post.slug') }}<span style="color: red; ">
                                             *</span></p>
@@ -387,7 +387,7 @@
                                         @enderror
                                     </div>
                                 </div>
-                            </div> --}}
+                            </div>
                             <div class="form-group">
                                 <div>
                                     <p class="align-middle p-0 m-0">{{ __('admin.content') }}<span style="color: red; ">

@@ -19,6 +19,7 @@ class AdminUpdateForm
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:admins,email,' . $request->id,
             'role' => 'required|exists:roles,id',
+            'domain' => 'required|string',
         ];
 
         // Trường hợp không phải là cập nhật hoặc có yêu cầu thay đổi mật khẩu

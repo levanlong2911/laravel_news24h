@@ -41,14 +41,15 @@ class PostController extends Controller
 
     public function index()
     {
-        $listsPost = $this->postService->getListPost();
+        $user = auth()->user(); // lấy id user đang đăng nhập
+        $listsPost = $this->postService->getListPost($user);
         return view("post.index", [
             "route" => "post",
             "action" => "admin-post",
             "menu" => "menu-open",
             "active" => "active",
             'listsPost' => $listsPost,
-            "listIdPost" => $this->postService->getListPost()->pluck('id'),
+            "listIdPost" => $this->postService->getListPost($user)->pluck('id'),
         ]);
     }
 
@@ -92,7 +93,7 @@ class PostController extends Controller
 
     public function update(Request $request, $id)
     {
-        $listPost = $this->postService->getPostById($id);
+        $listPost = $this->postService->getPostById($id, auth()->user());
         $listsCate = $this->categoryService->getListCategory();
         if($request->isMethod('post')) {
             $this->form->validate($request, 'PostUpdateForm');

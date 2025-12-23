@@ -12,6 +12,7 @@ use App\Repositories\Eloquent\PostRepository;
 use App\Repositories\Eloquent\PostTagRepository;
 use App\Repositories\Eloquent\RoleRepository;
 use App\Repositories\Eloquent\TagRepository;
+use App\Repositories\Eloquent\WebsiteRepository;
 use App\Repositories\Interfaces\AdminRepositoryInterface;
 use App\Repositories\Interfaces\AdsRepositoryInterface;
 use App\Repositories\Interfaces\CategoryRepositoryInterface;
@@ -22,6 +23,7 @@ use App\Repositories\Interfaces\PostTagRepositoryInterface;
 use App\Repositories\Interfaces\RepositoryInterface;
 use App\Repositories\Interfaces\RoleRepositoryInterface;
 use App\Repositories\Interfaces\TagRepositoryInterface;
+use App\Repositories\Interfaces\WebsiteRepositoryInterface;
 use Illuminate\Support\ServiceProvider;
 
 class RepositoryServiceProvider extends ServiceProvider
@@ -71,6 +73,10 @@ class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(
             FontRepositoryInterface::class,
             FontRepository::class
+        );
+        $this->app->bind(
+            WebsiteRepositoryInterface::class,
+            WebsiteRepository::class
         );
     }
 

@@ -27,6 +27,7 @@
                                                     <th class="text-center">{{ __('admin.name') }}</th>
                                                     <th class="text-center">{{ __('admin.email') }}</th>
                                                     <th class="text-center">{{ __('admin.role') }}</th>
+                                                    <th class="text-center">{{ __('admin.domain') }}</th>
                                                     <th class="text-center">{{ __('admin.detail') }}</th>
                                             </thead>
                                             <tbody>
@@ -35,9 +36,13 @@
                                                         <td class="text-center">{{ $admin->name }}</td>
                                                         <td class="text-center">{{ $admin->email }}</td>
                                                         <td class="text-center">{{ data_get($admin, 'role.name') }}</td>
+                                                        <td class="text-center">{{ $admin->domain }}</td>
                                                         <td class="text-center">
                                                             <a href="{{ route('admin.detail',['id' => $admin->id]) }}">
                                                                 {{ __('admin.detail') }}
+                                                            </a>
+                                                            <a href="{{ route('admin.update',['id' => $admin->id]) }}">
+                                                                {{ __('admin.update') }}
                                                             </a>
                                                         </td>
                                                     </tr>

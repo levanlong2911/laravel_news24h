@@ -40,9 +40,7 @@ class AdminController extends Controller
     public function add(Request $request)
     {
         $listRole = $this->adminService->getListRole();
-        // dd($request->isMethod('post'));
         if($request->isMethod('post')) {
-            // dd(22);
             $this->form->validate($request, 'AdminAddForm');
             $addAcc = $this->adminService->create($request);
             if ($addAcc) {
@@ -59,9 +57,9 @@ class AdminController extends Controller
         ]);
     }
 
-    public function update(Request $request)
+    public function update(Request $request, $id)
     {
-        $dataAcc = $this->adminService->getByIdAcc($request->id);
+        $dataAcc = $this->adminService->getByIdAcc($id);
         if(!$dataAcc) {
             return redirect()->back()->with('error', __('messages.account_not_found'));
         }

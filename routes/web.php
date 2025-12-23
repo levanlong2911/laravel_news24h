@@ -4,6 +4,7 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdvertisementController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\DomainController;
 use App\Http\Controllers\FontController;
 use App\Http\Controllers\GetLinkController;
 use App\Http\Controllers\GetTagController;
@@ -105,6 +106,15 @@ Route::group(
         Route::match(["get", "post"], "/update/{id}", [FontController::class, "update"])->name("font.update");
         Route::match(["get", "post"], "/delete", [FontController::class, "delete"])->name("font.delete");
         Route::match(["get", "post"], "/detail/{id}", [FontController::class, "detail"])->name("font.detail");
+    });
+
+    // Domains
+    Route::group(["prefix" => "website"], function () {
+        Route::get("/", [DomainController::class, "index"])->name("website.index");
+        Route::match(["get", "post"], "/add", [DomainController::class, "add"])->name("website.add");
+        Route::match(["get", "post"], "/update/{id}", [DomainController::class, "update"])->name("website.update");
+        Route::match(["get", "post"], "/delete", [DomainController::class, "delete"])->name("website.delete");
+        Route::match(["get", "post"], "/detail/{id}", [DomainController::class, "detail"])->name("website.detail");
     });
 
     Route::post("/getlink", [GetLinkController::class, "getLink"]);

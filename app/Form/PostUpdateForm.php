@@ -12,11 +12,15 @@ class PostUpdateForm
      *
      * @param \Illuminate\Http\Request $request
      */
-    public function validate(Request $request, $id = null)
+    public function validate(Request $request)
     {
         $validator = Validator::make($request->all(),
         [
             "title" => [
+                "bail",
+                "required",
+            ],
+            "slug" => [
                 "bail",
                 "required",
             ],

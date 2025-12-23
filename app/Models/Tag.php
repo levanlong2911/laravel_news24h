@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Traits\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Tag extends Model
 {
     use HasFactory;
+    use HasUuid;
 
     protected $table = 'tags';
     protected $keyType = 'string'; // UUID là chuỗi
