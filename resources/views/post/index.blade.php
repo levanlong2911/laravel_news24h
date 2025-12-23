@@ -131,7 +131,7 @@
                                                             {{ $post->created_at->format('d-m-Y') }}
                                                         </td>
                                                         <td class="text-center">
-                                                            <a href="https://{{ $post->domain }}/post/{{ $post->slug }}">
+                                                            <a href="https://caranddriverenthusiast.com/post/{{ $post->slug }}">
                                                                 {{ __('post.detail') }}
                                                             </a>
                                                             <a href="{{ route('post.update', ['id' => $post->id]) }}">
