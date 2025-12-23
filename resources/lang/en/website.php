@@ -1,0 +1,27 @@
+<?php
+
+return [
+    'website_management' => 'Domain',
+    'website_detail' => 'Detail',
+    'website_website' => 'Website',
+    'website_host' => 'Host',
+    'website_name' => 'Name',
+    'website_detail' => 'Detail',
+    'create_new_domain' => 'Add',
+    'delete_selected' => 'Detele all',
+    'website_admin' => 'Member',
+    'key_class' => 'Class',
+    'back' => 'Back',
+    'add' => 'Add',
+    'edit' => 'Edit',
+    'update' => 'Update',
+    'delete' => 'Delete',
+    'detail' => 'Detail',
+    // 'create_new_domain' => 'Add domain',
+    'input_name_required' => 'Vui lòng nhập tên Website',
+    'input_url' => 'Vui lòng nhập đúng url',
+    'input_host_required' => 'Vui lòng nhập url website',
+    'max_name' => 'Bạn đã nhập quá số kí tự cho phép',
+    'min_name' => 'Vui lòng nhập nhiều hơn 5 ký tự',
+    'input_class_length' => 'Bạn đã nhập quá 100 ký tự',
+];
