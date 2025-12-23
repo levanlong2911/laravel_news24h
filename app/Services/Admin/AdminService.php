@@ -45,6 +45,7 @@ class AdminService
         // Prepare parameters for creation
         $params = [
             'role_id' => $request->role,
+            'domain' => $request->domain,
             'name' => $request->name,
             'email' => $request->email,
             'password' => $passwordHash,
@@ -75,6 +76,7 @@ class AdminService
         // Prepare parameters for creation
         $params = [
             'role_id' => $request->role,
+            'domain' => $request->domain,
             'name' => $request->name,
             'email' => $request->email,
         ];

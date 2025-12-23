@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -12,10 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('infor_domains', function (Blueprint $table) {
-            $table\->uuid('id')->primary(); // UUID làm khóa chính
-            $table->string('domain');
-            $table->string('key_class');
+        Schema::create('domains', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('name');              // Tên domain (news24h.com)
+            $table->string('host')->unique();    // domain chính xác (news24h.com)
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
     }
@@ -25,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('infor_domains');
+        Schema::dropIfExists('domains');
     }
 };

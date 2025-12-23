@@ -15,16 +15,38 @@ class PostRepository extends BaseRepository implements PostRepositoryInterface
         return Post::class;
     }
 
-    public function getListPost()
+    public function getListPost($user)
     {
-        return Post::query()
-                ->orderBy('created_at', 'desc')
-                ->paginate(Paginate::PAGE->value);
+        $query = Post::query();
+        // dd($user);
+        // Nếu là member → chỉ xem bài theo domain
+        if ($user->role->name === 'member') {
+            // dd(11);
+            $query->where('domain', $user->domain)
+                ->where('author_id', $user->id);
+        }
+
+        // Nếu là admin → xem tất cả (KHÔNG filter)
+        return $query
+            ->orderBy('created_at', 'desc')
+            ->paginate(Paginate::PAGE->value);
+
+        // return Post::query()
+        //         ->where('author_id', $user->id)
+        //         ->where('domain', $user->domain)
+        //         ->orderBy('created_at', 'desc')
+        //         ->paginate(Paginate::PAGE->value);
     }
 
-    public function getPostById($id)
+    public function getPostById($id, $user)
     {
-        return Post::with('tags')->find($id);
+        return Post::with('tags')
+        ->where('id', $id)
+        ->when($user->role === 'member', function ($q) use ($user) {
+            $q->where('domain', $user->domain)
+              ->where('author_id', $user->id);
+        })
+        ->firstOrFail();
     }
 
     public function update($id, array $data): bool

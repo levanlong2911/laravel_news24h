@@ -99,6 +99,7 @@
                                                     </th>
                                                     <th class="text-center">{{ __('post.title') }}</th>
                                                     <th class="text-center">{{ __('post.category') }}</th>
+                                                    <th class="text-center">{{ __('post.domain') }}</th>
                                                     <th class="text-center">{{ __('post.day') }}</th>
                                                     <th class="text-center">{{ __('post.detail') }}</th>
                                             </thead>
@@ -122,6 +123,9 @@
                                                         </td>
                                                         <td class="text-center">
                                                             {{ data_get($post, 'category.name') }}
+                                                        </td>
+                                                        <td class="text-center">
+                                                            {{ $post->domain }}
                                                         </td>
                                                         <td class="text-center">
                                                             {{ $post->created_at->format('d-m-Y') }}

@@ -35,6 +35,9 @@
     </div>
 </div>
 <script>
+    window.currentUser = "{{ Str::slug(Auth::user()->name) }}";
+</script>
+<script>
     $(document).ready(function() {
         // Cấu hình jQuery Validate
         $('#quickFormModal').validate({
@@ -90,7 +93,18 @@
                 success: function(response) {
                     if (response.success) {
                         $('#title').val(response.title); // Gán tiêu đề
-                        $('#slug').val(response.slug); // Gán tiêu đề
+                        // Tự tạo slug từ title
+                        const slug = response.title
+                            .toLowerCase()
+                            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Bỏ dấu tiếng Việt
+                            .replace(/[^a-z0-9]+/g, '-') // Thay bằng dấu -
+                            .replace(/^-+|-+$/g, ''); // Xóa - ở đầu/cuối
+
+                        // Lấy user đang login (đã slug hoá)
+                        let userSlug = window.currentUser;
+
+                        // Gộp slug + user
+                        $('#slug').val(slug + '-' + userSlug);
                         $('#editor_content').val(response.content); // Gán nội dung
                         $('#getLink').modal('hide'); // Đóng modal
                     } else {

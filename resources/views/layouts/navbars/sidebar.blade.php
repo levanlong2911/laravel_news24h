@@ -61,6 +61,14 @@
                         </p>
                     </a>
                 </li>
+                <li class="nav-item {{ ($route == 'website') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('website.index') }}" class="nav-link d-inline-flex {{ ($action == 'website-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
+                        <p>
+                            {{ __('sidebar.domain_management') }}
+                        </p>
+                    </a>
+                </li>
             </ul>
         </nav>
         <!-- /.sidebar-menu -->

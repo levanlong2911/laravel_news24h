@@ -3,6 +3,8 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+
+use App\Models\Traits\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -11,6 +13,7 @@ use Laravel\Sanctum\HasApiTokens;
 class Admin extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
+    use HasUuid;
 
     protected $table = "admins";
 
@@ -18,7 +21,7 @@ class Admin extends Authenticatable
 
     public $incrementing = false;
 
-    protected $fillable = ['name', 'email', 'password', 'role_id', 'email_verified_at', 'remember_token'];
+    protected $fillable = ['name', 'email', 'password', 'role_id', 'domain', 'email_verified_at', 'remember_token'];
 
     /**
      * The attributes that are mass assignable.
@@ -60,5 +63,10 @@ class Admin extends Authenticatable
     public function role()
     {
         return $this->belongsTo(Role::class, 'role_id'); // 'role_id' là khóa ngoại
+    }
+
+    public function posts()
+    {
+        return $this->hasMany(Post::class, 'author_id', 'id');
     }
 }

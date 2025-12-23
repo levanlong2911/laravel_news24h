@@ -38,9 +38,9 @@ class PostService
      *
      * @return mixed
      */
-    public function getListPost()
+    public function getListPost($user)
     {
-        return $this->postRepository->getListPost();
+        return $this->postRepository->getListPost($user);
     }
 
     public function getInfoPost($id)
@@ -60,10 +60,11 @@ class PostService
             'id' => $postId,
             'title' => $request->title,
             'content' => $updatedContent,
-            'slug' => Str::slug($request->title),
+            'slug' => $request->slug,
             'thumbnail' => $webpThumbnail,
             'category_id' => $request->category,
             'author_id' => Auth::id(),
+            'domain' => auth()->user()->domain,
         ];
         // Create a new admin using the repository
         $post = $this->postRepository->create($params);
@@ -78,73 +79,243 @@ class PostService
         return $post;
     }
 
-    private function convertImagesToWebp($content)
+    // private function convertImagesToWebp(string $content): string
+    // {
+    //     // Tạo DOM từ nội dung HTML
+    //     $dom = new DOMDocument();
+    //     libxml_use_internal_errors(true);
+    //     $dom->loadHTML(mb_convert_encoding($content, 'HTML-ENTITIES', 'UTF-8'));
+    //     libxml_clear_errors();
+
+    //     // Lấy tất cả thẻ <img>
+    //     $images = $dom->getElementsByTagName('img');
+    //     // Mảng lưu trữ ảnh cần tải
+    //     $imageUrls = [];
+
+
+    //     foreach ($images as $img) {
+    //         $src = str_replace(' ', '%20', $img->getAttribute('src')); //Mã hóa khoảng trắng
+
+    //         if (!filter_var($src, FILTER_VALIDATE_URL)) {
+    //             continue; // Bỏ qua nếu không hợp lệ
+    //         }
+
+    //         $parsedUrl = parse_url($src);
+    //         if (!$parsedUrl || !isset($parsedUrl['scheme'], $parsedUrl['host'])) {
+    //             continue; // Kiểm tra domain hợp lệ
+    //         }
+
+    //         $imageUrls[] = $src;
+    //     }
+    //     // Tải tất cả ảnh một lần bằng multi cURL
+    //     $imageDataList = $this->fetchImage($imageUrls);
+
+    //     foreach ($images as $img) {
+    //         $src = str_replace(' ', '%20', $img->getAttribute('src'));
+    //         if (!isset($imageDataList[$src])) {
+    //             continue;
+    //         }
+
+    //         $webpData = $this->downloadAndConvertToWebp($src, $imageDataList[$src]);
+    //         if ($webpData) {
+    //             list($webpPath, $newHeight) = $webpData;
+    //             $img->setAttribute('src', asset("storage/$webpPath"));
+    //             $img->setAttribute('width', '800');
+    //             if ($newHeight) {
+    //                 $img->setAttribute('height', $newHeight);
+    //             }
+    //         }
+    //     }
+
+    //     $body = $dom->getElementsByTagName('body')->item(0);
+    //     $contentWithoutHtmlBody = '';
+    //     foreach ($body->childNodes as $node) {
+    //         $contentWithoutHtmlBody .= $dom->saveHTML($node);
+    //     }
+
+    //     return $contentWithoutHtmlBody;
+    // }
+
+    private function convertImagesToWebp(string $content): string
     {
-        // Tạo DOM từ nội dung HTML
-        $dom = new DOMDocument();
+        if (trim($content) === '') {
+            return $content;
+        }
+
+        // 1️⃣ Fix encoding toàn bộ HTML trước khi DOM parse
+        $content = $this->normalizeHtml($content);
+
+        $dom = new DOMDocument('1.0', 'UTF-8');
         libxml_use_internal_errors(true);
         $dom->loadHTML(mb_convert_encoding($content, 'HTML-ENTITIES', 'UTF-8'));
         libxml_clear_errors();
 
-        // Lấy tất cả thẻ <img>
-        $images = $dom->getElementsByTagName('img');
-        // Mảng lưu trữ ảnh cần tải
-        $imageUrls = [];
-
+        // 2️⃣ Snapshot img nodes (BẮT BUỘC)
+        $images = iterator_to_array($dom->getElementsByTagName('img'));
 
         foreach ($images as $img) {
-            $src = str_replace(' ', '%20', $img->getAttribute('src')); //Mã hóa khoảng trắng
+            $rawSrc = $img->getAttribute('src');
+            $src = $this->normalizeImageUrl($rawSrc);
 
-            if (!filter_var($src, FILTER_VALIDATE_URL)) {
-                continue; // Bỏ qua nếu không hợp lệ
-            }
-
-            $parsedUrl = parse_url($src);
-            if (!$parsedUrl || !isset($parsedUrl['scheme'], $parsedUrl['host'])) {
-                continue; // Kiểm tra domain hợp lệ
-            }
-
-            $imageUrls[] = $src;
-        }
-        // Tải tất cả ảnh một lần bằng multi cURL
-        $imageDataList = $this->fetchImage($imageUrls);
-
-        foreach ($images as $img) {
-            $src = str_replace(' ', '%20', $img->getAttribute('src'));
-            if (!isset($imageDataList[$src])) {
+            if (!$src) {
                 continue;
             }
 
-            $webpData = $this->downloadAndConvertToWebp($src, $imageDataList[$src]);
-            if ($webpData) {
-                list($webpPath, $newHeight) = $webpData;
-                $img->setAttribute('src', asset("storage/$webpPath"));
-                $img->setAttribute('width', '800');
-                if ($newHeight) {
-                    $img->setAttribute('height', $newHeight);
-                }
+            $imageContent = $this->fetchSingleImage($src);
+            if (!$imageContent) {
+                continue;
+            }
+
+            $webpData = $this->downloadAndConvertToWebp($src, $imageContent);
+            if (!$webpData) {
+                continue;
+            }
+
+            [$webpPath, $newHeight] = $webpData;
+
+            $img->setAttribute('src', asset("storage/$webpPath"));
+            $img->setAttribute('width', '800');
+
+            if ($newHeight) {
+                $img->setAttribute('height', (string) $newHeight);
             }
         }
-
         $body = $dom->getElementsByTagName('body')->item(0);
         $contentWithoutHtmlBody = '';
         foreach ($body->childNodes as $node) {
-            $contentWithoutHtmlBody .= $dom->saveHTML($node);
+            $html = trim($dom->saveHTML($node));
+            if ($html !== '') {
+                $contentWithoutHtmlBody .= $html . PHP_EOL . PHP_EOL;
+            }
         }
 
-        return $contentWithoutHtmlBody;
+        return trim($contentWithoutHtmlBody);
+    }
+
+    private function normalizeHtml(string $html): string
+    {
+        $encoding = mb_detect_encoding($html, [
+            'UTF-8', 'ISO-8859-1', 'Windows-1252'
+        ], true);
+
+        if ($encoding && $encoding !== 'UTF-8') {
+            $html = mb_convert_encoding($html, 'UTF-8', $encoding);
+        }
+
+        for ($i = 0; $i < 3; $i++) {
+            $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+
+        // Xóa byte lỗi
+        $html = preg_replace('/[\x00-\x1F\x7F-\x9F]/u', '', $html);
+
+        return $html;
+    }
+
+    private function normalizeImageUrl(?string $url): ?string
+    {
+        if (!$url) {
+            return null;
+        }
+
+        for ($i = 0; $i < 3; $i++) {
+            $decoded = html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if ($decoded === $url) {
+                break;
+            }
+            $url = $decoded;
+        }
+
+        $url = preg_replace('/[\x00-\x1F\x7F-\x9F]/u', '', $url);
+
+        $encoding = mb_detect_encoding($url, [
+            'UTF-8', 'ISO-8859-1', 'Windows-1252'
+        ], true);
+
+        if ($encoding && $encoding !== 'UTF-8') {
+            $url = mb_convert_encoding($url, 'UTF-8', $encoding);
+        }
+
+        $url = strtok($url, '?');
+
+        $url = trim(str_replace(' ', '%20', $url));
+
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return null;
+        }
+
+        if (!preg_match('#^https?://#i', $url)) {
+            return null;
+        }
+
+        return $url;
+    }
+
+    private function fetchSingleImage(string $url): ?string
+    {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            CURLOPT_HTTPHEADER => [
+                'Accept: image/avif,image/webp,image/*,*/*;q=0.8',
+                'Accept-Encoding: identity',
+            ],
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+        ]);
+
+        $data = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode !== 200 || !$data) {
+            return null;
+        }
+
+        return $data;
     }
 
     private function downloadAndConvertToWebp($imageUrl, $imageContent)
     {
+        if (strlen($imageContent) < 2000) {
+            return null;
+        }
+
         try {
-            // Lấy thông tin ảnh gốc
-            $originalSize = getimagesizefromstring($imageContent);
-            if (!$originalSize) {
-                return null;
+            $originalWidth  = null;
+            $originalHeight = null;
+
+            // 1️⃣ Thử lấy size bằng GD
+            $size = @getimagesizefromstring($imageContent);
+            if ($size && isset($size[0], $size[1])) {
+                $originalWidth  = $size[0];
+                $originalHeight = $size[1];
             }
 
-            list($originalWidth, $originalHeight, $imageType) = $originalSize;
+            // list($originalWidth, $originalHeight, $imageType) = $originalSize;
+
+            if (!$originalWidth || !$originalHeight) {
+                try {
+                    $imagick = new \Imagick();
+                    $imagick->readImageBlob($imageContent);
+
+                    $originalWidth  = $imagick->getImageWidth();
+                    $originalHeight = $imagick->getImageHeight();
+
+                    $imagick->clear();
+                    $imagick->destroy();
+                } catch (\Throwable $e) {
+                    return null;
+                }
+            }
+
+            if ($originalWidth < 10 || $originalHeight < 10) {
+                return null;
+            }
 
             // Lấy phần mở rộng hợp lệ từ loại ảnh
             $validExtensions = [
@@ -153,12 +324,15 @@ class PostService
                 IMAGETYPE_GIF => 'gif',
                 IMAGETYPE_AVIF => 'avif', // Hỗ trợ AVIF
             ];
-            if (!isset($validExtensions[$imageType])) {
+            if (!isset($validExtensions)) {
                 return null;
             }
 
             // Lấy tên file gốc và tạo tên WebP
             $originalName = pathinfo(parse_url($imageUrl, PHP_URL_PATH), PATHINFO_FILENAME);
+            if (!$originalName) {
+                $originalName = md5($imageUrl);
+            }
             $timestamp = now()->format('Ymd_His');
             $fileName = $timestamp . '_' . Str::slug($originalName) . '.webp';
             $filePath = 'public/images/' . $fileName;
@@ -180,13 +354,7 @@ class PostService
 
             // Lưu ảnh vào storage
             Storage::put($filePath, $image->toString());
-
-            // Xóa ảnh gốc sau khi xử lý
-            $originalPath = 'public/images/' . $originalName . '.' . $validExtensions[$imageType];
-            if (Storage::exists($originalPath)) {
-                Storage::delete($originalPath);
-            }
-
+            unset($image, $imageContent);
             // Trả về đường dẫn public
             return [str_replace('public/', '', $filePath), $newHeight];
         } catch (\Exception $e) {
@@ -197,66 +365,68 @@ class PostService
     /**
      * Tải ảnh từ URL bằng cURL để tránh lỗi `file_get_contents()`
      */
-    private function fetchImage($urls)
+    // private function fetchImage($urls)
+    // {
+    //     $mh = curl_multi_init();
+    //     $chArray = [];
+    //     $imageDataList = [];
+
+    //     foreach ($urls as $url) {
+    //         $ch = curl_init($url);
+    //         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    //         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+    //         curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/5.0");
+    //         curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    //         curl_multi_add_handle($mh, $ch);
+    //         $chArray[$url] = $ch;
+    //     }
+
+    //     do {
+    //         curl_multi_exec($mh, $running);
+    //     } while ($running);
+
+    //     foreach ($chArray as $url => $ch) {
+    //         $imageDataList[$url] = curl_multi_getcontent($ch);
+    //         curl_multi_remove_handle($mh, $ch);
+    //         curl_close($ch);
+    //     }
+
+    //     curl_multi_close($mh);
+    //     return $imageDataList;
+    // }
+
+    private function convertThumbnailToWebp(?string $Url): ?string
     {
-        $mh = curl_multi_init();
-        $chArray = [];
-        $imageDataList = [];
 
-        foreach ($urls as $url) {
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-            curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/5.0");
-            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-            curl_multi_add_handle($mh, $ch);
-            $chArray[$url] = $ch;
+        if (!filter_var($Url, FILTER_VALIDATE_URL)) {
+            return $Url; // Nếu URL không hợp lệ, giữ nguyên ảnh gốc
         }
 
-        do {
-            curl_multi_exec($mh, $running);
-        } while ($running);
-
-        foreach ($chArray as $url => $ch) {
-            $imageDataList[$url] = curl_multi_getcontent($ch);
-            curl_multi_remove_handle($mh, $ch);
-            curl_close($ch);
+        $url = $this->normalizeImageUrl($Url);
+        if (!$url) {
+            return $url;
         }
-
-        curl_multi_close($mh);
-        return $imageDataList;
-    }
-
-    private function convertThumbnailToWebp($thumbnailUrl)
-    {
-        if (!filter_var($thumbnailUrl, FILTER_VALIDATE_URL)) {
-            return $thumbnailUrl; // Nếu URL không hợp lệ, giữ nguyên ảnh gốc
-        }
-
         // Tải ảnh thumbnail bằng cURL
-        $imageContent = $this->fetchImage([$thumbnailUrl])[$thumbnailUrl] ?? null;
+        $imageContent = $this->fetchSingleImage($url);
         if (!$imageContent) {
-            return $thumbnailUrl;
+            return $url;
         }
-
         // Chuyển đổi ảnh sang WebP
-        $webpData = $this->downloadAndConvertToWebp($thumbnailUrl, $imageContent);
-        if ($webpData) {
-            list($webpPath, $newHeight) = $webpData;
-            return asset("storage/$webpPath"); // Trả về URL WebP
+        $webpData = $this->downloadAndConvertToWebp($url, $imageContent);
+        if (!$webpData) {
+            return $url;
         }
-
-        return $thumbnailUrl; // Nếu lỗi, trả về ảnh gốc
+        return asset('storage/' . $webpData[0]); // Nếu lỗi, trả về ảnh gốc
     }
 
-    public function getPostById($id)
+    public function getPostById($id, $user)
     {
-        return $this->postRepository->getPostById($id);
+        return $this->postRepository->getPostById($id, $user);
     }
 
     public function update($id, $request)
     {
-        $dataPost = $this->getPostById($id);
+        $dataPost = $this->getPostById($id, auth()->user());
         // 1. Kiểm tra hình ảnh có thay đổi không
         if ($request->editor_content !== $dataPost->content) {
             $updatedContent = $this->convertImagesToWebp($request->editor_content);
@@ -264,12 +434,11 @@ class PostService
             $updatedContent = $dataPost->content; // Giữ nguyên nếu không thay đổi
         }
 
-        if ($request->editor_content !== $dataPost->content) {
+        if ($request->thumbnail !== $dataPost->thumbnail) {
             $imageThumbnail = $this->convertThumbnailToWebp($request->image);
         } else {
             $imageThumbnail = $dataPost->thumbnail; // Giữ nguyên nếu không thay đổi
         }
-
         // Cập nhật thông tin bài viết nếu có thay đổi
         $params = [
             'title' => $request->title,
@@ -277,6 +446,7 @@ class PostService
             'slug' => Str::slug($request->title),
             'thumbnail' => $imageThumbnail,
             'category_id' => $request->category,
+            'domain' => auth()->user()->domain,
         ];
         // Cập nhật dữ liệu vào database
         DB::transaction(function () use ($dataPost, $params, $request) {

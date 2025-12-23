@@ -2,14 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Traits\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Post extends Model
 {
     use HasFactory;
+    use HasUuid;
+
     protected $fillable = [
-        'id', 'title', 'content', 'slug', 'category_id', 'author_id', 'thumbnail',
+        'id', 'title', 'content', 'slug', 'category_id', 'author_id', 'domain', 'thumbnail',
     ];
 
     public $incrementing = false;
@@ -30,5 +33,15 @@ class Post extends Model
     public function admin()
     {
         return $this->belongsTo(Admin::class, 'author_id');
+    }
+
+    public function author()
+    {
+        return $this->belongsTo(Admin::class, 'author_id', 'id');
+    }
+
+    public function domain()
+    {
+        return $this->belongsTo(Domain::class);
     }
 }

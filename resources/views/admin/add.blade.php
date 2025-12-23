@@ -45,6 +45,9 @@
                     role: {
                         required: true
                     },
+                    domain: {
+                        required: true
+                    },
                     password: {
                         required: true,
                         minlength: 8
@@ -64,6 +67,9 @@
                     },
                     role: {
                         required: "{{ __('admin.select_role') }}",
+                    },
+                    domain: {
+                        required: "{{ __('admin.input_domain') }}",
                     },
                     password: {
                         required: "{{ __('admin.input_password_required') }}",
@@ -178,6 +184,24 @@
                                                         class="form-control{{ $errors->has('email') ? ' is-invalid' : '' }} col-6"
                                                         name="email" id="email" placeholder="">
                                                     @error('email')
+                                                        <span class="invalid-feedback" role="alert">
+                                                            <strong>{{ $message }}</strong>
+                                                        </span>
+                                                    @enderror
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row row">
+                                            <div class="col-2 d-flex align-items-center">
+                                                <p class="align-middle p-0 m-0">{{ __('admin.domain') }}<span
+                                                        style="color: red; "> *</span></p>
+                                            </div>
+                                            <div class="col-10 pl-0">
+                                                <div class="input inputMessage">
+                                                    <input type="text" value="{{ old('domain') ?? old('domain') }}"
+                                                        class="form-control{{ $errors->has('domain') ? ' is-invalid' : '' }} col-6"
+                                                        name="domain" id="domain" placeholder="">
+                                                    @error('domain')
                                                         <span class="invalid-feedback" role="alert">
                                                             <strong>{{ $message }}</strong>
                                                         </span>

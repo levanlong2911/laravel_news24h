@@ -25,9 +25,9 @@
                         maxlength: 500,
                         minlength: 5,
                     },
-                    // slug: {
-                    //     required: true,
-                    // },
+                    slug: {
+                        required: true,
+                    },
                     editor_content: {
                         required: true,
                         minlength: 200,
@@ -49,9 +49,9 @@
                         maxlength: "{{ __('post.validate_max_required') }}",
                         minlength: "{{ __('post.validate_min_title_required') }}",
                     },
-                    // slug: {
-                    //     required: "{{ __('post.validate_editor_content_required') }}",
-                    // },
+                    slug: {
+                        required: "{{ __('post.validate_editor_content_required') }}",
+                    },
                     editor_content: {
                         required: "{{ __('post.validate_editor_content_required') }}",
                         minlength: "{{ __('post.validate_editor_content_required') }}",
@@ -409,7 +409,7 @@
                                     </div>
                                 </div>
                             </div>
-                            {{-- <div class="form-group">
+                            <div class="form-group">
                                 <div>
                                     <p class="align-middle p-0 m-0">{{ __('admin.link') }}<span style="color: red; ">
                                             *</span></p>
@@ -426,7 +426,7 @@
                                         @enderror
                                     </div>
                                 </div>
-                            </div> --}}
+                            </div>
                             <div class="form-group">
                                 <div>
                                     <p class="align-middle p-0 m-0">{{ __('admin.content') }}<span style="color: red; ">

@@ -21,6 +21,11 @@ class PostAddForm
                 "required",
                 "unique:posts,title," . ($id ?? 'NULL') . ",id"
             ],
+            "slug" => [
+                "bail",
+                "required",
+                "unique:posts,slug," . ($id ?? 'NULL') . ",id"
+            ],
             "editor_content" => [
                 "bail",
                 "required"
