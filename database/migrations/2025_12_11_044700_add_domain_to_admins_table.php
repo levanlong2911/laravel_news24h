@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -12,11 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('infor_domains', function (Blueprint $table) {
-            $table\->uuid('id')->primary(); // UUID làm khóa chính
-            $table->string('domain');
-            $table->string('key_class');
-            $table->timestamps();
+        Schema::table('admins', function (Blueprint $table) {
+            $table->string('domain')->nullable()->after('role_id');
         });
     }
 
@@ -25,6 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('infor_domains');
+        Schema::table('admins', function (Blueprint $table) {
+            $table->dropColumn('domain');
+        });
     }
 };
