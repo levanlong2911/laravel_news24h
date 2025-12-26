@@ -23,15 +23,15 @@
                                     <div class="card-body lable-form-add-policy pt-0" id="card-add">
                                         <div class="row row">
                                             <div class="col-2 d-flex align-items-center">
-                                                <p class="align-middle p-0 m-0">{{ __('domain.domain_name') }}<span
+                                                <p class="align-middle p-0 m-0">{{ __('website.website_name') }}<span
                                                         style="color: red; "> *</span></p>
                                             </div>
                                             <div class="col-10 pl-0">
                                                 <div class="input inputMessage">
-                                                    <input type="text" value="{{ $infoDomain->domain }}"
-                                                        class="form-control{{ $errors->has('domain') ? ' is-invalid' : '' }} col-6"
-                                                        name="domain" id="domain" placeholder="" disabled>
-                                                    @error('domain')
+                                                    <input type="text" value="{{ $inForWebsite->name }}"
+                                                        class="form-control{{ $errors->has('name') ? ' is-invalid' : '' }} col-6"
+                                                        name="name" id="name" placeholder="" disabled>
+                                                    @error('name')
                                                         <span class="invalid-feedback" role="alert">
                                                             <strong>{{ $message }}</strong>
                                                         </span>
@@ -43,15 +43,15 @@
                                     <div class="card-body lable-form-add-policy pt-0" id="card-add">
                                         <div class="row row">
                                             <div class="col-2 d-flex align-items-center">
-                                                <p class="align-middle p-0 m-0">{{ __('domain.key_class') }}<span
+                                                <p class="align-middle p-0 m-0">{{ __('website.website_host') }}<span
                                                         style="color: red; "> *</span></p>
                                             </div>
                                             <div class="col-10 pl-0">
                                                 <div class="input inputMessage">
-                                                    <input type="text" value="{{ $infoDomain->key_class }}"
-                                                        class="form-control{{ $errors->has('key_class') ? ' is-invalid' : '' }} col-6"
-                                                        name="key_class" id="key_class" placeholder="" disabled>
-                                                    @error('key_class')
+                                                    <input type="text" value="{{ $inForWebsite->host }}"
+                                                        class="form-control{{ $errors->has('hots') ? ' is-invalid' : '' }} col-6"
+                                                        name="hots" id="hots" placeholder="" disabled>
+                                                    @error('hots')
                                                         <span class="invalid-feedback" role="alert">
                                                             <strong>{{ $message }}</strong>
                                                         </span>
@@ -61,18 +61,18 @@
                                         </div>
                                     </div>
                                     <div class="text-right">
-                                        <a href="{{ route('domain.index') }}"
-                                            class="btn button-center button-back">{{ __('domain.back') }}</a>
+                                        <a href="{{ route('website.index') }}"
+                                            class="btn button-center button-back">{{ __('website.back') }}</a>
                                             <a id="delete_form" class="btn button-del btn-danger">
-                                                {{ __('domain.delete') }}
+                                                {{ __('website.delete') }}
                                             </a>
-                                            <a href="{{ route('domain.update', ['id' => $infoDomain->id]) }}"
+                                            <a href="{{ route('website.update', ['id' => $inForWebsite->id]) }}"
                                                 class="btn button-create-update w-200">
-                                                {{ __('domain.edit') }}
+                                                {{ __('website.edit') }}
                                             </a>
                                     </div>
                                 </form>
-                                @include('modal.delete', ['url' => route('domain.delete'), 'id' => $infoDomain->id])
+                                @include('modal.delete', ['url' => route('website.delete'), 'id' => $inForWebsite->id])
                             </div>
                         </div>
                     </div>

@@ -34,7 +34,7 @@
                     category: {
                         required: true,
                     },
-                    tag: {
+                    tag_names: {
                         required: true,
                     },
                     image: {
@@ -58,7 +58,7 @@
                     category: {
                         required: "{{ __('post.validate_category_required') }}",
                     },
-                    tag: {
+                    tag_names: {
                         required: "{{ __('post.validate_tag_required') }}",
                     },
                     image: {
@@ -445,13 +445,13 @@
                                     <div id="tag-container">
                                         <input type="text" value="{{ old('tag_names') ?? old('tag_names') }}"
                                             class="form-control{{ $errors->has('tag') ? ' is-invalid' : '' }} col-12"
-                                            name="tag" id="tag" readonly>
+                                            name="tag_names" id="tag" readonly>
                                         {{-- @error('tag')
                                             <span class="invalid-feedback" role="alert">
                                                 <strong>{{ $message }}</strong>
                                             </span>
                                         @enderror --}}
-                                        <input type="hidden" name="tag" id="tag-hidden" value="{{ old('tag') }}">
+                                        <input type="hidden" name="tagIds" id="tag-hidden" value="{{ old('tag') }}">
                                     </div>
                                 </div>
                             </div>

@@ -7,6 +7,7 @@ use App\Services\Admin\CategoryService;
 use App\Services\Admin\FontService;
 use App\Services\Admin\InforDomainService;
 use App\Services\Admin\PostService;
+use App\Services\Admin\WebsiteService;
 use Illuminate\Http\Request;
 use DOMDocument;
 use DOMXPath;
@@ -21,6 +22,7 @@ class PostController extends Controller
     private AdminCustomValidator $form;
     private PostService $postService;
     private FontService $fontService;
+    private WebsiteService $websiteService;
 
     public function __construct
     (
@@ -28,6 +30,7 @@ class PostController extends Controller
         InforDomainService $domainService,
         AdminCustomValidator $form,
         FontService $fontService,
+        WebsiteService $websiteService,
         PostService $postService
     )
     {
@@ -36,29 +39,46 @@ class PostController extends Controller
         $this->form = $form;
         $this->postService = $postService;
         $this->fontService = $fontService;
+        $this->websiteService = $websiteService;
     }
 
 
     public function index()
     {
-        $user = auth()->user(); // lấy id user đang đăng nhập
-        $listsPost = $this->postService->getListPost($user);
+        $listsPost = $this->postService->getListPost();
         return view("post.index", [
             "route" => "post",
             "action" => "admin-post",
             "menu" => "menu-open",
             "active" => "active",
             'listsPost' => $listsPost,
-            "listIdPost" => $this->postService->getListPost($user)->pluck('id'),
+            "listIdPost" => $this->postService->getListPost()->pluck('id'),
         ]);
     }
 
     public function add(Request $request)
     {
         $listsCate = $this->categoryService->getListCategory();
+
+        $listWebsite = $this->websiteService->getListWebsite();
+
         if($request->isMethod('post')) {
-            $this->form->validate($request, 'PostAddForm');
-            $addPost = $this->postService->create($request);
+            $admin = auth()->user();
+
+            // Xác định domainId
+            if ($admin->isAdmin()) {
+                if (!$request->domain_id) {
+                    return back()->withErrors(['domain_id' => 'Admin phải chọn domain']);
+                }
+                $domainId = $request->domain_id;
+            } else {
+                if (!$admin->domain_id) {
+                    abort(403, 'Member chưa được gán domain');
+                }
+                $domainId = $admin->domain_id;
+            }
+            $this->form->validate($request, 'PostAddForm', $domainId);
+            $addPost = $this->postService->create($request, $domainId);
             if ($addPost) {
                 return redirect()->route('post.index')->with('success', __('messages.add_success'));
             }
@@ -70,6 +90,7 @@ class PostController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             "listsCate" => $listsCate,
+            "listWebsite" => $listWebsite,
         ]);
     }
 
@@ -93,11 +114,19 @@ class PostController extends Controller
 
     public function update(Request $request, $id)
     {
-        $listPost = $this->postService->getPostById($id, auth()->user());
+        $listPost = $this->postService->getPostById($id);
+        if (!$listPost) {
+                return redirect()->route('post.index')->with('error', __('messages.add_error'));
+            }
         $listsCate = $this->categoryService->getListCategory();
+        // if (!auth()->user()->isAdmin()) {
+        //     if ($listPost->author_id !== auth()->id()) {
+        //         abort(403, 'Bạn không có quyền sửa bài viết này');
+        //     }
+        // }
         if($request->isMethod('post')) {
-            $this->form->validate($request, 'PostUpdateForm');
-            $upPost = $this->postService->update($id, $request);
+            $this->form->validate($request, 'PostUpdateForm', $listPost->id, $listPost->domain_id);
+            $upPost = $this->postService->update($id, $request, $listPost);
             if ($upPost) {
                 return redirect()->route('post.index')->with('success', __('messages.add_success'));
             }

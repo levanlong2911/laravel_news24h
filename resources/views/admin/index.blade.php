@@ -36,7 +36,7 @@
                                                         <td class="text-center">{{ $admin->name }}</td>
                                                         <td class="text-center">{{ $admin->email }}</td>
                                                         <td class="text-center">{{ data_get($admin, 'role.name') }}</td>
-                                                        <td class="text-center">{{ $admin->domain }}</td>
+                                                        <td class="text-center">{{ data_get($admin, 'domains.host') }}</td>
                                                         <td class="text-center">
                                                             <a href="{{ route('admin.detail',['id' => $admin->id]) }}">
                                                                 {{ __('admin.detail') }}

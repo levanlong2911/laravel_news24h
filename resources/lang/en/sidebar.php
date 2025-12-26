@@ -12,4 +12,5 @@ return [
     'font_management' => 'Font',
     'spin' => 'Spin Management',
     'domain_management' => 'Domains',
+    'website_management' => 'Website',
 ];

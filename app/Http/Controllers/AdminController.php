@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Form\AdminCustomValidator;
 use App\Repositories\Interfaces\AdminRepositoryInterface;
 use App\Services\Admin\AdminService;
+use App\Services\Admin\WebsiteService;
 use Illuminate\Http\Request;
 
 class AdminController extends Controller
@@ -12,17 +13,20 @@ class AdminController extends Controller
     private AdminService $adminService;
     private AdminCustomValidator $form;
     private AdminRepositoryInterface $adminRepository;
+    private WebsiteService $websiteService;
 
     public function __construct
     (
         AdminService $adminService,
         AdminCustomValidator $form,
-        AdminRepositoryInterface $adminRepository
+        AdminRepositoryInterface $adminRepository,
+        WebsiteService $websiteService
     )
     {
         $this->adminService = $adminService;
         $this->form = $form;
         $this->adminRepository = $adminRepository;
+        $this->websiteService = $websiteService;
     }
 
     public function index()
@@ -40,9 +44,10 @@ class AdminController extends Controller
     public function add(Request $request)
     {
         $listRole = $this->adminService->getListRole();
+        $listWebsite = $this->websiteService->getListWebsite();
         if($request->isMethod('post')) {
             $this->form->validate($request, 'AdminAddForm');
-            $addAcc = $this->adminService->create($request);
+            $addAcc = $this->adminService->addAdmin($request);
             if ($addAcc) {
                 return redirect()->route('admin.index')->with('success', __('messages.add_success'));
             }
@@ -53,7 +58,8 @@ class AdminController extends Controller
             "action" => "admin-add",
             "menu" => "menu-open",
             "active" => "active",
-            "listRole" => $listRole
+            "listRole" => $listRole,
+            "listWebsite" => $listWebsite
         ]);
     }
 
@@ -63,6 +69,7 @@ class AdminController extends Controller
         if(!$dataAcc) {
             return redirect()->back()->with('error', __('messages.account_not_found'));
         }
+        $listWebsite = $this->websiteService->getListWebsite();
         $listRole = $this->adminService->getListRole();
         if ($request->isMethod('post')) {
             $this->form->validate($request, 'AdminUpdateForm');
@@ -78,7 +85,8 @@ class AdminController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             "dataAcc" => $dataAcc,
-            "listRole" => $listRole
+            "listRole" => $listRole,
+            "listWebsite" => $listWebsite
         ]);
     }
 

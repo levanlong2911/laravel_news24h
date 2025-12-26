@@ -30,7 +30,7 @@ class DomainController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             'listWeb' => $listWeb,
-            // "fontIds" => $this->fontService->getListFontIds()->pluck('id'),
+            "WebsiteIds" => $this->websiteService->getListWebsiteIds()->pluck('id'),
         ]);
     }
 
@@ -38,7 +38,6 @@ class DomainController extends Controller
     {
         if ($request->isMethod('post')) {
             $addWeb = $this->websiteService->addWebsite($request);
-            dd($addWeb);
             if ($addWeb) {
                 return redirect()->route('website.index')->with('success', __('messages.add_success'));
             }
@@ -52,57 +51,57 @@ class DomainController extends Controller
         ]);
     }
 
-//     public function detail(Request $request)
-//     {
-//         $inForFont = $this->fontService->getByIdFont($request->id);
-//         if(!$inForFont) {
-//             return redirect()->back()->with('error', __('messages.account_not_found'));
-//         }
-//         return view("convert_font.detail", [
-//             "route" => "convert_font",
-//             "action" => "convert_font-detail",
-//             "menu" => "menu-open",
-//             "active" => "active",
-//             'inForFont' => $inForFont,
-//         ]);
-//     }
+    public function detail($id)
+    {
+        $inForWebsite = $this->websiteService->getByIdWebsite($id);
+        if(!$inForWebsite) {
+            return redirect()->back()->with('error', __('messages.account_not_found'));
+        }
+        return view("website.detail", [
+            "route" => "website",
+            "action" => "website-detail",
+            "menu" => "menu-open",
+            "active" => "active",
+            'inForWebsite' => $inForWebsite,
+        ]);
+    }
 
-//     public function update(Request $request, $id)
-//     {
-//         $inForFont = $this->fontService->getByIdFont($id);
-//         if (! $inForFont) {
-//             return redirect()->back()->with('error', __('messages.account_not_found'));
-//         }
-//         if ($request->isMethod('post')) {
-//             $params = [
-//                 'find' => $request->find,
-//                 'replace' => $request->replace,
-//             ];
-//             $updateFont = $this->fontRepository->update($id, $params);
-//             if ($updateFont) {
-//                 return redirect()->route('font.index')->with("success",__('messages.add_success'));
-//             }
-//             return back()->with("error",__('messages.add_error'));
-//         }
-//         return view("convert_font.update", [
-//             "route" => "convert_font",
-//             "action" => "convert_font-update",
-//             "menu" => "menu-open",
-//             "active" => "active",
-//             "inForFont" => $inForFont,
-//         ]);
-//     }
+    public function update(Request $request, $id)
+    {
+        $inForWebsite = $this->websiteService->getByIdWebsite($id);
+        if (! $inForWebsite) {
+            return redirect()->back()->with('error', __('messages.account_not_found'));
+        }
+        if ($request->isMethod('post')) {
+            $params = [
+                'name' => $request->name,
+                'host' => $request->host,
+            ];
+            $updateFont = $this->websiteRepository->update($id, $params);
+            if ($updateFont) {
+                return redirect()->route('website.index')->with("success",__('messages.add_success'));
+            }
+            return back()->with("error",__('messages.add_error'));
+        }
+        return view("website.update", [
+            "route" => "website",
+            "action" => "website-update",
+            "menu" => "menu-open",
+            "active" => "active",
+            "inForWebsite" => $inForWebsite,
+        ]);
+    }
 
-//     public function delete(Request $request)
-//     {
-//         $del = $this->fontService->deleteFontByIds($request);
-//         if ($del) {
-//             return redirect()
-//                 ->route('font.index')
-//                 ->with("success", __("messages.delete_success"));
-//         }
-//         return redirect()
-//         ->route('font.index')
-//         ->with("error", __("messages.delete_error"));
-//     }
+    public function delete(Request $request)
+    {
+        $del = $this->websiteService->deleteWebsiteByIds($request);
+        if ($del) {
+            return redirect()
+                ->route('website.index')
+                ->with("success", __("messages.delete_success"));
+        }
+        return redirect()
+        ->route('website.index')
+        ->with("error", __("messages.delete_error"));
+    }
 }

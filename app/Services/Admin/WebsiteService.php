@@ -24,10 +24,10 @@ class WebsiteService
         return $this->websiteRepository->getListWebsite();
     }
 
-    // public function getListFontIds()
-    // {
-    //     return $this->fontRepository->all();
-    // }
+    public function getListWebsiteIds()
+    {
+        return $this->websiteRepository->all();
+    }
 
     public function addWebsite($request)
     {
@@ -41,42 +41,40 @@ class WebsiteService
                 'name' => $request->name,
                 'host' => $host,
             ];
-            dd($this->websiteRepository->create($params));
             $website = $this->websiteRepository->create($params);
             DB::commit();
             return $website;
         } catch (Exception $e) {
             DB::rollback();
-            dd($e->getMessage());
             return false;
         }
     }
 
-    // public function getByIdFont($id)
-    // {
-    //     return $this->fontRepository->find($id);
-    // }
+    public function getByIdWebsite($id)
+    {
+        return $this->websiteRepository->find($id);
+    }
 
-    // /**
-    //  * Xóa một danh mục
-    //  *
-    //  * @param \Illuminate\Http\Request $request
-    //  * @return bool
-    //  */
-    // public function deleteFontByIds($request)
-    // {
-    //     DB::beginTransaction();
-    //     try {
-    //         $dataFont = $this->fontRepository->getDataListIds($request->ids);
-    //         foreach ($dataFont as $font) {
-    //             $font->delete();
-    //         }
-    //         DB::commit();
-    //         return true;
-    //     } catch (Exception $e) {
-    //         DB::rollback();
-    //         return false;
-    //     }
-    // }
+    /**
+     * Xóa một danh mục
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return bool
+     */
+    public function deleteWebsiteByIds($request)
+    {
+        DB::beginTransaction();
+        try {
+            $dataWebsite = $this->websiteRepository->getDataListIds($request->ids);
+            foreach ($dataWebsite as $font) {
+                $font->delete();
+            }
+            DB::commit();
+            return true;
+        } catch (Exception $e) {
+            DB::rollback();
+            return false;
+        }
+    }
 
 }

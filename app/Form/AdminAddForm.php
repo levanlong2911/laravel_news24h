@@ -16,10 +16,10 @@ class AdminAddForm
     {
         $validator = Validator::make($request->all(),
         [
+            'role' => 'required|exists:roles,id',
             'name' => 'required|string|max:100',
             'email' => 'required|email|unique:admins,email',
-            'role' => 'required|exists:roles,id',
-            'domain' => 'required|string',
+            'website' => 'required|exists:domains,id',
             "password" => [
                 "bail",
                 'regex:/^[A-Z][A-Za-z\d!@#$%^&*()_+\-=\[\]{};:"\\|,.<>\/?]*[!@#$%^&*()_+\-=\[\]{};:"\\|,.<>\/?]+.*$/', // Regex kiểm tra chữ cái đầu viết hoa và 1 ký tự đặc biệt

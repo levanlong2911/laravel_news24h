@@ -21,7 +21,7 @@ class Admin extends Authenticatable
 
     public $incrementing = false;
 
-    protected $fillable = ['name', 'email', 'password', 'role_id', 'domain', 'email_verified_at', 'remember_token'];
+    protected $fillable = ['name', 'email', 'password', 'role_id', 'domain_id', 'email_verified_at', 'remember_token'];
 
     /**
      * The attributes that are mass assignable.
@@ -69,4 +69,21 @@ class Admin extends Authenticatable
     {
         return $this->hasMany(Post::class, 'author_id', 'id');
     }
+
+    public function domains()
+    {
+        return $this->belongsTo(Domain::class, 'domain_id');
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->role && $this->role->name === 'admin';
+    }
+
+    public function isMember(): bool
+    {
+        return $this->role && $this->role->name === 'member';
+    }
+
+
 }

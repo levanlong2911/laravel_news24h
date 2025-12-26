@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('advertisements', function (Blueprint $table) {
-            $table\->uuid('id')->primary();
+            $table->uuid('id')->primary();
             $table->string('name'); // Tên quảng cáo để quản lý
             $table->enum('position', ['top', 'middle', 'bottom']); // Vị trí hiển thị
             $table->text('script'); // Mã HTML/JS từ nhà quảng cáo

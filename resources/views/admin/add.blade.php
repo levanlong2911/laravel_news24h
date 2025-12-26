@@ -45,7 +45,7 @@
                     role: {
                         required: true
                     },
-                    domain: {
+                    website: {
                         required: true
                     },
                     password: {
@@ -68,7 +68,7 @@
                     role: {
                         required: "{{ __('admin.select_role') }}",
                     },
-                    domain: {
+                    website: {
                         required: "{{ __('admin.input_domain') }}",
                     },
                     password: {
@@ -198,10 +198,18 @@
                                             </div>
                                             <div class="col-10 pl-0">
                                                 <div class="input inputMessage">
-                                                    <input type="text" value="{{ old('domain') ?? old('domain') }}"
-                                                        class="form-control{{ $errors->has('domain') ? ' is-invalid' : '' }} col-6"
-                                                        name="domain" id="domain" placeholder="">
-                                                    @error('domain')
+                                                    <select
+                                                        class="form-control {{ $errors->has('website') ? ' is-invalid' : '' }} col-6"
+                                                        name="website" id="website">
+                                                        <option value selected>--</option>
+                                                        @foreach ($listWebsite as $id => $web)
+                                                            <option value="{{ $web->id }}"
+                                                                data-role="{{ $web->name }}">
+                                                                {{ $web->name }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                    @error('name')
                                                         <span class="invalid-feedback" role="alert">
                                                             <strong>{{ $message }}</strong>
                                                         </span>

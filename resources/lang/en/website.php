@@ -6,7 +6,7 @@ return [
     'website_website' => 'Website',
     'website_host' => 'Host',
     'website_name' => 'Name',
-    'website_detail' => 'Detail',
+    'website_update' => 'Update',
     'create_new_domain' => 'Add',
     'delete_selected' => 'Detele all',
     'website_admin' => 'Member',

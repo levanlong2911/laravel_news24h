@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('posts', function (Blueprint $table) {
-            $table\->uuid('id')->primary(); // UUID thay vì ID tự tăng
+            $table->uuid('id')->primary(); // UUID thay vì ID tự tăng
             $table->string('title');  // Tiêu đề bài viết
             $table->text('content');  // Nội dung bài viết
             $table->string('slug')->unique();  // Slug (URL thân thiện)

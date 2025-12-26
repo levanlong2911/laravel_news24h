@@ -11,7 +11,7 @@ return [
     'action' => 'Action',
     'create_new_account' => 'Add',
     'role' => 'Role',
-    'domain' => 'Domain',
+    'domain' => 'Website',
     'password' => 'Password',
     'confirm_password' => 'Confirm Password',
     'add' => 'Add',

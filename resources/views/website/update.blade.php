@@ -1,5 +1,5 @@
 @extends('layouts.base', ['title' => __('admin.edit_category')])
-@section('title', __('category.category_edit'))
+@section('title', __('website.website_update'))
 @section('css')
     <link rel="stylesheet" href="/assets/css/admin.css" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
@@ -11,34 +11,36 @@
     <script>
         $(function() {
             $.validator.addMethod("validDomain", function(value, element) {
-                var domain = value.trim();
+                var host = value.trim();
 
                 // Loại bỏ "http://", "https://" và "www."
-                domain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '');
+                host = host.replace(/^https?:\/\//, '').replace(/^www\./, '');
 
                 // Regex kiểm tra domain hợp lệ
                 var domainRegex = /^[a-zA-Z0-9-]+(\.[a-zA-Z]{2,})+$/;
-                return this.optional(element) || domainRegex.test(domain);
+                return this.optional(element) || domainRegex.test(host);
             }, "Vui lòng nhập tên miền hợp lệ (ví dụ: crash.net)");
             $('#quickForm').validate({
                 rules: {
-                    domain: {
+                    name: {
+                        required: true,
+                        maxlength: 100,
+                        minlength: 5
+                    },
+                    host: {
                         required: true,
                         validDomain: true
                     },
-                    key_class: {
-                        required: true,
-                        maxlength: 500
-                    },
                 },
                 messages: {
-                    domain: {
-                        required: "{{ __('domain.input_doamin_required') }}",
-                        validDomain: "{{ __('domain.input_validDomain_required') }}",
+                    name: {
+                        required: {{ __('website.input_name_required') }}",
+                        maxlength: "{{ __('website.max_name') }}",
+                        minlength: "{{ __('website.min_name') }}",
                     },
-                    key_class: {
-                        required: "{{ __('domain.input_key_class_required') }}",
-                        maxlength: "{{ __('domain.input_max_required') }}",
+                    host: {
+                        required: "{{ __('website.input_host_required') }}",
+                        validDomain: "{{ __('website.input_url') }}",
                     },
                 },
                 errorElement: 'span',
@@ -65,21 +67,21 @@
                     <div class="card card-default">
                         <div class="card-body">
                             <div class="policy">
-                                <form id="quickForm" action="{{ route('domain.update', ['id' => $infoDomain->id]) }}"
+                                <form id="quickForm" action="{{ route('website.update', ['id' => $inForWebsite->id]) }}"
                                     method="post">
                                     @csrf
                                     <div class="card-body lable-form-add-policy pt-0" id="card-add">
                                         <div class="row row">
                                             <div class="col-2 d-flex align-items-center">
-                                                <p class="align-middle p-0 m-0">{{ __('domain.domain_name') }}<span
+                                                <p class="align-middle p-0 m-0">{{ __('website.website_name') }}<span
                                                         style="color: red; "> *</span></p>
                                             </div>
                                             <div class="col-10 pl-0">
                                                 <div class="input inputMessage">
-                                                    <input type="text" value="{{ $infoDomain->domain }}"
-                                                        class="form-control{{ $errors->has('domain') ? ' is-invalid' : '' }} col-6"
-                                                        name="domain" id="domain" placeholder="">
-                                                    @error('domain')
+                                                    <input type="text" value="{{ $inForWebsite->name }}"
+                                                        class="form-control{{ $errors->has('name') ? ' is-invalid' : '' }} col-6"
+                                                        name="name" id="name" placeholder="">
+                                                    @error('name')
                                                         <span class="invalid-feedback" role="alert">
                                                             <strong>{{ $message }}</strong>
                                                         </span>
@@ -91,15 +93,15 @@
                                     <div class="card-body lable-form-add-policy pt-0" id="card-add">
                                         <div class="row row">
                                             <div class="col-2 d-flex align-items-center">
-                                                <p class="align-middle p-0 m-0">{{ __('domain.key_class') }}<span
+                                                <p class="align-middle p-0 m-0">{{ __('website.website_host') }}<span
                                                         style="color: red; "> *</span></p>
                                             </div>
                                             <div class="col-10 pl-0">
                                                 <div class="input inputMessage">
-                                                    <input type="text" value="{{ $infoDomain->key_class }}"
-                                                        class="form-control{{ $errors->has('key_class') ? ' is-invalid' : '' }} col-6"
-                                                        name="key_class" id="key_class" placeholder="">
-                                                    @error('key_class')
+                                                    <input type="text" value="{{ $inForWebsite->host }}"
+                                                        class="form-control{{ $errors->has('host') ? ' is-invalid' : '' }} col-6"
+                                                        name="host" id="host" placeholder="">
+                                                    @error('host')
                                                         <span class="invalid-feedback" role="alert">
                                                             <strong>{{ $message }}</strong>
                                                         </span>
@@ -109,10 +111,10 @@
                                         </div>
                                     </div>
                                     <div class="text-right">
-                                        <a href="{{ route('domain.index') }}"
-                                            class="btn button-center button-back">{{ __('domain.back') }}</a>
+                                        <a href="{{ route('website.index') }}"
+                                            class="btn button-center button-back">{{ __('website.back') }}</a>
                                         <button type="submit"
-                                            class="btn button-right button-create-update" id="edit_form">{{ __('domain.update') }}</button>
+                                            class="btn button-right button-create-update" id="edit_form">{{ __('website.update') }}</button>
                                     </div>
                                 </form>
                             </div>

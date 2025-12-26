@@ -16,7 +16,7 @@ class AdminCustomValidator
      *
      * @return JSON || boolean
      */
-    public function validate($request, string $class)
+    public function validate($request, string $class, ...$params)
     {
         // Declare object
         $formValidator = str_replace(
@@ -26,7 +26,7 @@ class AdminCustomValidator
         );
         $formValidator = new $formValidator();
         // Validate inputs
-        $error = $formValidator->validate($request);
+        $error = $formValidator->validate($request, ...$params);
         return $error;
     }
 }

@@ -40,7 +40,6 @@
                                                     </th>
                                                     <th class="text-center">{{ __('website.website_website') }}</th>
                                                     <th class="text-center">{{ __('website.website_host') }}</th>
-                                                    <th class="text-center">{{ __('website.website_admin') }}</th>
                                                     <th class="text-center">{{ __('website.website_detail') }}</th>
                                             </thead>
                                             <tbody>
@@ -64,6 +63,10 @@
                                                             <a
                                                                 href="{{ route('website.detail', ['id' => $website->id]) }}">
                                                                 {{ __('website.detail') }}
+                                                            </a>
+                                                            <a
+                                                                href="{{ route('website.update', ['id' => $website->id]) }}">
+                                                                {{ __('website.update') }}
                                                             </a>
                                                         </td>
                                                     </tr>
@@ -91,5 +94,17 @@
         </div>
     </div>
     {{-- </section> --}}
+@endsection
+@section('script')
+    <script src="{{ asset('assets/dist/js/commonHandleList.js') }}"></script>
+    <script>
+        // const
+        const MODAL_CONFIRM_URL = "{{ route('modal.confirm') }}";
+        var STORAGE_NAME = "level_selected_storage";
+        var DELETE_URL = "{{ route('website.delete') }}";
+        // get list client init
+        var listIds = <?php echo json_encode($WebsiteIds); ?>;
+        listIds = listIds.map(String);
+    </script>
 @endsection
 

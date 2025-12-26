@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('roles', function (Blueprint $table) {
-            $table\->uuid('id')->primary(); // UUID làm khóa chính
+            $table->uuid('id')->primary(); // UUID làm khóa chính
             $table->string('name'); // Tên vai trò
             $table->timestamps(); // created_at và updated_at
         });

@@ -9,6 +9,9 @@
     <script src="/assets/plugins/jquery-validation/additional-methods.min.js"></script>
     <script src="/assets/plugins/jquery-validation/localization/messages_ja.min.js"></script>
     <script>
+        const IS_ADMIN = {{ auth()->user()->isAdmin() ? 'true' : 'false' }};
+    </script>
+    <script>
         $.validator.setDefaults({
             ignore: []
         });
@@ -35,13 +38,19 @@
                     category: {
                         required: true,
                     },
-                    tag: {
+                    tagIds: {
                         required: true,
                     },
                     image: {
                         required: true,
                         url: true,
                     },
+                    // 👇 CHỈ ADMIN MỚI BẮT BUỘC
+                    ...(IS_ADMIN ? {
+                        domain_id: {
+                            required: true,
+                        }
+                    } : {})
                 },
                 messages: {
                     title: {
@@ -59,13 +68,19 @@
                     category: {
                         required: "{{ __('post.validate_category_required') }}",
                     },
-                    tag: {
+                    tagIds: {
                         required: "{{ __('post.validate_tag_required') }}",
                     },
                     image: {
                         required: "{{ __('post.validate_image_required') }}",
                         url: "{{ __('post.validate_url_required') }}",
                     },
+                    // 👇 CHỈ ADMIN MỚI BẮT BUỘC
+                    ...(IS_ADMIN ? {
+                        domain_id: {
+                            required: "{{ __('post.validate_tag_required') }}",
+                        }
+                    } : {})
                 },
                 errorElement: 'span',
                 errorPlacement: function(error, element) {
@@ -484,16 +499,42 @@
                                     <div id="tag-container">
                                         <input type="text" value="{{ old('tag_names') ?? old('tag_names') }}"
                                             class="form-control{{ $errors->has('tag') ? ' is-invalid' : '' }} col-12"
-                                            name="tag" id="tag" readonly>
+                                            name="tag_names" id="tag" readonly>
                                         {{-- @error('tag')
                                             <span class="invalid-feedback" role="alert">
                                                 <strong>{{ $message }}</strong>
                                             </span>
                                         @enderror --}}
-                                        <input type="hidden" name="tag" id="tag-hidden" value="{{ old('tag') }}">
+                                        <input type="hidden" name="tagIds" id="tag-hidden" value="{{ old('tagIds') }}">
                                     </div>
                                 </div>
                             </div>
+                            @if(auth()->user()->isAdmin())
+                                <div class="form-group">
+                                    <div>
+                                        <p class="align-middle p-0 m-0">{{ __('post.website') }}
+                                            <span style="color: red; ">*</span>
+                                        </p>
+                                    </div>
+                                    <div class="col-12 pl-0">
+                                        <div class="input inputMessage">
+                                            <select
+                                                class="form-control {{ $errors->has('domain_id') ? ' is-invalid' : '' }} col-12"
+                                                name="domain_id" id="domain_id">
+                                                <option value>Select website</option>
+                                                @foreach ($listWebsite as $web)
+                                                    <option value="{{ $web->id }}" {{ (old('domain_id') == $web->id) ? 'selected' : '' }}>{{  $web->name }}</option>
+                                                @endforeach
+                                            </select>
+                                            @error('domain_id')
+                                                <span class="invalid-feedback" role="alert">
+                                                    <strong>{{ $message }}</strong>
+                                                </span>
+                                            @enderror
+                                        </div>
+                                    </div>
+                                </div>
+                            @endif
                             <div class="form-group">
                                 <div>
                                     <p class="align-middle p-0 m-0">{{ __('post.image') }}

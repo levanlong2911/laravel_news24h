@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('tags', function (Blueprint $table) {
-            $table\->uuid('id')->primary();
+            $table->uuid('id')->primary();
             $table->string('name');
             $table->uuid('category_id'); // UUID của danh mục
             $table->foreign('category_id')->references('id')->on('categories')->cascadeOnDelete();

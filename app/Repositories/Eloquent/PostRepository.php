@@ -5,6 +5,7 @@ namespace App\Repositories\Eloquent;
 use App\Models\Post;
 use App\Enums\Paginate;
 use App\Repositories\Interfaces\PostRepositoryInterface;
+use Illuminate\Support\Facades\Gate;
 
 class PostRepository extends BaseRepository implements PostRepositoryInterface
 {
@@ -15,21 +16,19 @@ class PostRepository extends BaseRepository implements PostRepositoryInterface
         return Post::class;
     }
 
-    public function getListPost($user)
+    public function getListPost()
     {
-        $query = Post::query();
-        // dd($user);
-        // Nếu là member → chỉ xem bài theo domain
-        if ($user->role->name === 'member') {
-            // dd(11);
-            $query->where('domain', $user->domain)
-                ->where('author_id', $user->id);
-        }
+        $user = auth()->user();
 
-        // Nếu là admin → xem tất cả (KHÔNG filter)
-        return $query
+        return Post::with('tags')
+            ->visibleTo($user)
             ->orderBy('created_at', 'desc')
             ->paginate(Paginate::PAGE->value);
+
+        // Nếu là admin → xem tất cả (KHÔNG filter)
+        // return $query
+        //     ->orderBy('created_at', 'desc')
+        //     ->paginate(Paginate::PAGE->value);
 
         // return Post::query()
         //         ->where('author_id', $user->id)
@@ -38,20 +37,23 @@ class PostRepository extends BaseRepository implements PostRepositoryInterface
         //         ->paginate(Paginate::PAGE->value);
     }
 
-    public function getPostById($id, $user)
+    public function getPostById($id): ?Post
     {
-        return Post::with('tags')
-        ->where('id', $id)
-        ->when($user->role === 'member', function ($q) use ($user) {
-            $q->where('domain', $user->domain)
-              ->where('author_id', $user->id);
-        })
-        ->firstOrFail();
+        $post = Post::with('tags')->find($id);
+        if (!$post) {
+            abort(404);
+        }
+        if (!Gate::allows('update', $post)) {
+            return null;
+        }
+        return $post;
     }
 
     public function update($id, array $data): bool
     {
-        $post = Post::find($id);
+        $post = Post::findOrFail($id);
+
+        Gate::authorize('update', $post);
         if (!$post) {
             return false;
         }
@@ -64,4 +66,14 @@ class PostRepository extends BaseRepository implements PostRepositoryInterface
                 ->whereIn("id", $ids)
                 ->get();
     }
+
+    // public function delete(string $id): void
+    // {
+    //     $post = Post::findOrFail($id);
+
+    //     Gate::authorize('delete', $post);
+
+    //     $post->delete();
+    // }
+
 }

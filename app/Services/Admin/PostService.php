@@ -3,6 +3,7 @@
 namespace App\Services\Admin;
 
 use App\Enums\Paginate;
+use App\Models\Post;
 use App\Repositories\Interfaces\PostRepositoryInterface;
 use App\Repositories\Interfaces\PostTagRepositoryInterface;
 use Exception;
@@ -12,6 +13,7 @@ use Illuminate\Support\Str;
 use Intervention\Image\ImageManager;
 use DOMDocument;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Intervention\Image\Drivers\Imagick\Driver as ImagickDriver;
 use Illuminate\Support\Facades\Storage;
 
@@ -38,9 +40,9 @@ class PostService
      *
      * @return mixed
      */
-    public function getListPost($user)
+    public function getListPost()
     {
-        return $this->postRepository->getListPost($user);
+        return $this->postRepository->getListPost();
     }
 
     public function getInfoPost($id)
@@ -48,35 +50,51 @@ class PostService
         return $this->postRepository->find($id);
     }
 
-    public function create($request): Model
+    public function create($request, $domainId): Model
     {
-        // Chuyển đổi ảnh sang WebP và cập nhật editor_content
-        $updatedContent = $this->convertImagesToWebp($request->editor_content);
-        // Chuyển đổi ảnh thumbnail sang WebP
-        $webpThumbnail = $this->convertThumbnailToWebp($request->image);
-        // Tạo UUID cho bài viết
-        $postId = Str::uuid()->toString();
-        $params = [
-            'id' => $postId,
-            'title' => $request->title,
-            'content' => $updatedContent,
-            'slug' => $request->slug,
-            'thumbnail' => $webpThumbnail,
-            'category_id' => $request->category,
-            'author_id' => Auth::id(),
-            'domain' => auth()->user()->domain,
-        ];
-        // Create a new admin using the repository
-        $post = $this->postRepository->create($params);
-         // Xử lý tags nếu có
-         if ($request->has('tag') && !empty($request->tag)) {
-            // Chuyển chuỗi tag thành mảng UUID
-            $tagIds = array_map('trim', explode(',', $request->tag));
+        DB::beginTransaction();
 
-            // Gắn tags vào bài viết qua bảng pivot `post_tags`
-            $post->tags()->attach($tagIds);
+        try {
+            // $admin = auth()->user();
+            // $domainId = $admin->isAdmin()
+            //     ? $request->domain_id
+            //     : $admin->domain_id;
+
+            // if (!$domainId) {
+            //     throw new \Exception('User chưa được gán domain');
+            // }
+            // Chuyển đổi ảnh sang WebP và cập nhật editor_content
+            $updatedContent = $this->convertImagesToWebp($request->editor_content);
+            // Chuyển đổi ảnh thumbnail sang WebP
+            $webpThumbnail = $this->convertThumbnailToWebp($request->image);
+            // Tạo UUID cho bài viết
+            $postId = Str::uuid()->toString();
+            $params = [
+                'id' => $postId,
+                'title' => $request->title,
+                'content' => $updatedContent,
+                'slug' => $request->slug,
+                'thumbnail' => $webpThumbnail,
+                'category_id' => $request->category,
+                'author_id' => Auth::id(),
+                'domain_id' => $domainId,
+            ];
+            // Create a new admin using the repository
+            $post = $this->postRepository->create($params);
+            // Xử lý tags nếu có
+            if ($request->has('tagIds') && !empty($request->tagIds)) {
+                // Chuyển chuỗi tag thành mảng UUID
+                $tagIds = array_map('trim', explode(',', $request->tagIds));
+
+                // Gắn tags vào bài viết qua bảng pivot `post_tags`
+                $post->tags()->attach($tagIds);
+            }
+            DB::commit();
+            return $post;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
-        return $post;
     }
 
     // private function convertImagesToWebp(string $content): string
@@ -419,14 +437,14 @@ class PostService
         return asset('storage/' . $webpData[0]); // Nếu lỗi, trả về ảnh gốc
     }
 
-    public function getPostById($id, $user)
+    public function getPostById($id)
     {
-        return $this->postRepository->getPostById($id, $user);
+        return $this->postRepository->getPostById($id);
     }
 
-    public function update($id, $request)
+    public function update($id, $request, $dataPost)
     {
-        $dataPost = $this->getPostById($id, auth()->user());
+        // $dataPost = $this->getPostById($id);
         // 1. Kiểm tra hình ảnh có thay đổi không
         if ($request->editor_content !== $dataPost->content) {
             $updatedContent = $this->convertImagesToWebp($request->editor_content);
@@ -439,24 +457,37 @@ class PostService
         } else {
             $imageThumbnail = $dataPost->thumbnail; // Giữ nguyên nếu không thay đổi
         }
+        $slug = $dataPost->slug;
+        if ($request->title !== $dataPost->title) {
+            $slug = $this->generateUniqueSlug(
+                $request->title,
+                $dataPost->domain_id,
+                $dataPost->id
+            );
+        }
         // Cập nhật thông tin bài viết nếu có thay đổi
         $params = [
             'title' => $request->title,
             'content' => $updatedContent,
-            'slug' => Str::slug($request->title),
+            'slug' => $slug,
             'thumbnail' => $imageThumbnail,
             'category_id' => $request->category,
-            'domain' => auth()->user()->domain,
         ];
         // Cập nhật dữ liệu vào database
         DB::transaction(function () use ($dataPost, $params, $request) {
             $dataPost->update($params);
-            if ($request->has('tag') && !is_null($request->tag) && trim($request->tag) !== '') {
-                $tagIds = array_map('trim', explode(',', $request->tag));
-                $dataPost->tags()->sync($tagIds);
-            } else {
-                $dataPost->tags()->detach();
-            }
+            // if ($request->has('tagIds') && !is_null($request->tagIds) && trim($request->tagIds) !== '') {
+            //     $tagIds = array_map('trim', explode(',', $request->tagIds));
+            //     $dataPost->tags()->sync($tagIds);
+            // } else {
+            //     $dataPost->tags()->detach();
+            // }
+                if ($request->filled('tagIds')) {
+                    $tagIds = array_map('trim', explode(',', $request->tagIds));
+                    $dataPost->tags()->sync($tagIds);
+                } else {
+                    $dataPost->tags()->detach();
+                }
         });
         return $dataPost;
     }
@@ -478,6 +509,10 @@ class PostService
             $posts = $this->postRepository->getDataListIds($ids);
 
             foreach ($posts as $post) {
+                // ❌ Không có quyền → ném exception
+                if (!Gate::allows('delete', $post)) {
+                    throw new \Exception('NO_PERMISSION');
+                }
                 $this->deletePostWithRelations($post);
             }
 
@@ -504,6 +539,24 @@ class PostService
 
         // Xóa post
         $post->delete(); // Hoặc forceDelete() nếu dùng soft delete
+    }
+
+    private function generateUniqueSlug($title, $domainId, $postId = null)
+    {
+        $slug = Str::slug($title);
+        $originalSlug = $slug;
+        $i = 1;
+
+        while (
+            Post::where('slug', $slug)
+                ->where('domain_id', $domainId)
+                ->when($postId, fn ($q) => $q->where('id', '!=', $postId))
+                ->exists()
+        ) {
+            $slug = $originalSlug . '-' . $i++;
+        }
+
+        return $slug;
     }
 
 

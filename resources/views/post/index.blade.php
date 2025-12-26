@@ -125,13 +125,13 @@
                                                             {{ data_get($post, 'category.name') }}
                                                         </td>
                                                         <td class="text-center">
-                                                            {{ $post->domain }}
+                                                            {{ data_get($post, 'domain.host') }}
                                                         </td>
                                                         <td class="text-center">
                                                             {{ $post->created_at->format('d-m-Y') }}
                                                         </td>
                                                         <td class="text-center">
-                                                            <a href="https://caranddriverenthusiast.com/post/{{ $post->slug }}">
+                                                            <a href="https://{{ data_get($post, 'domain.host') }}/post/{{ $post->slug }}">
                                                                 {{ __('post.detail') }}
                                                             </a>
                                                             <a href="{{ route('post.update', ['id' => $post->id]) }}">
