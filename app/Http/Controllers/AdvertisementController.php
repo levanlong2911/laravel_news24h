@@ -5,26 +5,31 @@ namespace App\Http\Controllers;
 use App\Enums\Ads;
 use App\Form\AdminCustomValidator;
 use App\Services\Admin\AdsService;
+use App\Services\Admin\WebsiteService;
 use Illuminate\Http\Request;
 
 class AdvertisementController extends Controller
 {
     private AdminCustomValidator $form;
     private AdsService $adsService;
+    private WebsiteService $websiteService;
 
     public function __construct
     (
         AdminCustomValidator $form,
-        AdsService $adsService
+        AdsService $adsService,
+        WebsiteService $websiteService
     )
     {
         $this->form = $form;
         $this->adsService = $adsService;
+        $this->websiteService = $websiteService;
     }
 
     public function index()
     {
         $listAds = $this->adsService->getListAds();
+        // dd($listAds);
         return view("ads.index", [
             "route" => "ads",
             "action" => "ads-index",
@@ -37,6 +42,7 @@ class AdvertisementController extends Controller
 
     public function add(Request $request)
     {
+        $listWeb = $this->websiteService->getListWebsite();
         if ($request->isMethod('post')) {
             $this->form->validate($request, 'AdsAddForm');
             $addAds = $this->adsService->addAds($request);
@@ -52,6 +58,7 @@ class AdvertisementController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             "positions" => $positions,
+            "listWeb" => $listWeb,
         ]);
     }
 
@@ -71,6 +78,7 @@ class AdvertisementController extends Controller
     public function update(Request $request, $id)
     {
         $inforAds = $this->adsService->getByIdAds($id);
+        $listWeb = $this->websiteService->getListWebsite();
         if ($request->isMethod('post')) {
             $this->form->validate($request, 'AdsAddForm');
             $updateAds = $this->adsService->updateAds($id, $request);
@@ -87,6 +95,7 @@ class AdvertisementController extends Controller
             "active" => "active",
             "inforAds" => $inforAds,
             "positions" => $positions,
+            "listWeb" => $listWeb,
         ]);
     }
 

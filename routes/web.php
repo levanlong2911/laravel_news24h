@@ -125,3 +125,11 @@ Route::group(
 Route::middleware('auth:sanctum')->get('/posts', function (Request $request) {
     return \App\Models\Post::latest()->get();
 });
+
+Route::get('/test-domain', function () {
+    dd(
+        function_exists('currentDomain'),
+        currentDomain(),
+        request()->getHost()
+    );
+});

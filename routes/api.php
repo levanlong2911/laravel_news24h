@@ -18,4 +18,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/posts', [PostApiController::class, 'index']);
 Route::get('/posts/{slug}', [PostApiController::class, 'show']);
-Route::get('/ads', [ApiAdvertisementController::class, 'index']);
+// Route::get('/ads', [ApiAdvertisementController::class, 'index']);
+Route::prefix('ads')->group(function () {
+    Route::get('/', [ApiAdvertisementController::class, 'index']);
+    Route::get('{position}', [ApiAdvertisementController::class, 'byPosition']);
+});

@@ -34,15 +34,11 @@ class Domain extends Model
         return $this->hasMany(Post::class, 'domain_id');
     }
 
-    // Domain có nhiều ads
     public function advertisements()
     {
         return $this->hasMany(Advertisement::class, 'domain_id');
     }
 
-    /* ================= SCOPES ================= */
-
-    // Domain đang active
     public function scopeActive($query)
     {
         return $query->where('active', true);

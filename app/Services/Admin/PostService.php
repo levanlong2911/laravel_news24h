@@ -13,6 +13,7 @@ use Illuminate\Support\Str;
 use Intervention\Image\ImageManager;
 use DOMDocument;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Intervention\Image\Drivers\Imagick\Driver as ImagickDriver;
 use Illuminate\Support\Facades\Storage;
@@ -55,14 +56,6 @@ class PostService
         DB::beginTransaction();
 
         try {
-            // $admin = auth()->user();
-            // $domainId = $admin->isAdmin()
-            //     ? $request->domain_id
-            //     : $admin->domain_id;
-
-            // if (!$domainId) {
-            //     throw new \Exception('User chưa được gán domain');
-            // }
             // Chuyển đổi ảnh sang WebP và cập nhật editor_content
             $updatedContent = $this->convertImagesToWebp($request->editor_content);
             // Chuyển đổi ảnh thumbnail sang WebP
@@ -90,6 +83,8 @@ class PostService
                 $post->tags()->attach($tagIds);
             }
             DB::commit();
+            // 🔥 CLEAR CACHE SAU KHI CREATE
+            // $this->clearPostCacheAfterCreate($post);
             return $post;
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -437,6 +432,16 @@ class PostService
         return asset('storage/' . $webpData[0]); // Nếu lỗi, trả về ảnh gốc
     }
 
+    // protected function clearPostCacheAfterCreate(Post $post): void
+    // {
+    //     Cache::tags([
+    //         "domain:{$post->domain_id}",
+    //         "posts",
+    //         "category:{$post->category_id}",
+    //     ])->flush();
+    // }
+
+
     public function getPostById($id)
     {
         return $this->postRepository->getPostById($id);
@@ -444,19 +449,17 @@ class PostService
 
     public function update($id, $request, $dataPost)
     {
-        // $dataPost = $this->getPostById($id);
-        // 1. Kiểm tra hình ảnh có thay đổi không
-        if ($request->editor_content !== $dataPost->content) {
-            $updatedContent = $this->convertImagesToWebp($request->editor_content);
-        } else {
-            $updatedContent = $dataPost->content; // Giữ nguyên nếu không thay đổi
-        }
+        // $oldSlug      = $dataPost->slug;
+        // $oldCategory  = $dataPost->category_id;
+        // CONTENT
+        $updatedContent = $request->editor_content !== $dataPost->content
+            ? $this->convertImagesToWebp($request->editor_content)
+            : $dataPost->content;
 
-        if ($request->thumbnail !== $dataPost->thumbnail) {
-            $imageThumbnail = $this->convertThumbnailToWebp($request->image);
-        } else {
-            $imageThumbnail = $dataPost->thumbnail; // Giữ nguyên nếu không thay đổi
-        }
+        // THUMBNAIL
+        $imageThumbnail = $request->thumbnail !== $dataPost->thumbnail
+            ? $this->convertThumbnailToWebp($request->image)
+            : $dataPost->thumbnail;
         $slug = $dataPost->slug;
         if ($request->title !== $dataPost->title) {
             $slug = $this->generateUniqueSlug(
@@ -482,15 +485,37 @@ class PostService
             // } else {
             //     $dataPost->tags()->detach();
             // }
-                if ($request->filled('tagIds')) {
-                    $tagIds = array_map('trim', explode(',', $request->tagIds));
-                    $dataPost->tags()->sync($tagIds);
-                } else {
-                    $dataPost->tags()->detach();
-                }
+            if ($request->filled('tagIds')) {
+                $tagIds = array_map('trim', explode(',', $request->tagIds));
+                $dataPost->tags()->sync($tagIds);
+            } else {
+                $dataPost->tags()->detach();
+            }
         });
+
+        // 🔥 CLEAR CACHE SAU UPDATE
+        // $this->clearPostCacheAfterUpdate(
+        //     $dataPost,
+        //     $oldSlug,
+        //     $oldCategory
+        // );
         return $dataPost;
     }
+
+    // protected function clearPostCacheAfterUpdate(
+    //     Post $post,
+    //     string $oldSlug,
+    //     string $oldCategoryId
+    // ): void {
+    //     Cache::tags([
+    //         "domain:{$post->domain_id}",
+    //         "posts",
+    //         "post:{$oldSlug}",        // ❗ slug cũ
+    //         "post:{$post->slug}",     // slug mới
+    //         "category:{$oldCategoryId}",
+    //         "category:{$post->category_id}",
+    //     ])->flush();
+    // }
 
     /**
      * Xóa một danh mục
@@ -509,13 +534,13 @@ class PostService
             $posts = $this->postRepository->getDataListIds($ids);
 
             foreach ($posts as $post) {
+
                 // ❌ Không có quyền → ném exception
                 if (!Gate::allows('delete', $post)) {
                     throw new \Exception('NO_PERMISSION');
                 }
                 $this->deletePostWithRelations($post);
             }
-
             DB::commit();
             return true;
         } catch (\Throwable $e) {
@@ -536,10 +561,23 @@ class PostService
         foreach ($postTags as $tag) {
             $this->postTagRepository->delete($tag);
         }
+        // 🔥 CLEAR CACHE TRƯỚC KHI DELETE
+        // $this->clearPostCacheAfterDelete($post);
 
         // Xóa post
         $post->delete(); // Hoặc forceDelete() nếu dùng soft delete
     }
+
+    // protected function clearPostCacheAfterDelete(Post $post): void
+    // {
+    //     Cache::tags([
+    //         "domain:{$post->domain_id}",
+    //         "posts",
+    //         "post:{$post->slug}",
+    //         "category:{$post->category_id}",
+    //     ])->flush();
+    // }
+
 
     private function generateUniqueSlug($title, $domainId, $postId = null)
     {

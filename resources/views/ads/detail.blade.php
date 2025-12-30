@@ -43,6 +43,17 @@
                                             </div>
                                             <div class="col-9 pl-0">
                                                 <div class="input inputMessage text-form-detail">
+                                                    {{ data_get($inforAds, 'webSite.host') }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-2 d-flex align-items-center lable-form-detail">
+                                                <p class="align-middle p-0 m-0">{{ __('ads.code') }}<span
+                                                        style="color: red; "> *</span></p>
+                                            </div>
+                                            <div class="col-9 pl-0">
+                                                <div class="input inputMessage text-form-detail">
                                                     <textarea
                                                         class="form-control{{ $errors->has('code') ? ' is-invalid' : '' }} col-6"
                                                         name="code" id="code" rows="4" placeholder="" disabled>

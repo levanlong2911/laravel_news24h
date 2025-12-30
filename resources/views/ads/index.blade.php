@@ -40,6 +40,7 @@
                                                     </th>
                                                     <th class="text-center">{{ __('ads.ads_name') }}</th>
                                                     <th class="text-center">{{ __('ads.position') }}</th>
+                                                    <th class="text-center">{{ __('ads.website') }}</th>
                                                     <th class="text-center">{{ __('ads.date') }}</th>
                                                     <th class="text-center">{{ __('ads.detail') }}</th>
                                             </thead>
@@ -65,11 +66,17 @@
                                                             {{ $ads->position }}
                                                         </td>
                                                         <td class="text-center">
+                                                            {{ data_get($ads, 'webSite.host') }}
+                                                        </td>
+                                                        <td class="text-center">
                                                             {{ \Carbon\Carbon::parse($ads->created_at)->format('d/m/Y') }}
                                                         </td>
                                                         <td class="text-center">
                                                             <a href="{{ route('ads.detail', ['id' => $ads->id]) }}">
                                                                 {{ __('ads.detail') }}
+                                                            </a>
+                                                            <a href="{{ route('ads.update', ['id' => $ads->id]) }}">
+                                                                {{ __('ads.update') }}
                                                             </a>
                                                         </td>
                                                     </tr>

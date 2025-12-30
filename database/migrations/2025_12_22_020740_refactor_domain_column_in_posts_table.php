@@ -12,29 +12,27 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('posts', function (Blueprint $table) {
-            Schema::table('posts', function (Blueprint $table) {
 
-                // 1. drop cột domain cũ nếu tồn tại
-                if (Schema::hasColumn('posts', 'domain')) {
-                    $table->dropColumn('domain');
-                }
+            // 1. drop cột domain cũ nếu tồn tại
+            if (Schema::hasColumn('posts', 'domain')) {
+                $table->dropColumn('domain');
+            }
 
-                // 2. thêm domain_id (UUID)
-                if (!Schema::hasColumn('posts', 'domain_id')) {
-                    $table->uuid('domain_id')
-                        ->nullable()
-                        ->after('author_id')
-                        ->index();
-                }
-            });
+            // 2. thêm domain_id (UUID)
+            if (!Schema::hasColumn('posts', 'domain_id')) {
+                $table->uuid('domain_id')
+                    ->nullable()
+                    ->after('author_id')
+                    ->index();
+            }
+        });
 
-            // 3. add foreign key
-            Schema::table('posts', function (Blueprint $table) {
-                $table->foreign('domain_id')
-                    ->references('id')
-                    ->on('domains')
-                    ->onDelete('cascade');
-            });
+        // 3. add foreign key
+        Schema::table('posts', function (Blueprint $table) {
+            $table->foreign('domain_id')
+                ->references('id')
+                ->on('domains')
+                ->onDelete('cascade');
         });
     }
 

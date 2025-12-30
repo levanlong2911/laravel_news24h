@@ -17,6 +17,9 @@
                     position: {
                         required: true,
                     },
+                    domain_id: {
+                        required: true,
+                    },
                     code: {
                         required: true,
                     },
@@ -26,6 +29,9 @@
                         required: "{{ __('ads.validate_name_required') }}",
                     },
                     position: {
+                        required: "{{ __('ads.validate_position_required') }}",
+                    },
+                    domain_id: {
                         required: "{{ __('ads.validate_position_required') }}",
                     },
                     code: {
@@ -97,6 +103,30 @@
                                                         @endforeach
                                                     </select>
                                                     @error('position')
+                                                        <span class="invalid-feedback" role="alert">
+                                                            <strong>{{ $message }}</strong>
+                                                        </span>
+                                                    @enderror
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-2 d-flex align-items-center lable-form-detail">
+                                                <p class="align-middle p-0 m-0">
+                                                    {{ __('ads.website') }}<span style="color: red; ">
+                                                        *</span></p>
+                                            </div>
+                                            <div class="col-10 pl-0">
+                                                <div class="input inputMessage text-form-detail">
+                                                    <select
+                                                        class="form-control {{ $errors->has('domain_id') ? ' is-invalid' : '' }} col-6"
+                                                        name="domain_id" id="domain_id">
+                                                        <option value>--</option>
+                                                        @foreach ($listWeb as $item)
+                                                            <option value="{{ $item->id }}" {{ old('category') ? (old('category') == $item->id ? 'selected' : '') : ($inforAds->domain_id == $item->id ? 'selected' : '') }}>{{  $item->host }}</option>
+                                                        @endforeach
+                                                    </select>
+                                                    @error('domain_id')
                                                         <span class="invalid-feedback" role="alert">
                                                             <strong>{{ $message }}</strong>
                                                         </span>

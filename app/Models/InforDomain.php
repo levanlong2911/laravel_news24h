@@ -16,4 +16,5 @@ class InforDomain extends Model
 
     // Các cột có thể được gán giá trị
     protected $fillable = ['domain', 'key_class'];
+
 }

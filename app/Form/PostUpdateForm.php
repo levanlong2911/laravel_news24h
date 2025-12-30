@@ -20,7 +20,7 @@ class PostUpdateForm
             "title" => [
                 "bail",
                 "required",
-                Rule::unique('posts', 'slug')
+                Rule::unique('posts', 'title')
                     ->where(fn ($q) => $q->where('domain_id', $domainId))
                     ->ignore($postId),
             ],

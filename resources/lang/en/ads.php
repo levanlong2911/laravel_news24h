@@ -23,4 +23,5 @@
         'code' => 'Code script:',
         'position' => 'Position',
         'name_category' => 'Category',
+        'website' => 'Website',
     ];
