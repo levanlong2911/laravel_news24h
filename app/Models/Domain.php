@@ -17,11 +17,20 @@ class Domain extends Model
         'id',
         'name',
         'host',
+        'api_key',
         'is_active',
     ];
 
     public $incrementing = false;
     protected $keyType = 'string';
+    protected $guarded = [];
+    protected $attributes = [
+        'api_key' => null,
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
 
     public function admin()
     {
@@ -41,6 +50,6 @@ class Domain extends Model
 
     public function scopeActive($query)
     {
-        return $query->where('active', true);
+        return $query->where('is_active', true);
     }
 }

@@ -14,5 +14,6 @@ class VerifyCsrfToken extends Middleware
     protected $except = [
         'astro/*',
         'astro/assets/*',
+        'admin/website/*/api-key',
     ];
 }

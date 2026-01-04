@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Domain;
 use App\Repositories\Interfaces\WebsiteRepositoryInterface;
 use App\Services\Admin\WebsiteService;
 use Illuminate\Http\Request;
@@ -103,5 +104,26 @@ class DomainController extends Controller
         return redirect()
         ->route('website.index')
         ->with("error", __("messages.delete_error"));
+    }
+
+    public function generateApiKey(Domain $domain)
+    {
+        // 1. Sinh API key cho client
+        $plainKey = 'lk_' . rtrim(strtr(
+            base64_encode(random_bytes(32)),
+            '+/', '-_'
+        ), '=');
+
+        $hashedKey = hash('sha256', $plainKey);
+        $domain->api_key = $hashedKey;
+
+        $domain->save();
+
+        // 3. Trả về CHỈ 1 LẦN
+        return response()->json([
+            'success' => true,
+            'api_key' => $plainKey,
+            'note' => 'API key chỉ hiển thị 1 lần, hãy lưu lại'
+        ]);
     }
 }

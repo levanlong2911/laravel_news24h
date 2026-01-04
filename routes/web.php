@@ -115,6 +115,7 @@ Route::group(
         Route::match(["get", "post"], "/update/{id}", [DomainController::class, "update"])->name("website.update");
         Route::match(["get", "post"], "/delete", [DomainController::class, "delete"])->name("website.delete");
         Route::match(["get", "post"], "/detail/{id}", [DomainController::class, "detail"])->name("website.detail");
+        Route::post('{domain}/api-key', [DomainController::class,'generateApiKey']);
     });
 
     Route::post("/getlink", [GetLinkController::class, "getLink"]);
@@ -126,10 +127,10 @@ Route::middleware('auth:sanctum')->get('/posts', function (Request $request) {
     return \App\Models\Post::latest()->get();
 });
 
-Route::get('/test-domain', function () {
-    dd(
-        function_exists('currentDomain'),
-        currentDomain(),
-        request()->getHost()
-    );
-});
+// Route::get('/test-domain', function () {
+//     dd(
+//         function_exists('currentDomain'),
+//         currentDomain(),
+//         request()->getHost()
+//     );
+// });

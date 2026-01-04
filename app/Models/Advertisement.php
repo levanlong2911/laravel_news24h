@@ -42,7 +42,7 @@ class Advertisement extends Model
      */
     public function scopeActive(Builder $q): Builder
     {
-        return $q->where('is_active', true);
+        return $q->where('is_active', 1);
     }
 
     /**

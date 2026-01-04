@@ -6,6 +6,8 @@ use App\Models\Scopes\DomainScope;
 use App\Models\Traits\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Cache\TaggableStore;
 
 class Post extends Model
 {
@@ -46,10 +48,10 @@ class Post extends Model
         return $this->belongsTo(Domain::class, 'domain_id');
     }
 
-    protected static function booted()
-    {
-        static::addGlobalScope(new DomainScope);
-    }
+    // protected static function booted()
+    // {
+    //     static::addGlobalScope(new DomainScope);
+    // }
 
     public function scopeVisibleTo($query, $user)
     {
@@ -59,6 +61,27 @@ class Post extends Model
 
         return $query->where('domain_id', $user->domain_id)
                     ->where('author_id', $user->id);
+    }
+    protected static function booted()
+    {
+        static::saved(function ($post) {
+            self::clearCache($post);
+        });
+
+        static::deleted(function ($post) {
+            self::clearCache($post);
+        });
+    }
+
+    protected static function clearCache($post)
+    {
+        if (Cache::getStore() instanceof TaggableStore) {
+            Cache::tags([
+                "domain:{$post->domain_id}",
+                "posts",
+                "post:{$post->slug}",
+            ])->flush();
+        }
     }
 
 }
