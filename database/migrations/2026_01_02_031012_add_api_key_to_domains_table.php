@@ -12,11 +12,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('domains', function (Blueprint $table) {
-            $table->char('api_key', 64)
-                ->nullable()
-                ->after('host')
-                ->comment('SHA256 hash of domain API key')
-                ->change();
+            if (!Schema::hasColumn('domains', 'api_key')) {
+                $table->char('api_key', 64)
+                    ->nullable()
+                    ->comment('SHA256 hash of domain API key')
+                    ->after('host');
+            }
         });
     }
 
@@ -26,7 +27,9 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('domains', function (Blueprint $table) {
-            $table->unique('api_key', 'domains_api_key_unique');
+            if (Schema::hasColumn('domains', 'api_key')) {
+                $table->dropColumn('api_key');
+            }
         });
     }
 };
