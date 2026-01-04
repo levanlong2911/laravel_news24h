@@ -16,168 +16,285 @@ class PostApiController extends Controller
     {
         $domain = $request->get('domain');
 
-        $page    = max((int) $request->query('page', 1), 1);
+        // PROMAX: không domain → trả rỗng
+        if (!$domain) {
+            return response()->json([
+                'success' => true,
+                'data' => [],
+            ]);
+        }
+        $page = max((int) $request->query('page', 1), 1);
         $perPage = 20;
 
-        $cacheKey = sprintf(
-            'public_posts:%s:%s:page:%d',
-            CacheVersion::POSTS,
-            $domain->id,
-            $page
-        );
-
-        $useTag = Cache::getStore() instanceof TaggableStore;
+        $cacheKey = "posts:{$domain->id}:page:$page";
 
         try {
-            $posts = $useTag
-                ? Cache::tags(["domain:$domain->id", 'posts'])
-                    ->remember($cacheKey, 300, fn () =>
-                        $this->queryPosts($domain, $perPage, $page)
-                    )
-                : Cache::remember($cacheKey, 300, fn () =>
-                        $this->queryPosts($domain, $perPage, $page)
-                  );
-
-            return response()
-                ->json(['success' => true, 'data' => $posts])
-                ->withHeaders($this->cacheHeaders(60));
+            $posts = Cache::remember($cacheKey, 60, function () use ($domain, $perPage, $page) {
+                return Post::query()
+                    ->select(['id','title','content','slug','thumbnail','category_id','updated_at'])
+                    ->with('category:id,name')
+                    ->where('domain_id', $domain->id)
+                    ->where('is_active', true)
+                    ->latest()
+                    ->paginate($perPage, ['*'], 'page', $page)
+                    ->items(); // 🔥 CHỈ TRẢ ARRAY
+            });
+            return response()->json([
+                'success' => true,
+                'data' => is_array($posts) ? $posts : [],
+            ]);
 
         } catch (\Throwable $e) {
 
-            Log::critical('POST INDEX FATAL', [
-                'domain_id' => $domain->id,
-                'error'     => $e->getMessage(),
+            Log::error('POST INDEX FAIL', [
+                'domain_id' => $domain->id ?? null,
+                'error' => $e->getMessage(),
             ]);
 
+            // PROMAX: không bao giờ 500
             return response()->json([
-                'success' => false,
-                'message' => 'Service unavailable',
-            ], 503);
+                'success' => true,
+                'data' => [],
+            ]);
         }
-    }
-
-    protected function queryPosts($domain, int $perPage, int $page)
-    {
-        return Post::query()
-            ->select(['id','title', 'content', 'slug','thumbnail','category_id','updated_at'])
-            ->with('category:id,name')
-            ->where('domain_id', $domain->id)
-            ->where('is_active', true)
-            ->latest()
-            ->paginate($perPage, ['*'], 'page', $page);
     }
 
     public function show(Request $request, string $slug)
     {
         $domain = $request->get('domain');
 
-        $cacheKey = sprintf(
-            'public_post:%s:%s:%s',
-            CacheVersion::POST,
-            $domain->id,
-            $slug
-        );
-
-        $useTag = Cache::getStore() instanceof TaggableStore;
-
-        try {
-            $data = $useTag
-                ? Cache::tags(["domain:$domain->id", "post:$slug"])
-                    ->remember($cacheKey, 900, fn () =>
-                        $this->getPostDetailData($domain, $slug, true)
-                    )
-                : Cache::remember($cacheKey, 900, fn () =>
-                        $this->getPostDetailData($domain, $slug, false)
-                  );
-
-            return response()
-                ->json(['success' => true, 'data' => $data])
-                ->withHeaders($this->cacheHeaders(300));
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
-
+        if (!$domain || !$slug) {
             return response()->json([
                 'success' => false,
-                'message' => 'Post not found',
+                'data' => null,
             ], 404);
+        }
+
+        $cacheKey = "post:{$domain->id}:$slug";
+
+        try {
+            $data = Cache::remember($cacheKey, 120, function () use ($domain, $slug) {
+
+                $post = Post::query()
+                    ->with(['admin:id,name', 'category:id,name'])
+                    ->where('domain_id', $domain->id)
+                    ->where('slug', $slug)
+                    ->where('is_active', true)
+                    ->first(); // ❌ KHÔNG firstOrFail
+
+                if (!$post) {
+                    return null;
+                }
+
+                $related = Post::query()
+                    ->select(['id','title','slug','thumbnail','created_at'])
+                    ->where('domain_id', $domain->id)
+                    ->where('category_id', $post->category_id)
+                    ->where('id', '!=', $post->id)
+                    ->where('is_active', true)
+                    ->latest()
+                    ->limit(6)
+                    ->get();
+
+                return [
+                    'post' => $post,
+                    'related_posts' => $related,
+                ];
+            });
+
+            if (!$data) {
+                return response()->json([
+                    'success' => false,
+                    'data' => null,
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+            ]);
 
         } catch (\Throwable $e) {
 
-            Log::error('POST DETAIL ERROR', [
+            Log::error('POST DETAIL FAIL', [
+                'slug' => $slug,
                 'domain_id' => $domain->id,
-                'slug'      => $slug,
-                'error'     => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
 
+            // PROMAX: không giết Astro
             return response()->json([
                 'success' => false,
-                'message' => 'Service unavailable',
-            ], 503);
+                'data' => null,
+            ], 404);
         }
     }
 
-    // protected function success($data)
+    // public function index(Request $request)
     // {
-    //     return response()->json([
-    //         'success' => true,
-    //         'data'    => $data,
-    //     ]);
+    //     $domain = $request->get('domain');
+    //     if (!$domain) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'data' => null,
+    //             'message' => 'Domain not found'
+    //         ], 404);
+    //     }
+
+    //     $page    = max((int) $request->query('page', 1), 1);
+    //     $perPage = 20;
+
+    //     $cacheKey = sprintf(
+    //         'public_posts:%s:%s:page:%d',
+    //         CacheVersion::POSTS,
+    //         $domain->id,
+    //         $page
+    //     );
+
+    //     $useTag = Cache::getStore() instanceof TaggableStore;
+
+    //     try {
+    //         $posts = $useTag
+    //             ? Cache::tags(["domain:$domain->id", 'posts'])
+    //                 ->remember($cacheKey, 300, fn () =>
+    //                     $this->queryPosts($domain, $perPage, $page)
+    //                 )
+    //             : Cache::remember($cacheKey, 300, fn () =>
+    //                     $this->queryPosts($domain, $perPage, $page)
+    //               );
+
+    //         return response()
+    //             ->json(['success' => true, 'data' => $posts])
+    //             ->withHeaders($this->cacheHeaders(60));
+
+    //     } catch (\Throwable $e) {
+
+    //         Log::critical('POST INDEX FATAL', [
+    //             'domain_id' => $domain->id,
+    //             'error'     => $e->getMessage(),
+    //         ]);
+
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Service unavailable',
+    //         ], 503);
+    //     }
     // }
 
-    // protected function error(string $message, int $status)
+    // protected function queryPosts($domain, int $perPage, int $page)
     // {
-    //     return response()->json([
-    //         'success' => false,
-    //         'message' => $message,
-    //     ], $status);
+    //     return Post::query()
+    //         ->select(['id','title', 'content', 'slug','thumbnail','category_id','updated_at'])
+    //         ->with('category:id,name')
+    //         ->where('domain_id', $domain->id)
+    //         ->where('is_active', true)
+    //         ->latest()
+    //         ->paginate($perPage, ['*'], 'page', $page);
     // }
 
-    protected function getPostDetailData($domain, string $slug, bool $useTag): array
-    {
-        $post = Post::query()
-            ->with(['admin:id,name', 'category:id,name'])
-            ->where('domain_id', $domain->id)
-            ->where('slug', $slug)
-            ->where('is_active', true)
-            ->firstOrFail();
+    // public function show(Request $request, string $slug)
+    // {
+    //     $domain = $request->get('domain');
+    //     if (!$domain) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'data' => null,
+    //             'message' => 'Domain not found'
+    //         ], 404);
+    //     }
 
-        $relatedKey = "related_posts:$domain->id:$post->category_id";
+    //     $cacheKey = sprintf(
+    //         'public_post:%s:%s:%s',
+    //         CacheVersion::POST,
+    //         $domain->id,
+    //         $slug
+    //     );
 
-        $related = $useTag
-            ? Cache::tags(["domain:$domain->id", "category:$post->category_id"])
-                ->remember($relatedKey, 1800, fn () =>
-                    $this->queryRelatedPosts($post, $domain)
-                )
-            : Cache::remember($relatedKey, 1800, fn () =>
-                    $this->queryRelatedPosts($post, $domain)
-              );
+    //     $useTag = Cache::getStore() instanceof TaggableStore;
 
-        return [
-            'post'          => $post,
-            'related_posts' => $related,
-        ];
-    }
+    //     try {
+    //         $data = $useTag
+    //             ? Cache::tags(["domain:$domain->id", "post:$slug"])
+    //                 ->remember($cacheKey, 900, fn () =>
+    //                     $this->getPostDetailData($domain, $slug, true)
+    //                 )
+    //             : Cache::remember($cacheKey, 900, fn () =>
+    //                     $this->getPostDetailData($domain, $slug, false)
+    //               );
 
-    protected function queryRelatedPosts($post, $domain)
-    {
-        return Post::query()
-            ->select(['id','title','slug','thumbnail','created_at'])
-            ->where('domain_id', $domain->id)
-            ->where('category_id', $post->category_id)
-            ->where('id', '!=', $post->id)
-            ->where('is_active', true)
-            ->latest()
-            ->limit(6)
-            ->get();
-    }
+    //         return response()
+    //             ->json(['success' => true, 'data' => $data])
+    //             ->withHeaders($this->cacheHeaders(300));
 
-    protected function cacheHeaders(int $seconds): array
-    {
-        return [
-            'Cache-Control' => "public, s-maxage=$seconds, max-age=$seconds",
-            'Vary'          => 'Accept-Encoding, Host',
-        ];
-    }
+    //     } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
+
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Post not found',
+    //         ], 404);
+
+    //     } catch (\Throwable $e) {
+
+    //         Log::error('POST DETAIL ERROR', [
+    //             'domain_id' => $domain->id,
+    //             'slug'      => $slug,
+    //             'error'     => $e->getMessage(),
+    //         ]);
+
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Service unavailable',
+    //         ], 503);
+    //     }
+    // }
+
+    // protected function getPostDetailData($domain, string $slug, bool $useTag): array
+    // {
+    //     $post = Post::query()
+    //         ->with(['admin:id,name', 'category:id,name'])
+    //         ->where('domain_id', $domain->id)
+    //         ->where('slug', $slug)
+    //         ->where('is_active', true)
+    //         ->first();
+
+    //     $relatedKey = "related_posts:$domain->id:$post->category_id";
+
+    //     $related = $useTag
+    //         ? Cache::tags(["domain:$domain->id", "category:$post->category_id"])
+    //             ->remember($relatedKey, 1800, fn () =>
+    //                 $this->queryRelatedPosts($post, $domain)
+    //             )
+    //         : Cache::remember($relatedKey, 1800, fn () =>
+    //                 $this->queryRelatedPosts($post, $domain)
+    //           );
+
+    //     return [
+    //         'post'          => $post,
+    //         'related_posts' => $related,
+    //     ];
+    // }
+
+    // protected function queryRelatedPosts($post, $domain)
+    // {
+    //     return Post::query()
+    //         ->select(['id','title','slug','thumbnail','created_at'])
+    //         ->where('domain_id', $domain->id)
+    //         ->where('category_id', $post->category_id)
+    //         ->where('id', '!=', $post->id)
+    //         ->where('is_active', true)
+    //         ->latest()
+    //         ->limit(6)
+    //         ->get();
+    // }
+
+    // protected function cacheHeaders(int $seconds): array
+    // {
+    //     return [
+    //         'Cache-Control' => "public, s-maxage=$seconds, max-age=$seconds",
+    //         'Vary'          => 'Accept-Encoding, Host',
+    //     ];
+    // }
+
 
 
 
