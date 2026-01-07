@@ -379,7 +379,7 @@
                                     <div class="input inputMessage">
                                         <input type="text" value="{{ $listPost->slug }}"
                                             class="form-control{{ $errors->has('slug') ? ' is-invalid' : '' }} col-12"
-                                            name="slug" id="slug" placeholder="">
+                                            name="slug" id="slug" placeholder="" readonly>
                                         @error('slug')
                                             <span class="invalid-feedback" role="alert">
                                                 <strong>{{ $message }}</strong>

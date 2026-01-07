@@ -463,7 +463,7 @@ class PostService
         $slug = $dataPost->slug;
         if ($request->title !== $dataPost->title) {
             $slug = $this->generateUniqueSlug(
-                $request->title,
+                $request->slug,
                 $dataPost->domain_id,
                 $dataPost->id
             );
