@@ -32,7 +32,7 @@ class PostApiController extends Controller
             $posts = Cache::remember($cacheKey, 60, function () use ($domain, $perPage, $page) {
                 return Post::query()
                     ->select(['id','title','content','slug','thumbnail','category_id', 'author_id', 'updated_at'])
-                    ->with('category:id,name')
+                    ->with(['admin:id,name', 'category:id,name'])
                     ->where('domain_id', $domain->id)
                     ->where('is_active', true)
                     ->latest()

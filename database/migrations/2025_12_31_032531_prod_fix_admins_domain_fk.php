@@ -9,7 +9,9 @@ return new class extends Migration {
 
     public function up(): void
     {
-        // 1️⃣ Drop FK domain_id nếu tồn tại
+        /**
+         * 1️⃣ DROP FK domain_id nếu tồn tại (AN TOÀN)
+         */
         $foreignKeys = DB::select("
             SELECT CONSTRAINT_NAME
             FROM information_schema.KEY_COLUMN_USAGE
@@ -25,7 +27,9 @@ return new class extends Migration {
             );
         }
 
-        // 2️⃣ Add lại FK domain_id
+        /**
+         * 2️⃣ ADD lại FK domain_id (KHÔNG TRÙNG)
+         */
         Schema::table('admins', function (Blueprint $table) {
             $table->foreign('domain_id')
                   ->references('id')
@@ -36,10 +40,19 @@ return new class extends Migration {
 
     public function down(): void
     {
-        Schema::table('admins', function (Blueprint $table) {
-            try {
-                $table->dropForeign(['domain_id']);
-            } catch (\Throwable $e) {}
-        });
+        $foreignKeys = DB::select("
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_NAME = 'admins'
+              AND COLUMN_NAME = 'domain_id'
+              AND CONSTRAINT_SCHEMA = DATABASE()
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+        ");
+
+        foreach ($foreignKeys as $fk) {
+            DB::statement(
+                "ALTER TABLE admins DROP FOREIGN KEY {$fk->CONSTRAINT_NAME}"
+            );
+        }
     }
 };

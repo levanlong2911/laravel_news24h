@@ -112,7 +112,6 @@
         $('#editor_content').filemanager('image', {
             prefix: route_prefix
         });
-        // $('#lfm').filemanager('file', {prefix: route_prefix});
     </script>
     <script>
         $('textarea[name=editor_content]').ckeditor({
@@ -127,7 +126,6 @@
         $('#lfm').filemanager('image', {
             prefix: route_prefix
         });
-        // $('#lfm').filemanager('file', {prefix: route_prefix});
     </script>
 
     <script>
@@ -171,72 +169,6 @@
             prefix: route_prefix
         });
     </script>
-    {{-- <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            let editorContentId = 'editor_content';
-
-            // Kiểm tra CKEditor đã tồn tại chưa
-            if (!CKEDITOR.instances[editorContentId]) {
-                CKEDITOR.replace(editorContentId, {
-                    entities: false, // Tắt auto encode HTML entities
-                    entities_latin: false // Ngăn mã hóa các ký tự Latin như "ι"
-                });
-            }
-
-            let titleInput = document.getElementById("title");
-
-            function getEditorContent() {
-                return CKEDITOR.instances[editorContentId].getData();
-            }
-
-            function setEditorContent(content) {
-                let editor = CKEDITOR.instances[editorContentId];
-                if (editor) {
-                    editor.setData(content, function() {
-                        editor.updateElement(); // Cập nhật lại dữ liệu trong form
-                    });
-                }
-            }
-
-            function replaceText(find, replace) {
-                // Thay thế trong input title
-                if (titleInput) {
-                    titleInput.value = titleInput.value.replace(new RegExp(find, "g"), replace);
-                }
-
-                // Thay thế trong CKEditor (content)
-                let content = getEditorContent();
-
-                // Chuyển nội dung HTML thành DOM để tránh lỗi phá vỡ cấu trúc
-                let tempDiv = document.createElement("div");
-                tempDiv.innerHTML = content;
-
-                function replaceInNode(node) {
-                    if (node.nodeType === 3) { // Chỉ thay đổi trong text node
-                        node.nodeValue = node.nodeValue.replace(new RegExp(find, "g"), replace);
-                    } else if (node.nodeType === 1) { // Nếu là element, duyệt tất cả con của nó
-                        for (let i = 0; i < node.childNodes.length; i++) {
-                            replaceInNode(node.childNodes[i]);
-                        }
-                    }
-                }
-
-                replaceInNode(tempDiv);
-
-                setEditorContent(tempDiv.innerHTML);
-            }
-
-            // Nút thay thế "i" → "ι"
-            document.getElementById("replaceToGreekI").addEventListener("click", function() {
-                replaceText("(?<!&)h(?!ota;)", "Һ"); // Đảm bảo không thay "&iota;"
-            });
-
-            // Nút thay thế "ι" → "i"
-            document.getElementById("replaceToLatinI").addEventListener("click", function() {
-                replaceText("Һ", "h");
-            });
-        });
-    </script> --}}
     <script>
         document.addEventListener("DOMContentLoaded", function () {
 
