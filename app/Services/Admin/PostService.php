@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Intervention\Image\ImageManager;
 use DOMDocument;
+use DOMXPath;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
@@ -54,7 +55,7 @@ class PostService
     public function create($request, $domainId): Model
     {
         DB::beginTransaction();
-
+        // dd($request->all());
         try {
             // Chuyển đổi ảnh sang WebP và cập nhật editor_content
             $updatedContent = $this->convertImagesToWebp($request->editor_content);
@@ -158,10 +159,52 @@ class PostService
         // 1️⃣ Fix encoding toàn bộ HTML trước khi DOM parse
         $content = $this->normalizeHtml($content);
 
+        // dd($content);
         $dom = new DOMDocument('1.0', 'UTF-8');
-        libxml_use_internal_errors(true);
-        $dom->loadHTML(mb_convert_encoding($content, 'HTML-ENTITIES', 'UTF-8'));
-        libxml_clear_errors();
+        $dom->loadHTML(
+            '<?xml encoding="utf-8" ?><div id="root">' .
+            mb_convert_encoding($content, 'HTML-ENTITIES', 'UTF-8') .
+            '</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+
+        $xpath = new DOMXPath($dom);
+
+        /**
+         * =====================================
+         * 2️⃣ CLEAN <p>
+         * =====================================
+         * ✔ Gỡ <a> (giữ text)
+         * ✔ Xóa <p> rỗng
+         * ✔ Không phá HTML
+         */
+
+        $paragraphs = $xpath->query('//p');
+
+        foreach ($paragraphs as $p) {
+
+            /** Gỡ <a> nhưng giữ text */
+            $links = $p->getElementsByTagName('a');
+            for ($i = $links->length - 1; $i >= 0; $i--) {
+                $a = $links->item($i);
+                $textNode = $dom->createTextNode(trim($a->textContent ?? ''));
+                $a->parentNode->replaceChild($textNode, $a);
+            }
+
+            // 2️⃣ Kiểm tra rỗng
+            $text = trim(
+                preg_replace('/\x{00A0}|\s+/u', '', $p->textContent)
+            );
+
+            // 3️⃣ Kiểm tra có ảnh không
+            $hasImage = $p->getElementsByTagName('img')->length > 0;
+
+            // 4️⃣ Chỉ xóa <p> rỗng khi KHÔNG có img
+            if ($text === '' && !$hasImage) {
+                $p->parentNode->removeChild($p);
+            }
+        }
+
 
         // 2️⃣ Snapshot img nodes (BẮT BUỘC)
         $images = iterator_to_array($dom->getElementsByTagName('img'));
@@ -193,7 +236,7 @@ class PostService
                 $img->setAttribute('height', (string) $newHeight);
             }
         }
-        $body = $dom->getElementsByTagName('body')->item(0);
+        $body = $dom->getElementById('root');
         $contentWithoutHtmlBody = '';
         foreach ($body->childNodes as $node) {
             $html = trim($dom->saveHTML($node));
@@ -449,9 +492,6 @@ class PostService
 
     public function update($id, $request, $dataPost)
     {
-        // $oldSlug      = $dataPost->slug;
-        // $oldCategory  = $dataPost->category_id;
-        // CONTENT
         $updatedContent = $request->editor_content !== $dataPost->content
             ? $this->convertImagesToWebp($request->editor_content)
             : $dataPost->content;
