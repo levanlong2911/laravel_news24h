@@ -159,6 +159,10 @@ class PostService
         // 1️⃣ Fix encoding toàn bộ HTML trước khi DOM parse
         $content = $this->normalizeHtml($content);
 
+        $content = $this->fixBrokenHtmlEntities($content);
+
+        libxml_use_internal_errors(true);
+
         // dd($content);
         $dom = new DOMDocument('1.0', 'UTF-8');
         $dom->loadHTML(
@@ -167,6 +171,7 @@ class PostService
             '</div>',
             LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
         );
+        libxml_clear_errors();
 
         $xpath = new DOMXPath($dom);
 
@@ -246,6 +251,16 @@ class PostService
         }
 
         return trim($contentWithoutHtmlBody);
+    }
+
+    private function fixBrokenHtmlEntities(string $html): string
+    {
+        // Sửa & không phải entity hợp lệ thành &amp;
+        return preg_replace(
+            '/&(?![a-zA-Z]+;|#\d+;|#x[0-9a-fA-F]+;)/',
+            '&amp;',
+            $html
+        );
     }
 
     private function normalizeHtml(string $html): string
