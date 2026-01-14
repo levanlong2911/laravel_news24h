@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Advertisement;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Cache\TaggableStore;
+use App\Support\CacheVersion;
 use Illuminate\Support\Facades\Log;
 
 class ApiAdvertisementController extends Controller
@@ -20,34 +20,36 @@ class ApiAdvertisementController extends Controller
         $domain = $request->get('domain');
         if (!$domain) {
             return response()->json([
-                'success' => false,
-                'message' => 'Domain not found',
-            ], 404);
+                'success' => true,
+                'data'    => [],
+            ]);
         }
 
-        $cacheKey = "ads:domain:{$domain->id}";
-        $useTag   = Cache::getStore() instanceof TaggableStore;
+        $cacheKey = sprintf(
+            'ads:%s:domain:%s',
+            CacheVersion::ADS,
+            $domain->id
+        );
 
         try {
-            $ads = $useTag
-                ? Cache::tags(["domain:{$domain->id}", "ads"])
-                    ->remember($cacheKey, 600, fn () => $this->queryAds($domain))
-                : Cache::remember($cacheKey, 600, fn () => $this->queryAds($domain));
+            $ads = Cache::remember($cacheKey, 600, function () use ($domain) {
+                return $this->queryAds($domain);
+            });
 
             return response()->json([
                 'success' => true,
-                'data'    => $ads,
+                'data'    => $ads ?: [],
             ]);
         } catch (\Throwable $e) {
             Log::error('ADS API INDEX ERROR', [
                 'domain_id' => $domain->id,
-                'message'   => $e->getMessage(),
+                'error'   => $e->getMessage(),
             ]);
 
             return response()->json([
-                'success' => false,
-                'message' => 'Service unavailable',
-            ], 503);
+                'success' => true,
+                'data'    => [],
+            ]);
         }
     }
 
@@ -60,43 +62,46 @@ class ApiAdvertisementController extends Controller
         $domain = $request->get('domain');
         if (!$domain) {
             return response()->json([
-                'success' => false,
-                'message' => 'Domain not found',
-            ], 404);
+                'success' => true,
+                'data'    => [],
+            ]);
         }
 
         $allowed = ['top', 'middle', 'bottom', 'header', 'in-post'];
-        if (!in_array($position, $allowed)) {
+        if (!in_array($position, $allowed, true)) {
             return response()->json([
-                'success' => false,
-                'message' => 'Invalid position',
-            ], 404);
+                'success' => true,
+                'data'    => [],
+            ]);
         }
 
-        $cacheKey = "ads:{$domain->id}:{$position}";
-        $useTag   = Cache::getStore() instanceof TaggableStore;
+        $cacheKey = sprintf(
+            'ads:%s:%s:%s',
+            CacheVersion::ADS,
+            $domain->id,
+            $position
+        );
 
         try {
-            $ads = $useTag
-                ? Cache::tags(["domain:{$domain->id}", "ads:{$position}"])
-                    ->remember($cacheKey, 600, fn () => $this->queryAds($domain, $position))
-                : Cache::remember($cacheKey, 600, fn () => $this->queryAds($domain, $position));
+            $ads = Cache::remember($cacheKey, 600, function () use ($domain, $position) {
+                return $this->queryAds($domain, $position);
+            });
 
             return response()->json([
                 'success' => true,
-                'data'    => $ads,
+                'data'    => $ads ?: [],
             ]);
         } catch (\Throwable $e) {
-            Log::error('ADS API POSITION ERROR', [
+            Log::error('ADS POSITION FAIL', [
                 'domain_id' => $domain->id,
                 'position'  => $position,
-                'message'   => $e->getMessage(),
+                'error'     => $e->getMessage(),
             ]);
 
             return response()->json([
-                'success' => false,
-                'message' => 'Service unavailable',
-            ], 503);
+                'success' => true,
+                'data'    => [],
+            ]);
         }
     }
 

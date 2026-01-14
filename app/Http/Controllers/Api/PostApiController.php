@@ -8,7 +8,6 @@ use App\Support\CacheVersion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Cache\TaggableStore;
 
 class PostApiController extends Controller
 {
@@ -20,41 +19,68 @@ class PostApiController extends Controller
         if (!$domain) {
             return response()->json([
                 'success' => true,
-                'data' => [],
+                'data' => [
+                    'items' => [],
+                    'meta' => null,
+                ]
             ]);
         }
         $page = max((int) $request->query('page', 1), 1);
         $perPage = 20;
 
-        $cacheKey = "posts:{$domain->id}:page:$page";
+        // $cacheKey = "posts:{$domain->id}:page:$page";
+        $cacheKey = sprintf(
+            'posts:%s:%s:page:%d',
+            CacheVersion::POSTS,
+            $domain->id,
+            $page
+        );
 
         try {
-            $posts = Cache::remember($cacheKey, 60, function () use ($domain, $perPage, $page) {
-                return Post::query()
+            $cached = Cache::get($cacheKey);
+            if (!$cached) {
+                $paginator = Post::query()
                     ->select(['id','title','content','slug','thumbnail','category_id', 'author_id', 'updated_at'])
                     ->with(['admin:id,name', 'category:id,name'])
                     ->where('domain_id', $domain->id)
                     ->where('is_active', true)
                     ->latest()
-                    ->paginate($perPage, ['*'], 'page', $page)
-                    ->items(); // 🔥 CHỈ TRẢ ARRAY
-            });
+                    ->paginate($perPage, ['*'], 'page', $page);
+                    // ->items();
+                if ($paginator->total() > 0) {
+                    $cached = [
+                        'items' => $paginator->items(),
+                        'meta'  => [
+                            'page' => $paginator->currentPage(),
+                            'last' => $paginator->lastPage(),
+                        ],
+                    ];
+
+                    Cache::put($cacheKey, $cached, 60);
+                } else {
+                    $cached = [
+                        'items' => [],
+                        'meta'  => null,
+                    ];
+                }
+            };
             return response()->json([
                 'success' => true,
-                'data' => is_array($posts) ? $posts : [],
+                'data' => $cached,
             ]);
 
         } catch (\Throwable $e) {
-
             Log::error('POST INDEX FAIL', [
                 'domain_id' => $domain->id ?? null,
-                'error' => $e->getMessage(),
+                'error'     => $e->getMessage(),
             ]);
-
-            // PROMAX: không bao giờ 500
+            // PROMAX: không giết Astro
             return response()->json([
                 'success' => true,
-                'data' => [],
+                'data' => [
+                    'items' => [],
+                    'meta'  => null,
+                ],
             ]);
         }
     }
@@ -65,16 +91,21 @@ class PostApiController extends Controller
 
         if (!$domain || !$slug) {
             return response()->json([
-                'success' => false,
+                'success' => true,
                 'data' => null,
-            ], 404);
+            ]);
         }
 
-        $cacheKey = "post:{$domain->id}:$slug";
+        $cacheKey = sprintf(
+            'post:%s:%s:%s',
+            CacheVersion::POST,
+            $domain->id,
+            $slug
+        );
 
         try {
-            $data = Cache::remember($cacheKey, 120, function () use ($domain, $slug) {
-
+            $data = Cache::get($cacheKey);
+            if (!$data) {
                 $post = Post::query()
                     ->with(['admin:id,name', 'category:id,name'])
                     ->where('domain_id', $domain->id)
@@ -83,7 +114,10 @@ class PostApiController extends Controller
                     ->first(); // ❌ KHÔNG firstOrFail
 
                 if (!$post) {
-                    return null;
+                    return response()->json([
+                        'success' => true,
+                        'data' => null,
+                    ]);
                 }
 
                 $related = Post::query()
@@ -96,19 +130,12 @@ class PostApiController extends Controller
                     ->limit(6)
                     ->get();
 
-                return [
+                $data = [
                     'post' => $post,
                     'related_posts' => $related,
                 ];
-            });
-
-            if (!$data) {
-                return response()->json([
-                    'success' => false,
-                    'data' => null,
-                ], 404);
-            }
-
+                Cache::put($cacheKey, $data, 300);
+            };
             return response()->json([
                 'success' => true,
                 'data' => $data,
@@ -118,15 +145,15 @@ class PostApiController extends Controller
 
             Log::error('POST DETAIL FAIL', [
                 'slug' => $slug,
-                'domain_id' => $domain->id,
+                'domain_id' => $domain->id ?? null,
                 'error' => $e->getMessage(),
             ]);
 
-            // PROMAX: không giết Astro
+            // PROMAX: Astro không bao giờ chết
             return response()->json([
-                'success' => false,
+                'success' => true,
                 'data' => null,
-            ], 404);
+            ]);
         }
     }
 
