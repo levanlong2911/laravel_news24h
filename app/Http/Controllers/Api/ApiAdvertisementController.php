@@ -35,7 +35,6 @@ class ApiAdvertisementController extends Controller
             $ads = Cache::remember($cacheKey, 600, function () use ($domain) {
                 return $this->queryAds($domain);
             });
-
             return response()->json([
                 'success' => true,
                 'data'    => $ads ?: [],
@@ -110,8 +109,9 @@ class ApiAdvertisementController extends Controller
      */
     protected function queryAds($domain, ?string $position = null)
     {
+
         $query = Advertisement::query()
-            ->is_active()
+            ->where('is_active', true)
             ->forDomain($domain->id)
             ->orderByRaw("
                 CASE WHEN domain_id IS NOT NULL THEN 0 ELSE 1 END
