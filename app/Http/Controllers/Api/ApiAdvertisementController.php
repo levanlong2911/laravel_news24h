@@ -111,7 +111,7 @@ class ApiAdvertisementController extends Controller
     protected function queryAds($domain, ?string $position = null)
     {
         $query = Advertisement::query()
-            ->active()
+            ->is_active()
             ->forDomain($domain->id)
             ->orderByRaw("
                 CASE WHEN domain_id IS NOT NULL THEN 0 ELSE 1 END
