@@ -314,15 +314,49 @@
             });
         });
     </script>
-    {{-- <script>
-        // let editorContentadd = 'editor_content';
-        CKEDITOR.replace('editor_content', {
-            contentsCss: [
-                CKEDITOR.basePath + 'contents.css', // file mặc định
-                '{{ asset("assets/css/content_addPost.css") }}'          // file custom của bạn
-            ]
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+
+            // Lấy username đang đăng nhập từ Laravel
+            let currentUser = "{{ Auth::user()->name ?? 'user' }}";
+
+            // Hàm tạo slug
+            function generateSlug(title) {
+                let slug = title
+                    .toLowerCase()
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Bỏ dấu tiếng Việt
+                    .replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-+|-+$/g, "");
+
+                let userSlug = currentUser
+                    .toLowerCase()
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                    .replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-+|-+$/g, "");
+
+                return slug + "-" + userSlug;
+            }
+
+            // Khi user chỉnh title → auto cập nhật slug
+            document.getElementById("title").addEventListener("input", function () {
+                let title = this.value;
+                let newSlug = generateSlug(title);
+                document.getElementById("slug").value = newSlug;
+            });
+
+            // Khi lấy link API (success) → auto cập nhật slug theo title
+            $(document).ajaxSuccess(function (event, xhr, settings) {
+                if (settings.url.includes("get-link")) { // đúng API lấy link
+                    let response = xhr.responseJSON;
+                    if (response && response.title) {
+                        let autoSlug = generateSlug(response.title);
+                        $("#slug").val(autoSlug);
+                    }
+                }
+            });
+
         });
-    </script> --}}
+    </script>
 @endsection
 @section('content')
     <section class="content">
@@ -455,7 +489,7 @@
                                                 name="domain_id" id="domain_id">
                                                 <option value>Select website</option>
                                                 @foreach ($listWebsite as $web)
-                                                    <option value="{{ $web->id }}" {{ (old('domain_id') == $web->id) ? 'selected' : '' }}>{{  $web->name }}</option>
+                                                    <option value="{{ $web->id }}" {{ (old('domain_id', auth()->user()->domain_id) == $web->id) ? 'selected' : '' }}>{{  $web->name }}</option>
                                                 @endforeach
                                             </select>
                                             @error('domain_id')
