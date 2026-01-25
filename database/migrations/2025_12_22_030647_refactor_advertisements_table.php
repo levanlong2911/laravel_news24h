@@ -6,28 +6,38 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
+        /**
+         * 1. DROP enum position cũ
+         */
         Schema::table('advertisements', function (Blueprint $table) {
-            // 1. add domain_id
+            if (Schema::hasColumn('advertisements', 'position')) {
+                $table->dropColumn('position');
+            }
+        });
+
+        /**
+         * 2. ADD position enum mới + domain_id
+         */
+        Schema::table('advertisements', function (Blueprint $table) {
+
             if (!Schema::hasColumn('advertisements', 'domain_id')) {
                 $table->uuid('domain_id')->nullable()->after('script');
             }
 
-            // 2. update enum position
             $table->enum('position', [
                 'top',
                 'middle',
                 'bottom',
                 'header',
                 'in-post',
-            ])->change();
+            ])->after('script');
         });
 
-        // 3. add foreign key
+        /**
+         * 3. ADD FK
+         */
         Schema::table('advertisements', function (Blueprint $table) {
             $table->foreign('domain_id')
                 ->references('id')
@@ -36,21 +46,31 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
+        /**
+         * DROP FK + domain_id
+         */
         Schema::table('advertisements', function (Blueprint $table) {
-            $table->dropForeign(['domain_id']);
-            $table->dropColumn('domain_id');
+            if (Schema::hasColumn('advertisements', 'domain_id')) {
+                $table->dropForeign(['domain_id']);
+                $table->dropColumn('domain_id');
+            }
+        });
 
-            // rollback enum
+        /**
+         * ROLLBACK enum position
+         */
+        Schema::table('advertisements', function (Blueprint $table) {
+            if (Schema::hasColumn('advertisements', 'position')) {
+                $table->dropColumn('position');
+            }
+
             $table->enum('position', [
                 'top',
                 'middle',
                 'bottom',
-            ])->change();
+            ]);
         });
     }
 };

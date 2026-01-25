@@ -9,7 +9,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // 1. DROP ALL FK liên quan role_id
+        /**
+         * 1. DROP FK an toàn
+         */
         $foreignKeys = DB::select("
             SELECT CONSTRAINT_NAME
             FROM information_schema.KEY_COLUMN_USAGE
@@ -22,23 +24,43 @@ return new class extends Migration
             DB::statement("ALTER TABLE admins DROP FOREIGN KEY `{$fk->CONSTRAINT_NAME}`");
         }
 
-        // 2. SỬA CẤU TRÚC
+        /**
+         * 2. DROP các cột cần sửa
+         */
         Schema::table('admins', function (Blueprint $table) {
-
             if (Schema::hasColumn('admins', 'domain')) {
                 $table->dropColumn('domain');
             }
+
+            if (Schema::hasColumn('admins', 'email_verified_at')) {
+                $table->dropColumn('email_verified_at');
+            }
+
+            if (Schema::hasColumn('admins', 'remember_token')) {
+                $table->dropColumn('remember_token');
+            }
+        });
+
+        /**
+         * 3. ADD lại cột đúng chuẩn
+         */
+        Schema::table('admins', function (Blueprint $table) {
 
             if (!Schema::hasColumn('admins', 'domain_id')) {
                 $table->uuid('domain_id')->nullable()->after('role_id');
             }
 
-            $table->uuid('role_id')->change();
-            $table->timestamp('email_verified_at')->nullable()->change();
-            $table->string('remember_token', 100)->nullable()->change();
+            // role_id chuẩn UUID
+            $table->uuid('role_id')->change(); // 👈 CHỈ GIỮ LẠI nếu role_id đang là string/int
+            // nếu vẫn lỗi → drop + add giống dưới
+
+            $table->timestamp('email_verified_at')->nullable()->after('email');
+            $table->string('remember_token', 100)->nullable()->after('password');
         });
 
-        // 3. ADD FK LẠI
+        /**
+         * 4. ADD FK lại
+         */
         Schema::table('admins', function (Blueprint $table) {
             $table->foreign('role_id')
                 ->references('id')->on('roles')
@@ -52,7 +74,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        // DROP FK an toàn
         $foreignKeys = DB::select("
             SELECT CONSTRAINT_NAME
             FROM information_schema.KEY_COLUMN_USAGE
