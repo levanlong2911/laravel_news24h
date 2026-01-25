@@ -277,45 +277,68 @@ class GetLinkController extends Controller
         return $html;
     }
 
-    private function cleanNode(DOMXPath $xpath, DOMNode $node, DOMDocument $dom)
+    private function cleanNode($xpath, $node, $dom)
     {
-        // DIV
-        foreach (iterator_to_array($xpath->query('.//div', $node)) as $div) {
-            if (!($div instanceof DOMElement)) continue;
+        // Guard node
+        if (!$node instanceof \DOMElement) {
+            return;
+        }
 
-            if (strpos($div->getAttribute('class'), 'table-container') === false) {
-                if ($div->parentNode) {
-                    $div->parentNode->removeChild($div);
+        // Xử lý thẻ div: giữ lại div có class "table-container", xóa các div khác
+        $divs = $xpath->query('.//div', $node);
+        if ($divs !== false) {
+            foreach (iterator_to_array($divs) as $div) {
+                if (!$div instanceof \DOMElement) continue;
+
+                $classAttr = $div->getAttribute('class');
+                if (strpos($classAttr, 'table-container') === false) {
+                    if ($div->parentNode) {
+                        $div->parentNode->removeChild($div);
+                    }
                 }
             }
         }
 
-        // TAG cần xóa
-        foreach (['section', 'figure', 'img'] as $tag) {
-            foreach (iterator_to_array($xpath->query(".//{$tag}", $node)) as $el) {
-                if ($el->parentNode) {
-                    $el->parentNode->removeChild($el);
+        // Xóa các tag không cần
+        $tagsToRemove = ['section', 'figure', 'img'];
+        foreach ($tagsToRemove as $tag) {
+            $elements = $xpath->query(".//{$tag}", $node);
+            if ($elements === false) continue;
+
+            foreach (iterator_to_array($elements) as $element) {
+                if ($element instanceof \DOMNode && $element->parentNode) {
+                    $element->parentNode->removeChild($element);
                 }
             }
         }
 
-        // <a> → giữ text
-        foreach (iterator_to_array($xpath->query('.//a', $node)) as $link) {
-            if ($link instanceof DOMElement && $link->parentNode) {
-                $text = $dom->createTextNode($link->textContent);
-                $link->parentNode->replaceChild($text, $link);
+        // <a> → giữ lại text
+        $links = $xpath->query('.//a', $node);
+        if ($links !== false) {
+            foreach (iterator_to_array($links) as $link) {
+                if ($link instanceof \DOMElement && $link->parentNode) {
+                    $textNode = $dom->createTextNode($link->textContent);
+                    $link->parentNode->replaceChild($textNode, $link);
+                }
             }
         }
 
-        // gỡ strong/b/u
-        foreach (['strong', 'b', 'u'] as $tag) {
-            foreach (iterator_to_array($xpath->query(".//{$tag}", $node)) as $el) {
-                if (!$el->parentNode) continue;
+        // Gỡ thẻ nhưng giữ nội dung
+        $tagsToKeepContent = ['strong', 'b', 'u'];
+        foreach ($tagsToKeepContent as $tag) {
+            $elements = $xpath->query(".//{$tag}", $node);
+            if ($elements === false) continue;
 
-                while ($el->firstChild) {
-                    $el->parentNode->insertBefore($el->firstChild, $el);
+            foreach (iterator_to_array($elements) as $element) {
+                if (!$element instanceof \DOMElement || !$element->parentNode) continue;
+
+                while ($element->firstChild) {
+                    $element->parentNode->insertBefore($element->firstChild, $element);
                 }
-                $el->parentNode->removeChild($el);
+
+                if ($element->parentNode) {
+                    $element->parentNode->removeChild($element);
+                }
             }
         }
     }
