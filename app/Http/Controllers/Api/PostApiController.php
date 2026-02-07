@@ -22,11 +22,26 @@ class PostApiController extends Controller
                 'data' => [
                     'items' => [],
                     'meta' => null,
+                    'has_more' => false,
                 ]
             ]);
         }
+        // ===== CONFIG =====
+        $firstLimit = 10;
+        $nextLimit  = 5;
+        $maxPage    = 100; // ✅ tối đa 255 bài
+
         $page = max((int) $request->query('page', 1), 1);
-        $perPage = 20;
+        $page = min($page, $maxPage);
+
+        // ===== OFFSET + LIMIT =====
+        if ($page === 1) {
+            $limit  = $firstLimit;
+            $offset = 0;
+        } else {
+            $limit  = $nextLimit;
+            $offset = $firstLimit + ($page - 2) * $nextLimit;
+        }
 
         // $cacheKey = "posts:{$domain->id}:page:$page";
         $cacheKey = sprintf(
@@ -39,30 +54,65 @@ class PostApiController extends Controller
         try {
             $cached = Cache::get($cacheKey);
             if (!$cached) {
-                $paginator = Post::query()
-                    ->select(['id','title','content','slug','thumbnail','category_id', 'author_id', 'updated_at'])
+                $items = Post::query()
+                    ->select([
+                        'id',
+                        'title',
+                        'content',
+                        'slug',
+                        'thumbnail',
+                        'category_id',
+                        'author_id',
+                        'updated_at'
+                    ])
                     ->with(['admin:id,name', 'category:id,name'])
                     ->where('domain_id', $domain->id)
                     ->where('is_active', true)
-                    ->latest()
-                    ->paginate($perPage, ['*'], 'page', $page);
-                    // ->items();
-                if ($paginator->total() > 0) {
-                    $cached = [
-                        'items' => $paginator->items(),
-                        'meta'  => [
-                            'page' => $paginator->currentPage(),
-                            'last' => $paginator->lastPage(),
-                        ],
-                    ];
+                    ->skip($offset)
+                    ->take($limit)
+                    ->get();
+                // $paginator->appends([
+                //     'domain' => $domain->id,
+                // ]);
+                // if ($paginator->total() > 0) {
+                //     $cached = [
+                //         'items' => $paginator->items(),
+                //         'meta'  => [
+                //             'page' => $paginator->currentPage(),
+                //             'last' => $paginator->lastPage(),
+                //         ],
+                //         'next_page_url' => $paginator->nextPageUrl(),
+                //     ];
 
-                    Cache::put($cacheKey, $cached, 60);
-                } else {
-                    $cached = [
-                        'items' => [],
-                        'meta'  => null,
-                    ];
-                }
+                //     Cache::put($cacheKey, $cached, 60);
+                // } else {
+                //     $cached = [
+                //         'items' => [],
+                //         'meta'  => null,
+                //     ];
+                // }
+                // ===== TOTAL =====
+                $total = Cache::remember(
+                    "posts:total:{$domain->id}",
+                    300,
+                    fn () => Post::where('domain_id', $domain->id)
+                        ->where('is_active', true)
+                        ->count()
+                );
+                $hasMore = ($offset + $limit) < $total && $page < $maxPage;
+
+                $cached = [
+                    'items' => $items,
+                    'meta' => [
+                        'page'   => $page,
+                        'limit'  => $limit,
+                        'offset' => $offset,
+                        'total'  => $total,
+                    ],
+                    'has_more' => $hasMore,
+                ];
+
+                Cache::put($cacheKey, $cached, 60);
             };
             return response()->json([
                 'success' => true,
@@ -80,6 +130,7 @@ class PostApiController extends Controller
                 'data' => [
                     'items' => [],
                     'meta'  => null,
+                    'has_more' => false,
                 ],
             ]);
         }

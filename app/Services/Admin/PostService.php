@@ -235,7 +235,7 @@ class PostService
             [$webpPath, $newHeight] = $webpData;
 
             $img->setAttribute('src', asset("storage/$webpPath"));
-            $img->setAttribute('width', '800');
+            $img->setAttribute('width', '700');
 
             if ($newHeight) {
                 $img->setAttribute('height', (string) $newHeight);
@@ -416,12 +416,12 @@ class PostService
             // Tạo ImageManager với Imagick
             $manager = new ImageManager(new ImagickDriver());
 
-            // Tính toán chiều cao theo tỷ lệ width = 800
-            $newHeight = ($originalWidth > 0) ? (int) (($originalHeight * 800) / $originalWidth) : 800;
+            // Tính toán chiều cao theo tỷ lệ width = 700
+            $newHeight = ($originalWidth > 0) ? (int) (($originalHeight * 700) / $originalWidth) : 700;
 
             // Chuyển đổi ảnh sang WebP
             $image = $manager->read($imageContent);
-            $image = $image->scale(width: 800, height: $newHeight)->toWebp(quality: 80);
+            $image = $image->scale(width: 700, height: $newHeight)->toWebp(quality: 80);
 
             // Lưu ảnh vào storage
             Storage::put($filePath, $image->toString());
