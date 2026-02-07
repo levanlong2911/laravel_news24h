@@ -68,29 +68,11 @@ class PostApiController extends Controller
                     ->with(['admin:id,name', 'category:id,name'])
                     ->where('domain_id', $domain->id)
                     ->where('is_active', true)
+                    ->orderBy('created_at', 'desc') // ✅ bài mới / vừa sửa
+                    ->orderBy('id', 'desc')         // ✅ fix lộn xộn
                     ->skip($offset)
                     ->take($limit)
                     ->get();
-                // $paginator->appends([
-                //     'domain' => $domain->id,
-                // ]);
-                // if ($paginator->total() > 0) {
-                //     $cached = [
-                //         'items' => $paginator->items(),
-                //         'meta'  => [
-                //             'page' => $paginator->currentPage(),
-                //             'last' => $paginator->lastPage(),
-                //         ],
-                //         'next_page_url' => $paginator->nextPageUrl(),
-                //     ];
-
-                //     Cache::put($cacheKey, $cached, 60);
-                // } else {
-                //     $cached = [
-                //         'items' => [],
-                //         'meta'  => null,
-                //     ];
-                // }
                 // ===== TOTAL =====
                 $total = Cache::remember(
                     "posts:total:{$domain->id}",
