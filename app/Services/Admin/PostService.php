@@ -215,8 +215,8 @@ class PostService
         $images = iterator_to_array($dom->getElementsByTagName('img'));
 
         foreach ($images as $img) {
-            $rawSrc = $img->getAttribute('src');
-            $src = $this->normalizeImageUrl($rawSrc);
+            $src = $img->getAttribute('src');
+            // $src = $this->normalizeImageUrl($rawSrc);
 
             if (!$src) {
                 continue;
