@@ -466,27 +466,26 @@ class PostService
     //     return $imageDataList;
     // }
 
-    private function convertThumbnailToWebp(?string $Url): ?string
+    private function convertThumbnailToWebp(?string $url): ?string
     {
 
-        if (!filter_var($Url, FILTER_VALIDATE_URL)) {
-            return $Url; // Nếu URL không hợp lệ, giữ nguyên ảnh gốc
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return $url; // Nếu URL không hợp lệ, giữ nguyên ảnh gốc
         }
-        // dd($Url);
 
         // $url = $this->normalizeImageUrl($Url);
         // if (!$url) {
         //     return $url;
         // }
         // Tải ảnh thumbnail bằng cURL
-        $imageContent = $this->fetchSingleImage($Url);
+        $imageContent = $this->fetchSingleImage($url);
         if (!$imageContent) {
-            return $Url;
+            return $url;
         }
         // Chuyển đổi ảnh sang WebP
-        $webpData = $this->downloadAndConvertToWebp($Url, $imageContent);
+        $webpData = $this->downloadAndConvertToWebp($url, $imageContent);
         if (!$webpData) {
-            return $Url;
+            return $url;
         }
         return asset('storage/' . $webpData[0]); // Nếu lỗi, trả về ảnh gốc
     }
@@ -508,12 +507,13 @@ class PostService
 
     public function update($id, $request, $dataPost)
     {
+        // dd($request->all());
         $updatedContent = $request->editor_content !== $dataPost->content
             ? $this->convertImagesToWebp($request->editor_content)
             : $dataPost->content;
 
         // THUMBNAIL
-        $imageThumbnail = $request->thumbnail !== $dataPost->thumbnail
+        $imageThumbnail = $request->image !== $dataPost->thumbnail
             ? $this->convertThumbnailToWebp($request->image)
             : $dataPost->thumbnail;
         $slug = $dataPost->slug;
