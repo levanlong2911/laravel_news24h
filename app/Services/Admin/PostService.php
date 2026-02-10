@@ -472,20 +472,21 @@ class PostService
         if (!filter_var($Url, FILTER_VALIDATE_URL)) {
             return $Url; // Nếu URL không hợp lệ, giữ nguyên ảnh gốc
         }
+        // dd($Url);
 
-        $url = $this->normalizeImageUrl($Url);
-        if (!$url) {
-            return $url;
-        }
+        // $url = $this->normalizeImageUrl($Url);
+        // if (!$url) {
+        //     return $url;
+        // }
         // Tải ảnh thumbnail bằng cURL
-        $imageContent = $this->fetchSingleImage($url);
+        $imageContent = $this->fetchSingleImage($Url);
         if (!$imageContent) {
-            return $url;
+            return $Url;
         }
         // Chuyển đổi ảnh sang WebP
-        $webpData = $this->downloadAndConvertToWebp($url, $imageContent);
+        $webpData = $this->downloadAndConvertToWebp($Url, $imageContent);
         if (!$webpData) {
-            return $url;
+            return $Url;
         }
         return asset('storage/' . $webpData[0]); // Nếu lỗi, trả về ảnh gốc
     }
