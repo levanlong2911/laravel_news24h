@@ -13,4 +13,7 @@ return [
     'spin' => 'Spin Management',
     'domain_management' => 'Domains',
     'website_management' => 'Website',
+    'article_management' => 'Article',
+    'news-source_management' => 'News Source',
+    'raw-article_management' => 'Raw Article',
 ];

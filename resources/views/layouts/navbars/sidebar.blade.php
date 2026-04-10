@@ -69,6 +69,32 @@
                         </p>
                     </a>
                 </li>
+                <li class="nav-item {{ ($route == 'article') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('article.index') }}" class="nav-link d-inline-flex {{ ($action == 'article-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
+                        <p>
+                            {{ __('sidebar.article_management') }}
+                        </p>
+                    </a>
+                </li>
+                <li class="nav-item {{ ($route == 'keyword') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('keyword.index') }}" class="nav-link d-inline-flex {{ ($action == 'keyword-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
+                        <p>Keywords</p>
+                    </a>
+                </li>
+                <li class="nav-item {{ ($route == 'news-source') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('news-source.index') }}" class="nav-link d-inline-flex {{ ($action == 'news-source-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
+                        <p>{{ __('sidebar.news-source_management') }}</p>
+                    </a>
+                </li>
+                <li class="nav-item {{ ($route == 'raw-article') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('raw-article.index') }}" class="nav-link d-inline-flex {{ ($action == 'raw-article-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
+                        <p>{{ __('sidebar.raw-article_management') }}</p>
+                    </a>
+                </li>
             </ul>
         </nav>
         <!-- /.sidebar-menu -->

@@ -31,4 +31,10 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    'serpapi' => ['key' => env('SERPAPI_KEY')],
+    'claude'  => [
+        'key' => env('CLAUDE_API_KEY'),
+        'version' => '2023-06-01',
+    ],
+
 ];

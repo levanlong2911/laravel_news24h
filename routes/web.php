@@ -1,5 +1,9 @@
 <?php
 
+use App\Http\Controllers\ArticleController;
+use App\Http\Controllers\KeywordController;
+use App\Http\Controllers\NewsSourceController;
+use App\Http\Controllers\RawArticleController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AdvertisementController;
 use App\Http\Controllers\AuthController;
@@ -12,6 +16,7 @@ use App\Http\Controllers\InforDomainsController;
 use App\Http\Controllers\ModalConfirmController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
+use App\Http\Controllers\TrendingController;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
@@ -118,9 +123,56 @@ Route::group(
         Route::post('{domain}/api-key', [DomainController::class,'generateApiKey']);
     });
 
+    // article
+    Route::group(['prefix' => 'article'], function () {
+        Route::get('/',                              [ArticleController::class, 'index'])      ->name('article.index');
+        Route::post('/generate-all',                 [ArticleController::class, 'generateAll'])->name('article.generateAll');
+        Route::post('/generate-one',                 [ArticleController::class, 'generateOne'])->name('article.generateOne');
+        Route::post('/publish-all',                  [ArticleController::class, 'publishAll']) ->name('article.publishAll');
+        Route::post('/cache-clear',                  [ArticleController::class, 'clearCache']) ->name('article.clearCache');
+        Route::post('/{article}/publish',            [ArticleController::class, 'publish'])    ->name('article.publish');
+        Route::post('/{article}/unpublish',          [ArticleController::class, 'unpublish'])  ->name('article.unpublish');
+        Route::delete('/{article}',                  [ArticleController::class, 'destroy'])    ->name('article.destroy');
+        Route::get('/{article}',                     [ArticleController::class, 'show'])       ->name('article.show');
+    });
+
+    // Raw articles (Google News fetch → manual AI generate)
+    Route::group(['prefix' => 'raw-article'], function () {
+        Route::get('/',                                [RawArticleController::class, 'index'])           ->name('raw-article.index');
+        Route::post('/fetch-all',                      [RawArticleController::class, 'fetchAll'])         ->name('raw-article.fetchAll');
+        Route::post('/fetch-one',                      [RawArticleController::class, 'fetchOne'])         ->name('raw-article.fetchOne');
+        Route::post('/generate-keyword',               [RawArticleController::class, 'generateKeyword'])  ->name('raw-article.generateKeyword');
+        Route::post('/generate-selected',              [RawArticleController::class, 'generateSelected']) ->name('raw-article.generateSelected');
+        Route::post('/clear-refetch',                  [RawArticleController::class, 'clearRefetch'])     ->name('raw-article.clearRefetch');
+        Route::post('/{rawArticle}/generate',          [RawArticleController::class, 'generate'])         ->name('raw-article.generate');
+        Route::post('/{rawArticle}/retry',             [RawArticleController::class, 'retry'])            ->name('raw-article.retry');
+        Route::delete('/{rawArticle}',                 [RawArticleController::class, 'destroy'])          ->name('raw-article.destroy');
+    });
+
+    // Keywords
+    Route::group(['prefix' => 'keyword'], function () {
+        Route::get('/',               [KeywordController::class, 'index'])        ->name('keyword.index');
+        Route::post('/',              [KeywordController::class, 'store'])        ->name('keyword.store');
+        Route::get('/{keyword}',      [KeywordController::class, 'show'])        ->name('keyword.show');
+        Route::put('/{keyword}',      [KeywordController::class, 'update'])      ->name('keyword.update');
+        Route::delete('/{keyword}',   [KeywordController::class, 'destroy'])     ->name('keyword.destroy');
+        Route::patch('/{keyword}/toggle', [KeywordController::class, 'toggleActive'])->name('keyword.toggle');
+    });
+
+    // News Sources (trusted / blocked domains)
+    Route::group(['prefix' => 'news-source'], function () {
+        Route::get('/',                      [NewsSourceController::class, 'index'])       ->name('news-source.index');
+        Route::post('/',                     [NewsSourceController::class, 'store'])       ->name('news-source.store');
+        Route::get('/{newsSource}',          [NewsSourceController::class, 'show'])        ->name('news-source.show');
+        Route::put('/{newsSource}',          [NewsSourceController::class, 'update'])      ->name('news-source.update');
+        Route::delete('/{newsSource}',       [NewsSourceController::class, 'destroy'])     ->name('news-source.destroy');
+        Route::patch('/{newsSource}/toggle', [NewsSourceController::class, 'toggleActive'])->name('news-source.toggle');
+    });
+
     Route::post("/getlink", [GetLinkController::class, "getLink"]);
     Route::get("/get-tags", [GetTagController::class, "getTags"]);
     Route::get("/modal-confirm", [ModalConfirmController::class, "modalConfirm"])->name("modal.confirm");
+    Route::get("/trending", [TrendingController::class, "index"])->name("trending.index");
 });
 
 Route::middleware('auth:sanctum')->get('/posts', function (Request $request) {

@@ -26,4 +26,9 @@ class Category extends Model
     {
         return $this->hasMany(Post::class, 'category_id');
     }
+
+    public function keywords()
+    {
+        return $this->hasMany(Keyword::class);
+    }
 }
