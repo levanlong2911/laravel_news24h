@@ -7,7 +7,6 @@ use App\Models\Article;
 use App\Models\Keyword;
 use App\Services\Admin\SerpApiService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 
 class ArticleController extends Controller
@@ -66,7 +65,35 @@ class ArticleController extends Controller
     public function destroy(Article $article)
     {
         $article->delete();
-        return back()->with('success', 'Deleted');
+        return redirect()->route('article.index')->with('success', 'Deleted');
+    }
+
+    public function destroySelected(Request $request)
+    {
+        $ids = array_filter((array) $request->get('selected_ids', []));
+        if (empty($ids)) {
+            return redirect()->route('article.index')->with('error', 'Chưa chọn bài nào.');
+        }
+
+        $count = Article::whereIn('id', $ids)->delete();
+
+        return redirect()->route('article.index', array_filter([
+            'status'     => $request->status,
+            'keyword_id' => $request->keyword_id,
+        ]))->with('success', "Đã xóa {$count} bài.");
+    }
+
+    public function destroyAll(Request $request)
+    {
+        $count = Article::query()
+            ->when($request->status && $request->status !== 'all', fn($q) => $q->where('status', $request->status))
+            ->when($request->keyword_id, fn($q) => $q->where('keyword_id', $request->keyword_id))
+            ->delete();
+
+        return redirect()->route('article.index', array_filter([
+            'status'     => $request->status,
+            'keyword_id' => $request->keyword_id,
+        ]))->with('success', "Deleted {$count} articles.");
     }
 
     public function publishAll(Request $request)
@@ -79,7 +106,7 @@ class ArticleController extends Controller
     }
 
     // Dispatch tất cả active keywords vào queue
-    public function generateAll(Request $request)
+    public function generateAll()
     {
         $keywords = Keyword::where('is_active', true)->get();
 

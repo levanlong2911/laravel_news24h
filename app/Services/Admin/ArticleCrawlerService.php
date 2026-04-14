@@ -6,7 +6,6 @@ use fivefilters\Readability\Configuration;
 use fivefilters\Readability\ParseException;
 use fivefilters\Readability\Readability;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\RequestException;
 use GuzzleHttp\Pool;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
@@ -15,10 +14,11 @@ use Illuminate\Support\Facades\Log;
 
 class ArticleCrawlerService
 {
-    private const CACHE_TTL   = 3600; // 1 giờ per URL
-    private const MAX_CHARS   = 8000; // tăng lên 8000 để Claude có đủ context
+    private const CACHE_TTL   = 3600;
+    private const MAX_CHARS   = 20000;
     private const TIMEOUT     = 12;
-    private const CONCURRENCY = 5;   // số URLs crawl đồng thời
+    private const CONCURRENCY = 5;
+
 
     private Client $client;
 
@@ -34,20 +34,17 @@ class ArticleCrawlerService
                 'Accept-Encoding' => 'gzip, deflate',
             ],
             'allow_redirects' => ['max' => 5],
-            'verify'          => false, // bỏ qua SSL lỗi trên một số news sites
+            'verify'          => false,
         ]);
     }
 
-    /**
-     * Crawl nhiều URLs SONG SONG bằng Guzzle Pool.
-     * Tách cache hit vs cần fetch — chỉ fetch URLs chưa cache.
-     */
+    // ── Public API ────────────────────────────────────────────────────────────
+
     public function crawlMany(array $urls): array
     {
-        $results  = [];
-        $toFetch  = [];
+        $results = [];
+        $toFetch = [];
 
-        // Tách URLs đã cache
         foreach ($urls as $url) {
             $hit = Cache::get('crawl:' . md5($url));
             if ($hit !== null) {
@@ -61,10 +58,8 @@ class ArticleCrawlerService
             return $results;
         }
 
-        // Crawl song song
         $fetched = $this->poolFetch($toFetch);
 
-        // Lưu cache từng URL
         foreach ($fetched as $url => $content) {
             Cache::put('crawl:' . md5($url), $content, self::CACHE_TTL);
         }
@@ -72,9 +67,36 @@ class ArticleCrawlerService
         return array_merge($results, $fetched);
     }
 
-    /**
-     * Guzzle Pool — gửi tất cả request đồng thời, concurrency 5.
-     */
+    public function extractPublishDate(string $url): ?string
+    {
+        try {
+            $html     = (string) $this->client->get($url)->getBody();
+            $patterns = [
+                '/<meta[^>]+property=["\']article:published_time["\'][^>]+content=["\']([^"\']+)["\'][^>]*>/i',
+                '/<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']article:published_time["\'][^>]*>/i',
+                '/<meta[^>]+itemprop=["\']datePublished["\'][^>]+content=["\']([^"\']+)["\'][^>]*>/i',
+                '/"datePublished"\s*:\s*"([^"]+)"/i',
+                '/"publishedAt"\s*:\s*"([^"]+)"/i',
+                '/<time[^>]+datetime=["\']([^"\']+)["\'][^>]*>/i',
+            ];
+
+            foreach ($patterns as $pattern) {
+                if (preg_match($pattern, $html, $m)) {
+                    $parsed = strtotime($m[1]);
+                    if ($parsed !== false && $parsed > 0) {
+                        return date('c', $parsed);
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            Log::debug('[Crawler] extractPublishDate failed: ' . $url . ' — ' . $e->getMessage());
+        }
+
+        return null;
+    }
+
+    // ── Private ───────────────────────────────────────────────────────────────
+
     private function poolFetch(array $urls): array
     {
         $results  = array_fill_keys($urls, '');
@@ -87,10 +109,9 @@ class ArticleCrawlerService
         $pool = new Pool($this->client, $requests($urls), [
             'concurrency' => self::CONCURRENCY,
             'fulfilled'   => function (Response $response, string $url) use (&$results) {
-                $html = (string) $response->getBody();
-                $results[$url] = $this->extractWithReadability($html, $url);
+                $results[$url] = $this->extractWithReadability((string) $response->getBody(), $url);
             },
-            'rejected' => function (RequestException $e, string $url) use (&$results) {
+            'rejected' => function (\Throwable $e, string $url) use (&$results) {
                 Log::warning('[Crawler] Failed: ' . $url . ' — ' . $e->getMessage());
                 $results[$url] = '';
             },
@@ -102,50 +123,9 @@ class ArticleCrawlerService
     }
 
     /**
-     * Crawl 1 URL để lấy publish date thật từ meta tags.
-     * SerpAPI trả về "3 hours ago" nhưng đó là thời gian cache của họ, không chính xác.
-     * Meta tags như article:published_time, datePublished luôn là thời gian thật.
-     */
-    public function extractPublishDate(string $url): ?string
-    {
-        try {
-            $response = $this->client->get($url);
-            $html     = (string) $response->getBody();
-
-            // Thứ tự ưu tiên: meta OG > JSON-LD > meta name > time tag
-            $patterns = [
-                // Open Graph / Article meta
-                '/<meta[^>]+property=["\']article:published_time["\'][^>]+content=["\']([^"\']+)["\'][^>]*>/i',
-                '/<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']article:published_time["\'][^>]*>/i',
-                // Schema.org
-                '/<meta[^>]+itemprop=["\']datePublished["\'][^>]+content=["\']([^"\']+)["\'][^>]*>/i',
-                // JSON-LD
-                '/"datePublished"\s*:\s*"([^"]+)"/i',
-                '/"publishedAt"\s*:\s*"([^"]+)"/i',
-                // time tag
-                '/<time[^>]+datetime=["\']([^"\']+)["\'][^>]*>/i',
-            ];
-
-            foreach ($patterns as $pattern) {
-                if (preg_match($pattern, $html, $m)) {
-                    $parsed = strtotime($m[1]);
-                    if ($parsed !== false && $parsed > 0) {
-                        return date('c', $parsed); // ISO 8601
-                    }
-                }
-            }
-
-        } catch (\Exception $e) {
-            Log::debug('[Crawler] extractPublishDate failed: ' . $url . ' — ' . $e->getMessage());
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract nội dung chính bằng fivefilters/readability.php.
-     * Dùng thuật toán Firefox Reader Mode — tự động loại ads, nav, sidebar.
-     * Fallback về strip_tags nếu Readability parse thất bại.
+     * BƯỚC 1: Xóa HTML elements rác (ads, related, social...) trước Readability.
+     * BƯỚC 2: Readability extract nội dung chính (Firefox Reader Mode algorithm).
+     * BƯỚC 3: Strip tags → lọc text noise từng dòng.
      */
     private function extractWithReadability(string $html, string $url): string
     {
@@ -153,23 +133,34 @@ class ArticleCrawlerService
             return '';
         }
 
+        // Normalize UTF-8: invalid byte sequences → U+FFFD, rồi xóa U+FFFD luôn.
+        // Cần làm trước mọi processing vì PCRE /u flag sẽ fail trên invalid UTF-8.
+        $html = mb_scrub($html, 'UTF-8');
+        $html = str_replace("\xef\xbf\xbd", ' ', $html);
+
+        // Lưu HTML gốc (trước khi strip script) để fallback JSON-LD dùng
+        $rawHtml = $html;
+
+        // BƯỚC 1: Xóa elements rác trước khi parse
+        $html = $this->removeNoisyElements($html);
+
         try {
             $config = new Configuration([
                 'FixRelativeURLs'     => true,
                 'OriginalURL'         => $url,
-                'SummonCthulhu'       => false,  // tắt regex hack
+                'SummonCthulhu'       => false,
                 'NormalizeWhitespace' => true,
             ]);
 
             $readability = new Readability($config);
             $readability->parse($html);
 
-            // Lấy nội dung HTML, rồi strip tags để lấy plain text
-            $html = $readability->getContent();
-            $text = strip_tags($html ?? '');
+            $extracted = $readability->getContent() ?? '';
+            $text      = $this->htmlToText($extracted);
 
-            if (! empty(trim($text)) && strlen(trim($text)) > 200) {
-                return $this->cleanAndTruncate($text);
+            if (!empty(trim($text)) && strlen(trim($text)) > 200) {
+                // BƯỚC 3: Lọc text noise
+                return $this->cleanText($text);
             }
 
         } catch (ParseException $e) {
@@ -178,35 +169,614 @@ class ArticleCrawlerService
             Log::warning('[Crawler] Readability error for ' . $url . ': ' . $e->getMessage());
         }
 
-        // Fallback: strip_tags thủ công nếu Readability thất bại
+        // Fallback: thử extract articleBody từ JSON-LD hoặc embedded JSON
+        // (dùng cho các site JS-rendered như USA Today, Vox, The Athletic...)
+        // Dùng $rawHtml vì $html đã bị strip <script> bởi removeNoisyElements.
+        $jsonText = $this->extractFromJsonLd($rawHtml);
+        if (strlen($jsonText) > 200) {
+            return $jsonText;
+        }
+
+        // Fallback: thử fetch AMP version qua Google AMP Cache
+        // AMP HTML là static (không cần JS) nên Readability extract được.
+        $ampText = $this->fetchAmpVersion($url);
+        if (strlen($ampText) > 200) {
+            return $ampText;
+        }
+
+        // Fallback cuối: Jina AI Reader — xử lý JS-rendered sites phía server.
+        // Không cần API key, miễn phí, hoạt động với hầu hết news sites.
+        $jinaText = $this->fetchViaJina($url);
+        if (strlen($jinaText) > 200) {
+            return $jinaText;
+        }
+
         return $this->fallbackExtract($html);
+    }
+
+    /**
+     * Jina AI Reader (r.jina.ai) — convert bất kỳ URL nào thành clean text.
+     * Xử lý JS-rendered pages phía server → hoạt động với React/Vue/SPA sites.
+     * Miễn phí, không cần API key. Rate limit: ~20 req/min trên free tier.
+     */
+    private function fetchViaJina(string $url): string
+    {
+        try {
+            $jinaUrl  = 'https://r.jina.ai/' . $url;
+
+            Log::debug('[Crawler] Trying Jina AI Reader', ['url' => $url]);
+
+            $response = $this->client->get($jinaUrl, [
+                'timeout' => 20,
+                'headers' => [
+                    'Accept'    => 'text/plain',
+                    'X-Timeout' => '15',
+                ],
+            ]);
+
+            $text = trim((string) $response->getBody());
+
+            if (strlen($text) < 200) {
+                return '';
+            }
+
+            // Jina trả về Markdown — bỏ phần metadata header (Title:, URL:, ...)
+            // Jina header format: "Title: ...\nURL Source: ...\nPublished Time: ...\n\n---\n\n"
+            if (preg_match('/^(?:Title:|URL Source:|Published Time:).+?(?:\n---+\n\n|\n\n\n)/s', $text, $m)) {
+                $text = substr($text, strlen($m[0]));
+            }
+
+            $text = trim($text);
+
+            if (strlen($text) < 200) {
+                return '';
+            }
+
+            Log::debug('[Crawler] Jina AI success', ['url' => $url, 'length' => strlen($text)]);
+
+            // Convert Markdown → HTML paragraphs
+            return $this->markdownToHtml($text);
+
+        } catch (\Exception $e) {
+            Log::debug('[Crawler] Jina AI failed: ' . $url . ' — ' . $e->getMessage());
+            return '';
+        }
+    }
+
+    /**
+     * Convert Markdown text từ Jina → HTML <p> tags.
+     * Xử lý: headings (#/##/###), bold (**text**), links ([text](url)), bullet lists.
+     */
+    private function markdownToHtml(string $markdown): string
+    {
+        $lines  = explode("\n", $markdown);
+        $html   = '';
+        $buffer = [];
+
+        $flushBuffer = function () use (&$buffer, &$html) {
+            $para = trim(implode(' ', array_filter(array_map('trim', $buffer))));
+            if ($para !== '') {
+                $html .= '<p>' . htmlspecialchars($para) . '</p>';
+            }
+            $buffer = [];
+        };
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            // Heading → <h2>
+            if (preg_match('/^#{1,3}\s+(.+)/', $line, $m)) {
+                $flushBuffer();
+                $html .= '<h2>' . htmlspecialchars(trim($m[1])) . '</h2>';
+                continue;
+            }
+
+            // Horizontal rule / separator → flush
+            if (preg_match('/^[-*_]{3,}$/', $line)) {
+                $flushBuffer();
+                continue;
+            }
+
+            // Dòng trống → flush paragraph
+            if ($line === '') {
+                $flushBuffer();
+                continue;
+            }
+
+            // Bỏ image markdown: ![alt](url)
+            $line = preg_replace('/!\[.*?\]\(.*?\)/', '', $line);
+
+            // Strip link markdown: [text](url) → text
+            $line = preg_replace('/\[([^\]]+)\]\([^)]+\)/', '$1', $line);
+
+            // Strip bold/italic
+            $line = preg_replace('/\*{1,2}([^*]+)\*{1,2}/', '$1', $line);
+            $line = trim($line);
+
+            if ($line !== '') {
+                $buffer[] = $line;
+            }
+        }
+
+        $flushBuffer();
+
+        // Giới hạn độ dài — không qua truncate/toHtml vì $html đã là HTML hoàn chỉnh
+        if (strlen($html) > self::MAX_CHARS) {
+            $cut  = substr($html, 0, self::MAX_CHARS);
+            $last = strrpos($cut, '</p>');
+            $html = $last ? substr($cut, 0, $last + 4) : $cut;
+        }
+
+        return $html;
+    }
+
+    /**
+     * Thử fetch AMP version của URL qua Google AMP Cache.
+     * Google AMP Cache lưu bản AMP của các trang báo lớn — static HTML, không cần JS.
+     *
+     * Format: https://[domain-encoded].cdn.ampproject.org/v/s/[original-url]
+     * Encoding: domain = thay "." → "-", "-" → "--"
+     * Ví dụ: www.usatoday.com → www-usatoday-com
+     */
+    private function fetchAmpVersion(string $url): string
+    {
+        $parsed = parse_url($url);
+        if (empty($parsed['host'])) {
+            return '';
+        }
+
+        // Encode domain theo chuẩn AMP cache: "-" → "--", "." → "-"
+        $domain        = $parsed['host'];
+        $encoded       = str_replace('.', '-', str_replace('-', '--', $domain));
+        $withoutScheme = preg_replace('#^https?://#', '', $url);
+        $ampCacheUrl   = 'https://' . $encoded . '.cdn.ampproject.org/v/s/' . $withoutScheme;
+
+        try {
+            Log::debug('[Crawler] Trying AMP cache', ['amp_url' => $ampCacheUrl]);
+
+            $response = $this->client->get($ampCacheUrl, ['timeout' => 15]);
+            $ampHtml  = (string) $response->getBody();
+
+            if (strlen($ampHtml) < 500) {
+                return '';
+            }
+
+            $ampHtml = mb_scrub($ampHtml, 'UTF-8');
+            $ampHtml = str_replace("\xef\xbf\xbd", ' ', $ampHtml);
+
+            // AMP HTML thường extract tốt với Readability
+            $config = new Configuration([
+                'FixRelativeURLs'     => true,
+                'OriginalURL'         => $url,
+                'NormalizeWhitespace' => true,
+            ]);
+            $readability = new Readability($config);
+            $readability->parse($this->removeNoisyElements($ampHtml));
+
+            $text = $this->htmlToText($readability->getContent() ?? '');
+            if (strlen(trim($text)) > 200) {
+                Log::debug('[Crawler] AMP cache success', ['url' => $url, 'length' => strlen($text)]);
+                return $this->cleanText($text);
+            }
+
+        } catch (\Exception $e) {
+            Log::debug('[Crawler] AMP cache failed: ' . $url . ' — ' . $e->getMessage());
+        }
+
+        return '';
+    }
+
+    /**
+     * Extract articleBody từ JSON-LD (<script type="application/ld+json">) hoặc
+     * embedded JSON blob trong <script> bất kỳ.
+     * Dùng làm fallback cho các site load content bằng JS.
+     */
+    private function extractFromJsonLd(string $html): string
+    {
+        // 1. Thử parse từng <script type="application/ld+json"> bằng json_decode
+        //    (robust hơn regex: xử lý @graph, escaped chars, Unicode đúng chuẩn)
+        preg_match_all(
+            '/<script[^>]+type=["\']application\/ld\+json["\'][^>]*>(.*?)<\/script>/si',
+            $html,
+            $scripts
+        );
+
+        foreach ($scripts[1] as $json) {
+            $data = json_decode(trim($json), true);
+            if (!is_array($data)) continue;
+
+            // Flatten @graph array (Google, USA Today, nhiều site dùng @graph)
+            $nodes = isset($data['@graph']) ? $data['@graph'] : [$data];
+
+            foreach ($nodes as $node) {
+                if (!empty($node['articleBody']) && strlen($node['articleBody']) > 200) {
+                    Log::debug('[Crawler] JSON-LD articleBody found via json_decode', [
+                        'length' => strlen($node['articleBody']),
+                    ]);
+                    return $this->cleanText($this->htmlToText($node['articleBody']));
+                }
+            }
+        }
+
+        // 2. Fallback: regex tìm "articleBody" trong bất kỳ <script> nào (embedded JS state)
+        //    Dùng cho các site nhúng state vào window.__INITIAL_STATE__ hoặc tương tự
+        if (preg_match('/"articleBody"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/s', $html, $m)) {
+            $body = json_decode('"' . $m[1] . '"');
+            if (is_string($body) && strlen($body) > 200) {
+                Log::debug('[Crawler] JSON-LD articleBody found via regex', [
+                    'length' => strlen($body),
+                ]);
+                return $this->cleanText($this->htmlToText($body));
+            }
+        }
+
+        Log::debug('[Crawler] JSON-LD not found', [
+            'has_ld_json'    => str_contains($html, 'application/ld+json'),
+            'has_articleBody'=> str_contains($html, 'articleBody'),
+        ]);
+
+        return '';
+    }
+
+    /**
+     * Xóa HTML tag rác trước khi Readability parse.
+     * Chỉ xóa các tag an toàn — không dùng class/id regex vì dễ xóa nhầm nội dung.
+     */
+    private function removeNoisyElements(string $html): string
+    {
+        // Xóa các tag block hoàn toàn — không bao giờ chứa nội dung bài viết
+        return preg_replace(
+            '/<(script|style|noscript|iframe|svg|canvas|form)[^>]*>.*?<\/\1>/si',
+            '',
+            $html
+        );
+    }
+
+    /**
+     * Lọc text noise từng dòng sau khi strip_tags.
+     * Loại bỏ: quảng cáo, subscribe, social share, breadcrumb, related links...
+     */
+    private function cleanText(string $text): string
+    {
+        $lines           = explode("\n", $text);
+        $result          = [];
+        $skipSection     = false; // Bỏ toàn bộ section sau heading noise
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            // Xóa ký tự ◆ ♦ ◇ ● ▪ ▸ ► inline trong dòng trước khi check
+            $line = preg_replace('/[\x{25A0}-\x{25FF}\x{2600}-\x{27BF}]/u', '', $line);
+            $line = str_replace(['◆', '◇', '♦', '●', '▸', '▪', '►', '◊'], '', $line);
+            $line = trim($line);
+
+            $lower = strtolower($line);
+            $len   = strlen($line);
+
+            // Bỏ dòng rỗng (sẽ xử lý lại sau)
+            if ($len === 0) {
+                $result[] = '';
+                continue;
+            }
+
+            // Bỏ dòng quá ngắn (dưới 8 ký tự) — thường là UI fragment ("|", "NFL", "Share"...)
+            // Ngưỡng 8 thay vì 15 để giữ tên ngắn như "Bo Melton" (9), "Skyy Moore" (10)
+            // List items ("- ...") luôn được giữ dù ngắn hơn ngưỡng
+            $isListItem = str_starts_with($line, '- ');
+            if ($len < 8 && !preg_match('/[.!?]$/', $line) && !$isListItem) {
+                continue;
+            }
+
+            // Bỏ dòng chứa noise keywords
+            if (preg_match('/\b(advertisement|sponsored content|paid content|sponsored by|brought to you by)\b/i', $line)) {
+                continue;
+            }
+
+            // Bỏ "Article continues below this ad" và các biến thể
+            if (preg_match('/article continues below|continues below this ad|below this ad/i', $lower)) {
+                continue;
+            }
+
+            // Bỏ "Make X a preferred source" / "Add Preferred Source" / paywalls
+            if (preg_match('/preferred source|add preferred|become a member|subscriber only|subscription required|sign in to read/i', $lower)) {
+                continue;
+            }
+
+            // Bỏ subscribe / newsletter prompts
+            if (preg_match('/\b(subscribe|sign up|newsletter|get the latest|join our|follow us|follow on|like us on|find us on|connect with us)\b/i', $lower)
+                && $len < 150) {
+                continue;
+            }
+
+            // Bỏ social share prompts
+            if (preg_match('/\b(share this|share on|tweet this|click to share|copy link|send email)\b/i', $lower)) {
+                continue;
+            }
+
+            // Bỏ cookie / GDPR banners
+            if (preg_match('/\b(cookie|privacy policy|terms of service|gdpr|we use cookies|by continuing)\b/i', $lower)
+                && $len < 200) {
+                continue;
+            }
+
+            // Bỏ breadcrumb / navigation dạng "Home > Sports > NFL"
+            if (preg_match('/^[\w\s]+(?:\s*[>\/|]\s*[\w\s]+){2,}$/', $line) && $len < 100) {
+                continue;
+            }
+
+            // Bỏ dòng chỉ toàn URL
+            if (preg_match('/^https?:\/\/\S+$/', $line)) {
+                continue;
+            }
+
+            // Bỏ copyright lines
+            if (preg_match('/^©|\bcopyright\b|\ball rights reserved\b/i', $lower)) {
+                continue;
+            }
+
+            // Bỏ "Read more:", "Also read:", "Related:", "More:", "More NFL news:", "MORE:" v.v.
+            if (preg_match('/^(read more|also read|related|see also|more from|more news|more:|trending now|up next|more nfl|more nba|more mlb|more nhl|more sports|more on|watch:|listen:)/i', $lower)) {
+                continue;
+            }
+
+            // Bỏ heading marker chứa noise → bật skipSection để bỏ cả phần sau
+            if (preg_match('/^##heading##(more|related|trending|up next|watch|listen)/i', $lower)) {
+                $skipSection = true;
+                continue;
+            }
+
+            // Gặp heading thực sự → tắt skipSection
+            if (preg_match('/^##heading##/i', $lower)) {
+                $skipSection = false;
+            }
+
+            // Bỏ toàn bộ section sau heading noise (More NFL news, Related, v.v.)
+            if ($skipSection) {
+                continue;
+            }
+
+            // Bỏ photo credit / caption ảnh
+            if (preg_match('/\b(getty|ap photo|reuters|afp|shutterstock|wire image|photo by|image by|credit:|imagn)\b/i', $lower)) {
+                continue;
+            }
+
+            // Bỏ author attribution dạng "Reporter / Senior Staff Writer", "Staff Writer | Sports"
+            if (preg_match('/\b(reporter|staff writer|senior writer|contributing writer|correspondent|columnist)\b/i', $lower)
+                && preg_match('/[\/|]/', $line) && $len < 100) {
+                continue;
+            }
+
+            // Bỏ author bio: "Name is a sports writer who covers..." hoặc "This is my Nth year covering..."
+            if (preg_match('/\b(is a (sports|news|staff|senior|contributing|freelance) (writer|reporter|editor|contributor))\b/i', $lower)) {
+                continue;
+            }
+            if (preg_match('/^(this is my \d+(st|nd|rd|th) year|i(\'ve| have) been covering|i cover the)/i', $lower)) {
+                continue;
+            }
+
+            // Bỏ "More about [Name]"
+            if (preg_match('/^more about\s+\w/i', $lower)) {
+                continue;
+            }
+
+            // Bỏ related article list: nhiều tiêu đề nối bằng " - " (dạng "A - B - C - D")
+            if (substr_count($line, ' - ') >= 2 && $len > 80) {
+                continue;
+            }
+
+            // Bỏ navigation link list nối bằng " | " (dạng SI.com: "Title A | Title B | Title C | ...")
+            if (substr_count($line, ' | ') >= 2) {
+                continue;
+            }
+
+            $result[] = $line;
+        }
+
+        // Xóa heading không có nội dung phía sau (orphaned heading).
+        // Ví dụ: "##HEADING##Packers Predraft Visits##/HEADING##" mà phía sau chỉ toàn dòng trắng
+        // hoặc heading khác → xóa để tránh tốn token khi truyền cho Claude.
+        $filtered = [];
+        $total    = count($result);
+        for ($i = 0; $i < $total; $i++) {
+            if (!str_starts_with($result[$i], '##HEADING##')) {
+                $filtered[] = $result[$i];
+                continue;
+            }
+            // Tìm dòng nội dung tiếp theo (không rỗng, không phải heading khác)
+            $hasContent = false;
+            for ($j = $i + 1; $j < $total; $j++) {
+                $next = trim($result[$j]);
+                if ($next === '') continue;
+                if (str_starts_with($next, '##HEADING##')) break; // heading khác → orphaned
+                $hasContent = true;
+                break;
+            }
+            if ($hasContent) {
+                $filtered[] = $result[$i];
+            }
+        }
+
+        $text = implode("\n", $filtered);
+
+        // Gom nhiều dòng trắng liên tiếp → 1 dòng trắng
+        $text = preg_replace('/\n{3,}/', "\n\n", $text);
+        $text = preg_replace('/\h+/u', ' ', $text); // cần /u để match U+00A0 đúng UTF-8
+        $text = trim($text);
+
+        return $this->truncate($text);
     }
 
     private function fallbackExtract(string $html): string
     {
-        // Xóa script/style/nav/footer
         $html = preg_replace(
-            '/<(script|style|nav|footer|header|aside|noscript|iframe)[^>]*>.*?<\/\1>/si',
+            '/<(script|style|nav|footer|header|aside|noscript|iframe|form)[^>]*>.*?<\/\1>/si',
             '',
             $html
         );
-        $text = strip_tags($html);
-        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        return $this->cleanAndTruncate($text);
+
+        return $this->cleanText($this->htmlToText($html));
     }
 
-    private function cleanAndTruncate(string $text): string
+    /**
+     * Convert HTML → plain text có giữ paragraph breaks.
+     * strip_tags() đơn thuần xóa tags nhưng không giữ newlines.
+     */
+    private function htmlToText(string $html): string
     {
-        $text = preg_replace('/\h+/', ' ', $text);
-        $text = preg_replace('/(\n\s*){3,}/', "\n\n", $text);
-        $text = trim($text);
+        // Xóa figure/figcaption — caption ảnh, credit ảnh
+        $html = preg_replace('/<figure[^>]*>.*?<\/figure>/si', '', $html);
+        $html = preg_replace('/<figcaption[^>]*>.*?<\/figcaption>/si', '', $html);
 
+        // Giữ heading — đánh dấu trước khi strip tags
+        $html = preg_replace_callback('/<h([1-6])[^>]*>(.*?)<\/h\1>/si', function ($m) {
+            $text = strip_tags($m[2]);
+            return "\n\n##HEADING##" . trim($text) . "##/HEADING##\n\n";
+        }, $html);
+
+        // List items → "- item" + single newline
+        // KHÔNG thêm \n trước "- " — để các items trong cùng <ul> nằm trên cùng 1 paragraph
+        // sau khi split("\n{2,}") trong toHtml(). Thứ tự: <ul>→\n, <li>→"- ", </li>→\n → "- item\n"
+        $html = preg_replace('/<li[^>]*>/i', '- ', $html);
+        $html = preg_replace('/<\/li>/i', "\n", $html);
+
+        // ul/ol → double newline để tách khỏi paragraph trước/sau
+        $html = preg_replace('/<ul[^>]*>/i', "\n\n", $html);
+        $html = preg_replace('/<\/ul>/i', "\n\n", $html);
+        $html = preg_replace('/<ol[^>]*>/i', "\n\n", $html);
+        $html = preg_replace('/<\/ol>/i', "\n\n", $html);
+
+        // Block elements → newline (opening) + double newline (closing)
+        $html = preg_replace('/<(?:p|div|section|article|blockquote)[^>]*>/i', "\n", $html);
+        $html = preg_replace('/<\/(p|div|section|article|blockquote)>/i', "\n\n", $html);
+
+        // Inline breaks → single newline
+        $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
+
+        // Adjacent links (e.g. depth-chart player names) — Readability có thể gộp chúng thành
+        // <a>Name1</a><a>Name2</a> mà không có separator. Tách ra bằng newline.
+        $html = preg_replace('/<\/a>\s*<a\b/i', "</a>\n<a", $html);
+
+        // Strip còn lại
+        $text = strip_tags($html);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        // Xóa U+FFFD (Replacement Character — xuất hiện khi encoding lỗi trong pipeline)
+        $text = str_replace("\xef\xbf\xbd", ' ', $text);
+
+        // Whitelist: chỉ giữ lại ký tự Latin + newline + dấu câu thông dụng.
+        // Loại bỏ toàn bộ symbol/icon Unicode (◆ ♦ ● ■ emoji v.v.) bằng cách thay = khoảng trắng.
+        // Giữ: \t \n \r | ASCII printable | Latin Extended | dấu gạch ngang | nháy | chấm lửng
+        $text = preg_replace(
+            '/[^\x{0009}\x{000A}\x{000D}\x{0020}-\x{007E}\x{00A0}-\x{024F}\x{2010}-\x{2015}\x{2018}-\x{201D}\x{2026}]/u',
+            ' ',
+            $text
+        );
+
+        // Gộp nhiều khoảng trắng ngang (không xóa newline)
+        $text = preg_replace('/[^\S\n]+/', ' ', $text);
+
+        return $text;
+    }
+
+    private function truncate(string $text): string
+    {
         if (strlen($text) <= self::MAX_CHARS) {
-            return $text;
+            return $this->toHtml($text);
         }
 
         $cut  = substr($text, 0, self::MAX_CHARS);
         $last = strrpos($cut, '. ');
-        return $last ? substr($cut, 0, $last + 1) . ' [...]' : $cut . ' [...]';
+        $text = $last ? substr($cut, 0, $last + 1) . ' [...]' : $cut . ' [...]';
+
+        return $this->toHtml($text);
+    }
+
+    /**
+     * Convert plain text → HTML <p> tags.
+     * Mỗi đoạn (cách nhau bằng dòng trắng) → 1 thẻ <p>.
+     */
+    private function toHtml(string $text): string
+    {
+        $paragraphs    = preg_split('/\n{2,}/', trim($text));
+        $html          = '';
+        $seenParagraph = false; // Đã thấy <p> content chưa (để detect highlights ở đầu bài)
+
+        foreach ($paragraphs as $para) {
+            $para = trim($para);
+            if (empty($para)) continue;
+
+            // Heading marker → <h2>
+            if (preg_match('/^##HEADING##(.+)##\/HEADING##$/s', $para, $m)) {
+                $html .= '<h2>' . htmlspecialchars(trim($m[1])) . '</h2>';
+                continue;
+            }
+
+            // Bỏ caption ảnh: dòng chứa " | " dạng "Tên ảnh | Photographer Name"
+            if (preg_match('/\|\s*\w+.{0,60}(Images?|Photo|Getty|Reuters|AFP|AP|Imagn)/i', $para)
+                && strlen($para) < 200) {
+                continue;
+            }
+
+            // Bỏ credit line ngắn dạng "Getty Images", "AP Photo by..."
+            if (preg_match('/^(Getty|AP|Reuters|AFP|Imagn|Shutterstock|USA Today|Icon Sportswire)/i', $para)
+                && strlen($para) < 120) {
+                continue;
+            }
+
+            // List block: para chứa nhiều dòng bắt đầu bằng "- "
+            $lines        = explode("\n", $para);
+            $nonEmpty     = array_values(array_filter($lines, fn($l) => trim($l) !== ''));
+            $listLines    = array_filter($nonEmpty, fn($l) => str_starts_with(trim($l), '- '));
+
+            if (count($nonEmpty) >= 2 && count($listLines) >= 2) {
+                // Bỏ "highlights/key points" block: list đầu tiên xuất hiện trước bất kỳ <p> nào
+                // và tất cả items là câu hoàn chỉnh (kết thúc ".") — đây là summary thừa.
+                if (!$seenParagraph) {
+                    $allSentences = count(array_filter(
+                        $nonEmpty,
+                        fn($l) => preg_match('/[.!?]\s*$/', trim(preg_replace('/^-\s+/', '', $l)))
+                    )) === count($nonEmpty);
+
+                    if ($allSentences && count($nonEmpty) <= 6) {
+                        continue; // skip highlights
+                    }
+                }
+
+                $html .= '<ul>';
+                foreach ($nonEmpty as $line) {
+                    $line = trim($line);
+                    $item = preg_replace('/^-\s+/', '', $line);
+                    $html .= '<li>' . htmlspecialchars($item) . '</li>';
+                }
+                $html .= '</ul>';
+                continue;
+            }
+
+            // Dòng đơn bắt đầu bằng "- " → <ul><li> đơn
+            if (str_starts_with(trim($para), '- ')) {
+                $item = preg_replace('/^-\s+/', '', trim($para));
+                $html .= '<ul><li>' . htmlspecialchars($item) . '</li></ul>';
+                continue;
+            }
+
+            // Multi-line para với tất cả các dòng ngắn (≤ 40 chars, không dấu câu cuối) →
+            // có thể là danh sách tên cầu thủ / roster từ adjacent <a> tags — render thành <ul>
+            $shortLines = array_filter($nonEmpty, fn($l) => strlen(trim($l)) <= 40 && !preg_match('/[.!?,]$/', trim($l)));
+            if (count($nonEmpty) >= 3 && count($shortLines) === count($nonEmpty)) {
+                $html .= '<ul>';
+                foreach ($nonEmpty as $line) {
+                    $html .= '<li>' . htmlspecialchars(trim($line)) . '</li>';
+                }
+                $html .= '</ul>';
+                continue;
+            }
+
+            // Inline newlines trong <p> → <br> để giữ line breaks khi hiển thị
+            $paraHtml      = nl2br(htmlspecialchars($para));
+            $seenParagraph = true;
+            $html .= '<p>' . $paraHtml . '</p>';
+        }
+
+        return $html;
     }
 }

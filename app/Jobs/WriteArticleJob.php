@@ -51,6 +51,7 @@ class WriteArticleJob implements ShouldQueue
         // Tạo article record giữ slot (tránh race condition)
         $article = Article::create([
             'keyword_id'      => $raw->keyword_id,
+            'category_id'     => $raw->keyword->category_id ?? null,
             'source_url'      => $url,
             'source_url_hash' => md5($url),
             'source_title'    => $raw->title,
@@ -385,9 +386,14 @@ PROMPT;
 
     public function failed(\Throwable $e): void
     {
-        // Update raw article status nếu job permanently failed (hết retries)
+        // Update raw article + article khi job permanently failed (hết retries / bị timeout)
         try {
             $this->rawArticle->update(['status' => 'failed']);
+
+            // Cleanup article bị kẹt 'processing' (xảy ra khi worker bị kill mid-run)
+            Article::where('source_url_hash', md5($this->rawArticle->url))
+                ->where('status', 'processing')
+                ->update(['status' => 'failed']);
         } catch (\Throwable) {}
 
         Log::error('[WriteArticle] Permanently failed: ' . $e->getMessage());

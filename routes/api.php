@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ApiAdvertisementController;
 use App\Http\Controllers\Api\PostApiController;
+use App\Http\Controllers\Api\RedditController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -17,9 +18,15 @@ use Illuminate\Support\Facades\Route;
 */
 
 
-Route::middleware(['api', 'domain.api'])->group(function () {
+Route::middleware(['domain.api'])->group(function () {
     Route::get('/posts', [PostApiController::class, 'index']);
     Route::get('/posts/{slug}', [PostApiController::class, 'show']);
+
+});
+
+Route::prefix('/reddit')->group(function () {
+    Route::get('/', [RedditController::class, 'index']);
+    Route::get('/subreddit', [RedditController::class, 'subreddit']);
 });
 
 Route::prefix('ads')->group(function () {

@@ -8,6 +8,7 @@ use App\Repositories\Eloquent\BaseRepository;
 use App\Repositories\Eloquent\CategoryRepository;
 use App\Repositories\Eloquent\FontRepository;
 use App\Repositories\Eloquent\InforDomainRepository;
+use App\Repositories\Eloquent\KeywordRepository;
 use App\Repositories\Eloquent\PostRepository;
 use App\Repositories\Eloquent\PostTagRepository;
 use App\Repositories\Eloquent\RoleRepository;
@@ -18,6 +19,7 @@ use App\Repositories\Interfaces\AdsRepositoryInterface;
 use App\Repositories\Interfaces\CategoryRepositoryInterface;
 use App\Repositories\Interfaces\FontRepositoryInterface;
 use App\Repositories\Interfaces\InforDomainRepositoryInterface;
+use App\Repositories\Interfaces\KeywordRepositoryInterface;
 use App\Repositories\Interfaces\PostRepositoryInterface;
 use App\Repositories\Interfaces\PostTagRepositoryInterface;
 use App\Repositories\Interfaces\RepositoryInterface;
@@ -77,6 +79,10 @@ class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(
             WebsiteRepositoryInterface::class,
             WebsiteRepository::class
+        );
+        $this->app->bind(
+            KeywordRepositoryInterface::class,
+            KeywordRepository::class
         );
     }
 

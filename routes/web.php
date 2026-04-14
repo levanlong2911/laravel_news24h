@@ -129,6 +129,8 @@ Route::group(
         Route::post('/generate-all',                 [ArticleController::class, 'generateAll'])->name('article.generateAll');
         Route::post('/generate-one',                 [ArticleController::class, 'generateOne'])->name('article.generateOne');
         Route::post('/publish-all',                  [ArticleController::class, 'publishAll']) ->name('article.publishAll');
+        Route::delete('/delete-all',                 [ArticleController::class, 'destroyAll'])      ->name('article.destroyAll');
+        Route::delete('/delete-selected',            [ArticleController::class, 'destroySelected']) ->name('article.destroySelected');
         Route::post('/cache-clear',                  [ArticleController::class, 'clearCache']) ->name('article.clearCache');
         Route::post('/{article}/publish',            [ArticleController::class, 'publish'])    ->name('article.publish');
         Route::post('/{article}/unpublish',          [ArticleController::class, 'unpublish'])  ->name('article.unpublish');
@@ -144,6 +146,7 @@ Route::group(
         Route::post('/generate-keyword',               [RawArticleController::class, 'generateKeyword'])  ->name('raw-article.generateKeyword');
         Route::post('/generate-selected',              [RawArticleController::class, 'generateSelected']) ->name('raw-article.generateSelected');
         Route::post('/clear-refetch',                  [RawArticleController::class, 'clearRefetch'])     ->name('raw-article.clearRefetch');
+        Route::post('/{rawArticle}/save',              [RawArticleController::class, 'save'])             ->name('raw-article.save');
         Route::post('/{rawArticle}/generate',          [RawArticleController::class, 'generate'])         ->name('raw-article.generate');
         Route::post('/{rawArticle}/retry',             [RawArticleController::class, 'retry'])            ->name('raw-article.retry');
         Route::delete('/{rawArticle}',                 [RawArticleController::class, 'destroy'])          ->name('raw-article.destroy');

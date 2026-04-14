@@ -12,6 +12,7 @@ class Article extends Model
 
     protected $fillable = [
         'keyword_id',
+        'category_id',
         'source_url',
         'source_url_hash',
         'source_title',

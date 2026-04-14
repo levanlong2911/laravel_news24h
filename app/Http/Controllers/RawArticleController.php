@@ -4,11 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Jobs\ProcessKeywordJob;
 use App\Jobs\WriteArticleJob;
+use App\Models\Article;
 use App\Models\Keyword;
 use App\Models\RawArticle;
+use App\Services\Admin\ArticleCrawlerService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 class RawArticleController extends Controller
 {
@@ -62,8 +66,6 @@ class RawArticleController extends Controller
     // Fetch tất cả active keywords → xóa data cũ + cache → fetch mới
     public function fetchAll()
     {
-        set_time_limit(300);
-
         $keywords = Keyword::where('is_active', true)->get();
 
         // Xóa tất cả raw articles cũ (trừ bài đang generating)
@@ -86,12 +88,22 @@ class RawArticleController extends Controller
     // Generate nhiều raw articles cùng lúc (multi-select)
     public function generateSelected(Request $request)
     {
-        set_time_limit(600);
-
         $ids = array_filter((array) $request->get('selected_ids', []));
         if (empty($ids)) {
             return back()->with('error', 'Chưa chọn bài viết nào.');
         }
+
+        // Rate limit: tối đa 20 bài mỗi lần, tránh spam queue
+        if (count($ids) > 20) {
+            return back()->with('error', 'Chỉ được chọn tối đa 20 bài mỗi lần.');
+        }
+
+        $key = 'generate-selected';
+        if (RateLimiter::tooManyAttempts($key, 3)) {
+            $seconds = RateLimiter::availableIn($key);
+            return back()->with('error', "Quá nhiều request. Vui lòng đợi {$seconds}s.");
+        }
+        RateLimiter::hit($key, 60);
 
         $articles = RawArticle::whereIn('id', $ids)
             ->whereIn('status', ['pending', 'failed'])
@@ -117,17 +129,78 @@ class RawArticleController extends Controller
             return back()->with('error', 'Keyword not found');
         }
 
-        // Rate limit: mỗi keyword 1 lần/2 phút
+        // Rate limit: mỗi keyword 1 lần/30 giây
         $key = 'fetch-keyword-' . $keyword->id;
         if (RateLimiter::tooManyAttempts($key, 1)) {
             $seconds = RateLimiter::availableIn($key);
             return back()->with('error', "Please wait {$seconds}s before fetching {$keyword->name} again.");
         }
-        RateLimiter::hit($key, 30); // 30 giây
+        RateLimiter::hit($key, 30);
+
+        // Xóa SerpAPI cache để job lấy data mới nhất (không dùng cached results cũ)
+        $query = !empty($keyword->search_keyword) ? $keyword->search_keyword : ($keyword->name . ' news');
+        Cache::forget('serp_news_v2_' . md5($query));
 
         ProcessKeywordJob::dispatch($keyword)->onQueue('articles');
 
         return back()->with('success', "Fetching: {$keyword->name}. Check back in ~1 minute.");
+    }
+
+    // Crawl URL → lưu vào articles (không AI). Cho phép tải lại để tạo bài mới.
+    public function save(Request $request, RawArticle $rawArticle, ArticleCrawlerService $crawler)
+    {
+        $urlHash = md5($rawArticle->url);
+
+        // Xóa crawl cache để lấy nội dung mới nhất
+        Cache::forget('crawl:' . $urlHash);
+
+        // Crawl nội dung
+        $contents = $crawler->crawlMany([$rawArticle->url]);
+        $content  = trim($contents[$rawArticle->url] ?? '');
+
+        if (strlen($content) < 100) {
+            return back()->with('error', 'Không crawl được nội dung bài viết.');
+        }
+
+        $title   = $rawArticle->title;
+        $slug    = $this->uniqueSlug(Str::slug($title ?: 'article'));
+
+        // Nếu URL hash đã tồn tại trong articles (dù article_id có hay không)
+        // → thêm timestamp để tránh duplicate unique constraint
+        $finalUrlHash = Article::where('source_url_hash', $urlHash)->exists()
+            ? md5($rawArticle->url . '_' . time())
+            : $urlHash;
+
+        $article = Article::create([
+            'keyword_id'      => $rawArticle->keyword_id,
+            'category_id'     => $rawArticle->keyword->category_id ?? null,
+            'source_url'      => $rawArticle->url,
+            'source_url_hash' => $finalUrlHash,
+            'source_title'    => $title,
+            'source_name'     => $rawArticle->source,
+            'thumbnail'       => $rawArticle->thumbnail,
+            'title'           => $title,
+            'slug'            => $slug,
+            'content'         => $content,
+            'viral_score'     => $rawArticle->viral_score,
+            'status'          => 'pending',
+            'expires_at'      => now()->addHours(48),
+        ]);
+
+        $rawArticle->update(['status' => 'done', 'article_id' => $article->id]);
+
+        return back()->with('success', 'Đã lưu bài viết: ' . $title);
+    }
+
+    private function uniqueSlug(string $base): string
+    {
+        $slug    = $base ?: 'article';
+        $counter = 1;
+        while (Article::where('slug', $slug)->exists()) {
+            $slug = "{$base}-{$counter}";
+            $counter++;
+        }
+        return $slug;
     }
 
     // Trigger AI pipeline cho 1 raw article
@@ -177,11 +250,11 @@ class RawArticleController extends Controller
         $keywordId = $request->get('keyword_id');
 
         $pending = RawArticle::where('keyword_id', $keywordId)
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'failed'])
             ->get();
 
         if ($pending->isEmpty()) {
-            return back()->with('error', 'No pending articles for this keyword.');
+            return back()->with('error', 'No pending/failed articles for this keyword.');
         }
 
         // Rate limit: 1 lần generate-all mỗi 3 phút/keyword

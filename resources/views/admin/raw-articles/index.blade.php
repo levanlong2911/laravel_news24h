@@ -104,9 +104,9 @@
                     <button type="button" class="btn btn-outline-danger btn-sm mr-1" onclick="fetchOne()">
                         <i class="fas fa-search"></i> Fetch
                     </button>
-                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="generateKeyword()">
+                    {{-- <button type="button" class="btn btn-outline-primary btn-sm" onclick="generateKeyword()">
                         <i class="fas fa-robot"></i> Generate Pending
-                    </button>
+                    </button> --}}
                 </div>
             </form>
         </div>
@@ -307,27 +307,16 @@
                                 </a>
 
                                 {{-- Main action --}}
-                                @if($raw->status === 'pending')
-                                    <form method="POST" action="{{ route('raw-article.generate', $raw) }}" class="d-inline">
-                                        @csrf
-                                        <button class="btn btn-xs btn-primary" title="Generate with Claude AI">
-                                            <i class="fas fa-robot"></i> Generate
-                                        </button>
-                                    </form>
-                                @elseif($raw->status === 'generating')
+                                @if($raw->status === 'generating')
                                     <button class="btn btn-xs btn-warning" disabled>
-                                        <i class="fas fa-spinner fa-spin"></i> Writing
+                                        <i class="fas fa-spinner fa-spin"></i>
                                     </button>
-                                @elseif($raw->status === 'done' && $raw->article_id)
-                                    <a href="{{ route('article.show', $raw->article_id) }}"
-                                        class="btn btn-xs btn-success" title="View article">
-                                        <i class="fas fa-eye"></i> View
-                                    </a>
-                                @elseif($raw->status === 'failed')
-                                    <form method="POST" action="{{ route('raw-article.retry', $raw) }}" class="d-inline">
+                                @else
+                                    <form method="POST" action="{{ route('raw-article.save', $raw) }}" class="d-inline">
                                         @csrf
-                                        <button class="btn btn-xs btn-warning" title="Retry">
-                                            <i class="fas fa-redo"></i> Retry
+                                        <button class="btn btn-xs {{ $raw->status === 'done' ? 'btn-outline-primary' : 'btn-primary' }}"
+                                                title="{{ $raw->status === 'done' ? 'Tải lại (bài mới)' : 'Tải & lưu bài viết' }}">
+                                            <i class="fas fa-download"></i>
                                         </button>
                                     </form>
                                 @endif
@@ -367,7 +356,67 @@
 
 </div>
 
+{{-- Toast notification --}}
+<style>
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+</style>
+<div id="toastWrap" style="position:fixed;bottom:24px;right:24px;z-index:9999;min-width:260px"></div>
+
 <script>
+// ── Toast ────────────────────────────────────────────────────────────────────
+function showToast(message, type = 'success') {
+    const id  = 'toast-' + Date.now();
+    const bg  = type === 'success' ? '#28a745' : '#dc3545';
+    const icon = type === 'success' ? 'fa-check-circle' : 'fa-times-circle';
+    const html = `
+        <div id="${id}" style="background:${bg};color:#fff;padding:12px 18px;border-radius:8px;
+             margin-top:8px;box-shadow:0 4px 12px rgba(0,0,0,.25);display:flex;align-items:center;gap:10px;
+             animation:fadeIn .2s ease">
+            <i class="fas ${icon}"></i>
+            <span>${message}</span>
+        </div>`;
+    document.getElementById('toastWrap').insertAdjacentHTML('beforeend', html);
+    setTimeout(() => document.getElementById(id)?.remove(), 3500);
+}
+
+// ── Download / Save article ──────────────────────────────────────────────────
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-save-article');
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    fetch(btn.dataset.url, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json',
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message, 'success');
+            // Đổi button → View nếu không phải already
+            if (!data.already) {
+                btn.outerHTML = '<span class="badge badge-success">Saved</span>';
+            } else {
+                btn.outerHTML = '<span class="badge badge-secondary">Existed</span>';
+            }
+        } else {
+            showToast(data.message || 'Lỗi không xác định.', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-download"></i>';
+        }
+    })
+    .catch(() => {
+        showToast('Lỗi kết nối server.', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-download"></i>';
+    });
+});
+
 // ── Multi-select logic ───────────────────────────────────────────────────────
 function updateSelectedCount() {
     const checked = document.querySelectorAll('.article-checkbox:checked');
