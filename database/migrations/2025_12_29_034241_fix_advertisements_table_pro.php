@@ -35,7 +35,7 @@ return new class extends Migration
              * 3️⃣ active → is_active (NẾU CHƯA ĐỔI)
              */
             if (Schema::hasColumn('advertisements', 'active')) {
-                $table->renameColumn('active', 'is_active');
+                DB::statement("ALTER TABLE `advertisements` CHANGE `active` `is_active` TINYINT(1) NOT NULL DEFAULT 1");
             }
 
             /**

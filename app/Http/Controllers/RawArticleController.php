@@ -156,7 +156,6 @@ class RawArticleController extends Controller
 
         // Crawl nội dung
         $contents = $crawler->crawlMany([$rawArticle->url]);
-        dd($contents);
         $content  = trim($contents[$rawArticle->url] ?? '');
 
         if (strlen($content) < 100) {
@@ -186,6 +185,7 @@ class RawArticleController extends Controller
             'viral_score'     => $rawArticle->viral_score,
             'status'          => 'pending',
             'expires_at'      => now()->addHours(48),
+            'crawled_by'      => auth()->id(),
         ]);
 
         $rawArticle->update(['status' => 'done', 'article_id' => $article->id]);

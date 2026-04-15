@@ -28,6 +28,7 @@ class Article extends Model
         'status',
         'expires_at',
         'published_at',
+        'crawled_by',
     ];
 
     protected $casts = [
@@ -52,6 +53,11 @@ class Article extends Model
     public function rawArticle()
     {
         return $this->hasOne(RawArticle::class);
+    }
+
+    public function crawler()
+    {
+        return $this->belongsTo(\App\Models\Admin::class, 'crawled_by');
     }
 
     // ── Scopes ─────────────────────────────────────────────────────────────────

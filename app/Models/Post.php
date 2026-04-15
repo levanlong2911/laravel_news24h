@@ -15,7 +15,7 @@ class Post extends Model
     use HasUuid;
 
     protected $fillable = [
-        'id', 'title', 'content', 'slug', 'category_id', 'author_id', 'domain_id', 'thumbnail',
+        'id', 'title', 'meta_description', 'content', 'slug', 'category_id', 'author_id', 'domain_id', 'thumbnail',
     ];
 
     public $incrementing = false;

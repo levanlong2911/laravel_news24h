@@ -60,7 +60,6 @@ class ArticleCrawlerService
         }
 
         $fetched = $this->poolFetch($toFetch);
-        dd($fetched);
 
         foreach ($fetched as $url => $content) {
             Cache::put('crawl:' . md5($url), $content, self::CACHE_TTL);
@@ -113,13 +112,10 @@ class ArticleCrawlerService
             'concurrency' => self::CONCURRENCY,
             'fulfilled'   => function (Response $response, string $url) use (&$results, &$blocked) {
                 if ($response->getStatusCode() >= 400) {
-                    dd(220);
                     // 4xx (402 paywall, 403 blocked) → ghi nhận, xử lý Jina sau khi pool xong
                     $blocked[] = $url;
                 } else {
-                    dd(33);
                     $results[$url] = $this->extractWithReadability((string) $response->getBody(), $url);
-                    dd($results[$url]);
 
                 }
             },
@@ -128,7 +124,6 @@ class ArticleCrawlerService
                 $blocked[] = $url; // network error → cũng thử Jina
             },
         ]);
-        dd($pool);
 
         $pool->promise()->wait();
 
@@ -151,7 +146,6 @@ class ArticleCrawlerService
         if (empty(trim($html))) {
             return '';
         }
-        dd($html);
         // Normalize UTF-8: invalid byte sequences → U+FFFD, rồi xóa U+FFFD luôn.
         // Cần làm trước mọi processing vì PCRE /u flag sẽ fail trên invalid UTF-8.
         $html = mb_scrub($html, 'UTF-8');
