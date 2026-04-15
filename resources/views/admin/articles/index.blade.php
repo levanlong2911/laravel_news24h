@@ -11,13 +11,7 @@
             </h4>
         </div>
         <div class="col-md-4 text-right">
-            <form method="POST" action="{{ route('article.generateAll') }}" class="d-inline">
-                @csrf
-                <button class="btn btn-success btn-sm">
-                    <i class="fas fa-robot"></i> Generate All Keywords
-                </button>
-            </form>
-            <form method="POST" action="{{ route('article.clearCache') }}" class="d-inline ml-1">
+            <form method="POST" action="{{ route('article.clearCache') }}" class="d-inline">
                 @csrf
                 <button class="btn btn-outline-secondary btn-sm">Clear Cache</button>
             </form>
