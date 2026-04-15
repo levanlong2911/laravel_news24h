@@ -27,6 +27,7 @@ class ArticleCrawlerService
         $this->client = new Client([
             'timeout'         => self::TIMEOUT,
             'connect_timeout' => 5,
+            'http_errors'     => false, // 402/403 vào fulfilled thay vì rejected → Jina fallback xử lý được
             'headers'         => [
                 'User-Agent'      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36',
                 'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -59,6 +60,7 @@ class ArticleCrawlerService
         }
 
         $fetched = $this->poolFetch($toFetch);
+        dd($fetched);
 
         foreach ($fetched as $url => $content) {
             Cache::put('crawl:' . md5($url), $content, self::CACHE_TTL);
@@ -100,6 +102,7 @@ class ArticleCrawlerService
     private function poolFetch(array $urls): array
     {
         $results  = array_fill_keys($urls, '');
+        $blocked  = []; // URLs bị 4xx — xử lý Jina SAU KHI pool xong để tránh nested cURL
         $requests = function (array $urls) {
             foreach ($urls as $url) {
                 yield $url => new Request('GET', $url);
@@ -108,16 +111,32 @@ class ArticleCrawlerService
 
         $pool = new Pool($this->client, $requests($urls), [
             'concurrency' => self::CONCURRENCY,
-            'fulfilled'   => function (Response $response, string $url) use (&$results) {
-                $results[$url] = $this->extractWithReadability((string) $response->getBody(), $url);
+            'fulfilled'   => function (Response $response, string $url) use (&$results, &$blocked) {
+                if ($response->getStatusCode() >= 400) {
+                    dd(220);
+                    // 4xx (402 paywall, 403 blocked) → ghi nhận, xử lý Jina sau khi pool xong
+                    $blocked[] = $url;
+                } else {
+                    dd(33);
+                    $results[$url] = $this->extractWithReadability((string) $response->getBody(), $url);
+                    dd($results[$url]);
+
+                }
             },
-            'rejected' => function (\Throwable $e, string $url) use (&$results) {
+            'rejected' => function (\Throwable $e, string $url) use (&$blocked) {
                 Log::warning('[Crawler] Failed: ' . $url . ' — ' . $e->getMessage());
-                $results[$url] = '';
+                $blocked[] = $url; // network error → cũng thử Jina
             },
         ]);
+        dd($pool);
 
         $pool->promise()->wait();
+
+        // Xử lý blocked/failed URLs với Jina sau khi pool đã hoàn tất
+        foreach ($blocked as $url) {
+            $jinaText      = $this->fetchViaJina($url);
+            $results[$url] = strlen($jinaText) > 200 ? $jinaText : '';
+        }
 
         return $results;
     }
@@ -132,7 +151,7 @@ class ArticleCrawlerService
         if (empty(trim($html))) {
             return '';
         }
-
+        dd($html);
         // Normalize UTF-8: invalid byte sequences → U+FFFD, rồi xóa U+FFFD luôn.
         // Cần làm trước mọi processing vì PCRE /u flag sẽ fail trên invalid UTF-8.
         $html = mb_scrub($html, 'UTF-8');
@@ -202,27 +221,37 @@ class ArticleCrawlerService
     private function fetchViaJina(string $url): string
     {
         try {
-            $jinaUrl  = 'https://r.jina.ai/' . $url;
-
             Log::debug('[Crawler] Trying Jina AI Reader', ['url' => $url]);
 
-            $response = $this->client->get($jinaUrl, [
-                'timeout' => 20,
+            // Dùng fresh client riêng — tránh state/handler conflict sau khi pool chạy xong
+            $jinaClient = new Client([
+                'timeout' => 30,
+                'verify'  => false,
                 'headers' => [
                     'Accept'    => 'text/plain',
-                    'X-Timeout' => '15',
+                    'X-Timeout' => '25',
                 ],
             ]);
 
-            $text = trim((string) $response->getBody());
+            $response = $jinaClient->get('https://r.jina.ai/' . $url);
+            $text     = trim((string) $response->getBody());
 
             if (strlen($text) < 200) {
                 return '';
             }
 
-            // Jina trả về Markdown — bỏ phần metadata header (Title:, URL:, ...)
-            // Jina header format: "Title: ...\nURL Source: ...\nPublished Time: ...\n\n---\n\n"
-            if (preg_match('/^(?:Title:|URL Source:|Published Time:).+?(?:\n---+\n\n|\n\n\n)/s', $text, $m)) {
+            // Normalize line endings
+            $text = str_replace("\r\n", "\n", $text);
+
+            // Strip Jina metadata header — hỗ trợ cả 3 format:
+            // Format 1: "\nMarkdown Content:\n\n" (people.com, phổ biến nhất)
+            // Format 2: "\n\n---\n\n"
+            // Format 3: regex cũ
+            if (str_contains($text, "\nMarkdown Content:\n\n")) {
+                $text = substr($text, strpos($text, "\nMarkdown Content:\n\n") + strlen("\nMarkdown Content:\n\n"));
+            } elseif (str_contains($text, "\n\n---\n\n")) {
+                $text = substr($text, strpos($text, "\n\n---\n\n") + strlen("\n\n---\n\n"));
+            } elseif (preg_match('/^(?:Title:|URL Source:|Published Time:).+?(?:\n---+\n\n|\n\n\n)/s', $text, $m)) {
                 $text = substr($text, strlen($m[0]));
             }
 
@@ -245,62 +274,160 @@ class ArticleCrawlerService
 
     /**
      * Convert Markdown text từ Jina → HTML <p> tags.
-     * Xử lý: headings (#/##/###), bold (**text**), links ([text](url)), bullet lists.
+     * Tự động bỏ nav/menu ở đầu, dừng ở footer.
      */
     private function markdownToHtml(string $markdown): string
     {
-        $lines  = explode("\n", $markdown);
-        $html   = '';
-        $buffer = [];
+        // Normalize line endings
+        $markdown = str_replace("\r\n", "\n", $markdown);
+        $markdown = str_replace("\r", "\n", $markdown);
 
-        $flushBuffer = function () use (&$buffer, &$html) {
-            $para = trim(implode(' ', array_filter(array_map('trim', $buffer))));
-            if ($para !== '') {
-                $html .= '<p>' . htmlspecialchars($para) . '</p>';
-            }
-            $buffer = [];
-        };
+        $lines    = explode("\n", $markdown);
+        $total    = count($lines);
+        $startIdx = 0;
 
-        foreach ($lines as $line) {
-            $line = trim($line);
+        // Tìm paragraph đầu tiên >= 80 chars SAU KHI đã gặp list item dài (* ...)
+        // → bỏ qua nav/author bio ở đầu trang (people.com pattern)
+        // Fallback: nếu không có list nào → dùng paragraph đầu tiên
+        $seenList      = false;
+        $firstFallback = -1;
 
-            // Heading → <h2>
-            if (preg_match('/^#{1,3}\s+(.+)/', $line, $m)) {
-                $flushBuffer();
-                $html .= '<h2>' . htmlspecialchars(trim($m[1])) . '</h2>';
-                continue;
-            }
+        for ($i = 0; $i < $total; $i++) {
+            $t = trim($lines[$i]);
 
-            // Horizontal rule / separator → flush
-            if (preg_match('/^[-*_]{3,}$/', $line)) {
-                $flushBuffer();
-                continue;
-            }
+            // Chỉ đếm list item dài (>= 40 chars) — bỏ qua nav items ngắn như "* Home", "* Celebrity"
+            if (preg_match('/^[*\-]\s+\S/', $t) && strlen($t) >= 40) $seenList = true;
 
-            // Dòng trống → flush paragraph
-            if ($line === '') {
-                $flushBuffer();
-                continue;
-            }
+            if (strlen($t) >= 80
+                && !preg_match('/^[*\-]\s+/', $t)
+                && !preg_match('/^#{1,6}\s+/', $t)
+                && !preg_match('/^(\[[^\]]*\]\(https?:\/\/[^)]+\))+\s*$/', $t)) {
 
-            // Bỏ image markdown: ![alt](url)
-            $line = preg_replace('/!\[.*?\]\(.*?\)/', '', $line);
+                if ($firstFallback === -1) $firstFallback = $i;
 
-            // Strip link markdown: [text](url) → text
-            $line = preg_replace('/\[([^\]]+)\]\([^)]+\)/', '$1', $line);
-
-            // Strip bold/italic
-            $line = preg_replace('/\*{1,2}([^*]+)\*{1,2}/', '$1', $line);
-            $line = trim($line);
-
-            if ($line !== '') {
-                $buffer[] = $line;
+                if ($seenList) {
+                    $startIdx = $i;
+                    for ($j = $i - 1; $j >= max(0, $i - 20); $j--) {
+                        $lj = trim($lines[$j]);
+                        if (preg_match('/^[*\-]\s+/', $lj)) break; // stop: don't cross back over bullet list
+                        if (preg_match('/^#{1,6}\s+/', $lj)) {
+                            $startIdx = $j;
+                            break;
+                        }
+                    }
+                    break;
+                }
             }
         }
 
-        $flushBuffer();
+        // Fallback: không có list → dùng paragraph đầu tiên
+        if ($startIdx === 0 && $firstFallback > 0) {
+            $startIdx = $firstFallback;
+            for ($j = $firstFallback - 1; $j >= max(0, $firstFallback - 20); $j--) {
+                $lj = trim($lines[$j]);
+                if (preg_match('/^[*\-]\s+/', $lj)) break; // stop: don't cross back over bullet list
+                if (preg_match('/^#{1,6}\s+/', $lj)) {
+                    $startIdx = $j;
+                    break;
+                }
+            }
+        }
 
-        // Giới hạn độ dài — không qua truncate/toHtml vì $html đã là HTML hoàn chỉnh
+        $lines            = array_slice($lines, $startIdx);
+        $result           = [];
+        $foundBody        = false;
+        $prevLineWasImage = false;
+        $skipLines        = 0; // skip N non-empty lines (for inline widgets like Related Stories)
+
+        // Hard stop: real end of article — break immediately
+        $stopPattern = '/^(Follow Us|Newsletter Sign Up|About Us|Privacy Policy|Terms of Service|Advertise)\s*[:\-]?\s*$/i';
+        // Skip block: inline widget — skip heading + next 3 non-empty lines, then continue
+        $skipPattern = '/^(Read More:|Trending Now|Trending Stories|Related Articles|Related Stories)\s*[:\-]?\s*$/i';
+
+        foreach ($lines as $line) {
+            $t = trim($line);
+
+            // Check stop/skip against both plain line and heading text (## Related Stories)
+            $checkT = preg_match('/^#{1,6}\s+(.+)/', $t, $hm) ? trim($hm[1]) : $t;
+            if ($foundBody && $checkT !== '' && preg_match($stopPattern, $checkT)) break;
+            if ($foundBody && $checkT !== '' && preg_match($skipPattern, $checkT)) {
+                $skipLines = 3; // skip widget heading + related titles
+                continue;
+            }
+
+            // Skip lines belonging to the inline widget block
+            if ($skipLines > 0) {
+                if ($t !== '') $skipLines--;
+                continue;
+            }
+
+            if ($t === '') { $result[] = ''; continue; } // blank line — keep $prevLineWasImage
+
+            // Detect image line before processing
+            $isImageLine = (bool) preg_match('/^!\[/', $t);
+
+            // Skip image caption: short non-heading line right after image (blank lines allowed between)
+            if ($prevLineWasImage && !$isImageLine && strlen($t) < 100
+                && !preg_match('/^[*\-#]/', $t)) {
+                $prevLineWasImage = false;
+                continue;
+            }
+
+            if (!$foundBody && strlen($t) >= 80 && !preg_match('/^[*\-#]/', $t)) {
+                $foundBody = true;
+            }
+
+            if (preg_match('/^#{1,6}\s+(.+)/', $t, $m)) {
+                $prevLineWasImage = false;
+                $result[] = '';
+                $result[] = '<h2>' . htmlspecialchars(trim($m[1])) . '</h2>';
+                $result[] = '';
+                continue;
+            }
+
+            if (preg_match('/^[-*_]{3,}$/', $t)) { $prevLineWasImage = false; $result[] = ''; continue; }
+
+            // Fix: dùng regex xử lý URL có nested parens như :maxbytes(150000)
+            $t = preg_replace('/!\[[^\]]*\]\((?:[^()]*|\([^()]*\))*\)/', '', $t);
+            $t = preg_replace('/\[([^\]]+)\]\((?:[^()]*|\([^()]*\))*\)/', '$1', $t);
+            $t = preg_replace('/(\*{1,2}|_{1,2})([^*_]+)\1/', '$2', $t);
+            $t = preg_replace('/\[[^\]]*\]\(https?:\/\/[^)]*\)/', '', $t);
+            $t = trim($t);
+
+            if ($t === '') {
+                $prevLineWasImage = $isImageLine; // pure image line → next line may be caption
+                continue;
+            }
+            // CDN filter SAU substitution — catch phần URL còn sót
+            if (preg_match('/^:(?:maxbytes|max_bytes|stripicc|strip_icc|format|focal|fill|resize)\(/i', $t)) continue;
+            if (strlen($t) < 8) continue;
+            if (preg_match('/^https?:\/\/\S+$/', $t)) continue;
+            if (preg_match('/^©|\bcopyright\b|\ball rights reserved\b/i', $t)) continue;
+            if (preg_match('/^(Leave a Comment|People Editorial Guidelines|Sign Up for Newsletter)\s*$/i', $t)) continue;
+            if (preg_match('/^Published (on|at) .+\d{4}/i', $t)) continue;
+            if (preg_match('/^Our new app is here/i', $t)) continue;
+            if (preg_match('/\bCredit\s*:/i', $t)) continue;
+            if (preg_match('/^Never miss a story/i', $t)) continue; // newsletter promo
+            // Author bio: "Ashlyn Robinette is a Weddings Writer at PEOPLE..."
+            if (preg_match('/\bis (?:a|an) .{2,40}(?:Writer|Editor|Reporter|Correspondent|Contributor) at /i', $t)) continue;
+            // Lọc dòng chỉ là tên người (photographer credit): "Greg Finck"
+            if (preg_match('/^[A-Z][a-zA-Z]+(?: [A-Z][a-zA-Z]+){0,2}$/', $t) && strlen($t) < 35) continue;
+
+            $prevLineWasImage = false;
+            $result[] = $t;
+        }
+
+        // Ghép thành HTML paragraphs
+        $html  = '';
+        $paras = preg_split('/\n{2,}/', implode("\n", $result));
+        foreach ($paras as $para) {
+            $para = trim($para);
+            if (empty($para)) continue;
+            if (str_starts_with($para, '<h2>')) { $html .= $para; continue; }
+            $html .= '<p>' . nl2br(htmlspecialchars($para)) . '</p>';
+        }
+
+        // Giới hạn độ dài
         if (strlen($html) > self::MAX_CHARS) {
             $cut  = substr($html, 0, self::MAX_CHARS);
             $last = strrpos($cut, '</p>');

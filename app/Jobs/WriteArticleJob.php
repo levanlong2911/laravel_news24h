@@ -79,6 +79,9 @@ class WriteArticleJob implements ShouldQueue
                 throw new \RuntimeException('No content (crawl + snippet both empty)');
             }
 
+            // Clean noise trước khi gửi Claude (áp dụng cả content cũ lẫn mới)
+            $rawText = $this->cleanForPrompt($rawText);
+
             // ── STEP 2: Claude Haiku — extract & structure key facts ──────────
             $facts = $claude->generate(
                 $this->haikuPrompt($kwName, $rawText),
@@ -154,6 +157,51 @@ class WriteArticleJob implements ShouldQueue
     // ═════════════════════════════════════════════════════════════════════════
     // PROMPTS
     // ═════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Strip HTML + lọc noise trước khi gửi Claude.
+     * Áp dụng cả content mới crawl lẫn content cũ đã lưu DB.
+     */
+    private function cleanForPrompt(string $html): string
+    {
+        // Block elements → newline, strip tags, decode entities
+        $text = preg_replace('/<\/?(p|h[1-6]|div|br|li)[^>]*>/i', "\n", $html);
+        $text = strip_tags($text);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        $lines  = explode("\n", $text);
+        $result = [];
+
+        foreach ($lines as $line) {
+            $t = trim($line);
+            if ($t === '') continue;
+
+            // Hard stop: footer bắt đầu từ đây
+            if (preg_match('/^All comments are subject to/i', $t)) break;
+
+            // Bullet/list lines: NEED TO KNOW bullets, nav (* Settings, * Sign Out)
+            if (preg_match('/^[*\-]\s+/', $t)) continue;
+
+            // Quá ngắn: date fragments ("7 days ago", "March 16, 2026"), nav items
+            if (strlen($t) < 20) continue;
+
+            // Newsletter promo
+            if (preg_match('/^Never miss a story/i', $t)) continue;
+
+            // App promo
+            if (preg_match('/^(Get more in our free app|Download the app)\s*$/i', $t)) continue;
+
+            // Author bio: "Ashlyn Robinette is a Weddings Writer at PEOPLE..."
+            if (preg_match('/\bis (?:a|an) .{2,40}(?:Writer|Editor|Reporter|Correspondent|Contributor) at /i', $t)) continue;
+
+            // Heading "NEED TO KNOW" (standalone)
+            if (preg_match('/^NEED TO KNOW\s*$/i', $t)) continue;
+
+            $result[] = $t;
+        }
+
+        return implode("\n\n", $result);
+    }
 
     private function haikuPrompt(string $keyword, string $content): string
     {

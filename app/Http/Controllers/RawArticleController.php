@@ -156,6 +156,7 @@ class RawArticleController extends Controller
 
         // Crawl nội dung
         $contents = $crawler->crawlMany([$rawArticle->url]);
+        dd($contents);
         $content  = trim($contents[$rawArticle->url] ?? '');
 
         if (strlen($content) < 100) {
