@@ -1,0 +1,59 @@
+<?php
+
+namespace App\Services\Admin;
+
+/**
+ * Value Object — output của PromptBuilderService.
+ * Immutable. Chứa toàn bộ data để gọi Claude pipeline.
+ */
+final class PromptPayload
+{
+    public function __construct(
+        public readonly string  $system,
+        public readonly string  $phase1,
+        public readonly string  $phase2,
+        public readonly string  $phase3,
+        public readonly string  $outputSchema,
+        public readonly string  $contentTypesBlock,
+        public readonly ?string $contextId,        // null = fallback, chưa config context
+        public readonly int     $frameworkVersion, // framework->version → schema_version trong log
+    ) {}
+
+    /**
+     * Short fingerprint của prompt (12 hex chars).
+     * Dùng để trace "prompt version nào gây lỗi" trong production log.
+     * Thay đổi khi phase1/phase3 thay đổi (không include phase2 vì contentTypes thường xuyên thay đổi).
+     */
+    public function fingerprint(): string
+    {
+        return substr(hash('sha256', $this->system . $this->phase1 . $this->phase3), 0, 12);
+    }
+
+    // ── Prompt gửi Haiku: phase1 (analyze) + phase2 (diagnose) + rawText ─────
+
+    public function haikuPrompt(string $rawText): string
+    {
+        return $this->phase1
+            . "\n\n"
+            . $this->phase2
+            . "\n\nRAW CONTENT:\n---\n{$rawText}\n---";
+    }
+
+    // ── Prompt gửi Sonnet: phase3 + facts + bestHook (anchor) + schema ───────
+    // bestHook từ HookEngine — content phục vụ hook, không phải ngược lại
+
+    public function sonnetPrompt(string $facts, string $bestHook, string $keyword): string
+    {
+        return $this->phase3
+            . "\n\nTOPIC: {$keyword}"
+            . "\nTITLE ANCHOR (write content to support this hook): {$bestHook}"
+            . "\n\nEXTRACTED FACTS:\n---\n{$facts}\n---"
+            . "\n\nOUTPUT — Return ONLY this JSON (no markdown, no code block):\n"
+            . $this->outputSchema;
+    }
+
+    public function hasContext(): bool
+    {
+        return $this->contextId !== null;
+    }
+}
