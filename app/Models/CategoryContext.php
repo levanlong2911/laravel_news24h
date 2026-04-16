@@ -15,7 +15,7 @@ class CategoryContext extends Model
         'category_id', 'framework_id',
         'domain', 'audience', 'terminology',
         'tone_notes', 'hook_style', 'custom_type_triggers',
-        'performance_score', 'is_active',
+        'performance_score', 'sample_size', 'is_active',
     ];
 
     protected $casts = [
@@ -55,10 +55,4 @@ class CategoryContext extends Model
             ->first();
     }
 
-    /** Cập nhật performance_score sau khi generate */
-    public function updatePerformanceScore(): void
-    {
-        $avg = $this->metrics()->avg('viral_score');
-        $this->update(['performance_score' => round($avg ?? 0, 2)]);
-    }
 }

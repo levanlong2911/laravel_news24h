@@ -3,6 +3,7 @@
 namespace App\Services\Admin;
 
 use Illuminate\Support\Facades\Log;
+use App\Services\Admin\GuardReason;
 
 /**
  * POST Guard — chạy SAU khi Sonnet trả output.
@@ -37,10 +38,10 @@ class PostGuard
     public function check(string $sonnetOutput, string $rawFacts): PostGuardResult
     {
         // Step 1: Parse JSON
-        $parsed = $this->validateOutput($sonnetOutput);
+        [$parsed, $parseReason] = $this->validateOutput($sonnetOutput);
 
         if ($parsed === null) {
-            return PostGuardResult::invalid('JSON parse failed or missing required fields');
+            return PostGuardResult::invalid($parseReason);
         }
 
         // Step 2: Hallucination check
@@ -58,7 +59,7 @@ class PostGuard
             parsed:     $parsed,
             confidence: $confidence,
             acceptable: $acceptable,
-            reason:     $acceptable ? 'ok' : "confidence {$confidence} below threshold " . self::CONFIDENCE_THRESHOLD,
+            reason:     $acceptable ? GuardReason::OK : "confidence {$confidence} below threshold " . self::CONFIDENCE_THRESHOLD,
         );
     }
 
@@ -66,9 +67,11 @@ class PostGuard
 
     /**
      * Parse JSON Sonnet output, kiểm tra required fields.
-     * Trả về array nếu OK, null nếu invalid.
+     * Trả về [array, null] nếu OK, [null, reason] nếu invalid.
+     *
+     * @return array{0: ?array, 1: string}
      */
-    private function validateOutput(string $raw): ?array
+    private function validateOutput(string $raw): array
     {
         // Sonnet đôi khi wrap trong markdown code block → strip trước
         $clean = preg_replace('/^```(?:json)?\s*/i', '', trim($raw));
@@ -78,17 +81,17 @@ class PostGuard
 
         if (!is_array($data)) {
             Log::warning('[PostGuard] JSON parse failed', ['raw' => substr($raw, 0, 300)]);
-            return null;
+            return [null, GuardReason::JSON_INVALID];
         }
 
         foreach (self::REQUIRED_FIELDS as $field) {
             if (empty($data[$field])) {
                 Log::warning("[PostGuard] Missing required field: {$field}");
-                return null;
+                return [null, GuardReason::MISSING_FIELDS];
             }
         }
 
-        return $data;
+        return [$data, GuardReason::OK];
     }
 
     // ── Private — Hallucination ───────────────────────────────────────────────

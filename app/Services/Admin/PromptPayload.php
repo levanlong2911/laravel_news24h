@@ -21,12 +21,25 @@ final class PromptPayload
 
     /**
      * Short fingerprint của prompt (12 hex chars).
-     * Dùng để trace "prompt version nào gây lỗi" trong production log.
-     * Thay đổi khi phase1/phase3 thay đổi (không include phase2 vì contentTypes thường xuyên thay đổi).
+     * Include cả outputSchema + contentTypesBlock vì chúng ảnh hưởng trực tiếp đến output.
+     * Nếu thiếu: cùng fingerprint nhưng output khác → debug production rất khó.
      */
     public function fingerprint(): string
     {
-        return substr(hash('sha256', $this->system . $this->phase1 . $this->phase3), 0, 12);
+        return substr(
+            hash('sha256', $this->system . $this->phase1 . $this->phase3 . $this->outputSchema . $this->contentTypesBlock),
+            0, 12
+        );
+    }
+
+    /**
+     * Schema version = hash của outputSchema (8 hex chars).
+     * Độc lập với framework->version — đổi khi output fields thay đổi,
+     * kể cả khi framework version không đổi.
+     */
+    public function schemaVersion(): string
+    {
+        return substr(hash('sha256', $this->outputSchema), 0, 8);
     }
 
     // ── Prompt gửi Haiku: phase1 (analyze) + phase2 (diagnose) + rawText ─────

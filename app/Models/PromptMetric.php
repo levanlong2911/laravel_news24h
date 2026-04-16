@@ -13,6 +13,11 @@ class PromptMetric extends Model
     protected $fillable = [
         'context_id', 'article_id', 'content_type_detected',
         'viral_score', 'word_count', 'processing_time_ms', 'model_used',
+        'hook_score', 'hook_rank', 'hook_candidates',
+        'guard_confidence', 'final_reason',
+        'retry_count', 'retry_reason',
+        'schema_version', 'prompt_fingerprint',
+        'needs_review',
     ];
 
     public function context(): BelongsTo

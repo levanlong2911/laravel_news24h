@@ -10,6 +10,8 @@ use App\Models\Post;
 use App\Models\RawArticle;
 use App\Services\Admin\ArticleCrawlerService;
 use App\Services\Admin\ClaudeWriterService;
+use App\Services\Admin\FeedbackPayload;
+use App\Services\Admin\FeedbackService;
 use App\Services\Admin\HookEngine;
 use App\Services\Admin\PostGuard;
 use App\Services\Admin\PreGuard;
@@ -55,6 +57,7 @@ class WriteArticleJob implements ShouldQueue
         PromptBuilderService  $promptBuilder,
         HookEngine            $hookEngine,
         PostGuard             $postGuard,
+        FeedbackService       $feedbackService,
     ): void {
         $raw = $this->rawArticle->fresh()->load('keyword');
 
@@ -65,6 +68,7 @@ class WriteArticleJob implements ShouldQueue
 
         $raw->update(['status' => 'generating']);
 
+        $startMs    = (int) round(microtime(true) * 1000);
         $url        = $raw->url;
         $kwName     = $raw->keyword->name;
         $categoryId = $raw->keyword->category_id ?? null;
@@ -157,13 +161,19 @@ class WriteArticleJob implements ShouldQueue
             $sonnetRaw    = $claude->generate($sonnetPrompt, 'sonnet');
             $guardResult  = $postGuard->check($sonnetRaw, $facts);
             $retryCount   = 0;
+            $retryReason  = null;
 
             if ($guardResult->isParseFailure()) {
-                $retryCount = 1;
-                Log::info('[WriteArticle] Sonnet parse fail (not hallucination), retrying once...');
+                $retryCount  = 1;
+                $retryReason = $guardResult->reason; // 'json_invalid' | 'missing_fields'
+                Log::info('[WriteArticle] Sonnet parse fail (not hallucination), retrying once...', [
+                    'retry_reason' => $retryReason,
+                ]);
                 $sonnetRaw   = $claude->generate($sonnetPrompt, 'sonnet');
                 $guardResult = $postGuard->check($sonnetRaw, $facts);
             }
+
+            $finalReason = $guardResult->reason; // reason sau lần check cuối cùng
 
             // ── STEP 8: POST Guard result → decide status ─────────────────
             $needReview = $guardResult->needsHumanReview() || $softDuplicate;
@@ -212,6 +222,28 @@ class WriteArticleJob implements ShouldQueue
                 $this->createPost($raw, $finalTitle, $finalSlug, $parsed);
             }
 
+            // ── STEP 11: Record feedback metrics (chỉ khi có context) ────
+            if ($context) {
+                $feedbackService->record(new FeedbackPayload(
+                    contextId:          $context->id,
+                    articleId:          $article->id,
+                    contentTypeDetected: $hookResult->detectedType,
+                    hookScore:          $hookResult->bestScore,
+                    hookRank:           $hookResult->hookRank,
+                    hookCandidates:     count($hookResult->candidates),
+                    guardConfidence:    $guardResult->confidence,
+                    finalReason:        $finalReason,
+                    retryCount:         $retryCount,
+                    retryReason:        $retryReason,
+                    schemaVersion:      $payload->schemaVersion(),
+                    promptFingerprint:  $payload->fingerprint(),
+                    viralScore:         $raw->viral_score ?? 0,
+                    wordCount:          str_word_count(strip_tags($parsed['content'] ?? '')),
+                    processingTimeMs:   (int) round(microtime(true) * 1000) - $startMs,
+                    needsReview:        $needReview,
+                ));
+            }
+
             // Fix 1: fingerprint log — trace ngược nhanh khi debug production
             Log::info('[WriteArticle] Pipeline fingerprint', [
                 'status'            => $needReview ? 'review' : 'published',
@@ -220,7 +252,7 @@ class WriteArticleJob implements ShouldQueue
                 'context_id'        => $context?->id,
                 'framework'         => $context?->framework?->name,
                 'prompt_fingerprint'=> $payload->fingerprint(),
-                'schema_version'    => $payload->frameworkVersion,
+                'schema_version'    => $payload->schemaVersion(),
                 'content_type'      => $hookResult->detectedType,
                 'hook_used'         => $hookResult->bestHook,
                 'hook_score'        => $hookResult->bestScore,
@@ -228,6 +260,8 @@ class WriteArticleJob implements ShouldQueue
                 'hook_candidates'   => count($hookResult->candidates),
                 'guard_confidence'  => $guardResult->confidence,
                 'retry_count'       => $retryCount,
+                'retry_reason'      => $retryReason,   // reason lần check đầu (null nếu không retry)
+                'final_reason'      => $finalReason,   // reason lần check cuối (biết retry có cứu được không)
                 'soft_duplicate'    => $softDuplicate,
                 'content_chars'     => strlen($parsed['content'] ?? ''),
                 'faq_count'         => count($faq),

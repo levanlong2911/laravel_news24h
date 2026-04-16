@@ -257,6 +257,19 @@ class ArticleController extends Controller
         foreach ($lines as $line) {
             $t = trim($line);
             if ($t === '' || strlen($t) < 20) continue;
+
+            // Lọc URL ảnh còn sót (CDN links, direct image URLs)
+            if (preg_match('/^https?:\/\/\S+\.(jpg|jpeg|png|gif|webp|svg|avif)(\?[^\s]*)?$/i', $t)) continue;
+
+            // Lọc photo credit / caption ảnh
+            if (preg_match('/\b(getty|ap photo|reuters|afp|shutterstock|wire image|photo by|image by|credit:|imagn)\b/i', $t)) continue;
+
+            // Lọc copyright lines
+            if (preg_match('/^©|\bcopyright\b|\ball rights reserved\b/i', $t)) continue;
+
+            // Lọc dòng chỉ toàn URL
+            if (preg_match('/^https?:\/\/\S+$/', $t)) continue;
+
             $result[] = $t;
         }
 
