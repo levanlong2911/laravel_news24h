@@ -15,6 +15,7 @@ use App\Services\Admin\FeedbackService;
 use App\Services\Admin\HookEngine;
 use App\Services\Admin\PostGuard;
 use App\Services\Admin\PreGuard;
+use App\Services\Admin\PromptGuard;
 use App\Services\Admin\PreGuardException;
 use App\Services\Admin\PromptBuilderService;
 use Illuminate\Bus\Queueable;
@@ -56,6 +57,7 @@ class WriteArticleJob implements ShouldQueue
         PreGuard              $preGuard,
         PromptBuilderService  $promptBuilder,
         HookEngine            $hookEngine,
+        PromptGuard           $promptGuard,
         PostGuard             $postGuard,
         FeedbackService       $feedbackService,
     ): void {
@@ -154,10 +156,21 @@ class WriteArticleJob implements ShouldQueue
             // ── STEP 6: HookEngine ────────────────────────────────────────
             $hookResult = $hookEngine->resolve($facts, $kwName, $hookStyle, $contentTypes);
 
+            // Load structure_template for the detected content type
+            // Falls back to config default inside sonnetPrompt() if empty
+            $typeModel         = $contentTypes->firstWhere('type_code', $hookResult->detectedType);
+            $structureTemplate = $typeModel?->structure_template
+                ?? config('prompt.default_structure', '');
+
+            // ── STEP 6b: PromptGuard — validate pre-conditions before Sonnet ──
+            // Throws PromptGuardException if hook or structureTemplate is missing.
+            // Caught by the outer \Throwable handler → article marked failed.
+            $promptGuard->validate($hookResult->bestHook, $structureTemplate);
+
             // ── STEP 7: Sonnet + 1 retry CHỈ khi parse fail ─────────────
             // Retry khi: JSON invalid / missing required fields (lỗi ngẫu nhiên)
             // KHÔNG retry khi: hallucination confidence thấp → retrying không giúp gì
-            $sonnetPrompt = $payload->sonnetPrompt($facts, $hookResult->bestHook, $kwName);
+            $sonnetPrompt = $payload->sonnetPrompt($facts, $hookResult->bestHook, $kwName, $structureTemplate);
             $sonnetRaw    = $claude->generate($sonnetPrompt, 'sonnet');
             $guardResult  = $postGuard->check($sonnetRaw, $facts);
             $retryCount   = 0;
@@ -333,14 +346,18 @@ class WriteArticleJob implements ShouldQueue
             }
 
             Post::create([
-                'id'          => Str::uuid(),
-                'title'       => $title,
-                'content'     => $parsed['content'] ?? '',
-                'slug'        => $postSlug,
-                'thumbnail'   => $raw->thumbnail,
-                'category_id' => $raw->keyword->category_id ?? null,
-                'author_id'   => $admin->id,
-                'domain_id'   => $domain->id,
+                'id'               => Str::uuid(),
+                'title'            => $title,
+                'meta_description' => Str::limit($parsed['meta_description'] ?? '', 255),
+                'content'          => $parsed['content'] ?? '',
+                'slug'             => $postSlug,
+                'thumbnail'        => $raw->thumbnail,
+                'category_id'      => $raw->keyword->category_id ?? null,
+                'author_id'        => $admin->id,
+                'domain_id'        => $domain->id,
+                'fb_image_text'    => $parsed['fb_image_text'] ?? null,
+                'fb_quote'         => $parsed['fb_quote']      ?: null, // empty string → null
+                'fb_post_content'  => $parsed['fb_post_content'] ?? null,
             ]);
 
             Log::info("[WriteArticle] Post created: {$title}");

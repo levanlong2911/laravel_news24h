@@ -13,13 +13,14 @@ class FrameworkContentType extends Model
     protected $fillable = [
         'framework_id', 'type_code', 'type_name',
         'trigger_keywords', 'tone_profile', 'structure_template',
-        'sort_order', 'is_active',
+        'sort_order', 'is_active', 'applicability_score',
     ];
 
     protected $casts = [
-        'trigger_keywords' => 'array',
-        'tone_profile'     => 'array',
-        'is_active'        => 'boolean',
+        'trigger_keywords'    => 'array',
+        'tone_profile'        => 'array',
+        'is_active'           => 'boolean',
+        'applicability_score' => 'float',
     ];
 
     public function framework(): BelongsTo

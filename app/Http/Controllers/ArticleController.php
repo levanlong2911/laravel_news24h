@@ -205,6 +205,9 @@ class ArticleController extends Controller
                         'title'            => $article->title,
                         'meta_description' => Str::limit(strip_tags($facts), 155),
                         'content'          => implode('', array_map(fn($p) => "<p>{$p}</p>", $paragraphs)),
+                        'fb_image_text'    => null,
+                        'fb_quote'         => null,
+                        'fb_post_content'  => null,
                     ];
                 }
 
@@ -222,6 +225,9 @@ class ArticleController extends Controller
                     'category_id'      => $article->keyword->category_id ?? null,
                     'author_id'        => $admin->id,
                     'domain_id'        => $domain->id,
+                    'fb_image_text'    => $parsed['fb_image_text']   ?? null,
+                    'fb_quote'         => ($parsed['fb_quote'] ?? '') ?: null,
+                    'fb_post_content'  => $parsed['fb_post_content'] ?? null,
                 ]);
 
                 $article->update(['status' => 'published', 'published_at' => now()]);
@@ -318,11 +324,34 @@ TITLE: 60-70 characters. Factually accurate. Includes main keyword.
 META DESCRIPTION: 150-160 characters. Lead with emotional hook or surprising fact.
 CONTENT: 3,000-4,000 characters. HTML format (<p>, <h2> tags). 2 sentences per paragraph.
 
+FB_IMAGE_TEXT: 1-2 short sentences (80-150 chars) to overlay on a cover image in Canva.
+  Write as natural flowing sentences — no "BREAKING:" prefix, no format labels.
+  Use the most compelling fact or narrative hook from the article. Must read well in isolation.
+
+FB_QUOTE: The single most quotable direct quote from a named person in the article.
+  Include attribution naturally (e.g. "I'm here to win" — John Smith).
+  Return empty string "" if the article has no strong direct quote worth using.
+
+FB_POST_CONTENT: A Facebook caption ready to paste (no URL — link goes in first comment).
+  Facebook shows ~200 chars before "See More" on mobile — first 2 lines MUST hook standalone.
+  Structure (use literal line breaks \n):
+    Line 1: Strongest hook — 1 sentence, ≤90 chars, triggers emotion or curiosity
+    Line 2: Amplify — 1 sentence, ≤110 chars, deepens the intrigue
+    [blank line]
+    Lines 3-5: Key details from the article (visible after tapping See More)
+    [blank line]
+    Last line: Natural CTA — ask a question, invite a tag, or prompt a reaction.
+              Must match the content tone. Never generic ("read more", "click link").
+  Use emojis sparingly. Write in the same language as the article content. 250-450 chars total.
+
 OUTPUT — Return ONLY this JSON (no markdown, no code block):
 {
   "title": "...",
   "meta_description": "...",
-  "content": "..."
+  "content": "...",
+  "fb_image_text": "...",
+  "fb_quote": "...",
+  "fb_post_content": "..."
 }
 PROMPT;
     }

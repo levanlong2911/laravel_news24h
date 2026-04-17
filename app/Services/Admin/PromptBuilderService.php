@@ -12,13 +12,46 @@ use Illuminate\Support\Facades\Log;
 class PromptBuilderService
 {
     // Default output schema khi category chưa config CategoryOutputField
-    private const DEFAULT_SCHEMA = <<<JSON
+    private const DEFAULT_SCHEMA = <<<'JSON'
 {
   "title": "...",
   "meta_description": "...",
   "content": "...",
   "faq": []
 }
+JSON;
+
+    /**
+     * Universal Facebook fields — appended to EVERY output schema regardless of category.
+     *
+     * fb_image_text: 1-2 câu ngắn để overlay lên ảnh bìa (Canva, tool làm ảnh).
+     *   Viết như câu văn tự nhiên — không prefix "BREAKING:", không format label.
+     *   Câu hay nhất / fact nổi bật nhất của bài. Đọc được độc lập, không cần context.
+     *   Ideal: 80–150 ký tự.
+     *
+     * fb_quote: Câu trích dẫn trực tiếp từ nhân vật trong bài (nếu có).
+     *   Chỉ dùng khi bài có direct quote thật sự đáng dùng.
+     *   Không bịa — nếu không có quote hay thì để chuỗi rỗng "".
+     *   Ideal: 40–150 ký tự, bao gồm attribution nếu có chỗ.
+     *
+     * fb_post_content: Caption sẵn sàng paste lên Facebook.
+     *   Facebook hiện ~200 ký tự trước "Xem thêm" trên mobile — 2 dòng đầu PHẢI đủ hấp dẫn.
+     *   Cấu trúc cứng:
+     *     Dòng 1: Hook mạnh nhất — 1 câu, ≤90 ký tự, trigger cảm xúc hoặc tò mò
+     *     Dòng 2: Amplify — 1 câu, ≤110 ký tự, đẩy sức hút lên
+     *     [dòng trống]
+     *     Dòng 3-5: Chi tiết ngắn từ bài (người đọc thấy sau khi bấm "Xem thêm")
+     *     [dòng trống]
+     *     Dòng cuối: CTA tự nhiên, phù hợp nội dung — hỏi ý kiến, gợi tag bạn bè, hoặc
+     *                reaction prompt. KHÔNG generic ("đọc thêm", "click vào link").
+     *   Không có URL. Emoji dùng tiết kiệm, đúng chỗ. 250–450 ký tự tổng.
+     *   Viết cùng ngôn ngữ với phần content bài viết.
+     */
+    private const FB_SCHEMA_APPEND = <<<'JSON'
+,
+  "fb_image_text": "...",
+  "fb_quote": "...",
+  "fb_post_content": "..."
 JSON;
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -113,14 +146,23 @@ JSON;
      * Build output schema động từ CategoryOutputField.
      * Cache 1 giờ — schema hiếm khi thay đổi, tránh query mỗi job.
      * Fallback về DEFAULT_SCHEMA nếu chưa config.
+     *
+     * FB fields (fb_image_text, fb_quote, fb_post_content) luôn được append
+     * vào cuối — universal, áp dụng cho mọi category.
      */
     private function buildOutputSchema(string $categoryId): string
     {
-        return Cache::remember(
+        $base = Cache::remember(
             'prompt_schema_' . $categoryId,
             3600,
             fn () => CategoryOutputField::buildSchemaBlock($categoryId)
         );
+
+        // Inject FB fields trước dấu "}" đóng cuối cùng
+        // Đảm bảo hoạt động đúng dù base schema có trailing whitespace hay không
+        return rtrim($base, " \t\n\r") === '}'
+            ? rtrim($base, " \t\n\r\0\x0B}") . self::FB_SCHEMA_APPEND . "\n}"
+            : preg_replace('/\}\s*$/', self::FB_SCHEMA_APPEND . "\n}", $base);
     }
 
     /**
@@ -159,12 +201,14 @@ JSON;
             throw new \RuntimeException('[PromptBuilder] No active prompt framework found. Run seeder first.');
         }
 
+        $fallbackSchema = preg_replace('/\}\s*$/', self::FB_SCHEMA_APPEND . "\n}", self::DEFAULT_SCHEMA);
+
         return new PromptPayload(
             system:            $framework->system_prompt,
             phase1:            $framework->phase1_analyze,
             phase2:            $framework->phase2_diagnose,
             phase3:            $framework->phase3_generate,
-            outputSchema:      self::DEFAULT_SCHEMA,
+            outputSchema:      $fallbackSchema,
             contentTypesBlock: '(fallback — no category context)',
             contextId:         null,
             frameworkVersion:  $framework->version,

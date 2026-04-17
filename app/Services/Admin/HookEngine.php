@@ -130,11 +130,16 @@ class HookEngine
                     $count++;
                 }
             }
-            $scores[$type->type_code] = $count;
+            // Weighted score: keyword hits × applicability_score
+            // Types with lower applicability_score (e.g. 0.7) are naturally de-ranked
+            // without being fully disabled (is_active handles hard disabling)
+            $scores[$type->type_code] = round($count * ($type->applicability_score ?? 1.0), 3);
         }
 
         if (empty($scores)) {
-            return 'general';
+            // No active types in this framework — return first by sort_order
+            $first = $contentTypes->sortBy('sort_order')->first();
+            return $first?->type_code ?? 'breakthrough';
         }
 
         $topScore = max($scores);
@@ -164,9 +169,9 @@ class HookEngine
             return $llmType;
         }
 
-        // Last resort: type active đầu tiên theo sort_order
+        // Last resort: type active đầu tiên theo sort_order (không hardcode string)
         $first = $contentTypes->where('is_active', true)->sortBy('sort_order')->first();
-        return $first?->type_code ?? 'general';
+        return $first?->type_code ?? 'breakthrough';
     }
 
     /**

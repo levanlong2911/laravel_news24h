@@ -16,6 +16,7 @@ class Post extends Model
 
     protected $fillable = [
         'id', 'title', 'meta_description', 'content', 'slug', 'category_id', 'author_id', 'domain_id', 'thumbnail',
+        'fb_image_text', 'fb_quote', 'fb_post_content',
     ];
 
     public $incrementing = false;

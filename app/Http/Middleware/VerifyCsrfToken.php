@@ -15,5 +15,6 @@ class VerifyCsrfToken extends Middleware
         'astro/*',
         'astro/assets/*',
         'admin/website/*/api-key',
+        'admin/raw-article/*/save', // tạm thời để test Postman
     ];
 }

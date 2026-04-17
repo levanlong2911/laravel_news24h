@@ -107,6 +107,49 @@ class FeedbackService
         );
     }
 
+    /**
+     * Per-type breakdown for a context — used for dashboard content-type analysis.
+     * Shows which content types perform best so seeder data can be tuned.
+     *
+     * Result keyed by content_type_detected, ordered by avg_viral desc.
+     * Not cached — called infrequently from admin dashboard only.
+     *
+     * @return array<string, array{
+     *   count: int,
+     *   avg_viral: float,
+     *   avg_hook: float,
+     *   avg_confidence: float,
+     *   retry_count: int,
+     *   review_count: int,
+     * }>
+     */
+    public function summaryByType(string $contextId): array
+    {
+        return PromptMetric::where('context_id', $contextId)
+            ->select(
+                'content_type_detected',
+                DB::raw('COUNT(*) as count'),
+                DB::raw('ROUND(AVG(viral_score), 1) as avg_viral'),
+                DB::raw('ROUND(AVG(hook_score), 1) as avg_hook'),
+                DB::raw('ROUND(AVG(guard_confidence), 3) as avg_confidence'),
+                DB::raw('SUM(CASE WHEN retry_count > 0 THEN 1 ELSE 0 END) as retry_count'),
+                DB::raw('SUM(needs_review) as review_count')
+            )
+            ->groupBy('content_type_detected')
+            ->orderByDesc('avg_viral')
+            ->get()
+            ->keyBy('content_type_detected')
+            ->map(fn($row) => [
+                'count'          => (int) $row->count,
+                'avg_viral'      => (float) $row->avg_viral,
+                'avg_hook'       => (float) $row->avg_hook,
+                'avg_confidence' => (float) $row->avg_confidence,
+                'retry_count'    => (int) $row->retry_count,
+                'review_count'   => (int) $row->review_count,
+            ])
+            ->toArray();
+    }
+
     // ── Private ───────────────────────────────────────────────────────────────
 
     /**

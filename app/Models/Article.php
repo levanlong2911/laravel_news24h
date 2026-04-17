@@ -22,10 +22,17 @@ class Article extends Model
         'slug',
         'meta_description',
         'content',
+        'content_hash',
+        'content_simhash',
         'summary',
         'faq',
         'viral_score',
         'status',
+        'human_review',
+        'hook_type',
+        'hook_score',
+        'hook_rank',
+        'content_blocks',
         'expires_at',
         'published_at',
         'crawled_by',
@@ -36,6 +43,10 @@ class Article extends Model
         'published_at' => 'datetime',
         'viral_score'  => 'integer',
         'faq'          => 'array',
+        'human_review' => 'boolean',
+        'hook_score'     => 'integer',
+        'hook_rank'      => 'integer',
+        'content_blocks' => 'array',
     ];
 
     // ── Auto-delete bài hết hạn sau 48h (chạy bởi: php artisan model:prune) ──

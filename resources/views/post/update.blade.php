@@ -390,6 +390,42 @@
                             </div>
                             <div class="form-group">
                                 <div>
+                                    <p class="align-middle p-0 m-0">{{ __('admin.image_text') }}<span style="color: red; ">
+                                            *</span></p>
+                                </div>
+                                <div class="col-12 pl-0">
+                                    <div class="input inputMessage">
+                                        <input type="text" value="{{ $listPost->fb_image_text }}"
+                                            class="form-control{{ $errors->has('image_text') ? ' is-invalid' : '' }} col-12"
+                                            name="image_text" id="image_text" placeholder="">
+                                        @error('image_text')
+                                            <span class="invalid-feedback" role="alert">
+                                                <strong>{{ $message }}</strong>
+                                            </span>
+                                        @enderror
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div>
+                                    <p class="align-middle p-0 m-0">{{ __('admin.post_content') }}</p>
+                                </div>
+                                <div class="col-12 pl-0">
+                                    <div class="input inputMessage">
+                                        <textarea class="form-control col-12"
+                                            name="post_content" id="post_content"
+                                            rows="8"
+                                            style="white-space: pre-wrap; resize: vertical;">{{ $listPost->fb_post_content }}</textarea>
+                                        @error('post_content')
+                                            <span class="invalid-feedback" role="alert">
+                                                <strong>{{ $message }}</strong>
+                                            </span>
+                                        @enderror
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div>
                                     <p class="align-middle p-0 m-0">{{ __('admin.content') }}<span style="color: red; ">
                                             *</span></p>
                                 </div>

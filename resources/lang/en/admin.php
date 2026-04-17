@@ -33,4 +33,6 @@ return [
     'min_password' => 'Please enter at least 5 characters.',
     'edit_level' => 'Edit level',
     'change_password' => 'Change Password',
+    'image_text' => 'Image text FB',
+    'post_content' => 'Content image FB',
 ];

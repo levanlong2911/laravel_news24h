@@ -54,10 +54,26 @@ final class PromptPayload
 
     // ── Prompt gửi Sonnet: phase3 + facts + bestHook (anchor) + schema ───────
     // bestHook từ HookEngine — content phục vụ hook, không phải ngược lại
+    // structureTemplate: injected AFTER HookEngine detects content type
+    //   → phase3 contains {structure_template} placeholder
+    //   → replaced here at call time (not at PromptBuilder::build() time)
 
-    public function sonnetPrompt(string $facts, string $bestHook, string $keyword): string
-    {
-        return $this->phase3
+    public function sonnetPrompt(
+        string $facts,
+        string $bestHook,
+        string $keyword,
+        string $structureTemplate = '',
+    ): string {
+        // Resolve {structure_template} placeholder in phase3
+        $defaultStructure = config(
+            'prompt.default_structure',
+            "① HOOK — Open with the most compelling element\n② CONTEXT — Background and significance\n③ BODY — Core facts and analysis\n④ IMPACT — Consequences and implications\n⑤ CONCLUSION — Forward-looking statement"
+        );
+
+        $resolvedStructure = $structureTemplate ?: $defaultStructure;
+        $phase3 = str_replace('{structure_template}', $resolvedStructure, $this->phase3);
+
+        return $phase3
             . "\n\nTOPIC: {$keyword}"
             . "\nTITLE ANCHOR (write content to support this hook): {$bestHook}"
             . "\n\nEXTRACTED FACTS:\n---\n{$facts}\n---"
