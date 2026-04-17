@@ -154,7 +154,8 @@ class ArticleController extends Controller
         }
         RateLimiter::hit($key, 60);
 
-        $admin  = Cache::remember('default_admin',  3600, fn() => Admin::first());
+        // Dùng user đang đăng nhập làm author — bài sẽ hiện đúng trong list của họ
+        $admin  = auth()->user();
         $domain = Cache::remember('default_domain', 3600, fn() => Domain::first());
 
         if (!$admin || !$domain) {
