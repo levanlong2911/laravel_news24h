@@ -20,6 +20,7 @@ class RawArticle extends Model
         'source_icon',
         'thumbnail',
         'viral_score',
+        'fb_score',
         'position',
         'published_date',
         'stories_count',
@@ -33,6 +34,7 @@ class RawArticle extends Model
     protected $casts = [
         'top_story'   => 'boolean',
         'viral_score' => 'integer',
+        'fb_score'    => 'integer',
         'position'    => 'integer',
         'stories_count' => 'integer',
         'expires_at'  => 'datetime',

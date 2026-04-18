@@ -102,6 +102,7 @@ class ProcessKeywordJob implements ShouldQueue
                 'source_icon'    => $item['source_icon'] ?? '',
                 'thumbnail'      => $item['thumbnail'] ?? '',
                 'viral_score'    => (int) ($item['quality_score'] ?? 0),
+                'fb_score'       => (int) ($item['fb_score'] ?? 0),
                 'position'       => (int) ($item['position'] ?? 0),
                 'published_date' => $item['date'] ?? '',
                 'stories_count'  => count($item['stories'] ?? []),

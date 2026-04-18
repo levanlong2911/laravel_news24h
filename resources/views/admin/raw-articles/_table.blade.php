@@ -8,7 +8,8 @@
             <th width="30">#</th>
             <th width="55">Thumb</th>
             <th class="text-left">Title</th>
-            <th width="65">Score</th>
+            <th width="55">Score</th>
+            <th width="55">FB</th>
             <th width="50">Top</th>
             <th width="55">Stories</th>
             <th width="90">Posted</th>
@@ -59,14 +60,26 @@
                 </div>
             </td>
 
+            {{-- Quality Score --}}
             <td class="text-center align-middle">
-                @php
-                    $sc = $raw->viral_score;
-                    $bc = $sc >= 100 ? 'danger' : ($sc >= 70 ? 'warning' : ($sc >= 40 ? 'info' : 'secondary'));
-                @endphp
-                <span class="badge badge-pill badge-{{ $bc }}" style="font-size:.85em;padding:5px 8px">
-                    {{ $sc }}
-                </span>
+                @php $sc = $raw->viral_score; @endphp
+                <span class="badge badge-pill badge-{{ $sc >= 100 ? 'danger' : ($sc >= 70 ? 'warning' : ($sc >= 40 ? 'info' : 'secondary')) }}"
+                      style="font-size:.8em;padding:4px 7px">{{ $sc }}</span>
+            </td>
+
+            {{-- FB Score --}}
+            <td class="text-center align-middle">
+                @php $fb = $raw->fb_score; @endphp
+                @if($fb >= 80)
+                    <span class="badge badge-pill badge-danger" style="font-size:.8em;padding:4px 7px"
+                          title="High FB viral potential">🔥 {{ $fb }}</span>
+                @elseif($fb >= 50)
+                    <span class="badge badge-pill badge-warning" style="font-size:.8em;padding:4px 7px">{{ $fb }}</span>
+                @elseif($fb >= 25)
+                    <span class="badge badge-pill badge-info" style="font-size:.8em;padding:4px 7px">{{ $fb }}</span>
+                @else
+                    <span class="badge badge-pill badge-secondary" style="font-size:.8em;padding:4px 7px">{{ $fb }}</span>
+                @endif
             </td>
 
             <td class="text-center align-middle">

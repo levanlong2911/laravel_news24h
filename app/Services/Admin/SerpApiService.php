@@ -145,11 +145,12 @@ class SerpApiService
             if ($isBlocked) continue;
             if ($this->isVideoContent($title, $link)) continue;
 
-            // Score đầy đủ — không có trend nhưng vẫn tính freshness/source/signals
-            $score = $this->calcScore($article, $domain, [], $trusted);
+            $score   = $this->calcScore($article, $domain, $trusted);
+            $fbScore = $this->calcFbScore($article);
 
             $result[] = array_merge($article, [
                 'quality_score' => $score,
+                'fb_score'      => $fbScore,
                 'domain'        => $domain,
             ]);
         }
@@ -226,31 +227,25 @@ class SerpApiService
     // FILTER + SCORE — universal cho mọi domain
     // ══════════════════════════════════════════════
 
-    public function filterAndScore(array $articles, array $trend = []): array
+    public function filterAndScore(array $articles): array
     {
-        $minScore = empty($trend) ? 20 : 30;
+        // Load 1 lần — tránh cache read lặp lại khi doFilterAndScore chạy 2 lần
+        $trusted = $this->trustedSources();
+        $blocked = $this->blockedSources();
 
-        // Lần 1: lấy bài trong 12h
-        $result = $this->doFilterAndScore($articles, $trend, $minScore, 12);
+        $result = $this->doFilterAndScore($articles, 12, $trusted, $blocked);
 
-        // Nếu thiếu 10 bài → mở rộng lên 24h
         if (count($result) < 10) {
-            Log::info(sprintf(
-                '[FilterAndScore] Only %d articles in 12h, expanding to 24h',
-                count($result)
-            ));
-            $result = $this->doFilterAndScore($articles, $trend, $minScore, 24);
+            Log::info(sprintf('[FilterAndScore] Only %d in 12h, expanding to 24h', count($result)));
+            $result = $this->doFilterAndScore($articles, 24, $trusted, $blocked);
         }
 
         Log::info(sprintf('[FilterAndScore] Final: %d articles', count($result)));
         return $result;
     }
 
-    private function doFilterAndScore(array $articles, array $trend, int $minScore, int $hours): array
+    private function doFilterAndScore(array $articles, int $hours, array $trusted, array $blocked): array
     {
-        // Load 1 lần — tránh gọi Cache::remember lặp lại trong loop
-        $trusted = $this->trustedSources();
-        $blocked = $this->blockedSources();
 
         $scored = [];
         $seen   = [];
@@ -265,31 +260,30 @@ class SerpApiService
             if (isset($seen[$link])) continue;
             $seen[$link] = true;
 
-            // top_story luôn giới hạn 12h — sự kiện cluster cũ hơn 12h không còn hot
+            // cluster cũ hơn 12h không còn hot
             $maxHours = $topStory ? 12 : $hours;
             if (!$this->isWithinHours($date, $maxHours)) continue;
 
             $domain = strtolower(parse_url($link, PHP_URL_HOST) ?? '');
-
             foreach ($blocked as $b) {
                 if (str_contains($domain, $b)) continue 2;
             }
 
-            // Lọc bài dạng video/podcast — không crawl được nội dung text
             if ($this->isVideoContent($title, $link)) continue;
 
-            $score = $this->calcScore($article, $domain, $trend, $trusted);
+            $score   = $this->calcScore($article, $domain, $trusted);
+            $fbScore = $this->calcFbScore($article);
 
-            if ($score < $minScore) continue;
+            if ($score < 20) continue;
 
             $scored[] = array_merge($article, [
                 'quality_score' => $score,
+                'fb_score'      => $fbScore,
                 'domain'        => $domain,
             ]);
         }
 
         usort($scored, fn($a, $b) => $b['quality_score'] <=> $a['quality_score']);
-
         return array_values($scored);
     }
 
@@ -297,104 +291,129 @@ class SerpApiService
     // HELPERS
     // ══════════════════════════════════════════════
 
-    private function calcScore(array $article, string $domain, array $trend, array $trusted = []): int
+    private function calcScore(array $article, string $domain, array $trusted = []): int
     {
-        $score = 0;
+        $score    = 0;
+        $position = (int)($article['position'] ?? 99);
+        $date     = strtolower($article['date'] ?? '');
+        $stories  = count($article['stories'] ?? []);
+        $topStory = !empty($article['stories']);
 
-        // Trend signals
-        $traffic  = (int)($trend['traffic'] ?? 0);
-        $increase = (int)($trend['increase'] ?? 0);
-        $active   = (bool)($trend['active'] ?? false);
-
-        $score += match(true) {
-            $traffic >= 1_000_000 => 40,
-            $traffic >= 500_000   => 30,
-            $traffic >= 100_000   => 20,
-            $traffic >= 10_000    => 10,
-            default               => 0,
-        };
-
-        $score += match(true) {
-            $increase >= 1000 => 30,
-            $increase >= 500  => 15,
-            $increase >= 100  => 5,
-            default           => 0,
-        };
-
-        if ($active) $score += 20;
-
-        // News signals
-        $position  = (int)($article['position'] ?? 99);
-        $date      = strtolower($article['date'] ?? '');
-        $stories   = count($article['stories'] ?? []);
-        $snippet   = $article['snippet'] ?? '';
-        $title     = $article['title'] ?? '';
-        $topStory  = !empty($article['stories']); // Google gom nhiều nguồn = viral
-
-        // TOP STORY — signal viral mạnh nhất: Google đã cluster nhiều nguồn lại
+        // ── CLUSTER SIZE — tín hiệu mạnh nhất của Google News ────────────────
+        // Google gom nhiều nguồn = đã xác nhận sự kiện có thật và đang trending
         if ($topStory) {
             $score += match(true) {
-                $stories >= 10 => 50,
-                $stories >= 5  => 35,
+                $stories >= 10 => 60,
+                $stories >= 5  => 45,
+                $stories >= 3  => 30,
                 $stories >= 2  => 20,
                 default        => 10,
             };
         }
 
-        // Position trong Google News (Google's own ranking signal)
-        $score += max(0, (10 - min($position, 10)) * 3); // max +27 (giảm từ *5 xuống *3)
-
-        // Freshness — TĂNG TRỌNG SỐ: bài mới là yếu tố quan trọng nhất
+        // ── POSITION — thứ hạng Google News tự chọn ──────────────────────────
         $score += match(true) {
-            str_contains($date, 'minute') => 50,  // < 1h: cực kỳ fresh
-            str_contains($date, '1 hour') => 40,
-            str_contains($date, 'hour')   => 30,  // 2-23h
-            str_contains($date, '1 day')  => 10,
-            default                       => $this->scoreByDate($date),
+            $position === 1 => 30,
+            $position === 2 => 25,
+            $position === 3 => 20,
+            $position <= 5  => 15,
+            $position <= 10 => 10,
+            default         => 5,
         };
 
-        // Trusted source
+        // ── FRESHNESS — yếu tố quan trọng nhất trong Google News ─────────────
+        $score += match(true) {
+            str_contains($date, 'minute')           => 50,
+            str_contains($date, '1 hour')           => 40,
+            preg_match('/^[23]\s*h/', $date) === 1  => 35,
+            str_contains($date, 'hour')             => 25,  // 4-23h
+            str_contains($date, '1 day')            => 10,
+            default                                 => $this->scoreByDate($date),
+        };
+
+        // ── TRUSTED SOURCE — publisher authority từ news_sources table ────────
         foreach ($trusted as $trustedDomain) {
             if (str_contains($domain, $trustedDomain)) {
-                $score += 20; // giảm từ 30 → 20, source không quan trọng bằng freshness
+                $score += 20;
                 break;
             }
         }
 
-        $titleLower = strtolower($title);
+        return max(0, $score);
+    }
 
-        // ── BREAKING NEWS signals (+25) ───────────────────────────────────────
-        // Sự kiện thực tế: trade, injury, signing, firing → viral cao nhất FB
-        if (preg_match('/\b(breaking|just in|confirmed|official|signs|signed|traded|trade|fired|released|suspended|arrested|injured|injury|surgery|retires|retirement|dies|death|charged|indicted|accused)\b/', $titleLower)) {
+    // ── FB VIRALITY SCORE — riêng cho Facebook, độc lập với quality score ────
+
+    private function calcFbScore(array $article): int
+    {
+        $score   = 0;
+        $title   = strtolower($article['title'] ?? '');
+        $snippet = $article['snippet'] ?? '';
+        $date    = strtolower($article['date'] ?? '');
+        $stories = count($article['stories'] ?? []);
+
+        // ── FRESHNESS — FB algorithm ưu tiên nội dung mới ────────────────────
+        $score += match(true) {
+            str_contains($date, 'minute')           => 40,
+            str_contains($date, '1 hour')           => 35,
+            preg_match('/^[23] hour/', $date) === 1 => 28,
+            str_contains($date, 'hour')             => 15,  // 4-23h
+            str_contains($date, '1 day')            => 5,
+            default                                 => 0,
+        };
+
+        // ── TOP STORY — Google đã xác nhận viral ─────────────────────────────
+        if (!empty($article['stories'])) {
+            $score += 20 + min($stories * 3, 25); // +20 base, +3/story, max +45
+        }
+
+        // ── BREAKING / HARD NEWS (+40) — trigger share cao nhất ──────────────
+        if (preg_match('/\b(breaking|just in|confirmed|official|signs|signed|traded|trade|fired|cut|released|suspended|arrested|injured|injury|surgery|retires|retirement|dies|death|charged|indicted|accused|collapses|resigns)\b/', $title)) {
+            $score += 40;
+        }
+
+        // ── CONTROVERSY / DRAMA (+35) — comment & share magnet ───────────────
+        if (preg_match('/\b(slams|blasts|rips|calls out|responds|fires back|feud|beef|outrage|backlash|furious|angry|upset|betrayal|walks out|demands|controversy|drama|heated|shocking|accuses)\b/', $title)) {
+            $score += 35;
+        }
+
+        // ── EMOTIONAL / HUMAN INTEREST (+25) ─────────────────────────────────
+        if (preg_match('/\b(heartbreaking|emotional|tears|crying|incredible|amazing|unbelievable|insane|wild|legend|hero|tribute|honors|remembers|reveals|opens up|breaks silence|comeback|miracle|devastating)\b/', $title)) {
             $score += 25;
         }
 
-        // ── CONTROVERSY / DRAMA signals (+20) ────────────────────────────────
-        // Người dùng FB chia sẻ nhiều nhất khi có drama, tranh cãi
-        if (preg_match('/\b(controversy|drama|feud|beef|slams|blasts|rips|calls out|responds|fires back|shocking|outrage|backlash|criticism|frustrated|furious|angry|upset|betrayal|quit|walks out|demands)\b/', $titleLower)) {
+        // ── FAN LOYALTY / RIVALRY (+20) — fan base tranh cãi trong comments ──
+        if (preg_match('/\b(vs\.?|beats|defeats|crushes|destroys|embarrasses|dominates|rivalry|rivals?|enemy|greatest|worst|disrespects?|snubs?)\b/', $title)) {
             $score += 20;
         }
 
-        // ── EMOTION / HUMAN INTEREST signals (+15) ───────────────────────────
-        if (preg_match('/\b(heartbreaking|emotional|tears|crying|incredible|amazing|unbelievable|insane|wild|crazy|legend|hero|tribute|honors|remembers|reveals|opens up|breaks silence)\b/', $titleLower)) {
+        // ── RECORD / FIRST / HISTORIC (+15) — "chưa từng thấy" = shareable ──
+        if (preg_match('/\b(first time|first ever|never before|record|historic|all.time|milestone|first in \d+)\b/', $title)) {
             $score += 15;
         }
 
-        // ── Số trong tiêu đề → CTR cao hơn (+5) ─────────────────────────────
-        if (preg_match('/\d+/', $title)) {
-            $score += 5;
+        // ── MONEY / CONTRACT / NUMBER (+10) — cụ thể → credible → shareable ─
+        if (preg_match('/\$[\d,]+[mk]?|\b\d+[\s-]year\b|\b\d+[\s-]million\b|\b#\s*1\b/', $title)) {
+            $score += 10;
         }
 
-        if (strlen($snippet) > 120) $score += 5;
+        // ── SNIPPET DÀI (+5) ─────────────────────────────────────────────────
+        if (strlen($snippet) > 100) $score += 5;
 
-        // ── PENALIZE analysis/listicle — không viral trên FB ─────────────────
-        if (preg_match('/\b(mock draft|seven.round|trade proposal|could fit|how .+ could|what to know|everything you need|breakdown|film study|deep dive|explainer|roundup|recap|headlines:|power rankings|ranking|grades|report card|fantasy)\b/', $titleLower)) {
+        // ── PENALTIES ─────────────────────────────────────────────────────────
+        // Analysis/listicle — không ai share trên FB
+        if (preg_match('/\b(mock draft|seven.round|trade proposal|could fit|how .+ could|what to know|everything you need|breakdown|film study|deep dive|explainer|roundup|recap|power rankings|ranking|grades|report card|fantasy)\b/', $title)) {
+            $score -= 35;
+        }
+
+        // Evergreen — FB không boost nội dung cũ
+        if (preg_match('/\b(history of|look back|throwback|greatest ever|best ever|legacy|in \d{4}|since \d{4}|back in \d{4})\b/', $title)) {
             $score -= 25;
         }
 
-        // ── PENALIZE evergreen/historical content ─────────────────────────────
-        if (preg_match('/\b(history of|look back|throwback|all.time|greatest ever|best ever|legacy|how .+ landed|in \d{4}|since \d{4}|back in \d{4})\b/', $titleLower)) {
-            $score -= 30;
+        // Rumor/prediction — ít urgent hơn hard news
+        if (preg_match('/\b(could|might|projected|expected|reportedly|rumored|sources say|per report)\b/', $title)) {
+            $score -= 10;
         }
 
         return max(0, $score);
@@ -455,11 +474,10 @@ class SerpApiService
         $d        = strtolower(trim($date));
         $limitSec = $hours * 3600;
 
-        // Relative string: "X minutes ago" → luôn trong 1h → pass mọi threshold
         if (str_contains($d, 'minute')) return true;
 
-        // "X hours ago"
-        if (preg_match('/^(\d+)\s+hour/', $d, $m)) {
+        // "11h ago" (SerpAPI viết tắt) hoặc "11 hours ago"
+        if (preg_match('/^(\d+)\s*h(?:our)?s?\b/', $d, $m)) {
             return (int)$m[1] <= $hours;
         }
 
