@@ -996,63 +996,28 @@ QUOTE HANDLING:
 STEP 3 — FACEBOOK ASSETS
 ══════════════════════════════════════════
 FB_IMAGE_TEXT:
-• 50-90 chars. Reads well with zero context. No "BREAKING:", no emojis.
-• One punchy fact or hook — short enough to read at a glance on a thumbnail.
+- 1 sentence ≤70 chars. Use a strong active verb (steal, flip, crash, betray, collapse).
+- Technique: Hook + Tension — reveal half the story, keep the best part hidden.
+- Name the threat or rivalry — let reader feel stakes without knowing outcome.
+- No emoji. Write in plain text only.
+- GOOD: 'Miami Could Steal A.J. Brown Before Patriots Get a Shot'
+-       'Southwest just made Alaska Airlines nervous'
+-       'One phone call is about to change everything for Patriots fans.'
+- BAD: Two separate fact statements. Literal numbers/dates. Restate the headline. Using emoji.
+- Write in the same language as the article.
 
 FB_QUOTE:
 • "quote text" — Full Name
 • Return "" if no strong direct quote exists. Never fabricate.
 
 FB_POST_CONTENT:
-• No URL · No CTA · No direct question · No hashtags
-• 200-400 chars total · Use literal \n for line breaks
-• Mobile cuts at ~200 chars — Lines 1+2 MUST work completely alone
-
-LINE 1 — HOOK (≤90 chars):
-  Mirror Step 1 hook type, adapted for social.
-  NO emoji on this line — hook must stand on language alone.
-  Sharp, specific, no hedge words. Triggers emotion or curiosity on first read.
-  ✅ "No team touched the $5.8M tender. Dallas won without throwing a punch."
-  ❌ "Breaking news 🔥: Dallas locks up Aubrey for the new season!"
-
-LINE 2 — AMPLIFY (≤110 chars):
-  Raise stakes OR surface implicit tension between 2 sides.
-  Max 1 emoji if it genuinely adds weight — never decorative.
-  Embed controversy naturally — do NOT ask a direct question.
-  ✅ "No team thought he was worth more than $5.8M. Dallas disagrees. 💰"
-  ❌ "Do you think Dallas made the right call? Drop a comment below!"
-
-[BLANK LINE]
-
-LINES 3-5 — MIXED TEASER (curiosity + value):
-  2 lines TEASE (information gap) + 1 line FACT (anchor reality).
-  Do NOT reveal the full picture — cut each tease at the most compelling moment.
-  At least 1 concrete detail must appear (number, ranking, name).
-
-  Tease patterns (pick 1 per tease line):
-  A) Partially hidden number: "The real number behind this deal isn't $5.8M."
-  B) Real reason withheld:    "The real reason no team submitted wasn't the price."
-  C) Consequence unresolved:  "This win for Dallas could turn into a trap next year."
-  D) Implicit contradiction:  "3rd-highest-paid kicker — and nobody wanted to pay a dollar more."
-
-  Fact line: one clean, specific statement — no withholding, no hedge.
-  Example: "Aubrey ranked 3rd among all NFL kickers in 2024."
-
-  Rules for Lines 3-5:
-  • Each line ≤70 chars
-  • No more than 1 line ending with "..." — use it sparingly
-  • Never use: "Read more", "See full story", "Click the link"
-  • Mix: 2 tease + 1 fact (any order — fact can anchor first, middle, or last)
-
-  ✅ Correct (Aubrey):
-  "Aubrey ranked 3rd among all NFL kickers in 2024.
-  The real reason no team submitted wasn't the price.
-  And his contract situation in 2025 still has no answer."
-
-  ❌ Wrong (pure fact list):
-  "Aubrey ranks 3rd among NFL kickers by pay.
-  Deadline passed with zero offer sheets submitted.
-  Extension talks remain unresolved."
+• 60-150 chars MAX. No bullet points. No lists. Plain paragraphs only.
+• Structure: Hook → Tension → Hidden fact → CTA
+• Reveal MAX 2 facts — keep the most specific or surprising fact hidden.
+• Never use conclusion words: obvious, clear, certain, confirmed.
+• "Changes everything" is BANNED — say WHAT changes instead.
+• Name the threat or rivalry in the first line — never bury the conflict.
+• No emoji. No URL. No hashtags. Same language as article.
 
 ══════════════════════════════════════════
 QUALITY GATE — verify before output
@@ -1065,13 +1030,10 @@ QUALITY GATE — verify before output
 [ ] Zero forbidden words or phrases (including "apparently", "seemingly")
 [ ] No sentence explains a mechanism the reader already knows
 [ ] No sentence over 25 words
-[ ] FB image text ≤90 chars
+[ ] FB image text: Hook + Tension, curiosity gap, ≤70 chars
 [ ] Final sentence forward-looking, not philosophical
-[ ] FB Line 1 ≤90 chars, zero emoji, hook stands alone on language
-[ ] FB Line 2 ≤110 chars, max 1 emoji, has implicit tension (no direct question)
-[ ] FB Lines 3-5: mixed teaser — 2 tease (info gap) + 1 fact anchor, no CTA, each ≤70 chars
-[ ] FB Lines 1+2 work standalone at 200-char mobile cutoff
-[ ] FB: no URL, no direct question, no hashtag
+[ ] FB post: 60-150 chars, Hook→Tension→Hidden fact→CTA
+[ ] FB post: no bullet points, no URL, no hashtag, no emoji, conflict named in first line
 
 Fail any check → rewrite that section before outputting.
 PROMPT;

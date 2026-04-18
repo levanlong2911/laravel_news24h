@@ -24,34 +24,33 @@ JSON;
     /**
      * Universal Facebook fields — appended to EVERY output schema regardless of category.
      *
-     * fb_image_text: 1-2 câu ngắn để overlay lên ảnh bìa (Canva, tool làm ảnh).
-     *   Viết như câu văn tự nhiên — không prefix "BREAKING:", không format label.
-     *   Câu hay nhất / fact nổi bật nhất của bài. Đọc được độc lập, không cần context.
-     *   Ideal: 80–150 ký tự.
+     * ── fb_image_text ──────────────────────────────────────────────────────────
+     * Overlay lên ảnh bìa. 1–2 câu, ≤120 ký tự. Công thức: Hook (shock/tò mò) + Tension
+     * (câu hỏi chưa được trả lời). KHÔNG liệt kê fact đầy đủ — để lại phần hấp dẫn nhất.
+     * GOOD: "Southwest just made Alaska Airlines nervous. 🍷" / "You can now fly wine home free. But there's a catch."
+     * BAD:  "Southwest checks your wine free starting April 24. Up to 12 bottles."
+     * Viết cùng ngôn ngữ với content bài.
      *
-     * fb_quote: Câu trích dẫn trực tiếp từ nhân vật trong bài (nếu có).
-     *   Chỉ dùng khi bài có direct quote thật sự đáng dùng.
-     *   Không bịa — nếu không có quote hay thì để chuỗi rỗng "".
-     *   Ideal: 40–150 ký tự, bao gồm attribution nếu có chỗ.
+     * ── fb_quote ───────────────────────────────────────────────────────────────
+     * Direct quote từ nhân vật thật trong bài. Không bịa. Nếu không có → "".
+     * 40–150 ký tự, kèm attribution.
      *
-     * fb_post_content: Caption sẵn sàng paste lên Facebook.
-     *   Facebook hiện ~200 ký tự trước "Xem thêm" trên mobile — 2 dòng đầu PHẢI đủ hấp dẫn.
-     *   Cấu trúc cứng:
-     *     Dòng 1: Hook mạnh nhất — 1 câu, ≤90 ký tự, trigger cảm xúc hoặc tò mò
-     *     Dòng 2: Amplify — 1 câu, ≤110 ký tự, đẩy sức hút lên
-     *     [dòng trống]
-     *     Dòng 3-5: Chi tiết ngắn từ bài (người đọc thấy sau khi bấm "Xem thêm")
-     *     [dòng trống]
-     *     Dòng cuối: CTA tự nhiên, phù hợp nội dung — hỏi ý kiến, gợi tag bạn bè, hoặc
-     *                reaction prompt. KHÔNG generic ("đọc thêm", "click vào link").
-     *   Không có URL. Emoji dùng tiết kiệm, đúng chỗ. 250–450 ký tự tổng.
-     *   Viết cùng ngôn ngữ với phần content bài viết.
+     * ── fb_post_content ────────────────────────────────────────────────────────
+     * Caption Facebook 180–250 ký tự. Công thức 4 tầng viết liền mạch, chỉ dùng dấu chấm:
+     * HOOK (1 câu gây shock/tò mò, KHÔNG restate headline). TENSION (1 câu ngắn dramatic,
+     * tạo câu hỏi chưa có câu trả lời). FOMO (1–2 câu fact quan trọng nhất, viết như người
+     * kể chuyện, không bullet list). CTA (1 câu kết kích debate hoặc tension narrative —
+     * KHÔNG generic "đọc thêm"/"click vào link").
+     * GOOD: "Southwest just announced something Alaska Airlines has been doing since 2007.
+     *        And Alaska is already sweating. Starting April 24 — 12 bottles of wine, checked
+     *        free. The question isn't who started it — it's who does it better."
+     * Emoji: tối đa 2. Không có URL. Viết cùng ngôn ngữ với content bài.
      */
     private const FB_SCHEMA_APPEND = <<<'JSON'
 ,
-  "fb_image_text": "...",
-  "fb_quote": "...",
-  "fb_post_content": "..."
+  "fb_image_text": "1 sentence ≤70 chars. Strong active verb. Hook + Tension — reveal half the story, keep best part hidden. No emoji. GOOD: 'Southwest just made Alaska Airlines nervous' / 'Miami Could Steal A.J. Brown Before Patriots Get a Shot'. BAD: two fact statements, literal numbers/dates. Same language as article.",
+  "fb_quote": "Direct quote from a real person in the article with attribution. Empty string if none.",
+  "fb_post_content": "60-150 chars MAX. Plain paragraph only — no bullet points, no lists. Structure: Hook → Tension → Hidden fact → CTA. Reveal MAX 2 facts, keep the most surprising one hidden. Name the threat or rivalry in the first line. BANNED: 'changes everything' and conclusion words (obvious, clear, certain, confirmed). No emoji. No URL. No hashtags. Same language as article."
 JSON;
 
     // ── Public API ────────────────────────────────────────────────────────────
