@@ -43,6 +43,10 @@ final class FeedbackPayload
         public readonly int     $processingTimeMs, // tổng thời gian từ Crawl → Save
         public readonly bool    $needsReview,
 
+        // ── Cleaner metrics ───────────────────────────────────────────────────
+        public readonly float   $cleanerReductionRatio = 0.0,
+        public readonly bool    $usedHaiku = true,
+
         // ── Model ─────────────────────────────────────────────────────────────
         public readonly string  $modelUsed = 'sonnet',
     ) {}

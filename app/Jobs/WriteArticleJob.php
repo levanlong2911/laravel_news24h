@@ -4,20 +4,15 @@ namespace App\Jobs;
 
 use App\Models\Admin;
 use App\Models\Article;
-use App\Models\CategoryContext;
 use App\Models\Domain;
 use App\Models\Post;
 use App\Models\RawArticle;
 use App\Services\Admin\ArticleCrawlerService;
-use App\Services\Admin\ClaudeWriterService;
+use App\Services\Admin\ArticlePipelineService;
 use App\Services\Admin\FeedbackPayload;
 use App\Services\Admin\FeedbackService;
-use App\Services\Admin\HookEngine;
-use App\Services\Admin\PostGuard;
 use App\Services\Admin\PreGuard;
-use App\Services\Admin\PromptGuard;
 use App\Services\Admin\PreGuardException;
-use App\Services\Admin\PromptBuilderService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -29,15 +24,16 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * WriteArticleJob — orchestrate toàn bộ AI pipeline.
+ * WriteArticleJob — orchestrate pipeline ngoài AI.
  *
  * Pipeline:
- *   Crawl → PRE Guard → Reserve slot → PromptBuilder
- *         → Haiku → HookEngine → Sonnet (+ 1 retry) → POST Guard → Save → Post
+ *   Crawl → PRE Guard → Reserve slot → ArticlePipelineService → Save → Post
+ *
+ * AI pipeline (Haiku → HookEngine → Sonnet + retry → PostGuard) nằm trong ArticlePipelineService.
  *
  * Status lifecycle:
  *   processing → published  (ok, auto-publish)
- *   processing → review     (PostGuard low confidence | soft-duplicate | parse fail)
+ *   processing → review     (PostGuard low confidence | soft-duplicate)
  *   processing → failed     (exception)
  */
 class WriteArticleJob implements ShouldQueue
@@ -52,14 +48,10 @@ class WriteArticleJob implements ShouldQueue
     // ── Main pipeline ─────────────────────────────────────────────────────────
 
     public function handle(
-        ArticleCrawlerService $crawler,
-        ClaudeWriterService   $claude,
-        PreGuard              $preGuard,
-        PromptBuilderService  $promptBuilder,
-        HookEngine            $hookEngine,
-        PromptGuard           $promptGuard,
-        PostGuard             $postGuard,
-        FeedbackService       $feedbackService,
+        ArticleCrawlerService  $crawler,
+        ArticlePipelineService $pipeline,
+        PreGuard               $preGuard,
+        FeedbackService        $feedbackService,
     ): void {
         $raw = $this->rawArticle->fresh()->load('keyword');
 
@@ -139,80 +131,18 @@ class WriteArticleJob implements ShouldQueue
                 return;
             }
 
-            // ── STEP 4: Build PromptPayload ───────────────────────────────
-            $payload      = $promptBuilder->build($categoryId ?? '');
-            $context      = $categoryId ? CategoryContext::forCategory($categoryId) : null;
-            $contentTypes = $context?->framework?->contentTypes ?? collect();
-            $hookStyle    = $context?->hook_style ?? 'compelling and engaging opener';
+            // ── STEP 4: AI pipeline ───────────────────────────────────────
+            $result     = $pipeline->run($rawText, $kwName, $categoryId ?? '');
+            $parsed     = $result->parsed;
+            $hookResult = $result->hookResult;
+            $context    = $result->context;
+            $needReview = $result->needsReview() || $softDuplicate;
 
-            // ── STEP 5: Clean + Haiku ─────────────────────────────────────
-            $cleanedText = $this->cleanForPrompt($rawText);
-            $facts       = $claude->generate($payload->haikuPrompt($cleanedText), 'haiku');
-
-            if (empty(trim($facts))) {
-                throw new \RuntimeException('Haiku returned empty facts');
-            }
-
-            // ── STEP 6: HookEngine ────────────────────────────────────────
-            $hookResult = $hookEngine->resolve($facts, $kwName, $hookStyle, $contentTypes);
-
-            // Load structure_template for the detected content type
-            // Falls back to config default inside sonnetPrompt() if empty
-            $typeModel         = $contentTypes->firstWhere('type_code', $hookResult->detectedType);
-            $structureTemplate = $typeModel?->structure_template
-                ?? config('prompt.default_structure', '');
-
-            // ── STEP 6b: PromptGuard — validate pre-conditions before Sonnet ──
-            // Throws PromptGuardException if hook or structureTemplate is missing.
-            // Caught by the outer \Throwable handler → article marked failed.
-            $promptGuard->validate($hookResult->bestHook, $structureTemplate);
-
-            // ── STEP 7: Sonnet + 1 retry CHỈ khi parse fail ─────────────
-            // Retry khi: JSON invalid / missing required fields (lỗi ngẫu nhiên)
-            // KHÔNG retry khi: hallucination confidence thấp → retrying không giúp gì
-            $sonnetPrompt = $payload->sonnetPrompt($facts, $hookResult->bestHook, $kwName, $structureTemplate);
-            $sonnetRaw    = $claude->generate($sonnetPrompt, 'sonnet');
-            $guardResult  = $postGuard->check($sonnetRaw, $facts);
-            $retryCount   = 0;
-            $retryReason  = null;
-
-            if ($guardResult->isParseFailure()) {
-                $retryCount  = 1;
-                $retryReason = $guardResult->reason; // 'json_invalid' | 'missing_fields'
-                Log::info('[WriteArticle] Sonnet parse fail (not hallucination), retrying once...', [
-                    'retry_reason' => $retryReason,
-                ]);
-                $sonnetRaw   = $claude->generate($sonnetPrompt, 'sonnet');
-                $guardResult = $postGuard->check($sonnetRaw, $facts);
-            }
-
-            $finalReason = $guardResult->reason; // reason sau lần check cuối cùng
-
-            // ── STEP 8: POST Guard result → decide status ─────────────────
-            $needReview = $guardResult->needsHumanReview() || $softDuplicate;
-
-            // Fix 1: JSON fail sau retry → đánh dấu review, KHÔNG fallback HTML
-            if ($guardResult->isParseFailure()) {
-                Log::warning("[WriteArticle] Sonnet parse fail after retry, marking review: {$url}");
-                $article->update([
-                    'status'       => 'review',
-                    'human_review' => true,
-                    'hook_type'    => $hookResult->detectedType,
-                    'hook_score'   => $hookResult->bestScore,
-                    'hook_rank'    => $hookResult->hookRank,
-                ]);
-                $raw->update(['status' => 'done', 'article_id' => $article->id]);
-                return;
-            }
-
-            $parsed = $guardResult->parsed;
-
-            // ── STEP 9: Finalize & Save ───────────────────────────────────
-            $finalTitle = trim($parsed['title'] ?? $hookResult->bestHook ?: $raw->title);
+            // ── STEP 5: Finalize & Save ───────────────────────────────────
+            $finalTitle = $result->title() ?: $raw->title;
             $finalSlug  = $this->uniqueSlug(Str::slug($finalTitle ?: 'article'), $article->id);
             $faq        = $this->normalizeFaq($parsed['faq'] ?? []);
 
-            // Fix 4: status = 'review' khi cần duyệt, 'published' khi ok
             $article->update([
                 'title'            => $finalTitle,
                 'slug'             => $finalSlug,
@@ -230,55 +160,49 @@ class WriteArticleJob implements ShouldQueue
 
             $raw->update(['status' => 'done', 'article_id' => $article->id]);
 
-            // ── STEP 10: Create Post (chỉ khi không cần review) ──────────
+            // ── STEP 6: Create Post (chỉ khi không cần review) ───────────
             if (!$needReview) {
                 $this->createPost($raw, $finalTitle, $finalSlug, $parsed);
             }
 
-            // ── STEP 11: Record feedback metrics (chỉ khi có context) ────
+            // ── STEP 7: Record feedback metrics (chỉ khi có context) ─────
             if ($context) {
                 $feedbackService->record(new FeedbackPayload(
-                    contextId:          $context->id,
-                    articleId:          $article->id,
-                    contentTypeDetected: $hookResult->detectedType,
-                    hookScore:          $hookResult->bestScore,
-                    hookRank:           $hookResult->hookRank,
-                    hookCandidates:     count($hookResult->candidates),
-                    guardConfidence:    $guardResult->confidence,
-                    finalReason:        $finalReason,
-                    retryCount:         $retryCount,
-                    retryReason:        $retryReason,
-                    schemaVersion:      $payload->schemaVersion(),
-                    promptFingerprint:  $payload->fingerprint(),
-                    viralScore:         $raw->viral_score ?? 0,
-                    wordCount:          str_word_count(strip_tags($parsed['content'] ?? '')),
-                    processingTimeMs:   (int) round(microtime(true) * 1000) - $startMs,
-                    needsReview:        $needReview,
+                    contextId:             $context->id,
+                    articleId:             $article->id,
+                    contentTypeDetected:   $hookResult->detectedType,
+                    hookScore:             $hookResult->bestScore,
+                    hookRank:              $hookResult->hookRank,
+                    hookCandidates:        count($hookResult->candidates),
+                    guardConfidence:       $result->guardResult->confidence,
+                    finalReason:           $result->guardResult->reason,
+                    retryCount:            $result->retryCount,
+                    retryReason:           $result->retryReason,
+                    schemaVersion:         $result->schemaVersion,
+                    promptFingerprint:     $result->promptFingerprint,
+                    viralScore:            $raw->viral_score ?? 0,
+                    wordCount:             str_word_count(strip_tags($parsed['content'] ?? '')),
+                    processingTimeMs:      (int) round(microtime(true) * 1000) - $startMs,
+                    needsReview:           $needReview,
+                    cleanerReductionRatio: $result->cleanerReductionRatio,
+                    usedHaiku:             $result->usedHaiku,
                 ));
             }
 
-            // Fix 1: fingerprint log — trace ngược nhanh khi debug production
-            Log::info('[WriteArticle] Pipeline fingerprint', [
-                'status'            => $needReview ? 'review' : 'published',
-                'article_id'        => $article->id,
-                'keyword'           => $kwName,
-                'context_id'        => $context?->id,
-                'framework'         => $context?->framework?->name,
-                'prompt_fingerprint'=> $payload->fingerprint(),
-                'schema_version'    => $payload->schemaVersion(),
-                'content_type'      => $hookResult->detectedType,
-                'hook_used'         => $hookResult->bestHook,
-                'hook_score'        => $hookResult->bestScore,
-                'hook_rank'         => $hookResult->hookRank,
-                'hook_candidates'   => count($hookResult->candidates),
-                'guard_confidence'  => $guardResult->confidence,
-                'retry_count'       => $retryCount,
-                'retry_reason'      => $retryReason,   // reason lần check đầu (null nếu không retry)
-                'final_reason'      => $finalReason,   // reason lần check cuối (biết retry có cứu được không)
-                'soft_duplicate'    => $softDuplicate,
-                'content_chars'     => strlen($parsed['content'] ?? ''),
-                'faq_count'         => count($faq),
-                'viral_score'       => $raw->viral_score,
+            Log::info('[WriteArticle] Done', [
+                'status'             => $needReview ? 'review' : 'published',
+                'article_id'         => $article->id,
+                'keyword'            => $kwName,
+                'context_id'         => $context?->id,
+                'prompt_fingerprint' => $result->promptFingerprint,
+                'content_type'       => $hookResult->detectedType,
+                'hook_used'          => $hookResult->bestHook,
+                'hook_score'         => $hookResult->bestScore,
+                'guard_confidence'   => $result->guardResult->confidence,
+                'retry_count'        => $result->retryCount,
+                'cleaner_ratio'      => $result->cleanerReductionRatio,
+                'soft_duplicate'     => $softDuplicate,
+                'viral_score'        => $raw->viral_score,
             ]);
 
         } catch (\Throwable $e) {
@@ -289,35 +213,6 @@ class WriteArticleJob implements ShouldQueue
             ]);
             throw $e;
         }
-    }
-
-    // ── Private — Content Cleaning ────────────────────────────────────────────
-
-    private function cleanForPrompt(string $html): string
-    {
-        $text = preg_replace('/<\/?(p|h[1-6]|div|br|li)[^>]*>/i', "\n", $html);
-        $text = strip_tags($text);
-        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
-        $lines  = explode("\n", $text);
-        $result = [];
-
-        foreach ($lines as $line) {
-            $t = trim($line);
-            if ($t === '') continue;
-
-            if (preg_match('/^All comments are subject to/i', $t)) break;
-            if (preg_match('/^[*\-]\s+/', $t)) continue;
-            if (strlen($t) < 20) continue;
-            if (preg_match('/^Never miss a story/i', $t)) continue;
-            if (preg_match('/^(Get more in our free app|Download the app)\s*$/i', $t)) continue;
-            if (preg_match('/\bis (?:a|an) .{2,40}(?:Writer|Editor|Reporter|Correspondent|Contributor) at /i', $t)) continue;
-            if (preg_match('/^NEED TO KNOW\s*$/i', $t)) continue;
-
-            $result[] = $t;
-        }
-
-        return implode("\n\n", $result);
     }
 
     // ── Private — Post Creation ───────────────────────────────────────────────

@@ -60,7 +60,9 @@ class FeedbackService
                 'retry_reason'         => $feedback->retryReason,
                 'schema_version'       => $feedback->schemaVersion,
                 'prompt_fingerprint'   => $feedback->promptFingerprint,
-                'needs_review'         => $feedback->needsReview,
+                'needs_review'              => $feedback->needsReview,
+                'cleaner_reduction_ratio'   => $feedback->cleanerReductionRatio,
+                'used_haiku'                => $feedback->usedHaiku,
             ]);
 
             $this->updatePerformanceScore($feedback->contextId, $feedback->viralScore);

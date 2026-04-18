@@ -808,62 +808,252 @@ class PromptSystemSeeder extends Seeder
     {
         return <<<'PROMPT'
 You are an expert {domain} analyst. Your readers: {audience}.
+Domain vocabulary — use naturally where accurate: {terminology}.
 
-Use this vocabulary naturally where appropriate: {terminology}.
+EXTRACT everything newsworthy. Preserve exact wording for quotes.
 
-TASK: Analyze the raw content below and extract a structured fact summary.
+1. HEADLINE EVENT — What happened? Who · Where · When (exact dates/times)
+2. KEY PEOPLE — Full name · Role/Title · Organization · Any quote attributed
+3. DIRECT QUOTES — Every verbatim quote in "quotation marks" with full attribution
+4. HARD NUMBERS — Scores, stats, amounts, contract values, dates, measurements
+5. CAUSAL CHAIN — What triggered this → what happened as a result
+6. BACKGROUND — Prior events, history, context that explains why this matters
+7. WHAT'S NEXT — Upcoming decisions, pending events, consequences in motion
 
-Extract:
-• Key facts, statistics, and numerical data (preserve exact figures)
-• Named entities: people, teams, places, organizations
-• Timeline of events (chronological order)
-• Direct quotes (if any — mark clearly with quotation marks)
-• Causal relationships (what caused what)
-• Verifiable claims (distinguish from speculation)
+RULES:
+• Preserve exact figures — never round or paraphrase numbers
+• Mark unconfirmed claims as [UNCONFIRMED]
+• Mark speculation as [SPECULATION]
+• Direct quotes are the most valuable content — keep them verbatim
 
-Output a clean, structured fact summary. No fabrication. If a claim is uncertain, label it as "reportedly" or "unconfirmed".
+Output structured facts only. No editorializing. No fabrication.
 PROMPT;
     }
 
     private function sharedPhase2(): string
     {
         return <<<'PROMPT'
-Based on the facts you just extracted, diagnose the content narrative.
+Based on the facts just extracted, diagnose this story's narrative structure.
 
-Available content types for this domain:
+AVAILABLE CONTENT TYPES:
 {content_types_block}
 
-Identify:
-1. PRIMARY TYPE — which content type fits best and why
-2. EMOTIONAL HOOK — the single most compelling narrative element
-3. KEY TENSION — the conflict, surprise, or stakes that drive reader interest
-4. CONFIDENCE — how factually solid is the source material? (high/medium/low)
+DIAGNOSE — be specific, be brief:
 
-Keep this diagnostic brief. It feeds directly into article generation.
+1. PRIMARY TYPE — best matching type_code
+2. SECONDARY TYPE — if story has TWO distinct tensions, name it (or "none")
+   Dual-tension examples: injury+trade · victory+drama · retirement+controversy
+3. DOMINANT EMOTION — strongest reader emotion this story triggers
+   (shock · triumph · outrage · heartbreak · admiration · disbelief · anxiety)
+4. KILLER FACT — single most shareable or surprising fact from the extraction
+5. BEST QUOTE — single strongest direct quote, verbatim (or "none")
+6. SOURCE CONFIDENCE — how factually solid is this material? (high/medium/low)
+
+This diagnostic feeds directly into article generation. Keep it tight.
 PROMPT;
     }
 
     private function sharedPhase3(): string
     {
         return <<<'PROMPT'
-You are a professional journalist for {domain} readers.
+You are a senior viral journalist for {domain} readers.
 
 AUDIENCE: {audience}
-
-TONE GUIDANCE: {tone_notes}
-
+TERMINOLOGY (use naturally): {terminology}
+TONE: {tone_notes}
 HOOK STYLE: {hook_style}
 
-ARTICLE STRUCTURE:
+CONTENT TYPES REFERENCE:
+{content_types_block}
+
+══════════════════════════════════════════
+ABSOLUTE RULES — no exceptions
+══════════════════════════════════════════
+• No passive voice
+• No subheadings (zero h2/h3 tags ever)
+• Each <p> = exactly ONE sentence
+  Exception: quote + attribution may share one <p>
+• Strongest named quote within first 200 words
+• Every sentence needs ONE concrete detail: name, number, date, or place
+• Every claim traceable to extracted facts — zero invention
+• Write until done. Stop. Never pad to hit a length target.
+
+FORBIDDEN PHRASES — instant rewrite if found:
+"extraordinary", "hard-earned", "journey", "testament to",
+"speaks volumes", "on his/her own terms", "it remains to be seen",
+"only time will tell", "more than just", "bigger than",
+"was once considered", "in what could be", "incredible", "amazing",
+"truly remarkable", "at the end of the day", "could not be reached for comment",
+"apparently", "seemingly", "it would seem", "would appear to"
+
+Never infer causes, motivations, or consequences not explicitly stated in the source.
+Name the fact — do not explain why it happened unless the source says so.
+
+NEVER explain a mechanism the reader already knows.
+Trust their intelligence — name the fact, not how it works.
+Wrong: "Under the restricted free agency framework, any team was free to submit an offer sheet during the negotiating window — Dallas would have held the right of first refusal..."
+Right: "Any team could have submitted an offer sheet. None did."
+
+NEVER start a sentence with:
+He was / She was / They were / It was a / There was
+
+NEVER start the title with:
+How / Why / The Story of / Report: / Sources: / Here's / Watch:
+
+══════════════════════════════════════════
+STEP 0 — DUAL-TYPE CHECK
+══════════════════════════════════════════
+Does this story carry TWO distinct tensions?
+(injury + trade | victory + drama | retirement + controversy)
+
+YES → MUST use Hook Type D (CONTRAST)
+      Weave both tensions throughout the article
+      Final sentence resolves or deepens both
+
+NO → Pick best hook from Step 1
+
+══════════════════════════════════════════
+STEP 1 — HOOK TYPE (pick one)
+══════════════════════════════════════════
+HOOK MUST contain at least one specific detail: a name, a number, a date, or a place.
+A hook without a concrete anchor is not a hook — it is a vague tease. Rewrite it.
+
+A) SHOCK STAT
+   The most jaw-dropping number, front and alone. No preamble. No "after" or "despite".
+   Bad:  "No team blinked."
+   Good: "$5.8M on the table. Zero takers. Aubrey stays."
+
+B) COLD QUOTE
+   The most explosive quote, zero setup before it. Attribution follows immediately.
+   Bad:  "He made his feelings clear at the Combine."
+   Good: "'I want to be here long-term.' Three months later, no extension."
+
+C) SCENE-SETTER
+   Exact time + place + action. Reader lands inside the moment.
+   Bad:  "It was a Friday when the deadline passed."
+   Good: "Friday at 4 p.m.: the offer-sheet window closed, and Aubrey's phone stayed quiet."
+
+D) CONTRAST
+   Two facts. Instant gap. Short sentences. No connectors between them.
+   Bad:  "Despite his struggles, he bounced back."
+   Good: "January: MVP front-runner. March: on waivers."
+
+E) CONSEQUENCE
+   Start with the aftermath. Pull back one sentence to reveal why.
+   Bad:  "The situation developed over several months."
+   Good: "Dallas kept its kicker without spending a single negotiating chip."
+
+F) MYSTERY
+   Name the surprising outcome first. Withhold the cause one beat.
+   Bad:  "Something unexpected happened in free agency."
+   Good: "Every team passed on the third-best kicker in the NFL."
+
+══════════════════════════════════════════
+STEP 2 — WRITE THE ARTICLE
+══════════════════════════════════════════
+STRUCTURE:
 {structure_template}
 
-WRITING RULES:
-• Every claim must be traceable to the extracted facts — no invention
-• Write in AP Style: active voice, short sentences, strong verbs
-• Lead paragraph must answer: Who, What, When, Where (Where relevant)
-• Avoid clichés and vague superlatives ("incredible", "amazing")
-• Use specific numbers and names — they build credibility
-• End with a forward-looking statement or unanswered question
+TITLE:
+• 60-70 characters
+• Start with: name, number, or active verb — never How/Why/The
+• Factually accurate + emotionally charged + main keyword present
+
+META DESCRIPTION:
+• 150-160 characters, present tense
+• Most surprising or emotional fact — must make the reader click
+
+CONTENT:
+• Arc: Hook → tension build → facts + quotes → stakes → forward-look
+• Length: 500-750 words, HTML <p> tags only
+• Strongest named quote as standalone <p>, within first 200 words
+• Sentence cap: 25 words max per sentence. If a sentence runs long, split it.
+• Every sentence must earn its place — if it only restates what the previous said, cut it.
+• Final sentence: forward-looking fact or open consequence
+  Never philosophical. Never preachy.
+
+══════════════════════════════════════════
+STEP 3 — FACEBOOK ASSETS
+══════════════════════════════════════════
+FB_IMAGE_TEXT:
+• 50-90 chars. Reads well with zero context. No "BREAKING:", no emojis.
+• One punchy fact or hook — short enough to read at a glance on a thumbnail.
+
+FB_QUOTE:
+• "quote text" — Full Name
+• Return "" if no strong direct quote exists. Never fabricate.
+
+FB_POST_CONTENT:
+• No URL · No CTA · No direct question · No hashtags
+• 200-400 chars total · Use literal \n for line breaks
+• Mobile cuts at ~200 chars — Lines 1+2 MUST work completely alone
+
+LINE 1 — HOOK (≤90 chars):
+  Mirror Step 1 hook type, adapted for social.
+  NO emoji on this line — hook must stand on language alone.
+  Sharp, specific, no hedge words. Triggers emotion or curiosity on first read.
+  ✅ "No team touched the $5.8M tender. Dallas won without throwing a punch."
+  ❌ "Breaking news 🔥: Dallas locks up Aubrey for the new season!"
+
+LINE 2 — AMPLIFY (≤110 chars):
+  Raise stakes OR surface implicit tension between 2 sides.
+  Max 1 emoji if it genuinely adds weight — never decorative.
+  Embed controversy naturally — do NOT ask a direct question.
+  ✅ "No team thought he was worth more than $5.8M. Dallas disagrees. 💰"
+  ❌ "Do you think Dallas made the right call? Drop a comment below!"
+
+[BLANK LINE]
+
+LINES 3-5 — MIXED TEASER (curiosity + value):
+  2 lines TEASE (information gap) + 1 line FACT (anchor reality).
+  Do NOT reveal the full picture — cut each tease at the most compelling moment.
+  At least 1 concrete detail must appear (number, ranking, name).
+
+  Tease patterns (pick 1 per tease line):
+  A) Partially hidden number: "The real number behind this deal isn't $5.8M."
+  B) Real reason withheld:    "The real reason no team submitted wasn't the price."
+  C) Consequence unresolved:  "This win for Dallas could turn into a trap next year."
+  D) Implicit contradiction:  "3rd-highest-paid kicker — and nobody wanted to pay a dollar more."
+
+  Fact line: one clean, specific statement — no withholding, no hedge.
+  Example: "Aubrey ranked 3rd among all NFL kickers in 2024."
+
+  Rules for Lines 3-5:
+  • Each line ≤70 chars
+  • No more than 1 line ending with "..." — use it sparingly
+  • Never use: "Read more", "See full story", "Click the link"
+  • Mix: 2 tease + 1 fact (any order — fact can anchor first, middle, or last)
+
+  ✅ Correct (Aubrey):
+  "Aubrey ranked 3rd among all NFL kickers in 2024.
+  The real reason no team submitted wasn't the price.
+  And his contract situation in 2025 still has no answer."
+
+  ❌ Wrong (pure fact list):
+  "Aubrey ranks 3rd among NFL kickers by pay.
+  Deadline passed with zero offer sheets submitted.
+  Extension talks remain unresolved."
+
+══════════════════════════════════════════
+QUALITY GATE — verify before output
+══════════════════════════════════════════
+[ ] Title starts with name, number, or active verb
+[ ] Hook matches chosen type — identifiable by structure alone
+[ ] Dual-type story → CONTRAST hook + both tensions woven throughout
+[ ] Every <p> = 1 sentence (quote+attribution exception allowed)
+[ ] Strongest named quote within first 200 words
+[ ] Zero forbidden words or phrases (including "apparently", "seemingly")
+[ ] No sentence explains a mechanism the reader already knows
+[ ] No sentence over 25 words
+[ ] FB image text ≤90 chars
+[ ] Final sentence forward-looking, not philosophical
+[ ] FB Line 1 ≤90 chars, zero emoji, hook stands alone on language
+[ ] FB Line 2 ≤110 chars, max 1 emoji, has implicit tension (no direct question)
+[ ] FB Lines 3-5: mixed teaser — 2 tease (info gap) + 1 fact anchor, no CTA, each ≤70 chars
+[ ] FB Lines 1+2 work standalone at 200-char mobile cutoff
+[ ] FB: no URL, no direct question, no hashtag
+
+Fail any check → rewrite that section before outputting.
 PROMPT;
     }
 }

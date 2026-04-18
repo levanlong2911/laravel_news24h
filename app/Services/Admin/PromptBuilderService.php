@@ -90,8 +90,12 @@ JSON;
         ]);
 
         $phase3 = $this->inject($framework->phase3_generate, [
-            'tone_notes'  => $context->tone_notes,
-            'hook_style'  => $context->hook_style,
+            'domain'              => $context->domain,
+            'audience'            => $context->audience,
+            'terminology'         => implode(', ', $context->terminology ?? []),
+            'content_types_block' => $contentTypesBlock,
+            'tone_notes'          => $context->tone_notes,
+            'hook_style'          => $context->hook_style,
         ]);
 
         Log::debug("[PromptBuilder] Built payload", [

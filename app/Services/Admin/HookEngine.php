@@ -3,7 +3,7 @@
 namespace App\Services\Admin;
 
 use App\Models\FrameworkContentType;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -144,58 +144,20 @@ class HookEngine
 
         $topScore = max($scores);
 
-        // Confident detection — fast path
-        if ($topScore >= self::DETECT_THRESHOLD) {
-            // Tie-breaking: nhiều type cùng score → dùng sort_order làm priority
-            // (seeder định nghĩa sort_order theo mức độ ưu tiên: injury=1 > drama=2 > ...)
-            $tiedCodes = array_keys(array_filter($scores, fn($s) => $s === $topScore));
+        // Tie-breaking: nhiều type cùng score → dùng sort_order làm priority
+        $tiedCodes = array_keys(array_filter($scores, fn($s) => $s === $topScore));
 
-            $winner = $contentTypes
-                ->whereIn('type_code', $tiedCodes)
-                ->where('is_active', true)
-                ->sortBy('sort_order')
-                ->first()?->type_code ?? $tiedCodes[0];
+        $winner = $contentTypes
+            ->whereIn('type_code', $tiedCodes)
+            ->where('is_active', true)
+            ->sortBy('sort_order')
+            ->first()?->type_code ?? $tiedCodes[0];
 
-            Log::debug('[HookEngine] Type detected via keywords', [
-                'type' => $winner, 'score' => $topScore, 'tied' => count($tiedCodes),
-            ]);
-            return $winner;
-        }
+        Log::debug('[HookEngine] Type detected via keywords', [
+            'type' => $winner, 'score' => $topScore, 'tied' => count($tiedCodes),
+        ]);
 
-        // Ambiguous — LLM fallback
-        $llmType = $this->classifyWithLLM($rawFacts, $contentTypes);
-        if ($llmType !== null) {
-            Log::debug('[HookEngine] Type detected via LLM classify', ['type' => $llmType]);
-            return $llmType;
-        }
-
-        // Last resort: type active đầu tiên theo sort_order (không hardcode string)
-        $first = $contentTypes->where('is_active', true)->sortBy('sort_order')->first();
-        return $first?->type_code ?? 'breakthrough';
-    }
-
-    /**
-     * LLM classify: Haiku trả về 1 type_code duy nhất.
-     * Validate kết quả trước khi dùng.
-     */
-    private function classifyWithLLM(string $rawFacts, Collection $contentTypes): ?string
-    {
-        $validCodes = $contentTypes->where('is_active', true)->pluck('type_code');
-        $codeList   = $validCodes->implode(', ');
-        $excerpt    = mb_substr($rawFacts, 0, 600); // giới hạn để tiết kiệm token
-
-        $prompt = "Classify this sports content into exactly one of these types: {$codeList}\n\n"
-                . "Content:\n---\n{$excerpt}\n---\n\n"
-                . "Return ONLY the type code, nothing else. Example: victory";
-
-        $result = trim($this->claude->generate($prompt, 'haiku'));
-
-        if ($validCodes->contains($result)) {
-            return $result;
-        }
-
-        Log::warning('[HookEngine] LLM classify returned invalid code', ['result' => $result]);
-        return null;
+        return $winner;
     }
 
     // ── Fix 2: generateCandidates với template fallback ───────────────────────
