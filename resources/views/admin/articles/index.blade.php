@@ -12,6 +12,11 @@
             </h4>
         </div>
         <div class="col-auto d-flex align-items-center gap-2">
+            {{-- Get Link --}}
+            <button class="btn btn-success btn-sm" data-toggle="modal" data-target="#modalGetLink">
+                <i class="fas fa-link"></i> Get Link
+            </button>
+
             {{-- Gửi Claude / Tổng hợp --}}
             <button id="btnSendClaude" class="btn btn-info btn-sm" onclick="submitSendClaude()">
                 <i class="fas fa-robot"></i>
@@ -66,7 +71,7 @@
                 <select name="keyword_id" class="form-control form-control-sm mr-2">
                     <option value="">All Keywords</option>
                     @foreach($keywords as $kw)
-                        <option value="{{ $kw->id }}" {{ $keywordId === $kw->id ? 'selected' : '' }}>
+                        <option value="{{ $kw->id }}" {{ (string)$keywordId === (string)$kw->id ? 'selected' : '' }}>
                             {{ $kw->name }}
                         </option>
                     @endforeach
@@ -193,7 +198,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="10" class="text-center text-muted py-4">Chưa có bài viết nào.</td></tr>
+                    <tr><td colspan="11" class="text-center text-muted py-4">Chưa có bài viết nào.</td></tr>
                 @endforelse
                 </tbody>
             </table>
@@ -281,5 +286,130 @@ function submitDeleteSelected() {
     });
     document.getElementById('bulkDeleteForm').submit();
 }
+</script>
+{{-- ── GET LINK MODAL ── --}}
+<div class="modal fade" id="modalGetLink" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title"><i class="fas fa-link mr-2"></i>Get Link — Crawl & Lưu Bài Viết</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+
+                {{-- Form nhập --}}
+                <div id="glForm">
+                    <div class="form-group mb-2">
+                        <label class="small font-weight-bold">URL bài viết</label>
+                        <div class="input-group">
+                            <input type="url" id="glUrl" class="form-control"
+                                   placeholder="https://example.com/article...">
+                            <div class="input-group-append">
+                                <button class="btn btn-primary" onclick="glFetch()" id="glBtnFetch">
+                                    <i class="fas fa-search"></i> Fetch & Lưu
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group mb-0">
+                        <label class="small font-weight-bold">Keyword <span class="text-muted">(tuỳ chọn)</span></label>
+                        <select id="glKeyword" class="form-control form-control-sm" style="max-width:280px">
+                            <option value="">— Không chọn —</option>
+                            @foreach($keywords as $kw)
+                                <option value="{{ $kw->id }}">{{ $kw->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
+                {{-- Loading --}}
+                <div id="glLoading" class="d-none text-center py-4">
+                    <i class="fas fa-spinner fa-spin fa-2x text-primary"></i>
+                    <p id="glLoadingText" class="mt-2 text-muted small">Đang crawl nội dung...</p>
+                </div>
+
+                {{-- Error --}}
+                <div id="glError" class="d-none alert alert-danger py-2 mt-2 mb-0 small"></div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- Hidden save form --}}
+<form id="glSaveForm" method="POST" action="{{ route('article.storeManual') }}" class="d-none">
+    @csrf
+    <input type="hidden" name="source_url"  id="glHiddenUrl">
+    <input type="hidden" name="title"       id="glHiddenTitle">
+    <input type="hidden" name="content"     id="glHiddenContent">
+    <input type="hidden" name="keyword_id"  id="glHiddenKeyword">
+</form>
+
+<script>
+function glFetch() {
+    const url     = document.getElementById('glUrl').value.trim();
+    const keyword = document.getElementById('glKeyword').value;
+    const urlEl   = document.getElementById('glUrl');
+    const kwEl    = document.getElementById('glKeyword');
+
+    urlEl.classList.remove('is-invalid');
+    kwEl.classList.remove('is-invalid');
+
+    let valid = true;
+    if (!url)     { urlEl.classList.add('is-invalid'); valid = false; }
+    if (!keyword) { kwEl.classList.add('is-invalid');  valid = false; }
+    if (!valid) return;
+
+    document.getElementById('glForm').classList.add('d-none');
+    document.getElementById('glError').classList.add('d-none');
+    document.getElementById('glLoading').classList.remove('d-none');
+    document.getElementById('glLoadingText').textContent = 'Đang crawl nội dung...';
+
+    fetch('{{ url('/admin/getlink') }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify({ url })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) {
+            document.getElementById('glLoading').classList.add('d-none');
+            document.getElementById('glForm').classList.remove('d-none');
+            document.getElementById('glError').textContent = data.message || 'Không crawl được.';
+            document.getElementById('glError').classList.remove('d-none');
+            return;
+        }
+        // Crawl thành công → tự động lưu
+        document.getElementById('glLoadingText').textContent = 'Đang lưu bài viết...';
+        document.getElementById('glHiddenUrl').value     = url;
+        document.getElementById('glHiddenTitle').value   = data.title || '';
+        document.getElementById('glHiddenContent').value = data.content || '';
+        document.getElementById('glHiddenKeyword').value = document.getElementById('glKeyword').value;
+        document.getElementById('glSaveForm').submit();
+    })
+    .catch(() => {
+        document.getElementById('glLoading').classList.add('d-none');
+        document.getElementById('glForm').classList.remove('d-none');
+        document.getElementById('glError').textContent = 'Lỗi kết nối server.';
+        document.getElementById('glError').classList.remove('d-none');
+    });
+}
+
+function glReset() {
+    document.getElementById('glUrl').value = '';
+    document.getElementById('glLoading').classList.add('d-none');
+    document.getElementById('glError').classList.add('d-none');
+    document.getElementById('glForm').classList.remove('d-none');
+}
+
+document.getElementById('glUrl').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') glFetch();
+});
+
+document.getElementById('modalGetLink').addEventListener('hidden.bs.modal', glReset);
 </script>
 @endsection

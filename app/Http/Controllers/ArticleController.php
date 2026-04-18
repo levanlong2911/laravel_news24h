@@ -64,6 +64,45 @@ class ArticleController extends Controller
         return back()->with('success', 'Unpublished');
     }
 
+    public function storeManual(Request $request)
+    {
+        $request->validate([
+            'source_url' => 'required|url|max:2000',
+            'title'      => 'required|string|max:500',
+            'content'    => 'required|string',
+            'keyword_id' => 'nullable|exists:keywords,id',
+        ]);
+
+        $urlHash = md5($request->source_url);
+
+        if (Article::where('source_url_hash', $urlHash)->exists()) {
+            return back()->with('error', 'URL này đã được crawl rồi.');
+        }
+
+        $keyword = $request->keyword_id ? Keyword::find($request->keyword_id) : null;
+        $slug    = $this->uniqueSlug(Str::slug($request->title ?: 'article'));
+        $domain  = str_replace('www.', '', parse_url($request->source_url, PHP_URL_HOST) ?? '');
+
+        Article::create([
+            'keyword_id'      => $request->keyword_id,
+            'category_id'     => $keyword?->category_id,
+            'source_url'      => $request->source_url,
+            'source_url_hash' => $urlHash,
+            'source_title'    => $request->title,
+            'source_name'     => $domain,
+            'thumbnail'       => $request->thumbnail ?: null,
+            'title'           => $request->title,
+            'slug'            => $slug,
+            'content'         => $request->content,
+            'viral_score'     => 0,
+            'status'          => 'pending',
+            'expires_at'      => now()->addHours(48),
+            'crawled_by'      => auth()->id(),
+        ]);
+
+        return back()->with('success', 'Đã lưu: ' . Str::limit($request->title, 80));
+    }
+
     public function destroy(Article $article)
     {
         $article->delete();

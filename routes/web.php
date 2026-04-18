@@ -132,6 +132,7 @@ Route::group(
         Route::delete('/delete-all',                 [ArticleController::class, 'destroyAll'])      ->name('article.destroyAll');
         Route::delete('/delete-selected',            [ArticleController::class, 'destroySelected']) ->name('article.destroySelected');
         Route::post('/cache-clear',                  [ArticleController::class, 'clearCache'])    ->name('article.clearCache');
+        Route::post('/store-manual',                 [ArticleController::class, 'storeManual'])  ->name('article.storeManual');
         Route::post('/send-to-claude',               [ArticleController::class, 'sendToClaude']) ->name('article.sendToClaude');
         Route::post('/synthesize',                   [ArticleController::class, 'synthesize'])   ->name('article.synthesize');
         Route::post('/{article}/publish',            [ArticleController::class, 'publish'])    ->name('article.publish');
