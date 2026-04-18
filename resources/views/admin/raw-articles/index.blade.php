@@ -115,9 +115,10 @@
     {{-- ── GROUPED BY KEYWORD ── --}}
     @forelse($grouped as $group)
         @php
-            $kw    = $group['keyword'];
-            $items = $group['articles'];
-            $stats = $group['stats'];
+            $kw     = $group['keyword'];
+            $top    = $group['top'];
+            $recent = $group['recent'];
+            $stats  = $group['stats'];
         @endphp
 
         <div class="card card-default mb-4" id="kw-{{ $kw->id }}">
@@ -147,7 +148,6 @@
                         <span class="badge badge-danger">{{ $stats['failed'] }} failed</span>
                     @endif
                 </div>
-                {{-- Generate all pending cho keyword này --}}
                 @if($stats['pending'] > 0)
                 <form method="POST" action="{{ route('raw-article.generateKeyword') }}" class="d-inline mr-2">
                     @csrf
@@ -158,7 +158,6 @@
                     </button>
                 </form>
                 @endif
-                {{-- Fetch fresh news cho keyword này --}}
                 <form method="POST" action="{{ route('raw-article.fetchOne') }}" class="d-inline">
                     @csrf
                     <input type="hidden" name="keyword_id" value="{{ $kw->id }}">
@@ -166,7 +165,6 @@
                         <i class="fas fa-sync-alt"></i> Refresh
                     </button>
                 </form>
-                {{-- Clear & Refetch: xóa bài cũ → fetch lại để có timestamp chính xác --}}
                 <form method="POST" action="{{ route('raw-article.clearRefetch') }}" class="d-inline ml-1"
                     onsubmit="return confirm('Xóa tất cả {{ $stats['total'] }} bài của {{ $kw->name }} và fetch lại?')">
                     @csrf
@@ -177,167 +175,37 @@
                 </form>
             </div>
 
-            {{-- Articles Table --}}
             <div class="card-body p-0">
-                <table class="table table-sm table-bordered table-hover mb-0">
-                    <thead style="background:#f4f6f9">
-                        <tr class="text-center small text-uppercase text-muted" style="font-size:.75rem">
-                            <th width="30">
-                                <input type="checkbox" class="kw-check-all"
-                                       data-kw="{{ $kw->id }}" title="Select all in keyword">
-                            </th>
-                            <th width="30">#</th>
-                            <th width="55">Thumb</th>
-                            <th class="text-left">Title</th>
-                            <th width="65">Score</th>
-                            <th width="50">Top</th>
-                            <th width="55">Stories</th>
-                            <th width="90">Posted</th>
-                            <th width="75">Status</th>
-                            <th width="155">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach($items as $i => $raw)
-                        <tr class="{{ $raw->status==='generating' ? 'table-warning' : ($raw->status==='done' ? 'table-light' : '') }}">
 
-                            {{-- Checkbox --}}
-                            <td class="text-center align-middle">
-                                @if(in_array($raw->status, ['pending','failed']))
-                                <input type="checkbox" class="article-checkbox"
-                                       data-id="{{ $raw->id }}" data-kw="{{ $kw->id }}">
-                                @endif
-                            </td>
+                {{-- ── Table: Top 10 Viral ── --}}
+                @if($top->isNotEmpty())
+                <div class="px-3 pt-2 pb-1 d-flex align-items-center"
+                     style="background:#fff3cd;border-bottom:1px solid #ffc107">
+                    <i class="fas fa-trophy text-warning mr-2"></i>
+                    <strong class="small text-uppercase" style="letter-spacing:.05em">
+                        Top {{ $top->count() }} Viral
+                    </strong>
+                    <span class="ml-2 small text-muted">— chất lượng cao nhất (quality score)</span>
+                </div>
+                @include('admin.raw-articles._table', ['items' => $top, 'kw' => $kw, 'tableId' => 'top'])
+                @endif
 
-                            {{-- # --}}
-                            <td class="text-center align-middle text-muted small font-weight-bold">
-                                {{ $i + 1 }}
-                            </td>
+                {{-- ── Table: 20 Newest ── --}}
+                @if($recent->isNotEmpty())
+                <div class="px-3 pt-2 pb-1 d-flex align-items-center"
+                     style="background:#d1ecf1;border-bottom:1px solid #bee5eb;border-top:{{ $top->isNotEmpty() ? '2px solid #dee2e6' : 'none' }}">
+                    <i class="fas fa-clock text-info mr-2"></i>
+                    <strong class="small text-uppercase" style="letter-spacing:.05em">
+                        {{ $recent->count() }} Mới Nhất
+                    </strong>
+                    <span class="ml-2 small text-muted">— sắp xếp theo thời gian đăng</span>
+                </div>
+                @include('admin.raw-articles._table', ['items' => $recent, 'kw' => $kw, 'tableId' => 'recent'])
+                @endif
 
-                            {{-- Thumb --}}
-                            <td class="text-center align-middle p-1">
-                                @if($raw->thumbnail)
-                                    <img src="{{ $raw->thumbnail }}"
-                                        width="52" height="36"
-                                        style="object-fit:cover;border-radius:4px;display:block;margin:auto"
-                                        onerror="this.style.display='none'">
-                                @elseif($raw->source_icon)
-                                    <img src="{{ $raw->source_icon }}"
-                                        width="20" height="20"
-                                        style="border-radius:3px;display:block;margin:auto"
-                                        onerror="this.style.display='none'">
-                                @else
-                                    <div style="width:52px;height:36px;background:#eee;border-radius:4px;margin:auto;display:flex;align-items:center;justify-content:center">
-                                        <i class="fas fa-image text-muted" style="font-size:12px"></i>
-                                    </div>
-                                @endif
-                            </td>
-
-                            {{-- Title --}}
-                            <td class="align-middle" style="max-width:0">
-                                <a href="{{ $raw->url }}" target="_blank"
-                                    class="d-block font-weight-bold text-dark text-truncate"
-                                    title="{{ $raw->title }}"
-                                    style="max-width:100%">
-                                    {{ $raw->title }}
-                                </a>
-                                <div class="small text-muted text-truncate" style="max-width:100%">
-                                    <span class="text-primary font-weight-bold">{{ $raw->source }}</span>
-                                    @if($raw->snippet)
-                                        &nbsp;·&nbsp;{{ Str::limit($raw->snippet, 90) }}
-                                    @endif
-                                </div>
-                            </td>
-
-                            {{-- Viral Score --}}
-                            <td class="text-center align-middle">
-                                @php
-                                    $sc = $raw->viral_score;
-                                    $badgeColor = $sc >= 100 ? 'danger' : ($sc >= 70 ? 'warning' : ($sc >= 40 ? 'info' : 'secondary'));
-                                @endphp
-                                <span class="badge badge-pill badge-{{ $badgeColor }}"
-                                    style="font-size:.85em;padding:5px 8px">
-                                    {{ $sc }}
-                                </span>
-                            </td>
-
-                            {{-- Top Story --}}
-                            <td class="text-center align-middle">
-                                @if($raw->top_story)
-                                    <span title="Google News Top Story" style="font-size:1.1rem">🔥</span>
-                                @else
-                                    <span class="text-muted">—</span>
-                                @endif
-                            </td>
-
-                            {{-- Stories count --}}
-                            <td class="text-center align-middle">
-                                <span class="font-weight-bold {{ $raw->stories_count >= 5 ? 'text-danger' : ($raw->stories_count >= 2 ? 'text-warning' : 'text-muted') }}">
-                                    {{ $raw->stories_count }}
-                                </span>
-                            </td>
-
-                            {{-- Published date --}}
-                            <td class="text-center align-middle small text-muted" style="white-space:nowrap"
-                                title="{{ $raw->published_date }}">
-                                {{ $raw->posted_ago }}
-                            </td>
-
-                            {{-- Status --}}
-                            <td class="text-center align-middle">
-                                @if($raw->status === 'pending')
-                                    <span class="badge badge-warning">Pending</span>
-                                @elseif($raw->status === 'generating')
-                                    <span class="badge badge-info">
-                                        <i class="fas fa-spinner fa-spin"></i> AI
-                                    </span>
-                                @elseif($raw->status === 'done')
-                                    <span class="badge badge-success">Done</span>
-                                @elseif($raw->status === 'failed')
-                                    <span class="badge badge-danger">Failed</span>
-                                @endif
-                            </td>
-
-                            {{-- Actions --}}
-                            <td class="text-center align-middle" style="white-space:nowrap">
-                                {{-- Source link --}}
-                                <a href="{{ $raw->url }}" target="_blank"
-                                    class="btn btn-xs btn-outline-secondary" title="Source">
-                                    <i class="fas fa-external-link-alt"></i>
-                                </a>
-
-                                {{-- Main action --}}
-                                @if($raw->status === 'generating')
-                                    <button class="btn btn-xs btn-warning" disabled>
-                                        <i class="fas fa-spinner fa-spin"></i>
-                                    </button>
-                                @else
-                                    <form method="POST" action="{{ route('raw-article.save', $raw) }}" class="d-inline">
-                                        @csrf
-                                        <button class="btn btn-xs {{ $raw->status === 'done' ? 'btn-outline-primary' : 'btn-primary' }}"
-                                                title="{{ $raw->status === 'done' ? 'Tải lại (bài mới)' : 'Tải & lưu bài viết' }}">
-                                            <i class="fas fa-download"></i>
-                                        </button>
-                                    </form>
-                                @endif
-
-                                {{-- Delete --}}
-                                <form method="POST" action="{{ route('raw-article.destroy', $raw) }}"
-                                    class="d-inline" onsubmit="return confirm('Delete?')">
-                                    @csrf @method('DELETE')
-                                    <button class="btn btn-xs btn-outline-danger" title="Delete">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                    @endforeach
-                    </tbody>
-                </table>
             </div>
-            {{-- Footer --}}
             <div class="card-footer py-1 text-right small text-muted">
-                Expires in ~{{ optional($items->first()?->expires_at)->diffForHumans() ?? '—' }}
+                Expires in ~{{ optional(($top->merge($recent))->first()?->expires_at)->diffForHumans() ?? '—' }}
             </div>
         </div>
     @empty

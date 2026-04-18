@@ -36,20 +36,29 @@ class RawArticleController extends Controller
 
         $kwList  = $keywordId ? $keywords->where('id', $keywordId) : $keywords;
         $grouped = $kwList->map(function ($kw) use ($allArticles) {
-            $articles = $allArticles->get($kw->id, collect())->take(10);
+            $all    = $allArticles->get($kw->id, collect());
+            $top    = $all->where('list_type', 'top')->take(10)->values();
+            $recent = $all->where('list_type', 'recent')
+                ->sortByDesc(fn($a) => $a->published_timestamp)
+                ->take(20)->values();
+
+            $combined = $top->merge($recent);
+
+            if ($combined->isEmpty()) return null;
 
             return [
-                'keyword'  => $kw,
-                'articles' => $articles,
-                'stats'    => [
-                    'total'      => $articles->count(),
-                    'pending'    => $articles->where('status', 'pending')->count(),
-                    'generating' => $articles->where('status', 'generating')->count(),
-                    'done'       => $articles->where('status', 'done')->count(),
-                    'failed'     => $articles->where('status', 'failed')->count(),
+                'keyword' => $kw,
+                'top'     => $top,
+                'recent'  => $recent,
+                'stats'   => [
+                    'total'      => $combined->count(),
+                    'pending'    => $combined->where('status', 'pending')->count(),
+                    'generating' => $combined->where('status', 'generating')->count(),
+                    'done'       => $combined->where('status', 'done')->count(),
+                    'failed'     => $combined->where('status', 'failed')->count(),
                 ],
             ];
-        })->filter(fn($g) => $g['articles']->isNotEmpty())->values();
+        })->filter()->values();
 
         return view('admin.raw-articles.index', [
             'route'     => 'raw-article',

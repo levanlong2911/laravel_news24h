@@ -12,9 +12,10 @@
             </h4>
         </div>
         <div class="col-auto d-flex align-items-center gap-2">
-            {{-- Gửi Claude (luôn hiển thị) --}}
+            {{-- Gửi Claude / Tổng hợp --}}
             <button id="btnSendClaude" class="btn btn-info btn-sm" onclick="submitSendClaude()">
-                <i class="fas fa-robot"></i> Gửi Claude
+                <i class="fas fa-robot"></i>
+                <span id="btnLabel">Gửi Claude</span>
                 <span id="selectedCount" class="badge badge-light ml-1">0</span>
             </button>
 
@@ -80,6 +81,10 @@
     <form id="sendClaudeForm" method="POST" action="{{ route('article.sendToClaude') }}" class="d-none">
         @csrf
         <div id="claudeInputs"></div>
+    </form>
+    <form id="synthesizeForm" method="POST" action="{{ route('article.synthesize') }}" class="d-none">
+        @csrf
+        <div id="synthesizeInputs"></div>
     </form>
     <form id="bulkDeleteForm" method="POST" action="{{ route('article.destroySelected') }}" class="d-none">
         @csrf @method('DELETE')
@@ -217,17 +222,38 @@ function updateBtns() {
     document.getElementById('selectedCount').textContent = count;
     document.getElementById('deleteCount').textContent   = count;
     document.getElementById('btnDeleteSelected').classList.toggle('d-none', count === 0);
+
+    // Đổi label button theo mode
+    const label = document.getElementById('btnLabel');
+    if (count > 1) {
+        label.textContent = 'Tổng hợp ' + count + ' bài';
+        document.getElementById('btnSendClaude').className = 'btn btn-warning btn-sm';
+    } else {
+        label.textContent = 'Gửi Claude';
+        document.getElementById('btnSendClaude').className = 'btn btn-info btn-sm';
+    }
 }
 
 function submitSendClaude() {
     const checked = document.querySelectorAll('.article-check:checked');
-    if (!checked.length) {
+    const count   = checked.length;
+
+    if (!count) {
         alert('Hãy chọn ít nhất 1 bài trước khi gửi Claude.');
         return;
     }
-    if (!confirm('Gửi ' + checked.length + ' bài đã chọn sang Claude để tóm tắt & viết lại?')) return;
 
-    const container = document.getElementById('claudeInputs');
+    const isSynthesize = count > 1;
+    const msg = isSynthesize
+        ? `Tổng hợp ${count} bài thành 1 bài duy nhất bằng Claude?\n\nLưu ý: tất cả bài phải cùng keyword/category.`
+        : `Gửi 1 bài đã chọn sang Claude để viết lại?`;
+
+    if (!confirm(msg)) return;
+
+    const formId    = isSynthesize ? 'synthesizeForm'   : 'sendClaudeForm';
+    const containerId = isSynthesize ? 'synthesizeInputs' : 'claudeInputs';
+    const container = document.getElementById(containerId);
+
     container.innerHTML = '';
     checked.forEach(cb => {
         const input = document.createElement('input');
@@ -236,7 +262,7 @@ function submitSendClaude() {
         input.value = cb.value;
         container.appendChild(input);
     });
-    document.getElementById('sendClaudeForm').submit();
+    document.getElementById(formId).submit();
 }
 
 function submitDeleteSelected() {

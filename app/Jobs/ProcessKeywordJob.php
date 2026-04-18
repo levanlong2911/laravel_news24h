@@ -11,6 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Fetch top 10 từ Google News (SerpAPI) → lưu metadata vào raw_articles.
@@ -21,7 +22,7 @@ class ProcessKeywordJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries   = 2;
-    public int $timeout = 60;
+    public int $timeout = 120;
 
     public function __construct(public readonly Keyword $keyword) {}
 
@@ -48,36 +49,50 @@ class ProcessKeywordJob implements ShouldQueue
             return;
         }
 
-        // ── Filter + Score + Dedup theo topic ────────────────────────────────
+        // ── Top 10: quality-scored ────────────────────────────────────────────
         $scored = $serpApi->filterAndScore($allRaw);
+        $top10  = !empty($scored)
+            ? array_slice($this->deduplicateByTopic($scored), 0, 10)
+            : [];
 
-        if (empty($scored)) {
+        if (empty($top10)) {
             Log::warning("[FetchNews] All filtered out: {$kw->name}");
+        }
+
+        // ── Recent 20: date-sorted, minimal filter ────────────────────────────
+        $recent20 = $serpApi->filterRecent($allRaw, 20);
+
+        if (empty($top10) && empty($recent20)) {
+            Log::warning("[FetchNews] Nothing to save: {$kw->name}");
             return;
         }
 
-        $top10 = array_slice($this->deduplicateByTopic($scored), 0, 10);
+        // ── Merge, dedup by URL (top > recent priority) ───────────────────────
+        // Keyed by URL so same article in both lists is only saved once as 'top'
+        $byUrl = [];
+        foreach ($top10 as $item) {
+            $url = $item['link'] ?? '';
+            if ($url) $byUrl[$url] = array_merge($item, ['list_type' => 'top']);
+        }
+        foreach ($recent20 as $item) {
+            $url = $item['link'] ?? '';
+            if ($url && !isset($byUrl[$url])) {
+                $byUrl[$url] = array_merge($item, ['list_type' => 'recent']);
+            }
+        }
 
-        // ── Dedup theo URL hash — bỏ URL đã có trong raw_articles ────────────
-        $hashes   = array_map(fn($i) => md5($i['link'] ?? ''), $top10);
-        $existing = RawArticle::whereIn('url_hash', $hashes)
+        // ── Skip URLs already in DB ───────────────────────────────────────────
+        $existing = RawArticle::whereIn('url_hash', array_map('md5', array_keys($byUrl)))
             ->pluck('url_hash')->flip()->all();
 
-        $toSave = array_filter($top10, fn($i) => !isset($existing[md5($i['link'] ?? '')]));
+        $rows = [];
+        $now  = now();
 
-        if (empty($toSave)) {
-            Log::info("[FetchNews] All already in raw_articles: {$kw->name}");
-            return;
-        }
+        foreach ($byUrl as $url => $item) {
+            if (isset($existing[md5($url)])) continue;
 
-        // ── Lưu metadata vào raw_articles ────────────────────────────────────
-        $saved = 0;
-
-        foreach ($toSave as $item) {
-            $url = $item['link'] ?? '';
-            if (!$url) continue;
-
-            RawArticle::create([
+            $rows[] = [
+                'id'             => Str::uuid()->toString(),
                 'keyword_id'     => $kw->id,
                 'title'          => $item['title'] ?? '',
                 'url'            => $url,
@@ -89,16 +104,25 @@ class ProcessKeywordJob implements ShouldQueue
                 'viral_score'    => (int) ($item['quality_score'] ?? 0),
                 'position'       => (int) ($item['position'] ?? 0),
                 'published_date' => $item['date'] ?? '',
-                'stories_count'  => (int) ($item['stories_count'] ?? 0),
-                'top_story'      => (bool) ($item['top_story'] ?? false),
+                'stories_count'  => count($item['stories'] ?? []),
+                'top_story'      => !empty($item['stories']),
+                'list_type'      => $item['list_type'],
                 'status'         => 'pending',
-                'expires_at'     => now()->addHours(24),
-            ]);
-
-            $saved++;
+                'expires_at'     => $now->copy()->addHours(24),
+                'created_at'     => $now,
+                'updated_at'     => $now,
+            ];
         }
 
-        Log::info("[FetchNews] Saved {$saved} raw articles for: {$kw->name}");
+        $saved = count($rows);
+        if ($saved > 0) {
+            RawArticle::insert($rows);
+        }
+
+        Log::info(sprintf(
+            '[FetchNews] Saved %d for: %s (top=%d recent=%d)',
+            $saved, $kw->name, count($top10), count($recent20)
+        ));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

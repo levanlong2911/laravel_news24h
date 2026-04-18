@@ -26,6 +26,7 @@ class RawArticle extends Model
         'top_story',
         'article_id',
         'status',
+        'list_type',
         'expires_at',
     ];
 
@@ -52,6 +53,24 @@ class RawArticle extends Model
     public function article()
     {
         return $this->belongsTo(Article::class);
+    }
+
+    // ── Computed: parse published_date → unix timestamp (for sorting) ──────────
+    public function getPublishedTimestampAttribute(): int
+    {
+        $date = $this->published_date;
+        if (empty($date)) return 0;
+
+        $d = strtolower(trim($date));
+        if (str_contains($d, 'minute')) return time() - 30 * 60;
+        if (preg_match('/^(\d+)\s*h\b/', $d, $m))  return time() - (int)$m[1] * 3600;
+        if (preg_match('/^(\d+)\s+hour/', $d, $m))  return time() - (int)$m[1] * 3600;
+        if (preg_match('/^1 day/', $d))              return time() - 86400;
+        if (preg_match('/^(\d+) day/', $d, $m))      return time() - (int)$m[1] * 86400;
+
+        $cleaned = trim(preg_replace('/,?\s*\+\d{4}\s*UTC$/i', '', $date));
+        $parsed  = strtotime($cleaned);
+        return $parsed !== false ? $parsed : 0;
     }
 
     // ── Computed: parse published_date string → relative time ──────────────────

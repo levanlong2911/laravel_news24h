@@ -120,6 +120,64 @@ class SerpApiService
     }
 
     // ══════════════════════════════════════════════
+    // RECENT — top N bài mới nhất, lọc nhẹ (no video, no blocked)
+    // ══════════════════════════════════════════════
+
+    public function filterRecent(array $articles, int $limit = 20): array
+    {
+        $blocked = $this->blockedSources();
+        $trusted = $this->trustedSources();
+        $seen    = [];
+        $result  = [];
+
+        foreach ($articles as $article) {
+            $link  = $article['link'] ?? '';
+            $title = $article['title'] ?? '';
+            if (empty($link) || empty($title)) continue;
+            if (isset($seen[$link])) continue;
+            $seen[$link] = true;
+
+            $domain    = strtolower(parse_url($link, PHP_URL_HOST) ?? '');
+            $isBlocked = false;
+            foreach ($blocked as $b) {
+                if (str_contains($domain, $b)) { $isBlocked = true; break; }
+            }
+            if ($isBlocked) continue;
+            if ($this->isVideoContent($title, $link)) continue;
+
+            // Score đầy đủ — không có trend nhưng vẫn tính freshness/source/signals
+            $score = $this->calcScore($article, $domain, [], $trusted);
+
+            $result[] = array_merge($article, [
+                'quality_score' => $score,
+                'domain'        => $domain,
+            ]);
+        }
+
+        // Sort by parsed date: newest first
+        usort($result, fn($a, $b) =>
+            $this->parseDateToTimestamp($b['date'] ?? '') <=> $this->parseDateToTimestamp($a['date'] ?? '')
+        );
+
+        return array_values(array_slice($result, 0, $limit));
+    }
+
+    private function parseDateToTimestamp(string $date): int
+    {
+        if (empty($date)) return 0;
+        $d = strtolower(trim($date));
+
+        if (str_contains($d, 'minute')) return time() - 30 * 60;
+        if (preg_match('/^(\d+)\s+hour/', $d, $m)) return time() - (int)$m[1] * 3600;
+        if (preg_match('/^1 day/', $d)) return time() - 86400;
+        if (preg_match('/^(\d+) day/', $d, $m)) return time() - (int)$m[1] * 86400;
+
+        $cleaned = trim(preg_replace('/,?\s*\+\d{4}\s*UTC$/i', '', $date));
+        $parsed  = strtotime($cleaned);
+        return $parsed !== false ? $parsed : 0;
+    }
+
+    // ══════════════════════════════════════════════
     // RETRY — exponential backoff cho network errors
     // ══════════════════════════════════════════════
 

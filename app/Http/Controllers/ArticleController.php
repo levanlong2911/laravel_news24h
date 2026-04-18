@@ -222,6 +222,98 @@ class ArticleController extends Controller
         return back()->with('success', $msg);
     }
 
+    public function synthesize(Request $request, ArticlePipelineService $pipeline)
+    {
+        set_time_limit(300);
+
+        $ids = array_filter((array) $request->get('selected_ids', []));
+
+        if (count($ids) < 2) {
+            return back()->with('error', 'Cần chọn ít nhất 2 bài để tổng hợp.');
+        }
+        if (count($ids) > 5) {
+            return back()->with('error', 'Tối đa 5 bài mỗi lần tổng hợp.');
+        }
+
+        $key = 'article-send-claude';
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            return back()->with('error', 'Quá nhiều request. Đợi ' . RateLimiter::availableIn($key) . 's.');
+        }
+        RateLimiter::hit($key, 60);
+
+        $articles = Article::with('keyword')->whereIn('id', $ids)->get();
+
+        // Validate cùng category
+        $categoryIds = $articles->pluck('keyword.category_id')->unique()->filter();
+        if ($categoryIds->count() > 1) {
+            $kwNames = $articles->pluck('keyword.name')->unique()->implode(', ');
+            return back()->with('error', "Bài viết thuộc nhiều category ({$kwNames}). Chỉ chọn bài cùng keyword.");
+        }
+
+        $admin  = auth()->user();
+        $domain = Cache::remember('default_domain', 3600, fn() => Domain::first());
+
+        if (!$admin || !$domain) {
+            return back()->with('error', 'Không tìm thấy admin hoặc domain.');
+        }
+
+        // Primary = bài có viral_score cao nhất → dùng thumbnail + keyword
+        $primary = $articles->sortByDesc('viral_score')->first();
+
+        // Concat content, mỗi source có label riêng
+        $concatContent = $articles->map(
+            fn($a) => "[SOURCE — {$a->source_name}]\n{$a->content}"
+        )->implode("\n\n---\n\n");
+
+        try {
+            $articles->each(fn($a) => $a->update(['status' => 'processing']));
+
+            $result     = $pipeline->run(
+                rawHtml:    $concatContent,
+                keyword:    $primary->keyword->name ?? '',
+                categoryId: $primary->keyword->category_id ?? '',
+            );
+            $parsed     = $result->parsed;
+            $finalTitle = $result->title() ?: $primary->title;
+            $slug       = $this->uniqueSlug(Str::slug($finalTitle ?: 'article'));
+
+            Post::create([
+                'id'               => Str::uuid(),
+                'title'            => $finalTitle,
+                'meta_description' => Str::limit($parsed['meta_description'] ?? '', 255),
+                'content'          => $parsed['content'] ?? '',
+                'slug'             => $slug,
+                'thumbnail'        => $primary->thumbnail,
+                'category_id'      => $primary->keyword->category_id ?? null,
+                'author_id'        => $admin->id,
+                'domain_id'        => $domain->id,
+                'fb_image_text'    => $parsed['fb_image_text']   ?? null,
+                'fb_quote'         => ($parsed['fb_quote'] ?? '') ?: null,
+                'fb_post_content'  => $parsed['fb_post_content'] ?? null,
+            ]);
+
+            $sourceUrls = $articles->pluck('source_url')->filter()->values()->toArray();
+            $articles->each(fn($a) => $a->update([
+                'status'       => 'published',
+                'published_at' => now(),
+                'source_urls'  => $sourceUrls,
+            ]));
+
+            Log::info('[synthesize] OK: ' . $finalTitle, [
+                'count'      => count($ids),
+                'hook_type'  => $result->hookResult->detectedType,
+                'hook_score' => $result->hookResult->bestScore,
+            ]);
+
+            return back()->with('success', 'Đã tổng hợp ' . count($ids) . ' bài → "' . $finalTitle . '"');
+
+        } catch (\Throwable $e) {
+            $articles->each(fn($a) => $a->update(['status' => 'failed']));
+            Log::error('[synthesize] Failed: ' . $e->getMessage());
+            return back()->with('error', 'Lỗi tổng hợp: ' . $e->getMessage());
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private function uniqueSlug(string $base): string
