@@ -12,6 +12,11 @@
             </h4>
         </div>
         <div class="col-auto d-flex align-items-center gap-2">
+            {{-- Add Manual --}}
+            <button class="btn btn-secondary btn-sm" data-toggle="modal" data-target="#modalAddManual">
+                <i class="fas fa-pen"></i> Add Manual
+            </button>
+
             {{-- Get Link --}}
             <button class="btn btn-success btn-sm" data-toggle="modal" data-target="#modalGetLink">
                 <i class="fas fa-link"></i> Get Link
@@ -287,6 +292,53 @@ function submitDeleteSelected() {
     document.getElementById('bulkDeleteForm').submit();
 }
 </script>
+{{-- ── ADD MANUAL MODAL ── --}}
+<div class="modal fade" id="modalAddManual" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title"><i class="fas fa-pen mr-2"></i>Add Manual Article</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <form method="POST" action="{{ route('article.storeManual') }}">
+                @csrf
+                <div class="modal-body">
+                    <div class="form-group mb-2">
+                        <label class="small font-weight-bold">Source URL <span class="text-danger">*</span></label>
+                        <input type="url" name="source_url" class="form-control form-control-sm"
+                               placeholder="https://example.com/article..." required>
+                    </div>
+                    <div class="form-group mb-2">
+                        <label class="small font-weight-bold">Title <span class="text-danger">*</span></label>
+                        <input type="text" name="title" class="form-control form-control-sm"
+                               placeholder="Tiêu đề bài viết..." required maxlength="500">
+                    </div>
+                    <div class="form-group mb-2">
+                        <label class="small font-weight-bold">Keyword</label>
+                        <select name="keyword_id" class="form-control form-control-sm">
+                            <option value="">— Không chọn —</option>
+                            @foreach($keywords as $kw)
+                                <option value="{{ $kw->id }}">{{ $kw->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="form-group mb-0">
+                        <label class="small font-weight-bold">Content <span class="text-danger">*</span></label>
+                        <textarea name="content" class="form-control form-control-sm" rows="10"
+                                  placeholder="Nội dung bài viết..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="fas fa-save mr-1"></i>Lưu bài viết
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {{-- ── GET LINK MODAL ── --}}
 <div class="modal fade" id="modalGetLink" tabindex="-1">
     <div class="modal-dialog">

@@ -21,10 +21,13 @@ class ArticleController extends Controller
         $status    = $request->get('status', 'all');
         $keywordId = $request->get('keyword_id');
 
+        $user    = auth()->user();
+        $isAdmin = $user->role && $user->role->name === 'admin';
+
         $articles = Article::with(['keyword', 'crawler'])
             ->when($status !== 'all', fn($q) => $q->where('status', $status))
             ->when($keywordId,        fn($q) => $q->where('keyword_id', $keywordId))
-            ->orderByDesc('viral_score')
+            ->when(!$isAdmin,         fn($q) => $q->where('crawled_by', $user->id))
             ->orderByDesc('created_at')
             ->paginate(20);
 

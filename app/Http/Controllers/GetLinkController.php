@@ -7,7 +7,6 @@ use App\Services\Admin\FontService;
 use App\Services\Admin\InforDomainService;
 use GuzzleHttp\Client;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use DOMDocument;
 use DOMXPath;
 use DOMNode;
@@ -97,19 +96,10 @@ class GetLinkController extends Controller
                 ]);
             }
             $html = $response->getBody()->getContents();
-            $htmlSize = strlen($html);
-            Log::info('[GetLink] Fetched', [
-                'url'    => $url,
-                'status' => $statusCode,
-                'size'   => $htmlSize,
-                'class'  => $class,
-                'snippet'=> substr(strip_tags($html), 0, 200),
-            ]);
-
-            if ($htmlSize < 10000) {
+            if (strlen($html) < 10000) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Trang web chặn crawl từ server (bot protection). Hãy thử copy nội dung thủ công.',
+                    'message' => 'Trang web chặn crawl từ server. Hãy thử copy nội dung thủ công.',
                 ]);
             }
             // Chuyển đổi mã hóa để tránh lỗi ký tự đặc biệt
