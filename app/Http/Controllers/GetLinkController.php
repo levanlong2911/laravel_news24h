@@ -7,6 +7,7 @@ use App\Services\Admin\FontService;
 use App\Services\Admin\InforDomainService;
 use GuzzleHttp\Client;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use DOMDocument;
 use DOMXPath;
 use DOMNode;
@@ -89,6 +90,13 @@ class GetLinkController extends Controller
                 ]);
             }
             $html = $response->getBody()->getContents();
+            Log::info('[GetLink] Fetched', [
+                'url'    => $url,
+                'status' => $statusCode,
+                'size'   => strlen($html),
+                'class'  => $class,
+                'snippet'=> substr(strip_tags($html), 0, 200),
+            ]);
             // Chuyển đổi mã hóa để tránh lỗi ký tự đặc biệt
             $html = $this->cleanHtmlContent($html);
 
