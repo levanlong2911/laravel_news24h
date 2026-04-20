@@ -81,10 +81,11 @@ class GetLinkController extends Controller
             //     sleep(1);
             // }
 
-            if ($response->getStatusCode() !== 200) {
+            $statusCode = $response->getStatusCode();
+            if ($statusCode < 200 || $statusCode >= 300) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Lỗi HTTP: ' . $response->getStatusCode(),
+                    'message' => 'Lỗi HTTP: ' . $statusCode,
                 ]);
             }
             $html = $response->getBody()->getContents();
