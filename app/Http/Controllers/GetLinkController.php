@@ -37,7 +37,7 @@ class GetLinkController extends Controller
         $domain = str_replace("www.", "", parse_url($url, PHP_URL_HOST)); // Lấy domain từ URL
         $result = $this->domainService->checkDomain($domain);
         if ($result) {
-            $class = sprintf('//div[contains(@class, "%s")]', $result->key_class);
+            $class = sprintf('//*[contains(@class, "%s")]', $result->key_class);
         } else {
             $class = '//article//p | //div[contains(@class, "content") or contains(@class, "post-content") or contains(@class, "entry-content")]';
         }
