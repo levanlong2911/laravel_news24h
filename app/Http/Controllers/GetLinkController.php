@@ -44,20 +44,27 @@ class GetLinkController extends Controller
         }
         try {
             $client = new Client([
-                'timeout' => 10,
+                'timeout' => 15,
                 'headers' => [
-                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-                    'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-                    'Accept-Language' => 'en-US,en;q=0.9',
-                    'Accept-Encoding' => 'gzip, deflate',
-                    'Connection' => 'keep-alive',
+                    'User-Agent'                => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept'                    => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    'Accept-Language'           => 'en-US,en;q=0.9',
+                    'Accept-Encoding'           => 'gzip, deflate, br',
+                    'Connection'                => 'keep-alive',
                     'Upgrade-Insecure-Requests' => '1',
-                    'Referer' => 'https://www.google.com/',
-                    'X-Forwarded-For' => '66.249.66.1',
-                    'Cookie' => 'CONSENT=YES+1;',
+                    'Referer'                   => 'https://www.google.com/',
+                    'Cache-Control'             => 'max-age=0',
+                    'Sec-Fetch-Dest'            => 'document',
+                    'Sec-Fetch-Mode'            => 'navigate',
+                    'Sec-Fetch-Site'            => 'cross-site',
+                    'Sec-Fetch-User'            => '?1',
+                    'Sec-Ch-Ua'                 => '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+                    'Sec-Ch-Ua-Mobile'          => '?0',
+                    'Sec-Ch-Ua-Platform'        => '"Windows"',
+                    'DNT'                       => '1',
                 ],
                 'allow_redirects' => true,
-                'cookies' => true,
+                'cookies'         => true,
             ]);
             $response = $client->request('GET', $url);
             // $client = new Client([
@@ -90,13 +97,21 @@ class GetLinkController extends Controller
                 ]);
             }
             $html = $response->getBody()->getContents();
+            $htmlSize = strlen($html);
             Log::info('[GetLink] Fetched', [
                 'url'    => $url,
                 'status' => $statusCode,
-                'size'   => strlen($html),
+                'size'   => $htmlSize,
                 'class'  => $class,
                 'snippet'=> substr(strip_tags($html), 0, 200),
             ]);
+
+            if ($htmlSize < 10000) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Trang web chặn crawl từ server (bot protection). Hãy thử copy nội dung thủ công.',
+                ]);
+            }
             // Chuyển đổi mã hóa để tránh lỗi ký tự đặc biệt
             $html = $this->cleanHtmlContent($html);
 
