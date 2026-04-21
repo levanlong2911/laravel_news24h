@@ -967,21 +967,20 @@ STRUCTURE:
 {structure_template}
 
 TITLE:
-• 60-70 characters
+• 60-90 characters
 • Start with: name, number, or active verb — never How/Why/The
 • Factually accurate + emotionally charged + main keyword present
 
-META DESCRIPTION:
-• 150-160 characters, present tense
-• Most surprising or emotional fact — must make the reader click
-
 CONTENT:
 • Arc: Hook → tension build → facts + quotes → stakes → forward-look
-• Length: 500-750 words, HTML <p> tags only
-• Sentence cap: 25 words max per sentence. If a sentence runs long, split it.
+• Length: 120 - 280 characters per <p>, HTML <p> tags only
+• Sentence cap: 40 words max per sentence. Pack each sentence with specific facts, names, and numbers.
 • Every sentence must earn its place — if it only restates what the previous said, cut it.
 • Final sentence: forward-looking fact or open consequence
   Never philosophical. Never preachy.
+• SOURCE DATA: If the source contains tables, lists (ul/li/ol), or structured data —
+  extract the key numbers, rankings, or comparisons and weave them as evidence into the prose.
+  Do NOT reproduce the raw list — convert it to a sentence with the most impactful data points.
 
 QUOTE HANDLING:
 • Strongest named quote must appear within first 200 words
@@ -996,7 +995,7 @@ QUOTE HANDLING:
 STEP 3 — FACEBOOK ASSETS
 ══════════════════════════════════════════
 FB_IMAGE_TEXT:
-- 1 sentence ≤70 chars. Use a strong active verb (steal, flip, crash, betray, collapse).
+- 1 sentence 60-90 chars. Use a strong active verb (steal, flip, crash, betray, collapse).
 - Technique: Hook + Tension — reveal half the story, keep the best part hidden.
 - Name the threat or rivalry — let reader feel stakes without knowing outcome.
 - No emoji. Write in plain text only.
@@ -1006,18 +1005,15 @@ FB_IMAGE_TEXT:
 - BAD: Two separate fact statements. Literal numbers/dates. Restate the headline. Using emoji.
 - Write in the same language as the article.
 
-FB_QUOTE:
-• "quote text" — Full Name
-• Return "" if no strong direct quote exists. Never fabricate.
-
 FB_POST_CONTENT:
 • 60-150 chars MAX. No bullet points. No lists. Plain paragraphs only.
-• Structure: Hook → Tension → Hidden fact → CTA
+• Structure: Hook → Tension → Hidden fact
 • Reveal MAX 2 facts — keep the most specific or surprising fact hidden.
 • Never use conclusion words: obvious, clear, certain, confirmed.
 • "Changes everything" is BANNED — say WHAT changes instead.
 • Name the threat or rivalry in the first line — never bury the conflict.
 • No emoji. No URL. No hashtags. Same language as article.
+• No CTA. Do NOT end with "Find out", "Read more", "Click", "Discover", or any call-to-action.
 
 ══════════════════════════════════════════
 QUALITY GATE — verify before output
@@ -1029,7 +1025,7 @@ QUALITY GATE — verify before output
 [ ] Strongest named quote within first 200 words
 [ ] Zero forbidden words or phrases (including "apparently", "seemingly")
 [ ] No sentence explains a mechanism the reader already knows
-[ ] No sentence over 25 words
+[ ] No sentence over 40 words
 [ ] FB image text: Hook + Tension, curiosity gap, ≤70 chars
 [ ] Final sentence forward-looking, not philosophical
 [ ] FB post: 60-150 chars, Hook→Tension→Hidden fact→CTA
