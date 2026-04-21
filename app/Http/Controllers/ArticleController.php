@@ -212,13 +212,23 @@ class ArticleController extends Controller
                 continue;
             }
 
+            $categoryId = $article->keyword->category_id ?? $article->category_id ?? '';
+            $keyword    = $article->keyword->name ?? $article->source_title ?? $article->title ?? '';
+            $rawHtml    = $article->content ?? '';
+
+            if (strlen(trim($rawHtml)) < 1000) {
+                $article->update(['status' => 'failed']);
+                $errors[] = "'{$article->title}': nội dung quá ngắn (" . strlen(trim($rawHtml)) . " ký tự, cần ≥ 1000). Crawl lại bài này trước.";
+                continue;
+            }
+
             $article->update(['status' => 'processing']);
 
             try {
                 $result = $pipeline->run(
-                    rawHtml:    $article->content ?? '',
-                    keyword:    $article->keyword->name ?? '',
-                    categoryId: $article->keyword->category_id ?? '',
+                    rawHtml:    $rawHtml,
+                    keyword:    $keyword,
+                    categoryId: $categoryId,
                 );
 
                 $parsed     = $result->parsed;
@@ -232,7 +242,7 @@ class ArticleController extends Controller
                     'content'          => $parsed['content'] ?? '',
                     'slug'             => $slug,
                     'thumbnail'        => $article->thumbnail,
-                    'category_id'      => $article->keyword->category_id ?? null,
+                    'category_id'      => $categoryId ?: null,
                     'author_id'        => $admin->id,
                     'domain_id'        => $domain->id,
                     'fb_image_text'    => $parsed['fb_image_text']   ?? null,

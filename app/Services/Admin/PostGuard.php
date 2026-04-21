@@ -73,14 +73,24 @@ class PostGuard
      */
     private function validateOutput(string $raw): array
     {
-        // Sonnet đôi khi wrap trong markdown code block → strip trước
+        // Strip markdown code block nếu có
         $clean = preg_replace('/^```(?:json)?\s*/i', '', trim($raw));
         $clean = preg_replace('/\s*```$/', '', $clean);
 
+        // Thử parse trực tiếp trước
         $data = json_decode($clean, true);
 
+        // Nếu không được → tìm JSON object đầu tiên trong string (extract { ... })
         if (!is_array($data)) {
-            Log::warning('[PostGuard] JSON parse failed', ['raw' => substr($raw, 0, 300)]);
+            $start = strpos($clean, '{');
+            $end   = strrpos($clean, '}');
+            if ($start !== false && $end !== false && $end > $start) {
+                $data = json_decode(substr($clean, $start, $end - $start + 1), true);
+            }
+        }
+
+        if (!is_array($data)) {
+            Log::warning('[PostGuard] JSON parse failed', ['raw' => substr($raw, 0, 500)]);
             return [null, GuardReason::JSON_INVALID];
         }
 

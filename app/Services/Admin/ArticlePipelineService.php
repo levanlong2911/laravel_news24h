@@ -55,6 +55,11 @@ class ArticlePipelineService
             throw new \RuntimeException('Claude Haiku tra ve trong');
         }
 
+        // Gate: facts quá ngắn → không đủ ngữ liệu cho Sonnet, fail sớm thay vì tốn tiền
+        if (strlen(trim($facts)) < 150) {
+            throw new \RuntimeException('Haiku facts qua ngan (' . strlen(trim($facts)) . ' chars) — noi dung goc khong du thong tin');
+        }
+
         // ── 4. HookEngine → detect content type + best hook ───────────────────
         $hookResult        = $this->hookEngine->resolve($facts, $keyword, $hookStyle, $contentTypes);
         $typeModel         = $contentTypes->firstWhere('type_code', $hookResult->detectedType);
@@ -63,7 +68,7 @@ class ArticlePipelineService
         // ── 5. PromptGuard — chỉ validate hook; structureTemplate có fallback trong PromptPayload
         $this->promptGuard->validateHook($hookResult->bestHook);
 
-        // ── 6. Sonnet + 1 retry only on parse fail ─────────────────────────────
+        // ── 6. Sonnet — retry với fix prompt thay vì lặp lại cùng prompt (tiết kiệm token)
         $sonnetPrompt = $payload->sonnetPrompt($facts, $hookResult->bestHook, $keyword, $structureTemplate);
         $sonnetRaw    = $this->claude->generate($sonnetPrompt, 'sonnet');
         $guardResult  = $this->postGuard->check($sonnetRaw, $facts);
@@ -73,8 +78,10 @@ class ArticlePipelineService
         if ($guardResult->isParseFailure()) {
             $retryCount  = 1;
             $retryReason = $guardResult->reason;
-            Log::info('[Pipeline] Sonnet parse fail, retrying once', ['reason' => $retryReason]);
-            $sonnetRaw   = $this->claude->generate($sonnetPrompt, 'sonnet');
+            Log::info('[Pipeline] Sonnet parse fail, retrying with fix prompt', ['reason' => $retryReason]);
+
+            $fixPrompt   = "The previous response contained invalid JSON. Return ONLY the corrected JSON — no markdown, no code block, no extra text.\n\nPrevious broken output:\n{$sonnetRaw}\n\nRequired schema:\n{$payload->outputSchema}";
+            $sonnetRaw   = $this->claude->generate($fixPrompt, 'sonnet');
             $guardResult = $this->postGuard->check($sonnetRaw, $facts);
         }
 

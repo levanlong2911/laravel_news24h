@@ -25,7 +25,7 @@ JSON;
      * Universal Facebook fields — appended to EVERY output schema regardless of category.
      *
      * ── fb_image_text ──────────────────────────────────────────────────────────
-     * Overlay lên ảnh bìa. 1–2 câu, ≤120 ký tự. Công thức: Hook (shock/tò mò) + Tension
+     * Overlay lên ảnh bìa. 1 câu, 60-90 chars. Công thức: Hook (shock/tò mò) + Tension
      * (câu hỏi chưa được trả lời). KHÔNG liệt kê fact đầy đủ — để lại phần hấp dẫn nhất.
      * GOOD: "Southwest just made Alaska Airlines nervous. 🍷" / "You can now fly wine home free. But there's a catch."
      * BAD:  "Southwest checks your wine free starting April 24. Up to 12 bottles."
@@ -36,7 +36,7 @@ JSON;
      * 40–150 ký tự, kèm attribution.
      *
      * ── fb_post_content ────────────────────────────────────────────────────────
-     * Caption Facebook 180–250 ký tự. Công thức 4 tầng viết liền mạch, chỉ dùng dấu chấm:
+     * Caption Facebook 60-150 chars MAX. Công thức 4 tầng viết liền mạch, chỉ dùng dấu chấm:
      * HOOK (1 câu gây shock/tò mò, KHÔNG restate headline). TENSION (1 câu ngắn dramatic,
      * tạo câu hỏi chưa có câu trả lời). FOMO (1–2 câu fact quan trọng nhất, viết như người
      * kể chuyện, không bullet list). CTA (1 câu kết kích debate hoặc tension narrative —
@@ -48,9 +48,8 @@ JSON;
      */
     private const FB_SCHEMA_APPEND = <<<'JSON'
 ,
-  "fb_image_text": "1 sentence ≤70 chars. Strong active verb. Hook + Tension — reveal half the story, keep best part hidden. No emoji. GOOD: 'Southwest just made Alaska Airlines nervous' / 'Miami Could Steal A.J. Brown Before Patriots Get a Shot'. BAD: two fact statements, literal numbers/dates. Same language as article.",
-  "fb_quote": "Direct quote from a real person in the article with attribution. Empty string if none.",
-  "fb_post_content": "60-150 chars MAX. Plain paragraph only — no bullet points, no lists. Structure: Hook → Tension → Hidden fact → CTA. Reveal MAX 2 facts, keep the most surprising one hidden. Name the threat or rivalry in the first line. BANNED: 'changes everything' and conclusion words (obvious, clear, certain, confirmed). No emoji. No URL. No hashtags. Same language as article."
+  "fb_image_text": "1 sentence 60-90 chars. Strong active verb. Hook + Tension — reveal half the story, keep best part hidden. No emoji. GOOD: 'Southwest just made Alaska Airlines nervous' / 'Miami Could Steal A.J. Brown Before Patriots Get a Shot'. BAD: two fact statements, literal numbers/dates. Same language as article.",
+  "fb_post_content": "60-150 chars MAX. Plain paragraph only — no bullet points, no lists. Structure: Hook → Tension → Hidden fact. Reveal MAX 2 facts, keep the most surprising one hidden. Name the threat or rivalry in the first line. BANNED: 'changes everything' and conclusion words (obvious, clear, certain, confirmed). No CTA — do NOT end with 'Find out', 'Read more', 'Click', 'Discover', or any call-to-action. No emoji. No URL. No hashtags. Same language as article."
 JSON;
 
     // ── Public API ────────────────────────────────────────────────────────────
