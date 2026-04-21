@@ -95,6 +95,12 @@
                         <p>{{ __('sidebar.raw-article_management') }}</p>
                     </a>
                 </li>
+                <li class="nav-item {{ ($route == 'feed-source') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('feed-source.index') }}" class="nav-link d-inline-flex {{ ($action == 'feed-source-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
+                        <p>Feed Sources</p>
+                    </a>
+                </li>
             </ul>
         </nav>
         <!-- /.sidebar-menu -->
