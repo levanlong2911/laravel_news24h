@@ -49,8 +49,8 @@ class NewsWebController extends Controller
             return back()->with("error",__('messages.add_error'));
         }
         return view("newsweb.add", [
-            "route" => "tag",
-            "action" => "tag-index",
+            "route" => "news-web",
+            "action" => "news-web-index",
             "menu" => "menu-open",
             "active" => "active",
             "listsCate" => $listsCate,

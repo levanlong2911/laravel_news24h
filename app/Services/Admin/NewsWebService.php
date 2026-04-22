@@ -6,6 +6,7 @@ use App\Enums\Paginate;
 use App\Repositories\Interfaces\NewsWebRepositoryInterface;
 use Exception;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class NewsWebService
 {
@@ -24,24 +25,56 @@ class NewsWebService
 
     public function addNewsWeb($request)
     {
-        // dd($request->all());
-        $input = $request->all();
         DB::beginTransaction();
         try {
-            // Split tags by commas and remove extra spaces
-            $tagNames = array_map('trim', explode(',', $input['tags']));
-            // create data question
-            foreach ($tagNames as $tagName) {
-                $dataTag = [
-                    "category_id" => $input['category_id'],
-                    "name" => $tagName,
+            $newsWebInputs = array_map('trim', explode(',', $request->url));
+
+            $insertData = [];
+
+            foreach ($newsWebInputs as $url) {
+
+                if (empty($url)) {
+                    continue;
+                }
+
+                // 👉 đảm bảo URL có scheme
+                if (!Str::startsWith($url, ['http://', 'https://'])) {
+                    $url = 'https://' . $url;
+                }
+
+                $parsed = parse_url($url);
+
+                if (!isset($parsed['host'])) {
+                    continue; // bỏ qua URL lỗi
+                }
+
+                // 👉 domain
+                $domain = preg_replace('/^www\./', '', $parsed['host']);
+
+                // 👉 base_url
+                $baseUrl = isset($parsed['path'])
+                    ? ltrim($parsed['path'], '/')
+                    : null;
+
+                $insertData[] = [
+                    "category_id" => $request->category_id,
+                    "domain"      => $domain,
+                    "base_url"    => $baseUrl,
                 ];
-                $this->newsWebRepository->create($dataTag);
+            }
+
+            // 👉 insert batch (tối ưu hơn loop create)
+            if (!empty($insertData)) {
+                $this->newsWebRepository->create($insertData);
             }
             DB::commit();
             return true;
-        } catch (Exception $e) {
-            DB::rollback();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            // debug nếu cần
+            logger()->error($e->getMessage());
+
             return false;
         }
     }

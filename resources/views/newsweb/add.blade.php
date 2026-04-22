@@ -51,7 +51,7 @@
                     <div class="card card-default">
                         <div class="card-body">
                             <div class="policy">
-                                <form id="quickForm" action="{{ route('tag.add') }}" method="post">
+                                <form id="quickForm" action="{{ route('news-web.add') }}" method="post">
                                     @csrf
                                     <div class="card-body lable-form-add-policy pt-0" id="card-add">
                                         <div class="row">

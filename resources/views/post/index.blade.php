@@ -98,6 +98,7 @@
                                                         </div>
                                                     </th>
                                                     <th class="text-center">{{ __('post.title') }}</th>
+                                                    <th class="text-center">{{ __('post.name') }}</th>
                                                     <th class="text-center">{{ __('post.category') }}</th>
                                                     <th class="text-center">{{ __('post.domain') }}</th>
                                                     <th class="text-center">{{ __('post.day') }}</th>
@@ -120,6 +121,9 @@
                                                         </td>
                                                         <td>
                                                             {{ $post->title }}
+                                                        </td>
+                                                        <td>
+                                                            {{ data_get($post, 'role.name') }}
                                                         </td>
                                                         <td class="text-center">
                                                             {{ data_get($post, 'category.name') }}

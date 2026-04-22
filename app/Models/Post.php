@@ -90,4 +90,9 @@ class Post extends Model
         return $this->hasOne(Article::class);
     }
 
+    public function role()
+    {
+        return $this->belongsTo(Role::class, 'role_id'); // 'role_id' là khóa ngoại
+    }
+
 }

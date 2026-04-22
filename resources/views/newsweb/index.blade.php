@@ -103,32 +103,32 @@
                                                     <th class="text-center">{{ __('tag.detail') }}</th>
                                             </thead>
                                             <tbody>
-                                                @foreach ($listTag as $tag)
-                                                    <tr id="id_tr_{{ $tag->id }}" data-id="{{ $tag->id }}">
+                                                @foreach ($listNewsWeb as $Web)
+                                                    <tr id="id_tr_{{ $Web->id }}" data-id="{{ $Web->id }}">
                                                         <td class="pl-0 pr-0" style="vertical-align: middle !important;">
                                                             <div
                                                                 class="d-flex align-items-center justify-content-center form-check">
-                                                                <input id="id_tag{{ $tag->id }}" type="checkbox"
+                                                                <input id="id_tag{{ $Web->id }}" type="checkbox"
                                                                     class="check-select is-edit is-choose form-check-input"
-                                                                    value="{{ $tag->id }}">
-                                                                <label for="id_tag{{ $tag->id }}"
+                                                                    value="{{ $Web->id }}">
+                                                                <label for="id_tag{{ $Web->id }}"
                                                                     class="form-check-label form-checkbox text-box-label"></label>
                                                             </div>
-                                                            <input type="text" hidden name="id[{{ $tag->id }}]"
-                                                                value="{{ $tag->id }}">
+                                                            <input type="text" hidden name="id[{{ $Web->id }}]"
+                                                                value="{{ $Web->id }}">
                                                         </td>
                                                         <td class="text-center">
-                                                            {{ $tag->id }}
+                                                            {{ $Web->id }}
                                                         </td>
                                                         <td class="text-center">
-                                                            {{ $tag->name }}
+                                                            {{ $Web->name }}
                                                         </td>
                                                         <td class="text-center">
-                                                            {{ data_get($tag, 'category.name') }}
+                                                            {{ data_get($Web, 'category.name') }}
                                                         </td>
                                                         <td class="text-center">
-                                                            <a href="{{ route('tag.detail', ['id' => $tag->id]) }}">
-                                                                {{ __('tag.detail') }}
+                                                            <a href="{{ route('news-web.detail', ['id' => $Web->id]) }}">
+                                                                {{ __('news-web.detail') }}
                                                             </a>
                                                         </td>
                                                     </tr>
@@ -137,7 +137,7 @@
                                         </table>
                                     </div>
                                     <div class="card-footer clearfix">
-                                        {{ $listTag->appends(request()->except('page'))->links('pagination::bootstrap-4') }}
+                                        {{ $listNewsWeb->appends(request()->except('page'))->links('pagination::bootstrap-4') }}
                                     </div>
                                     <div class="row">
                                         <div class="col-12">
@@ -159,7 +159,7 @@
 
     {{-- </section> --}}
 @endsection
-@section('script')
+{{-- @section('script')
     <script src="{{ asset('assets/dist/js/commonHandleList.js') }}"></script>
     <script>
         // const
@@ -167,8 +167,7 @@
         var STORAGE_NAME = "tag_selected_storage";
         var DELETE_URL = "{{ route('tag.delete') }}";
         // get list client init
-        var listIds = <?php echo json_encode($tagIds); ?>;
         listIds = listIds.map(String);
     </script>
-@endsection
+@endsection --}}
 
