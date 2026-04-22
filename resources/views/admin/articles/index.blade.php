@@ -25,7 +25,7 @@
             {{-- Gửi Claude / Tổng hợp --}}
             <button id="btnSendClaude" class="btn btn-info btn-sm" onclick="submitSendClaude()">
                 <i class="fas fa-robot"></i>
-                <span id="btnLabel">Gửi Claude</span>
+                <span id="btnLabel">Send Claude</span>
                 <span id="selectedCount" class="badge badge-light ml-1">0</span>
             </button>
 

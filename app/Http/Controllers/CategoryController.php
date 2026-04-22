@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Repositories\Interfaces\CategoryRepositoryInterface;
 use App\Services\Admin\CategoryService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class CategoryController extends Controller
 {
@@ -39,6 +40,7 @@ class CategoryController extends Controller
         if ($request->isMethod('post')) {
             $params = [
                 'name' => $request->name,
+                'slug' => Str::slug($request->name),
             ];
             $addCate = $this->categoryRepository->create($params);
             if ($addCate) {

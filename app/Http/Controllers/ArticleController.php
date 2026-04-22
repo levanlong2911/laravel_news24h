@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+use Mews\Purifier\Facades\Purifier;
 
 class ArticleController extends Controller
 {
@@ -69,6 +71,11 @@ class ArticleController extends Controller
 
     public function storeManual(Request $request)
     {
+        $request->merge([
+            'source_url' => trim($request->source_url),
+            'title'      => trim($request->title),
+        ]);
+
         $request->validate([
             'source_url' => 'required|url|max:2000',
             'title'      => 'required|string|max:500',
@@ -76,32 +83,87 @@ class ArticleController extends Controller
             'keyword_id' => 'nullable|exists:keywords,id',
         ]);
 
-        $urlHash = md5($request->source_url);
+        // Normalize URL
+        $url = rtrim($request->source_url, '/');
+        $url = preg_replace('/\?.*/', '', $url);
+        $urlHash = md5($url);
 
         if (Article::where('source_url_hash', $urlHash)->exists()) {
             return back()->with('error', 'URL này đã được crawl rồi.');
         }
 
-        $keyword = $request->keyword_id ? Keyword::find($request->keyword_id) : null;
-        $slug    = $this->uniqueSlug(Str::slug($request->title ?: 'article'));
-        $domain  = str_replace('www.', '', parse_url($request->source_url, PHP_URL_HOST) ?? '');
+        // Lấy category_id nhẹ hơn
+        $categoryId = $request->keyword_id
+            ? Keyword::where('id', $request->keyword_id)->value('category_id')
+            : null;
 
-        Article::create([
-            'keyword_id'      => $request->keyword_id,
-            'category_id'     => $keyword?->category_id,
-            'source_url'      => $request->source_url,
-            'source_url_hash' => $urlHash,
-            'source_title'    => $request->title,
-            'source_name'     => $domain,
-            'thumbnail'       => $request->thumbnail ?: null,
-            'title'           => $request->title,
-            'slug'            => $slug,
-            'content'         => $request->content,
-            'viral_score'     => 0,
-            'status'          => 'pending',
-            'expires_at'      => now()->addHours(48),
-            'crawled_by'      => auth()->id(),
-        ]);
+        $slug = $this->uniqueSlug(Str::slug($request->title ?: 'article'));
+
+        $host = parse_url($request->source_url, PHP_URL_HOST);
+        $domain = $host ? preg_replace('/^www\./', '', $host) : null;
+
+        // Format + clean content
+        $content = $this->formatContent($request->content);
+        $content = Purifier::clean($content);
+        $content = Str::limit($content, 20000);
+
+        DB::transaction(function () use ($request, $urlHash, $slug, $domain, $categoryId, $content) {
+            Article::create([
+                'keyword_id'      => $request->keyword_id,
+                'category_id'     => $categoryId,
+                'source_url'      => $request->source_url,
+                'source_url_hash' => $urlHash,
+                'source_title'    => $request->title,
+                'source_name'     => $domain,
+                'thumbnail'       => $request->thumbnail ?: null,
+                'title'           => $request->title,
+                'slug'            => $slug,
+                'content'         => $content,
+                'viral_score'     => 0,
+                'status'          => 'pending',
+                'expires_at'      => now()->addHours(48),
+                'crawled_by'      => auth()->id(),
+            ]);
+        });
+
+        // $request->merge([
+        //     'source_url' => trim($request->source_url),
+        //     'title'      => trim($request->title),
+        // ]);
+
+        // $request->validate([
+        //     'source_url' => 'required|url|max:2000',
+        //     'title'      => 'required|string|max:500',
+        //     'content'    => 'required|string',
+        //     'keyword_id' => 'nullable|exists:keywords,id',
+        // ]);
+
+        // $urlHash = md5($request->source_url);
+
+        // if (Article::where('source_url_hash', $urlHash)->exists()) {
+        //     return back()->with('error', 'URL này đã được crawl rồi.');
+        // }
+
+        // $keyword = $request->keyword_id ? Keyword::find($request->keyword_id) : null;
+        // $slug    = $this->uniqueSlug(Str::slug($request->title ?: 'article'));
+        // $domain  = str_replace('www.', '', parse_url($request->source_url, PHP_URL_HOST) ?? '');
+
+        // Article::create([
+        //     'keyword_id'      => $request->keyword_id,
+        //     'category_id'     => $keyword?->category_id,
+        //     'source_url'      => $request->source_url,
+        //     'source_url_hash' => $urlHash,
+        //     'source_title'    => $request->title,
+        //     'source_name'     => $domain,
+        //     'thumbnail'       => $request->thumbnail ?: null,
+        //     'title'           => $request->title,
+        //     'slug'            => $slug,
+        //     'content'         => $request->content,
+        //     'viral_score'     => 0,
+        //     'status'          => 'pending',
+        //     'expires_at'      => now()->addHours(48),
+        //     'crawled_by'      => auth()->id(),
+        // ]);
 
         return back()->with('success', 'Đã lưu: ' . Str::limit($request->title, 80));
     }
@@ -377,5 +439,24 @@ class ArticleController extends Controller
             $counter++;
         }
         return $slug;
+    }
+
+    private function formatContent($text)
+    {
+        // Chuẩn hóa xuống dòng
+        $text = str_replace(["\r\n", "\r"], "\n", $text);
+
+        // Nếu text KHÔNG có xuống dòng → tách theo dấu câu
+        if (!str_contains($text, "\n")) {
+            $sentences = preg_split('/(?<=[.?!])\s+/', $text);
+        } else {
+            $sentences = preg_split('/\n+/', $text);
+        }
+
+        return collect($sentences)
+            ->map(fn($p) => trim($p))
+            ->filter(fn($p) => strlen($p) > 20) // bỏ đoạn quá ngắn
+            ->map(fn($p) => "<p>{$p}</p>")
+            ->implode("\n");
     }
 }

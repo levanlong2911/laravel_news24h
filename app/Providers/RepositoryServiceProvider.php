@@ -9,6 +9,7 @@ use App\Repositories\Eloquent\CategoryRepository;
 use App\Repositories\Eloquent\FontRepository;
 use App\Repositories\Eloquent\InforDomainRepository;
 use App\Repositories\Eloquent\KeywordRepository;
+use App\Repositories\Eloquent\NewsWebRepository;
 use App\Repositories\Eloquent\PostRepository;
 use App\Repositories\Eloquent\PostTagRepository;
 use App\Repositories\Eloquent\RoleRepository;
@@ -20,6 +21,7 @@ use App\Repositories\Interfaces\CategoryRepositoryInterface;
 use App\Repositories\Interfaces\FontRepositoryInterface;
 use App\Repositories\Interfaces\InforDomainRepositoryInterface;
 use App\Repositories\Interfaces\KeywordRepositoryInterface;
+use App\Repositories\Interfaces\NewsWebRepositoryInterface;
 use App\Repositories\Interfaces\PostRepositoryInterface;
 use App\Repositories\Interfaces\PostTagRepositoryInterface;
 use App\Repositories\Interfaces\RepositoryInterface;
@@ -83,6 +85,10 @@ class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(
             KeywordRepositoryInterface::class,
             KeywordRepository::class
+        );
+        $this->app->bind(
+            NewsWebRepositoryInterface::class,
+            NewsWebRepository::class
         );
     }
 

@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\ArticleController;
 use App\Http\Controllers\KeywordController;
-use App\Http\Controllers\FeedSourceController;
 use App\Http\Controllers\NewsSourceController;
 use App\Http\Controllers\RawArticleController;
 use App\Http\Controllers\AdminController;
@@ -15,6 +14,7 @@ use App\Http\Controllers\GetLinkController;
 use App\Http\Controllers\GetTagController;
 use App\Http\Controllers\InforDomainsController;
 use App\Http\Controllers\ModalConfirmController;
+use App\Http\Controllers\NewsWebController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
 use App\Http\Controllers\TrendingController;
@@ -75,6 +75,14 @@ Route::group(
         Route::match(["get", "post"], "/update/{id}", [TagController::class, "update"])->name("tag.update");
         Route::match(["get", "post"], "/delete", [TagController::class, "delete"])->name("tag.delete");
         Route::match(["get", "post"], "/detail/{id}", [TagController::class, "detail"])->name("tag.detail");
+    });
+    // news web
+    Route::group(["prefix" => "news-web"], function () {
+        Route::get("/", [NewsWebController::class, "index"])->name("news-web.index");
+        Route::match(["get", "post"], "/add", [NewsWebController::class, "add"])->name("news-web.add");
+        Route::match(["get", "post"], "/update/{id}", [NewsWebController::class, "update"])->name("news-web.update");
+        Route::match(["get", "post"], "/delete", [NewsWebController::class, "delete"])->name("news-web.delete");
+        Route::match(["get", "post"], "/detail/{id}", [NewsWebController::class, "detail"])->name("news-web.detail");
     });
     // post
     Route::group(["prefix" => "post"], function () {
@@ -154,24 +162,6 @@ Route::group(
         Route::post('/{rawArticle}/generate',          [RawArticleController::class, 'generate'])         ->name('raw-article.generate');
         Route::post('/{rawArticle}/retry',             [RawArticleController::class, 'retry'])            ->name('raw-article.retry');
         Route::delete('/{rawArticle}',                 [RawArticleController::class, 'destroy'])          ->name('raw-article.destroy');
-    });
-
-    // Feed Sources
-    Route::group(['prefix' => 'feed-source'], function () {
-        Route::get('/',                              [FeedSourceController::class, 'index'])          ->name('feed-source.index');
-        Route::post('/',                             [FeedSourceController::class, 'store'])          ->name('feed-source.store');
-        Route::put('/{feedSource}',                  [FeedSourceController::class, 'update'])         ->name('feed-source.update');
-        Route::delete('/{feedSource}',               [FeedSourceController::class, 'destroy'])        ->name('feed-source.destroy');
-        Route::patch('/{feedSource}/toggle',         [FeedSourceController::class, 'toggleActive'])   ->name('feed-source.toggle');
-        Route::post('/{feedSource}/fetch',           [FeedSourceController::class, 'fetchOne'])       ->name('feed-source.fetchOne');
-        Route::post('/fetch-by-category',            [FeedSourceController::class, 'fetchByCategory'])->name('feed-source.fetchByCategory');
-        Route::post('/fetch-due',                    [FeedSourceController::class, 'fetchDue'])       ->name('feed-source.fetchDue');
-        // Feed Items
-        Route::get('/items',                         [FeedSourceController::class, 'items'])          ->name('feed-source.items');
-        Route::post('/items/crawl-content',          [FeedSourceController::class, 'crawlContent'])   ->name('feed-source.crawlContent');
-        Route::post('/items/push-to-articles',       [FeedSourceController::class, 'pushToArticles']) ->name('feed-source.pushToArticles');
-        Route::delete('/items/destroy-all',          [FeedSourceController::class, 'destroyItemsAll'])->name('feed-source.destroyItemsAll');
-        Route::delete('/items/{feedItem}',           [FeedSourceController::class, 'destroyItem'])    ->name('feed-source.destroyItem');
     });
 
     // Keywords

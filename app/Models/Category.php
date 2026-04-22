@@ -14,7 +14,7 @@ class Category extends Model
     protected $keyType = 'string'; // UUID là chuỗi
     public $incrementing = false; // Tắt tự động tăng ID
 
-    protected $fillable = ['name'];
+    protected $fillable = ['name', 'slug'];
 
     public function tags()
     {
@@ -30,5 +30,10 @@ class Category extends Model
     public function keywords()
     {
         return $this->hasMany(Keyword::class);
+    }
+
+    public function newsWeb()
+    {
+        return $this->hasMany(NewsWeb::class);
     }
 }

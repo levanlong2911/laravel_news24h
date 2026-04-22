@@ -16,4 +16,5 @@ return [
     'article_management' => 'Article',
     'news-source_management' => 'News Source',
     'raw-article_management' => 'Raw Article',
+    'news-web' => 'News Web',
 ];
