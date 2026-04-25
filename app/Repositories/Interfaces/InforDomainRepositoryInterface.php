@@ -6,5 +6,5 @@ interface InforDomainRepositoryInterface extends RepositoryInterface
 {
     public function getDataListIds($ids);
     public function getByDomain($domain);
-    public function getListDomain();
+    public function getListDomain($request = null);
 }

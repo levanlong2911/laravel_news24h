@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ArticleController;
+use App\Http\Controllers\PromptFrameworkController;
 use App\Http\Controllers\KeywordController;
 use App\Http\Controllers\NewsSourceController;
 use App\Http\Controllers\RawArticleController;
@@ -130,6 +131,15 @@ Route::group(
         Route::match(["get", "post"], "/delete", [DomainController::class, "delete"])->name("website.delete");
         Route::match(["get", "post"], "/detail/{id}", [DomainController::class, "detail"])->name("website.detail");
         Route::post('{domain}/api-key', [DomainController::class,'generateApiKey']);
+    });
+
+    // prompt frameworks
+    Route::group(['prefix' => 'prompt-framework'], function () {
+        Route::get('/',                   [PromptFrameworkController::class, 'index']) ->name('prompt-framework.index');
+        Route::match(['get','post'],'/add',         [PromptFrameworkController::class, 'add'])    ->name('prompt-framework.add');
+        Route::match(['get','post'],'/detail/{id}', [PromptFrameworkController::class, 'detail']) ->name('prompt-framework.detail');
+        Route::match(['get','post'],'/edit/{id}',   [PromptFrameworkController::class, 'update']) ->name('prompt-framework.update');
+        Route::post('/delete',                      [PromptFrameworkController::class, 'delete']) ->name('prompt-framework.delete');
     });
 
     // article

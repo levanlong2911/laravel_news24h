@@ -3,7 +3,7 @@
 
 namespace App\Services\Admin;
 
-use App\Models\NewsSource;
+use App\Models\NewsWeb;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Support\Facades\Cache;
@@ -14,15 +14,23 @@ class SerpApiService
     protected Client $client;
     protected string $apiKey;
 
-    // Loaded from news_sources table (cached 1 hour)
-    protected function trustedSources(): array
+    protected function trustedSources(string $categoryId = ''): array
     {
-        return NewsSource::trustedDomains();
+        $key = 'news_webs_sources_' . ($categoryId ?: 'all');
+        return Cache::remember($key, 3600, fn() =>
+            NewsWeb::where('is_active', true)
+                ->when($categoryId, fn($q) => $q->where('category_id', $categoryId))
+                ->get(['domain', 'base_url'])
+                ->map(fn($r) => ['domain' => $r->domain, 'base_url' => $r->base_url])
+                ->toArray()
+        );
     }
 
     protected function blockedSources(): array
     {
-        return NewsSource::blockedDomains();
+        return Cache::remember('news_webs_blocked', 3600, fn() =>
+            NewsWeb::where('is_blocked', true)->pluck('domain')->toArray()
+        );
     }
 
     public function __construct()
@@ -123,10 +131,9 @@ class SerpApiService
     // RECENT — top N bài mới nhất, lọc nhẹ (no video, no blocked)
     // ══════════════════════════════════════════════
 
-    public function filterRecent(array $articles, int $limit = 20): array
+    public function filterRecent(array $articles, int $limit = 20, string $categoryId = ''): array
     {
-        $blocked = $this->blockedSources();
-        $trusted = $this->trustedSources();
+        $trusted = $this->trustedSources($categoryId);
         $seen    = [];
         $result  = [];
 
@@ -137,22 +144,11 @@ class SerpApiService
             if (isset($seen[$link])) continue;
             $seen[$link] = true;
 
-            $domain    = strtolower(parse_url($link, PHP_URL_HOST) ?? '');
-            $isBlocked = false;
-            foreach ($blocked as $b) {
-                if (str_contains($domain, $b)) { $isBlocked = true; break; }
-            }
-            if ($isBlocked) continue;
-            if ($this->isVideoContent($title, $link)) continue;
+            $domain = strtolower(parse_url($link, PHP_URL_HOST) ?? '');
 
-            $score   = $this->calcScore($article, $domain, $trusted);
-            $fbScore = $this->calcFbScore($article);
+            if (!empty($trusted) && !$this->matchesTrusted($domain, $trusted)) continue;
 
-            $result[] = array_merge($article, [
-                'quality_score' => $score,
-                'fb_score'      => $fbScore,
-                'domain'        => $domain,
-            ]);
+            $result[] = $article;
         }
 
         // Sort by parsed date: newest first
@@ -229,15 +225,11 @@ class SerpApiService
 
     public function filterAndScore(array $articles): array
     {
-        // Load 1 lần — tránh cache read lặp lại khi doFilterAndScore chạy 2 lần
-        $trusted = $this->trustedSources();
-        $blocked = $this->blockedSources();
-
-        $result = $this->doFilterAndScore($articles, 12, $trusted, $blocked);
+        $result = $this->doFilterAndScore($articles, 12, [], []);
 
         if (count($result) < 10) {
             Log::info(sprintf('[FilterAndScore] Only %d in 12h, expanding to 24h', count($result)));
-            $result = $this->doFilterAndScore($articles, 24, $trusted, $blocked);
+            $result = $this->doFilterAndScore($articles, 24, [], []);
         }
 
         Log::info(sprintf('[FilterAndScore] Final: %d articles', count($result)));
@@ -265,6 +257,7 @@ class SerpApiService
             if (!$this->isWithinHours($date, $maxHours)) continue;
 
             $domain = strtolower(parse_url($link, PHP_URL_HOST) ?? '');
+
             foreach ($blocked as $b) {
                 if (str_contains($domain, $b)) continue 2;
             }
@@ -290,6 +283,14 @@ class SerpApiService
     // ══════════════════════════════════════════════
     // HELPERS
     // ══════════════════════════════════════════════
+
+    private function matchesTrusted(string $domain, array $trusted): bool
+    {
+        foreach ($trusted as $source) {
+            if (str_contains($domain, $source['domain'] ?? '')) return true;
+        }
+        return false;
+    }
 
     private function calcScore(array $article, string $domain, array $trusted = []): int
     {
@@ -331,9 +332,10 @@ class SerpApiService
             default                                 => $this->scoreByDate($date),
         };
 
-        // ── TRUSTED SOURCE — publisher authority từ news_sources table ────────
-        foreach ($trusted as $trustedDomain) {
-            if (str_contains($domain, $trustedDomain)) {
+        // ── TRUSTED SOURCE — domain khớp news_webs của category ─────────────
+        foreach ($trusted as $source) {
+            $srcDomain = is_array($source) ? ($source['domain'] ?? '') : $source;
+            if (str_contains($domain, $srcDomain)) {
                 $score += 20;
                 break;
             }

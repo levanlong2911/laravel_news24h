@@ -25,18 +25,16 @@ class InforDomainsController extends Controller
         $this->form = $form;
     }
 
-    public function index()
+    public function index(Request $request)
     {
-        $listsDomain = $this->domainService->getListDomain();
-        // $result = $this->domainService->getListDomainIds()->pluck('id');
-        // dd($result);
+        $listsDomain = $this->domainService->getListDomain($request);
         return view("domain.index", [
-            "route" => "domain",
-            "action" => "admin-domain",
-            "menu" => "menu-open",
-            "active" => "active",
+            "route"       => "domain",
+            "action"      => "admin-domain",
+            "menu"        => "menu-open",
+            "active"      => "active",
             'listsDomain' => $listsDomain,
-            "domainIds" => $this->domainService->getListDomainIds()->pluck('id'),
+            "domainIds"   => $this->domainService->getListDomainIds()->pluck('id'),
         ]);
     }
 

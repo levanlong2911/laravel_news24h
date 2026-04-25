@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use App\Models\Category;
 use App\Models\Tag;
@@ -10,26 +9,35 @@ use Illuminate\Support\Str;
 
 class CategoryTagSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        // Tạo 5 danh mục
         for ($i = 1; $i <= 5; $i++) {
-            $category = Category::create([
-                'id' => (string) Str::uuid(),
-                'name' => "Category $i",
-            ]);
+            $name = "Category $i";
+            $slug = Str::slug($name);
 
-            // Tạo 3 thẻ tag cho mỗi danh mục
+            // ✅ Không tạo trùng category
+            $category = Category::updateOrCreate(
+                ['slug' => $slug], // điều kiện check tồn tại
+                [
+                    'name' => $name,
+                ]
+            );
+
+            // 🔁 tạo tag
             for ($j = 1; $j <= 3; $j++) {
-                Tag::create([
-                    'id' => (string) Str::uuid(),
-                    'name' => "Tag $j for Category $i",
-                    'category_id' => $category->id,
-                ]);
+                $tagName = "Tag $j for Category $i";
+
+                Tag::updateOrCreate(
+                    [
+                        'name' => $tagName,
+                        'category_id' => $category->id,
+                    ],
+                    [] // không cần update gì thêm
+                );
             }
+
+            // 👉 log ra cho dễ debug
+            $this->command->info("Seeded: $name");
         }
     }
 }

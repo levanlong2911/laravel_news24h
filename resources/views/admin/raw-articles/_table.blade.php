@@ -114,6 +114,9 @@
             </td>
 
             <td class="text-center align-middle" style="white-space:nowrap">
+                <a href="{{ route('article.show', $raw) }}" class="btn btn-xs btn-outline-primary" title="View">
+                                <i class="fas fa-eye"></i>
+                            </a>
                 <a href="{{ $raw->url }}" target="_blank"
                    class="btn btn-xs btn-outline-secondary" title="Source">
                     <i class="fas fa-external-link-alt"></i>

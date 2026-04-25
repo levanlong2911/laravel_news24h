@@ -98,7 +98,7 @@
                                                         </div>
                                                     </th>
                                                     <th class="text-center">{{ __('post.title') }}</th>
-                                                    <th class="text-center">{{ __('post.name') }}</th>
+                                                    <th class="text-center">Name</th>
                                                     <th class="text-center">{{ __('post.category') }}</th>
                                                     <th class="text-center">{{ __('post.domain') }}</th>
                                                     <th class="text-center">{{ __('post.day') }}</th>
@@ -134,12 +134,14 @@
                                                         <td class="text-center">
                                                             {{ $post->created_at->format('d-m-Y') }}
                                                         </td>
-                                                        <td class="text-center">
-                                                            <a href="https://{{ data_get($post, 'domain.host') }}/post/{{ $post->slug }}">
-                                                                {{ __('post.detail') }}
+                                                        <td class="text-center" style="white-space:nowrap">
+                                                            <a href="https://{{ data_get($post, 'domain.host') }}/post/{{ $post->slug }}"
+                                                               target="_blank" class="btn btn-xs btn-outline-primary" title="{{ __('post.detail') }}">
+                                                                <i class="fas fa-eye"></i>
                                                             </a>
-                                                            <a href="{{ route('post.update', ['id' => $post->id]) }}">
-                                                                {{ __('post.update') }}
+                                                            <a href="{{ route('post.update', ['id' => $post->id]) }}"
+                                                               class="btn btn-xs btn-outline-warning" title="{{ __('post.update') }}">
+                                                                <i class="fas fa-edit"></i>
                                                             </a>
                                                         </td>
                                                     </tr>

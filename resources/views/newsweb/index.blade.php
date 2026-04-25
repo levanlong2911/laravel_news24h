@@ -1,85 +1,32 @@
-@extends('layouts.base', ['title' => __('tag.tag_management')])
-@section('title', __('tag.tag_management'))
+@extends('layouts.base', ['title' => __('admin.newsWeb_management')])
+@section('title', __('admin.newsWeb_management'))
 @section('content')
     {{-- <section class="content"> --}}
     <div class="container-fluid">
         <div class="col-md-12">
             <div class="row">
                 <div class="col-md-12">
-                    {{-- <div class="row">
-                        <!-- FormValidation -->
-                        <div class="col-12">
-                            <div class="card">
-                                <div class="card-body line-input">
-                                    <form id="name" class="row g-3 fv-plugins-bootstrap5 fv-plugins-framework" novalidate="novalidate">
-                                        <div class="col-6 fv-plugins-icon-container inputMessage">
-                                            <label class="form-label" for="tag">{{ __('tag.tag') }}</label>
-                                            <input type="text" id="tag" class="form-control" value="{{ request()->input('tag') ?? request()->input('tag') }}" placeholder="John Doe" name="tag">
-                                            @error('tag')
-                                                <span class="invalid-feedback" role="alert">
-                                                    <strong>{{ $message }}</strong>
-                                                </span>
-                                            @enderror
-                                        </div>
-                                        <div class="col-6 fv-plugins-icon-container inputMessage">
-                                            <label class="form-label" for="answer">{{ __('tag.answer') }}</label>
-                                            <input class="form-control{{ $errors->has('answer') ? ' is-invalid' : '' }}" type="number" id="answer" value="{{ request()->input('answer') ?? request()->input('answer') }}" name="answer">
-                                            @error('answer')
-                                                <span class="invalid-feedback" role="alert">
-                                                    <strong>{{ $message }}</strong>
-                                                </span>
-                                            @enderror
-                                        </div>
-                                        <div class="col-6 fv-plugins-icon-container inputMessage">
-                                            <label class="form-label" for="level_id">{{ __('tag.level') }}</label>
-                                            <select class="form-control {{ $errors->has('level_id') ? ' is-invalid' : '' }}"
-                                                name="level_id">
-                                                <option value="">{{ __('tag.level') }}</option>
-                                                @foreach ($levels as $level)
-                                                    <option value="{{ $level->id }}"
-                                                        {{ $level->id == request()->input('level_id') ? 'selected' : '' }}>
-                                                        {{ $level->name }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                        <div class="col-6 fv-plugins-icon-container inputMessage">
-                                            <label class="form-label" for="language_id">{{ __('tag.language') }}</label>
-                                            <select class="form-control {{ $errors->has('language_id') ? ' is-invalid' : '' }}"
-                                                name="language_id">
-                                                <option value="">{{ __('tag.language') }}</option>
-                                                @foreach ($languages as $language)
-                                                    <option value="{{ $language->id }}"
-                                                        {{ $language->id == request()->input('language_id') ? 'selected' : '' }}>
-                                                        {{ $language->name }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                        <div class="col-md-12 pt-2 text-right">
-                                            <button type="submit" class="btn btn-primary float-btn">{{ __('tag.search') }}</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- /FormValidation -->
-                    </div> --}}
                     <div class="card card-default">
                         <div class="card-body">
-                            <div class="row">
-                                <div class="col-12 mb-3">
-                                    <div class="float-right">
-                                        <div class="btn-group">
-                                            <a href="{{ route('news-web.add') }}"
-                                                class="btn btn-primary btn-block"><b>{{ __('tag.create_new_tag') }}</b></a>
-                                        </div>
-                                        <div class="btn-group">
-                                            <button type="button" class="btn btn-danger btn-block disabled-button reload"
-                                                onclick="deleteMulti()"
-                                                disabled><b>{{ __('tag.delete_selected') }}</b></button>
-                                        </div>
-                                    </div>
+                            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                                <form method="GET" class="form-inline flex-wrap gap-2">
+                                    <input type="text" name="domain" class="form-control form-control-sm mr-2"
+                                        placeholder="Tìm theo domain..." value="{{ request('domain') }}" style="min-width:180px">
+                                    <select name="category_id" class="form-control form-control-sm mr-2">
+                                        <option value="">All category</option>
+                                        @foreach ($categories as $cat)
+                                            <option value="{{ $cat->id }}" {{ request('category_id') == $cat->id ? 'selected' : '' }}>
+                                                {{ $cat->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <button class="btn btn-primary btn-sm mr-1">Search</button>
+                                    <a href="{{ route('news-web.index') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+                                </form>
+                                <div class="d-flex gap-2">
+                                    <a href="{{ route('news-web.add') }}" class="btn btn-primary btn-sm"><b>{{ __('tag.create_new_tag') }}</b></a>
+                                    <button type="button" class="btn btn-danger btn-sm disabled-button reload"
+                                        onclick="deleteMulti()" disabled><b>{{ __('tag.delete_selected') }}</b></button>
                                 </div>
                             </div>
                             <div class="policy">
@@ -98,7 +45,8 @@
                                                         </div>
                                                     </th>
                                                     <th class="text-center">{{ __('tag.tag') }}</th>
-                                                    <th class="text-center">{{ __('tag.tag_name') }}</th>
+                                                    <th class="text-center">Domain</th>
+                                                    <th class="text-center">Base url</th>
                                                     <th class="text-center">{{ __('tag.name_category') }}</th>
                                                     <th class="text-center">{{ __('tag.detail') }}</th>
                                             </thead>
@@ -121,14 +69,22 @@
                                                             {{ $Web->id }}
                                                         </td>
                                                         <td class="text-center">
-                                                            {{ $Web->name }}
+                                                            {{ $Web->domain }}
+                                                        </td>
+                                                        <td class="text-center">
+                                                            {{ $Web->base_url }}
                                                         </td>
                                                         <td class="text-center">
                                                             {{ data_get($Web, 'category.name') }}
                                                         </td>
-                                                        <td class="text-center">
-                                                            <a href="{{ route('news-web.detail', ['id' => $Web->id]) }}">
-                                                                {{ __('news-web.detail') }}
+                                                        <td class="text-center" style="white-space:nowrap">
+                                                            <a href="{{ route('news-web.detail', ['id' => $Web->id]) }}"
+                                                               class="btn btn-xs btn-outline-primary" title="{{ __('admin.detail') }}">
+                                                                <i class="fas fa-eye"></i>
+                                                            </a>
+                                                            <a href="{{ route('news-web.update', ['id' => $Web->id]) }}"
+                                                               class="btn btn-xs btn-outline-warning" title="{{ __('admin.update') }}">
+                                                                <i class="fas fa-edit"></i>
                                                             </a>
                                                         </td>
                                                     </tr>
@@ -159,15 +115,16 @@
 
     {{-- </section> --}}
 @endsection
-{{-- @section('script')
+@section('script')
     <script src="{{ asset('assets/dist/js/commonHandleList.js') }}"></script>
     <script>
         // const
         const MODAL_CONFIRM_URL = "{{ route('modal.confirm') }}";
-        var STORAGE_NAME = "tag_selected_storage";
-        var DELETE_URL = "{{ route('tag.delete') }}";
+        var STORAGE_NAME = "web_selected_storage";
+        var DELETE_URL = "{{ route('news-web.delete') }}";
         // get list client init
+        var listIds = <?php echo json_encode($webIds); ?>;
         listIds = listIds.map(String);
     </script>
-@endsection --}}
+@endsection
 

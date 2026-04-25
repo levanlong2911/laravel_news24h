@@ -35,4 +35,5 @@ return [
     'change_password' => 'Change Password',
     'image_text' => 'Image text FB',
     'post_content' => 'Content image FB',
+    'newsWeb_management' => 'News Web Management',
 ];

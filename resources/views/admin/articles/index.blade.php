@@ -172,13 +172,7 @@
                             <span class="badge badge-{{ $badge }}">{{ $article->status }}</span>
                         </td>
                         <td class="text-center align-middle small" style="white-space:nowrap">
-                            @if($article->expires_at)
-                                <span title="{{ $article->expires_at->setTimezone('Asia/Bangkok')->format('d/m/Y H:i') }} ICT">
-                                    {{ $article->expires_at->setTimezone('Asia/Bangkok')->format('d/m H:i') }}
-                                </span>
-                            @else
-                                <span class="text-muted">—</span>
-                            @endif
+                            {{ $article->created_at->format('d-m-Y H:i') }}
                         </td>
                         <td class="text-center align-middle" style="white-space:nowrap">
                             <a href="{{ route('article.show', $article) }}" class="btn btn-xs btn-outline-primary" title="View">
@@ -209,7 +203,7 @@
             </table>
         </div>
         <div class="card-footer">
-            {{ $articles->appends(request()->query())->links() }}
+            {{ $articles->appends(request()->query())->links('pagination::bootstrap-4') }}
         </div>
     </div>
 </div>

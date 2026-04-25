@@ -20,15 +20,30 @@ class NewsWebRepository extends BaseRepository implements NewsWebRepositoryInter
                 ->get();
     }
 
-    public function getTagByCategoryId($categoryId)
+    public function getWebByCategoryId($categoryId)
     {
         return NewsWeb::where('category_id', $categoryId)->get();
     }
 
-    public function getListNewsWeb()
+    public function getListNewsWeb($request = null)
+    {
+        $query = NewsWeb::query()->with('category')->orderBy('created_at', 'desc');
+
+        if ($request && $request->filled('domain')) {
+            $query->where('domain', 'like', '%' . $request->domain . '%');
+        }
+
+        if ($request && $request->filled('category_id')) {
+            $query->where('category_id', $request->category_id);
+        }
+
+        return $query->paginate(Paginate::PAGE->value);
+    }
+    public function chekDomain($domain, $category_id)
     {
         return NewsWeb::query()
-                ->orderBy('created_at', 'desc')
-                ->paginate(Paginate::PAGE->value);
+                ->where('domain', $domain)
+                ->where('category_id', $category_id)
+                ->exists();
     }
 }

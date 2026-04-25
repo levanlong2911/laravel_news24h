@@ -2,7 +2,6 @@
 
 namespace App\Services\Admin;
 
-use App\Enums\Paginate;
 use App\Repositories\Interfaces\NewsWebRepositoryInterface;
 use Exception;
 use Illuminate\Support\Facades\DB;
@@ -18,97 +17,75 @@ class NewsWebService
         $this->newsWebRepository = $newsWebRepository;
     }
 
-    public function getListNewsWeb()
+    public function getListNewsWeb($request = null)
     {
-        return $this->newsWebRepository->getListNewsWeb();
+        return $this->newsWebRepository->getListNewsWeb($request);
     }
 
     public function addNewsWeb($request)
     {
         DB::beginTransaction();
         try {
-            $newsWebInputs = array_map('trim', explode(',', $request->url));
-
-            $insertData = [];
-
-            foreach ($newsWebInputs as $url) {
-
+            foreach (array_map('trim', explode(',', $request->url)) as $url) {
                 if (empty($url)) {
                     continue;
                 }
 
-                // 👉 đảm bảo URL có scheme
                 if (!Str::startsWith($url, ['http://', 'https://'])) {
                     $url = 'https://' . $url;
                 }
 
                 $parsed = parse_url($url);
-
                 if (!isset($parsed['host'])) {
-                    continue; // bỏ qua URL lỗi
+                    continue;
                 }
 
-                // 👉 domain
-                $domain = preg_replace('/^www\./', '', $parsed['host']);
+                $domain  = preg_replace('/^www\./', '', $parsed['host']);
+                $baseUrl = ltrim($parsed['path'] ?? '', '/') ?: null;
 
-                // 👉 base_url
-                $baseUrl = isset($parsed['path'])
-                    ? ltrim($parsed['path'], '/')
-                    : null;
+                if ($this->newsWebRepository->chekDomain($domain, $request->category_id)) {
+                    throw new \RuntimeException("Domain '{$domain}' đã tồn tại trong category này.");
+                }
 
-                $insertData[] = [
-                    "category_id" => $request->category_id,
-                    "domain"      => $domain,
-                    "base_url"    => $baseUrl,
-                ];
+                $this->newsWebRepository->create([
+                    'category_id' => $request->category_id,
+                    'domain'      => $domain,
+                    'base_url'    => $baseUrl,
+                ]);
             }
 
-            // 👉 insert batch (tối ưu hơn loop create)
-            if (!empty($insertData)) {
-                $this->newsWebRepository->create($insertData);
-            }
             DB::commit();
             return true;
+        } catch (\RuntimeException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Throwable $e) {
             DB::rollBack();
-
-            // debug nếu cần
             logger()->error($e->getMessage());
-
             return false;
         }
     }
 
-    public function getByIdTag($id)
+    public function getByIdWeb($id)
     {
         return $this->newsWebRepository->find($id);
     }
 
-    public function updateTag($id, $request)
+    public function updateWeb($id, $request)
     {
         DB::beginTransaction();
         try {
-            $input = $request->all();
-
-            // Xóa các tag cũ của category liên quan nếu có
-            // $this->newsWebRepository->deleteByCategory($input['category_id']);
-
-            // Tách các tag mới bằng dấu phẩy
-            $tagNames = array_map('trim', explode(',', $input['tags']));
-
-            // Tạo lại các tag
-            foreach ($tagNames as $tagName) {
-                $dataTag = [
-                    "category_id" => $input['category_id'],
-                    "name" => $tagName,
-                ];
-                $this->newsWebRepository->update($id, $dataTag);
-            }
+            $this->newsWebRepository->update($id, [
+                'category_id' => $request->category_id,
+                'domain'      => $request->domain,
+                'base_url'    => ltrim($request->url ?? '', '/') ?: null,
+            ]);
 
             DB::commit();
             return true;
         } catch (Exception $e) {
             DB::rollback();
+            logger()->error($e->getMessage());
             return false;
         }
     }
@@ -118,24 +95,25 @@ class NewsWebService
         return $this->newsWebRepository->all();
     }
 
-    // public function deleteTagByIds($request)
-    // {
-    //     DB::beginTransaction();
-    //     try {
-    //         $questionData = $this->newsWebRepository->getDataListIds($request->ids);
-    //         foreach ($questionData as $question) {
-    //             $question->delete();
-    //         }
-    //         DB::commit();
-    //         return true;
-    //     } catch (Exception $e) {
-    //         DB::rollback();
-    //         return false;
-    //     }
-    // }
+    public function deleteWebByIds($request)
+    {
+        DB::beginTransaction();
+        try {
+            $questionData = $this->newsWebRepository->getListNewsWebIds($request->ids);
+            foreach ($questionData as $question) {
+                $question->delete();
+            }
+            DB::commit();
+            return true;
+        } catch (Exception $e) {
+            DB::rollback();
+            return false;
+        }
+    }
 
-    // public function getListTagByCategoryId($categoryId)
-    // {
-    //     return $this->newsWebRepository->getTagByCategoryId($categoryId);
-    // }
+    public function getListTagByCategoryId($categoryId)
+    {
+        return $this->newsWebRepository->getWebByCategoryId($categoryId);
+    }
+
 }

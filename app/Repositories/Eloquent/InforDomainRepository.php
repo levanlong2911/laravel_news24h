@@ -28,10 +28,14 @@ class InforDomainRepository extends BaseRepository implements InforDomainReposit
         return $this->model->where('domain', $domain)->first();
     }
 
-    public function getListDomain()
+    public function getListDomain($request = null)
     {
-        return $this->model->newQuery()
-                ->orderBy('created_at', 'desc')
-                ->paginate(Paginate::PAGE->value);
+        $query = $this->model->newQuery()->orderBy('created_at', 'desc');
+
+        if ($request && $request->filled('domain')) {
+            $query->where('domain', 'like', '%' . $request->domain . '%');
+        }
+
+        return $query->paginate(Paginate::PAGE->value);
     }
 }

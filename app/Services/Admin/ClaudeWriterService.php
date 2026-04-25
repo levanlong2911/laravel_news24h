@@ -13,7 +13,7 @@ class ClaudeWriterService
 
     private const MAX_TOKENS = [
         'haiku'  => 2048,
-        'sonnet' => 4096,
+        'sonnet' => 8000,
     ];
 
     // Retry config: tối đa 5 lần, delay tăng dần (exponential backoff)

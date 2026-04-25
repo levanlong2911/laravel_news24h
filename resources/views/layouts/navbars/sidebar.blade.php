@@ -103,6 +103,12 @@
                         <p>{{ __('sidebar.raw-article_management') }}</p>
                     </a>
                 </li>
+                <li class="nav-item {{ ($route == 'prompt-framework') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('prompt-framework.index') }}" class="nav-link d-inline-flex {{ ($route == 'prompt-framework-index') ? $active ?? '' : '' }}">
+                        <p class="icon"><img src="{{ asset('assets/admin/img/user.svg') }}" /></p>
+                        <p>Prompt Framework</p>
+                    </a>
+                </li>
             </ul>
         </nav>
         <!-- /.sidebar-menu -->

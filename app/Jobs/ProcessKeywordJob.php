@@ -59,8 +59,8 @@ class ProcessKeywordJob implements ShouldQueue
             Log::warning("[FetchNews] All filtered out: {$kw->name}");
         }
 
-        // ── Recent 20: date-sorted, minimal filter ────────────────────────────
-        $recent20 = $serpApi->filterRecent($allRaw, 20);
+        // ── Recent 30: date-sorted, filter theo domain trong news_webs ──────────
+        $recent20 = $serpApi->filterRecent($allRaw, 30, $kw->category_id ?? '');
 
         if (empty($top10) && empty($recent20)) {
             Log::warning("[FetchNews] Nothing to save: {$kw->name}");

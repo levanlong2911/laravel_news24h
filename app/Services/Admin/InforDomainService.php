@@ -23,9 +23,9 @@ class InforDomainService
      *
      * @return mixed
      */
-    public function getListDomain()
+    public function getListDomain($request = null)
     {
-        return $this->domainRepository->getListDomain();
+        return $this->domainRepository->getListDomain($request);
     }
 
     public function checkDomain($domain)

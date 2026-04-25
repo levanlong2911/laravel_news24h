@@ -7,6 +7,17 @@
             <div class="row">
                 <div class="col-md-12">
 
+                    <div class="card card-default mb-3">
+                        <div class="card-body py-2">
+                            <form method="GET" class="form-inline">
+                                <input type="text" name="domain" class="form-control form-control-sm mr-2"
+                                    placeholder="Tìm theo domain..." value="{{ request('domain') }}" style="min-width:220px">
+                                <button class="btn btn-primary btn-sm mr-2">Tìm kiếm</button>
+                                <a href="{{ route('domain.index') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+                            </form>
+                        </div>
+                    </div>
+
                     <div class="card card-default">
                         <div class="card-body">
                             <div class="row">
@@ -60,10 +71,14 @@
                                                         </td>
                                                         <td class="text-center">{{ $domain->domain }}</td>
                                                         <td class="text-center">{{ $domain->key_class }}</td>
-                                                        <td class="text-center">
-                                                            <a
-                                                                href="{{ route('domain.detail', ['id' => $domain->id]) }}">
-                                                                {{ __('domain.detail') }}
+                                                        <td class="text-center" style="white-space:nowrap">
+                                                            <a href="{{ route('domain.detail', ['id' => $domain->id]) }}"
+                                                               class="btn btn-xs btn-outline-primary" title="{{ __('domain.detail') }}">
+                                                                <i class="fas fa-eye"></i>
+                                                            </a>
+                                                            <a href="{{ route('domain.update', ['id' => $domain->id]) }}"
+                                                               class="btn btn-xs btn-outline-warning" title="{{ __('domain.update') }}">
+                                                                <i class="fas fa-edit"></i>
                                                             </a>
                                                         </td>
                                                     </tr>

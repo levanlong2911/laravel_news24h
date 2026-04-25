@@ -10,7 +10,7 @@
         $(function() {
             $('#quickForm').validate({
                 rules: {
-                    category: {
+                    category_id: {
                         required: true,
                     },
                     url: {
@@ -19,7 +19,7 @@
                     },
                 },
                 messages: {
-                    category: {
+                    category_id: {
                         required: "{{ __('category.validate_tag_required') }}",
                     },
                     url: {
