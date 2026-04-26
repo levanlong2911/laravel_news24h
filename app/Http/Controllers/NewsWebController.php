@@ -40,7 +40,7 @@ class NewsWebController extends Controller
             "active"      => "active",
             'listNewsWeb' => $listNewsWeb,
             'categories'  => $categories,
-            "webIds"      => $this->newsWebService->getListNewsWebIds()->pluck('id'),
+            "webIds"      => $listNewsWeb->pluck('id'),
         ]);
     }
 
