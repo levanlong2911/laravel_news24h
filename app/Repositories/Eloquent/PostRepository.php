@@ -20,7 +20,7 @@ class PostRepository extends BaseRepository implements PostRepositoryInterface
     {
         $user = auth()->user();
 
-        return Post::with('tags')
+        return Post::with(['tags', 'author', 'category', 'domain'])
             ->visibleTo($user)
             ->orderBy('created_at', 'desc')
             ->paginate(Paginate::PAGE->value);

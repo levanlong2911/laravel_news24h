@@ -123,7 +123,7 @@
                                                             {{ $post->title }}
                                                         </td>
                                                         <td>
-                                                            {{ data_get($post, 'role.name') }}
+                                                            {{ data_get($post, 'author.name') }}
                                                         </td>
                                                         <td class="text-center">
                                                             {{ data_get($post, 'category.name') }}

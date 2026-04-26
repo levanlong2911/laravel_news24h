@@ -7,31 +7,26 @@
             <div class="row">
                 <div class="col-md-12">
 
-                    <div class="card card-default mb-3">
-                        <div class="card-body py-2">
-                            <form method="GET" class="form-inline">
-                                <input type="text" name="domain" class="form-control form-control-sm mr-2"
-                                    placeholder="Tìm theo domain..." value="{{ request('domain') }}" style="min-width:220px">
-                                <button class="btn btn-primary btn-sm mr-2">Tìm kiếm</button>
-                                <a href="{{ route('domain.index') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
-                            </form>
-                        </div>
-                    </div>
-
                     <div class="card card-default">
                         <div class="card-body">
-                            <div class="row">
-                                <div class="col-12 mb-3">
-                                    <div class="float-right">
-                                        <div class="btn-group">
-                                            <a href="{{ route('domain.add') }}"
-                                                class="btn btn-primary btn-block"><b>{{ __('domain.create_new_domain') }}</b></a>
-                                        </div>
-                                        <div class="btn-group">
-                                            <button type="button" class="btn btn-danger btn-block disabled-button reload"
-                                                onclick="deleteMulti()"
-                                                disabled><b>{{ __('domain.delete_selected') }}</b></button>
-                                        </div>
+                            <div class="row align-items-center mb-3">
+                                <div class="col">
+                                    <form method="GET" class="form-inline">
+                                        <input type="text" name="domain" class="form-control form-control-sm mr-2"
+                                            placeholder="Search domain..." value="{{ request('domain') }}" style="min-width:220px">
+                                        <button class="btn btn-primary btn-sm mr-2">Search</button>
+                                        <a href="{{ route('domain.index') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+                                    </form>
+                                </div>
+                                <div class="col-auto">
+                                    <div class="btn-group">
+                                        <a href="{{ route('domain.add') }}"
+                                            class="btn btn-primary"><b>{{ __('domain.create_new_domain') }}</b></a>
+                                    </div>
+                                    <div class="btn-group ml-1">
+                                        <button type="button" class="btn btn-danger disabled-button reload"
+                                            onclick="deleteMulti()"
+                                            disabled><b>{{ __('domain.delete_selected') }}</b></button>
                                     </div>
                                 </div>
                             </div>

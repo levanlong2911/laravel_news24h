@@ -161,7 +161,7 @@
                                 <span class="text-muted">Auto</span>
                             @endif
                         </td>
-                        <td class="align-middle small">{{ $article->keyword->name ?? '—' }}</td>
+                        <td class="align-middle small">{{ $article->keyword?->name ?? '—' }}</td>
                         <td class="text-center align-middle">
                             <span class="badge badge-{{ $article->viral_score >= 80 ? 'danger' : ($article->viral_score >= 50 ? 'warning' : 'secondary') }}">
                                 {{ $article->viral_score }}
@@ -178,6 +178,17 @@
                             <a href="{{ route('article.show', $article) }}" class="btn btn-xs btn-outline-primary" title="View">
                                 <i class="fas fa-eye"></i>
                             </a>
+                            @if($article->post_id)
+                                <a href="{{ route('post.update', $article->post_id) }}" target="_blank"
+                                   class="btn btn-xs btn-success" title="Xem bài Claude đã viết">
+                                    <i class="fas fa-newspaper"></i>
+                                </a>
+                            @elseif($article->status === 'published')
+                                <a href="{{ route('post.index') }}" target="_blank"
+                                   class="btn btn-xs btn-outline-success" title="Vào Posts để tìm bài">
+                                    <i class="fas fa-newspaper"></i>
+                                </a>
+                            @endif
                             <a href="{{ $article->source_url }}" target="_blank" class="btn btn-xs btn-outline-secondary" title="Source">
                                 <i class="fas fa-external-link-alt"></i>
                             </a>

@@ -31,7 +31,7 @@ class CategoryController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             'listsCate' => $listsCate,
-            "listIdCate" => $this->categoryService->getListCategory()->pluck('id'),
+            "listIdCate" => $listsCate->pluck('id'),
         ]);
     }
 

@@ -114,9 +114,15 @@
             </td>
 
             <td class="text-center align-middle" style="white-space:nowrap">
-                <a href="{{ route('article.show', $raw) }}" class="btn btn-xs btn-outline-primary" title="View">
-                                <i class="fas fa-eye"></i>
-                            </a>
+                @if($raw->status === 'done' && $raw->article)
+                    <a href="{{ route('article.show', $raw->article) }}" class="btn btn-xs btn-outline-primary" title="View Article">
+                        <i class="fas fa-eye"></i>
+                    </a>
+                @else
+                    <span class="btn btn-xs btn-outline-secondary" style="opacity:.35;cursor:default" title="Chưa generate">
+                        <i class="fas fa-eye"></i>
+                    </span>
+                @endif
                 <a href="{{ $raw->url }}" target="_blank"
                    class="btn btn-xs btn-outline-secondary" title="Source">
                     <i class="fas fa-external-link-alt"></i>

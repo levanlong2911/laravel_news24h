@@ -82,7 +82,7 @@
                     <table class="table table-sm mb-0">
                         <tr><th>Status</th>
                             <td><span class="badge badge-{{ ['published'=>'success','processing'=>'warning','pending'=>'info','failed'=>'danger'][$article->status] ?? 'secondary' }}">{{ $article->status }}</span></td></tr>
-                        <tr><th>Keyword</th><td>{{ $article->keyword->name ?? '—' }}</td></tr>
+                        <tr><th>Keyword</th><td>{{ $article->keyword?->name ?? '—' }}</td></tr>
                         <tr><th>Source</th><td><a href="{{ $article->source_url }}" target="_blank">{{ $article->source_name }}</a></td></tr>
                         <tr><th>Viral Score</th>
                             <td><span class="badge badge-{{ $article->viral_score >= 80 ? 'danger' : ($article->viral_score >= 50 ? 'warning' : 'secondary') }}">{{ $article->viral_score }}</span></td></tr>
@@ -90,6 +90,12 @@
                         <tr><th>Published</th><td>{{ $article->published_at?->format('M d, H:i') ?? '—' }}</td></tr>
                         <tr><th>Expires</th><td>{{ $article->expires_at?->diffForHumans() ?? '—' }}</td></tr>
                         <tr><th>FAQ items</th><td>{{ $article->faq ? count($article->faq) : 0 }}</td></tr>
+                        @if($article->post_id)
+                        <tr><th>Post</th>
+                            <td><a href="{{ route('post.update', $article->post_id) }}" target="_blank" class="btn btn-xs btn-success">
+                                <i class="fas fa-newspaper mr-1"></i>Xem bài viết
+                            </a></td></tr>
+                        @endif
                     </table>
                 </div>
             </div>

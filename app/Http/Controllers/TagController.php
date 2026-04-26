@@ -38,7 +38,7 @@ class TagController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             'listTag' => $listTag,
-            "tagIds" => $this->tagService->getListTagIds()->pluck('id'),
+            "tagIds" => $listTag->pluck('id'),
         ]);
     }
 

@@ -297,7 +297,7 @@ class ArticleController extends Controller
                 $finalTitle = $result->title() ?: $article->title;
                 $slug       = $this->uniqueSlug(Str::slug($finalTitle ?: 'article'));
 
-                Post::create([
+                $post = Post::create([
                     'id'               => Str::uuid(),
                     'title'            => $finalTitle,
                     'meta_description' => Str::limit($parsed['meta_description'] ?? '', 255),
@@ -312,7 +312,7 @@ class ArticleController extends Controller
                     'fb_post_content'  => $parsed['fb_post_content'] ?? null,
                 ]);
 
-                $article->update(['status' => 'published', 'published_at' => now()]);
+                $article->update(['status' => 'published', 'published_at' => now(), 'post_id' => $post->id]);
                 $done++;
 
                 Log::info("[sendToClaude] OK: {$finalTitle}", [
@@ -391,7 +391,7 @@ class ArticleController extends Controller
             $finalTitle = $result->title() ?: $primary->title;
             $slug       = $this->uniqueSlug(Str::slug($finalTitle ?: 'article'));
 
-            Post::create([
+            $post = Post::create([
                 'id'               => Str::uuid(),
                 'title'            => $finalTitle,
                 'meta_description' => Str::limit($parsed['meta_description'] ?? '', 255),
@@ -411,6 +411,7 @@ class ArticleController extends Controller
                 'status'       => 'published',
                 'published_at' => now(),
                 'source_urls'  => $sourceUrls,
+                'post_id'      => $post->id,
             ]));
 
             Log::info('[synthesize] OK: ' . $finalTitle, [

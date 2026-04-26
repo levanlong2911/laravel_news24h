@@ -31,7 +31,7 @@ class DomainController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             'listWeb' => $listWeb,
-            "WebsiteIds" => $this->websiteService->getListWebsiteIds()->pluck('id'),
+            "WebsiteIds" => $listWeb->pluck('id'),
         ]);
     }
 

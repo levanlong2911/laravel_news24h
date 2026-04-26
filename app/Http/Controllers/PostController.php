@@ -52,7 +52,7 @@ class PostController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             'listsPost' => $listsPost,
-            "listIdPost" => $this->postService->getListPost()->pluck('id'),
+            "listIdPost" => $listsPost->pluck('id'),
         ]);
     }
 

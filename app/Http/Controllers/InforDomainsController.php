@@ -34,7 +34,7 @@ class InforDomainsController extends Controller
             "menu"        => "menu-open",
             "active"      => "active",
             'listsDomain' => $listsDomain,
-            "domainIds"   => $this->domainService->getListDomainIds()->pluck('id'),
+            "domainIds"   => $listsDomain->pluck('id'),
         ]);
     }
 

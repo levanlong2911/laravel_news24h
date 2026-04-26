@@ -29,8 +29,11 @@
                 <table class="table table-bordered table-striped mb-0">
                     <thead class="bg-th-blue">
                         <tr>
-                            <th class="pl-0 pr-0 text-center" style="width:40px">
-                                <input type="checkbox" id="check_select_all" class="form-check-input">
+                            <th class="pl-0 pr-0" style="width:40px; vertical-align:middle">
+                                <div class="d-flex align-items-center justify-content-center form-check">
+                                    <input type="checkbox" id="check_select_all" class="form-check-input">
+                                    <label for="check_select_all" class="form-check-label form-checkbox text-box-label"></label>
+                                </div>
                             </th>
                             <th>Name</th>
                             <th>Description</th>
@@ -42,10 +45,13 @@
                     <tbody>
                         @forelse($list as $fw)
                             <tr id="id_tr_{{ $fw->id }}" data-id="{{ $fw->id }}">
-                                <td class="text-center align-middle pl-0 pr-0">
-                                    <input id="id_fw{{ $fw->id }}" type="checkbox"
-                                        class="check-select is-edit is-choose form-check-input"
-                                        value="{{ $fw->id }}">
+                                <td class="pl-0 pr-0" style="vertical-align:middle">
+                                    <div class="d-flex align-items-center justify-content-center form-check">
+                                        <input id="id_fw{{ $fw->id }}" type="checkbox"
+                                            class="check-select is-edit is-choose form-check-input"
+                                            value="{{ $fw->id }}">
+                                        <label for="id_fw{{ $fw->id }}" class="form-check-label form-checkbox text-box-label"></label>
+                                    </div>
                                     <input type="text" hidden name="id[{{ $fw->id }}]" value="{{ $fw->id }}">
                                 </td>
                                 <td class="align-middle font-weight-bold">{{ $fw->name }}</td>

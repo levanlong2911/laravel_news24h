@@ -36,6 +36,8 @@ class Article extends Model
         'expires_at',
         'published_at',
         'crawled_by',
+        'source_urls',
+        'post_id',
     ];
 
     protected $casts = [
@@ -47,6 +49,7 @@ class Article extends Model
         'hook_score'     => 'integer',
         'hook_rank'      => 'integer',
         'content_blocks' => 'array',
+        'source_urls'    => 'array',
     ];
 
     // ── Auto-delete bài hết hạn sau 48h (chạy bởi: php artisan model:prune) ──
@@ -59,6 +62,11 @@ class Article extends Model
     public function keyword()
     {
         return $this->belongsTo(Keyword::class);
+    }
+
+    public function post()
+    {
+        return $this->belongsTo(\App\Models\Post::class);
     }
 
     public function rawArticle()

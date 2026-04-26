@@ -29,14 +29,13 @@ class AdvertisementController extends Controller
     public function index()
     {
         $listAds = $this->adsService->getListAds();
-        // dd($listAds);
         return view("ads.index", [
             "route" => "ads",
             "action" => "ads-index",
             "menu" => "menu-open",
             "active" => "active",
             'listAds' => $listAds,
-            "adsIds" => $this->adsService->getListAdsIds()->pluck('id'),
+            "adsIds" => $listAds->pluck('id'),
         ]);
     }
 

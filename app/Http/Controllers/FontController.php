@@ -30,7 +30,7 @@ class FontController extends Controller
             "menu" => "menu-open",
             "active" => "active",
             'listFont' => $listFont,
-            "fontIds" => $this->fontService->getListFontIds()->pluck('id'),
+            "fontIds" => $listFont->pluck('id'),
         ]);
     }
 
