@@ -30,4 +30,11 @@ class CategoryRepository extends BaseRepository implements CategoryRepositoryInt
                 ->orderBy('created_at', 'desc')
                 ->paginate(Paginate::PAGE->value);
     }
+
+    public function getAllCategories()
+    {
+        return $this->model->newQuery()
+                ->orderBy('name', 'asc')
+                ->get();
+    }
 }

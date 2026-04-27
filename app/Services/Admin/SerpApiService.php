@@ -3,6 +3,7 @@
 
 namespace App\Services\Admin;
 
+use App\Models\NewsSource;
 use App\Models\NewsWeb;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
@@ -94,10 +95,10 @@ class SerpApiService
                                 'snippet'     => $story['snippet']          ?? $item['snippet'] ?? '',
                                 'source'      => $story['source']['name']   ?? $item['source']['name'] ?? '',
                                 'source_icon' => $story['source']['icon']   ?? $item['source']['icon'] ?? '',
-                                'date'        => (!empty($story['date']) ? $story['date'] : null) ?? $item['date'] ?? '',
-                                'position'    => $item['position'] ?? 99,   // giữ position của cluster
+                                'date'        => $story['iso_date']         ?? $story['date'] ?? $item['iso_date'] ?? $item['date'] ?? '',
+                                'position'    => $item['position'] ?? 99,
                                 'thumbnail'   => $story['thumbnail']        ?? $item['thumbnail'] ?? '',
-                                'stories'     => $stories,                  // toàn bộ cluster để scoring
+                                'stories'     => $stories,
                                 'top_story'   => true,
                             ];
                         }
@@ -112,7 +113,7 @@ class SerpApiService
                             'snippet'     => $item['snippet']        ?? '',
                             'source'      => $item['source']['name'] ?? '',
                             'source_icon' => $item['source']['icon'] ?? '',
-                            'date'        => $item['date']           ?? '',
+                            'date'        => $item['iso_date']       ?? $item['date'] ?? '',
                             'position'    => $item['position']       ?? 99,
                             'thumbnail'   => $item['thumbnail']      ?? '',
                             'stories'     => [],
@@ -133,9 +134,12 @@ class SerpApiService
 
     public function filterRecent(array $articles, int $limit = 20, string $categoryId = ''): array
     {
-        $trusted = $this->trustedSources($categoryId);
-        $seen    = [];
-        $result  = [];
+        $trustedWebs    = $this->trustedSources($categoryId);
+        $trustedSources = NewsSource::trustedDomains();
+
+        $seen        = [];
+        $fromWebs    = [];
+        $fromSources = [];
 
         foreach ($articles as $article) {
             $link  = $article['link'] ?? '';
@@ -146,12 +150,21 @@ class SerpApiService
 
             $domain = strtolower(parse_url($link, PHP_URL_HOST) ?? '');
 
-            if (!empty($trusted) && !$this->matchesTrusted($domain, $trusted)) continue;
-
-            $result[] = $article;
+            if (!empty($trustedWebs) && $this->matchesTrusted($domain, $trustedWebs)) {
+                $fromWebs[] = $article;
+            } elseif (!empty($trustedSources) && $this->matchesDomain($domain, $trustedSources)) {
+                $fromSources[] = $article;
+            }
         }
 
-        // Sort by parsed date: newest first
+        // Case 1: news_webs có đủ limit bài trong 24h → chỉ dùng news_webs
+        // Case 2: không đủ → fill thêm từ news_sources cho đủ limit
+        $websRecent = array_filter($fromWebs, fn($a) => $this->isWithinHours($a['date'] ?? '', 24));
+
+        $result = count($websRecent) >= $limit
+            ? array_values($websRecent)
+            : array_merge(array_values($websRecent), $fromSources);
+
         usort($result, fn($a, $b) =>
             $this->parseDateToTimestamp($b['date'] ?? '') <=> $this->parseDateToTimestamp($a['date'] ?? '')
         );
@@ -159,18 +172,27 @@ class SerpApiService
         return array_values(array_slice($result, 0, $limit));
     }
 
+    private function matchesDomain(string $domain, array $domains): bool
+    {
+        foreach ($domains as $d) {
+            if (str_contains($domain, $d)) return true;
+        }
+        return false;
+    }
+
     private function parseDateToTimestamp(string $date): int
     {
         if (empty($date)) return 0;
         $d = strtolower(trim($date));
 
+        // Relative strings (cũ — giữ để tương thích)
         if (str_contains($d, 'minute')) return time() - 30 * 60;
         if (preg_match('/^(\d+)\s+hour/', $d, $m)) return time() - (int)$m[1] * 3600;
         if (preg_match('/^1 day/', $d)) return time() - 86400;
         if (preg_match('/^(\d+) day/', $d, $m)) return time() - (int)$m[1] * 86400;
 
-        $cleaned = trim(preg_replace('/,?\s*\+\d{4}\s*UTC$/i', '', $date));
-        $parsed  = strtotime($cleaned);
+        // ISO 8601: "2026-04-27T02:08:00Z" hoặc absolute date
+        $parsed = strtotime($date);
         return $parsed !== false ? $parsed : 0;
     }
 
@@ -223,6 +245,15 @@ class SerpApiService
     // FILTER + SCORE — universal cho mọi domain
     // ══════════════════════════════════════════════
 
+    public function scoreArticle(array $article): array
+    {
+        $domain = strtolower(parse_url($article['link'] ?? '', PHP_URL_HOST) ?? '');
+        return [
+            'quality_score' => $this->calcScore($article, $domain, []),
+            'fb_score'      => $this->calcFbScore($article),
+        ];
+    }
+
     public function filterAndScore(array $articles): array
     {
         $result = $this->doFilterAndScore($articles, 12, [], []);
@@ -252,9 +283,8 @@ class SerpApiService
             if (isset($seen[$link])) continue;
             $seen[$link] = true;
 
-            // cluster cũ hơn 12h không còn hot
             $maxHours = $topStory ? 12 : $hours;
-            if (!$this->isWithinHours($date, $maxHours)) continue;
+            if (!empty($date) && !$this->isWithinHours($date, $maxHours)) continue;
 
             $domain = strtolower(parse_url($link, PHP_URL_HOST) ?? '');
 
@@ -266,8 +296,6 @@ class SerpApiService
 
             $score   = $this->calcScore($article, $domain, $trusted);
             $fbScore = $this->calcFbScore($article);
-
-            if ($score < 20) continue;
 
             $scored[] = array_merge($article, [
                 'quality_score' => $score,
@@ -296,12 +324,10 @@ class SerpApiService
     {
         $score    = 0;
         $position = (int)($article['position'] ?? 99);
-        $date     = strtolower($article['date'] ?? '');
         $stories  = count($article['stories'] ?? []);
         $topStory = !empty($article['stories']);
 
         // ── CLUSTER SIZE — tín hiệu mạnh nhất của Google News ────────────────
-        // Google gom nhiều nguồn = đã xác nhận sự kiện có thật và đang trending
         if ($topStory) {
             $score += match(true) {
                 $stories >= 10 => 60,
@@ -322,14 +348,15 @@ class SerpApiService
             default         => 5,
         };
 
-        // ── FRESHNESS — yếu tố quan trọng nhất trong Google News ─────────────
+        // ── FRESHNESS — tính từ iso_date (giờ đã qua) ────────────────────────
+        $h = $this->hoursAgo($article['date'] ?? '');
         $score += match(true) {
-            str_contains($date, 'minute')           => 50,
-            str_contains($date, '1 hour')           => 40,
-            preg_match('/^[23]\s*h/', $date) === 1  => 35,
-            str_contains($date, 'hour')             => 25,  // 4-23h
-            str_contains($date, '1 day')            => 10,
-            default                                 => $this->scoreByDate($date),
+            $h <= 1  => 50,
+            $h <= 3  => 40,
+            $h <= 6  => 35,
+            $h <= 12 => 25,
+            $h <= 24 => 10,
+            default  => 0,
         };
 
         // ── TRUSTED SOURCE — domain khớp news_webs của category ─────────────
@@ -344,6 +371,13 @@ class SerpApiService
         return max(0, $score);
     }
 
+    private function hoursAgo(string $date): float
+    {
+        if (empty($date)) return 999.0;
+        $parsed = strtotime($date);
+        return $parsed !== false ? (time() - $parsed) / 3600 : 999.0;
+    }
+
     // ── FB VIRALITY SCORE — riêng cho Facebook, độc lập với quality score ────
 
     private function calcFbScore(array $article): int
@@ -351,17 +385,17 @@ class SerpApiService
         $score   = 0;
         $title   = strtolower($article['title'] ?? '');
         $snippet = $article['snippet'] ?? '';
-        $date    = strtolower($article['date'] ?? '');
         $stories = count($article['stories'] ?? []);
 
         // ── FRESHNESS — FB algorithm ưu tiên nội dung mới ────────────────────
+        $h = $this->hoursAgo($article['date'] ?? '');
         $score += match(true) {
-            str_contains($date, 'minute')           => 40,
-            str_contains($date, '1 hour')           => 35,
-            preg_match('/^[23] hour/', $date) === 1 => 28,
-            str_contains($date, 'hour')             => 15,  // 4-23h
-            str_contains($date, '1 day')            => 5,
-            default                                 => 0,
+            $h <= 1  => 40,
+            $h <= 3  => 35,
+            $h <= 6  => 28,
+            $h <= 12 => 15,
+            $h <= 24 => 5,
+            default  => 0,
         };
 
         // ── TOP STORY — Google đã xác nhận viral ─────────────────────────────
@@ -470,29 +504,19 @@ class SerpApiService
 
     private function isWithinHours(string $date, int $hours): bool
     {
-        // Empty date → không biết ngày đăng → chỉ cho qua nếu không phải top_story strict mode
         if (empty($date)) return $hours >= 24;
 
         $d        = strtolower(trim($date));
         $limitSec = $hours * 3600;
 
+        // Relative strings (fallback — ít gặp sau khi dùng iso_date)
         if (str_contains($d, 'minute')) return true;
-
-        // "11h ago" (SerpAPI viết tắt) hoặc "11 hours ago"
-        if (preg_match('/^(\d+)\s*h(?:our)?s?\b/', $d, $m)) {
-            return (int)$m[1] <= $hours;
-        }
-
-        // "1 day ago" = 24h
+        if (preg_match('/^(\d+)\s*h(?:our)?s?\b/', $d, $m)) return (int)$m[1] <= $hours;
         if (preg_match('/^1 day/', $d)) return $hours >= 24;
-
-        // "2+ days ago" → luôn quá hạn
         if (preg_match('/^(\d+) day/', $d, $m) && (int)$m[1] > 1) return false;
 
-        // ISO hoặc absolute date
-        $cleaned = trim(preg_replace('/,?\s*\+\d{4}\s*UTC$/i', '', $date));
-        $parsed  = strtotime($cleaned);
-
+        // ISO 8601 hoặc absolute date — strtotime xử lý trực tiếp
+        $parsed = strtotime($date);
         if ($parsed === false) return true;
 
         return (time() - $parsed) <= $limitSec;

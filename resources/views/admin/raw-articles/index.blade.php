@@ -9,14 +9,9 @@
             <h4 class="mb-0">
                 <i class="fas fa-fire text-danger"></i> Trending News Feed
             </h4>
-            <small class="text-muted">Top 10 bài viral nhất theo từng keyword • Tự xóa sau 24h • Chọn nhiều bài → Generate</small>
+            <small class="text-muted">Top 10 bài viral nhất theo từng keyword • Tự xóa sau 24h</small>
         </div>
         <div class="col-auto d-flex align-items-center gap-2">
-            {{-- Generate Selected (hiện khi có check) --}}
-            <button id="btnGenerateSelected" class="btn btn-success btn-sm d-none"
-                    onclick="submitSelected()">
-                <i class="fas fa-robot"></i> Generate Selected (<span id="selectedCount">0</span>)
-            </button>
             <form method="POST" action="{{ route('raw-article.fetchAll') }}" class="d-inline"
                   onsubmit="return confirm('Xóa tất cả data cũ và fetch lại từ Google News?')">
                 @csrf
@@ -29,12 +24,6 @@
             </a>
         </div>
     </div>
-
-    {{-- Hidden form for bulk generate --}}
-    <form id="bulkGenerateForm" method="POST" action="{{ route('raw-article.generateSelected') }}" class="d-none">
-        @csrf
-        <div id="bulkInputs"></div>
-    </form>
 
     {{-- ── ALERTS ── --}}
     @if(session('success'))
@@ -53,10 +42,9 @@
     {{-- ── GLOBAL STATS ── --}}
     @php
         $allStats = \App\Models\RawArticle::selectRaw('status, count(*) as cnt')->groupBy('status')->pluck('cnt','status');
-        $isGenerating = ($allStats['generating'] ?? 0) > 0;
     @endphp
     <div class="row mb-3">
-        @foreach(['pending'=>['warning','clock'], 'generating'=>['info','spinner fa-spin'], 'done'=>['success','check'], 'failed'=>['danger','times']] as $s=>[$color,$icon])
+        @foreach(['pending'=>['warning','clock'], 'done'=>['success','check']] as $s=>[$color,$icon])
         <div class="col-sm-3">
             <div class="info-box mb-2" style="min-height:60px">
                 <span class="info-box-icon bg-{{ $color }}" style="line-height:60px;font-size:20px">
@@ -84,16 +72,14 @@
                     @endforeach
                 </select>
                 <select name="status" class="form-control form-control-sm mr-2">
-                    <option value="all"        {{ $status==='all'        ?'selected':'' }}>All Status</option>
-                    <option value="pending"    {{ $status==='pending'    ?'selected':'' }}>Pending</option>
-                    <option value="generating" {{ $status==='generating' ?'selected':'' }}>Generating</option>
-                    <option value="done"       {{ $status==='done'       ?'selected':'' }}>Done</option>
-                    <option value="failed"     {{ $status==='failed'     ?'selected':'' }}>Failed</option>
+                    <option value="all"     {{ $status==='all'     ?'selected':'' }}>All Status</option>
+                    <option value="pending" {{ $status==='pending' ?'selected':'' }}>Pending</option>
+                    <option value="done"    {{ $status==='done'    ?'selected':'' }}>Done</option>
                 </select>
                 <button class="btn btn-primary btn-sm mr-2">Filter</button>
                 <a href="{{ route('raw-article.index') }}" class="btn btn-outline-secondary btn-sm mr-4">Reset</a>
 
-                {{-- Quick actions --}}
+                {{-- Quick fetch --}}
                 <div class="d-flex align-items-center ml-auto">
                     <select id="kwSelect" class="form-control form-control-sm mr-1" style="width:180px">
                         <option value="">-- keyword --</option>
@@ -101,12 +87,9 @@
                             <option value="{{ $kw->id }}">{{ $kw->name }}</option>
                         @endforeach
                     </select>
-                    <button type="button" class="btn btn-outline-danger btn-sm mr-1" onclick="fetchOne()">
+                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="fetchOne()">
                         <i class="fas fa-search"></i> Fetch
                     </button>
-                    {{-- <button type="button" class="btn btn-outline-primary btn-sm" onclick="generateKeyword()">
-                        <i class="fas fa-robot"></i> Generate Pending
-                    </button> --}}
                 </div>
             </form>
         </div>
@@ -136,28 +119,10 @@
                     @if($stats['pending'] > 0)
                         <span class="badge badge-warning">{{ $stats['pending'] }} pending</span>
                     @endif
-                    @if($stats['generating'] > 0)
-                        <span class="badge badge-info">
-                            <i class="fas fa-spinner fa-spin"></i> {{ $stats['generating'] }} generating
-                        </span>
-                    @endif
                     @if($stats['done'] > 0)
                         <span class="badge badge-success">{{ $stats['done'] }} done</span>
                     @endif
-                    @if($stats['failed'] > 0)
-                        <span class="badge badge-danger">{{ $stats['failed'] }} failed</span>
-                    @endif
                 </div>
-                @if($stats['pending'] > 0)
-                <form method="POST" action="{{ route('raw-article.generateKeyword') }}" class="d-inline mr-2">
-                    @csrf
-                    <input type="hidden" name="keyword_id" value="{{ $kw->id }}">
-                    <button class="btn btn-sm btn-warning"
-                        onclick="return confirm('Generate all {{ $stats['pending'] }} pending articles for {{ $kw->name }}?')">
-                        <i class="fas fa-robot"></i> Generate All ({{ $stats['pending'] }})
-                    </button>
-                </form>
-                @endif
                 <form method="POST" action="{{ route('raw-article.fetchOne') }}" class="d-inline">
                     @csrf
                     <input type="hidden" name="keyword_id" value="{{ $kw->id }}">
@@ -185,9 +150,9 @@
                     <strong class="small text-uppercase" style="letter-spacing:.05em">
                         Top {{ $top->count() }} Viral
                     </strong>
-                    <span class="ml-2 small text-muted">— chất lượng cao nhất (quality score)</span>
+                    <span class="ml-2 small text-muted">— ưu tiên viral Facebook (fb score)</span>
                 </div>
-                @include('admin.raw-articles._table', ['items' => $top, 'kw' => $kw, 'tableId' => 'top'])
+                @include('admin.raw-articles._table', ['items' => $top, 'kw' => $kw])
                 @endif
 
                 {{-- ── Table: 20 Newest ── --}}
@@ -200,7 +165,7 @@
                     </strong>
                     <span class="ml-2 small text-muted">— sắp xếp theo thời gian đăng</span>
                 </div>
-                @include('admin.raw-articles._table', ['items' => $recent, 'kw' => $kw, 'tableId' => 'recent'])
+                @include('admin.raw-articles._table', ['items' => $recent, 'kw' => $kw])
                 @endif
 
             </div>
@@ -224,14 +189,12 @@
 
 </div>
 
-{{-- Toast notification --}}
 <style>
 @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 </style>
 <div id="toastWrap" style="position:fixed;bottom:24px;right:24px;z-index:9999;min-width:260px"></div>
 
 <script>
-// ── Toast ────────────────────────────────────────────────────────────────────
 function showToast(message, type = 'success') {
     const id  = 'toast-' + Date.now();
     const bg  = type === 'success' ? '#28a745' : '#dc3545';
@@ -247,7 +210,6 @@ function showToast(message, type = 'success') {
     setTimeout(() => document.getElementById(id)?.remove(), 3500);
 }
 
-// ── Download / Save article ──────────────────────────────────────────────────
 document.addEventListener('click', function(e) {
     const btn = e.target.closest('.btn-save-article');
     if (!btn) return;
@@ -266,7 +228,6 @@ document.addEventListener('click', function(e) {
     .then(data => {
         if (data.success) {
             showToast(data.message, 'success');
-            // Đổi button → View nếu không phải already
             if (!data.already) {
                 btn.outerHTML = '<span class="badge badge-success">Saved</span>';
             } else {
@@ -285,50 +246,6 @@ document.addEventListener('click', function(e) {
     });
 });
 
-// ── Multi-select logic ───────────────────────────────────────────────────────
-function updateSelectedCount() {
-    const checked = document.querySelectorAll('.article-checkbox:checked');
-    const count = checked.length;
-    document.getElementById('selectedCount').textContent = count;
-    const btn = document.getElementById('btnGenerateSelected');
-    if (count > 0) {
-        btn.classList.remove('d-none');
-    } else {
-        btn.classList.add('d-none');
-    }
-}
-
-function submitSelected() {
-    const checked = document.querySelectorAll('.article-checkbox:checked');
-    if (checked.length === 0) { alert('Chưa chọn bài nào.'); return; }
-    if (!confirm(`Generate ${checked.length} bài đã chọn bằng Claude AI?`)) return;
-
-    const container = document.getElementById('bulkInputs');
-    container.innerHTML = '';
-    checked.forEach(cb => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'selected_ids[]';
-        input.value = cb.dataset.id;
-        container.appendChild(input);
-    });
-    document.getElementById('bulkGenerateForm').submit();
-}
-
-// Delegate: checkbox changes
-document.addEventListener('change', function(e) {
-    if (e.target.classList.contains('article-checkbox')) {
-        updateSelectedCount();
-    }
-    // Select all in keyword
-    if (e.target.classList.contains('kw-check-all')) {
-        const kw = e.target.dataset.kw;
-        document.querySelectorAll(`.article-checkbox[data-kw="${kw}"]`)
-            .forEach(cb => cb.checked = e.target.checked);
-        updateSelectedCount();
-    }
-});
-
 function fetchOne() {
     const kwId = document.getElementById('kwSelect').value;
     if (!kwId) { alert('Please select a keyword'); return; }
@@ -340,23 +257,5 @@ function fetchOne() {
     document.body.appendChild(form);
     form.submit();
 }
-
-function generateKeyword() {
-    const kwId = document.getElementById('kwSelect').value;
-    if (!kwId) { alert('Please select a keyword'); return; }
-    if (!confirm('Generate all pending articles for this keyword?')) return;
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = '{{ route('raw-article.generateKeyword') }}';
-    form.innerHTML = `<input type="hidden" name="_token" value="{{ csrf_token() }}">
-                      <input type="hidden" name="keyword_id" value="${kwId}">`;
-    document.body.appendChild(form);
-    form.submit();
-}
-
-@if($isGenerating)
-// Auto-refresh sau 10s nếu có bài đang generating
-setTimeout(() => location.reload(), 10000);
-@endif
 </script>
 @endsection

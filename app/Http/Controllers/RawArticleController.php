@@ -2,12 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\ProcessKeywordJob;
-use App\Jobs\WriteArticleJob;
 use App\Models\Article;
 use App\Models\Keyword;
 use App\Models\RawArticle;
 use App\Services\Admin\ArticleCrawlerService;
+use App\Services\Admin\FetchKeywordNewsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -16,7 +15,6 @@ use Illuminate\Support\Str;
 
 class RawArticleController extends Controller
 {
-    // Danh sách raw articles — group theo keyword, mỗi keyword top 10
     public function index(Request $request)
     {
         $keywordId = $request->get('keyword_id');
@@ -25,7 +23,6 @@ class RawArticleController extends Controller
         $keywords = Keyword::where('is_active', true)->orderBy('sort_order')->get();
         $kwIds    = $keywordId ? [$keywordId] : $keywords->pluck('id')->all();
 
-        // Load tất cả raw articles 1 lần — tránh N+1
         $allArticles = RawArticle::with('article')
             ->whereIn('keyword_id', $kwIds)
             ->when($status !== 'all', fn($q) => $q->where('status', $status))
@@ -37,7 +34,7 @@ class RawArticleController extends Controller
         $kwList  = $keywordId ? $keywords->where('id', $keywordId) : $keywords;
         $grouped = $kwList->map(function ($kw) use ($allArticles) {
             $all    = $allArticles->get($kw->id, collect());
-            $top    = $all->where('list_type', 'top')->take(10)->values();
+            $top    = $all->where('list_type', 'top')->sortByDesc('fb_score')->take(10)->values();
             $recent = $all->where('list_type', 'recent')
                 ->sortByDesc(fn($a) => $a->published_timestamp)
                 ->take(20)->values();
@@ -51,11 +48,9 @@ class RawArticleController extends Controller
                 'top'     => $top,
                 'recent'  => $recent,
                 'stats'   => [
-                    'total'      => $combined->count(),
-                    'pending'    => $combined->where('status', 'pending')->count(),
-                    'generating' => $combined->where('status', 'generating')->count(),
-                    'done'       => $combined->where('status', 'done')->count(),
-                    'failed'     => $combined->where('status', 'failed')->count(),
+                    'total'   => $combined->count(),
+                    'pending' => $combined->where('status', 'pending')->count(),
+                    'done'    => $combined->where('status', 'done')->count(),
                 ],
             ];
         })->filter()->values();
@@ -72,65 +67,30 @@ class RawArticleController extends Controller
         ]);
     }
 
-    // Fetch tất cả active keywords → xóa data cũ + cache → fetch mới
-    public function fetchAll()
+    public function fetchAll(FetchKeywordNewsService $fetchService)
     {
         $keywords = Keyword::where('is_active', true)->get();
 
-        // Xóa tất cả raw articles cũ (trừ bài đang generating)
         RawArticle::where('status', '!=', 'generating')->delete();
 
-        // Xóa SerpAPI cache — dùng đúng query mà job sẽ gọi
         foreach ($keywords as $kw) {
-            $query = !empty($kw->search_keyword) ? $kw->search_keyword : ($kw->name . ' news');
-            Cache::forget('serp_news_v2_' . md5($query));
+            $queries = array_filter(array_merge(
+                [!empty($kw->search_keyword) ? $kw->search_keyword : ($kw->name . ' news')],
+                $kw->extra_queries ?? []
+            ));
+            foreach ($queries as $q) {
+                Cache::forget('serp_news_v2_' . md5($q));
+            }
         }
 
-        // Fetch từng keyword (sync = chạy ngay)
-        foreach ($keywords as $keyword) {
-            ProcessKeywordJob::dispatch($keyword)->onQueue('articles');
+        foreach ($keywords as $kw) {
+            $fetchService->fetch($kw);
         }
 
         return back()->with('success', "Đã xóa data cũ và fetch {$keywords->count()} keywords mới.");
     }
 
-    // Generate nhiều raw articles cùng lúc (multi-select)
-    public function generateSelected(Request $request)
-    {
-        $ids = array_filter((array) $request->get('selected_ids', []));
-        if (empty($ids)) {
-            return back()->with('error', 'Chưa chọn bài viết nào.');
-        }
-
-        // Rate limit: tối đa 20 bài mỗi lần, tránh spam queue
-        if (count($ids) > 20) {
-            return back()->with('error', 'Chỉ được chọn tối đa 20 bài mỗi lần.');
-        }
-
-        $key = 'generate-selected';
-        if (RateLimiter::tooManyAttempts($key, 3)) {
-            $seconds = RateLimiter::availableIn($key);
-            return back()->with('error', "Quá nhiều request. Vui lòng đợi {$seconds}s.");
-        }
-        RateLimiter::hit($key, 60);
-
-        $articles = RawArticle::whereIn('id', $ids)
-            ->whereIn('status', ['pending', 'failed'])
-            ->get();
-
-        if ($articles->isEmpty()) {
-            return back()->with('error', 'Không có bài pending/failed trong danh sách đã chọn.');
-        }
-
-        foreach ($articles as $raw) {
-            WriteArticleJob::dispatch($raw)->onQueue('articles');
-        }
-
-        return back()->with('success', "Đang generate {$articles->count()} bài với Claude AI.");
-    }
-
-    // Fetch 1 keyword cụ thể
-    public function fetchOne(Request $request)
+    public function fetchOne(Request $request, FetchKeywordNewsService $fetchService)
     {
         $keyword = Keyword::find($request->get('keyword_id'));
 
@@ -138,7 +98,6 @@ class RawArticleController extends Controller
             return back()->with('error', 'Keyword not found');
         }
 
-        // Rate limit: mỗi keyword 1 lần/30 giây
         $key = 'fetch-keyword-' . $keyword->id;
         if (RateLimiter::tooManyAttempts($key, 1)) {
             $seconds = RateLimiter::availableIn($key);
@@ -146,24 +105,29 @@ class RawArticleController extends Controller
         }
         RateLimiter::hit($key, 30);
 
-        // Xóa SerpAPI cache để job lấy data mới nhất (không dùng cached results cũ)
-        $query = !empty($keyword->search_keyword) ? $keyword->search_keyword : ($keyword->name . ' news');
-        Cache::forget('serp_news_v2_' . md5($query));
+        RawArticle::where('keyword_id', $keyword->id)
+            ->whereIn('status', ['pending', 'failed'])
+            ->delete();
 
-        ProcessKeywordJob::dispatch($keyword)->onQueue('articles');
+        $queries = array_filter(array_merge(
+            [!empty($keyword->search_keyword) ? $keyword->search_keyword : ($keyword->name . ' news')],
+            $keyword->extra_queries ?? []
+        ));
+        foreach ($queries as $q) {
+            Cache::forget('serp_news_v2_' . md5($q));
+        }
 
-        return back()->with('success', "Fetching: {$keyword->name}. Check back in ~1 minute.");
+        $result = $fetchService->fetch($keyword);
+
+        return back()->with('success', "Fetched {$keyword->name}: {$result['saved']} new (top={$result['top']}, recent={$result['recent']}).");
     }
 
-    // Crawl URL → lưu vào articles (không AI). Cho phép tải lại để tạo bài mới.
     public function save(Request $request, RawArticle $rawArticle, ArticleCrawlerService $crawler)
     {
         $urlHash = md5($rawArticle->url);
 
-        // Xóa crawl cache để lấy nội dung mới nhất
         Cache::forget('crawl:' . $urlHash);
 
-        // Crawl nội dung
         $contents = $crawler->crawlMany([$rawArticle->url]);
         $content  = trim($contents[$rawArticle->url] ?? '');
 
@@ -171,11 +135,9 @@ class RawArticleController extends Controller
             return back()->with('error', 'Không crawl được nội dung bài viết.');
         }
 
-        $title   = $rawArticle->title;
-        $slug    = $this->uniqueSlug(Str::slug($title ?: 'article'));
+        $title = $rawArticle->title;
+        $slug  = $this->uniqueSlug(Str::slug($title ?: 'article'));
 
-        // Nếu URL hash đã tồn tại trong articles (dù article_id có hay không)
-        // → thêm timestamp để tránh duplicate unique constraint
         $finalUrlHash = Article::where('source_url_hash', $urlHash)->exists()
             ? md5($rawArticle->url . '_' . time())
             : $urlHash;
@@ -202,89 +164,7 @@ class RawArticleController extends Controller
         return back()->with('success', 'Đã lưu bài viết: ' . $title);
     }
 
-    private function uniqueSlug(string $base): string
-    {
-        $slug    = $base ?: 'article';
-        $counter = 1;
-        while (Article::where('slug', $slug)->exists()) {
-            $slug = "{$base}-{$counter}";
-            $counter++;
-        }
-        return $slug;
-    }
-
-    // Trigger AI pipeline cho 1 raw article
-    public function generate(RawArticle $rawArticle)
-    {
-        if ($rawArticle->status === 'generating') {
-            return back()->with('error', 'Already generating...');
-        }
-
-        if ($rawArticle->status === 'done') {
-            return back()->with('error', 'Already generated. View the article.');
-        }
-
-        // Rate limit: tối đa 5 generate mỗi phút (tránh spam Claude API)
-        $key = 'generate-article';
-        if (RateLimiter::tooManyAttempts($key, 5)) {
-            $seconds = RateLimiter::availableIn($key);
-            return back()->with('error', "Too many requests. Please wait {$seconds}s.");
-        }
-        RateLimiter::hit($key, 60);
-
-        WriteArticleJob::dispatch($rawArticle)->onQueue('articles');
-
-        return back()->with('success', "Generating: {$rawArticle->title}");
-    }
-
-    // Retry failed article
-    public function retry(RawArticle $rawArticle)
-    {
-        // Rate limit: tối đa 5 retry mỗi phút
-        $key = 'generate-article';
-        if (RateLimiter::tooManyAttempts($key, 5)) {
-            $seconds = RateLimiter::availableIn($key);
-            return back()->with('error', "Too many requests. Please wait {$seconds}s.");
-        }
-        RateLimiter::hit($key, 60);
-
-        $rawArticle->update(['status' => 'pending']);
-        WriteArticleJob::dispatch($rawArticle)->onQueue('articles');
-
-        return back()->with('success', "Retrying: {$rawArticle->title}");
-    }
-
-    // Generate tất cả pending articles của 1 keyword
-    public function generateKeyword(Request $request)
-    {
-        $keywordId = $request->get('keyword_id');
-
-        $pending = RawArticle::where('keyword_id', $keywordId)
-            ->whereIn('status', ['pending', 'failed'])
-            ->get();
-
-        if ($pending->isEmpty()) {
-            return back()->with('error', 'No pending/failed articles for this keyword.');
-        }
-
-        // Rate limit: 1 lần generate-all mỗi 3 phút/keyword
-        $key = 'generate-keyword-' . $keywordId;
-        if (RateLimiter::tooManyAttempts($key, 1)) {
-            $seconds = RateLimiter::availableIn($key);
-            return back()->with('error', "Please wait {$seconds}s before generating this keyword again.");
-        }
-        RateLimiter::hit($key, 180); // 3 phút
-
-        foreach ($pending as $raw) {
-            WriteArticleJob::dispatch($raw)->onQueue('articles');
-        }
-
-        $kwName = $pending->first()->keyword->name ?? '';
-        return back()->with('success', "Generating {$pending->count()} articles for {$kwName}.");
-    }
-
-    // Xóa tất cả bài của 1 keyword (kể cả done) → fetch lại để có timestamp chính xác
-    public function clearRefetch(Request $request)
+    public function clearRefetch(Request $request, FetchKeywordNewsService $fetchService)
     {
         $keyword = Keyword::find($request->get('keyword_id'));
 
@@ -296,18 +176,33 @@ class RawArticleController extends Controller
             ->where('status', '!=', 'generating')
             ->delete();
 
-        // Xóa đúng cache key mà job sẽ dùng
-        $query = !empty($keyword->search_keyword) ? $keyword->search_keyword : ($keyword->name . ' news');
-        Cache::forget('serp_news_v2_' . md5($query));
+        $queries = array_filter(array_merge(
+            [!empty($keyword->search_keyword) ? $keyword->search_keyword : ($keyword->name . ' news')],
+            $keyword->extra_queries ?? []
+        ));
+        foreach ($queries as $q) {
+            Cache::forget('serp_news_v2_' . md5($q));
+        }
 
-        ProcessKeywordJob::dispatch($keyword)->onQueue('articles');
+        $result = $fetchService->fetch($keyword);
 
-        return back()->with('success', "Cleared {$deleted} articles + cache for {$keyword->name}. Fetching fresh data...");
+        return back()->with('success', "Cleared {$deleted} + fetched {$result['saved']} new for {$keyword->name}.");
     }
 
     public function destroy(RawArticle $rawArticle)
     {
         $rawArticle->delete();
         return back()->with('success', 'Deleted.');
+    }
+
+    private function uniqueSlug(string $base): string
+    {
+        $slug    = $base ?: 'article';
+        $counter = 1;
+        while (Article::where('slug', $slug)->exists()) {
+            $slug = "{$base}-{$counter}";
+            $counter++;
+        }
+        return $slug;
     }
 }

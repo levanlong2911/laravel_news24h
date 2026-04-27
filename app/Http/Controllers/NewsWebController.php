@@ -32,7 +32,7 @@ class NewsWebController extends Controller
     public function index(Request $request)
     {
         $listNewsWeb = $this->newsWebService->getListNewsWeb($request);
-        $categories  = $this->categoryService->getListCategory();
+        $categories  = $this->categoryService->getAllCategories();
         return view("newsweb.index", [
             "route"       => "news-web",
             "action"      => "admin-news-web",
@@ -46,7 +46,7 @@ class NewsWebController extends Controller
 
     public function add(Request $request)
     {
-        $listsCate = $this->categoryService->getListCategory();
+        $listsCate = $this->categoryService->getAllCategories();
         if ($request->isMethod('post')) {
             try {
                 $this->newsWebService->addNewsWeb($request);
@@ -83,7 +83,7 @@ class NewsWebController extends Controller
 
     public function update(Request $request, $id)
     {
-        $listsCate = $this->categoryService->getListCategory();
+        $listsCate = $this->categoryService->getAllCategories();
         $infoWeb = $this->newsWebService->getByIdWeb($id);
 
         if(is_null($infoWeb)) {

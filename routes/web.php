@@ -164,12 +164,8 @@ Route::group(
         Route::get('/',                                [RawArticleController::class, 'index'])           ->name('raw-article.index');
         Route::post('/fetch-all',                      [RawArticleController::class, 'fetchAll'])         ->name('raw-article.fetchAll');
         Route::post('/fetch-one',                      [RawArticleController::class, 'fetchOne'])         ->name('raw-article.fetchOne');
-        Route::post('/generate-keyword',               [RawArticleController::class, 'generateKeyword'])  ->name('raw-article.generateKeyword');
-        Route::post('/generate-selected',              [RawArticleController::class, 'generateSelected']) ->name('raw-article.generateSelected');
         Route::post('/clear-refetch',                  [RawArticleController::class, 'clearRefetch'])     ->name('raw-article.clearRefetch');
         Route::post('/{rawArticle}/save',              [RawArticleController::class, 'save'])             ->name('raw-article.save');
-        Route::post('/{rawArticle}/generate',          [RawArticleController::class, 'generate'])         ->name('raw-article.generate');
-        Route::post('/{rawArticle}/retry',             [RawArticleController::class, 'retry'])            ->name('raw-article.retry');
         Route::delete('/{rawArticle}',                 [RawArticleController::class, 'destroy'])          ->name('raw-article.destroy');
     });
 

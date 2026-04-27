@@ -15,6 +15,7 @@ class Keyword extends Model
         'name',
         'short_name',
         'search_keyword',
+        'extra_queries',
         'is_base',
         'is_active',
         'sort_order',
@@ -22,8 +23,9 @@ class Keyword extends Model
     ];
 
     protected $casts = [
-        'is_base'   => 'boolean',
-        'is_active' => 'boolean',
+        'is_base'        => 'boolean',
+        'is_active'      => 'boolean',
+        'extra_queries'  => 'array',
     ];
 
     // Relationship

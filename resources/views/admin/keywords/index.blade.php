@@ -54,6 +54,11 @@
                         <input type="text" name="search_keyword" class="form-control form-control-sm"
                                placeholder="Dallas Cowboys news">
                     </div>
+                    <div class="col-md-3">
+                        <label class="small mb-1">Extra Queries <span class="text-muted">(mỗi dòng 1 query)</span></label>
+                        <textarea name="extra_queries" class="form-control form-control-sm" rows="2"
+                                  placeholder="Dallas Cowboys Caleb Downs&#10;thelandryhat Cowboys"></textarea>
+                    </div>
                     <div class="col-md-2">
                         <label class="small mb-1">Category</label>
                         <select name="category_id" class="form-control form-control-sm">
@@ -110,6 +115,12 @@
                             {{ $kw->search_keyword ?: ($kw->name . ' news') }}
                             @if(!$kw->search_keyword)
                                 <span class="badge badge-secondary" style="font-size:.65rem">auto</span>
+                            @endif
+                            @if(!empty($kw->extra_queries))
+                                <br>
+                                @foreach($kw->extra_queries as $eq)
+                                    <span class="badge badge-info" style="font-size:.65rem">+{{ $eq }}</span>
+                                @endforeach
                             @endif
                         </td>
                         <td class="text-center align-middle">
@@ -191,7 +202,15 @@
                             <span class="text-muted">(để trống = name + news)</span>
                         </label>
                         <input type="text" name="search_keyword" id="edit-search" class="form-control form-control-sm"
-                               placeholder="e.g. aviation, airline news">
+                               placeholder="e.g. Dallas Cowboys news">
+                    </div>
+                    <div class="form-group">
+                        <label class="small">Extra Queries
+                            <span class="text-muted">(mỗi dòng 1 query phụ)</span>
+                        </label>
+                        <textarea name="extra_queries" id="edit-extra" class="form-control form-control-sm" rows="3"
+                                  placeholder="Dallas Cowboys Caleb Downs&#10;thelandryhat Cowboys"></textarea>
+                        <small class="text-muted">Mỗi query = 1 lần gọi SerpAPI thêm</small>
                     </div>
                     <div class="form-group">
                         <label class="small">Category</label>
@@ -237,6 +256,7 @@ function openEdit(id) {
         $('#edit-name').val(kw.name);
         $('#edit-short').val(kw.short_name);
         $('#edit-search').val(kw.search_keyword);
+        $('#edit-extra').val(kw.extra_queries ? kw.extra_queries.join('\n') : '');
         $('#edit-category').val(kw.category_id);
         $('#edit-order').val(kw.sort_order);
     })

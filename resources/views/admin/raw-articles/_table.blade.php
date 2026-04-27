@@ -1,10 +1,6 @@
 <table class="table table-sm table-bordered table-hover mb-0">
     <thead style="background:#f4f6f9">
         <tr class="text-center small text-uppercase text-muted" style="font-size:.75rem">
-            <th width="30">
-                <input type="checkbox" class="kw-check-all"
-                       data-kw="{{ $kw->id }}-{{ $tableId }}" title="Select all">
-            </th>
             <th width="30">#</th>
             <th width="55">Thumb</th>
             <th class="text-left">Title</th>
@@ -14,19 +10,12 @@
             <th width="55">Stories</th>
             <th width="90">Posted</th>
             <th width="75">Status</th>
-            <th width="155">Actions</th>
+            <th width="120">Actions</th>
         </tr>
     </thead>
     <tbody>
     @foreach($items as $i => $raw)
-        <tr class="{{ $raw->status==='generating' ? 'table-warning' : ($raw->status==='done' ? 'table-light' : '') }}">
-
-            <td class="text-center align-middle">
-                @if(in_array($raw->status, ['pending','failed']))
-                <input type="checkbox" class="article-checkbox"
-                       data-id="{{ $raw->id }}" data-kw="{{ $kw->id }}-{{ $tableId }}">
-                @endif
-            </td>
+        <tr class="{{ $raw->status==='done' ? 'table-light' : '' }}">
 
             <td class="text-center align-middle text-muted small font-weight-bold">{{ $i + 1 }}</td>
 
@@ -60,14 +49,12 @@
                 </div>
             </td>
 
-            {{-- Quality Score --}}
             <td class="text-center align-middle">
                 @php $sc = $raw->viral_score; @endphp
                 <span class="badge badge-pill badge-{{ $sc >= 100 ? 'danger' : ($sc >= 70 ? 'warning' : ($sc >= 40 ? 'info' : 'secondary')) }}"
                       style="font-size:.8em;padding:4px 7px">{{ $sc }}</span>
             </td>
 
-            {{-- FB Score --}}
             <td class="text-center align-middle">
                 @php $fb = $raw->fb_score; @endphp
                 @if($fb >= 80)
@@ -104,12 +91,10 @@
             <td class="text-center align-middle">
                 @if($raw->status === 'pending')
                     <span class="badge badge-warning">Pending</span>
-                @elseif($raw->status === 'generating')
-                    <span class="badge badge-info"><i class="fas fa-spinner fa-spin"></i> AI</span>
                 @elseif($raw->status === 'done')
                     <span class="badge badge-success">Done</span>
-                @elseif($raw->status === 'failed')
-                    <span class="badge badge-danger">Failed</span>
+                @else
+                    <span class="badge badge-secondary">{{ $raw->status }}</span>
                 @endif
             </td>
 
@@ -119,7 +104,7 @@
                         <i class="fas fa-eye"></i>
                     </a>
                 @else
-                    <span class="btn btn-xs btn-outline-secondary" style="opacity:.35;cursor:default" title="Chưa generate">
+                    <span class="btn btn-xs btn-outline-secondary" style="opacity:.35;cursor:default">
                         <i class="fas fa-eye"></i>
                     </span>
                 @endif
@@ -127,19 +112,13 @@
                    class="btn btn-xs btn-outline-secondary" title="Source">
                     <i class="fas fa-external-link-alt"></i>
                 </a>
-                @if($raw->status === 'generating')
-                    <button class="btn btn-xs btn-warning" disabled>
-                        <i class="fas fa-spinner fa-spin"></i>
+                <form method="POST" action="{{ route('raw-article.save', $raw) }}" class="d-inline">
+                    @csrf
+                    <button class="btn btn-xs {{ $raw->status === 'done' ? 'btn-outline-primary' : 'btn-primary' }}"
+                            title="{{ $raw->status === 'done' ? 'Tải lại (bài mới)' : 'Tải & lưu bài viết' }}">
+                        <i class="fas fa-download"></i>
                     </button>
-                @else
-                    <form method="POST" action="{{ route('raw-article.save', $raw) }}" class="d-inline">
-                        @csrf
-                        <button class="btn btn-xs {{ $raw->status === 'done' ? 'btn-outline-primary' : 'btn-primary' }}"
-                                title="{{ $raw->status === 'done' ? 'Tải lại (bài mới)' : 'Tải & lưu bài viết' }}">
-                            <i class="fas fa-download"></i>
-                        </button>
-                    </form>
-                @endif
+                </form>
                 <form method="POST" action="{{ route('raw-article.destroy', $raw) }}"
                       class="d-inline" onsubmit="return confirm('Delete?')">
                     @csrf @method('DELETE')

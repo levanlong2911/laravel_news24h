@@ -39,6 +39,7 @@ class KeywordController extends Controller
             'name'           => trim($request->name),
             'short_name'     => trim($request->short_name) ?: Str::slug($request->name),
             'search_keyword' => trim($request->search_keyword) ?: null,
+            'extra_queries'  => $this->parseExtraQueries($request->extra_queries),
             'category_id'    => $request->category_id ?: null,
             'sort_order'     => $request->sort_order ?? 99,
             'is_base'        => true,
@@ -62,11 +63,19 @@ class KeywordController extends Controller
             'name'           => trim($request->name),
             'short_name'     => trim($request->short_name) ?: Str::slug($request->name),
             'search_keyword' => trim($request->search_keyword) ?: null,
+            'extra_queries'  => $this->parseExtraQueries($request->extra_queries),
             'category_id'    => $request->category_id ?: null,
             'sort_order'     => $request->sort_order ?? $keyword->sort_order,
         ]);
 
         return back()->with('success', "Đã cập nhật: {$keyword->name}");
+    }
+
+    private function parseExtraQueries(?string $raw): ?array
+    {
+        if (empty($raw)) return null;
+        $lines = array_filter(array_map('trim', explode("\n", $raw)));
+        return !empty($lines) ? array_values($lines) : null;
     }
 
     public function destroy(Keyword $keyword)
