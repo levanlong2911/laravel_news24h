@@ -550,7 +550,7 @@ class ArticleCrawlerService
             '/<(script|style|noscript|iframe|svg|canvas|form)[^>]*>.*?<\/\1>/si',
             '',
             $html
-        );
+        ) ?? $html;
     }
 
     /**

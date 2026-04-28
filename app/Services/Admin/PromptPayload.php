@@ -73,10 +73,16 @@ final class PromptPayload
         $resolvedStructure = $structureTemplate ?: $defaultStructure;
         $phase3 = str_replace('{structure_template}', $resolvedStructure, $this->phase3);
 
+        // Replace double-quotes in all prompt inputs so Sonnet doesn't output unescaped " in JSON
+        $quotes      = ['"', '"', '"'];
+        $safeKeyword = str_replace($quotes, "'", $keyword);
+        $safeHook    = str_replace($quotes, "'", $bestHook);
+        $safeFacts   = str_replace($quotes, "'", $facts);
+
         return $phase3
-            . "\n\nTOPIC: {$keyword}"
-            . "\nTITLE ANCHOR (write content to support this hook): {$bestHook}"
-            . "\n\nEXTRACTED FACTS:\n---\n{$facts}\n---"
+            . "\n\nTOPIC: {$safeKeyword}"
+            . "\nTITLE ANCHOR (write content to support this hook): {$safeHook}"
+            . "\n\nEXTRACTED FACTS:\n---\n{$safeFacts}\n---"
             . "\n\nOUTPUT — Return ONLY this JSON (no markdown, no code block):\n"
             . $this->outputSchema;
     }

@@ -80,7 +80,10 @@ class ArticlePipelineService
             $retryReason = $guardResult->reason;
             Log::info('[Pipeline] Sonnet parse fail, retrying with fix prompt', ['reason' => $retryReason]);
 
-            $fixPrompt   = "The previous response contained invalid JSON. Return ONLY the corrected JSON — no markdown, no code block, no extra text.\n\nPrevious broken output:\n{$sonnetRaw}\n\nRequired schema:\n{$payload->outputSchema}";
+            $fixPrompt   = "The JSON below is invalid. String values contain literal \" characters that break JSON syntax.\n"
+                . "Fix rule: every \" inside a string value must be escaped as \\\".\n"
+                . "Return ONLY the corrected JSON — no markdown, no explanation.\n\n"
+                . $sonnetRaw;
             $sonnetRaw   = $this->claude->generate($fixPrompt, 'sonnet');
             $guardResult = $this->postGuard->check($sonnetRaw, $facts);
         }

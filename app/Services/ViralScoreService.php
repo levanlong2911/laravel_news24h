@@ -191,16 +191,42 @@ class ViralScoreService
     // ── C. RECOGNITION SIGNALS ────────────────────────────────────────────────
 
     private const RECOGNITION_LISTS = [
-        'NFL' => [
-            'tier1' => [
-                'Patrick Mahomes', 'Travis Kelce', 'Josh Allen',
-                'Lamar Jackson', 'A.J. Brown', 'Justin Jefferson',
-                'Dak Prescott', 'Micah Parsons', 'CeeDee Lamb',
-            ],
-            'tier2' => [
-                'Jalen Hurts', 'Joe Burrow', 'Tua Tagovailoa',
-                'Brock Purdy', 'Jared Goff', 'Jordan Love',
-            ],
+        // NFL teams — 2026 season rosters (updated April 2026)
+        'KANSAS CITY CHIEFS' => [
+            'tier1' => ['Patrick Mahomes', 'Travis Kelce', 'Chris Jones', 'Andy Reid', 'Kenneth Walker III', 'Justin Fields'],
+            'tier2' => ['George Karlaftis', 'Xavier Worthy', 'Creed Humphrey', 'R. Mason Thomas', 'Mansoor Delane', 'Peter Woods'],
+        ],
+        'DALLAS COWBOYS' => [
+            'tier1' => ['Dak Prescott', 'CeeDee Lamb', 'George Pickens', 'Rashan Gary', 'Kenny Clark'],
+            'tier2' => ['Jake Ferguson', 'Javonte Williams', 'Tyler Booker', 'Brandon Aubrey', 'Caleb Downs', 'Malachi Lawrence', 'Quinnen Williams', 'Jalen Thompson'],
+        ],
+        'PHILADELPHIA EAGLES' => [
+            'tier1' => ['Jalen Hurts', 'A.J. Brown', 'Saquon Barkley', 'Jalen Carter', 'DeVonta Smith', 'Dallas Goedert'],
+            'tier2' => ['Jonathan Greenard', 'Jordan Davis', 'Makai Lemon', 'Eli Stowers', 'Cooper DeJean'],
+        ],
+        'SAN FRANCISCO 49ERS' => [
+            'tier1' => ['Brock Purdy', 'Christian McCaffrey', 'Nick Bosa', 'George Kittle', 'Brandon Aiyuk' ],
+            'tier2' => ['Deebo Samuel', 'Trent Williams', 'Fred Warner', 'Mike Evans', 'Ricky Pearsall', 'Mykel Williams',],
+        ],
+        'PITTSBURGH STEELERS' => [
+            'tier1' => ['T.J. Watt', 'DK Metcalf', 'Cam Heyward', 'Aaron Rodgers'],
+            'tier2' => ['Michael Pittman Jr.', 'Pat Freiermuth', 'Alex Highsmith', 'Jalen Ramsey', 'Joey Porter Jr.', 'Jaylen Warren'],
+        ],
+        'GREEN BAY PACKERS' => [
+            'tier1' => ['Jordan Love', 'Micah Parsons', 'Jayden Reed', 'Josh Jacobs', 'Xavier McKinney', 'Tucker Kraft', 'Lukas Van Ness', 'Christian Watson'],
+            'tier2' => ['Devonte Wyatt', 'Javon Hargrave', 'Edgerrin Cooper', 'Keisean Nixon', 'Matthew Golden', 'Zach Tom'],
+        ],
+        'NEW ENGLAND PATRIOTS' => [
+            'tier1' => ['Drake Maye', 'Rhamondre Stevenson', 'Christian Barmore', 'Christian Gonzalez', 'Hunter Henry', 'Will Campbell', 'TreVeyon Henderson', 'Milton Williams', 'Harold Landry III' ],
+            'tier2' => ['Kayshon Boutte', 'Romeo Doubs', 'Kevin Byard', 'Robert Spillane', 'Marte Mapu', 'Caleb Lomu', 'Eli Raridon', 'Gabe Jacas' ],
+        ],
+        'CHICAGO BEARS' => [
+            'tier1' => ['Caleb Williams', 'Montez Sweat', 'Rome Odunze', 'Luther Burden III', 'Colston Loveland', 'Cole Kmet', "D'Andre Swift", 'Darnell Wright', 'Montez Sweat', 'Jaylon Johnson'],
+            'tier2' => ['Kyler Gordon', 'Grady Jarrett', 'Austin Booker', 'Devin Bush', 'Jahdae Walker', 'Kalif Raymond', 'Dillon Thieneman', 'Malik Muhammad', 'Keyshaun Elliott',],
+        ],
+        'NEW YORK GIANTS' => [
+            'tier1' => ['Malik Nabers', 'Jaxson Dart', 'Andrew Thomas', 'Abdul Carter', 'Brian Burns', 'Kayvon Thibodeaux'],
+            'tier2' => ["Tremaine Edmunds", 'Arvell Reese', 'Cam Skattebo', 'Francis Mauigoa', 'Isaiah Likely', 'Malachi Fields', 'Colton Hood', 'Jermaine Eluemunor'],
         ],
         'SHOWBIZ' => [
             'tier1' => [
@@ -217,14 +243,14 @@ class ViralScoreService
             'tier1' => [
                 'American Airlines', 'United Airlines',
                 'Southwest Airlines', 'Delta Air Lines',
-                'Emirates', 'Qatar Airways',
+                'Alaska Airlines', 'JetBlue',
             ],
             'tier2' => [
                 'Spirit Airlines', 'Frontier Airlines',
-                'Alaska Airlines', 'JetBlue', 'Allegiant',
+                'Allegiant',
             ],
         ],
-        'F1' => [
+        'FORMULA 1' => [
             'tier1' => [
                 'Max Verstappen', 'Lewis Hamilton',
                 'Charles Leclerc', 'Lando Norris',
@@ -248,54 +274,50 @@ class ViralScoreService
         ],
         'TENNIS' => [
             'tier1' => [
-                'Novak Djokovic', 'Carlos Alcaraz',
-                'Jannik Sinner', 'Iga Swiatek',
-                'Wimbledon', 'US Open', 'Roland Garros',
+                'Carlos Alcaraz', 'Jannik Sinner',
+                'Coco Gauff', 'Iga Swiatek', 'Aryna Sabalenka', 'US Open',
+                'Wimbledon', 'Roland Garros', 'Australian Open'
             ],
             'tier2' => [
-                'Daniil Medvedev', 'Stefanos Tsitsipas',
-                'Aryna Sabalenka', 'Coco Gauff',
+                'Ben Shelton', 'Taylor Fritz', 'Frances Tiafoe',
+                'Jessica Pegula', 'Daniil Medvedev',
+                'Wimbledon', 'US Open', 'Roland Garros',
             ],
         ],
-        'SUPERCARS' => [
+        'CARS' => [
             'tier1' => [
                 'Ferrari', 'Lamborghini', 'Bugatti',
                 'McLaren', 'Porsche', 'Rolls-Royce',
                 'Koenigsegg', 'Pagani',
             ],
-            'tier2' => [
-                'Aston Martin', 'Bentley', 'Maserati',
-                'Lotus', 'Rimac',
-            ],
+            'tier2' => ['Aston Martin', 'Bentley', 'Maserati', 'Lotus', 'Rimac'],
         ],
         'MOTOGP' => [
             'tier1' => [
                 'Marc Marquez', 'Francesco Bagnaia',
                 'Jorge Martin', 'Ducati', 'Honda',
             ],
-            'tier2' => [
-                'Fabio Quartararo', 'Maverick Viñales',
-                'Yamaha', 'Aprilia',
-            ],
+            'tier2' => ['Fabio Quartararo', 'Maverick Viñales', 'Yamaha', 'Aprilia'],
+        ],
+        'MOTO' => [
+            'tier1' => ['Harley-Davidson', 'Ducati', 'BMW Motorrad', 'Indian Motorcycle', 'Honda'],
+            'tier2' => ['Kawasaki', 'Yamaha', 'Triumph', 'KTM', 'Suzuki'],
+        ],
+        'SUPERYACHT' => [
+            'tier1' => ['Azzam', 'Eclipse', 'Flying Fox', 'Amadea', 'Jubilee', 'Dilbar'],
+            'tier2' => ['Feadship', 'Lürssen', 'Oceanco', 'Benetti', 'Sunseeker'],
+        ],
+        'YACHT' => [
+            'tier1' => ['Azzam', 'Eclipse', 'Feadship', 'Lürssen', 'Oceanco'],
+            'tier2' => ['Beneteau', 'Jeanneau', 'Sunseeker', 'Azimut', 'Princess Yachts'],
         ],
         'HEALTH' => [
-            'tier1' => [
-                'FDA', 'WHO', 'CDC', 'Harvard',
-                'Mayo Clinic', 'NIH', 'Stanford',
-            ],
-            'tier2' => [
-                'Johns Hopkins', 'Oxford', 'MIT',
-                'Cleveland Clinic',
-            ],
+            'tier1' => ['FDA', 'WHO', 'CDC', 'Harvard', 'Mayo Clinic', 'NIH', 'Stanford'],
+            'tier2' => ['Johns Hopkins', 'Oxford', 'MIT', 'Cleveland Clinic'],
         ],
         'ASTRONOMY' => [
-            'tier1' => [
-                'NASA', 'SpaceX', 'James Webb',
-                'Elon Musk', 'ESA', 'Hubble',
-            ],
-            'tier2' => [
-                'ISRO', 'JAXA', 'Blue Origin',
-            ],
+            'tier1' => ['NASA', 'SpaceX', 'James Webb', 'Elon Musk', 'ESA', 'Hubble'],
+            'tier2' => ['ISRO', 'JAXA', 'Blue Origin'],
         ],
     ];
 
@@ -303,47 +325,80 @@ class ViralScoreService
     // ── D. DISTRIBUTION SIGNALS ───────────────────────────────────────────────
 
     private const SHAREABILITY_SCORES = [
-        'NFL'        => 20,
-        'SHOWBIZ'    => 18,
-        'WEIRD_NEWS' => 15,
-        'HEALTH'     => 15,
-        'ANIMAL'     => 14,
-        'F1'         => 12,
-        'MOTOGP'     => 12,
-        'ASTRONOMY'  => 12,
-        'TENNIS'     => 10,
-        'GOLF'       => 10,
-        'AIRLINE'    => 10,
-        'SUPERCARS'  => 10,
-        'TINY_HOME'  => 9,
-        'MOTO'       => 8,
-        'SUPERYACHT' => 8,
+        'KANSAS CITY CHIEFS'   => 20,
+        'DALLAS COWBOYS'       => 20,
+        'PHILADELPHIA EAGLES'  => 19,
+        'SAN FRANCISCO 49ERS'  => 18,
+        'PITTSBURGH STEELERS'  => 17,
+        'GREEN BAY PACKERS'    => 16,
+        'CHICAGO BEARS'        => 16,
+        'NEW ENGLAND PATRIOTS' => 16,
+        'NEW YORK GIANTS'      => 15,
+        'SHOWBIZ'              => 18,
+        'WEIRD NEWS'           => 16,
+        'WEIRD'                => 14,
+        'HEALTH'               => 15,
+        'CATS'                 => 14,
+        'DOGS'                 => 14,
+        'FORMULA 1'            => 12,
+        'MOTOGP'               => 12,
+        'ASTRONOMY'            => 12,
+        'TENNIS'               => 10,
+        'GOLF'                 => 10,
+        'AIRLINE'              => 10,
+        'CARS'                 => 10,
+        'TINY HOME'            => 9,
+        'MOTO'                 => 8,
+        'SUPERYACHT'           => 8,
+        'YACHT'                => 7,
     ];
 
     // ── E. TIMING SIGNALS ─────────────────────────────────────────────────────
 
     private const GOLDEN_HOURS = [
-        'NFL'        => [19, 20, 21, 22],
-        'SHOWBIZ'    => [12, 13, 20, 21],
-        'HEALTH'     => [7, 8, 9, 21, 22],
-        'WEIRD_NEWS' => [11, 12, 17, 18],
-        'ANIMAL'     => [8, 9, 20, 21],
-        'ASTRONOMY'  => [20, 21, 22, 23],
-        'F1'         => [14, 15, 20, 21],
-        'MOTOGP'     => [14, 15, 20, 21],
-        'GOLF'       => [13, 14, 15, 16],
-        'SUPERCARS'  => [12, 18, 19],
-        'AIRLINE'    => [6, 7, 17, 18],
-        'TINY_HOME'  => [9, 10, 20, 21],
+        'KANSAS CITY CHIEFS'   => [18, 19, 20, 21, 22],
+        'DALLAS COWBOYS'       => [18, 19, 20, 21, 22],
+        'PHILADELPHIA EAGLES'  => [18, 19, 20, 21, 22],
+        'SAN FRANCISCO 49ERS'  => [18, 19, 20, 21, 22],
+        'PITTSBURGH STEELERS'  => [18, 19, 20, 21, 22],
+        'GREEN BAY PACKERS'    => [18, 19, 20, 21, 22],
+        'CHICAGO BEARS'        => [18, 19, 20, 21, 22],
+        'NEW ENGLAND PATRIOTS' => [18, 19, 20, 21, 22],
+        'NEW YORK GIANTS'      => [18, 19, 20, 21, 22],
+        'SHOWBIZ'              => [12, 13, 20, 21],
+        'HEALTH'               => [7, 8, 9, 21, 22],
+        'WEIRD NEWS'           => [11, 12, 17, 18],
+        'WEIRD'                => [11, 12, 17, 18],
+        'CATS'                 => [8, 9, 20, 21],
+        'DOGS'                 => [8, 9, 20, 21],
+        'ASTRONOMY'            => [20, 21, 22, 23],
+        'FORMULA 1'            => [14, 15, 20, 21],
+        'MOTOGP'               => [14, 15, 20, 21],
+        'GOLF'                 => [13, 14, 15, 16],
+        'CARS'                 => [12, 18, 19],
+        'MOTO'                 => [12, 18, 19],
+        'AIRLINE'              => [6, 7, 17, 18],
+        'TINY HOME'            => [9, 10, 20, 21],
+        'SUPERYACHT'           => [11, 12, 18, 19],
+        'YACHT'                => [11, 12, 18, 19],
+        'TENNIS'               => [13, 14, 15, 20],
     ];
 
     private const BEST_DAYS = [
-        'NFL'     => [0, 1, 4],
-        'GOLF'    => [6, 0],
-        'F1'      => [6, 0],
-        'MOTOGP'  => [6, 0],
-        'SHOWBIZ' => [1, 2, 3],
-        'TENNIS'  => [6, 0, 1],
+        'KANSAS CITY CHIEFS'   => [0, 1, 4],
+        'DALLAS COWBOYS'       => [0, 1, 4],
+        'PHILADELPHIA EAGLES'  => [0, 1, 4],
+        'SAN FRANCISCO 49ERS'  => [0, 1, 4],
+        'PITTSBURGH STEELERS'  => [0, 1, 4],
+        'GREEN BAY PACKERS'    => [0, 1, 4],
+        'CHICAGO BEARS'        => [0, 1, 4],
+        'NEW ENGLAND PATRIOTS' => [0, 1, 4],
+        'NEW YORK GIANTS'      => [0, 1, 4],
+        'GOLF'                 => [6, 0],
+        'FORMULA 1'            => [6, 0],
+        'MOTOGP'               => [6, 0],
+        'SHOWBIZ'              => [1, 2, 3],
+        'TENNIS'               => [6, 0, 1],
     ];
 
     // ── PUBLIC — Main entry point ─────────────────────────────────────────────
@@ -424,7 +479,7 @@ class ViralScoreService
             'emotion'         => $this->emotionScore($text),
             'comment_bait'    => $this->commentBaitScore($text),
 
-            // C. RECOGNITION (max 45)
+            // C. RECOGNITION (max 41)
             'celebrity_brand' => $this->recognitionScore($title . ' ' . $snippet, $category),
             'social_proof'    => $this->socialProofScore($sourceUrl, $content ?? ''),
             'top_story'       => $topStoryHint ?? 0,
@@ -511,10 +566,11 @@ class ViralScoreService
 
     private function negativeHookScore(string $title): int
     {
+        $best = 0;
         foreach (self::NEGATIVE_HOOK_PATTERNS as $pattern => $points) {
-            if (preg_match($pattern, $title)) return $points;
+            if (preg_match($pattern, $title)) $best = max($best, $points);
         }
-        return 0;
+        return $best;
     }
 
     private function fbTitleScore(string $title): int
