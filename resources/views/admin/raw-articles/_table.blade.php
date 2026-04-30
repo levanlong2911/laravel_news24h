@@ -15,7 +15,9 @@
     </thead>
     <tbody>
     @foreach($items as $i => $raw)
-        <tr class="{{ $raw->status==='done' ? 'table-light' : '' }}">
+        @php $isRecommended = isset($recommendedId) && $raw->id === $recommendedId; @endphp
+        <tr class="{{ $raw->status==='done' ? 'table-light' : '' }}"
+            style="{{ $isRecommended ? 'border-left:3px solid #ffc107;background:#fffdf0' : '' }}">
 
             <td class="text-center align-middle text-muted small font-weight-bold">{{ $i + 1 }}</td>
 
@@ -39,6 +41,9 @@
                 <a href="{{ $raw->url }}" target="_blank"
                    class="d-block font-weight-bold text-dark text-truncate"
                    title="{{ $raw->title }}" style="max-width:100%">
+                    @if($isRecommended)
+                        <span class="badge badge-warning mr-1" style="font-size:.7em;vertical-align:middle">⭐ Đề xuất</span>
+                    @endif
                     {{ $raw->title }}
                 </a>
                 <div class="small text-muted text-truncate" style="max-width:100%">

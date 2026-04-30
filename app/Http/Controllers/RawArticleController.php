@@ -34,7 +34,9 @@ class RawArticleController extends Controller
         $kwList  = $keywordId ? $keywords->where('id', $keywordId) : $keywords;
         $grouped = $kwList->map(function ($kw) use ($allArticles) {
             $all    = $allArticles->get($kw->id, collect());
-            $top    = $all->where('list_type', 'top')->sortByDesc('fb_score')->take(10)->values();
+            $top    = $all->where('list_type', 'top')
+                ->sortByDesc(fn($a) => $a->viral_score * 0.6 + $a->fb_score * 0.4)
+                ->take(10)->values();
             $recent = $all->where('list_type', 'recent')
                 ->sortByDesc(fn($a) => $a->published_timestamp)
                 ->take(20)->values();
@@ -44,10 +46,11 @@ class RawArticleController extends Controller
             if ($combined->isEmpty()) return null;
 
             return [
-                'keyword' => $kw,
-                'top'     => $top,
-                'recent'  => $recent,
-                'stats'   => [
+                'keyword'     => $kw,
+                'top'         => $top,
+                'recent'      => $recent,
+                'recommended' => $this->buildRecommendation($top->first()),
+                'stats'       => [
                     'total'   => $combined->count(),
                     'pending' => $combined->where('status', 'pending')->count(),
                     'done'    => $combined->where('status', 'done')->count(),
@@ -193,6 +196,52 @@ class RawArticleController extends Controller
     {
         $rawArticle->delete();
         return back()->with('success', 'Deleted.');
+    }
+
+    private function buildRecommendation(?\App\Models\RawArticle $article): ?array
+    {
+        if (!$article) return null;
+
+        $reasons    = [];
+        $title      = $article->title ?? '';
+        $titleLower = strtolower($title);
+
+        if ($article->topic_score > 0) {
+            $reasons[] = ['icon' => '🔥', 'text' => "Topic đang trending (topic score: {$article->topic_score})"];
+        }
+        if ($article->stories_count >= 3) {
+            $reasons[] = ['icon' => '📰', 'text' => "{$article->stories_count} nguồn khác nhau đang cover cùng chủ đề"];
+        } elseif ($article->stories_count >= 1) {
+            $reasons[] = ['icon' => '📰', 'text' => "{$article->stories_count} nguồn đang cover chủ đề này"];
+        }
+        if ($article->fb_score >= 35) {
+            $reasons[] = ['icon' => '💥', 'text' => "FB score rất cao ({$article->fb_score}/100) — title có hook mạnh"];
+        } elseif ($article->fb_score >= 25) {
+            $reasons[] = ['icon' => '👍', 'text' => "FB score tốt ({$article->fb_score}/100) — tiềm năng viral"];
+        }
+        if ($article->viral_score >= 90) {
+            $reasons[] = ['icon' => '⚡', 'text' => "SerpAPI score cao ({$article->viral_score}) — bài mới + top Google News"];
+        }
+        if (preg_match("/['\"][^'\"]{2,}['\"]/", $title)) {
+            $reasons[] = ['icon' => '🤔', 'text' => 'Title có quote/nickname → curiosity gap'];
+        }
+        if (str_contains($title, '?')) {
+            $reasons[] = ['icon' => '❓', 'text' => 'Title dạng câu hỏi → kích thích tò mò'];
+        }
+        if (preg_match('/\b\d+\b/', $title)) {
+            $reasons[] = ['icon' => '🔢', 'text' => 'Title có con số cụ thể → tăng credibility'];
+        }
+        if (preg_match('/breaking|exclusive|just in/i', $titleLower)) {
+            $reasons[] = ['icon' => '🚨', 'text' => 'Breaking news → urgency cao'];
+        }
+        if (preg_match('/\b(top|best|worst|never|only|biggest|greatest)\b/i', $titleLower)) {
+            $reasons[] = ['icon' => '🏆', 'text' => 'Title có superlative → highly shareable'];
+        }
+        if (preg_match('/\b(should|must|why|how)\b/i', $titleLower)) {
+            $reasons[] = ['icon' => '💡', 'text' => 'Title dạng opinion/advice → high comment rate'];
+        }
+
+        return ['article' => $article, 'reasons' => $reasons];
     }
 
     private function uniqueSlug(string $base): string

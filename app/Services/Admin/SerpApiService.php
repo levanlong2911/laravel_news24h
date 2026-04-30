@@ -49,7 +49,7 @@ class SerpApiService
     // NEWS — 1 call/query, cache 15 phút
     // ══════════════════════════════════════════════
 
-    public function searchNews(string $query, int $limit = 10): array
+    public function searchNews(string $query, int $limit = 100): array
     {
         // v2: thêm version vào cache key để force refresh khi logic thay đổi
         $cacheKey = 'serp_news_v2_' . md5($query);
@@ -256,11 +256,13 @@ class SerpApiService
 
     public function filterAndScore(array $articles): array
     {
-        $result = $this->doFilterAndScore($articles, 12, [], []);
+        $blocked = $this->blockedSources();
+
+        $result = $this->doFilterAndScore($articles, 12, [], $blocked);
 
         if (count($result) < 10) {
             Log::info(sprintf('[FilterAndScore] Only %d in 12h, expanding to 24h', count($result)));
-            $result = $this->doFilterAndScore($articles, 24, [], []);
+            $result = $this->doFilterAndScore($articles, 24, [], $blocked);
         }
 
         Log::info(sprintf('[FilterAndScore] Final: %d articles', count($result)));
@@ -322,53 +324,85 @@ class SerpApiService
 
     private function calcScore(array $article, string $domain, array $trusted = []): int
     {
-        $score    = 0;
-        $position = (int)($article['position'] ?? 99);
-        $stories  = count($article['stories'] ?? []);
-        $topStory = !empty($article['stories']);
+        $storiesArr = $article['stories'] ?? [];
+        $stCount    = count($storiesArr);
+        $topStory   = $stCount > 0;
+        $position   = (int)($article['position'] ?? 99);
 
-        // ── CLUSTER SIZE — tín hiệu mạnh nhất của Google News ────────────────
-        if ($topStory) {
-            $score += match(true) {
-                $stories >= 10 => 60,
-                $stories >= 5  => 45,
-                $stories >= 3  => 30,
-                $stories >= 2  => 20,
-                default        => 10,
-            };
-        }
-
-        // ── POSITION — thứ hạng Google News tự chọn ──────────────────────────
-        $score += match(true) {
-            $position === 1 => 30,
-            $position === 2 => 25,
-            $position === 3 => 20,
-            $position <= 5  => 15,
-            $position <= 10 => 10,
-            default         => 5,
+        // === 1. CLUSTER SIGNAL (0-35) ===
+        $clusterBase = match(true) {
+            $stCount >= 15 => 28,
+            $stCount >= 10 => 23,
+            $stCount >= 5  => 18,
+            $stCount >= 3  => 13,
+            $stCount >= 2  => 8,
+            $stCount >= 1  => 3,
+            default        => 0,
         };
+        $sourceNames   = array_filter(array_map(
+            fn($s) => is_array($s['source'] ?? '') ? ($s['source']['name'] ?? '') : ($s['source'] ?? ''),
+            $storiesArr
+        ));
+        $uniqueSources = count(array_unique($sourceNames));
+        $diversityBonus = match(true) {
+            $uniqueSources >= 5 => 7,
+            $uniqueSources >= 3 => 4,
+            $uniqueSources >= 2 => 2,
+            default             => 0,
+        };
+        $clusterScore = $clusterBase + $diversityBonus;
 
-        // ── FRESHNESS — tính từ iso_date (giờ đã qua) ────────────────────────
-        $h = $this->hoursAgo($article['date'] ?? '');
-        $score += match(true) {
-            $h <= 1  => 50,
-            $h <= 3  => 40,
-            $h <= 6  => 35,
-            $h <= 12 => 25,
-            $h <= 24 => 10,
+        // === 2. TREND SIGNAL (0-30) ===
+        $posScore = match(true) {
+            $position === 1 => 24,
+            $position === 2 => 20,
+            $position === 3 => 17,
+            $position <= 5  => 13,
+            $position <= 10 => 8,
+            $position <= 20 => 4,
+            default         => 1,
+        };
+        $trendScore = $posScore + ($topStory ? 6 : 0);
+
+        // === 3. FRESHNESS SIGNAL (0-20) ===
+        $h          = $this->hoursAgo($article['date'] ?? '');
+        $freshScore = match(true) {
+            $h <= 1  => 20,
+            $h <= 3  => 17,
+            $h <= 6  => 14,
+            $h <= 12 => 10,
+            $h <= 24 => 5,
+            $h <= 48 => 2,
             default  => 0,
         };
 
-        // ── TRUSTED SOURCE — domain khớp news_webs của category ─────────────
+        // === 4. SOURCE AUTHORITY (0-15) ===
+        $tierScore    = $this->domainAuthorityScore($domain);
+        $trustedScore = 0;
         foreach ($trusted as $source) {
             $srcDomain = is_array($source) ? ($source['domain'] ?? '') : $source;
             if (str_contains($domain, $srcDomain)) {
-                $score += 20;
+                $trustedScore = 10;
                 break;
             }
         }
+        $sourceScore = min(15, max($tierScore, $trustedScore));
 
-        return max(0, $score);
+        return min(100, $clusterScore + $trendScore + $freshScore + $sourceScore);
+    }
+
+    private function domainAuthorityScore(string $domain): int
+    {
+        if (preg_match('/espn|nfl\.com|nba\.com|cnn\.com|bbc\.|reuters|apnews|nytimes|washingtonpost|theguardian|wsj\.com|foxnews|nbcnews|cbsnews|abcnews|usatoday|si\.com|theathletic|bleacherreport/i', $domain)) {
+            return 15;
+        }
+        if (preg_match('/people\.com|pagesix|tmz|eonline|heavy\.com|clutchpoints|sportingnews|nbcsports|cbssports|foxsports|yardbarker|msn\.com|nypost|complex|theringer/i', $domain)) {
+            return 8;
+        }
+        if (preg_match('/packerswire|patriotswire|cowboyswire|eagleswire|sportsnaut|outkick|fansided|pro-football-reference|baseball-reference/i', $domain)) {
+            return 4;
+        }
+        return 0;
     }
 
     private function hoursAgo(string $date): float

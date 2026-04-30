@@ -98,10 +98,11 @@
     {{-- ── GROUPED BY KEYWORD ── --}}
     @forelse($grouped as $group)
         @php
-            $kw     = $group['keyword'];
-            $top    = $group['top'];
-            $recent = $group['recent'];
-            $stats  = $group['stats'];
+            $kw          = $group['keyword'];
+            $top         = $group['top'];
+            $recent      = $group['recent'];
+            $stats       = $group['stats'];
+            $recommended = $group['recommended'] ?? null;
         @endphp
 
         <div class="card card-default mb-4" id="kw-{{ $kw->id }}">
@@ -152,7 +153,37 @@
                     </strong>
                     <span class="ml-2 small text-muted">— ưu tiên viral Facebook (fb score)</span>
                 </div>
-                @include('admin.raw-articles._table', ['items' => $top, 'kw' => $kw])
+
+                {{-- ── Recommendation Banner ── --}}
+                @if($recommended)
+                <div style="background:linear-gradient(135deg,#fff8e1,#fffde7);border-left:4px solid #ffc107;padding:12px 16px;border-bottom:1px solid #ffe082">
+                    <div class="d-flex align-items-start">
+                        <div class="mr-2" style="font-size:1.3rem;line-height:1">⭐</div>
+                        <div class="flex-grow-1">
+                            <div class="font-weight-bold text-warning mb-1" style="font-size:.7rem;letter-spacing:.08em;text-transform:uppercase">
+                                Đề xuất viết lại — viral nhất trên Facebook
+                            </div>
+                            <a href="{{ $recommended['article']->url }}" target="_blank"
+                               class="font-weight-bold text-dark d-block mb-2" style="font-size:.92rem;line-height:1.4">
+                                {{ $recommended['article']->title }}
+                            </a>
+                            <div class="d-flex flex-wrap" style="gap:5px">
+                                @foreach($recommended['reasons'] as $r)
+                                <span class="badge badge-light border text-dark" style="font-size:.75em;padding:3px 8px;font-weight:normal">
+                                    {{ $r['icon'] }} {{ $r['text'] }}
+                                </span>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                @endif
+
+                @include('admin.raw-articles._table', [
+                    'items'         => $top,
+                    'kw'            => $kw,
+                    'recommendedId' => $recommended['article']->id ?? null,
+                ])
                 @endif
 
                 {{-- ── Table: 20 Newest ── --}}

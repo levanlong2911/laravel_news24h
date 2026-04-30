@@ -28,7 +28,7 @@ class FetchKeywordNewsService
         $seen   = [];
 
         foreach ($queries as $query) {
-            foreach ($this->serpApi->searchNews($query, 20) as $item) {
+            foreach ($this->serpApi->searchNews($query) as $item) {
                 $link = $item['link'] ?? '';
                 if ($link && !isset($seen[$link])) {
                     $seen[$link] = true;
@@ -44,49 +44,87 @@ class FetchKeywordNewsService
             return ['saved' => 0, 'top' => 0, 'recent' => 0];
         }
 
-        // Score tất cả bài — kể cả bài không qua filterAndScore
-        $scoreMap = [];
-        foreach ($allRaw as $item) {
-            $url = $item['link'] ?? '';
-            if ($url) $scoreMap[$url] = $this->serpApi->scoreArticle($item);
-        }
-
-        // filterAndScore cho top: lọc theo thời gian + score ≥ 20
         $scored = $this->serpApi->filterAndScore($allRaw);
 
-        // Override scoreMap với điểm chính xác hơn từ filterAndScore
+        // ViralScore + quality_score map cho tất cả filtered articles
+        $viralScores     = [];
+        $qualityScoreMap = [];
         foreach ($scored as $item) {
             $url = $item['link'] ?? '';
-            if ($url) $scoreMap[$url] = [
-                'quality_score' => $item['quality_score'] ?? 0,
-                'fb_score'      => $item['fb_score'] ?? 0,
-            ];
+            if ($url) {
+                $viralScores[$url]     = $this->viralScore->calculateFromRaw($item, $kw)['score'];
+                $qualityScoreMap[$url] = (int) ($item['quality_score'] ?? 0);
+            }
         }
 
-        // Score tất cả candidates bằng ViralScoreService trước khi sort
-        $viralScores = [];
-        foreach ($scored as $item) {
-            $url = $item['link'] ?? '';
-            if ($url) $viralScores[$url] = $this->viralScore->calculateFromRaw($item, $kw)['score'];
+        // Entity Heat Map — boost articles where entity dominates the news cycle
+        $entityCount = [];
+        foreach ($allRaw as $article) {
+            preg_match_all('/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/', $article['title'] ?? '', $m);
+            foreach ($m[0] as $entity) {
+                $entityCount[$entity] = ($entityCount[$entity] ?? 0) + 1;
+            }
+        }
+        $hotEntities = array_filter($entityCount, fn($c) => $c >= 3);
+
+        if (!empty($hotEntities)) {
+            $hotLower = [];
+            foreach ($hotEntities as $entity => $count) {
+                $hotLower[strtolower($entity)] = $count;
+            }
+
+            foreach ($scored as $item) {
+                $url = $item['link'] ?? '';
+                if (!$url) continue;
+                $titleLower = strtolower($item['title'] ?? '');
+                $maxBoost   = 0;
+                foreach ($hotLower as $entity => $count) {
+                    if (str_contains($titleLower, $entity)) {
+                        $maxBoost = max($maxBoost, match(true) {
+                            $count >= 6 => 15,
+                            $count >= 4 => 10,
+                            default     => 5,
+                        });
+                    }
+                }
+                if ($maxBoost > 0) {
+                    $viralScores[$url] = min(100, ($viralScores[$url] ?? 0) + $maxBoost);
+                }
+            }
+
+            Log::info('[EntityHeat] ' . $kw->name . ': ' . implode(', ', array_map(
+                fn($e, $c) => "{$e}({$c})", array_keys($hotEntities), $hotEntities
+            )));
         }
 
-        if (!empty($scored)) {
-            usort($scored, fn($a, $b) =>
-                ($viralScores[$b['link'] ?? ''] ?? 0) <=> ($viralScores[$a['link'] ?? ''] ?? 0)
-            );
+        $topics = !empty($scored) ? $this->buildTopics($scored, $viralScores) : [];
+        usort($topics, fn($a, $b) => $b['topic_score'] <=> $a['topic_score']);
+
+        $top10 = [];
+        foreach (array_slice($topics, 0, 10) as $topic) {
+            $article                  = $topic['best_article'];
+            $article['_topic_score']  = (int) $topic['topic_score'];
+            $top10[]                  = $article;
         }
 
-        $top10 = !empty($scored)
-            ? array_slice($this->deduplicateByTopic($scored), 0, 10)
-            : [];
+        // Fill remaining slots with best fb_score articles not already selected
+        if (count($top10) < 10) {
+            $selectedUrls = array_flip(array_filter(array_column($top10, 'link')));
+            $candidates   = array_filter($scored, fn($a) => !isset($selectedUrls[$a['link'] ?? '']));
+            usort($candidates, fn($a, $b) => ($viralScores[$b['link'] ?? ''] ?? 0) <=> ($viralScores[$a['link'] ?? ''] ?? 0));
+            foreach (array_slice($candidates, 0, 10 - count($top10)) as $filler) {
+                $filler['_topic_score'] = 0;
+                $top10[]                = $filler;
+            }
+        }
 
         if (empty($top10)) {
             Log::warning("[FetchNews] All filtered out: {$kw->name}");
         }
 
-        $recent30 = $this->serpApi->filterRecent($allRaw, 30, $kw->category_id ?? '');
+        $recent50 = $this->serpApi->filterRecent($allRaw, 50, $kw->category_id ?? '');
 
-        if (empty($top10) && empty($recent30)) {
+        if (empty($top10) && empty($recent50)) {
             Log::warning("[FetchNews] Nothing to save: {$kw->name}");
             return ['saved' => 0, 'top' => 0, 'recent' => 0];
         }
@@ -97,51 +135,60 @@ class FetchKeywordNewsService
             $url = $item['link'] ?? '';
             if ($url) $byUrl[$url] = array_merge($item, ['list_type' => 'top']);
         }
-        foreach ($recent30 as $item) {
+        foreach ($recent50 as $item) {
             $url = $item['link'] ?? '';
             if ($url && !isset($byUrl[$url])) {
                 $byUrl[$url] = array_merge($item, ['list_type' => 'recent']);
             }
         }
 
-        // Score recent30 items chưa có trong viralScores
+        // Score items chưa được score (recent articles ngoài 12-24h window của filterAndScore)
         foreach ($byUrl as $url => $item) {
             if (!isset($viralScores[$url])) {
                 $viralScores[$url] = $this->viralScore->calculateFromRaw($item, $kw)['score'];
             }
+            if (!isset($qualityScoreMap[$url])) {
+                $qualityScoreMap[$url] = $this->serpApi->scoreArticle($item)['quality_score'] ?? 0;
+            }
         }
 
-        // Skip URLs đã có trong DB
-        $existing = RawArticle::whereIn('url_hash', array_map('md5', array_keys($byUrl)))
+        // Pre-compute url_hash để tránh md5 gọi 2 lần
+        $urlHashes = [];
+        foreach ($byUrl as $url => $_) {
+            $urlHashes[$url] = md5($url);
+        }
+
+        $existing = RawArticle::whereIn('url_hash', array_values($urlHashes))
             ->pluck('url_hash')->flip()->all();
 
-        $rows = [];
-        $now  = now();
+        $rows      = [];
+        $now       = now();
+        $expiresAt = $now->copy()->addHours(24); // tính 1 lần ngoài loop
 
         foreach ($byUrl as $url => $item) {
-            if (isset($existing[md5($url)])) continue;
-
-            $fbScore = $viralScores[$url];
+            $urlHash = $urlHashes[$url];
+            if (isset($existing[$urlHash])) continue;
 
             $rows[] = [
                 'id'             => Str::uuid()->toString(),
                 'keyword_id'     => $kw->id,
                 'title'          => $item['title'] ?? '',
                 'url'            => $url,
-                'url_hash'       => md5($url),
+                'url_hash'       => $urlHash,
                 'snippet'        => $item['snippet'] ?? '',
                 'source'         => $item['source'] ?? '',
                 'source_icon'    => $item['source_icon'] ?? '',
                 'thumbnail'      => $item['thumbnail'] ?? '',
-                'viral_score'    => (int) ($item['quality_score'] ?? $scoreMap[$url]['quality_score'] ?? 0),
-                'fb_score'       => $fbScore,
+                'viral_score'    => $qualityScoreMap[$url] ?? 0,
+                'topic_score'    => $item['_topic_score'] ?? 0,
+                'fb_score'       => $viralScores[$url] ?? 0,
                 'position'       => (int) ($item['position'] ?? 0),
                 'published_date' => $item['date'] ?? '',
                 'stories_count'  => count($item['stories'] ?? []),
                 'top_story'      => !empty($item['stories']),
                 'list_type'      => $item['list_type'],
                 'status'         => 'pending',
-                'expires_at'     => $now->copy()->addHours(24),
+                'expires_at'     => $expiresAt,
                 'created_at'     => $now,
                 'updated_at'     => $now,
             ];
@@ -152,45 +199,182 @@ class FetchKeywordNewsService
             RawArticle::insert($rows);
         }
 
-        Log::info("[FetchNews] Saved {$saved} for: {$kw->name} (top=" . count($top10) . " recent=" . count($recent30) . ")");
+        Log::info("[FetchNews] Saved {$saved} for: {$kw->name} (top=" . count($top10) . " recent=" . count($recent50) . ")");
 
-        return ['saved' => $saved, 'top' => count($top10), 'recent' => count($recent30)];
+        return ['saved' => $saved, 'top' => count($top10), 'recent' => count($recent50)];
     }
 
-    private function deduplicateByTopic(array $articles): array
+    private function buildTopics(array $articles, array $viralScores): array
     {
-        $result   = [];
-        $seenKeys = [];
-
+        // 1. Cluster — lưu thêm fps[] để tính cohesion sau
+        $clusters = [];
         foreach ($articles as $article) {
-            $fp          = $this->titleFingerprint($article['title'] ?? '');
-            $isDuplicate = false;
-
-            foreach ($seenKeys as $existingFp) {
-                if ($this->jaccardSimilarity($fp, $existingFp) >= 0.55) {
-                    $isDuplicate = true;
+            $fp      = $this->titleFingerprint($article['title'] ?? '');
+            $matched = false;
+            foreach ($clusters as &$cluster) {
+                if ($this->jaccardSimilarity($fp, $cluster['fp']) >= 0.45) {
+                    $cluster['articles'][] = $article;
+                    $cluster['fps'][]      = $fp;
+                    $matched = true;
                     break;
                 }
             }
-
-            if (!$isDuplicate) {
-                $result[]   = $article;
-                $seenKeys[] = $fp;
+            unset($cluster);
+            if (!$matched) {
+                $clusters[] = ['fp' => $fp, 'fps' => [$fp], 'articles' => [$article]];
             }
         }
 
-        return $result;
+        // 2. Score từng topic — single pass per cluster
+        $now    = time();
+        $topics = [];
+
+        foreach ($clusters as $cluster) {
+            $arts         = $cluster['articles'];
+            $storiesCount = max(array_map(fn($a) => count($a['stories'] ?? []), $arts));
+            $articleCount = count($arts);
+
+            // Single pass: uniqueSources, avgViral, freshScore, topStory, article hours
+            $sources      = [];
+            $viralSum     = 0.0;
+            $freshSum     = 0.0;
+            $hasTopStory  = false;
+            $articleHours = [];
+
+            foreach ($arts as $i => $a) {
+                $url = $a['link'] ?? '';
+                if ($a['source'] ?? '') $sources[$a['source']] = true;
+                $viralSum        += $viralScores[$url] ?? 0;
+                $ts               = !empty($a['date']) ? (strtotime($a['date']) ?: $now) : $now;
+                $h                = ($now - $ts) / 3600;
+                $articleHours[$i] = $h;
+                $freshSum        += match(true) {
+                    $h <= 3  => 10,
+                    $h <= 6  => 7,
+                    $h <= 12 => 4,
+                    default  => 1,
+                };
+                if (!empty($a['top_story'])) $hasTopStory = true;
+            }
+
+            $uniqueSources = count($sources);
+            $avgViral      = $viralSum / $articleCount;
+            $freshScore    = $freshSum / $articleCount;
+
+            // Early trend: breaking news 1 story nhưng cực hot + cực mới (< 3h)
+            $isEarlyTrend = ($storiesCount === 1 && $avgViral > 85 && $freshScore >= 10 && $uniqueSources >= 1);
+
+            // Loại topic rác — nhưng cho phép early trend qua
+            if (!$isEarlyTrend && ($storiesCount < 2 || $uniqueSources < 2)) continue;
+
+            $topStoryBoost = $hasTopStory ? 10 : 0;
+
+            $titleText   = strtolower(implode(' ', array_column($arts, 'title')));
+            $entityBoost = $this->entityBoost($titleText);
+
+            $saturationPenalty = match(true) {
+                $storiesCount > 25 => 10,
+                $storiesCount > 15 => 5,
+                default            => 0,
+            };
+
+            // Cohesion penalty — pairwise avg Jaccard (chỉ tính khi ≥3 bài)
+            $cohesionPenalty = 0;
+            if ($articleCount >= 3) {
+                $fps   = $cluster['fps'];
+                $n     = count($fps);
+                $sum   = 0.0;
+                $pairs = 0;
+                for ($i = 0; $i < $n; $i++) {
+                    for ($j = $i + 1; $j < $n; $j++) {
+                        $sum += $this->jaccardSimilarity($fps[$i], $fps[$j]);
+                        $pairs++;
+                    }
+                }
+                if ($pairs > 0 && ($sum / $pairs) < 0.4) $cohesionPenalty = 10;
+            }
+
+            // Single article guard — bài lẻ viral không được thắng topic lớn (trừ early trend)
+            $singleArticlePenalty = (!$isEarlyTrend && $storiesCount < 3 && $avgViral > 85) ? 8 : 0;
+
+            $topicScore = ($avgViral * 0.6)
+                + min($storiesCount, 15) * 10
+                + $articleCount  * 3
+                + min($uniqueSources, 8) * 6
+                + $freshScore
+                + $entityBoost
+                + $topStoryBoost
+                + ($isEarlyTrend ? 12 : 0)     // breaking news cực mới được boost qua filter
+                - $saturationPenalty
+                - $cohesionPenalty
+                - $singleArticlePenalty;
+
+            // Bài tốt nhất — dùng lại $articleHours đã tính
+            $clusterBonus = min($storiesCount, 10) * 3;
+            $best         = null;
+            $bestScore    = PHP_INT_MIN;
+            foreach ($arts as $i => $a) {
+                $url   = $a['link'] ?? '';
+                $score = ($viralScores[$url] ?? 0)
+                       + $clusterBonus
+                       + ($this->isTopSource($a['source'] ?? '') ? 5 : 0)
+                       + ($articleHours[$i] <= 3 ? 3 : 0);
+                if ($score > $bestScore) { $bestScore = $score; $best = $a; }
+            }
+
+            $topics[] = [
+                'topic_score'  => $topicScore,
+                'best_article' => $best,
+                'articles'     => $arts,
+            ];
+        }
+
+        return $topics;
+    }
+
+    private function entityBoost(string $text): int
+    {
+        $tier1 = preg_match_all(
+            '/cowboys|chiefs|eagles|patriots|steelers|packers|bears|giants|49ers'
+            . '|mahomes|dak prescott|jalen hurts|brock purdy|jordan love|aaron rodgers'
+            . '|tj watt|dk metcalf|travis kelce|saquon barkley|micah parsons|malik nabers'
+            . '|taylor swift|kim kardashian|beyonce|elon musk|drake|kanye west|rihanna/i',
+            $text
+        );
+
+        if ($tier1 >= 2) return 20; // 15 base + 5 extra cho nhiều entity lớn
+        if ($tier1 >= 1) return 15;
+
+        if (preg_match(
+            '/verstappen|lewis hamilton|leclerc|lando norris|ferrari|red bull racing'
+            . '|carlos alcaraz|jannik sinner|coco gauff|iga swiatek|aryna sabalenka'
+            . '|rory mcilroy|scottie scheffler|tiger woods/i',
+            $text
+        )) return 8;
+
+        return 0;
+    }
+
+    private function isTopSource(string $source): bool
+    {
+        return (bool) preg_match(
+            '/espn|nfl\.com|nba\.com|cnn|bbc|reuters|associated press|ap news'
+            . '|yahoo sports|fox sports|nbc sports|abc|cbssports|bleacher report|the athletic|si\.com/i',
+            $source
+        );
     }
 
     private function titleFingerprint(string $title): array
     {
-        static $stop = ['the','a','an','and','or','but','in','on','at','to','for','of',
+        // array_flip → isset O(1) thay vì in_array O(n)
+        static $stop = null;
+        $stop ??= array_flip(['the','a','an','and','or','but','in','on','at','to','for','of',
             'with','by','from','is','are','was','were','be','been','have','has','had',
             'will','would','could','should','its','it','this','that','about','after',
-            'before','into','than','when','where','who','how','what'];
+            'before','into','than','when','where','who','how','what']);
 
         $words = preg_split('/\W+/', strtolower($title), -1, PREG_SPLIT_NO_EMPTY);
-        $words = array_filter($words, fn($w) => strlen($w) > 2 && !in_array($w, $stop));
+        $words = array_filter($words, fn($w) => strlen($w) > 2 && !isset($stop[$w]));
         return array_values(array_unique($words));
     }
 

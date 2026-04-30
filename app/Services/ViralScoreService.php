@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Log;
  */
 class ViralScoreService
 {
-    private const MAX_RAW_SCORE = 194;
+    private const MAX_RAW_SCORE = 212; // fb_title cap 5→8 (+3), comment_bait cap 15→30 (+15)
 
     private ?array $tier1Domains = null;
     private ?array $tier2Domains = null;
@@ -24,15 +24,38 @@ class ViralScoreService
     // ── A. TITLE SIGNALS ──────────────────────────────────────────────────────
 
     private const POWER_WORDS = [
-        'negative_shock' => [
+        // negative_shock split into 3 levels — high/med/low for proportional scoring
+        'negative_shock_high' => [
             'words'  => [
-                'ban', 'banned', 'fired', 'arrested', 'collapsed',
-                'failed', 'disaster', 'crisis', 'scandal', 'exposed',
-                'caught', 'accused', 'suspended', 'fined', 'sued',
-                'bankrupt', 'shutdown', 'cancelled', 'denied',
-                'rejected', 'stolen', 'leaked', 'hacked', 'crashed',
+                'career-ending', 'devastating', 'brutal', 'humiliating',
+                'nightmare', 'explosive', 'bombshell', 'catastrophic',
+            ],
+            'points' => 12,
+        ],
+        'negative_shock_med' => [
+            'words'  => [
+                'banned', 'fired', 'arrested', 'scandal', 'exposed',
+                'accused', 'suspended', 'traded', 'waived', 'benched', 'released',
             ],
             'points' => 9,
+        ],
+        'negative_shock_low' => [
+            'words'  => [
+                'ban', 'collapsed', 'failed', 'disaster', 'crisis',
+                'caught', 'fined', 'sued', 'bankrupt', 'shutdown', 'cancelled',
+                'denied', 'rejected', 'stolen', 'leaked', 'hacked', 'crashed',
+                'cut', 'dropped',
+            ],
+            'points' => 6,
+        ],
+        'viral_phrases' => [
+            'words'  => [
+                'career in jeopardy', 'future in doubt', 'locker room issues',
+                'under fire', 'on the brink', 'parts ways with',
+                'walks away from', 'no longer with', 'shocking trade',
+                'shocking move', 'major blow', 'massive blow',
+            ],
+            'points' => 10,
         ],
         'urgency' => [
             'words'  => [
@@ -40,6 +63,7 @@ class ViralScoreService
                 'developing', 'urgent', 'immediately', 'official',
                 'confirmed', 'announced', 'effective immediately',
                 'just announced', 'just confirmed',
+                'just reported', 'sources say', 'per report', 'breaking news',
             ],
             'points' => 8,
         ],
@@ -50,6 +74,7 @@ class ViralScoreService
                 'blasts', 'feuds', 'clashes', 'disagrees',
                 'backlash', 'outrage', 'debate', 'divided',
                 'sparks', 'reaction', 'criticism',
+                'confronts', 'disputes', 'heated', 'drama',
             ],
             'points' => 8,
         ],
@@ -67,6 +92,7 @@ class ViralScoreService
                 'record-breaking', 'historic', 'all-time', 'worst ever',
                 'best ever', 'unprecedented', 'most expensive',
                 'number one', 'only one', 'rarest',
+                'highest paid', 'richest', 'most valuable',
             ],
             'points' => 7,
         ],
@@ -76,6 +102,7 @@ class ViralScoreService
                 'survived', 'comeback', 'miracle', 'finally',
                 'breakthrough', 'game-changer', 'transforms',
                 'beats', 'defeats', 'overcomes', 'achieves',
+                'signs', 're-signs', 'extension', 'named starter', 'promoted',
             ],
             'points' => 7,
         ],
@@ -86,6 +113,7 @@ class ViralScoreService
                 'here\'s why', 'this is why', 'the reason',
                 'what happened', 'inside story', 'behind the scenes',
                 'exclusive', 'reveals', 'you won\'t believe',
+                'what no one talks about', 'the truth',
             ],
             'points' => 6,
         ],
@@ -99,34 +127,44 @@ class ViralScoreService
                 'fans react', 'twitter reacts', 'everyone',
                 'nobody', 'you need to', 'we need to talk about',
                 'this changes everything', 'what this means',
+                'what we know', 'here is why', 'what fans think',
             ],
             'points' => 5,
         ],
     ];
 
     private const NEGATIVE_HOOK_PATTERNS = [
-        '/no longer/i'                          => 8,
-        '/is over|it\'s over/i'                 => 7,
-        '/nobody wants|no one wants/i'          => 7,
-        '/fails? to|failed to/i'                => 6,
-        '/the end of/i'                         => 7,
-        '/why .+ is wrong/i'                    => 6,
-        '/won\'t .+ anymore|will no longer/i'   => 7,
-        '/the problem with/i'                   => 5,
-        '/not what you think/i'                 => 6,
-        '/nobody (saw|expected|noticed)/i'      => 7,
-        '/walking away|steps down|retires/i'    => 6,
-        '/loses? (contract|deal|job|spot)/i'    => 6,
+        '/no longer/i'                              => 8,
+        '/wants out|trade demand|requests? trade/i' => 8,
+        '/is over|it\'s over/i'                     => 7,
+        '/nobody wants|no one wants/i'              => 7,
+        '/the end of/i'                             => 7,
+        '/won\'t .+ anymore|will no longer/i'       => 7,
+        '/nobody (saw|expected|noticed)/i'          => 7,
+        '/traded to|waived by|released by|cut by/i' => 7,
+        '/fails? to|failed to/i'                    => 6,
+        '/why .+ is wrong/i'                        => 6,
+        '/not what you think/i'                     => 6,
+        '/walking away|steps down|retires/i'        => 6,
+        '/loses? (contract|deal|job|spot)/i'        => 6,
+        '/injury|injured|out for season|placed on ir/i' => 6,
+        '/loses? starting|benched|demoted/i'        => 6,
+        '/the problem with/i'                       => 5,
+        '/no longer welcome|shown the door/i'       => 5,
     ];
 
     private const FB_TITLE_SIGNALS = [
-        '/^this /i'                            => 2,
-        '/you |your /i'                        => 2,
-        '/we |our /i'                          => 2,
-        '/today|tonight|this week|right now/i' => 2,
-        '/exclusive|first look|revealed/i'     => 3,
-        '/tag someone|share this/i'            => 3,
-        '/\?\s*$/i'                            => 2,
+        '/^this /i'                                => 2,
+        '/you |your /i'                            => 2,
+        '/we |our /i'                              => 2,
+        '/today|tonight|this week|right now/i'     => 2,
+        '/exclusive|first look|revealed/i'         => 3,
+        '/tag someone|share this/i'                => 3,
+        '/\?\s*$/i'                                => 2,
+        '/here\'s why|this is why|real reason/i'   => 2,
+        '/just got|just made|just dropped/i'       => 2,
+        '/must (see|read|know|watch)/i'            => 2,
+        '/^\d+ (things|reasons|ways|players)/i'    => 2,
     ];
 
     // ── B. EMOTION SIGNALS ────────────────────────────────────────────────────
@@ -136,53 +174,69 @@ class ViralScoreService
             'shocking', 'scandal', 'outrage', 'betrayal', 'disgrace',
             'disgusting', 'unacceptable', 'amazing', 'incredible win',
             'proud', 'victory', 'champion', 'legend',
+            'dynasty', 'legendary', 'epic', 'dominant', 'insane',
         ],
         20 => [
             'nobody expected', 'stunning', 'unbelievable',
             'out of nowhere', 'shocking twist', 'jaw-dropping',
             'no one saw', 'blindsided',
+            'nobody predicted', 'stunning move', 'shocked everyone',
         ],
         15 => [
             'finally', 'hope', 'inspiring', 'comeback', 'redemption',
             'overcomes', 'beats the odds', 'rises up',
+            'hero', 'clutch', 'iconic', 'historic moment', 'dream come true',
         ],
         10 => [
             'heartbreaking', 'sad', 'tragedy', 'devastating',
             'loss', 'grief', 'mourning', 'passing',
+            'frustrated', 'furious', 'angry', 'struggling', 'painful',
         ],
         5  => [
             'interesting', 'curious', 'wonder', 'fascinating',
+            'notable', 'significant', 'surprising', 'unexpected',
         ],
     ];
 
     private const COMMENT_TRIGGERS = [
         'two_side' => [
             'patterns' => [
-                '/patriots|cowboys|eagles|chiefs|steelers|49ers/i',
-                '/ferrari|mercedes|red bull/i',
-                '/mahomes|allen|burrow|jackson/i',
+                // NFL teams
+                '/patriots|cowboys|eagles|chiefs|steelers|49ers|packers|bears|giants/i',
+                // NFL players — franchise stars
+                '/mahomes|parsons|jordan love|caleb williams|jaxson dart|dak prescott|jalen hurts|brock purdy|tj watt|dk metcalf|travis kelce|saquon barkley|george pickens|aaron rodgers|malik nabers/i',
+                // F1 + CARS
+                '/ferrari|mercedes|red bull|lamborghini|mclaren|verstappen|hamilton|leclerc|lando norris/i',
+                // SHOWBIZ — highest comment volume of all categories
+                '/taylor swift|drake|kanye|beyoncé|beyonce|kardashian|rihanna|justin bieber|elon musk|dua lipa|bad bunny/i',
+                // TENNIS rivalry
+                '/alcaraz|jannik sinner|coco gauff|iga swiatek|aryna sabalenka/i',
+                // GOLF — LIV vs PGA is a major debate trigger
+                '/liv golf|pga tour|rory mcilroy|scottie scheffler|tiger woods/i',
+                // MotoGP rivalry
+                '/marc marquez|bagnaia|jorge martin|ducati|honda/i',
             ],
             'points' => 15,
         ],
         'blame' => [
             'patterns' => [
-                '/blame|fault|responsible|caused/i',
-                '/should have|could have|mistake/i',
+                '/blame|fault|responsible|caused|costing|ruined|destroyed|choked/i',
+                '/should have|could have|mistake|blew it|blew the|let down|bottled/i',
             ],
             'points' => 12,
         ],
         'defense' => [
             'patterns' => [
-                '/overrated|underrated/i',
-                '/doesn\'t deserve|should be/i',
-                '/worst|greatest of all time|goat/i',
+                '/overrated|underrated|disrespected|slept on|criminally underrated/i',
+                '/doesn\'t deserve|should be|greatest|legend|hall of fame/i',
+                '/worst|greatest of all time|goat|best ever|all-time/i',
             ],
             'points' => 10,
         ],
         'personal' => [
             'patterns' => [
                 '/you |your |we |our /i',
-                '/everyone|nobody|anybody/i',
+                '/everyone|nobody|anybody|who else|agree\?|hot take/i',
             ],
             'points' => 8,
         ],
@@ -221,7 +275,7 @@ class ViralScoreService
             'tier2' => ['Kayshon Boutte', 'Romeo Doubs', 'Kevin Byard', 'Robert Spillane', 'Marte Mapu', 'Caleb Lomu', 'Eli Raridon', 'Gabe Jacas' ],
         ],
         'CHICAGO BEARS' => [
-            'tier1' => ['Caleb Williams', 'Montez Sweat', 'Rome Odunze', 'Luther Burden III', 'Colston Loveland', 'Cole Kmet', "D'Andre Swift", 'Darnell Wright', 'Montez Sweat', 'Jaylon Johnson'],
+            'tier1' => ['Caleb Williams', 'Rome Odunze', 'Luther Burden III', 'Colston Loveland', 'Cole Kmet', "D'Andre Swift", 'Darnell Wright', 'Montez Sweat', 'Jaylon Johnson'],
             'tier2' => ['Kyler Gordon', 'Grady Jarrett', 'Austin Booker', 'Devin Bush', 'Jahdae Walker', 'Kalif Raymond', 'Dillon Thieneman', 'Malik Muhammad', 'Keyshaun Elliott',],
         ],
         'NEW YORK GIANTS' => [
@@ -265,23 +319,22 @@ class ViralScoreService
             'tier1' => [
                 'Tiger Woods', 'Rory McIlroy',
                 'Scottie Scheffler', 'Jon Rahm',
-                'PGA Tour', 'LIV Golf',
             ],
             'tier2' => [
                 'Jordan Spieth', 'Justin Thomas',
                 'Brooks Koepka', 'Bryson DeChambeau',
+                'PGA Tour', 'LIV Golf',
             ],
         ],
         'TENNIS' => [
             'tier1' => [
                 'Carlos Alcaraz', 'Jannik Sinner',
-                'Coco Gauff', 'Iga Swiatek', 'Aryna Sabalenka', 'US Open',
-                'Wimbledon', 'Roland Garros', 'Australian Open'
+                'Coco Gauff', 'Iga Swiatek', 'Aryna Sabalenka',
+                'Wimbledon', 'US Open', 'Roland Garros', 'Australian Open',
             ],
             'tier2' => [
                 'Ben Shelton', 'Taylor Fritz', 'Frances Tiafoe',
                 'Jessica Pegula', 'Daniil Medvedev',
-                'Wimbledon', 'US Open', 'Roland Garros',
             ],
         ],
         'CARS' => [
@@ -474,6 +527,7 @@ class ViralScoreService
             'title_structure' => $this->titleStructureScore($title),
             'negative_hooks'  => $this->negativeHookScore($title),
             'fb_title'        => $this->fbTitleScore($title),
+            'title_penalty'   => $this->titlePenaltyScore($title),
 
             // B. EMOTION (max 40)
             'emotion'         => $this->emotionScore($text),
@@ -498,7 +552,7 @@ class ViralScoreService
         ];
 
         $rawScore        = array_sum($signals);
-        $normalizedScore = (int) min(round(($rawScore / self::MAX_RAW_SCORE) * 100), 100);
+        $normalizedScore = (int) max(1, min(round(($rawScore / self::MAX_RAW_SCORE) * 100), 100));
         $tier            = $this->getTier($normalizedScore);
 
         Log::debug('ViralScoreService', [
@@ -541,9 +595,13 @@ class ViralScoreService
             }
         }
 
-        if (in_array('urgency', $matched) && in_array('negative_shock', $matched)) $score += 5;
+        $hasNegShock = in_array('negative_shock_high', $matched)
+                    || in_array('negative_shock_med', $matched)
+                    || in_array('negative_shock_low', $matched);
+
+        if (in_array('urgency', $matched) && $hasNegShock)                           $score += 5;
         if (in_array('superlative', $matched) && in_array('money_number', $matched)) $score += 3;
-        if (in_array('controversy', $matched) && in_array('negative_shock', $matched)) $score += 4;
+        if (in_array('controversy', $matched) && $hasNegShock)                       $score += 4;
 
         return min($score, 25);
     }
@@ -579,7 +637,15 @@ class ViralScoreService
         foreach (self::FB_TITLE_SIGNALS as $pattern => $points) {
             if (preg_match($pattern, $title)) $score += $points;
         }
-        return min($score, 5);
+        return min($score, 8);
+    }
+
+    private function titlePenaltyScore(string $title): int
+    {
+        $len = strlen($title);
+        if ($len < 35)  return -5;
+        if ($len > 100) return -4;
+        return 0;
     }
 
     // ── B. EMOTION ────────────────────────────────────────────────────────────
@@ -609,7 +675,7 @@ class ViralScoreService
                 }
             }
         }
-        return min($score, 15);
+        return min($score, 30);
     }
 
     // ── C. RECOGNITION ────────────────────────────────────────────────────────
@@ -645,7 +711,7 @@ class ViralScoreService
         elseif ($inTier($tier2)) $score += 5;
         else                     $score += 2;
 
-        if (preg_match_all('/according to|told [A-Z]|said [A-Z]/i', $content) >= 2) $score += 3;
+        if ((preg_match_all('/according to|told [A-Z]|said [A-Z]/i', $content) ?: 0) >= 2) $score += 3;
 
         return min($score, 11);
     }
@@ -664,8 +730,12 @@ class ViralScoreService
         $score  = 3;
         $domain = parse_url($thumbnail, PHP_URL_HOST) ?? '';
 
-        $trusted = ['espn.com','nfl.com','cbssports.com','apnews.com','reuters.com',
-                    'bbc.co.uk','cnn.com','foxnews.com','nbcsports.com','usatoday.com'];
+        $trusted = [
+            'espn.com','nfl.com','cbssports.com','apnews.com','reuters.com',
+            'bbc.co.uk','cnn.com','foxnews.com','nbcsports.com','usatoday.com',
+            'si.com','heavy.com','bleacherreport.com','theathletic.com',
+            'sportingnews.com','theringer.com','pro-football-reference.com',
+        ];
         foreach ($trusted as $d) {
             if (str_contains($domain, $d)) { $score += 5; break; }
         }
@@ -714,9 +784,9 @@ class ViralScoreService
 
     private function controversyScore(string $text): int
     {
-        if (str_contains($text, 'disagrees') || str_contains($text, ' vs ')) return 10;
-        if (str_contains($text, 'blamed')    || str_contains($text, 'loser')) return 7;
-        if (str_contains($text, 'divided')   || str_contains($text, 'debate')) return 5;
+        if (preg_match('/\bvs\b|versus|disagrees|confronts|fires back|clashes|calls out|face off/i', $text)) return 10;
+        if (preg_match('/blamed|criticism|criticized|slams|blasts|drama|scandal|controversy|dispute|condemned/i', $text)) return 7;
+        if (preg_match('/divided|debate|feuds|tension|heated|backlash|pushback|pushes back/i', $text)) return 5;
         return 0;
     }
 
