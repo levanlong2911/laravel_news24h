@@ -43,7 +43,6 @@ class FetchKeywordNewsService
             Log::warning("[FetchNews] No results: {$kw->name}");
             return ['saved' => 0, 'top' => 0, 'recent' => 0];
         }
-
         $scored = $this->serpApi->filterAndScore($allRaw);
 
         // ViralScore + quality_score map cho tất cả filtered articles

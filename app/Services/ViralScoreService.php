@@ -306,35 +306,52 @@ class ViralScoreService
         ],
         'FORMULA 1' => [
             'tier1' => [
-                'Max Verstappen', 'Lewis Hamilton',
-                'Charles Leclerc', 'Lando Norris',
+                'Max Verstappen', 'Verstappen',
+                'Lewis Hamilton', 'Hamilton',
+                'Charles Leclerc', 'Leclerc',
+                'Lando Norris', 'Norris',
                 'Ferrari', 'Red Bull', 'Mercedes',
             ],
             'tier2' => [
-                'Carlos Sainz', 'Fernando Alonso',
-                'George Russell', 'Oscar Piastri',
+                'Carlos Sainz', 'Sainz',
+                'Fernando Alonso', 'Alonso',
+                'George Russell',
+                'Oscar Piastri', 'Piastri',
             ],
         ],
         'GOLF' => [
             'tier1' => [
-                'Tiger Woods', 'Rory McIlroy',
-                'Scottie Scheffler', 'Jon Rahm',
+                'Tiger Woods', 'Woods',
+                'Rory McIlroy', 'McIlroy',
+                'Scottie Scheffler', 'Scheffler',
+                'Jon Rahm', 'Rahm',
             ],
             'tier2' => [
-                'Jordan Spieth', 'Justin Thomas',
-                'Brooks Koepka', 'Bryson DeChambeau',
+                'Jordan Spieth', 'Spieth',
+                'Justin Thomas',
+                'Brooks Koepka', 'Koepka',
+                'Bryson DeChambeau', 'DeChambeau',
+            ],
+            'tier3' => [
                 'PGA Tour', 'LIV Golf',
+                'The Masters', 'US Open', 'The Open Championship', 'Ryder Cup',
             ],
         ],
         'TENNIS' => [
             'tier1' => [
-                'Carlos Alcaraz', 'Jannik Sinner',
-                'Coco Gauff', 'Iga Swiatek', 'Aryna Sabalenka',
+                'Carlos Alcaraz', 'Alcaraz',
+                'Jannik Sinner', 'Sinner',
+                'Coco Gauff', 'Gauff',
+                'Iga Swiatek', 'Swiatek',
+                'Aryna Sabalenka', 'Sabalenka',
                 'Wimbledon', 'US Open', 'Roland Garros', 'Australian Open',
             ],
             'tier2' => [
-                'Ben Shelton', 'Taylor Fritz', 'Frances Tiafoe',
-                'Jessica Pegula', 'Daniil Medvedev',
+                'Ben Shelton', 'Shelton',
+                'Taylor Fritz', 'Fritz',
+                'Frances Tiafoe', 'Tiafoe',
+                'Jessica Pegula', 'Pegula',
+                'Daniil Medvedev', 'Medvedev',
             ],
         ],
         'CARS' => [
@@ -347,10 +364,15 @@ class ViralScoreService
         ],
         'MOTOGP' => [
             'tier1' => [
-                'Marc Marquez', 'Francesco Bagnaia',
+                'Marc Marquez', 'Marquez',
+                'Francesco Bagnaia', 'Bagnaia',
                 'Jorge Martin', 'Ducati', 'Honda',
             ],
-            'tier2' => ['Fabio Quartararo', 'Maverick Viñales', 'Yamaha', 'Aprilia'],
+            'tier2' => [
+                'Fabio Quartararo', 'Quartararo',
+                'Maverick Viñales', 'Viñales',
+                'Yamaha', 'Aprilia',
+            ],
         ],
         'MOTO' => [
             'tier1' => ['Harley-Davidson', 'Ducati', 'BMW Motorrad', 'Indian Motorcycle', 'Honda'],
@@ -689,6 +711,9 @@ class ViralScoreService
         }
         foreach ($lists['tier2'] ?? [] as $name) {
             if (stripos($text, $name) !== false) return 10;
+        }
+        foreach ($lists['tier3'] ?? [] as $name) {
+            if (stripos($text, $name) !== false) return 5;
         }
         if (preg_match('/\b[A-Z][a-z]+ [A-Z][a-z]+\b/', $text)) return 3;
 

@@ -259,11 +259,25 @@ document.addEventListener('click', function(e) {
     .then(data => {
         if (data.success) {
             showToast(data.message, 'success');
-            if (!data.already) {
-                btn.outerHTML = '<span class="badge badge-success">Saved</span>';
-            } else {
-                btn.outerHTML = '<span class="badge badge-secondary">Existed</span>';
+
+            const tr = btn.closest('tr');
+
+            // Update row style
+            tr.classList.add('table-light');
+
+            // Update status badge
+            const statusTd = tr.querySelector('td:nth-last-child(2)');
+            if (statusTd) statusTd.innerHTML = '<span class="badge badge-success">Done</span>';
+
+            // Update view button (first button in actions td)
+            const actionsTd = tr.querySelector('td:last-child');
+            if (actionsTd && data.article_url) {
+                const viewBtn = actionsTd.querySelector('a, span.btn-outline-secondary');
+                if (viewBtn) viewBtn.outerHTML = `<a href="${data.article_url}" class="btn btn-xs btn-outline-primary" title="View Article"><i class="fas fa-eye"></i></a>`;
             }
+
+            // Replace download button
+            btn.outerHTML = '<span class="badge badge-success">Saved</span>';
         } else {
             showToast(data.message || 'Lỗi không xác định.', 'error');
             btn.disabled = false;

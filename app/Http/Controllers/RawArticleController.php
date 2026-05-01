@@ -77,16 +77,7 @@ class RawArticleController extends Controller
         RawArticle::where('status', '!=', 'generating')->delete();
 
         foreach ($keywords as $kw) {
-            $queries = array_filter(array_merge(
-                [!empty($kw->search_keyword) ? $kw->search_keyword : ($kw->name . ' news')],
-                $kw->extra_queries ?? []
-            ));
-            foreach ($queries as $q) {
-                Cache::forget('serp_news_v2_' . md5($q));
-            }
-        }
-
-        foreach ($keywords as $kw) {
+            $this->clearQueryCache($kw);
             $fetchService->fetch($kw);
         }
 
@@ -112,14 +103,7 @@ class RawArticleController extends Controller
             ->whereIn('status', ['pending', 'failed'])
             ->delete();
 
-        $queries = array_filter(array_merge(
-            [!empty($keyword->search_keyword) ? $keyword->search_keyword : ($keyword->name . ' news')],
-            $keyword->extra_queries ?? []
-        ));
-        foreach ($queries as $q) {
-            Cache::forget('serp_news_v2_' . md5($q));
-        }
-
+        $this->clearQueryCache($keyword);
         $result = $fetchService->fetch($keyword);
 
         return back()->with('success', "Fetched {$keyword->name}: {$result['saved']} new (top={$result['top']}, recent={$result['recent']}).");
@@ -135,13 +119,17 @@ class RawArticleController extends Controller
         $content  = trim($contents[$rawArticle->url] ?? '');
 
         if (strlen($content) < 100) {
-            return back()->with('error', 'Không crawl được nội dung bài viết.');
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'message' => 'Không crawl được nội dung bài viết.'])
+                : back()->with('error', 'Không crawl được nội dung bài viết.');
         }
 
         $title = $rawArticle->title;
         $slug  = $this->uniqueSlug(Str::slug($title ?: 'article'));
 
-        $finalUrlHash = Article::where('source_url_hash', $urlHash)->exists()
+        $already = Article::where('source_url_hash', $urlHash)->exists();
+
+        $finalUrlHash = $already
             ? md5($rawArticle->url . '_' . time())
             : $urlHash;
 
@@ -164,7 +152,14 @@ class RawArticleController extends Controller
 
         $rawArticle->update(['status' => 'done', 'article_id' => $article->id]);
 
-        return back()->with('success', 'Đã lưu bài viết: ' . $title);
+        return $request->expectsJson()
+            ? response()->json([
+                'success'     => true,
+                'already'     => $already,
+                'message'     => 'Đã lưu bài viết: ' . $title,
+                'article_url' => route('article.show', $article),
+            ])
+            : back()->with('success', 'Đã lưu bài viết: ' . $title);
     }
 
     public function clearRefetch(Request $request, FetchKeywordNewsService $fetchService)
@@ -179,14 +174,7 @@ class RawArticleController extends Controller
             ->where('status', '!=', 'generating')
             ->delete();
 
-        $queries = array_filter(array_merge(
-            [!empty($keyword->search_keyword) ? $keyword->search_keyword : ($keyword->name . ' news')],
-            $keyword->extra_queries ?? []
-        ));
-        foreach ($queries as $q) {
-            Cache::forget('serp_news_v2_' . md5($q));
-        }
-
+        $this->clearQueryCache($keyword);
         $result = $fetchService->fetch($keyword);
 
         return back()->with('success', "Cleared {$deleted} + fetched {$result['saved']} new for {$keyword->name}.");
@@ -242,6 +230,17 @@ class RawArticleController extends Controller
         }
 
         return ['article' => $article, 'reasons' => $reasons];
+    }
+
+    private function clearQueryCache(Keyword $keyword): void
+    {
+        $queries = array_filter(array_merge(
+            [!empty($keyword->search_keyword) ? $keyword->search_keyword : ($keyword->name . ' news')],
+            $keyword->extra_queries ?? []
+        ));
+        foreach ($queries as $q) {
+            Cache::forget('serp_news_v2_' . md5($q));
+        }
     }
 
     private function uniqueSlug(string $base): string

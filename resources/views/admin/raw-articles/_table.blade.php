@@ -117,13 +117,11 @@
                    class="btn btn-xs btn-outline-secondary" title="Source">
                     <i class="fas fa-external-link-alt"></i>
                 </a>
-                <form method="POST" action="{{ route('raw-article.save', $raw) }}" class="d-inline">
-                    @csrf
-                    <button class="btn btn-xs {{ $raw->status === 'done' ? 'btn-outline-primary' : 'btn-primary' }}"
-                            title="{{ $raw->status === 'done' ? 'Tải lại (bài mới)' : 'Tải & lưu bài viết' }}">
-                        <i class="fas fa-download"></i>
-                    </button>
-                </form>
+                <button class="btn btn-xs btn-save-article {{ $raw->status === 'done' ? 'btn-outline-primary' : 'btn-primary' }}"
+                        data-url="{{ route('raw-article.save', $raw) }}"
+                        title="{{ $raw->status === 'done' ? 'Tải lại (bài mới)' : 'Tải & lưu bài viết' }}">
+                    <i class="fas fa-download"></i>
+                </button>
                 <form method="POST" action="{{ route('raw-article.destroy', $raw) }}"
                       class="d-inline" onsubmit="return confirm('Delete?')">
                     @csrf @method('DELETE')
