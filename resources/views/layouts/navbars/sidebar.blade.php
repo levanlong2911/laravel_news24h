@@ -91,6 +91,14 @@
                         <p>Prompt Framework</p>
                     </a>
                 </li>
+                @if(auth()->user()->isAdmin())
+                <li class="nav-item {{ ($route == 'claude-usage') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('admin.claude-usage') }}" class="nav-link d-inline-flex {{ ($action == 'admin-claude-usage') ? $active ?? '' : '' }}">
+                        <i class="nav-icon fas fa-chart-bar"></i>
+                        <p>Claude Usage</p>
+                    </a>
+                </li>
+                @endif
             </ul>
         </nav>
         <!-- /.sidebar-menu -->

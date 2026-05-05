@@ -3,16 +3,18 @@
 namespace App\Models;
 
 use App\Models\Scopes\DomainScope;
+use App\Models\Traits\HasUniqueSlug;
 use App\Models\Traits\HasUuid;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Cache\TaggableStore;
 
+/** @method static string uniqueSlug(string $base, ?string $excludeId = null) */
 class Post extends Model
 {
     use HasFactory;
-    use HasUuid;
+    use HasUuid, HasUniqueSlug;
 
     protected $fillable = [
         'id', 'title', 'meta_description', 'content', 'slug', 'category_id', 'author_id', 'domain_id', 'thumbnail',

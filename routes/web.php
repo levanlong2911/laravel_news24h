@@ -6,6 +6,7 @@ use App\Http\Controllers\KeywordController;
 use App\Http\Controllers\NewsSourceController;
 use App\Http\Controllers\RawArticleController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\ClaudeUsageController;
 use App\Http\Controllers\AdvertisementController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CategoryController;
@@ -18,7 +19,6 @@ use App\Http\Controllers\ModalConfirmController;
 use App\Http\Controllers\NewsWebController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
-use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Response;
@@ -56,6 +56,7 @@ Route::group(
     function() {
     // Admin
     Route::get('/', [AdminController::class, 'index'])->name('admin.index');
+    Route::get('/claude-usage', [ClaudeUsageController::class, 'index'])->middleware('admin')->name('admin.claude-usage');
     Route::match(['get', 'post'], '/add', [AdminController::class, 'add'])->name('admin.add');
     Route::match(['get', 'post'], '/update/{id}', [AdminController::class, 'update'])->name('admin.update');
     Route::match(['get', 'post'], '/delete/{id}', [AdminController::class, 'delete'])->name('admin.delete');
@@ -153,8 +154,11 @@ Route::group(
         Route::post('/store-manual',                 [ArticleController::class, 'storeManual'])  ->name('article.storeManual');
         Route::post('/send-to-claude',               [ArticleController::class, 'sendToClaude']) ->name('article.sendToClaude');
         Route::post('/synthesize',                   [ArticleController::class, 'synthesize'])   ->name('article.synthesize');
-        Route::post('/{article}/publish',            [ArticleController::class, 'publish'])    ->name('article.publish');
-        Route::post('/{article}/unpublish',          [ArticleController::class, 'unpublish'])  ->name('article.unpublish');
+        Route::post('/{article}/publish',            [ArticleController::class, 'publish'])         ->name('article.publish');
+        Route::post('/{article}/unpublish',          [ArticleController::class, 'unpublish'])       ->name('article.unpublish');
+        Route::post('/{article}/publish-blogbio',    [ArticleController::class, 'publishBlogbio'])  ->name('article.publishBlogbio');
+        Route::get('/{article}/search-images',       [ArticleController::class, 'searchImages'])   ->name('article.searchImages');
+        Route::post('/{article}/update-thumbnail',   [ArticleController::class, 'updateThumbnail'])->name('article.updateThumbnail');
         Route::delete('/{article}',                  [ArticleController::class, 'destroy'])    ->name('article.destroy');
         Route::get('/{article}',                     [ArticleController::class, 'show'])       ->name('article.show');
     });
@@ -194,7 +198,7 @@ Route::group(
     Route::get("/modal-confirm", [ModalConfirmController::class, "modalConfirm"])->name("modal.confirm");
 });
 
-Route::middleware('auth:sanctum')->get('/posts', function (Request $request) {
+Route::middleware('auth:sanctum')->get('/posts', function () {
     return \App\Models\Post::latest()->get();
 });
 

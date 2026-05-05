@@ -2,13 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Traits\HasUniqueSlug;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\MassPrunable;
 
+/** @method static string uniqueSlug(string $base, ?string $excludeId = null) */
 class Article extends Model
 {
-    use HasUuids, MassPrunable;
+    use HasUuids, MassPrunable, HasUniqueSlug;
 
     protected $fillable = [
         'keyword_id',
