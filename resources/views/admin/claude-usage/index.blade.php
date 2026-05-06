@@ -19,6 +19,38 @@
                 <button type="submit" class="btn btn-primary">Lọc</button>
             </form>
 
+            {{-- Monthly Summary --}}
+            @if($monthlySummary->isNotEmpty())
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong>Tổng tháng {{ $month }}</strong>
+                    <span class="badge badge-primary badge-lg" style="font-size:1rem">Tổng: {{ number_format($grandTotal) }} lần</span>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead class="thead-light">
+                            <tr>
+                                <th>Member</th>
+                                <th class="text-right">Số lần gọi Claude</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($monthlySummary as $row)
+                            <tr>
+                                <td>{{ $adminMap[$row->admin_id]->name ?? $row->admin_id }}</td>
+                                <td class="text-right"><strong>{{ number_format($row->total) }}</strong></td>
+                            </tr>
+                            @endforeach
+                            <tr class="table-active font-weight-bold">
+                                <td>Tổng cộng</td>
+                                <td class="text-right">{{ number_format($grandTotal) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            @endif
+
             {{-- Daily Summary --}}
             @if($dailySummary->isNotEmpty())
             <div class="card mb-4">

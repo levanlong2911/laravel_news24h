@@ -39,16 +39,29 @@ class ClaudeUsageController extends Controller
             ->get()
             ->groupBy('day');
 
+        // Tổng cả tháng theo admin
+        $monthlySummary = ClaudeUsageLog::selectRaw('admin_id, COUNT(*) as total')
+            ->whereYear('created_at', $year)
+            ->whereMonth('created_at', $mon)
+            ->when($adminId, fn($q) => $q->where('admin_id', $adminId))
+            ->groupBy('admin_id')
+            ->orderByDesc('total')
+            ->get();
+
+        $grandTotal = $monthlySummary->sum('total');
+
         return view('admin.claude-usage.index', [
-            'route'        => 'claude-usage',
-            'action'       => 'admin-claude-usage',
-            'menu'         => 'menu-open',
-            'active'       => 'active',
-            'logs'         => $logs,
-            'admins'       => $admins,
-            'dailySummary' => $dailySummary,
-            'month'        => $month,
-            'adminId'      => $adminId,
+            'route'          => 'claude-usage',
+            'action'         => 'admin-claude-usage',
+            'menu'           => 'menu-open',
+            'active'         => 'active',
+            'logs'           => $logs,
+            'admins'         => $admins,
+            'dailySummary'   => $dailySummary,
+            'monthlySummary' => $monthlySummary,
+            'grandTotal'     => $grandTotal,
+            'month'          => $month,
+            'adminId'        => $adminId,
         ]);
     }
 }
