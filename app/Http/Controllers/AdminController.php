@@ -63,7 +63,7 @@ class AdminController extends Controller
         ]);
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, string $id)
     {
         $dataAcc = $this->adminService->getByIdAcc($id);
         if(!$dataAcc) {
@@ -111,14 +111,14 @@ class AdminController extends Controller
             return redirect()->back()->with('error', __('messages.account_not_found'));
         }
         $roleAcc = $this->adminService->getRoleAcc($infoAcc->role_id);
-        // dd($roleAcc);
         return view("admin.detail", [
-            "route" => "admin",
-            "action" => "admin-detail",
-            "menu" => "menu-open",
-            "active" => "active",
+            "route"          => "admin",
+            "action"         => "admin-detail",
+            "menu"           => "menu-open",
+            "active"  => "active",
             'infoAcc' => $infoAcc,
             'roleAcc' => $roleAcc,
         ]);
     }
+
 }

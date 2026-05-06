@@ -73,6 +73,12 @@ class PostGuard
      */
     private function validateOutput(string $raw): array
     {
+        // Sonnet gate reject — check trước khi tốn 3 tầng parse
+        if (str_contains($raw, 'GENERATE BLOCKED')) {
+            Log::warning('[PostGuard] GENERATE BLOCKED sentinel', ['raw' => substr($raw, 0, 100)]);
+            return [null, GuardReason::BLOCKED_CONTENT];
+        }
+
         // Strip markdown code block nếu có
         $clean = preg_replace('/^```(?:json)?\s*/i', '', trim($raw));
         $clean = preg_replace('/\s*```$/', '', $clean);
@@ -90,6 +96,11 @@ class PostGuard
         }
 
         if (!is_array($data)) {
+            // Last resort: regex-extract individual fields
+            $data = $this->extractFieldsViaRegex($clean);
+        }
+
+        if (!is_array($data)) {
             Log::warning('[PostGuard] JSON parse failed', ['raw' => substr($raw, 0, 500)]);
             return [null, GuardReason::JSON_INVALID];
         }
@@ -99,9 +110,48 @@ class PostGuard
                 Log::warning("[PostGuard] Missing required field: {$field}");
                 return [null, GuardReason::MISSING_FIELDS];
             }
+
         }
 
         return [$data, GuardReason::OK];
+    }
+
+    // ── Private — Regex fallback ──────────────────────────────────────────────
+
+    /**
+     * Khi JSON parse hoàn toàn thất bại, thử extract từng field bằng regex.
+     * Xử lý HTML dài trong "content" bằng cách match đến key tiếp theo hoặc cuối object.
+     */
+    private function extractFieldsViaRegex(string $raw): ?array
+    {
+        $fields = ['title', 'meta_description', 'summary', 'content',
+                   'fb_image_text', 'fb_quote', 'fb_post_content'];
+        $result = [];
+
+        foreach ($fields as $field) {
+            // Match: "field": "value" — value có thể chứa escaped chars, không dừng ở \"
+            if (preg_match('/"' . preg_quote($field, '/') . '"\s*:\s*"((?:[^"\\\\]|\\\\.)*)"/s', $raw, $m)) {
+                $result[$field] = stripcslashes($m[1]);
+            }
+        }
+
+        // faq array
+        if (preg_match('/"faq"\s*:\s*(\[.*?\])/s', $raw, $m)) {
+            $faqDecoded = json_decode($m[1], true);
+            if (is_array($faqDecoded)) {
+                $result['faq'] = $faqDecoded;
+            }
+        }
+
+        if (empty($result['title']) || empty($result['content'])) {
+            return null;
+        }
+
+        Log::warning('[PostGuard] Used regex fallback to extract fields', [
+            'keys_found' => array_keys($result),
+        ]);
+
+        return $result;
     }
 
     // ── Private — Hallucination ───────────────────────────────────────────────

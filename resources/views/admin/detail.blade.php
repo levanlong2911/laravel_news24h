@@ -81,10 +81,10 @@
                                                 <a id="delete_form" class="btn button-del btn-danger">
                                                     {{ __('admin.delete') }}
                                                 </a>
-                                                <a href="{{ route('admin.update',['id' => $infoAcc->id]) }}" class="btn button-create-update w-200">
-                                                    {{ __('admin.edit') }}
-                                                </a>
                                             @endif
+                                            <a href="{{ route('admin.update',['id' => $infoAcc->id]) }}" class="btn button-create-update w-200">
+                                                {{ __('admin.edit') }}
+                                            </a>
                                         </div>
                                     </div>
                                 </form>

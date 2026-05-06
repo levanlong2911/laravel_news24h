@@ -536,6 +536,53 @@ class SerpApiService
         };
     }
 
+    // ══════════════════════════════════════════════
+    // IMAGES — Google Images search, filter ≥1200px
+    // ══════════════════════════════════════════════
+
+    public function searchImages(string $query, int $num = 20): array
+    {
+        $cacheKey = 'serp_images_' . md5($query . '_' . $num);
+
+        if ($cached = Cache::get($cacheKey)) {
+            return $cached;
+        }
+
+        $images = $this->withRetry(function () use ($query, $num) {
+            $response = $this->client->get('https://serpapi.com/search', [
+                'query' => [
+                    'engine'  => 'google_images',
+                    'q'       => $query,
+                    'num'     => $num,
+                    'imgsz'   => 'l',
+                    'api_key' => $this->apiKey,
+                ],
+            ]);
+            $data = json_decode($response->getBody(), true);
+            return collect($data['images_results'] ?? [])
+                ->filter(fn($img) =>
+                    !empty($img['original']) &&
+                    ($img['original_width'] ?? 0) >= 1200
+                )
+                ->map(fn($img) => [
+                    'url'       => $img['original'],
+                    'thumbnail' => $img['thumbnail'] ?? $img['original'],
+                    'width'     => $img['original_width']  ?? 0,
+                    'height'    => $img['original_height'] ?? 0,
+                    'source'    => $img['source'] ?? '',
+                    'title'     => $img['title']  ?? '',
+                ])
+                ->values()
+                ->all();
+        }, "Images[{$query}]");
+
+        if (!empty($images)) {
+            Cache::put($cacheKey, $images, 3600);
+        }
+
+        return $images;
+    }
+
     private function isWithinHours(string $date, int $hours): bool
     {
         if (empty($date)) return $hours >= 24;

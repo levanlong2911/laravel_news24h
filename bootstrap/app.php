@@ -51,6 +51,4 @@ $app->singleton(
 | from the actual running of the application and sending responses.
 |
 */
-putenv('PANTHER_CHROME_DRIVER_BINARY=' . base_path('drivers/chromedriver'));
-
 return $app;

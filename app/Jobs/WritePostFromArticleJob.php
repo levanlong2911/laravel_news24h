@@ -79,7 +79,7 @@ class WritePostFromArticleJob implements ShouldQueue
 
             // ── STEP 3: Lưu vào Post ──────────────────────────────────────────
             $finalTitle = trim($parsed['title'] ?? $article->title);
-            $slug       = $this->uniqueSlug(Str::slug($finalTitle ?: 'article'));
+            $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article'));
 
             $admin  = Cache::remember('default_admin',  3600, fn() => Admin::first());
             $domain = Cache::remember('default_domain', 3600, fn() => Domain::first());
@@ -203,16 +203,6 @@ PROMPT;
         return null;
     }
 
-    private function uniqueSlug(string $base): string
-    {
-        $slug    = $base ?: 'article';
-        $counter = 1;
-        while (Post::where('slug', $slug)->exists()) {
-            $slug = "{$base}-{$counter}";
-            $counter++;
-        }
-        return $slug;
-    }
 
     public function failed(\Throwable $e): void
     {

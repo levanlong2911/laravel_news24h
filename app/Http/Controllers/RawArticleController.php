@@ -125,7 +125,7 @@ class RawArticleController extends Controller
         }
 
         $title = $rawArticle->title;
-        $slug  = $this->uniqueSlug(Str::slug($title ?: 'article'));
+        $slug  = Article::uniqueSlug(Str::slug($title ?: 'article'));
 
         $already = Article::where('source_url_hash', $urlHash)->exists();
 
@@ -243,14 +243,4 @@ class RawArticleController extends Controller
         }
     }
 
-    private function uniqueSlug(string $base): string
-    {
-        $slug    = $base ?: 'article';
-        $counter = 1;
-        while (Article::where('slug', $slug)->exists()) {
-            $slug = "{$base}-{$counter}";
-            $counter++;
-        }
-        return $slug;
-    }
 }

@@ -24,16 +24,19 @@ class PostService
     private PostRepositoryInterface $postRepository;
     private PostTagRepositoryInterface $postTagRepository;
     private PostTagService $postTagService;
+    private ImageService $imageService;
 
     public function __construct(
         PostRepositoryInterface $postRepository,
         PostTagRepositoryInterface $postTagRepository,
         PostTagService $postTagService,
+        ImageService $imageService,
     )
     {
         $this->postRepository = $postRepository;
         $this->postTagRepository = $postTagRepository;
         $this->postTagService = $postTagService;
+        $this->imageService = $imageService;
     }
 
 
@@ -60,7 +63,7 @@ class PostService
             // Chuyển đổi ảnh sang WebP và cập nhật editor_content
             $updatedContent = $this->convertImagesToWebp($request->editor_content);
             // Chuyển đổi ảnh thumbnail sang WebP
-            $webpThumbnail = $this->convertThumbnailToWebp($request->image);
+            $webpThumbnail = $request->image;
             // Tạo UUID cho bài viết
             $postId = Str::uuid()->toString();
             $params = [
@@ -222,7 +225,7 @@ class PostService
                 continue;
             }
 
-            $imageContent = $this->fetchSingleImage($src);
+            $imageContent = $this->imageService->fetchImage($src);
             if (!$imageContent) {
                 continue;
             }
@@ -322,34 +325,6 @@ class PostService
         return $url;
     }
 
-    private function fetchSingleImage(string $url): ?string
-    {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_TIMEOUT => 15,
-            CURLOPT_CONNECTTIMEOUT => 8,
-            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            CURLOPT_HTTPHEADER => [
-                'Accept: image/avif,image/webp,image/*,*/*;q=0.8',
-                'Accept-Encoding: identity',
-            ],
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
-        ]);
-
-        $data = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($httpCode !== 200 || !$data) {
-            return null;
-        }
-
-        return $data;
-    }
-
     private function downloadAndConvertToWebp($imageUrl, $imageContent)
     {
         if (strlen($imageContent) < 2000) {
@@ -385,17 +360,6 @@ class PostService
             }
 
             if ($originalWidth < 10 || $originalHeight < 10) {
-                return null;
-            }
-
-            // Lấy phần mở rộng hợp lệ từ loại ảnh
-            $validExtensions = [
-                IMAGETYPE_JPEG => 'jpg',
-                IMAGETYPE_PNG => 'png',
-                IMAGETYPE_GIF => 'gif',
-                IMAGETYPE_AVIF => 'avif', // Hỗ trợ AVIF
-            ];
-            if (!isset($validExtensions)) {
                 return null;
             }
 
@@ -466,32 +430,6 @@ class PostService
     //     return $imageDataList;
     // }
 
-    private function convertThumbnailToWebp(?string $url): ?string
-    {
-            dd(22);
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
-            return $url; // Nếu URL không hợp lệ, giữ nguyên ảnh gốc
-        }
-
-        // $url = $this->normalizeImageUrl($Url);
-        // if (!$url) {
-        //     return $url;
-        // }
-        // Tải ảnh thumbnail bằng cURL
-        $imageContent = $this->fetchSingleImage($url);
-        dd($imageContent);
-
-        if (!$imageContent) {
-            return $url;
-        }
-        // Chuyển đổi ảnh sang WebP
-        $webpData = $this->downloadAndConvertToWebp($url, $imageContent);
-        dd($webpData);
-        if (!$webpData) {
-            return $url;
-        }
-        return asset('storage/' . $webpData[0]); // Nếu lỗi, trả về ảnh gốc
-    }
 
     // protected function clearPostCacheAfterCreate(Post $post): void
     // {
@@ -515,22 +453,9 @@ class PostService
             ? $this->convertImagesToWebp($request->editor_content)
             : $dataPost->content;
 
-        // THUMBNAIL
-        // $imageThumbnail = ($request->image !== $dataPost->thumbnail)
-        //     ? dd(22)
-        //     : $dataPost->thumbnail ;
-        dd($dataPost->thumbnail);
-        if ($request->image !== $dataPost->thumbnail) {
-            dd(11);
-        } else {
-            dd(22);
-        }
-
-
-        // $imageThumbnail = $request->image !== $dataPost->thumbnail
-        //     ? $this->convertThumbnailToWebp($request->image)
-        //     : $dataPost->thumbnail;
-        dd($imageThumbnail);
+        $imageThumbnail = $request->image !== $dataPost->thumbnail
+            ? $request->image
+            : $dataPost->thumbnail;
         $slug = $dataPost->slug;
         if ($request->title !== $dataPost->title) {
             $slug = $this->generateUniqueSlug(

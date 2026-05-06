@@ -116,7 +116,7 @@ class WriteArticleJob implements ShouldQueue
                     'source_name'     => $raw->source,
                     'thumbnail'       => $raw->thumbnail,
                     'title'           => $raw->title,
-                    'slug'            => $this->uniqueSlug(Str::slug($raw->title ?: 'article')),
+                    'slug'            => Article::uniqueSlug(Str::slug($raw->title ?: 'article')),
                     'content'         => $raw->snippet ?? '',
                     'content_hash'    => $contentHash,
                     'content_simhash' => $contentSimhash,
@@ -140,7 +140,7 @@ class WriteArticleJob implements ShouldQueue
 
             // ── STEP 5: Finalize & Save ───────────────────────────────────
             $finalTitle = $result->title() ?: $raw->title;
-            $finalSlug  = $this->uniqueSlug(Str::slug($finalTitle ?: 'article'), $article->id);
+            $finalSlug  = Article::uniqueSlug(Str::slug($finalTitle ?: 'article'), $article->id);
             $faq        = $this->normalizeFaq($parsed['faq'] ?? []);
 
             $article->update([
@@ -274,20 +274,6 @@ class WriteArticleJob implements ShouldQueue
         ));
     }
 
-    private function uniqueSlug(string $base, ?string $excludeId = null): string
-    {
-        $slug    = $base ?: 'article';
-        $counter = 1;
-        while (
-            Article::where('slug', $slug)
-                ->when($excludeId, fn($q) => $q->where('id', '!=', $excludeId))
-                ->exists()
-        ) {
-            $slug = "{$base}-{$counter}";
-            $counter++;
-        }
-        return $slug;
-    }
 
     // ── Job failure hook ──────────────────────────────────────────────────────
 

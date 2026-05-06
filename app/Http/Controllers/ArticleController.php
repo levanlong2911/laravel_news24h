@@ -8,6 +8,7 @@ use App\Models\Domain;
 use App\Models\Keyword;
 use App\Models\Post;
 use App\Services\Admin\ArticlePipelineService;
+use App\Services\Admin\SerpApiService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -69,6 +70,32 @@ class ArticleController extends Controller
         return back()->with('success', 'Unpublished');
     }
 
+    public function searchImages(Article $article, SerpApiService $serpApi)
+    {
+        $images = $serpApi->searchImages($article->title, 12);
+        return response()->json(['images' => $images, 'query' => $article->title]);
+    }
+
+    public function updateThumbnail(Request $request, Article $article, \App\Services\Admin\ImageService $imageService)
+    {
+        $request->validate(['thumbnail' => 'required|url|max:2048']);
+
+        $url     = $imageService->downloadToWebp($request->thumbnail, 1200) ?? $request->thumbnail;
+        $content = $article->content ?? '';
+
+        if ($content && str_contains($content, '</p>')) {
+            $imgHtml = '<p style="text-align:center;">'
+                . '<img src="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" '
+                . 'style="width:100%;max-width:850px;border-radius:10px;margin:20px 0;">'
+                . '</p>';
+            $content = preg_replace('/<\/p>/i', '</p>' . $imgHtml, $content, 1);
+        }
+
+        $article->update(['thumbnail' => $url, 'content' => $content]);
+
+        return response()->json(['success' => true, 'thumbnail' => $url]);
+    }
+
     public function storeManual(Request $request)
     {
         $request->merge([
@@ -97,7 +124,7 @@ class ArticleController extends Controller
             ? Keyword::where('id', $request->keyword_id)->value('category_id')
             : null;
 
-        $slug = $this->uniqueSlug(Str::slug($request->title ?: 'article'));
+        $slug = Post::uniqueSlug(Str::slug($request->title ?: 'article'));
 
         $host = parse_url($request->source_url, PHP_URL_HOST);
         $domain = $host ? preg_replace('/^www\./', '', $host) : null;
@@ -126,45 +153,6 @@ class ArticleController extends Controller
             ]);
         });
 
-        // $request->merge([
-        //     'source_url' => trim($request->source_url),
-        //     'title'      => trim($request->title),
-        // ]);
-
-        // $request->validate([
-        //     'source_url' => 'required|url|max:2000',
-        //     'title'      => 'required|string|max:500',
-        //     'content'    => 'required|string',
-        //     'keyword_id' => 'nullable|exists:keywords,id',
-        // ]);
-
-        // $urlHash = md5($request->source_url);
-
-        // if (Article::where('source_url_hash', $urlHash)->exists()) {
-        //     return back()->with('error', 'URL này đã được crawl rồi.');
-        // }
-
-        // $keyword = $request->keyword_id ? Keyword::find($request->keyword_id) : null;
-        // $slug    = $this->uniqueSlug(Str::slug($request->title ?: 'article'));
-        // $domain  = str_replace('www.', '', parse_url($request->source_url, PHP_URL_HOST) ?? '');
-
-        // Article::create([
-        //     'keyword_id'      => $request->keyword_id,
-        //     'category_id'     => $keyword?->category_id,
-        //     'source_url'      => $request->source_url,
-        //     'source_url_hash' => $urlHash,
-        //     'source_title'    => $request->title,
-        //     'source_name'     => $domain,
-        //     'thumbnail'       => $request->thumbnail ?: null,
-        //     'title'           => $request->title,
-        //     'slug'            => $slug,
-        //     'content'         => $request->content,
-        //     'viral_score'     => 0,
-        //     'status'          => 'pending',
-        //     'expires_at'      => now()->addHours(48),
-        //     'crawled_by'      => auth()->id(),
-        // ]);
-
         return back()->with('success', 'Đã lưu: ' . Str::limit($request->title, 80));
     }
 
@@ -191,9 +179,12 @@ class ArticleController extends Controller
 
     public function destroyAll(Request $request)
     {
+        $admin = auth()->user();
+
         $count = Article::query()
             ->when($request->status && $request->status !== 'all', fn($q) => $q->where('status', $request->status))
             ->when($request->keyword_id, fn($q) => $q->where('keyword_id', $request->keyword_id))
+            ->when(!$admin->isAdmin(), fn($q) => $q->where('crawled_by', $admin->id))
             ->delete();
 
         return redirect()->route('article.index', array_filter([
@@ -274,6 +265,11 @@ class ArticleController extends Controller
                 continue;
             }
 
+            if (empty($article->thumbnail)) {
+                $errors[] = "'{$article->title}': Bạn chưa chọn hình ảnh cho bài này.";
+                continue;
+            }
+
             $categoryId = $article->keyword->category_id ?? $article->category_id ?? '';
             $keyword    = $article->keyword->name ?? $article->source_title ?? $article->title ?? '';
             $rawHtml    = $article->content ?? '';
@@ -295,7 +291,7 @@ class ArticleController extends Controller
 
                 $parsed     = $result->parsed;
                 $finalTitle = $result->title() ?: $article->title;
-                $slug       = $this->uniqueSlug(Str::slug($finalTitle ?: 'article'));
+                $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article'));
 
                 $post = Post::create([
                     'id'               => Str::uuid(),
@@ -313,6 +309,7 @@ class ArticleController extends Controller
                 ]);
 
                 $article->update(['status' => 'published', 'published_at' => now(), 'post_id' => $post->id]);
+                $admin->incrementClaudeUsage($finalTitle, $article->source_url ?? '');
                 $done++;
 
                 Log::info("[sendToClaude] OK: {$finalTitle}", [
@@ -389,7 +386,7 @@ class ArticleController extends Controller
             );
             $parsed     = $result->parsed;
             $finalTitle = $result->title() ?: $primary->title;
-            $slug       = $this->uniqueSlug(Str::slug($finalTitle ?: 'article'));
+            $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article'));
 
             $post = Post::create([
                 'id'               => Str::uuid(),
@@ -414,6 +411,8 @@ class ArticleController extends Controller
                 'post_id'      => $post->id,
             ]));
 
+            $admin->incrementClaudeUsage($finalTitle, $sourceUrls[0] ?? '', 'synthesize');
+
             Log::info('[synthesize] OK: ' . $finalTitle, [
                 'count'      => count($ids),
                 'hook_type'  => $result->hookResult->detectedType,
@@ -431,18 +430,8 @@ class ArticleController extends Controller
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private function uniqueSlug(string $base): string
-    {
-        $slug    = $base ?: 'article';
-        $counter = 1;
-        while (Post::where('slug', $slug)->exists()) {
-            $slug = "{$base}-{$counter}";
-            $counter++;
-        }
-        return $slug;
-    }
 
-    private function formatContent($text)
+    private function formatContent(string $text)
     {
         // Chuẩn hóa xuống dòng
         $text = str_replace(["\r\n", "\r"], "\n", $text);

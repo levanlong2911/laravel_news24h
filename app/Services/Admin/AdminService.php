@@ -45,13 +45,13 @@ class AdminService
         try {
             $passwordHash = Hash::make($request->password);
             $params = [
-                'role_id' => $request->role,
-                'name' => $request->name,
-                'email' => $request->email,
-                'domain_id' => $request->website,
-                'password' => $passwordHash,
+                'role_id'           => $request->role,
+                'name'              => $request->name,
+                'email'             => $request->email,
+                'domain_id'         => $request->website,
+                'password'          => $passwordHash,
                 'email_verified_at' => Carbon::now(),
-                'remember_token' => Str::random(10),
+                'remember_token'    => Str::random(10),
             ];
             $admin = $this->adminRepository->create($params);
             DB::commit();
