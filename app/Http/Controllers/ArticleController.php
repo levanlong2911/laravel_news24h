@@ -70,31 +70,31 @@ class ArticleController extends Controller
         return back()->with('success', 'Unpublished');
     }
 
-    public function searchImages(Article $article, SerpApiService $serpApi)
-    {
-        $images = $serpApi->searchImages($article->title, 12);
-        return response()->json(['images' => $images, 'query' => $article->title]);
-    }
+    // public function searchImages(Article $article, SerpApiService $serpApi)
+    // {
+    //     $images = $serpApi->searchImages($article->title, 12);
+    //     return response()->json(['images' => $images, 'query' => $article->title]);
+    // }
 
-    public function updateThumbnail(Request $request, Article $article, \App\Services\Admin\ImageService $imageService)
-    {
-        $request->validate(['thumbnail' => 'required|url|max:2048']);
+    // public function updateThumbnail(Request $request, Article $article, \App\Services\Admin\ImageService $imageService)
+    // {
+    //     $request->validate(['thumbnail' => 'required|url|max:2048']);
 
-        $url     = $imageService->downloadToWebp($request->thumbnail, 1200) ?? $request->thumbnail;
-        $content = $article->content ?? '';
+    //     $url     = $imageService->downloadToWebp($request->thumbnail, 1200) ?? $request->thumbnail;
+    //     $content = $article->content ?? '';
 
-        if ($content && str_contains($content, '</p>')) {
-            $imgHtml = '<p style="text-align:center;">'
-                . '<img src="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" '
-                . 'style="width:100%;max-width:850px;border-radius:10px;margin:20px 0;">'
-                . '</p>';
-            $content = preg_replace('/<\/p>/i', '</p>' . $imgHtml, $content, 1);
-        }
+    //     if ($content && str_contains($content, '</p>')) {
+    //         $imgHtml = '<p style="text-align:center;">'
+    //             . '<img src="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" '
+    //             . 'style="width:100%;max-width:850px;border-radius:10px;margin:20px 0;">'
+    //             . '</p>';
+    //         $content = preg_replace('/<\/p>/i', '</p>' . $imgHtml, $content, 1);
+    //     }
 
-        $article->update(['thumbnail' => $url, 'content' => $content]);
+    //     $article->update(['thumbnail' => $url, 'content' => $content]);
 
-        return response()->json(['success' => true, 'thumbnail' => $url]);
-    }
+    //     return response()->json(['success' => true, 'thumbnail' => $url]);
+    // }
 
     public function storeManual(Request $request)
     {
@@ -265,10 +265,11 @@ class ArticleController extends Controller
                 continue;
             }
 
-            if (empty($article->thumbnail)) {
-                $errors[] = "'{$article->title}': Bạn chưa chọn hình ảnh cho bài này.";
-                continue;
-            }
+            // TODO: bật lại khi thumbnail upload đã ổn định
+            // if (empty($article->thumbnail)) {
+            //     $errors[] = "'{$article->title}': Bạn chưa chọn hình ảnh cho bài này.";
+            //     continue;
+            // }
 
             $categoryId = $article->keyword->category_id ?? $article->category_id ?? '';
             $keyword    = $article->keyword->name ?? $article->source_title ?? $article->title ?? '';
