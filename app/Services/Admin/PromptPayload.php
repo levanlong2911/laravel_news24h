@@ -83,7 +83,12 @@ final class PromptPayload
             . "\n\nTOPIC: {$safeKeyword}"
             . "\nTITLE ANCHOR (write content to support this hook): {$safeHook}"
             . "\n\nEXTRACTED FACTS:\n---\n{$safeFacts}\n---"
-            . "\n\nOUTPUT — Return ONLY this JSON (no markdown, no code block):\n"
+            . "\n\nOUTPUT RULES:"
+            . "\n- Return ONLY valid JSON. No markdown, no code block, no extra text."
+            . "\n- In the \"content\" field: use single quotes for ALL HTML attributes (e.g. style='...' not style=\"...\")."
+            . "\n- Keep \"content\" under 700 words to avoid truncation."
+            . "\n- Keep \"faq\" to 3 items max."
+            . "\n\n"
             . $this->outputSchema;
     }
 

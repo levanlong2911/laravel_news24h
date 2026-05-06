@@ -65,6 +65,17 @@ class ClaudeWriterService
                     $stopReason = $json['stop_reason'] ?? '';
                     $text       = $json['content'][0]['text'] ?? '';
 
+                    if ($stopReason === 'max_tokens') {
+                        Log::warning('Claude output truncated at max_tokens', [
+                            'model'  => $model,
+                            'tokens' => $json['usage']['output_tokens'] ?? 0,
+                        ]);
+                        // Retry cùng prompt vẫn bị truncate — throw ngay để caller xử lý
+                        throw new \RuntimeException(
+                            "Claude output truncated (max_tokens={$maxTokens}). Reduce prompt length or output fields."
+                        );
+                    }
+
                     Log::debug('Claude OK', [
                         'model'       => $model,
                         'attempt'     => $attempt,
