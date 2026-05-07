@@ -124,8 +124,8 @@ class PostGuard
      */
     private function extractFieldsViaRegex(string $raw): ?array
     {
-        $fields = ['title', 'meta_description', 'summary', 'content',
-                   'fb_image_text', 'fb_quote', 'fb_post_content'];
+        $fields = ['title', 'summary', 'content',
+                   'fb_image_text', 'fb_post_content'];
         $result = [];
 
         foreach ($fields as $field) {

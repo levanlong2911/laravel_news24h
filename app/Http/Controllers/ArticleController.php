@@ -304,8 +304,8 @@ class ArticleController extends Controller
                     'category_id'      => $categoryId ?: null,
                     'author_id'        => $admin->id,
                     'domain_id'        => $domain->id,
+                    'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
                     'fb_image_text'    => $parsed['fb_image_text']   ?? null,
-                    'fb_quote'         => ($parsed['fb_quote'] ?? '') ?: null,
                     'fb_post_content'  => $parsed['fb_post_content'] ?? null,
                 ]);
 
@@ -399,8 +399,8 @@ class ArticleController extends Controller
                 'category_id'      => $primary->keyword->category_id ?? null,
                 'author_id'        => $admin->id,
                 'domain_id'        => $domain->id,
+                'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
                 'fb_image_text'    => $parsed['fb_image_text']   ?? null,
-                'fb_quote'         => ($parsed['fb_quote'] ?? '') ?: null,
                 'fb_post_content'  => $parsed['fb_post_content'] ?? null,
             ]);
 

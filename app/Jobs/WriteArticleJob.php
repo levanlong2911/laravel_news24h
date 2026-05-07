@@ -146,7 +146,7 @@ class WriteArticleJob implements ShouldQueue
             $article->update([
                 'title'            => $finalTitle,
                 'slug'             => $finalSlug,
-                'meta_description' => Str::limit($parsed['meta_description'] ?? '', 255),
+                'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
                 'summary'          => $parsed['summary'] ?? '',
                 'content'          => $parsed['content'] ?? '',
                 'faq'              => $faq,
@@ -243,15 +243,14 @@ class WriteArticleJob implements ShouldQueue
             Post::create([
                 'id'               => Str::uuid(),
                 'title'            => $title,
-                'meta_description' => Str::limit($parsed['meta_description'] ?? '', 255),
+                'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
                 'content'          => $parsed['content'] ?? '',
                 'slug'             => $postSlug,
                 'thumbnail'        => $raw->thumbnail,
                 'category_id'      => $raw->keyword->category_id ?? null,
                 'author_id'        => $admin->id,
                 'domain_id'        => $domain->id,
-                'fb_image_text'    => $parsed['fb_image_text'] ?? null,
-                'fb_quote'         => $parsed['fb_quote']      ?: null, // empty string → null
+                'fb_image_text'    => $parsed['fb_image_text'] ?? null, // empty string → null
                 'fb_post_content'  => $parsed['fb_post_content'] ?? null,
             ]);
 

@@ -15,7 +15,6 @@ class PromptBuilderService
     private const DEFAULT_SCHEMA = <<<'JSON'
 {
   "title": "...",
-  "meta_description": "...",
   "content": "...",
   "faq": []
 }
@@ -149,7 +148,7 @@ JSON;
      * Cache 1 giờ — schema hiếm khi thay đổi, tránh query mỗi job.
      * Fallback về DEFAULT_SCHEMA nếu chưa config.
      *
-     * FB fields (fb_image_text, fb_quote, fb_post_content) luôn được append
+     * FB fields (fb_image_text, fb_post_content) luôn được append
      * vào cuối — universal, áp dụng cho mọi category.
      */
     private function buildOutputSchema(string $categoryId): string
@@ -211,11 +210,15 @@ JSON;
 
         $fallbackSchema = preg_replace('/\}\s*$/', self::FB_SCHEMA_APPEND . "\n}", self::DEFAULT_SCHEMA);
 
+        // Strip unresolved {placeholders} — no context to inject, but keep {structure_template}
+        // which is a deferred placeholder resolved later in sonnetPrompt()
+        $strip = fn(string $t) => preg_replace('/\{(?!structure_template\})[a-z_]+\}/', '', $t);
+
         return new PromptPayload(
             system:            $framework->system_prompt,
-            phase1:            $framework->phase1_analyze,
-            phase2:            $framework->phase2_diagnose,
-            phase3:            $framework->phase3_generate,
+            phase1:            $strip($framework->phase1_analyze),
+            phase2:            $strip($framework->phase2_diagnose),
+            phase3:            $strip($framework->phase3_generate),
             outputSchema:      $fallbackSchema,
             contentTypesBlock: '(fallback — no category context)',
             contextId:         null,

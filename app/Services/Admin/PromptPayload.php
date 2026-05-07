@@ -52,7 +52,26 @@ final class PromptPayload
             . "\n\nRAW CONTENT:\n---\n{$rawText}\n---";
     }
 
-    // ── Prompt gửi Sonnet: phase3 + facts + bestHook (anchor) + schema ───────
+    /**
+     * Haiku = signal compressor: extract key facts (< 1500 chars) + 5 headline hooks in ONE call.
+     * Instructions placed BEFORE raw content so the model registers the output format first.
+     */
+    public function haikuCombinedPrompt(string $rawText, string $keyword, string $hookStyle): string
+    {
+        return $this->phase1
+            . "\n\n"
+            . $this->phase2
+            . "\n\nIMPORTANT: Keep your analysis concise — under 1500 characters total."
+            . "\nSignal-density rules: keep only high-signal facts (controversy, key quotes, stakes, timeline)."
+            . "\nRemove: repetition, background filler, fan reactions, SEO padding."
+            . "\nAFTER your analysis, you MUST end with exactly this line (replace h1-h5 with real headlines):"
+            . "\nHOOKS_JSON:[\"h1\",\"h2\",\"h3\",\"h4\",\"h5\"]"
+            . "\nHeadline rules: KEYWORD={$keyword} | STYLE={$hookStyle} | 45-90 chars | factually accurate | vary formats."
+            . "\n\nRAW CONTENT:\n---\n{$rawText}\n---"
+            . "\n\nReminder: end your response with HOOKS_JSON:[...] — 5 headlines, JSON array, nothing after.";
+    }
+
+    // ── Sonnet = article writer: compressed facts (≤ 2000 chars) + bestHook anchor ──
     // bestHook từ HookEngine — content phục vụ hook, không phải ngược lại
     // structureTemplate: injected AFTER HookEngine detects content type
     //   → phase3 contains {structure_template} placeholder
@@ -73,11 +92,18 @@ final class PromptPayload
         $resolvedStructure = $structureTemplate ?: $defaultStructure;
         $phase3 = str_replace('{structure_template}', $resolvedStructure, $this->phase3);
 
-        // Replace double-quotes in all prompt inputs so Sonnet doesn't output unescaped " in JSON
+        // Normalize + cap facts at sentence boundary ≤ 2000 chars.
+        // Cutting at last '.' avoids broken sentences / mid-quote truncation.
         $quotes      = ['"', '"', '"'];
         $safeKeyword = str_replace($quotes, "'", $keyword);
         $safeHook    = str_replace($quotes, "'", $bestHook);
-        $safeFacts   = str_replace($quotes, "'", $facts);
+
+        $normalizedFacts = preg_replace('/\s+/', ' ', str_replace($quotes, "'", $facts));
+        $safeFacts       = mb_substr($normalizedFacts, 0, 2000);
+        $lastPeriod      = mb_strrpos($safeFacts, '.');
+        if ($lastPeriod !== false) {
+            $safeFacts = mb_substr($safeFacts, 0, $lastPeriod + 1);
+        }
 
         return $phase3
             . "\n\nTOPIC: {$safeKeyword}"

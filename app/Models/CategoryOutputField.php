@@ -36,7 +36,7 @@ class CategoryOutputField extends Model
 
         if ($fields->isEmpty()) {
             // Default schema nếu chưa cấu hình
-            return "{\n  \"title\": \"...\",\n  \"meta_description\": \"...\",\n  \"content\": \"...\",\n  \"faq\": []\n}";
+            return "{\n  \"title\": \"...\",\n  \"content\": \"...\",\n  \"faq\": []\n}";
         }
 
         $lines = $fields->map(function ($f) {

@@ -71,9 +71,8 @@ class WritePostFromArticleJob implements ShouldQueue
             if (!$parsed) {
                 $paragraphs = array_filter(explode("\n\n", trim($facts)));
                 $parsed = [
-                    'title'            => $article->title,
-                    'meta_description' => Str::limit(strip_tags($facts), 155),
-                    'content'          => implode('', array_map(fn($p) => "<p>{$p}</p>", $paragraphs)),
+                    'title'   => $article->title,
+                    'content' => implode('', array_map(fn($p) => "<p>{$p}</p>", $paragraphs)),
                 ];
             }
 
@@ -91,7 +90,7 @@ class WritePostFromArticleJob implements ShouldQueue
             Post::create([
                 'id'               => Str::uuid(),
                 'title'            => $finalTitle,
-                'meta_description' => Str::limit($parsed['meta_description'] ?? '', 255),
+                'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
                 'content'          => $parsed['content'] ?? '',
                 'slug'             => $slug,
                 'thumbnail'        => $article->thumbnail,
@@ -170,13 +169,11 @@ EXTRACTED FACTS:
 ---
 
 TITLE RULES: 60-70 characters. Factually accurate. Includes main keyword.
-META DESCRIPTION: 150-160 characters. Lead with emotional hook or surprising fact.
 CONTENT: 3,000-4,000 characters total. HTML format. 2 sentences per paragraph.
 
 OUTPUT — Return ONLY this JSON (no markdown, no code block):
 {
   "title": "...",
-  "meta_description": "...",
   "content": "..."
 }
 PROMPT;

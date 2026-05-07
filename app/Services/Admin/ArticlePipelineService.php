@@ -48,20 +48,34 @@ class ArticlePipelineService
         $contentTypes = $context?->framework?->contentTypes ?? collect();
         $hookStyle    = $context?->hook_style ?? 'compelling and engaging opener';
 
-        // ── 3. Haiku extract facts ─────────────────────────────────────────────
-        $facts = $this->claude->generate($payload->haikuPrompt($cleanedText), 'haiku');
+        // ── 3. Haiku extract facts + hooks (1 call thay vì 2) ────────────────
+        $haikuRaw = $this->claude->generate(
+            $payload->haikuCombinedPrompt($cleanedText, $keyword, $hookStyle),
+            'haiku'
+        );
 
-        if (empty(trim($facts))) {
+        if (empty(trim($haikuRaw))) {
             throw new \RuntimeException('Claude Haiku tra ve trong');
         }
 
-        // Gate: facts quá ngắn → không đủ ngữ liệu cho Sonnet, fail sớm thay vì tốn tiền
+        // Tách facts và hooks từ combined response
+        $facts              = $haikuRaw;
+        $preloadedCandidates = [];
+
+        if (preg_match('/HOOKS_JSON:(\[.*?\])\s*$/s', $haikuRaw, $m)) {
+            $decoded = json_decode($m[1], true);
+            if (is_array($decoded) && count($decoded) >= 3) {
+                $preloadedCandidates = array_values(array_filter($decoded, 'is_string'));
+                $facts = trim(substr($haikuRaw, 0, strrpos($haikuRaw, 'HOOKS_JSON:')));
+            }
+        }
+
         if (strlen(trim($facts)) < 150) {
             throw new \RuntimeException('Haiku facts qua ngan (' . strlen(trim($facts)) . ' chars) — noi dung goc khong du thong tin');
         }
 
         // ── 4. HookEngine → detect content type + best hook ───────────────────
-        $hookResult        = $this->hookEngine->resolve($facts, $keyword, $hookStyle, $contentTypes);
+        $hookResult        = $this->hookEngine->resolve($facts, $keyword, $hookStyle, $contentTypes, $preloadedCandidates);
         $typeModel         = $contentTypes->firstWhere('type_code', $hookResult->detectedType);
         $structureTemplate = $typeModel?->structure_template ?? config('prompt.default_structure', '');
 
@@ -70,7 +84,7 @@ class ArticlePipelineService
 
         // ── 6. Sonnet — retry với fix prompt thay vì lặp lại cùng prompt (tiết kiệm token)
         $sonnetPrompt = $payload->sonnetPrompt($facts, $hookResult->bestHook, $keyword, $structureTemplate);
-        $sonnetRaw    = $this->claude->generate($sonnetPrompt, 'sonnet');
+        $sonnetRaw    = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system);
         $guardResult  = $this->postGuard->check($sonnetRaw, $facts);
         $retryCount   = 0;
         $retryReason  = null;

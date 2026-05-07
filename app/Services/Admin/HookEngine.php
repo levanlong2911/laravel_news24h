@@ -61,13 +61,17 @@ class HookEngine
         string     $keyword,
         string     $hookStyle,
         Collection $contentTypes,
+        array      $preloadedCandidates = [],
     ): HookResult {
         $detectedType = $this->detectType($rawFacts, $contentTypes);
 
         /** @var FrameworkContentType|null $typeModel */
         $typeModel = $contentTypes->firstWhere('type_code', $detectedType);
 
-        $candidates = $this->generateCandidates($typeModel, $hookStyle, $keyword, $rawFacts);
+        // Skip Claude call if candidates already provided from combined Haiku prompt
+        $candidates = !empty($preloadedCandidates)
+            ? $preloadedCandidates
+            : $this->generateCandidates($typeModel, $hookStyle, $keyword, $rawFacts);
 
         if (empty($candidates)) {
             Log::warning('[HookEngine] All generation failed, using keyword fallback', [
