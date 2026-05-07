@@ -24,31 +24,26 @@ JSON;
      * Universal Facebook fields — appended to EVERY output schema regardless of category.
      *
      * ── fb_image_text ──────────────────────────────────────────────────────────
-     * Overlay lên ảnh bìa. 1 câu, 60-90 chars. Công thức: Hook (shock/tò mò) + Tension
-     * (câu hỏi chưa được trả lời). KHÔNG liệt kê fact đầy đủ — để lại phần hấp dẫn nhất.
-     * GOOD: "Southwest just made Alaska Airlines nervous. 🍷" / "You can now fly wine home free. But there's a catch."
-     * BAD:  "Southwest checks your wine free starting April 24. Up to 12 bottles."
-     * Viết cùng ngôn ngữ với content bài.
+     * Overlay lên ảnh bìa. 1 câu, 70-100 chars. Bắt buộc có tên người/đội thật.
+     * Công thức: Hook + Tension — reveal half the story, keep best part hidden. No emoji.
+     * GOOD: "Green Bay is still betting on MarShawn Lloyd — who played one NFL game in two years."
+     * BAD:  "Green Bay is still banking on a back who played once." — anonymous, no proper name.
      *
      * ── fb_quote ───────────────────────────────────────────────────────────────
      * Direct quote từ nhân vật thật trong bài. Không bịa. Nếu không có → "".
      * 40–150 ký tự, kèm attribution.
      *
      * ── fb_post_content ────────────────────────────────────────────────────────
-     * Caption Facebook 60-150 chars MAX. Công thức 4 tầng viết liền mạch, chỉ dùng dấu chấm:
-     * HOOK (1 câu gây shock/tò mò, KHÔNG restate headline). TENSION (1 câu ngắn dramatic,
-     * tạo câu hỏi chưa có câu trả lời). FOMO (1–2 câu fact quan trọng nhất, viết như người
-     * kể chuyện, không bullet list). CTA (1 câu kết kích debate hoặc tension narrative —
-     * KHÔNG generic "đọc thêm"/"click vào link").
-     * GOOD: "Southwest just announced something Alaska Airlines has been doing since 2007.
-     *        And Alaska is already sweating. Starting April 24 — 12 bottles of wine, checked
-     *        free. The question isn't who started it — it's who does it better."
-     * Emoji: tối đa 2. Không có URL. Viết cùng ngôn ngữ với content bài.
+     * Caption Facebook 150-250 chars. Formula: named person/team + specific stake +
+     * pressure/tension + withheld outcome. End with a soft CTA (deadline, stakes fork,
+     * question, incomplete fact, insider signal) — never an explicit command.
+     * No generic phrases: "major update", "huge news", "shocking development", "fans stunned".
+     * No emoji. No URL. No hashtags. Same language as article.
      */
     private const FB_SCHEMA_APPEND = <<<'JSON'
 ,
-  "fb_image_text": "1 sentence 60-90 chars. Strong active verb. Hook + Tension — reveal half the story, keep best part hidden. No emoji. GOOD: 'Southwest just made Alaska Airlines nervous' / 'Miami Could Steal A.J. Brown Before Patriots Get a Shot'. BAD: two fact statements, literal numbers/dates. Same language as article.",
-  "fb_post_content": "60-150 chars MAX. Plain paragraph only — no bullet points, no lists. Structure: Hook → Tension → Hidden fact. Reveal MAX 2 facts, keep the most surprising one hidden. Name the threat or rivalry in the first line. BANNED: 'changes everything' and conclusion words (obvious, clear, certain, confirmed). No CTA — do NOT end with 'Find out', 'Read more', 'Click', 'Discover', or any call-to-action. No emoji. No URL. No hashtags. Same language as article."
+  "fb_image_text": "1 sentence 70-100 chars. Strong active verb. MUST include full person name or team name — never 'a player', 'a back', 'the team'. Hook + Tension: reveal half the story, keep best part hidden. No emoji. GOOD: 'Green Bay is still betting on MarShawn Lloyd — who played one NFL game in two years.' BAD: anonymous reference. Same language as article.",
+  "fb_post_content": "150-250 chars. Plain text only — no bullet points, emoji, URL, hashtags. Formula: [Named person/team] + [Specific stake] + [Pressure/tension] + [Withheld outcome]. End with a soft CTA — choose one: Deadline ('The window closes Thursday.'), Stakes fork ('Sign him now — or lose him for nothing.'), Question ('Which team made the call nobody expected?'), Incomplete fact ('One number explains why Green Bay kept Lloyd over Wilson.'), Insider signal ('What he said off-script tells you everything.'). No explicit CTAs: 'Find out', 'Read more', 'Click', 'Discover'. No generic phrases: 'major update', 'huge news', 'shocking development', 'fans stunned'. Same language as article."
 JSON;
 
     // ── Public API ────────────────────────────────────────────────────────────
