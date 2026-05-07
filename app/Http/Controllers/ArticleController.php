@@ -230,7 +230,7 @@ class ArticleController extends Controller
     // Article → ArticlePipelineService → Post
     public function sendToClaude(Request $request, ArticlePipelineService $pipeline)
     {
-        set_time_limit(300);
+        set_time_limit(600);
 
         $ids = array_filter((array) $request->get('selected_ids', []));
         if (empty($ids)) {
@@ -336,7 +336,7 @@ class ArticleController extends Controller
 
     public function synthesize(Request $request, ArticlePipelineService $pipeline)
     {
-        set_time_limit(300);
+        set_time_limit(600);
 
         $ids = array_filter((array) $request->get('selected_ids', []));
 

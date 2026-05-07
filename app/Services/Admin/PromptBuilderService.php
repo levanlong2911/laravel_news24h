@@ -94,7 +94,7 @@ JSON;
             'content_types_block' => $contentTypesBlock,
             'tone_notes'          => $context->tone_notes,
             'hook_style'          => $context->hook_style,
-        ]);
+        ], ['structure_template']);
 
         Log::debug("[PromptBuilder] Built payload", [
             'category_id' => $categoryId,
@@ -171,7 +171,7 @@ JSON;
      * Replace {placeholder} trong template với giá trị thực.
      * Sau inject, kiểm tra unresolved placeholders — log warning + xóa để Claude không nhận literal.
      */
-    private function inject(string $template, array $vars): string
+    private function inject(string $template, array $vars, array $deferred = []): string
     {
         foreach ($vars as $key => $value) {
             $template = str_replace("{{$key}}", (string) $value, $template);
@@ -179,11 +179,17 @@ JSON;
 
         $count = preg_match_all('/\{[a-z_]+\}/', $template, $matches);
         if ($count > 0) {
-            Log::warning('[PromptBuilder] Unresolved placeholders detected', [
-                'placeholders' => $matches[0],
-            ]);
-            // Replace với empty string — Claude không nhận literal {placeholder}
-            $template = preg_replace('/\{[a-z_]+\}/', '', $template);
+            $deferredSet  = array_map(fn($k) => "{{$k}}", $deferred);
+            $unresolved   = array_diff($matches[0], $deferredSet);
+
+            if (!empty($unresolved)) {
+                Log::warning('[PromptBuilder] Unresolved placeholders detected', [
+                    'placeholders' => array_values($unresolved),
+                ]);
+                foreach ($unresolved as $p) {
+                    $template = str_replace($p, '', $template);
+                }
+            }
         }
 
         return $template;

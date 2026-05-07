@@ -12,12 +12,12 @@ class ClaudeWriterService
     ];
 
     private const MAX_TOKENS = [
-        'haiku'  => 2048,
+        'haiku'  => 4096,
         'sonnet' => 8000,
     ];
 
-    private const MAX_RETRIES  = 5;
-    private const BASE_DELAY_S = 5;
+    private const MAX_RETRIES  = 3;
+    private const BASE_DELAY_S = 3;
 
     public function generate(string $prompt, string $modelType = 'haiku', string $system = ''): string
     {
@@ -41,7 +41,7 @@ class ClaudeWriterService
                 $ch = curl_init('https://api.anthropic.com/v1/messages');
                 curl_setopt_array($ch, [
                     CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_TIMEOUT        => 120,
+                    CURLOPT_TIMEOUT        => 60,
                     CURLOPT_POST           => true,
                     CURLOPT_HTTPHEADER     => [
                         'x-api-key: '         . config('services.claude.key'),
@@ -54,6 +54,7 @@ class ClaudeWriterService
                 $body       = curl_exec($ch);
                 $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $curlError  = curl_error($ch);
+                curl_close($ch);
 
                 if ($curlError) {
                     throw new \RuntimeException("cURL error: {$curlError}");
@@ -66,14 +67,12 @@ class ClaudeWriterService
                     $text       = $json['content'][0]['text'] ?? '';
 
                     if ($stopReason === 'max_tokens') {
-                        Log::warning('Claude output truncated at max_tokens', [
+                        Log::warning('Claude output truncated at max_tokens — returning partial', [
                             'model'  => $model,
                             'tokens' => $json['usage']['output_tokens'] ?? 0,
                         ]);
-                        // Retry cùng prompt vẫn bị truncate — throw ngay để caller xử lý
-                        throw new \RuntimeException(
-                            "Claude output truncated (max_tokens={$maxTokens}). Reduce prompt length or output fields."
-                        );
+                        // Không retry — cùng prompt sẽ vẫn truncate. Trả về text bị cắt để caller xử lý.
+                        return $text;
                     }
 
                     Log::debug('Claude OK', [
