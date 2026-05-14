@@ -1,20 +1,25 @@
 @extends('layouts.base', ['title' => 'Claude Usage'])
 @section('title', 'Claude Usage')
+@section('css')
+<style>
+.claude-usage-wrap { min-height: calc(100vh - 160px); }
+</style>
+@endsection
 @section('content')
 @php
-    $adminMap   = $admins->keyBy('id');
-    $totalCost  = $tokenStats->total_cost  ?? 0;
-    $avgCost    = $tokenStats->avg_cost    ?? 0;
-    $totalArts  = $tokenStats->total_articles ?? 0;
-    $avgSec     = $tokenStats->avg_sec     ?? 0;
-    $haikuIn    = $tokenStats->haiku_in    ?? 0;
-    $haikuOut   = $tokenStats->haiku_out   ?? 0;
-    $sonnetIn   = $tokenStats->sonnet_in   ?? 0;
-    $sonnetOut  = $tokenStats->sonnet_out  ?? 0;
+    $adminMap    = $admins->keyBy('id');
+    $totalCost   = $dailyCost->sum('total_cost');  // AI pipeline + manual combined
+    $avgCost     = $tokenStats->avg_cost      ?? 0;
+    $totalArts   = $tokenStats->total_articles ?? 0;
+    $avgSec      = $tokenStats->avg_sec       ?? 0;
+    $haikuIn     = $tokenStats->haiku_in      ?? 0;
+    $haikuOut    = $tokenStats->haiku_out     ?? 0;
+    $sonnetIn    = $tokenStats->sonnet_in     ?? 0;
+    $sonnetOut   = $tokenStats->sonnet_out    ?? 0;
     $totalTokens = $haikuIn + $haikuOut + $sonnetIn + $sonnetOut;
 @endphp
 
-<div class="container-fluid">
+<div class="container-fluid claude-usage-wrap">
     <div class="row mb-3">
         <div class="col-12">
             <h4 class="mb-3">Claude Usage</h4>
@@ -193,7 +198,7 @@
                         <tfoot class="table-active">
                             <tr>
                                 <td colspan="2"><strong>Tổng ngày {{ \Carbon\Carbon::parse($date)->format('d/m') }}</strong></td>
-                                <td class="text-right font-weight-bold">{{ number_format($tokenStats->haiku_in + $tokenStats->haiku_out + $tokenStats->sonnet_in + $tokenStats->sonnet_out) }}</td>
+                                <td class="text-right font-weight-bold">{{ number_format($totalTokens) }}</td>
                                 <td class="text-right font-weight-bold">
                                     {{ number_format($totalCost * 25000, 0, ',', '.') }} đ
                                     <div class="text-muted" style="font-size:11px; font-weight:normal;">${{ number_format($totalCost, 4) }}</div>
