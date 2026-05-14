@@ -271,9 +271,10 @@ class ArticleController extends Controller
             //     continue;
             // }
 
-            $categoryId = $article->keyword->category_id ?? $article->category_id ?? '';
-            $keyword    = $article->keyword->name ?? $article->source_title ?? $article->title ?? '';
-            $rawHtml    = $article->content ?? '';
+            $categoryId  = $article->keyword->category_id ?? $article->category_id ?? '';
+            $keyword     = $article->keyword->name ?? $article->source_title ?? $article->title ?? '';
+            $sourceTitle = trim($article->source_title ?? $article->title ?? '');
+            $rawHtml     = ($sourceTitle ? "TITLE: {$sourceTitle}\n\n" : '') . ($article->content ?? '');
 
             if (strlen(trim($rawHtml)) < 1000) {
                 $article->update(['status' => 'failed']);
@@ -373,9 +374,10 @@ class ArticleController extends Controller
         $primary = $articles->sortByDesc('viral_score')->first();
 
         // Concat content, mỗi source có label riêng
-        $concatContent = $articles->map(
-            fn($a) => "[SOURCE — {$a->source_name}]\n{$a->content}"
-        )->implode("\n\n---\n\n");
+        $concatContent = $articles->map(function ($a) {
+            $t = trim($a->source_title ?? $a->title ?? '');
+            return ($t ? "TITLE: {$t}\n" : '') . "[SOURCE — {$a->source_name}]\n{$a->content}";
+        })->implode("\n\n---\n\n");
 
         try {
             $articles->each(fn($a) => $a->update(['status' => 'processing']));

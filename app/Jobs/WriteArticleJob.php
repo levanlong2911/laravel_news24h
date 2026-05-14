@@ -73,12 +73,18 @@ class WriteArticleJob implements ShouldQueue
 
         try {
             // ── STEP 1: Crawl ─────────────────────────────────────────────
-            $crawled = $crawler->crawlMany([$url]);
-            $rawText = trim($crawled[$url] ?? '');
+            $crawled  = $crawler->crawlMany([$url]);
+            $rawText  = trim($crawled[$url] ?? '');
 
             if (strlen($rawText) < 200) {
                 Log::info("[WriteArticle] Crawl short, fallback to snippet: {$url}");
                 $rawText = $raw->snippet ?? '';
+            }
+
+            // Prepend source title so AI has full name context (e.g. "Payton Wilson" not just "Wilson")
+            $rawTitle = trim($raw->title ?? '');
+            if ($rawTitle) {
+                $rawText = "TITLE: {$rawTitle}\n\n" . $rawText;
             }
 
             // ── STEP 2: PRE Guard ─────────────────────────────────────────

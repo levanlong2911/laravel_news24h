@@ -40,8 +40,11 @@ class WritePostFromArticleJob implements ShouldQueue
 
         $article->update(['status' => 'processing']);
 
-        $kwName  = $article->keyword->name ?? '';
-        $rawText = $this->cleanForPrompt($article->content ?? '');
+        $kwName      = $article->keyword->name ?? '';
+        $sourceTitle = trim($article->source_title ?? $article->title ?? '');
+        $rawText     = $this->cleanForPrompt(
+            ($sourceTitle ? "TITLE: {$sourceTitle}\n\n" : '') . ($article->content ?? '')
+        );
 
         Log::info("[WritePost] Start: {$kwName} | {$article->title}");
 
