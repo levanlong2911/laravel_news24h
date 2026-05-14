@@ -54,22 +54,24 @@ class WritePostFromArticleJob implements ShouldQueue
             }
 
             // ── STEP 1: Claude Haiku — extract & structure key facts ──────────
-            $facts = $claude->generate(
+            $haikuResp = $claude->generate(
                 $this->haikuPrompt($kwName, $rawText),
                 'haiku'
             );
 
-            if (empty(trim($facts))) {
+            if (empty(trim($haikuResp->text))) {
                 throw new \RuntimeException('Haiku returned empty');
             }
 
+            $facts = $haikuResp->text;
+
             // ── STEP 2: Claude Sonnet — write viral article → JSON ────────────
-            $sonnetRaw = $claude->generate(
+            $sonnetResp = $claude->generate(
                 $this->sonnetPrompt($kwName, $article->title, $facts),
                 'sonnet'
             );
 
-            $parsed = $this->parseJson($sonnetRaw);
+            $parsed = $this->parseJson($sonnetResp->text);
 
             if (!$parsed) {
                 $paragraphs = array_filter(explode("\n\n", trim($facts)));

@@ -192,6 +192,11 @@ class WriteArticleJob implements ShouldQueue
                     needsReview:           $needReview,
                     cleanerReductionRatio: $result->cleanerReductionRatio,
                     usedHaiku:             $result->usedHaiku,
+                    haikuInputTokens:      $result->haikuInputTokens,
+                    haikuOutputTokens:     $result->haikuOutputTokens,
+                    sonnetInputTokens:     $result->sonnetInputTokens,
+                    sonnetOutputTokens:    $result->sonnetOutputTokens,
+                    totalCostUsd:          $result->totalCostUsd,
                 ));
             }
 

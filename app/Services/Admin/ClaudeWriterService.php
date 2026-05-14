@@ -16,10 +16,28 @@ class ClaudeWriterService
         'sonnet' => 8000,
     ];
 
+    // Pricing per 1M tokens (USD) — update when Anthropic changes rates
+    public const PRICE_INPUT = [
+        'haiku'  => 0.80,
+        'sonnet' => 3.00,
+    ];
+
+    public const PRICE_OUTPUT = [
+        'haiku'  => 4.00,
+        'sonnet' => 15.00,
+    ];
+
     private const MAX_RETRIES  = 3;
     private const BASE_DELAY_S = 3;
 
-    public function generate(string $prompt, string $modelType = 'haiku', string $system = ''): string
+    public static function costUsd(int $inputTokens, int $outputTokens, string $modelType): float
+    {
+        $priceIn  = self::PRICE_INPUT[$modelType]  ?? self::PRICE_INPUT['sonnet'];
+        $priceOut = self::PRICE_OUTPUT[$modelType] ?? self::PRICE_OUTPUT['sonnet'];
+        return ($inputTokens * $priceIn + $outputTokens * $priceOut) / 1_000_000;
+    }
+
+    public function generate(string $prompt, string $modelType = 'haiku', string $system = ''): ClaudeResponse
     {
         $model     = self::MODELS[$modelType]     ?? self::MODELS['haiku'];
         $maxTokens = self::MAX_TOKENS[$modelType] ?? 2048;
@@ -63,33 +81,35 @@ class ClaudeWriterService
                 $json = json_decode($body, true);
 
                 if ($httpStatus === 200) {
-                    $stopReason = $json['stop_reason'] ?? '';
-                    $text       = $json['content'][0]['text'] ?? '';
+                    $stopReason   = $json['stop_reason'] ?? '';
+                    $text         = $json['content'][0]['text'] ?? '';
+                    $inputTokens  = $json['usage']['input_tokens']  ?? 0;
+                    $outputTokens = $json['usage']['output_tokens'] ?? 0;
 
                     if ($stopReason === 'max_tokens') {
                         Log::warning('Claude output truncated at max_tokens — returning partial', [
                             'model'  => $model,
-                            'tokens' => $json['usage']['output_tokens'] ?? 0,
+                            'tokens' => $outputTokens,
                         ]);
-                        // Không retry — cùng prompt sẽ vẫn truncate. Trả về text bị cắt để caller xử lý.
-                        return $text;
+                        return new ClaudeResponse($text, $inputTokens, $outputTokens);
                     }
 
                     Log::debug('Claude OK', [
-                        'model'       => $model,
-                        'attempt'     => $attempt,
-                        'stop_reason' => $stopReason,
-                        'tokens'      => $json['usage']['output_tokens'] ?? 0,
-                        'chars'       => strlen($text),
+                        'model'        => $model,
+                        'attempt'      => $attempt,
+                        'stop_reason'  => $stopReason,
+                        'input_tokens' => $inputTokens,
+                        'output_tokens'=> $outputTokens,
+                        'chars'        => strlen($text),
                     ]);
 
-                    return $text;
+                    return new ClaudeResponse($text, $inputTokens, $outputTokens);
                 }
 
                 // 400 Bad Request → không retry
                 if ($httpStatus === 400) {
                     Log::error('Claude 400 Bad Request', ['body' => $body]);
-                    return '';
+                    return new ClaudeResponse('', 0, 0);
                 }
 
                 // 500/529 → retry với backoff
@@ -113,6 +133,6 @@ class ClaudeWriterService
             'last_error' => $lastError,
         ]);
 
-        return '';
+        return new ClaudeResponse('', 0, 0);
     }
 }

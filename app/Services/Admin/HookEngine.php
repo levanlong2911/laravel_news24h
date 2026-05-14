@@ -204,7 +204,8 @@ Example: ["Hook A", "Hook B", "Hook C", "Hook D", "Hook E"]
 PROMPT;
 
         $candidates = [];
-        $raw        = $this->claude->generate($prompt, 'haiku');
+        $resp       = $this->claude->generate($prompt, 'haiku');
+        $raw        = $resp->text;
 
         if (!empty($raw) && preg_match('/\[.*\]/s', $raw, $m)) {
             $decoded = json_decode($m[0], true);

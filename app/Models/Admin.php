@@ -97,19 +97,21 @@ class Admin extends Authenticatable
             ->get(['date', 'count']);
     }
 
-    public function incrementClaudeUsage(string $title = '', string $sourceUrl = '', string $action = 'send_to_claude'): void
+    public function incrementClaudeUsage(string $title = '', string $sourceUrl = '', string $action = 'send_to_claude', int $totalTokens = 0, float $totalCostUsd = 0.0): void
     {
-        DB::transaction(function () use ($title, $sourceUrl, $action) {
+        DB::transaction(function () use ($title, $sourceUrl, $action, $totalTokens, $totalCostUsd) {
             DB::statement(
                 'INSERT INTO claude_usages (admin_id, date, count, created_at, updated_at) VALUES (?, ?, 1, NOW(), NOW()) ON DUPLICATE KEY UPDATE count = count + 1, updated_at = NOW()',
                 [$this->id, now()->toDateString()]
             );
 
             ClaudeUsageLog::create([
-                'admin_id'   => $this->id,
-                'title'      => $title ?: null,
-                'source_url' => $sourceUrl ?: null,
-                'action'     => $action,
+                'admin_id'       => $this->id,
+                'title'          => $title ?: null,
+                'source_url'     => $sourceUrl ?: null,
+                'action'         => $action,
+                'total_tokens'   => $totalTokens,
+                'total_cost_usd' => $totalCostUsd,
             ]);
         });
     }

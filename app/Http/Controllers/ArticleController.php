@@ -311,7 +311,13 @@ class ArticleController extends Controller
                 ]);
 
                 $article->update(['status' => 'published', 'published_at' => now(), 'post_id' => $post->id]);
-                $admin->incrementClaudeUsage($finalTitle, $article->source_url ?? '');
+                $admin->incrementClaudeUsage(
+                    $finalTitle,
+                    $article->source_url ?? '',
+                    'send_to_claude',
+                    $result->haikuInputTokens + $result->haikuOutputTokens + $result->sonnetInputTokens + $result->sonnetOutputTokens,
+                    $result->totalCostUsd,
+                );
                 $done++;
 
                 Log::info("[sendToClaude] OK: {$finalTitle}", [
@@ -414,7 +420,13 @@ class ArticleController extends Controller
                 'post_id'      => $post->id,
             ]));
 
-            $admin->incrementClaudeUsage($finalTitle, $sourceUrls[0] ?? '', 'synthesize');
+            $admin->incrementClaudeUsage(
+                $finalTitle,
+                $sourceUrls[0] ?? '',
+                'synthesize',
+                $result->haikuInputTokens + $result->haikuOutputTokens + $result->sonnetInputTokens + $result->sonnetOutputTokens,
+                $result->totalCostUsd,
+            );
 
             Log::info('[synthesize] OK: ' . $finalTitle, [
                 'count'      => count($ids),

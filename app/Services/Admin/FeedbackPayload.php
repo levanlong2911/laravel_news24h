@@ -49,5 +49,12 @@ final class FeedbackPayload
 
         // ── Model ─────────────────────────────────────────────────────────────
         public readonly string  $modelUsed = 'sonnet',
+
+        // ── Token usage ───────────────────────────────────────────────────────
+        public readonly int     $haikuInputTokens   = 0,
+        public readonly int     $haikuOutputTokens  = 0,
+        public readonly int     $sonnetInputTokens  = 0,
+        public readonly int     $sonnetOutputTokens = 0,
+        public readonly float   $totalCostUsd       = 0.0,
     ) {}
 }

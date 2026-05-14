@@ -17,7 +17,10 @@ class PromptMetric extends Model
         'guard_confidence', 'final_reason',
         'retry_count', 'retry_reason',
         'schema_version', 'prompt_fingerprint',
-        'needs_review',
+        'needs_review', 'cleaner_reduction_ratio', 'used_haiku',
+        'haiku_input_tokens', 'haiku_output_tokens',
+        'sonnet_input_tokens', 'sonnet_output_tokens',
+        'total_cost_usd',
     ];
 
     public function context(): BelongsTo

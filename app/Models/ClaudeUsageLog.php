@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class ClaudeUsageLog extends Model
 {
-    protected $fillable = ['admin_id', 'title', 'source_url', 'action'];
+    protected $fillable = ['admin_id', 'title', 'source_url', 'action', 'total_tokens', 'total_cost_usd'];
 
     public function admin()
     {

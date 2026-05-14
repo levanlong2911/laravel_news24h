@@ -49,24 +49,25 @@ class ArticlePipelineService
         $hookStyle    = $context?->hook_style ?? 'compelling and engaging opener';
 
         // ── 3. Haiku extract facts + hooks (1 call thay vì 2) ────────────────
-        $haikuRaw = $this->claude->generate(
+        $haikuResp = $this->claude->generate(
             $payload->haikuCombinedPrompt($cleanedText, $keyword, $hookStyle),
             'haiku'
         );
 
-        if (empty(trim($haikuRaw))) {
+        if (empty(trim($haikuResp->text))) {
             throw new \RuntimeException('Claude Haiku tra ve trong');
         }
 
         // Tách facts và hooks từ combined response
-        $facts              = $haikuRaw;
+        $haikuText           = $haikuResp->text;
+        $facts               = $haikuText;
         $preloadedCandidates = [];
 
-        if (preg_match('/HOOKS_JSON:(\[.*?\])\s*$/s', $haikuRaw, $m)) {
+        if (preg_match('/HOOKS_JSON:(\[.*?\])\s*$/s', $haikuText, $m)) {
             $decoded = json_decode($m[1], true);
             if (is_array($decoded) && count($decoded) >= 3) {
                 $preloadedCandidates = array_values(array_filter($decoded, 'is_string'));
-                $facts = trim(substr($haikuRaw, 0, strrpos($haikuRaw, 'HOOKS_JSON:')));
+                $facts = trim(substr($haikuText, 0, strrpos($haikuText, 'HOOKS_JSON:')));
             }
         }
 
@@ -84,10 +85,11 @@ class ArticlePipelineService
 
         // ── 6. Sonnet — retry với fix prompt thay vì lặp lại cùng prompt (tiết kiệm token)
         $sonnetPrompt = $payload->sonnetPrompt($facts, $hookResult->bestHook, $keyword, $structureTemplate);
-        $sonnetRaw    = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system);
-        $guardResult  = $this->postGuard->check($sonnetRaw, $facts);
+        $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system);
+        $guardResult  = $this->postGuard->check($sonnetResp->text, $facts);
         $retryCount   = 0;
         $retryReason  = null;
+        $retryResp    = null;
 
         if ($guardResult->isParseFailure()) {
             $retryCount  = 1;
@@ -97,22 +99,31 @@ class ArticlePipelineService
             $fixPrompt   = "The JSON below is invalid. String values contain literal \" characters that break JSON syntax.\n"
                 . "Fix rule: every \" inside a string value must be escaped as \\\".\n"
                 . "Return ONLY the corrected JSON — no markdown, no explanation.\n\n"
-                . $sonnetRaw;
-            $sonnetRaw   = $this->claude->generate($fixPrompt, 'sonnet');
-            $guardResult = $this->postGuard->check($sonnetRaw, $facts);
+                . $sonnetResp->text;
+            $retryResp   = $this->claude->generate($fixPrompt, 'sonnet');
+            $guardResult = $this->postGuard->check($retryResp->text, $facts);
         }
 
         if ($guardResult->isParseFailure()) {
             throw new \RuntimeException("Sonnet JSON invalid after retry: {$guardResult->reason}");
         }
 
+        // ── 7. Tính token usage + cost ────────────────────────────────────────
+        $sonnetInputTokens  = $sonnetResp->inputTokens  + ($retryResp?->inputTokens  ?? 0);
+        $sonnetOutputTokens = $sonnetResp->outputTokens + ($retryResp?->outputTokens ?? 0);
+        $totalCostUsd       = ClaudeWriterService::costUsd($haikuResp->inputTokens, $haikuResp->outputTokens, 'haiku')
+                            + ClaudeWriterService::costUsd($sonnetInputTokens, $sonnetOutputTokens, 'sonnet');
+
         Log::debug('[Pipeline] Done', [
-            'keyword'           => $keyword,
-            'context_id'        => $context?->id,
-            'hook_type'         => $hookResult->detectedType,
-            'hook_score'        => $hookResult->bestScore,
-            'guard_confidence'  => $guardResult->confidence,
-            'retry_count'       => $retryCount,
+            'keyword'            => $keyword,
+            'context_id'         => $context?->id,
+            'hook_type'          => $hookResult->detectedType,
+            'hook_score'         => $hookResult->bestScore,
+            'guard_confidence'   => $guardResult->confidence,
+            'retry_count'        => $retryCount,
+            'haiku_tokens'       => $haikuResp->inputTokens . '/' . $haikuResp->outputTokens,
+            'sonnet_tokens'      => $sonnetInputTokens . '/' . $sonnetOutputTokens,
+            'total_cost_usd'     => round($totalCostUsd, 6),
         ]);
 
         return new PipelineResult(
@@ -126,6 +137,11 @@ class ArticlePipelineService
             promptFingerprint:     $payload->fingerprint(),
             cleanerReductionRatio: $cleanerReductionRatio,
             usedHaiku:             true,
+            haikuInputTokens:      $haikuResp->inputTokens,
+            haikuOutputTokens:     $haikuResp->outputTokens,
+            sonnetInputTokens:     $sonnetInputTokens,
+            sonnetOutputTokens:    $sonnetOutputTokens,
+            totalCostUsd:          $totalCostUsd,
         );
     }
 }
