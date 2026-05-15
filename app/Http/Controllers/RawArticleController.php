@@ -125,7 +125,6 @@ class RawArticleController extends Controller
         }
 
         $title = $rawArticle->title;
-        $slug  = Article::uniqueSlug(Str::slug($title ?: 'article'));
 
         $already = Article::where('source_url_hash', $urlHash)->exists();
 
@@ -133,7 +132,7 @@ class RawArticleController extends Controller
             ? md5($rawArticle->url . '_' . time())
             : $urlHash;
 
-        $article = Article::create([
+        $article = Article::retryCreate([
             'keyword_id'      => $rawArticle->keyword_id,
             'category_id'     => $rawArticle->keyword->category_id ?? null,
             'source_url'      => $rawArticle->url,
@@ -142,13 +141,12 @@ class RawArticleController extends Controller
             'source_name'     => $rawArticle->source,
             'thumbnail'       => $rawArticle->thumbnail,
             'title'           => $title,
-            'slug'            => $slug,
             'content'         => $content,
             'viral_score'     => $rawArticle->viral_score,
             'status'          => 'pending',
             'expires_at'      => now()->addHours(48),
             'crawled_by'      => auth()->id(),
-        ]);
+        ], Str::slug($title ?: 'article'));
 
         $rawArticle->update(['status' => 'done', 'article_id' => $article->id]);
 

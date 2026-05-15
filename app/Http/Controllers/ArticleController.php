@@ -115,8 +115,9 @@ class ArticleController extends Controller
         $url = preg_replace('/\?.*/', '', $url);
         $urlHash = md5($url);
 
+        // Cho phép nhiều member lưu cùng URL; hash khác nhau để tránh duplicate key
         if (Article::where('source_url_hash', $urlHash)->exists()) {
-            return back()->with('error', 'URL này đã được crawl rồi.');
+            $urlHash = md5($url . '_' . time());
         }
 
         // Lấy category_id nhẹ hơn
@@ -124,7 +125,7 @@ class ArticleController extends Controller
             ? Keyword::where('id', $request->keyword_id)->value('category_id')
             : null;
 
-        $slug = Post::uniqueSlug(Str::slug($request->title ?: 'article'));
+        $slugBase = Str::slug($request->title ?: 'article');
 
         $host = parse_url($request->source_url, PHP_URL_HOST);
         $domain = $host ? preg_replace('/^www\./', '', $host) : null;
@@ -134,8 +135,8 @@ class ArticleController extends Controller
         $content = Purifier::clean($content);
         $content = Str::limit($content, 20000);
 
-        DB::transaction(function () use ($request, $urlHash, $slug, $domain, $categoryId, $content) {
-            Article::create([
+        DB::transaction(function () use ($request, $urlHash, $slugBase, $domain, $categoryId, $content) {
+            Article::retryCreate([
                 'keyword_id'      => $request->keyword_id,
                 'category_id'     => $categoryId,
                 'source_url'      => $request->source_url,
@@ -144,13 +145,12 @@ class ArticleController extends Controller
                 'source_name'     => $domain,
                 'thumbnail'       => $request->thumbnail ?: null,
                 'title'           => $request->title,
-                'slug'            => $slug,
                 'content'         => $content,
                 'viral_score'     => 0,
                 'status'          => 'pending',
                 'expires_at'      => now()->addHours(48),
                 'crawled_by'      => auth()->id(),
-            ]);
+            ], $slugBase);
         });
 
         return back()->with('success', 'Đã lưu: ' . Str::limit($request->title, 80));

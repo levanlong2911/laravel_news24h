@@ -20,4 +20,24 @@ trait HasUniqueSlug
 
         return $slug;
     }
+
+    /**
+     * Create a record with automatic slug-collision retry.
+     * Handles race conditions where two concurrent requests generate the same slug.
+     * Non-slug unique violations (e.g. url_hash) are re-thrown immediately.
+     */
+    public static function retryCreate(array $attributes, string $slugBase, int $maxAttempts = 5): static
+    {
+        for ($i = 0; $i < $maxAttempts; $i++) {
+            $attributes['slug'] = static::uniqueSlug($slugBase);
+            try {
+                return static::create($attributes);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                if ($i >= $maxAttempts - 1 || !str_contains(strtolower($e->getMessage()), 'slug')) {
+                    throw $e;
+                }
+            }
+        }
+        throw new \RuntimeException('unreachable');
+    }
 }

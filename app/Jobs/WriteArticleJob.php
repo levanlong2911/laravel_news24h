@@ -113,7 +113,7 @@ class WriteArticleJob implements ShouldQueue
 
             // ── STEP 3: Reserve article slot ──────────────────────────────
             try {
-                $article = Article::create([
+                $article = Article::retryCreate([
                     'keyword_id'      => $raw->keyword_id,
                     'category_id'     => $categoryId,
                     'source_url'      => $url,
@@ -122,7 +122,6 @@ class WriteArticleJob implements ShouldQueue
                     'source_name'     => $raw->source,
                     'thumbnail'       => $raw->thumbnail,
                     'title'           => $raw->title,
-                    'slug'            => Article::uniqueSlug(Str::slug($raw->title ?: 'article')),
                     'content'         => $raw->snippet ?? '',
                     'content_hash'    => $contentHash,
                     'content_simhash' => $contentSimhash,
@@ -130,9 +129,9 @@ class WriteArticleJob implements ShouldQueue
                     'status'          => 'processing',
                     'human_review'    => false,
                     'expires_at'      => now()->addHours(48),
-                ]);
+                ], Str::slug($raw->title ?: 'article'));
             } catch (UniqueConstraintViolationException) {
-                Log::info('[WriteArticle] Race condition duplicate on insert, skipping');
+                Log::info('[WriteArticle] Race condition duplicate url_hash, skipping');
                 $raw->update(['status' => 'done']);
                 return;
             }
