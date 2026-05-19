@@ -2,6 +2,7 @@
 
 namespace App\Services\Admin;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class ClaudeWriterService
@@ -27,8 +28,10 @@ class ClaudeWriterService
         'sonnet' => 15.00,
     ];
 
-    private const MAX_RETRIES  = 3;
-    private const BASE_DELAY_S = 3;
+    private const MAX_RETRIES   = 5;
+    private const BASE_DELAY_S  = 3;    // normal errors: 3s, 6s, 12s...
+    private const DELAY_529_S   = 30;   // 529 Overloaded: 30s, 60s, 90s...
+    private const RPM_LIMIT     = 40;   // max requests/phút gửi tới Anthropic
 
     public static function costUsd(int $inputTokens, int $outputTokens, string $modelType): float
     {
@@ -51,6 +54,9 @@ class ClaudeWriterService
             $requestBody['system'] = $system;
         }
         $encodedBody = json_encode($requestBody);
+
+        // Throttle: đảm bảo không vượt RPM_LIMIT request/phút tới Anthropic
+        $this->waitForRpmSlot();
 
         $lastError = '';
 
@@ -122,7 +128,11 @@ class ClaudeWriterService
             }
 
             if ($attempt < self::MAX_RETRIES) {
-                $delaySec = self::BASE_DELAY_S * (2 ** ($attempt - 1));
+                // 529 Overloaded: dùng delay dài hơn nhiều so với lỗi thường
+                $is529     = str_contains($lastError, '529');
+                $delaySec  = $is529
+                    ? self::DELAY_529_S * $attempt          // 30s, 60s, 90s, 120s
+                    : self::BASE_DELAY_S * (2 ** ($attempt - 1)); // 3s, 6s, 12s
                 Log::info("Claude retry in {$delaySec}s...");
                 sleep($delaySec);
             }
@@ -134,5 +144,21 @@ class ClaudeWriterService
         ]);
 
         return new ClaudeResponse('', 0, 0);
+    }
+
+    // Throttle: đếm request theo window 60s, block nếu đạt RPM_LIMIT
+    private function waitForRpmSlot(): void
+    {
+        $minuteKey = 'claude_rpm_' . (int) (time() / 60);
+
+        // Cache::add chỉ set khi key chưa tồn tại (atomic, có TTL ngay từ đầu)
+        Cache::add($minuteKey, 0, 65);
+        $count = Cache::increment($minuteKey);
+
+        if ($count > self::RPM_LIMIT) {
+            $waitSec = max(1, 61 - (time() % 60));
+            Log::info("Claude RPM limit ({$count}/" . self::RPM_LIMIT . "), waiting {$waitSec}s");
+            sleep($waitSec);
+        }
     }
 }
