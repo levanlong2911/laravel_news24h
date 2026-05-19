@@ -261,8 +261,13 @@ class ArticleController extends Controller
 
         foreach ($articles as $article) {
             if ($article->status === 'processing') {
-                $errors[] = "'{$article->title}' dang xu ly.";
-                continue;
+                // Nếu stuck > 10 phút (server kill process giữa chừng), tự động reset
+                $stuckMinutes = $article->updated_at?->diffInMinutes(now()) ?? 999;
+                if ($stuckMinutes < 10) {
+                    $errors[] = "'{$article->title}' dang xu ly.";
+                    continue;
+                }
+                $article->update(['status' => 'pending']);
             }
 
             // TODO: bật lại khi thumbnail upload đã ổn định

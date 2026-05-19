@@ -55,12 +55,16 @@ class ClaudeWriterService
         }
         $encodedBody = json_encode($requestBody);
 
-        // Throttle: đảm bảo không vượt RPM_LIMIT request/phút tới Anthropic
-        $this->waitForRpmSlot();
-
         $lastError = '';
 
         for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
+            // Throttle RPM trước mỗi lần gửi (kể cả retry)
+            $this->waitForRpmSlot();
+
+            // Lock serialize concurrent: chỉ 1 request gửi tới Anthropic tại một thời điểm
+            $lock = Cache::lock('claude_request_lock', 120);
+            $lock->block(120); // đợi tối đa 120s để lấy lock
+
             try {
                 $ch = curl_init('https://api.anthropic.com/v1/messages');
                 curl_setopt_array($ch, [
@@ -78,12 +82,15 @@ class ClaudeWriterService
                 $body       = curl_exec($ch);
                 $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $curlError  = curl_error($ch);
-                curl_close($ch);
 
-                if ($curlError) {
-                    throw new \RuntimeException("cURL error: {$curlError}");
-                }
+            } finally {
+                $lock->release(); // release ngay sau HTTP call, trước khi sleep
+            }
 
+            if ($curlError ?? false) {
+                $lastError = "cURL error: {$curlError}";
+                Log::warning("Claude exception (attempt {$attempt}/" . self::MAX_RETRIES . "): {$lastError}");
+            } else {
                 $json = json_decode($body, true);
 
                 if ($httpStatus === 200) {
@@ -97,42 +104,35 @@ class ClaudeWriterService
                             'model'  => $model,
                             'tokens' => $outputTokens,
                         ]);
-                        return new ClaudeResponse($text, $inputTokens, $outputTokens);
+                    } else {
+                        Log::debug('Claude OK', [
+                            'model'         => $model,
+                            'attempt'       => $attempt,
+                            'stop_reason'   => $stopReason,
+                            'input_tokens'  => $inputTokens,
+                            'output_tokens' => $outputTokens,
+                            'chars'         => strlen($text),
+                        ]);
                     }
-
-                    Log::debug('Claude OK', [
-                        'model'        => $model,
-                        'attempt'      => $attempt,
-                        'stop_reason'  => $stopReason,
-                        'input_tokens' => $inputTokens,
-                        'output_tokens'=> $outputTokens,
-                        'chars'        => strlen($text),
-                    ]);
 
                     return new ClaudeResponse($text, $inputTokens, $outputTokens);
                 }
 
-                // 400 Bad Request → không retry
                 if ($httpStatus === 400) {
                     Log::error('Claude 400 Bad Request', ['body' => $body]);
                     return new ClaudeResponse('', 0, 0);
                 }
 
-                // 500/529 → retry với backoff
                 $lastError = "HTTP {$httpStatus}: " . ($json['error']['message'] ?? $body);
                 Log::warning("Claude {$httpStatus} (attempt {$attempt}/" . self::MAX_RETRIES . "): {$lastError}");
-
-            } catch (\Throwable $e) {
-                $lastError = $e->getMessage();
-                Log::warning("Claude exception (attempt {$attempt}/" . self::MAX_RETRIES . "): {$lastError}");
             }
 
             if ($attempt < self::MAX_RETRIES) {
                 // 529 Overloaded: dùng delay dài hơn nhiều so với lỗi thường
-                $is529     = str_contains($lastError, '529');
-                $delaySec  = $is529
-                    ? self::DELAY_529_S * $attempt          // 30s, 60s, 90s, 120s
-                    : self::BASE_DELAY_S * (2 ** ($attempt - 1)); // 3s, 6s, 12s
+                $is529    = str_contains($lastError, '529');
+                $delaySec = $is529
+                    ? self::DELAY_529_S * $attempt           // 30s, 60s, 90s, 120s, 150s
+                    : self::BASE_DELAY_S * (2 ** ($attempt - 1)); // 3s, 6s, 12s, 24s
                 Log::info("Claude retry in {$delaySec}s...");
                 sleep($delaySec);
             }
