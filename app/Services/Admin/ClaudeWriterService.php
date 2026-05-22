@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 class ClaudeWriterService
 {
     private const MODELS = [
-        'haiku'  => 'claude-haiku-4-5-20251001',
+        'haiku'  => 'claude-3-5-haiku-20241022',
         'sonnet' => 'claude-sonnet-4-6',
     ];
 
