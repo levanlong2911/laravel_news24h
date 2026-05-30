@@ -75,11 +75,23 @@ class NewsWebService
     {
         DB::beginTransaction();
         try {
-            $this->newsWebRepository->update($id, [
+            $data = [
                 'category_id' => $request->category_id,
                 'domain'      => $request->domain,
                 'base_url'    => ltrim($request->url ?? '', '/') ?: null,
-            ]);
+            ];
+
+            $rssUrl = trim($request->rss_url ?? '');
+            if ($rssUrl !== '') {
+                $data['rss_url']   = $rssUrl;
+                $data['feed_type'] = $request->feed_type ?? 'rss';
+            } elseif ($request->has('rss_url')) {
+                // Field present but empty → clear both
+                $data['rss_url']   = null;
+                $data['feed_type'] = 'none';
+            }
+
+            $this->newsWebRepository->update($id, $data);
 
             DB::commit();
             return true;

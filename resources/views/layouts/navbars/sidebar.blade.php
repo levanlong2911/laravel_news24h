@@ -79,6 +79,12 @@
                         <p>{{ __('sidebar.news-source_management') }}</p>
                     </a>
                 </li>
+                <li class="nav-item {{ ($route == 'news-rss') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('news-rss.index') }}" class="nav-link d-inline-flex {{ ($action == 'news-rss-index') ? $active ?? '' : '' }}">
+                        <i class="nav-icon fas fa-rss-square text-warning"></i>
+                        <p>RSS News Feed</p>
+                    </a>
+                </li>
                 <li class="nav-item {{ ($route == 'raw-article') ? $menu ?? '' : '' }}">
                     <a href="{{ route('raw-article.index') }}" class="nav-link d-inline-flex {{ ($action == 'raw-article-index') ? $active ?? '' : '' }}">
                         <i class="nav-icon fas fa-file-import"></i>

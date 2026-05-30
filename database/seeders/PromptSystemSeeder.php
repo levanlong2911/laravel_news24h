@@ -673,6 +673,17 @@ class PromptSystemSeeder extends Seeder
                 'hook_style'  => 'Lead with the bump-and-run, the last-lap pass, or the fiery crash — NASCAR lives in its boldest moments',
             ],
 
+            [
+                'slug'        => 'motogp',
+                'name'        => 'MotoGP',
+                'framework_id'=> $frameworkIds['motorsport'],
+                'domain'      => 'MotoGP',
+                'audience'    => 'MotoGP fans, motorcycle racing followers, motorsport betting community',
+                'terminology' => ['MotoGP', 'Moto2', 'Moto3', 'pole position', 'qualifying', 'DNF', 'grid', 'fast lap', 'soft tyre', 'sprint race', 'points gap', 'world championship'],
+                'tone_notes'  => 'Fast-paced and technical, yet accessible to casual fans. Rider rivalries and championship battles are the narrative backbone. Crash and injury updates handled with urgency.',
+                'hook_style'  => 'Lead with the race-deciding moment — the pass, the crash, or the gap in points — then pull back to show what it means for the title fight',
+            ],
+
             // ── Luxury Assets ──────────────────────────────────────────────────
             [
                 'slug'        => 'supercars',

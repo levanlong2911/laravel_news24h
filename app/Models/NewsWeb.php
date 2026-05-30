@@ -14,9 +14,11 @@ class NewsWeb extends Model
         'category_id',
         'domain',
         'base_url',
+        'rss_url',
+        'feed_type',
         'is_active',
         'is_trusted',
-        'is_blocked'
+        'is_blocked',
     ];
 
     public function category()

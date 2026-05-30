@@ -32,6 +32,11 @@ return [
     ],
 
     'serpapi' => ['key' => env('SERPAPI_KEY')],
+
+    'crawler' => [
+        'url' => env('CRAWLER_SERVICE_URL'),
+        'key' => env('CRAWLER_SERVICE_KEY'),
+    ],
     'claude'  => [
         'key' => env('CLAUDE_API_KEY'),
         'version' => '2023-06-01',

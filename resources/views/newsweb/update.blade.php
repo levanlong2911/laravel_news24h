@@ -130,14 +130,31 @@
                                                     <input type="text" value="{{ $infoWeb->base_url }}"
                                                         class="form-control{{ $errors->has('url') ? ' is-invalid' : '' }} col-6"
                                                         name="url" id="url" placeholder="">
-                                                        {{-- <textarea class="form-control{{ $errors->has('url') ? ' is-invalid' : '' }} col-12"
-                                                            name="url" rows="5">{{ old('url') ? old('url') : $infoTag->name }}</textarea> --}}
                                                     @error('url')
                                                         <span class="invalid-feedback" role="alert">
                                                             <strong>{{ $message }}</strong>
                                                         </span>
                                                     @enderror
                                                 </div>
+                                            </div>
+                                        </div>
+                                        <div class="row mt-2">
+                                            <div class="col-2 d-flex align-items-center lable-form-detail">
+                                                <p class="align-middle p-0 m-0">RSS / Sitemap URL</p>
+                                            </div>
+                                            <div class="col-10 pl-0">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <input type="url" value="{{ $infoWeb->rss_url }}"
+                                                        class="form-control col-7"
+                                                        name="rss_url" id="rss_url"
+                                                        placeholder="https://example.com/feed">
+                                                    <select name="feed_type" class="form-control" style="width:120px">
+                                                        <option value="none"    {{ ($infoWeb->feed_type ?? 'none') === 'none'    ? 'selected' : '' }}>None</option>
+                                                        <option value="rss"     {{ ($infoWeb->feed_type ?? 'none') === 'rss'     ? 'selected' : '' }}>RSS</option>
+                                                        <option value="sitemap" {{ ($infoWeb->feed_type ?? 'none') === 'sitemap' ? 'selected' : '' }}>Sitemap</option>
+                                                    </select>
+                                                </div>
+                                                <small class="text-muted">Để trống = Auto Detect tìm tự động</small>
                                             </div>
                                         </div>
                                     </div>

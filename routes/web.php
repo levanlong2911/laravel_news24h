@@ -16,6 +16,7 @@ use App\Http\Controllers\GetLinkController;
 use App\Http\Controllers\GetTagController;
 use App\Http\Controllers\InforDomainsController;
 use App\Http\Controllers\ModalConfirmController;
+use App\Http\Controllers\NewsRssController;
 use App\Http\Controllers\NewsWebController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
@@ -160,6 +161,18 @@ Route::get('/{article}/search-images',       [ArticleController::class, 'searchI
         Route::post('/{article}/update-thumbnail',   [ArticleController::class, 'updateThumbnail'])->name('article.updateThumbnail');
         Route::delete('/{article}',                  [ArticleController::class, 'destroy'])    ->name('article.destroy');
         Route::get('/{article}',                     [ArticleController::class, 'show'])       ->name('article.show');
+    });
+
+    // RSS News Feed (Python service → rss_items → Article)
+    Route::group(['prefix' => 'news-rss'], function () {
+        Route::get('/',                   [NewsRssController::class, 'index'])       ->name('news-rss.index');
+        Route::post('/fetch-all',         [NewsRssController::class, 'fetchAll'])    ->name('news-rss.fetchAll');
+        Route::post('/fetch-one',          [NewsRssController::class, 'fetchOne'])        ->name('news-rss.fetchOne');
+        Route::post('/fetch-category',     [NewsRssController::class, 'fetchByCategory'])  ->name('news-rss.fetchByCategory');
+        Route::post('/clear-category',     [NewsRssController::class, 'clearAndRefreshCategory']) ->name('news-rss.clearCategory');
+        Route::post('/auto-detect',       [NewsRssController::class, 'autoDetect'])      ->name('news-rss.autoDetect');
+        Route::post('/{rssItem}/save',    [NewsRssController::class, 'save'])        ->name('news-rss.save');
+        Route::delete('/{rssItem}',       [NewsRssController::class, 'destroy'])     ->name('news-rss.destroy');
     });
 
     // Raw articles (Google News fetch → manual AI generate)
