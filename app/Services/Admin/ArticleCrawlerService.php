@@ -128,24 +128,41 @@ class ArticleCrawlerService
                 $response = $python->post('/crawl', ['json' => ['url' => $url]]);
 
                 if ($response->getStatusCode() === 200) {
-                    $data          = json_decode((string) $response->getBody(), true);
-                    $results[$url] = $data['content'] ?? '';
-                    Log::debug('[Crawler] Python ' . ($data['method'] ?? '?') . ' — ' . $url);
+                    $data    = json_decode((string) $response->getBody(), true);
+                    $content = $data['content'] ?? '';
+
+                    if (strlen($content) >= 100) {
+                        $results[$url] = $content;
+                        Log::debug('[Crawler] Python ' . ($data['method'] ?? '?') . ' — ' . $url);
+                    } else {
+                        Log::info('[Crawler] Python empty for ' . $url . ' → PHP fallback');
+                        $results = $this->poolFetch($urls);
+                    }
                 } else {
-                    Log::warning('[Crawler] Python /crawl HTTP ' . $response->getStatusCode() . ', falling back to PHP');
+                    Log::warning('[Crawler] Python /crawl HTTP ' . $response->getStatusCode() . ' → PHP fallback');
                     $results = $this->poolFetch($urls);
                 }
             } else {
                 $response = $python->post('/crawl/batch', ['json' => $urls]);
 
                 if ($response->getStatusCode() === 200) {
-                    $data = json_decode((string) $response->getBody(), true);
+                    $data     = json_decode((string) $response->getBody(), true);
+                    $phpUrls  = [];
                     foreach ($data as $url => $item) {
-                        $results[$url] = $item['content'] ?? '';
-                        Log::debug('[Crawler] Python ' . ($item['method'] ?? '?') . ' — ' . $url);
+                        $content = $item['content'] ?? '';
+                        if (strlen($content) >= 100) {
+                            $results[$url] = $content;
+                            Log::debug('[Crawler] Python ' . ($item['method'] ?? '?') . ' — ' . $url);
+                        } else {
+                            $phpUrls[] = $url;
+                        }
+                    }
+                    if (!empty($phpUrls)) {
+                        Log::info('[Crawler] Python empty for ' . count($phpUrls) . ' URLs → PHP fallback');
+                        $results = array_merge($results, $this->poolFetch($phpUrls));
                     }
                 } else {
-                    Log::warning('[Crawler] Python /crawl/batch HTTP ' . $response->getStatusCode() . ', falling back to PHP');
+                    Log::warning('[Crawler] Python /crawl/batch HTTP ' . $response->getStatusCode() . ' → PHP fallback');
                     $results = $this->poolFetch($urls);
                 }
             }

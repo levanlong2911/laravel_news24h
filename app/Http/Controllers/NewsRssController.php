@@ -43,6 +43,7 @@ class NewsRssController extends Controller
 
         $allItems = RssItem::with(['newsWeb.category', 'article'])
             ->whereIn('news_web_id', $webIds)
+            ->where('published_at', '>=', now()->subHours(24))
             ->when($status !== 'all', fn($q) => $q->where('status', $status))
             ->orderByDesc('published_at')
             ->get();
@@ -62,7 +63,7 @@ class NewsRssController extends Controller
 
                 return [
                     'category' => $websInCat->first()->category,
-                    'items'    => $items->values()->take(50),
+                    'items'    => $items->values()->take(100),
                     'stats'    => [
                         'pending' => $items->where('status', 'pending')->count(),
                         'done'    => $items->where('status', 'done')->count(),
@@ -120,7 +121,7 @@ class NewsRssController extends Controller
         $s     = $data['stats'];
 
         return back()->with('success',
-            "Fetch {$s['feeds_ok']}/{$newsWebs->count()} sources — {$s['total_entries']} bài trong 15h — {$saved} bài mới."
+            "Fetch {$s['feeds_ok']}/{$newsWebs->count()} sources — {$s['total_entries']} bài trong 24h — {$saved} bài mới."
         );
     }
 
@@ -150,7 +151,7 @@ class NewsRssController extends Controller
 
         $type = strtoupper($newsWeb->feed_type);
         return back()->with('success',
-            "[{$type}] {$newsWeb->domain}: {$s['total_entries']} bài trong 15h — {$saved} bài mới."
+            "[{$type}] {$newsWeb->domain}: {$s['total_entries']} bài trong 24h — {$saved} bài mới."
         );
     }
 
@@ -278,7 +279,7 @@ class NewsRssController extends Controller
         $s     = $data['stats'];
 
         return back()->with('success',
-            "Category fetch: {$s['feeds_ok']}/{$newsWebs->count()} sources — {$s['total_entries']} bài trong 15h — {$saved} bài mới."
+            "Category fetch: {$s['feeds_ok']}/{$newsWebs->count()} sources — {$s['total_entries']} bài trong 24h — {$saved} bài mới."
         );
     }
 
@@ -338,7 +339,7 @@ class NewsRssController extends Controller
         }
     }
 
-    private function callPythonRss(\Illuminate\Support\Collection $newsWebs, int $hours = 15): ?array
+    private function callPythonRss(\Illuminate\Support\Collection $newsWebs, int $hours = 24): ?array
     {
         if (!$this->pythonUrl) {
             Log::warning('[rss] CRAWLER_SERVICE_URL chưa được cấu hình.');
@@ -358,7 +359,7 @@ class NewsRssController extends Controller
                 ->post($this->pythonUrl . '/rss/fetch', [
                     'feeds'           => $feeds,
                     'hours'           => $hours,
-                    'limit'           => 300,
+                    'limit'           => 500,
                     'include_no_date' => false,
                 ]);
 
@@ -385,12 +386,16 @@ class NewsRssController extends Controller
             $newsWeb = $webMap->get($art['source']);
             if (!$newsWeb) continue;
 
+            // Strip UTM và tracking params để tránh URL quá dài
+            $cleanUrl = preg_replace('/[?&](utm_[^&]*|fbclid|gclid|mc_[^&]*)(&|$)/', '$2', $art['url']);
+            $cleanUrl = rtrim($cleanUrl, '?&');
+
             $item = RssItem::firstOrCreate(
                 ['url_hash' => $art['url_hash']],
                 [
                     'news_web_id'  => $newsWeb->id,
                     'title'        => $art['title'],
-                    'url'          => $art['url'],
+                    'url'          => $cleanUrl,
                     'image'        => $art['image'] ?? null,
                     'description'  => $art['description'] ?? null,
                     'published_at' => $art['published_at'],

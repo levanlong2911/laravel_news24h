@@ -9,7 +9,7 @@
             <h4 class="mb-0">
                 <i class="fas fa-rss text-warning"></i> RSS News Feed
             </h4>
-            <small class="text-muted">Tin tức từ các nguồn RSS • Chỉ lấy bài trong 15h gần nhất • Tự xóa sau 24h</small>
+            <small class="text-muted">Tin tức từ các nguồn RSS • Chỉ lấy bài trong 24h gần nhất • Tự xóa sau 24h</small>
         </div>
         <div class="col-auto d-flex align-items-center gap-2">
             <form method="POST" action="{{ route('news-rss.autoDetect') }}" class="d-inline"
@@ -49,78 +49,63 @@
         </div>
     @endif
 
-    {{-- ── GLOBAL STATS ── --}}
-    <div class="row mb-3">
-        @foreach(['pending'=>['warning','clock'], 'done'=>['success','check']] as $s=>[$color,$icon])
-        <div class="col-sm-3">
-            <div class="info-box mb-2" style="min-height:60px">
-                <span class="info-box-icon bg-{{ $color }}" style="line-height:60px;font-size:20px">
-                    <i class="fas fa-{{ $icon }}"></i>
-                </span>
-                <div class="info-box-content" style="padding:8px 10px">
-                    <span class="info-box-text text-capitalize">{{ $s }}</span>
-                    <span class="info-box-number">{{ $allStats[$s] ?? 0 }}</span>
-                </div>
-            </div>
-        </div>
-        @endforeach
-    </div>
-
     {{-- ── FILTERS ── --}}
     <div class="card card-default mb-3">
         <div class="card-body py-2">
-            {{-- Filter form — standalone, không lồng form khác bên trong --}}
-            <form method="GET" class="form-inline flex-wrap align-items-center">
-                <select name="category_id" class="form-control form-control-sm mr-2">
-                    <option value="">All Categories</option>
-                    @foreach($categories as $cat)
-                        <option value="{{ $cat->id }}" {{ $categoryId === $cat->id ? 'selected' : '' }}>
-                            {{ $cat->name }}
-                        </option>
-                    @endforeach
-                </select>
-                <select name="news_web_id" class="form-control form-control-sm mr-2">
-                    <option value="">All Sources</option>
-                    @foreach($allNewsWebs as $web)
-                        <option value="{{ $web->id }}" {{ $newsWebId === $web->id ? 'selected' : '' }}>
-                            {{ $web->domain }}
-                        </option>
-                    @endforeach
-                </select>
-                <select name="status" class="form-control form-control-sm mr-2">
-                    <option value="all"     {{ $status === 'all'     ? 'selected' : '' }}>All Status</option>
-                    <option value="pending" {{ $status === 'pending' ? 'selected' : '' }}>Pending</option>
-                    <option value="done"    {{ $status === 'done'    ? 'selected' : '' }}>Done</option>
-                </select>
-                <button class="btn btn-primary btn-sm mr-2">Filter</button>
-                <a href="{{ route('news-rss.index') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
-            </form>
+            <div class="d-flex align-items-center justify-content-between">
 
-            {{-- Category actions — tách riêng khỏi filter form để tránh conflict tên field --}}
-            <div class="d-flex align-items-center mt-2 gap-1" id="categoryActionWrap">
-                <select id="catActionSelect" class="form-control form-control-sm mr-1" style="width:200px">
-                    <option value="">-- chọn category --</option>
-                    @foreach($categories as $cat)
-                        <option value="{{ $cat->id }}">{{ $cat->name }}</option>
-                    @endforeach
-                </select>
-
-                <form method="POST" action="{{ route('news-rss.fetchByCategory') }}" id="formFetch" class="d-inline">
-                    @csrf
-                    <input type="hidden" name="category_id" id="fetchCatId">
-                    <button type="submit" class="btn btn-outline-warning btn-sm" onclick="syncCatId('fetchCatId')">
-                        <i class="fas fa-sync-alt"></i> Fetch
-                    </button>
+                {{-- Bên trái: filter GET --}}
+                <form method="GET" class="form-inline">
+                    <select name="category_id" class="form-control form-control-sm mr-2">
+                        <option value="">All Categories</option>
+                        @foreach($categories as $cat)
+                            <option value="{{ $cat->id }}" {{ $categoryId === $cat->id ? 'selected' : '' }}>
+                                {{ $cat->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <select name="news_web_id" class="form-control form-control-sm mr-2">
+                        <option value="">All Sources</option>
+                        @foreach($allNewsWebs as $web)
+                            <option value="{{ $web->id }}" {{ $newsWebId === $web->id ? 'selected' : '' }}>
+                                {{ $web->domain }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <select name="status" class="form-control form-control-sm mr-2">
+                        <option value="all"     {{ $status === 'all'     ? 'selected' : '' }}>All Status</option>
+                        <option value="pending" {{ $status === 'pending' ? 'selected' : '' }}>Pending</option>
+                        <option value="done"    {{ $status === 'done'    ? 'selected' : '' }}>Done</option>
+                    </select>
+                    <button class="btn btn-primary btn-sm mr-2">Filter</button>
+                    <a href="{{ route('news-rss.index') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
                 </form>
 
-                <form method="POST" action="{{ route('news-rss.clearCategory') }}" id="formClear" class="d-inline"
-                      onsubmit="return confirmClear()">
-                    @csrf
-                    <input type="hidden" name="category_id" id="clearCatId">
-                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="syncCatId('clearCatId')">
-                        <i class="fas fa-trash-alt"></i> Clear + Refresh
-                    </button>
-                </form>
+                {{-- Bên phải: category actions POST --}}
+                <div class="d-flex align-items-center" id="categoryActionWrap">
+                    <select id="catActionSelect" class="form-control form-control-sm mr-1" style="width:180px">
+                        <option value="">-- chọn category --</option>
+                        @foreach($categories as $cat)
+                            <option value="{{ $cat->id }}">{{ $cat->name }}</option>
+                        @endforeach
+                    </select>
+                    <form method="POST" action="{{ route('news-rss.fetchByCategory') }}" id="formFetch" class="d-inline mr-1">
+                        @csrf
+                        <input type="hidden" name="category_id" id="fetchCatId">
+                        <button type="submit" class="btn btn-outline-warning btn-sm" onclick="syncCatId('fetchCatId')">
+                            <i class="fas fa-sync-alt"></i> Fetch
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ route('news-rss.clearCategory') }}" id="formClear" class="d-inline"
+                          onsubmit="return confirmClear()">
+                        @csrf
+                        <input type="hidden" name="category_id" id="clearCatId">
+                        <button type="submit" class="btn btn-outline-danger btn-sm" onclick="syncCatId('clearCatId')">
+                            <i class="fas fa-trash-alt"></i> Clear + Refresh
+                        </button>
+                    </form>
+                </div>
+
             </div>
         </div>
     </div>
