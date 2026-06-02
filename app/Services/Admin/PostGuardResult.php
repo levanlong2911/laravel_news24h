@@ -56,16 +56,22 @@ final class PostGuardResult
 
     public function title(): string
     {
-        return $this->parsed['title'] ?? '';
+        return self::normalizeText($this->parsed['title'] ?? '');
     }
 
     public function content(): string
     {
-        return $this->parsed['content'] ?? '';
+        return self::normalizeText($this->parsed['content'] ?? '');
     }
 
     public function get(string $field, mixed $default = null): mixed
     {
-        return $this->parsed[$field] ?? $default;
+        $value = $this->parsed[$field] ?? $default;
+        return is_string($value) ? self::normalizeText($value) : $value;
+    }
+
+    private static function normalizeText(string $text): string
+    {
+        return str_replace('—', '-', $text);
     }
 }

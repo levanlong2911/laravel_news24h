@@ -10,8 +10,10 @@ use App\Models\CategoryContext;
  */
 final class PipelineResult
 {
+    public readonly array $parsed;
+
     public function __construct(
-        public readonly array            $parsed,
+        array                            $parsed,
         public readonly HookResult       $hookResult,
         public readonly ?CategoryContext $context,
         public readonly PostGuardResult  $guardResult,
@@ -32,7 +34,12 @@ final class PipelineResult
         public readonly int              $sonnetInputTokens  = 0,
         public readonly int              $sonnetOutputTokens = 0,
         public readonly float            $totalCostUsd       = 0.0,
-    ) {}
+    ) {
+        $this->parsed = array_map(
+            fn($v) => is_string($v) ? str_replace('—', '-', $v) : $v,
+            $parsed
+        );
+    }
 
     public function needsReview(): bool
     {
