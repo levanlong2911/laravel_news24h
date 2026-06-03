@@ -192,6 +192,18 @@
                             <a href="{{ $article->source_url }}" target="_blank" class="btn btn-xs btn-outline-secondary" title="Source">
                                 <i class="fas fa-external-link-alt"></i>
                             </a>
+                            <button class="btn btn-xs btn-outline-warning btn-pick-image"
+                                    data-id="{{ $article->id }}"
+                                    data-url="{{ route('article.searchImages', $article) }}"
+                                    data-save="{{ route('article.updateThumbnail', $article) }}"
+                                    title="Chọn ảnh Google">
+                                <i class="fas fa-image"></i>
+                            </button>
+                            <button class="btn btn-xs btn-outline-info btn-manual-url"
+                                    data-save="{{ route('article.updateThumbnail', $article) }}"
+                                    title="Nhập URL ảnh thủ công">
+                                <i class="fas fa-link"></i>
+                            </button>
                             <form method="POST" action="{{ route('article.sendToClaude') }}" class="d-inline">
                                 @csrf
                                 <input type="hidden" name="selected_ids[]" value="{{ $article->id }}">
@@ -468,5 +480,211 @@ document.getElementById('glUrl').addEventListener('keydown', function(e) {
 });
 
 document.getElementById('modalGetLink').addEventListener('hidden.bs.modal', glReset);
+</script>
+
+{{-- ── MANUAL URL MODAL ── --}}
+<div class="modal fade" id="modalManualUrl" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title"><i class="fas fa-link text-info mr-1"></i> Nhập URL ảnh</h6>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <input type="url" id="manualUrlInput" class="form-control form-control-sm"
+                           placeholder="https://...">
+                    <div class="input-group-append">
+                        <button id="btnConfirmManualUrl" class="btn btn-sm btn-info" type="button">
+                            <i class="fas fa-check"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="manualUrlFeedback" class="small mt-1 text-danger"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- ── IMAGE PICKER MODAL ── --}}
+<div class="modal fade" id="modalImagePicker" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title"><i class="fas fa-images text-warning mr-1"></i> Chọn ảnh bài viết</h6>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <div id="imgPickerQuery" class="text-muted small mb-2"></div>
+                <div id="imgPickerLoading" class="text-center py-4 d-none">
+                    <i class="fas fa-spinner fa-spin fa-2x text-warning"></i>
+                    <div class="small mt-2">Đang tìm ảnh...</div>
+                </div>
+                <div id="imgPickerGrid" class="row" style="gap:0"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const CSRF = '{{ csrf_token() }}';
+    const JSON_HEADERS = { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' };
+
+    function isValidUrl(url) {
+        try { new URL(url); return true; } catch (_) { return false; }
+    }
+
+    function saveThumbnail(saveUrl, imageUrl, btn, onSuccess) {
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        fetch(saveUrl, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify({ thumbnail: imageUrl }) })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok && data.success) {
+                    onSuccess(btn);
+                } else {
+                    btn.innerHTML = '<i class="fas fa-check"></i>';
+                    alert(data.errors?.thumbnail?.[0] ?? data.message ?? 'Lưu thất bại.');
+                }
+            })
+            .catch(() => {
+                btn.innerHTML = '<i class="fas fa-check"></i>';
+                alert('Lỗi kết nối.');
+            });
+    }
+
+    // ── Google Images picker ──────────────────────────────────────────────────
+    let _saveUrl = '';
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-pick-image');
+        if (!btn) return;
+
+        _saveUrl = btn.dataset.save;
+        document.getElementById('imgPickerGrid').innerHTML = '';
+        document.getElementById('imgPickerQuery').textContent = '';
+        document.getElementById('imgPickerLoading').classList.remove('d-none');
+        $('#modalImagePicker').modal('show');
+
+        fetch(btn.dataset.url, { headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF } })
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('imgPickerLoading').classList.add('d-none');
+                document.getElementById('imgPickerQuery').textContent = 'Kết quả cho: ' + data.query;
+                const grid = document.getElementById('imgPickerGrid');
+                if (!data.images?.length) {
+                    grid.innerHTML = '<div class="col-12 text-center text-muted py-4">Không tìm được ảnh phù hợp.</div>';
+                    return;
+                }
+                grid.innerHTML = data.images.map(img => `
+                    <div class="col-6 col-md-3 p-1">
+                        <div class="border rounded overflow-hidden">
+                            <img src="${img.thumbnail}" loading="lazy"
+                                 style="width:100%;height:140px;object-fit:cover;display:block"
+                                 onerror="this.src='${img.url}'">
+                            <div class="p-1 d-flex" style="gap:4px;background:#f8f9fa">
+                                <button class="btn btn-xs btn-outline-secondary flex-fill btn-copy-img"
+                                        data-url="${img.url}"><i class="fas fa-copy"></i> Copy</button>
+                                <button class="btn btn-xs btn-warning flex-fill btn-use-img"
+                                        data-url="${img.url}"><i class="fas fa-check"></i> Chọn</button>
+                            </div>
+                        </div>
+                    </div>`).join('');
+            })
+            .catch(() => {
+                document.getElementById('imgPickerLoading').classList.add('d-none');
+                document.getElementById('imgPickerGrid').innerHTML =
+                    '<div class="col-12 text-center text-danger py-4">Lỗi kết nối.</div>';
+            });
+    });
+
+    // Copy ảnh vào clipboard (qua proxy để bypass CORS)
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-copy-img');
+        if (!btn) return;
+        const proxyUrl = '{{ route("image.proxy") }}?url=' + encodeURIComponent(btn.dataset.url);
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+        (async () => {
+            try {
+                const r = await fetch(proxyUrl);
+                if (!r.ok) throw new Error();
+                let blob = await r.blob();
+                if (blob.type !== 'image/png') {
+                    blob = await new Promise(res => {
+                        const img = new Image(), url = URL.createObjectURL(blob);
+                        img.onload = () => {
+                            const c = document.createElement('canvas');
+                            c.width = img.width; c.height = img.height;
+                            c.getContext('2d').drawImage(img, 0, 0);
+                            c.toBlob(res, 'image/png');
+                            URL.revokeObjectURL(url);
+                        };
+                        img.src = url;
+                    });
+                }
+                await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                btn.innerHTML = '<i class="fas fa-check text-success"></i> Copied!';
+                setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i> Copy', 2500);
+            } catch (_) {
+                btn.innerHTML = '<i class="fas fa-times text-danger"></i> Lỗi';
+                setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i> Copy', 2500);
+            }
+        })();
+    });
+
+    // ── Manual URL modal ─────────────────────────────────────────────────────
+    const manualInp      = document.getElementById('manualUrlInput');
+    const manualFeedback = document.getElementById('manualUrlFeedback');
+    const manualBtn      = document.getElementById('btnConfirmManualUrl');
+    let _manualSaveUrl   = '';
+
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-manual-url');
+        if (!btn) return;
+        _manualSaveUrl = btn.dataset.save;
+        manualInp.value = '';
+        manualInp.classList.remove('is-invalid', 'is-valid');
+        manualFeedback.textContent = '';
+        manualBtn.innerHTML = '<i class="fas fa-check"></i>';
+        manualBtn.className = 'btn btn-sm btn-info';
+        $('#modalManualUrl').modal('show');
+    });
+
+    manualInp.addEventListener('input', function () {
+        const val = this.value.trim();
+        if (!val) {
+            manualFeedback.textContent = '';
+            this.classList.remove('is-invalid', 'is-valid');
+            manualBtn.className = 'btn btn-sm btn-info';
+            return;
+        }
+        const valid = isValidUrl(val);
+        manualFeedback.textContent = valid ? '' : 'URL không hợp lệ.';
+        this.classList.toggle('is-valid', valid);
+        this.classList.toggle('is-invalid', !valid);
+        manualBtn.className = valid ? 'btn btn-sm btn-info' : 'btn btn-sm btn-secondary';
+    });
+
+    manualBtn.addEventListener('click', function () {
+        const url = manualInp.value.trim();
+        if (!isValidUrl(url)) { manualFeedback.textContent = 'URL không hợp lệ.'; return; }
+        manualFeedback.textContent = '';
+        saveThumbnail(_manualSaveUrl, url, manualBtn, btn => {
+            btn.className = 'btn btn-sm btn-success';
+            setTimeout(() => $('#modalManualUrl').modal('hide'), 600);
+        });
+    });
+
+    // Chọn ảnh → lưu thumbnail
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-use-img');
+        if (!btn) return;
+        saveThumbnail(_saveUrl, btn.dataset.url, btn, b => {
+            b.innerHTML = '<i class="fas fa-check"></i> Đã chọn';
+            b.classList.replace('btn-warning', 'btn-success');
+            $('#modalImagePicker').modal('hide');
+        });
+    });
+})();
 </script>
 @endsection

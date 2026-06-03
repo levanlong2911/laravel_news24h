@@ -8,6 +8,7 @@ use App\Models\Domain;
 use App\Models\Keyword;
 use App\Models\Post;
 use App\Services\Admin\ArticlePipelineService;
+use App\Services\Admin\PostService;
 use App\Services\Admin\SerpApiService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -70,31 +71,40 @@ class ArticleController extends Controller
         return back()->with('success', 'Unpublished');
     }
 
-    // public function searchImages(Article $article, SerpApiService $serpApi)
-    // {
-    //     $images = $serpApi->searchImages($article->title, 12);
-    //     return response()->json(['images' => $images, 'query' => $article->title]);
-    // }
+    public function searchImages(Article $article, SerpApiService $serpApi)
+    {
+        $images = $serpApi->searchImages($article->title, 12);
+        return response()->json(['images' => $images, 'query' => $article->title]);
+    }
 
-    // public function updateThumbnail(Request $request, Article $article, \App\Services\Admin\ImageService $imageService)
-    // {
-    //     $request->validate(['thumbnail' => 'required|url|max:2048']);
+    public function imageProxy(Request $request)
+    {
+        $url = $request->get('url');
+        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
+            abort(400, 'Invalid URL');
+        }
 
-    //     $url     = $imageService->downloadToWebp($request->thumbnail, 1200) ?? $request->thumbnail;
-    //     $content = $article->content ?? '';
+        try {
+            $client   = new \GuzzleHttp\Client(['timeout' => 10, 'verify' => false]);
+            $response = $client->get($url, ['headers' => ['User-Agent' => 'Mozilla/5.0']]);
+            $mime     = $response->getHeaderLine('Content-Type') ?: 'image/jpeg';
+            $mime     = explode(';', $mime)[0];
 
-    //     if ($content && str_contains($content, '</p>')) {
-    //         $imgHtml = '<p style="text-align:center;">'
-    //             . '<img src="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" '
-    //             . 'style="width:100%;max-width:850px;border-radius:10px;margin:20px 0;">'
-    //             . '</p>';
-    //         $content = preg_replace('/<\/p>/i', '</p>' . $imgHtml, $content, 1);
-    //     }
+            return response($response->getBody()->getContents(), 200)
+                ->header('Content-Type', $mime)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Cache-Control', 'public, max-age=3600');
+        } catch (\Throwable $e) {
+            abort(502, 'Cannot fetch image');
+        }
+    }
 
-    //     $article->update(['thumbnail' => $url, 'content' => $content]);
-
-    //     return response()->json(['success' => true, 'thumbnail' => $url]);
-    // }
+    public function updateThumbnail(Request $request, Article $article)
+    {
+        $request->validate(['thumbnail' => 'required|url|max:2048']);
+        $article->update(['thumbnail' => $request->thumbnail]);
+        return response()->json(['success' => true, 'thumbnail' => $request->thumbnail]);
+    }
 
     public function storeManual(Request $request)
     {
@@ -227,8 +237,8 @@ class ArticleController extends Controller
         return back()->with('success', 'Cache cleared');
     }
 
-    // Article → ArticlePipelineService → Post
-    public function sendToClaude(Request $request, ArticlePipelineService $pipeline)
+    // Article → ArticlePipelineService → PostService → Post
+    public function sendToClaude(Request $request, ArticlePipelineService $pipeline, PostService $postService)
     {
         set_time_limit(600);
 
@@ -299,21 +309,20 @@ class ArticleController extends Controller
                 $parsed     = $result->parsed;
                 $finalTitle = $result->title() ?: $article->title;
                 $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article'));
+                $thumbnail  = $article->thumbnail;
+                $content    = $this->injectHeroImage($parsed['content'] ?? '', $thumbnail);
 
-                $post = Post::create([
-                    'id'               => Str::uuid(),
+                $post = $postService->createFromData([
                     'title'            => $finalTitle,
-                    'meta_description' => Str::limit($parsed['meta_description'] ?? '', 255),
-                    'content'          => $parsed['content'] ?? '',
+                    'content'          => $content,
                     'slug'             => $slug,
-                    'thumbnail'        => $article->thumbnail,
+                    'thumbnail'        => $thumbnail,
                     'category_id'      => $categoryId ?: null,
                     'author_id'        => $admin->id,
-                    'domain_id'        => $domain->id,
                     'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
                     'fb_image_text'    => $parsed['fb_image_text']   ?? null,
                     'fb_post_content'  => $parsed['fb_post_content'] ?? null,
-                ]);
+                ], $domain->id);
 
                 $article->update(['status' => 'published', 'published_at' => now(), 'post_id' => $post->id]);
                 $admin->incrementClaudeUsage(
@@ -346,7 +355,7 @@ class ArticleController extends Controller
         return back()->with('success', $msg);
     }
 
-    public function synthesize(Request $request, ArticlePipelineService $pipeline)
+    public function synthesize(Request $request, ArticlePipelineService $pipeline, PostService $postService)
     {
         set_time_limit(600);
 
@@ -402,20 +411,17 @@ class ArticleController extends Controller
             $finalTitle = $result->title() ?: $primary->title;
             $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article'));
 
-            $post = Post::create([
-                'id'               => Str::uuid(),
+            $post = $postService->createFromData([
                 'title'            => $finalTitle,
-                'meta_description' => Str::limit($parsed['meta_description'] ?? '', 255),
                 'content'          => $parsed['content'] ?? '',
                 'slug'             => $slug,
                 'thumbnail'        => $primary->thumbnail,
                 'category_id'      => $primary->keyword->category_id ?? null,
                 'author_id'        => $admin->id,
-                'domain_id'        => $domain->id,
                 'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
                 'fb_image_text'    => $parsed['fb_image_text']   ?? null,
                 'fb_post_content'  => $parsed['fb_post_content'] ?? null,
-            ]);
+            ], $domain->id);
 
             $sourceUrls = $articles->pluck('source_url')->filter()->values()->toArray();
             $articles->each(fn($a) => $a->update([
@@ -468,5 +474,16 @@ class ArticleController extends Controller
             ->filter(fn($p) => strlen($p) > 20) // bỏ đoạn quá ngắn
             ->map(fn($p) => "<p>{$p}</p>")
             ->implode("\n");
+    }
+
+    private function injectHeroImage(string $content, ?string $imageUrl): string
+    {
+        if (empty($imageUrl) || empty($content)) return $content;
+
+        $img = '<figure class="article-hero-image" style="margin:16px 0">'
+             . '<img src="' . e($imageUrl) . '" alt="" style="width:100%;border-radius:8px">'
+             . '</figure>';
+
+        return preg_replace('/<\/p>/i', '</p>' . $img, $content, 1) ?? $content;
     }
 }
