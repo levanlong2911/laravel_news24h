@@ -46,7 +46,7 @@ class PostApiController extends Controller
         // $cacheKey = "posts:{$domain->id}:page:$page";
         $cacheKey = sprintf(
             'posts:%s:%s:page:%d',
-            CacheVersion::POSTS,
+            CacheVersion::posts(),
             $domain->id,
             $page
         );
@@ -131,7 +131,7 @@ class PostApiController extends Controller
 
         $cacheKey = sprintf(
             'post:%s:%s:%s',
-            CacheVersion::POST,
+            CacheVersion::posts(),
             $domain->id,
             $slug
         );

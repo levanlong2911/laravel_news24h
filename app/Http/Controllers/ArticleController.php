@@ -307,7 +307,8 @@ class ArticleController extends Controller
 
                 $parsed     = $result->parsed;
                 $finalTitle = $result->title() ?: $article->title;
-                $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article'));
+                $authorSlug = Str::slug($admin->name ?? '');
+                $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article') . ($authorSlug ? '-' . $authorSlug : ''));
                 $thumbnail  = $article->thumbnail;
                 $content    = $this->injectHeroImage($parsed['content'] ?? '', $thumbnail);
 
@@ -411,7 +412,8 @@ class ArticleController extends Controller
             );
             $parsed     = $result->parsed;
             $finalTitle = $result->title() ?: $primary->title;
-            $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article'));
+            $authorSlug = Str::slug($admin->name ?? '');
+            $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article') . ($authorSlug ? '-' . $authorSlug : ''));
 
             $post = $postService->createFromData([
                 'title'            => $finalTitle,

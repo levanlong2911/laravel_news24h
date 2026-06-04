@@ -587,7 +587,7 @@ document.getElementById('modalGetLink').addEventListener('hidden.bs.modal', glRe
                                 <button class="btn btn-xs btn-outline-secondary flex-fill btn-copy-img"
                                         data-url="${img.url}"><i class="fas fa-copy"></i> Copy</button>
                                 <button class="btn btn-xs btn-warning flex-fill btn-use-img"
-                                        data-url="${img.url}"><i class="fas fa-check"></i> Chọn</button>
+                                        data-url="${img.thumbnail}"><i class="fas fa-check"></i> Chọn</button>
                             </div>
                         </div>
                     </div>`).join('');

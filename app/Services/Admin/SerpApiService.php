@@ -549,38 +549,51 @@ class SerpApiService
         }
 
         $images = $this->withRetry(function () use ($query, $num) {
-            $response = $this->client->get('https://serpapi.com/search', [
-                'query' => [
-                    'engine'  => 'google_images',
-                    'q'       => $query,
-                    'num'     => $num,
-                    'imgsz'   => 'l',
-                    'api_key' => $this->apiKey,
-                ],
-            ]);
-            $data = json_decode($response->getBody(), true);
-            return collect($data['images_results'] ?? [])
-                ->filter(fn($img) =>
-                    !empty($img['original']) &&
-                    ($img['original_width'] ?? 0) >= 1200
-                )
-                ->map(fn($img) => [
-                    'url'       => $img['original'],
-                    'thumbnail' => $img['thumbnail'] ?? $img['original'],
-                    'width'     => $img['original_width']  ?? 0,
-                    'height'    => $img['original_height'] ?? 0,
-                    'source'    => $img['source'] ?? '',
-                    'title'     => $img['title']  ?? '',
-                ])
-                ->values()
-                ->all();
+            $result = $this->fetchImagesByTbs($query, $num, 'qdr:m');
+
+            // Nếu 1 tháng không đủ ảnh, mở rộng sang 1 năm
+            if (count($result) < 4) {
+                $result = $this->fetchImagesByTbs($query, $num, 'qdr:y');
+            }
+
+            return $result;
         }, "Images[{$query}]");
 
         if (!empty($images)) {
-            Cache::put($cacheKey, $images, 3600);
+            Cache::put($cacheKey, $images, 1800); // cache 30 phút
         }
 
         return $images;
+    }
+
+    private function fetchImagesByTbs(string $query, int $num, string $tbs): array
+    {
+        $response = $this->client->get('https://serpapi.com/search', [
+            'query' => [
+                'engine'  => 'google_images',
+                'q'       => $query,
+                'num'     => $num,
+                'imgsz'   => 'l',
+                'tbs'     => $tbs,
+                'api_key' => $this->apiKey,
+            ],
+        ]);
+        $data = json_decode($response->getBody(), true);
+        return collect($data['images_results'] ?? [])
+            ->filter(fn($img) =>
+                !empty($img['original']) &&
+                ($img['original_width'] ?? 0) >= 1200
+            )
+            ->map(fn($img) => [
+                'url'       => $img['original'],
+                'thumbnail' => $img['thumbnail'] ?? $img['original'],
+                'width'     => $img['original_width']  ?? 0,
+                'height'    => $img['original_height'] ?? 0,
+                'source'    => $img['source'] ?? '',
+                'title'     => $img['title']  ?? '',
+            ])
+            ->values()
+            ->all();
     }
 
     private function isWithinHours(string $date, int $hours): bool

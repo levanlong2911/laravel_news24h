@@ -5,6 +5,7 @@ namespace App\Services\Admin;
 use App\Models\Post;
 use App\Repositories\Interfaces\PostRepositoryInterface;
 use App\Repositories\Interfaces\PostTagRepositoryInterface;
+use App\Support\CacheVersion;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -98,8 +99,7 @@ class PostService
                 $post->tags()->attach($tagIds);
             }
             DB::commit();
-            // 🔥 CLEAR CACHE SAU KHI CREATE
-            // $this->clearPostCacheAfterCreate($post);
+            CacheVersion::bumpPosts();
             return $post;
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -478,6 +478,7 @@ class PostService
             ]);
 
             DB::commit();
+            CacheVersion::bumpPosts();
             return $post;
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -539,6 +540,7 @@ class PostService
         //     $oldSlug,
         //     $oldCategory
         // );
+        CacheVersion::bumpPosts();
         return $dataPost;
     }
 
