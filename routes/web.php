@@ -54,6 +54,9 @@ Route::group(
         "middleware" => "auth",
     ],
     function() {
+    // Image proxy — bypass CORS khi copy ảnh từ Google Images
+    Route::get('/image-proxy', [ArticleController::class, 'imageProxy'])->name('image.proxy');
+
     // Admin
     Route::get('/', [AdminController::class, 'index'])->name('admin.index');
     Route::get('/claude-usage', [ClaudeUsageController::class, 'index'])->middleware('admin')->name('admin.claude-usage');

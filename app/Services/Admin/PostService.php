@@ -2,11 +2,9 @@
 
 namespace App\Services\Admin;
 
-use App\Enums\Paginate;
 use App\Models\Post;
 use App\Repositories\Interfaces\PostRepositoryInterface;
 use App\Repositories\Interfaces\PostTagRepositoryInterface;
-use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -14,7 +12,6 @@ use Intervention\Image\ImageManager;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Intervention\Image\Drivers\Imagick\Driver as ImagickDriver;
 use Illuminate\Support\Facades\Storage;
@@ -23,19 +20,16 @@ class PostService
 {
     private PostRepositoryInterface $postRepository;
     private PostTagRepositoryInterface $postTagRepository;
-    private PostTagService $postTagService;
     private ImageService $imageService;
 
     public function __construct(
         PostRepositoryInterface $postRepository,
         PostTagRepositoryInterface $postTagRepository,
-        PostTagService $postTagService,
         ImageService $imageService,
     )
     {
         $this->postRepository = $postRepository;
         $this->postTagRepository = $postTagRepository;
-        $this->postTagService = $postTagService;
         $this->imageService = $imageService;
     }
 
@@ -55,15 +49,32 @@ class PostService
         return $this->postRepository->find($id);
     }
 
-    public function create($request, $domainId): Model
+    private function prepareImages(string $content, ?string $thumbnail): array
     {
+        // Convert thumbnail trước → lấy local WebP URL
+        $webpThumbnail = $thumbnail
+            ? ($this->imageService->downloadToWebp($thumbnail, 1200) ?? $thumbnail)
+            : null;
+
+        // Nếu thumbnail đã được convert thành local URL, replace trong content
+        // để convertImagesToWebp() không tải lại cùng URL đó lần 2
+        if ($webpThumbnail && $thumbnail && $webpThumbnail !== $thumbnail) {
+            $content = str_replace($thumbnail, $webpThumbnail, $content);
+        }
+
+        return [
+            'content'   => $this->convertImagesToWebp($content),
+            'thumbnail' => $webpThumbnail,
+        ];
+    }
+
+    public function create(\Illuminate\Http\Request $request, string $domainId): Model
+    {
+        ['content' => $updatedContent, 'thumbnail' => $webpThumbnail] =
+            $this->prepareImages($request->editor_content, $request->image);
+
         DB::beginTransaction();
-        // dd($request->all());
         try {
-            // Chuyển đổi ảnh sang WebP và cập nhật editor_content
-            $updatedContent = $this->convertImagesToWebp($request->editor_content);
-            // Chuyển đổi ảnh thumbnail sang WebP
-            $webpThumbnail = $request->image;
             // Tạo UUID cho bài viết
             $postId = Str::uuid()->toString();
             $params = [
@@ -219,9 +230,13 @@ class PostService
 
         foreach ($images as $img) {
             $src = $img->getAttribute('src');
-            // $src = $this->normalizeImageUrl($rawSrc);
 
             if (!$src) {
+                continue;
+            }
+
+            // Skip ảnh đã lưu local — không tải lại
+            if (str_contains($src, '/storage/images/')) {
                 continue;
             }
 
@@ -441,6 +456,35 @@ class PostService
     // }
 
 
+    public function createFromData(array $data, string $domainId): Post
+    {
+        ['content' => $updatedContent, 'thumbnail' => $webpThumbnail] =
+            $this->prepareImages($data['content'] ?? '', $data['thumbnail'] ?? null);
+
+        DB::beginTransaction();
+        try {
+            $post = $this->postRepository->create([
+                'id'               => Str::uuid()->toString(),
+                'title'            => $data['title'],
+                'content'          => $updatedContent,
+                'slug'             => $data['slug'],
+                'thumbnail'        => $webpThumbnail,
+                'category_id'      => $data['category_id'] ?? null,
+                'author_id'        => $data['author_id'],
+                'domain_id'        => $domainId,
+                'meta_description' => $data['meta_description'] ?? null,
+                'fb_image_text'    => $data['fb_image_text']    ?? null,
+                'fb_post_content'  => $data['fb_post_content']  ?? null,
+            ]);
+
+            DB::commit();
+            return $post;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     public function getPostById($id)
     {
         return $this->postRepository->getPostById($id);
@@ -454,7 +498,7 @@ class PostService
             : $dataPost->content;
 
         $imageThumbnail = $request->image !== $dataPost->thumbnail
-            ? $request->image
+            ? ($this->imageService->downloadToWebp($request->image, 1200) ?? $request->image)
             : $dataPost->thumbnail;
         $slug = $dataPost->slug;
         if ($request->title !== $dataPost->title) {
