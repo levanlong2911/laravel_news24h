@@ -192,6 +192,7 @@
                             <a href="{{ $article->source_url }}" target="_blank" class="btn btn-xs btn-outline-secondary" title="Source">
                                 <i class="fas fa-external-link-alt"></i>
                             </a>
+                            @if(auth()->user()->isAdmin())
                             <button class="btn btn-xs btn-outline-warning btn-pick-image"
                                     data-id="{{ $article->id }}"
                                     data-url="{{ route('article.searchImages', $article) }}"
@@ -199,6 +200,7 @@
                                     title="Chọn ảnh Google">
                                 <i class="fas fa-image"></i>
                             </button>
+                            @endif
                             <button class="btn btn-xs btn-outline-info btn-manual-url"
                                     data-save="{{ route('article.updateThumbnail', $article) }}"
                                     title="Nhập URL ảnh thủ công">

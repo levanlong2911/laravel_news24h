@@ -73,6 +73,7 @@ class ArticleController extends Controller
 
     public function searchImages(Article $article, SerpApiService $serpApi)
     {
+        abort_unless(auth()->user()->isAdmin(), 403);
         $images = $serpApi->searchImages($article->title, 12);
         return response()->json(['images' => $images, 'query' => $article->title]);
     }

@@ -51,11 +51,20 @@ class PostService
 
     private function prepareImages(string $content, ?string $thumbnail): array
     {
+        // Convert thumbnail trước → lấy local WebP URL
+        $webpThumbnail = $thumbnail
+            ? ($this->imageService->downloadToWebp($thumbnail, 1200) ?? $thumbnail)
+            : null;
+
+        // Nếu thumbnail đã được convert thành local URL, replace trong content
+        // để convertImagesToWebp() không tải lại cùng URL đó lần 2
+        if ($webpThumbnail && $thumbnail && $webpThumbnail !== $thumbnail) {
+            $content = str_replace($thumbnail, $webpThumbnail, $content);
+        }
+
         return [
             'content'   => $this->convertImagesToWebp($content),
-            'thumbnail' => $thumbnail
-                ? ($this->imageService->downloadToWebp($thumbnail, 1200) ?? $thumbnail)
-                : null,
+            'thumbnail' => $webpThumbnail,
         ];
     }
 
@@ -221,9 +230,13 @@ class PostService
 
         foreach ($images as $img) {
             $src = $img->getAttribute('src');
-            // $src = $this->normalizeImageUrl($rawSrc);
 
             if (!$src) {
+                continue;
+            }
+
+            // Skip ảnh đã lưu local — không tải lại
+            if (str_contains($src, '/storage/images/')) {
                 continue;
             }
 
