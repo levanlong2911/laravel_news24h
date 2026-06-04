@@ -2,11 +2,9 @@
 
 namespace App\Services\Admin;
 
-use App\Enums\Paginate;
 use App\Models\Post;
 use App\Repositories\Interfaces\PostRepositoryInterface;
 use App\Repositories\Interfaces\PostTagRepositoryInterface;
-use Exception;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -14,7 +12,6 @@ use Intervention\Image\ImageManager;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Intervention\Image\Drivers\Imagick\Driver as ImagickDriver;
 use Illuminate\Support\Facades\Storage;
@@ -23,19 +20,16 @@ class PostService
 {
     private PostRepositoryInterface $postRepository;
     private PostTagRepositoryInterface $postTagRepository;
-    private PostTagService $postTagService;
     private ImageService $imageService;
 
     public function __construct(
         PostRepositoryInterface $postRepository,
         PostTagRepositoryInterface $postTagRepository,
-        PostTagService $postTagService,
         ImageService $imageService,
     )
     {
         $this->postRepository = $postRepository;
         $this->postTagRepository = $postTagRepository;
-        $this->postTagService = $postTagService;
         $this->imageService = $imageService;
     }
 
@@ -67,11 +61,11 @@ class PostService
 
     public function create(\Illuminate\Http\Request $request, string $domainId): Model
     {
+        ['content' => $updatedContent, 'thumbnail' => $webpThumbnail] =
+            $this->prepareImages($request->editor_content, $request->image);
+
         DB::beginTransaction();
-        // dd($request->all());
         try {
-            ['content' => $updatedContent, 'thumbnail' => $webpThumbnail] =
-                $this->prepareImages($request->editor_content, $request->image);
             // Tạo UUID cho bài viết
             $postId = Str::uuid()->toString();
             $params = [
@@ -451,11 +445,11 @@ class PostService
 
     public function createFromData(array $data, string $domainId): Post
     {
+        ['content' => $updatedContent, 'thumbnail' => $webpThumbnail] =
+            $this->prepareImages($data['content'] ?? '', $data['thumbnail'] ?? null);
+
         DB::beginTransaction();
         try {
-            ['content' => $updatedContent, 'thumbnail' => $webpThumbnail] =
-                $this->prepareImages($data['content'] ?? '', $data['thumbnail'] ?? null);
-
             $post = $this->postRepository->create([
                 'id'               => Str::uuid()->toString(),
                 'title'            => $data['title'],
