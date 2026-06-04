@@ -252,18 +252,21 @@ class ArticleController extends Controller
             return back()->with('error', 'Xu ly truc tiep toi da 5 bai moi lan.');
         }
 
-        $key = 'article-send-claude';
+        $admin = auth()->user();
+
+        $key = 'article-send-claude:' . $admin->id;
         if (RateLimiter::tooManyAttempts($key, 5)) {
             $seconds = RateLimiter::availableIn($key);
             return back()->with('error', "Qua nhieu request. Doi {$seconds}s.");
         }
         RateLimiter::hit($key, 60);
 
-        $admin  = auth()->user();
-        $domain = Cache::remember('default_domain', 3600, fn() => Domain::first());
-
-        if (!$admin || !$domain) {
-            return back()->with('error', 'Khong tim thay admin hoac domain.');
+        if (!$admin->domain_id) {
+            return back()->with('error', 'Tài khoản chưa được gán domain. Liên hệ admin.');
+        }
+        $domain = Domain::find($admin->domain_id);
+        if (!$domain) {
+            return back()->with('error', 'Không tìm thấy domain.');
         }
 
         $articles = Article::with('keyword')->whereIn('id', $ids)->get();
@@ -281,20 +284,15 @@ class ArticleController extends Controller
                 $article->update(['status' => 'pending']);
             }
 
-            // TODO: bật lại khi thumbnail upload đã ổn định
-            // if (empty($article->thumbnail)) {
-            //     $errors[] = "'{$article->title}': Bạn chưa chọn hình ảnh cho bài này.";
-            //     continue;
-            // }
-
             $categoryId  = $article->keyword->category_id ?? $article->category_id ?? '';
             $keyword     = $article->keyword->name ?? $article->source_title ?? $article->title ?? '';
             $sourceTitle = trim($article->source_title ?? $article->title ?? '');
             $rawHtml     = ($sourceTitle ? "TITLE: {$sourceTitle}\n\n" : '') . ($article->content ?? '');
+            $rawLen      = strlen(trim($rawHtml));
 
-            if (strlen(trim($rawHtml)) < 1000) {
+            if ($rawLen < 1000) {
                 $article->update(['status' => 'failed']);
-                $errors[] = "'{$article->title}': nội dung quá ngắn (" . strlen(trim($rawHtml)) . " ký tự, cần ≥ 1000). Crawl lại bài này trước.";
+                $errors[] = "'{$article->title}': nội dung quá ngắn ({$rawLen} ký tự, cần ≥ 1000). Crawl lại bài này trước.";
                 continue;
             }
 
@@ -385,10 +383,13 @@ class ArticleController extends Controller
         }
 
         $admin  = auth()->user();
-        $domain = Cache::remember('default_domain', 3600, fn() => Domain::first());
 
-        if (!$admin || !$domain) {
-            return back()->with('error', 'Không tìm thấy admin hoặc domain.');
+        if (!$admin->domain_id) {
+            return back()->with('error', 'Tài khoản chưa được gán domain. Liên hệ admin.');
+        }
+        $domain = Domain::find($admin->domain_id);
+        if (!$domain) {
+            return back()->with('error', 'Không tìm thấy domain.');
         }
 
         // Primary = bài có viral_score cao nhất → dùng thumbnail + keyword
