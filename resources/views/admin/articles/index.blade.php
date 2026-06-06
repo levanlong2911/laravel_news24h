@@ -29,6 +29,15 @@
                 <span id="selectedCount" class="badge badge-light ml-1">0</span>
             </button>
 
+            {{-- Image selector — hiện khi chọn ≥ 2 bài để tổng hợp --}}
+            <div id="synthesizeImageWrap" class="d-none" style="gap:4px">
+                <input type="url" id="synthesizeImageUrl" class="form-control form-control-sm"
+                       placeholder="URL ảnh bìa..." style="width:190px">
+                <button id="btnPickSynthesizeImage" class="btn btn-outline-warning btn-sm" title="Tìm ảnh Google">
+                    <i class="fas fa-image"></i>
+                </button>
+            </div>
+
             {{-- Delete Selected (hiện khi có check) --}}
             <button id="btnDeleteSelected" class="btn btn-danger btn-sm d-none"
                     onclick="submitDeleteSelected()">
@@ -95,6 +104,7 @@
     <form id="synthesizeForm" method="POST" action="{{ route('article.synthesize') }}" class="d-none">
         @csrf
         <div id="synthesizeInputs"></div>
+        <input type="hidden" name="thumbnail" id="synthesizeThumbnailInput">
     </form>
     <form id="bulkDeleteForm" method="POST" action="{{ route('article.destroySelected') }}" class="d-none">
         @csrf @method('DELETE')
@@ -254,12 +264,24 @@ function updateBtns() {
 
     // Đổi label button theo mode
     const label = document.getElementById('btnLabel');
-    if (count > 1) {
+    const isSynthesize = count > 1;
+    if (isSynthesize) {
         label.textContent = 'Tổng hợp ' + count + ' bài';
         document.getElementById('btnSendClaude').className = 'btn btn-warning btn-sm';
     } else {
         label.textContent = 'Gửi Claude';
         document.getElementById('btnSendClaude').className = 'btn btn-info btn-sm';
+    }
+
+    // Show/hide image selector
+    const wrap = document.getElementById('synthesizeImageWrap');
+    if (isSynthesize) {
+        wrap.classList.remove('d-none');
+        wrap.classList.add('d-flex', 'align-items-center');
+    } else {
+        wrap.classList.add('d-none');
+        wrap.classList.remove('d-flex', 'align-items-center');
+        document.getElementById('synthesizeImageUrl').value = '';
     }
 }
 
@@ -291,6 +313,12 @@ function submitSendClaude() {
         input.value = cb.value;
         container.appendChild(input);
     });
+
+    if (isSynthesize) {
+        const imgUrl = document.getElementById('synthesizeImageUrl').value.trim();
+        document.getElementById('synthesizeThumbnailInput').value = imgUrl;
+    }
+
     document.getElementById(formId).submit();
 }
 
@@ -556,18 +584,16 @@ document.getElementById('modalGetLink').addEventListener('hidden.bs.modal', glRe
     }
 
     // ── Google Images picker ──────────────────────────────────────────────────
-    let _saveUrl = '';
-    document.addEventListener('click', function (e) {
-        const btn = e.target.closest('.btn-pick-image');
-        if (!btn) return;
+    let _onSelectCallback = null;
 
-        _saveUrl = btn.dataset.save;
+    function openImagePicker(searchUrl, onSelect) {
+        _onSelectCallback = onSelect;
         document.getElementById('imgPickerGrid').innerHTML = '';
         document.getElementById('imgPickerQuery').textContent = '';
         document.getElementById('imgPickerLoading').classList.remove('d-none');
         $('#modalImagePicker').modal('show');
 
-        fetch(btn.dataset.url, { headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF } })
+        fetch(searchUrl, { headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': CSRF } })
             .then(r => r.json())
             .then(data => {
                 document.getElementById('imgPickerLoading').classList.add('d-none');
@@ -593,10 +619,25 @@ document.getElementById('modalGetLink').addEventListener('hidden.bs.modal', glRe
                     </div>`).join('');
             })
             .catch(() => {
+                _onSelectCallback = null;
                 document.getElementById('imgPickerLoading').classList.add('d-none');
                 document.getElementById('imgPickerGrid').innerHTML =
                     '<div class="col-12 text-center text-danger py-4">Lỗi kết nối.</div>';
             });
+    }
+
+    // Per-row image picker
+    document.addEventListener('click', function (e) {
+        const btn = e.target.closest('.btn-pick-image');
+        if (!btn) return;
+        const saveUrl = btn.dataset.save;
+        openImagePicker(btn.dataset.url, (imgUrl, imgBtn) => {
+            saveThumbnail(saveUrl, imgUrl, imgBtn, b => {
+                b.innerHTML = '<i class="fas fa-check"></i> Đã chọn';
+                b.classList.replace('btn-warning', 'btn-success');
+                $('#modalImagePicker').modal('hide');
+            });
+        });
     });
 
     // Copy ảnh vào clipboard (qua proxy để bypass CORS)
@@ -677,13 +718,26 @@ document.getElementById('modalGetLink').addEventListener('hidden.bs.modal', glRe
         });
     });
 
-    // Chọn ảnh → lưu thumbnail
+    // Chọn ảnh → gọi callback hiện tại
     document.addEventListener('click', function (e) {
         const btn = e.target.closest('.btn-use-img');
-        if (!btn) return;
-        saveThumbnail(_saveUrl, btn.dataset.url, btn, b => {
-            b.innerHTML = '<i class="fas fa-check"></i> Đã chọn';
-            b.classList.replace('btn-warning', 'btn-success');
+        if (!btn || !_onSelectCallback) return;
+        _onSelectCallback(btn.dataset.url, btn);
+    });
+
+    // Reset callback khi đóng modal
+    document.getElementById('modalImagePicker').addEventListener('hidden.bs.modal', function () {
+        _onSelectCallback = null;
+    });
+
+    // ── Google picker cho nút Tổng hợp ──────────────────────────────────────
+    document.getElementById('btnPickSynthesizeImage').addEventListener('click', function () {
+        const firstChecked = document.querySelector('.article-check:checked');
+        if (!firstChecked) return;
+        const pickBtn = firstChecked.closest('tr').querySelector('.btn-pick-image');
+        if (!pickBtn) { document.getElementById('synthesizeImageUrl').focus(); return; }
+        openImagePicker(pickBtn.dataset.url, (imgUrl) => {
+            document.getElementById('synthesizeImageUrl').value = imgUrl;
             $('#modalImagePicker').modal('hide');
         });
     });

@@ -261,12 +261,12 @@ class ArticleController extends Controller
         }
         RateLimiter::hit($key, 60);
 
-        if (!$admin->domain_id) {
-            return back()->with('error', 'Tài khoản chưa được gán domain. Liên hệ admin.');
-        }
-        $domain = Domain::find($admin->domain_id);
+        $domain = $this->resolveDomain($admin);
         if (!$domain) {
-            return back()->with('error', 'Không tìm thấy domain.');
+            return back()->with('error', $admin->domain_id
+                ? 'Không tìm thấy domain.'
+                : 'Tài khoản chưa được gán domain. Liên hệ admin.'
+            );
         }
 
         $articles = Article::with('keyword')->whereIn('id', $ids)->get();
@@ -359,16 +359,19 @@ class ArticleController extends Controller
     {
         set_time_limit(600);
 
-        $ids = array_filter((array) $request->get('selected_ids', []));
+        $ids   = array_filter((array) $request->get('selected_ids', []));
+        $count = count($ids);
 
-        if (count($ids) < 2) {
+        if ($count < 2) {
             return back()->with('error', 'Cần chọn ít nhất 2 bài để tổng hợp.');
         }
-        if (count($ids) > 5) {
+        if ($count > 5) {
             return back()->with('error', 'Tối đa 5 bài mỗi lần tổng hợp.');
         }
 
-        $key = 'article-send-claude';
+        $admin = auth()->user();
+
+        $key = 'article-synthesize:' . $admin->id;
         if (RateLimiter::tooManyAttempts($key, 5)) {
             return back()->with('error', 'Quá nhiều request. Đợi ' . RateLimiter::availableIn($key) . 's.');
         }
@@ -383,14 +386,12 @@ class ArticleController extends Controller
             return back()->with('error', "Bài viết thuộc nhiều category ({$kwNames}). Chỉ chọn bài cùng keyword.");
         }
 
-        $admin  = auth()->user();
-
-        if (!$admin->domain_id) {
-            return back()->with('error', 'Tài khoản chưa được gán domain. Liên hệ admin.');
-        }
-        $domain = Domain::find($admin->domain_id);
+        $domain = $this->resolveDomain($admin);
         if (!$domain) {
-            return back()->with('error', 'Không tìm thấy domain.');
+            return back()->with('error', $admin->domain_id
+                ? 'Không tìm thấy domain.'
+                : 'Tài khoản chưa được gán domain. Liên hệ admin.'
+            );
         }
 
         // Primary = bài có viral_score cao nhất → dùng thumbnail + keyword
@@ -419,7 +420,7 @@ class ArticleController extends Controller
                 'title'            => $finalTitle,
                 'content'          => $parsed['content'] ?? '',
                 'slug'             => $slug,
-                'thumbnail'        => $primary->thumbnail,
+                'thumbnail'        => $request->filled('thumbnail') ? $request->input('thumbnail') : null,
                 'category_id'      => $primary->keyword->category_id ?? null,
                 'author_id'        => $admin->id,
                 'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
@@ -449,7 +450,7 @@ class ArticleController extends Controller
                 'hook_score' => $result->hookResult->bestScore,
             ]);
 
-            return back()->with('success', 'Đã tổng hợp ' . count($ids) . ' bài → "' . $finalTitle . '"');
+            return back()->with('success', "Đã tổng hợp {$count} bài → \"{$finalTitle}\"");
 
         } catch (\Throwable $e) {
             $articles->each(fn($a) => $a->update(['status' => 'failed']));
@@ -460,6 +461,11 @@ class ArticleController extends Controller
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    private function resolveDomain($admin): ?Domain
+    {
+        if (!$admin->domain_id) return null;
+        return Domain::find($admin->domain_id);
+    }
 
     private function formatContent(string $text)
     {
