@@ -139,7 +139,7 @@ class RawArticleController extends Controller
             'source_url_hash' => $finalUrlHash,
             'source_title'    => $title,
             'source_name'     => $rawArticle->source,
-            'thumbnail'       => $rawArticle->thumbnail,
+            // 'thumbnail'       => $rawArticle->thumbnail,
             'title'           => $title,
             'content'         => $content,
             'viral_score'     => $rawArticle->viral_score,

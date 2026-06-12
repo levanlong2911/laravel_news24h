@@ -54,7 +54,14 @@ class ClaudeWriterService
         if ($system !== '') {
             $requestBody['system'] = $system;
         }
-        $encodedBody = json_encode($requestBody);
+        $encodedBody = json_encode($requestBody, JSON_UNESCAPED_UNICODE);
+        if ($encodedBody === false) {
+            // Fallback: strip invalid UTF-8 rồi encode lại
+            array_walk_recursive($requestBody, function (&$v) {
+                if (is_string($v)) $v = mb_convert_encoding($v, 'UTF-8', 'UTF-8');
+            });
+            $encodedBody = json_encode($requestBody, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        }
 
         $lastError = '';
 
