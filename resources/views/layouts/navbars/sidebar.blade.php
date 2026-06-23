@@ -91,6 +91,12 @@
                         <p>Prompt Framework</p>
                     </a>
                 </li>
+                <li class="nav-item {{ ($route == 'video-job') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('video-job.index') }}" class="nav-link d-inline-flex {{ ($action == 'video-job-index') ? $active ?? '' : '' }}">
+                        <i class="nav-icon fas fa-video"></i>
+                        <p>Video Jobs</p>
+                    </a>
+                </li>
                 @if(auth()->user()->isAdmin())
                 <li class="nav-item {{ ($route == 'claude-usage') ? $menu ?? '' : '' }}">
                     <a href="{{ route('admin.claude-usage') }}" class="nav-link d-inline-flex {{ ($action == 'admin-claude-usage') ? $active ?? '' : '' }}">

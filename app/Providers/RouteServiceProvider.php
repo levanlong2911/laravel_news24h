@@ -33,6 +33,13 @@ class RouteServiceProvider extends ServiceProvider
                 ->prefix('api')
                 ->group(base_path('routes/api.php'));
 
+            // Deliberately bypasses the global 'api' group's DomainContext
+            // middleware (tenant X-Api-Key check) -- see routes/video-api.php
+            // for why. Sanctum is the only auth this group needs.
+            Route::middleware(['auth:sanctum', 'throttle:api'])
+                ->prefix('api/video-jobs')
+                ->group(base_path('routes/video-api.php'));
+
             Route::middleware('web')
                 ->group(base_path('routes/web.php'));
         });

@@ -40,11 +40,17 @@ class Article extends Model
         'crawled_by',
         'source_urls',
         'post_id',
+        'video_skipped_at',
+        'video_skip_reason',
+        'video_failure_count',
+        'video_processing_started_at',
     ];
 
     protected $casts = [
-        'expires_at'   => 'datetime',
-        'published_at' => 'datetime',
+        'expires_at'       => 'datetime',
+        'published_at'     => 'datetime',
+        'video_skipped_at' => 'datetime',
+        'video_processing_started_at' => 'datetime',
         'viral_score'  => 'integer',
         'faq'          => 'array',
         'human_review' => 'boolean',
@@ -79,6 +85,16 @@ class Article extends Model
     public function crawler()
     {
         return $this->belongsTo(\App\Models\Admin::class, 'crawled_by');
+    }
+
+    public function articleFact()
+    {
+        return $this->hasOne(ArticleFact::class);
+    }
+
+    public function storyPlan()
+    {
+        return $this->hasOne(StoryPlan::class);
     }
 
     // ── Scopes ─────────────────────────────────────────────────────────────────

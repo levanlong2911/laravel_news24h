@@ -19,6 +19,7 @@ use App\Http\Controllers\ModalConfirmController;
 use App\Http\Controllers\NewsWebController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
+use App\Http\Controllers\VideoJobController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Response;
@@ -159,10 +160,20 @@ Route::group(
         Route::post('/synthesize',                   [ArticleController::class, 'synthesize'])   ->name('article.synthesize');
         Route::post('/{article}/publish',            [ArticleController::class, 'publish'])         ->name('article.publish');
         Route::post('/{article}/unpublish',          [ArticleController::class, 'unpublish'])       ->name('article.unpublish');
-Route::get('/{article}/search-images',       [ArticleController::class, 'searchImages'])   ->name('article.searchImages');
+        Route::get('/{article}/search-images',       [ArticleController::class, 'searchImages'])   ->name('article.searchImages');
         Route::post('/{article}/update-thumbnail',   [ArticleController::class, 'updateThumbnail'])->name('article.updateThumbnail');
         Route::delete('/{article}',                  [ArticleController::class, 'destroy'])    ->name('article.destroy');
         Route::get('/{article}',                     [ArticleController::class, 'show'])       ->name('article.show');
+    });
+
+    // Video pipeline status (Fact Extractor / Story Planner / Script Generator,
+    // rendered by the separate Python project -- see VideoJobApiController)
+    Route::group(['prefix' => 'video-job'], function () {
+        Route::get('/', [VideoJobController::class, 'index'])->name('video-job.index');
+        Route::post('/generate/{article}', [VideoJobController::class, 'generate'])->name('video-job.generate');
+        Route::get('/status/{article}', [VideoJobController::class, 'status'])->name('video-job.status');
+        Route::get('/{article}', [VideoJobController::class, 'show'])->name('video-job.show');
+        Route::post('/{videoJob}/rerender', [VideoJobController::class, 'rerender'])->name('video-job.rerender');
     });
 
     // Raw articles (Google News fetch → manual AI generate)

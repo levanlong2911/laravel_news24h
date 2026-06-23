@@ -129,6 +129,77 @@
          */
 
     </script>
+    <script>
+        /**
+         * Video AI generation polling -- global so the "hoàn thành"/"lỗi" toast
+         * fires no matter which admin page the user navigated to after clicking
+         * "Tạo Video AI" (the button triggers a background process and redirects
+         * immediately; this is what notifies once that background process is done).
+         * Tracked client-side via localStorage (not server push) -- simplest option
+         * that needs no extra infrastructure; each browser/employee tracks only
+         * what they themselves triggered.
+         */
+        (function () {
+            const STORAGE_KEY = 'video_ai_pending';
+            const POLL_INTERVAL_MS = 7000;
+            const GIVE_UP_AFTER_MS = 10 * 60 * 1000; // stop polling a stuck entry after 10 min
+
+            function getPending() {
+                try {
+                    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+                } catch (e) {
+                    return [];
+                }
+            }
+
+            function setPending(list) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+            }
+
+            function removePending(articleId) {
+                setPending(getPending().filter(p => p.id !== articleId));
+            }
+
+            // Called by the "Tạo Video AI" forms (articles list + video-job page)
+            // right before they submit/navigate away.
+            window.trackVideoGeneration = function (articleId, title) {
+                const list = getPending();
+                if (!list.find(p => p.id === articleId)) {
+                    list.push({ id: articleId, title: title, since: Date.now() });
+                    setPending(list);
+                }
+            };
+
+            function poll() {
+                const list = getPending();
+                if (list.length === 0) return;
+
+                list.forEach(function (item) {
+                    if (Date.now() - item.since > GIVE_UP_AFTER_MS) {
+                        removePending(item.id);
+                        return;
+                    }
+
+                    fetch('{{ url('admin/video-job/status') }}/' + item.id, { headers: { 'Accept': 'application/json' } })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.status === 'ok') {
+                                toastr.success('Video AI hoàn thành: "' + item.title + '" -- ' + data.message);
+                                removePending(item.id);
+                            } else if (data.status === 'skipped' || data.status === 'failed') {
+                                toastr.error('Video AI lỗi "' + item.title + '": ' + data.message);
+                                removePending(item.id);
+                            }
+                            // status === 'pending' -- keep polling, no toast yet
+                        })
+                        .catch(function () {}); // network hiccup -- just retry next interval
+                });
+            }
+
+            setInterval(poll, POLL_INTERVAL_MS);
+            $(poll); // also check once immediately on every page load
+        })();
+    </script>
 </body>
 
 </html>

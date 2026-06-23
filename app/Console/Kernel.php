@@ -15,6 +15,14 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->onFailure(fn() => \Log::error('Scheduler: news:dispatch failed'));
 
+        // Video pipeline: Fact Extractor -> Story Planner -> Script Generator,
+        // mỗi 15 phút. Vẫn chạy sync (QUEUE_CONNECTION không đổi) -- chạy qua
+        // CLI command nên không bị giới hạn execution-time như HTTP request.
+        $schedule->command('video:process-articles')
+            ->everyFifteenMinutes()
+            ->withoutOverlapping()
+            ->onFailure(fn() => \Log::error('Scheduler: video:process-articles failed'));
+
         // Tự xóa raw_articles hết hạn (expires_at < now, TTL 24h)
         $schedule->command('model:prune', ['--model' => \App\Models\RawArticle::class])
             ->hourly();

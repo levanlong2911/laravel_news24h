@@ -11,7 +11,7 @@ class PromptFramework extends Model
     use HasUuids;
 
     protected $fillable = [
-        'name', 'group_description',
+        'name', 'purpose', 'group_description',
         'system_prompt', 'phase1_analyze', 'phase2_diagnose', 'phase3_generate',
         'version', 'is_active',
     ];

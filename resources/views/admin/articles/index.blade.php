@@ -224,6 +224,16 @@
                                     <i class="fas fa-robot {{ $article->status === 'processing' ? 'fa-spin' : '' }}"></i>
                                 </button>
                             </form>
+                            @if($article->status === 'published')
+                                <form method="POST" action="{{ route('video-job.generate', $article) }}" class="d-inline"
+                                      onsubmit="if (!confirm('Tạo Video AI cho bài này?{{ $article->video_skipped_at ? ' (Bài này đã bị skip trước đó -- bấm sẽ retry lại)' : '' }}')) return false; trackVideoGeneration('{{ $article->id }}', {{ \Illuminate\Support\Js::from(Str::limit($article->title, 60)) }}); return true;">
+                                    @csrf
+                                    <button class="btn btn-xs {{ $article->video_skipped_at ? 'btn-outline-danger' : 'btn-outline-primary' }}"
+                                            title="{{ $article->video_skipped_at ? 'Đã skip: ' . $article->video_skip_reason : 'Tạo Video AI' }}">
+                                        <i class="fas fa-video"></i>
+                                    </button>
+                                </form>
+                            @endif
                             <form method="POST" action="{{ route('article.destroy', $article) }}" class="d-inline"
                                   onsubmit="return confirm('Delete?')">
                                 @csrf @method('DELETE')
