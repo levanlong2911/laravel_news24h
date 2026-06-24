@@ -37,4 +37,17 @@ return [
         'version' => '2023-06-01',
     ],
 
+    // L9 Thumbnail Lab — Flux image generation via fal.ai
+    'fal' => [
+        'key' => env('FAL_KEY'),
+    ],
+
+    // L11 Publisher — n8n/Make webhook URLs (leave blank to skip that platform)
+    'publisher' => [
+        'youtube_webhook'   => env('PUBLISHER_YOUTUBE_WEBHOOK'),
+        'facebook_webhook'  => env('PUBLISHER_FACEBOOK_WEBHOOK'),
+        'tiktok_webhook'    => env('PUBLISHER_TIKTOK_WEBHOOK'),
+        'instagram_webhook' => env('PUBLISHER_INSTAGRAM_WEBHOOK'),
+    ],
+
 ];

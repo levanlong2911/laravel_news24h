@@ -87,6 +87,11 @@ class Article extends Model
         return $this->belongsTo(\App\Models\Admin::class, 'crawled_by');
     }
 
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
     public function articleFact()
     {
         return $this->hasOne(ArticleFact::class);

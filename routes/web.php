@@ -20,6 +20,7 @@ use App\Http\Controllers\NewsWebController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
 use App\Http\Controllers\VideoJobController;
+use App\Http\Controllers\VideoApprovalController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Response;
@@ -174,6 +175,15 @@ Route::group(
         Route::get('/status/{article}', [VideoJobController::class, 'status'])->name('video-job.status');
         Route::get('/{article}', [VideoJobController::class, 'show'])->name('video-job.show');
         Route::post('/{videoJob}/rerender', [VideoJobController::class, 'rerender'])->name('video-job.rerender');
+    });
+
+    // L10.5 Human Approval queue
+    Route::group(['prefix' => 'video-approval'], function () {
+        Route::get('/', [VideoApprovalController::class, 'index'])->name('video-approval.index');
+        Route::get('/{videoJob}', [VideoApprovalController::class, 'review'])->name('video-approval.review');
+        Route::post('/{videoJob}/approve', [VideoApprovalController::class, 'approve'])->name('video-approval.approve');
+        Route::post('/{videoJob}/reject', [VideoApprovalController::class, 'reject'])->name('video-approval.reject');
+        Route::post('/{videoJob}/regenerate', [VideoApprovalController::class, 'regenerate'])->name('video-approval.regenerate');
     });
 
     // Raw articles (Google News fetch → manual AI generate)

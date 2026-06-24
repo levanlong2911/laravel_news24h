@@ -12,7 +12,7 @@ class StoryPlan extends Model
     use HasUuids;
 
     protected $fillable = [
-        'article_id', 'hook', 'narrative_arc', 'mood', 'visual_anchor', 'total_parts', 'parts_outline_json',
+        'article_id', 'hook', 'narrative_arc', 'mood', 'content_type', 'visual_anchor', 'total_parts', 'parts_outline_json',
     ];
 
     protected $casts = [

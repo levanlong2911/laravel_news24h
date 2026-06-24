@@ -23,7 +23,7 @@ class ScriptGeneratorService
 {
     use VideoPipelineHelpers;
 
-    private const TARGET_SECONDS_PHASE1 = 45;
+    private const TARGET_SECONDS_PHASE1 = 15;
 
     public function __construct(
         private ClaudeWriterService $claude,

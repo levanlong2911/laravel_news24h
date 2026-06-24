@@ -40,6 +40,14 @@ class RouteServiceProvider extends ServiceProvider
                 ->prefix('api/video-jobs')
                 ->group(base_path('routes/video-api.php'));
 
+            // L12 analytics ingestion (n8n/Make webhook, same Sanctum auth)
+            Route::middleware(['auth:sanctum', 'throttle:api'])
+                ->prefix('api/video-analytics')
+                ->group(function () {
+                    Route::post('/', [\App\Http\Controllers\Api\VideoAnalyticsController::class, 'store']);
+                    Route::get('/top-articles', [\App\Http\Controllers\Api\VideoAnalyticsController::class, 'topArticles']);
+                });
+
             Route::middleware('web')
                 ->group(base_path('routes/web.php'));
         });

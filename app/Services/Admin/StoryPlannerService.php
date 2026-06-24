@@ -69,19 +69,34 @@ class StoryPlannerService
             );
         }
 
-        // Fallback anchor if Claude omits it -- keeps the pipeline from hard-failing
-        // on this alone, but every scene's image_prompt loses cross-scene consistency
-        // until an admin sets a real art_style/checks this article's output.
         $visualAnchor = trim($parsed['visual_anchor'] ?? '') ?: "Generic subject matching this topic, {$artStyle}, no logos or trademarked symbols.";
+
+        $narrativeArc = $parsed['narrative_arc'] ?? '';
+        $contentType = $this->resolveContentType($narrativeArc, $context->domain);
 
         return StoryPlan::create([
             'article_id' => $article->id,
             'hook' => $hook,
-            'narrative_arc' => $parsed['narrative_arc'] ?? '',
+            'narrative_arc' => $narrativeArc,
             'mood' => $parsed['mood'] ?? 'epic',
+            'content_type' => $contentType,
             'visual_anchor' => $visualAnchor,
             'total_parts' => $totalParts,
             'parts_outline_json' => $parsed['parts_outline'],
         ]);
+    }
+
+    private function resolveContentType(string $narrativeArc, string $domain): string
+    {
+        $visualKeywords = ['yacht', 'superyacht', 'construction', 'travel', 'luxury', 'architecture', 'scenic'];
+        $text = strtolower($narrativeArc . ' ' . $domain);
+
+        foreach ($visualKeywords as $keyword) {
+            if (str_contains($text, $keyword)) {
+                return 'visual';
+            }
+        }
+
+        return 'informational';
     }
 }

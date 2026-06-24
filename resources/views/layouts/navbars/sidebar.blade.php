@@ -97,6 +97,12 @@
                         <p>Video Jobs</p>
                     </a>
                 </li>
+                <li class="nav-item {{ ($route == 'video-approval') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('video-approval.index') }}" class="nav-link d-inline-flex {{ ($action == 'video-approval-index') ? $active ?? '' : '' }}">
+                        <i class="nav-icon fas fa-check-circle"></i>
+                        <p>Video Approval</p>
+                    </a>
+                </li>
                 @if(auth()->user()->isAdmin())
                 <li class="nav-item {{ ($route == 'claude-usage') ? $menu ?? '' : '' }}">
                     <a href="{{ route('admin.claude-usage') }}" class="nav-link d-inline-flex {{ ($action == 'admin-claude-usage') ? $active ?? '' : '' }}">

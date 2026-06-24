@@ -87,12 +87,13 @@ class VideoJobApiController extends Controller
             'article_id' => $job->storyPlan->article_id,
             'topic' => $job->storyPlan->narrative_arc,
             'mood' => $job->storyPlan->mood,
+            'content_type' => $job->storyPlan->content_type ?? 'informational',
             'part_number' => $job->part_number,
             'total_parts' => $job->storyPlan->total_parts,
             'is_final_part' => $job->part_number === $job->storyPlan->total_parts,
             'hook' => $script['hook'] ?? $job->storyPlan->hook,
             'cta' => $script['cta'] ?? null,
-            'target_seconds' => $script['target_seconds'] ?? 45,
+            'target_seconds' => $script['target_seconds'] ?? 15,
             'scenes' => $script['scenes'] ?? [],
         ]]);
     }

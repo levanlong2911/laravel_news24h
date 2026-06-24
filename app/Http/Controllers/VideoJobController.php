@@ -10,29 +10,27 @@ use Illuminate\Support\Facades\Process;
 
 class VideoJobController extends Controller
 {
+    /**
+     * One unified table, built from Article (not StoryPlan) -- a published
+     * article either hasn't entered the video pipeline yet (storyPlan is
+     * null: show the "Tạo Video AI" button) or already has (show
+     * mood/parts/progress/cost + a "view" link). Two separate tables read as
+     * if they were different concepts; they're really just one list with two
+     * states of the same Action column.
+     */
     public function index()
     {
-        $plans = StoryPlan::with(['article:id,title,viral_score', 'videoJobs'])
-            ->latest()
-            ->paginate(20);
-
-        // Candidates for the manual "Tạo Video AI" dropdown -- recent published
-        // articles that haven't entered the video pipeline yet (includes ones
-        // currently skipped/failed, since picking one here is a deliberate
-        // manual retry override; see VideoPipelineRunner::forceRetry()).
-        $candidates = Article::published()
-            ->whereDoesntHave('storyPlan')
+        $articles = Article::published()
+            ->with(['category:id,name', 'crawler:id,name', 'storyPlan.videoJobs'])
             ->latest('published_at')
-            ->limit(50)
-            ->get(['id', 'title']);
+            ->paginate(20);
 
         return view('admin.video-jobs.index', [
             'route' => 'video-job',
             'action' => 'video-job-index',
             'menu' => 'menu-open',
             'active' => 'active',
-            'plans' => $plans,
-            'candidates' => $candidates,
+            'articles' => $articles,
         ]);
     }
 
