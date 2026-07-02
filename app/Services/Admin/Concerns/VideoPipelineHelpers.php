@@ -32,6 +32,12 @@ trait VideoPipelineHelpers
         return [$context, $context->videoFramework];
     }
 
+    /** art_style from CategoryContext, falling back to the global config default. */
+    protected function resolveArtStyle(CategoryContext $context): string
+    {
+        return $context->art_style ?: (string) config('video.default_art_style', '');
+    }
+
     /** Returns null (not an exception) on empty/unparseable input -- callers
      * decide whether that means "escalate" or "fail this part, continue the rest". */
     protected function parseJson(string $text): ?array

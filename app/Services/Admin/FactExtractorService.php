@@ -26,6 +26,12 @@ class FactExtractorService
     ) {
     }
 
+    // Long list articles (50 yachts, 100 cars, etc.) cause Claude to generate
+    // thousands of individual fact entries that exceed any max_tokens limit and
+    // produce truncated (unparseable) JSON. Cap the content so the response
+    // stays within a single model call — we only need 5-10 facts for a 15s video.
+    private const MAX_CONTENT_CHARS = 4500;
+
     public function run(Article $article): ArticleFact
     {
         $existing = ArticleFact::where('article_id', $article->id)->first();
@@ -35,12 +41,17 @@ class FactExtractorService
 
         [$context, $framework] = $this->resolveVideoFramework($article->category_id);
 
+        $content = $article->content;
+        if (strlen($content) > self::MAX_CONTENT_CHARS) {
+            $content = mb_substr($content, 0, self::MAX_CONTENT_CHARS) . "\n\n[Content truncated — extract facts from the above section only.]";
+        }
+
         $prompt = $this->promptBuilder->inject($framework->phase1_analyze, [
             'domain' => $context->domain,
             'audience' => $context->audience,
             'terminology' => implode(', ', $context->terminology ?? []),
             'article_title' => $article->title,
-            'article_content' => $article->content,
+            'article_content' => $content,
         ]);
 
         $response = $this->claude->generate($prompt, 'haiku', $framework->system_prompt);

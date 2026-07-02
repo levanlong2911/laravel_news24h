@@ -53,8 +53,6 @@ class ProcessVideoArticles extends Command
 
     public function handle(VideoPipelineRunner $runner): int
     {
-        $partsPerTopic = (int) config('video.parts_per_topic', 3);
-
         if ($articleId = $this->option('article')) {
             $article = Article::find($articleId);
             if (!$article) {
@@ -62,7 +60,7 @@ class ProcessVideoArticles extends Command
                 return self::FAILURE;
             }
 
-            $result = $runner->forceRetry($article, $partsPerTopic);
+            $result = $runner->forceRetry($article);
             $this->report($article, $result);
 
             return self::SUCCESS;
@@ -70,10 +68,16 @@ class ProcessVideoArticles extends Command
 
         $batchSize = (int) config('video.batch_size', 20);
 
+        // Select articles that: have no story plan yet, OR have a plan but
+        // no video jobs (script generation failed last time — retry it).
+        // total_parts is now per-article (driven by viral_score inside
+        // VideoPipelineRunner::resolveTotalParts) so a single fixed threshold
+        // can no longer be used as the "fully done" gate here.
         $articles = Article::published()
             ->whereNull('video_skipped_at')
-            ->whereDoesntHave('storyPlan', function ($q) use ($partsPerTopic) {
-                $q->has('videoJobs', '>=', $partsPerTopic);
+            ->where(function ($q) {
+                $q->whereDoesntHave('storyPlan')
+                  ->orWhereHas('storyPlan', fn ($sp) => $sp->whereDoesntHave('videoJobs'));
             })
             ->orderBy('published_at')
             ->limit($batchSize)
@@ -82,7 +86,7 @@ class ProcessVideoArticles extends Command
         $this->info("Processing {$articles->count()} article(s) for the video pipeline...");
 
         foreach ($articles as $article) {
-            $this->report($article, $runner->run($article, $partsPerTopic));
+            $this->report($article, $runner->run($article));
         }
 
         return self::SUCCESS;
@@ -91,9 +95,10 @@ class ProcessVideoArticles extends Command
     private function report(Article $article, array $result): void
     {
         match ($result['status']) {
-            'ok' => $this->line("  [{$article->id}] OK -- {$result['message']}"),
+            'ok'      => $this->line("  [{$article->id}] OK -- {$result['message']}"),
             'skipped' => $this->warn("  [{$article->id}] SKIPPED -- {$result['message']}"),
-            'failed' => $this->error("  [{$article->id}] FAILED ({$article->video_failure_count}/" . VideoPipelineRunner::MAX_FAILURES . ") -- {$result['message']}"),
+            'failed'  => $this->error("  [{$article->id}] FAILED ({$article->video_failure_count}/" . VideoPipelineRunner::MAX_FAILURES . ") -- {$result['message']}"),
+            default   => $this->warn("  [{$article->id}] UNKNOWN status '{$result['status']}' -- {$result['message']}"),
         };
     }
 }

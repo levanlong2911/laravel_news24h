@@ -24,6 +24,7 @@ class ScriptGeneratorService
     use VideoPipelineHelpers;
 
     private const TARGET_SECONDS_PHASE1 = 15;
+    private const VISUAL_IMAGE_SCENES   = 10;
 
     public function __construct(
         private ClaudeWriterService $claude,
@@ -33,9 +34,14 @@ class ScriptGeneratorService
 
     public function run(Article $article, ArticleFact $facts, StoryPlan $plan): void
     {
+        if ($plan->content_type === 'visual_image') {
+            $this->runVisualImage($article, $facts, $plan);
+            return;
+        }
+
         [$context, $framework] = $this->resolveVideoFramework($article->category_id);
         $factsJson = json_encode($facts->facts_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-        $artStyle = $context->art_style ?: config('video.default_art_style');
+        $artStyle = $this->resolveArtStyle($context);
 
         foreach ($plan->parts_outline_json as $partOutline) {
             $partNumber = $partOutline['part_number'];
@@ -95,5 +101,76 @@ class ScriptGeneratorService
                 ],
             ]);
         }
+    }
+
+    /**
+     * visual_image pipeline: ask Claude for 10 image-only scenes (no narration).
+     * Each scene = scene_id + beat + image_prompt. Python generates images with
+     * fal_flux dev, applies Ken Burns, adds music — no TTS, no subtitles.
+     */
+    private function runVisualImage(Article $article, ArticleFact $facts, StoryPlan $plan): void
+    {
+        $existing = VideoJob::where('story_plan_id', $plan->id)->where('part_number', 1)->first();
+        if ($existing) {
+            return;
+        }
+
+        [$context, $framework] = $this->resolveVideoFramework($article->category_id);
+        $artStyle = $this->resolveArtStyle($context);
+        $factsJson = json_encode($facts->facts_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+        $nScenes  = self::VISUAL_IMAGE_SCENES;
+        $nSeconds = self::TARGET_SECONDS_PHASE1;
+        $prompt = <<<PROMPT
+You are a visual content director creating a stunning {$context->domain} video slideshow.
+
+Visual anchor: {$plan->visual_anchor}
+Art style: {$artStyle}
+Hook (video title): {$plan->hook}
+Facts about this topic:
+{$factsJson}
+
+Generate exactly {$nScenes} image scenes for a {$nSeconds}-second slideshow.
+Each scene gets {$nSeconds}/{$nScenes} = 1.5 seconds of screen time.
+
+Return ONLY a JSON object (no markdown, no explanation):
+{
+  "scenes": [
+    {
+      "scene_id": "s1",
+      "beat": "hook",
+      "narration": "",
+      "visual_description": "...",
+      "image_prompt": "detailed, cinematic image generation prompt",
+      "fact_refs": []
+    }
+  ]
+}
+
+Beats to use in order: hook, reveal, reveal, build, build, tense, dramatic, dramatic, climax, fade.
+Image prompts must be vivid, cinematic, and visually distinct from each other.
+No logos, no text overlays, no watermarks. Art style: {$artStyle}.
+PROMPT;
+
+        $response = $this->claude->generate($prompt, 'haiku', $framework->system_prompt);
+        $this->logVideoCost($article->id, 'script_generator_visual', 'haiku', $response);
+
+        $parsed = $this->parseJson($response->text);
+        if ($parsed === null || empty($parsed['scenes'])) {
+            Log::error('[ScriptGenerator] visual_image: failed to parse scenes', ['article_id' => $article->id]);
+            return;
+        }
+
+        VideoJob::create([
+            'story_plan_id' => $plan->id,
+            'part_number'   => 1,
+            'status'        => 'script_ready',
+            'script_json'   => [
+                'hook'           => $plan->hook,
+                'cta'            => null,
+                'target_seconds' => self::TARGET_SECONDS_PHASE1,
+                'scenes'         => $parsed['scenes'],
+            ],
+        ]);
     }
 }

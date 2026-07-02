@@ -1,0 +1,18 @@
+{
+    "shot_order": 1,
+    "cam": "MACRO",
+    "lens": "85",
+    "light": "W1",
+    "move": "P1",
+    "emo": "CRAFT",
+    "dur": 1.5,
+    "motion_level": "low",
+    "realism": "high",
+    "has_human": false,
+    "camera_goal": "reveal seat texture",
+    "sub": {
+        "actor": null,
+        "action": "install",
+        "obj": "motorcycle_seat"
+    }
+}

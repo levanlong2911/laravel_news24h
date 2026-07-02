@@ -83,10 +83,12 @@ class PublisherService
 
             if ($response->successful()) {
                 $result = $response->json();
-                // n8n/Make echoes back the platform's post/video ID
-                $idField = "{$platform}_post_id";
-                if (!empty($result['video_id'] ?? $result['post_id'] ?? null)) {
-                    $job->update([$idField => $result['video_id'] ?? $result['post_id']]);
+                // n8n/Make echoes back the platform's post/video ID.
+                // YouTube uses youtube_video_id; all others use {platform}_post_id.
+                $idValue = $result['video_id'] ?? $result['post_id'] ?? null;
+                if (!empty($idValue)) {
+                    $idField = $platform === 'youtube' ? 'youtube_video_id' : "{$platform}_post_id";
+                    $job->update([$idField => $idValue]);
                 }
                 Log::info("[Publisher] {$platform} OK", ['job_id' => $job->id]);
             } else {

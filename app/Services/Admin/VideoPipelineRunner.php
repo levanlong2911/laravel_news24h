@@ -26,20 +26,19 @@ class VideoPipelineRunner
     }
 
     /**
-     * Two callers can race for the same article: a manually-triggered
-     * background process (VideoJobController::generate()) and the
-     * 15-minute cron batch, or two employees both picking the same article
-     * within seconds of each other. Without a lock, both would pass the
-     * "no ArticleFact/StoryPlan yet" check, both call Claude, and the
-     * second INSERT would hit article_facts/story_plans' unique(article_id)
-     * constraint -- wasted Claude cost, confusing failure log. The atomic
-     * conditional UPDATE below (only succeeds if video_processing_started_at
-     * is null or stale) is the actual lock; checking-then-setting in two
-     * steps would have the exact same race it's meant to prevent.
-     *
-     * @return array{status: 'ok'|'skipped'|'failed', message: string}
+     * L10 — viral_score drives total_parts:
+     *   >= 70 → 3 parts (high viral, worth multi-part cliffhanger series)
+     *   >= 40 → 2 parts (medium engagement)
+     *   <  40 → 1 part  (low reach, single short video only)
+     * Capped by config('video.parts_per_topic', 3) so a future config
+     * change (e.g. max 5) automatically unlocks more parts for viral content.
      */
-    public function run(Article $article, int $partsPerTopic): array
+    public function resolveTotalParts(Article $article): int
+    {
+        return 1;
+    }
+
+    public function run(Article $article, int $partsPerTopic = 0): array
     {
         $acquired = Article::where('id', $article->id)
             ->where(function ($q) {
@@ -53,10 +52,12 @@ class VideoPipelineRunner
         }
 
         $article = $article->fresh();
+        // L10: use viral_score to decide total_parts; caller's hint is ignored when 0
+        $totalParts = $partsPerTopic > 0 ? $partsPerTopic : $this->resolveTotalParts($article);
 
         try {
             $facts = $article->articleFact ?? $this->factExtractor->run($article);
-            $plan = $article->storyPlan ?? $this->storyPlanner->run($article, $facts, $partsPerTopic);
+            $plan = $article->storyPlan ?? $this->storyPlanner->run($article, $facts, $totalParts);
             $this->scriptGenerator->run($article, $facts, $plan);
 
             return ['status' => 'ok', 'message' => "{$plan->total_parts} part(s) scripted"];
@@ -88,7 +89,7 @@ class VideoPipelineRunner
      * unattended cron batch from permanently-broken articles. Locking
      * itself happens inside run() -- shared with the cron path.
      */
-    public function forceRetry(Article $article, int $partsPerTopic): array
+    public function forceRetry(Article $article): array
     {
         if ($article->video_skipped_at || $article->video_failure_count > 0) {
             $article->update([
@@ -98,7 +99,7 @@ class VideoPipelineRunner
             ]);
         }
 
-        return $this->run($article, $partsPerTopic);
+        return $this->run($article);
     }
 
     private function skipPermanently(Article $article, string $reason): void
@@ -112,6 +113,7 @@ class VideoPipelineRunner
     private function recordFailure(Article $article, string $reason): void
     {
         $article->increment('video_failure_count');
+        $article->refresh(); // sync in-memory value with the DB-incremented value
 
         if ($article->video_failure_count >= self::MAX_FAILURES) {
             $this->skipPermanently($article, "Max retries exceeded ({$article->video_failure_count}): {$reason}");

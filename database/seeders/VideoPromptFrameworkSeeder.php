@@ -47,7 +47,7 @@ class VideoPromptFrameworkSeeder extends Seeder
     {
         return <<<'TXT'
 You are a short-form video script writer working from an already-published news/history
-article. You write for vertical Shorts/Reels (30-60 seconds per part). Always respond with
+article. You write for vertical Shorts/Reels of approximately 15 seconds. Always respond with
 ONLY a single valid JSON object -- no markdown fences, no commentary before or after it.
 TXT;
     }
@@ -96,7 +96,7 @@ TXT;
 
     /**
      * Placeholders: {domain} {audience} {tone_notes} {hook_style} {art_style} {hook}
-     *   {viral_score} {total_parts} {facts_summary}
+     *   {viral_score} {facts_summary} {analytics_hint}
      * Output: {"narrative_arc": "...", "mood": "...", "visual_anchor": "...", "parts_outline": [...]}
      */
     private function storyPlannerPrompt(): string
@@ -108,38 +108,38 @@ Tone for this category: {tone_notes}
 This category's hook style: {hook_style}
 Required art style for every image in this video: {art_style}
 
+L12 Analytics Feedback — what has worked best for this category recently:
+{analytics_hint}
+
 This article already has a proven hook (written and scored by the article pipeline, viral
-score {viral_score}/100) -- do NOT invent a new one. Extend and adapt this exact hook into a
-{total_parts}-part cliffhanger video series:
+score {viral_score}/100) -- do NOT invent a new one. Build a single, self-contained 15-second
+short-form video around this exact hook:
 
   "{hook}"
 
 Facts available to draw on:
 {facts_summary}
 
-Plan exactly {total_parts} parts. Every part except the last must end on a genuine, specific
-cliffhanger question that makes someone want the next part -- not a generic teaser. The LAST
-part (part_number = {total_parts}) must NOT have a cliffhanger_question; instead give it a
-short call-to-action (cta) wrapping up the series.
+Plan ONE part only (part_number=1, is_final_part=true). This is a complete standalone video
+— no cliffhanger, no "continued in part 2". It must open with the hook, build tension or
+reveal through the middle, and end with a strong call-to-action (cta) that encourages
+likes/comments/follows.
 
-Every part's "beat" must reference something concrete and specific from the facts above, not
-a fill-in-the-blank formula where only the topic noun changes -- platforms increasingly detect
-and demonetize mass-produced, minimal-substance content, so each part needs real substance.
+The beat must reference something concrete and specific from the facts above — platforms
+detect and demonetize generic, fact-free content, so the video needs real substance.
 
 Also choose one overall "mood" tag for background music selection: one of
 epic, calm, mysterious, tense, hopeful.
 
 Write a "visual_anchor": a single fixed, detailed description (appearance, clothing/gear,
 colors, distinguishing features) of this video's main subject(s), in the {art_style} style.
-Every scene's image prompt across every part of this series will reuse this exact description
-so the subject looks like the same person/thing throughout the whole series, not a different
-rendering each time. The visual_anchor must describe people/objects GENERICALLY -- physical
-build, generic clothing colors/shapes, a generic version of any equipment -- and must NEVER
-name or describe any real team logo, league logo, brand logo, trademarked symbol, jersey
-number tied to a real team, or any other copyrighted/trademarked visual element. If the article
-is about a real, identifiable person, describe them as a generic character inspired by the role
-(e.g. "a tall athletic football player in a plain dark jersey, no visible logos or numbers"),
-never by name-dropping copyrighted team branding.
+Every scene's image prompt will reuse this exact description so the subject looks consistent
+throughout. The visual_anchor must describe people/objects GENERICALLY — physical build,
+generic clothing colors/shapes, a generic version of any equipment — and must NEVER name
+or describe any real team logo, brand logo, trademarked symbol, or copyrighted visual element.
+If the article is about a real person, describe them as a generic character inspired by the
+role (e.g. "a tall athletic football player in a plain dark jersey, no visible logos"),
+never by name-dropping copyrighted branding.
 
 Respond with ONLY this JSON shape:
 {
@@ -147,8 +147,7 @@ Respond with ONLY this JSON shape:
   "mood": "epic|calm|mysterious|tense|hopeful",
   "visual_anchor": "...",
   "parts_outline": [
-    {"part_number": 1, "beat": "...", "cliffhanger_question": "...", "is_final_part": false, "cta": null},
-    {"part_number": {total_parts}, "beat": "...", "cliffhanger_question": null, "is_final_part": true, "cta": "..."}
+    {"part_number": 1, "beat": "...", "cliffhanger_question": null, "is_final_part": true, "cta": "..."}
   ]
 }
 TXT;
@@ -170,25 +169,28 @@ Tone: {tone_notes}
 
 Required art style for every image_prompt below: {art_style}
 
-This video series' fixed visual_anchor -- every scene's image_prompt MUST describe this same
+This video's fixed visual_anchor -- every scene's image_prompt MUST describe this same
 subject consistently (same appearance, clothing, colors, features as written here), so the
-subject doesn't look like a different character from scene to scene or part to part:
+subject looks the same in both scenes:
   "{visual_anchor}"
 
-You are writing Part {part_number} of {total_parts} for this video series.
-This part's planned beat: {beat}
+This video's planned beat: {beat}
 {cliffhanger_or_cta_instruction}
 
 Facts available (cite specific ones -- do not write generic, fact-free narration):
 {facts_json}
 
-Target length: approximately {target_seconds} seconds of narration (roughly 2.5 words/second).
+Target length: {target_seconds} seconds total. Write EXACTLY 2 scenes:
+  - Scene s1 (beat = hook/reveal/dramatic): the main story — ~10 seconds, ~25 words of narration.
+    This is the longer clip that hooks the viewer and delivers the key facts.
+  - Scene s2 (beat = end): the closing CTA — ~5 seconds, ~12 words of narration.
+    This wraps up with a call-to-action (like/follow/comment).
 
-Break this part into 3-6 short scenes. For each scene write: the exact narration text to be
-read aloud, a visual description of what should be shown, a fully-formed image-generation
-prompt derived from that visual description, and which fact id(s) (from the facts above) this
-scene's narration draws on (fact_refs) -- every scene should cite at least one fact id where
-the narration makes a factual claim.
+Do NOT write more or fewer than 2 scenes. Exceeding 2 scenes breaks the video layout.
+
+For each scene write: the narration text (s1 ≤ 27 words, s2 ≤ 14 words), a visual description
+of what should be shown, a fully-formed image-generation prompt, and fact_refs citing at least
+one fact id where the narration makes a factual claim.
 
 Every image_prompt must: (1) end with the exact required art style above, (2) describe the
 visual_anchor's subject the same way every time -- do not vary their appearance, outfit, or
@@ -198,9 +200,8 @@ element, even if the underlying fact mentions a real team or brand name -- descr
 clothing generically instead (e.g. "a plain dark athletic jersey", not a named team's actual
 uniform design).
 
-Tag each scene with a "beat" of: hook, reveal, tense, dramatic, transition, or fade -- this
-selects which Ken Burns camera-motion style the renderer uses, so vary it scene-to-scene
-rather than repeating the same tag.
+Tag each scene with a "beat" — s1 must be one of: hook, reveal, tense, dramatic, climax,
+transition. s2 must always be: end. These drive the camera-motion and lighting style.
 
 Respond with ONLY this JSON shape:
 {

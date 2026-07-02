@@ -103,6 +103,9 @@ class ThumbnailLabService
 
     private function scoreCtr(array $variants, string $hook, string $narrativeArc): array
     {
+        $count = count($variants);
+        $last  = $count - 1;
+
         // Ask Claude to write 5 hooks AND score each variant's predicted CTR
         $prompt = <<<TXT
 You are a YouTube Shorts CTR expert. Given this video's hook and topic, rate each of
@@ -116,10 +119,6 @@ Number of variants: {$count}
 Respond with ONLY this JSON:
 {"variants": [{"index": 0, "ctr_score": 8, "hook": "..."}, ...]}
 TXT;
-
-        $count = count($variants);
-        $last  = $count - 1;
-        $prompt = str_replace(['{$count}', '{$last}'], [$count, $last], $prompt);
 
         try {
             $response = $this->claude->generate($prompt, 'haiku');

@@ -227,6 +227,9 @@ Tone for this category: {tone_notes}
 This category's hook style: {hook_style}
 Required art style for every image in this video: {art_style}
 
+L12 Analytics Feedback — what has worked best for this category recently:
+{analytics_hint}
+
 This article already has a proven hook (written and scored by the article pipeline, viral
 score {viral_score}/100) -- do NOT invent a new one. Extend and adapt this exact hook into a
 {total_parts}-part cliffhanger video series:

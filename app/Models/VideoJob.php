@@ -13,7 +13,7 @@ class VideoJob extends Model
     protected $fillable = [
         'story_plan_id', 'part_number', 'status', 'script_json',
         'claimed_by', 'claimed_at', 'cost_total',
-        'video_path', 'thumbnail_path', 'youtube_video_id', 'facebook_post_id',
+        'video_path', 'thumbnail_path', 'youtube_video_id', 'facebook_post_id', 'tiktok_post_id', 'instagram_post_id',
         'error_message',
         'approval_status', 'reviewed_by', 'reviewed_at', 'rejection_note',
     ];

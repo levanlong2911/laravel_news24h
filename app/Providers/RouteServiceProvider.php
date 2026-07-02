@@ -40,6 +40,12 @@ class RouteServiceProvider extends ServiceProvider
                 ->prefix('api/video-jobs')
                 ->group(base_path('routes/video-api.php'));
 
+            // New pipeline (Shadow Migration): media_jobs = SceneGraph-based queue.
+            // Same Sanctum auth as video-jobs; separate prefix for clean ABI.
+            Route::middleware(['auth:sanctum', 'throttle:api'])
+                ->prefix('api/media-jobs')
+                ->group(base_path('routes/media-jobs-api.php'));
+
             // L12 analytics ingestion (n8n/Make webhook, same Sanctum auth)
             Route::middleware(['auth:sanctum', 'throttle:api'])
                 ->prefix('api/video-analytics')

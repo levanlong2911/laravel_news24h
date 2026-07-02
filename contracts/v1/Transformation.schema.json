@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://news24h/contracts/v1/Transformation",
+  "title": "Transformation",
+  "description": "Planning decisions produced by TransformationPlanner (rule-based). Pure decisions, no raw article data.",
+  "type": "object",
+  "required": ["theme", "style", "duration", "emotion_arc", "color_palette", "pacing"],
+  "additionalProperties": false,
+  "properties": {
+    "theme":         { "type": "string", "description": "e.g. 'motorcycle customization'" },
+    "style":         { "type": "string", "enum": ["cinematic", "documentary", "dynamic", "elegant"] },
+    "duration":      { "type": "integer", "minimum": 5, "maximum": 300, "description": "Target seconds" },
+    "emotion_arc":   { "type": "array", "items": { "type": "string" }, "minItems": 2 },
+    "color_palette": { "type": "string", "enum": ["warm", "cool", "neutral", "high_contrast"] },
+    "pacing":        { "type": "string", "enum": ["slow", "medium", "fast", "dynamic"] }
+  }
+}

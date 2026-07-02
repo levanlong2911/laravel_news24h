@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://news24h/contracts/v1/MediaJobClaim",
+  "title": "MediaJobClaim",
+  "description": "Response Laravel returns when Python calls POST /api/media-jobs/claim.",
+  "type": "object",
+  "required": ["job_id", "project_id", "job_type", "scene_graph"],
+  "additionalProperties": false,
+  "properties": {
+    "job_id":      { "type": "string", "format": "uuid" },
+    "project_id":  { "type": "string", "format": "uuid" },
+    "job_type":    { "type": "string", "enum": ["render","thumbnail","translate","publish","rerender"] },
+    "priority":    { "type": "integer" },
+    "scene_graph": { "$ref": "SceneGraph.schema.json" }
+  }
+}

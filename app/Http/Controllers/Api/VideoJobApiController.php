@@ -37,7 +37,7 @@ class VideoJobApiController extends Controller
         $jobs = VideoJob::where('status', $status)
             ->orderBy('created_at')
             ->limit($limit)
-            ->get(['id', 'status', 'part_number', 'created_at']);
+            ->get(['id', 'status', 'part_number', 'created_at', 'updated_at', 'youtube_video_id']);
 
         return response()->json(['data' => $jobs]);
     }
@@ -79,22 +79,27 @@ class VideoJobApiController extends Controller
     {
         $this->authorizeAbility($request);
 
-        $job = VideoJob::with('storyPlan')->findOrFail($id);
-        $script = $job->script_json;
+        $job = VideoJob::with('storyPlan.article')->findOrFail($id);
+        $script  = $job->script_json;
+        $plan    = $job->storyPlan;
+        $article = $plan->article;
 
         return response()->json(['data' => [
-            'job_id' => $job->id,
-            'article_id' => $job->storyPlan->article_id,
-            'topic' => $job->storyPlan->narrative_arc,
-            'mood' => $job->storyPlan->mood,
-            'content_type' => $job->storyPlan->content_type ?? 'informational',
-            'part_number' => $job->part_number,
-            'total_parts' => $job->storyPlan->total_parts,
-            'is_final_part' => $job->part_number === $job->storyPlan->total_parts,
-            'hook' => $script['hook'] ?? $job->storyPlan->hook,
-            'cta' => $script['cta'] ?? null,
+            'job_id'       => $job->id,
+            'article_id'   => $plan->article_id,
+            'topic'        => $plan->narrative_arc,
+            'mood'         => $plan->mood,
+            'content_type' => $plan->content_type ?? 'informational',
+            'part_number'  => $job->part_number,
+            'total_parts'  => $plan->total_parts,
+            'is_final_part' => (int) $job->part_number === (int) $plan->total_parts,
+            'hook'          => $script['hook'] ?? $plan->hook,
+            'cta'           => $script['cta'] ?? null,
             'target_seconds' => $script['target_seconds'] ?? 15,
-            'scenes' => $script['scenes'] ?? [],
+            'scenes'        => $script['scenes'] ?? [],
+            // L10: viral signals so Python's viral_analyzer tunes prompt intensity
+            'viral_score'   => (int) ($article->viral_score ?? 0),
+            'hook_score'    => (float) ($article->hook_score ?? 0.0),
         ]]);
     }
 
@@ -117,8 +122,9 @@ class VideoJobApiController extends Controller
 
     /**
      * POST /api/video-jobs/{id}/assets -- multipart: video, thumbnail, metadata (JSON string).
-     * Streams to disk via Laravel's default UploadedFile handling -- never buffers
-     * the whole file in memory (this is the heaviest of the five endpoints).
+     * Saves files then immediately advances status to 'uploaded' in one save() call so the
+     * VideoJobObserver fires only after video_path is guaranteed to exist (not before).
+     * Python should call this endpoint INSTEAD of calling updateStatus('uploaded') separately.
      */
     public function storeAssets(Request $request, string $id)
     {
@@ -134,6 +140,7 @@ class VideoJobApiController extends Controller
 
         $videoPath = $request->file('video')->store("videos/{$job->id}", 'public');
         $job->video_path = $videoPath;
+        $job->status = 'uploaded';
 
         if ($request->hasFile('thumbnail')) {
             $job->thumbnail_path = $request->file('thumbnail')->store("videos/{$job->id}", 'public');
@@ -145,14 +152,22 @@ class VideoJobApiController extends Controller
         if (!empty($metadata['facebook_post_id'])) {
             $job->facebook_post_id = $metadata['facebook_post_id'];
         }
+        if (!empty($metadata['tiktok_post_id'])) {
+            $job->tiktok_post_id = $metadata['tiktok_post_id'];
+        }
+        if (!empty($metadata['instagram_post_id'])) {
+            $job->instagram_post_id = $metadata['instagram_post_id'];
+        }
         if (isset($metadata['cost_total'])) {
             $job->cost_total = $metadata['cost_total'];
         }
         $job->save();
 
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk('public');
         return response()->json(['data' => [
-            'video_url' => Storage::disk('public')->url($job->video_path),
-            'thumbnail_url' => $job->thumbnail_path ? Storage::disk('public')->url($job->thumbnail_path) : null,
+            'video_url'     => $disk->url($job->video_path),
+            'thumbnail_url' => $job->thumbnail_path ? $disk->url($job->thumbnail_path) : null,
         ]]);
     }
 }

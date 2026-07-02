@@ -13,7 +13,7 @@ class ClaudeWriterService
     ];
 
     private const MAX_TOKENS = [
-        'haiku'  => 4096,
+        'haiku'  => 6000,
         'sonnet' => 8000,
     ];
 
@@ -72,7 +72,7 @@ class ClaudeWriterService
             $ch = curl_init('https://api.anthropic.com/v1/messages');
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT        => 60,
+                CURLOPT_TIMEOUT        => 180,
                 CURLOPT_POST           => true,
                 CURLOPT_HTTPHEADER     => [
                     'x-api-key: '         . config('services.claude.key'),
@@ -88,7 +88,7 @@ class ClaudeWriterService
 
             $this->releaseConcurrent();    // giải phóng slot ngay sau HTTP call
 
-            if ($curlError ?? false) {
+            if ($curlError !== '') {
                 $lastError = "cURL error: {$curlError}";
                 Log::warning("Claude exception (attempt {$attempt}/" . self::MAX_RETRIES . "): {$lastError}");
             } else {

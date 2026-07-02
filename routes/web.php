@@ -171,9 +171,11 @@ Route::group(
     // rendered by the separate Python project -- see VideoJobApiController)
     Route::group(['prefix' => 'video-job'], function () {
         Route::get('/', [VideoJobController::class, 'index'])->name('video-job.index');
+        Route::delete('/', [VideoJobController::class, 'bulkDestroy'])->name('video-job.bulk-destroy');
         Route::post('/generate/{article}', [VideoJobController::class, 'generate'])->name('video-job.generate');
         Route::get('/status/{article}', [VideoJobController::class, 'status'])->name('video-job.status');
         Route::get('/{article}', [VideoJobController::class, 'show'])->name('video-job.show');
+        Route::delete('/{article}', [VideoJobController::class, 'destroy'])->name('video-job.destroy');
         Route::post('/{videoJob}/rerender', [VideoJobController::class, 'rerender'])->name('video-job.rerender');
     });
 
@@ -184,6 +186,8 @@ Route::group(
         Route::post('/{videoJob}/approve', [VideoApprovalController::class, 'approve'])->name('video-approval.approve');
         Route::post('/{videoJob}/reject', [VideoApprovalController::class, 'reject'])->name('video-approval.reject');
         Route::post('/{videoJob}/regenerate', [VideoApprovalController::class, 'regenerate'])->name('video-approval.regenerate');
+        Route::delete('/{videoJob}', [VideoApprovalController::class, 'destroy'])->name('video-approval.destroy');
+        Route::delete('/', [VideoApprovalController::class, 'bulkDestroy'])->name('video-approval.bulk-destroy');
     });
 
     // Raw articles (Google News fetch → manual AI generate)

@@ -75,18 +75,23 @@ class VideoApprovalController extends Controller
     /** Approve → trigger publisher. */
     public function approve(Request $request, VideoJob $videoJob): RedirectResponse
     {
+        if ($videoJob->approval_status === 'approved') {
+            return redirect()->route('video-approval.index')
+                ->with('error', "Part {$videoJob->part_number} đã được approve rồi.");
+        }
+
+        try {
+            $this->publisher->publish($videoJob);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Publisher failed: ' . $e->getMessage());
+        }
+
+        // Persist 'approved' only after publisher succeeds — keeps state consistent
         $videoJob->update([
             'approval_status' => 'approved',
             'reviewed_by'     => Auth::id(),
             'reviewed_at'     => now(),
         ]);
-
-        // Fire publisher in background so HTTP worker returns immediately
-        try {
-            $this->publisher->publish($videoJob);
-        } catch (\Throwable $e) {
-            return back()->with('error', 'Approved but publisher failed: ' . $e->getMessage());
-        }
 
         return redirect()->route('video-approval.index')
             ->with('success', "Đã approve và đăng Part {$videoJob->part_number} lên platform.");
@@ -106,6 +111,40 @@ class VideoApprovalController extends Controller
 
         return redirect()->route('video-approval.index')
             ->with('success', "Đã reject Part {$videoJob->part_number}.");
+    }
+
+    /** Delete a single job and its stored files. */
+    public function destroy(VideoJob $videoJob): RedirectResponse
+    {
+        if ($videoJob->video_path) {
+            Storage::disk('public')->delete($videoJob->video_path);
+        }
+        if ($videoJob->thumbnail_path) {
+            Storage::disk('public')->delete($videoJob->thumbnail_path);
+        }
+        $videoJob->delete();
+
+        return redirect()->route('video-approval.index')
+            ->with('success', 'Đã xóa video.');
+    }
+
+    /** Bulk delete selected jobs. */
+    public function bulkDestroy(Request $request): RedirectResponse
+    {
+        $ids = $request->input('ids', []);
+        if (empty($ids)) {
+            return redirect()->route('video-approval.index')->with('error', 'Chưa chọn video nào.');
+        }
+
+        $jobs = VideoJob::whereIn('id', $ids)->get();
+        foreach ($jobs as $job) {
+            if ($job->video_path) Storage::disk('public')->delete($job->video_path);
+            if ($job->thumbnail_path) Storage::disk('public')->delete($job->thumbnail_path);
+            $job->delete();
+        }
+
+        return redirect()->route('video-approval.index')
+            ->with('success', "Đã xóa {$jobs->count()} video.");
     }
 
     /** Regenerate — resets to script_ready so Python re-renders. */

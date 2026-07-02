@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://news24h/contracts/v1/SceneShot",
+  "title": "SceneShot",
+  "description": "Output of SceneShotPlanner — scenes with shots in Compact Cinematic DSL. NO provider names allowed (Rule 1).",
+  "type": "object",
+  "required": ["scenes"],
+  "additionalProperties": false,
+  "properties": {
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["scene_number", "title", "emotion", "duration", "shots"],
+        "additionalProperties": false,
+        "properties": {
+          "scene_number": { "type": "integer", "minimum": 1 },
+          "title":        { "type": "string" },
+          "emotion":      { "type": "string" },
+          "duration":     { "type": "number", "exclusiveMinimum": 0 },
+          "shots": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["shot_order","cam","lens","light","move","emo","dur","motion_level","realism","has_human"],
+              "additionalProperties": false,
+              "properties": {
+                "shot_order":    { "type": "integer", "minimum": 1 },
+                "cam":   { "type": "string", "enum": ["WIDE","MEDIUM","CLOSE","MACRO","ORBITAL","TRACKING","AERIAL","POV"] },
+                "lens":  { "type": "string", "enum": ["24","35","50","85","135","200"] },
+                "light": { "type": "string", "enum": ["W1","W2","G1","N1","N2","D1","S1","S2","C1","C2"] },
+                "move":  { "type": "string", "enum": ["STATIC","P1","P2","D1","D2","O1","O2","H1","T1","T2"] },
+                "emo":   { "type": "string", "enum": ["HOOK","CRAFT","AWE","TENSE","DRAMA","REVEAL","CALM","POWER","JOY","FEAR","EPIC"] },
+                "dur":   { "type": "number", "minimum": 0.5, "maximum": 10 },
+                "motion_level":  { "type": "string", "enum": ["none","low","medium","high"] },
+                "realism":       { "type": "string", "enum": ["low","medium","high","photoreal"] },
+                "has_human":     { "type": "boolean" },
+                "camera_goal":   { "type": "string" },
+                "sub": {
+                  "type": "object",
+                  "properties": {
+                    "actor":  { "type": "string" },
+                    "action": { "type": "string" },
+                    "obj":    { "type": "string" }
+                  }
+                },
+                "asset_ref": {
+                  "type": "object",
+                  "required": ["id", "type"],
+                  "properties": {
+                    "id":        { "type": "string" },
+                    "type":      { "type": "string", "enum": ["component","vehicle","person","location","prop","texture","audio"] },
+                    "reuse":     { "type": "boolean", "default": false },
+                    "variation": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

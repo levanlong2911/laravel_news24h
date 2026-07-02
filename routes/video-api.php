@@ -16,7 +16,6 @@
 */
 
 use App\Http\Controllers\Api\VideoJobApiController;
-use App\Http\Controllers\Api\VideoAnalyticsController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [VideoJobApiController::class, 'index']);

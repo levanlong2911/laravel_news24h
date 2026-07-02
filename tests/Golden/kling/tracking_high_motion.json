@@ -1,0 +1,18 @@
+{
+    "shot_order": 3,
+    "cam": "TRACKING",
+    "lens": "35",
+    "light": "D1",
+    "move": "H1",
+    "emo": "POWER",
+    "dur": 2.5,
+    "motion_level": "high",
+    "realism": "high",
+    "has_human": false,
+    "camera_goal": "chase sequence",
+    "sub": {
+        "actor": "motorcycle",
+        "action": "accelerating",
+        "obj": "open_road"
+    }
+}

@@ -6,7 +6,9 @@ use App\Models\Article;
 use App\Models\StoryPlan;
 use App\Models\VideoJob;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Storage;
 
 class VideoJobController extends Controller
 {
@@ -111,6 +113,46 @@ class VideoJobController extends Controller
      * mid-render (status=claimed/rendering) should be left alone in case a
      * worker is genuinely still processing it.
      */
+    /** Delete Article + StoryPlan + VideoJobs + stored files. */
+    public function destroy(Article $article): RedirectResponse
+    {
+        $this->deleteArticleWithVideos($article);
+
+        return redirect()->route('video-job.index')
+            ->with('success', "Đã xóa \"{$article->title}\".");
+    }
+
+    /** Bulk delete selected articles and their video pipelines. */
+    public function bulkDestroy(Request $request): RedirectResponse
+    {
+        $ids = $request->input('ids', []);
+        if (empty($ids)) {
+            return redirect()->route('video-job.index')->with('error', 'Chưa chọn bài nào.');
+        }
+
+        $count = 0;
+        foreach (Article::whereIn('id', $ids)->get() as $article) {
+            $this->deleteArticleWithVideos($article);
+            $count++;
+        }
+
+        return redirect()->route('video-job.index')
+            ->with('success', "Đã xóa {$count} bài.");
+    }
+
+    private function deleteArticleWithVideos(Article $article): void
+    {
+        $plan = StoryPlan::where('article_id', $article->id)->first();
+        if ($plan) {
+            foreach ($plan->videoJobs as $job) {
+                if ($job->video_path) Storage::disk('public')->delete($job->video_path);
+                if ($job->thumbnail_path) Storage::disk('public')->delete($job->thumbnail_path);
+            }
+            $plan->delete();
+        }
+        $article->delete();
+    }
+
     public function rerender(VideoJob $videoJob): RedirectResponse
     {
         if (!in_array($videoJob->status, ['quality_check_failed', 'upload_failed'], true)) {
