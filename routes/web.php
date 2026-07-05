@@ -21,6 +21,7 @@ use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
 use App\Http\Controllers\VideoJobController;
 use App\Http\Controllers\VideoApprovalController;
+use App\Http\Controllers\Benchmark\AnnotationController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Response;
@@ -29,6 +30,14 @@ use Illuminate\Http\Request;
 // Route::get('/', function () {
 //     return view('welcome');
 // });
+
+// ── Benchmark Annotation UI ───────────────────────────────────────────────────
+Route::prefix('benchmark')->name('benchmark.')->group(function () {
+    Route::get('/',                            [AnnotationController::class, 'sessions'])->name('sessions');
+    Route::get('/session/{session}',           [AnnotationController::class, 'renders'])->name('renders');
+    Route::get('/annotate/{uuid}',             [AnnotationController::class, 'annotate'])->name('annotate');
+    Route::post('/annotate/{uuid}/save',       [AnnotationController::class, 'save'])->name('save');
+});
 
 Route::fallback(function () {
     $path = public_path('astro/index.html');

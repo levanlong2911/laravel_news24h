@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\ApiAdvertisementController;
+use App\Http\Controllers\Api\Benchmark\RenderResultController;
 use App\Http\Controllers\Api\PostApiController;
 use App\Http\Controllers\Api\RedditController;
 use Illuminate\Http\Request;
@@ -33,3 +34,9 @@ Route::prefix('ads')->group(function () {
     Route::get('/', [ApiAdvertisementController::class, 'index']);
     Route::get('{position}', [ApiAdvertisementController::class, 'byPosition']);
 });
+
+Route::prefix('benchmark')
+    ->withoutMiddleware(\App\Http\Middleware\DomainContext::class)
+    ->group(function () {
+        Route::post('render-result', [RenderResultController::class, 'store']);
+    });

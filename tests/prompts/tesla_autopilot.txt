@@ -1,0 +1,20 @@
+SCENE
+Opening shot. Tesla Autopilot Activation, soft diffused ambient light, slow unveiling.
+
+CAMERA
+Camera moves into an intimate close-up, gently pushing in toward the subject. High angle perspective. lower third framing. Subject body line directs attention toward the focal point of the action.
+
+ACTION
+[0–0.4s] Fast aggressive push — camera emerges from mist or cloud cover before the earth reveals its scale or declares its name, cool neutral geological light stripping all warmth and temporal context — only surface and geological texture are available — scale is withheld. Scale without reference. Cloud vapor tears apart as drone descends through the layer — wisps trail in the wake. Crowd reacting slowly as the full scale of the moment becomes clear.
+[0.4–0.7s] Steady accelerated motion — sweeping low-altitude pass through crisp high-altitude light, cliff edge or canyon rim appearing. Natural structure becoming identifiable — valley or ravine visible at natural depth. Wind-bent vegetation streams past at speed — water glints and rock faces flash by below.
+[0.7–3.2s] Camera decelerates abruptly, holds — atmospheric veil lifts in flooding golden hour warmth — camera hovers at signature focal point as the horizon declares natural scale that cannot be denied. Driver most defining element fills frame — primary geological feature at full visible depth. Foreground grasses move in steady wind — distant waterfall catches light and fractures — micro-motion everywhere at different scales.
+[3.2–5s] Steady accelerated motion — pull back to reveal cosmic scale in warm golden wide light — the geological world fills every depth plane of the frame. Driver shrinks as surrounding landscape overwhelms with pure scale — entire terrain visible to horizon. Wind patterns visible across vast terrain — cloud shadows race across landscape — scale of natural forces evident.
+
+ENVIRONMENT
+Crowd reacting slowly as the full scale of the moment becomes clear.
+
+STYLE
+Hyperrealistic, photographic quality, professional cinema camera. Minimal motion blur.
+
+CONTINUITY
+Same driver. Scene: soft ambient, daytime, soft warm. Maintain camera: 85mm lens, high-angle, gimbal.

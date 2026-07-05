@@ -1,0 +1,44 @@
+version: "1.0"
+description: "Default values for all domain expected_outputs. Domain files override only what differs."
+
+# These defaults apply to every scene unless overridden.
+# CV pipeline reads these when a qa field is absent from the domain expected_outputs.
+
+defaults:
+  expected_camera_height: EYE
+  expected_motion: STATIC
+  expected_composition: rule_of_thirds
+  expected_tone: neutral
+
+# ── Machine-readable QA field vocabulary ─────────────────────────────────────
+#
+# Each field maps to a specific CV measurement.
+# Vision QA pipeline reads these directly — no NLP required.
+#
+# Field types:
+#   boolean    — presence/absence check            (reflection_visible: true)
+#   enum       — exact classification match        (lighting_quality: golden_hour)
+#   ratio      — float 0.0–1.0 fraction of frame   (water_surface_coverage: {min: 0.5})
+#   score      — float 0.0–1.0 quality metric      (focus_sharpness: {min: 0.7})
+#
+# Enum vocabularies:
+#   camera_height:      ankle | knee | eye | above_head | drone_low | drone_high
+#   motion_type:        static | slow_push | slow_pull | orbit | dolly | tilt | handheld
+#   lighting_quality:   golden_hour | overcast | direct_sun | artificial_night | warm_window | studio
+#   primary_subject:    water_feature | material | arch_element | interior | structure | landscape | vehicle | person
+#   composition:        rule_of_thirds | centered | negative_space_right | negative_space_up | leading_lines | panoramic
+
+qa_field_types:
+  water_surface_coverage: ratio
+  sky_coverage: ratio
+  subject_coverage: ratio
+  focus_sharpness: score
+  reflection_visible: boolean
+  human_visible: boolean
+  camera_motion_present: boolean
+  lighting_quality: enum
+  camera_height: enum
+  motion_type: enum
+  primary_subject_type: enum
+  composition_type: enum
+  dominant_color_temp: enum   # warm | cool | neutral

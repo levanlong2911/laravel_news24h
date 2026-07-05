@@ -26,6 +26,14 @@ final class ActionPlanner
 {
     /** Keyword → template name. First match wins. */
     private const PATTERNS = [
+        // ── Vehicle / Aircraft / Spacecraft ────────────────────────────────
+        // Must appear before football patterns — 'launch' in fb_throw would
+        // otherwise match "rocket launch", "vehicle_flight", etc.
+        ['match' => ['vehicle_flight', 'vehicle_fly', 'rocket_launch'],  'template' => 'vehicle_flight'],
+        ['match' => ['vehicle_race', 'vehicle_drive'],                   'template' => 'vehicle_race'],
+        // ── Craft / Precision Work ──────────────────────────────────────────
+        // 'craft_throw' must be matched before fb_throw catches 'throw'.
+        ['match' => ['craft_throw', 'craft_build', 'craft_weld', 'craft_precision', 'robot_arm'], 'template' => 'craft_precision'],
         // ── Football ────────────────────────────────────────────────────────
         ['match' => ['throw', 'launch', 'deep pass', 'spiral', 'heave', 'fling', 'airs it out'],  'template' => 'fb_throw'],
         ['match' => ['catch', 'reception', 'grab', 'haul in', 'snag', 'reel in'],                 'template' => 'fb_catch'],
@@ -266,6 +274,49 @@ final class ActionPlanner
             ],
             'physics_triggers' => ['tire_smoke', 'dust_spray'],
         ],
+        'vehicle_flight' => [
+            'phases' => [
+                ['ratio' => 0.15, 'subject' => 'vehicle poised — scale and power held in stillness'],
+                ['ratio' => 0.20, 'subject' => 'propulsion engages — motion initiated with controlled force'],
+                ['ratio' => 0.30, 'subject' => 'accelerates through the medium, wake of force expanding behind'],
+                ['ratio' => 0.25, 'subject' => 'reaches full velocity — environment recedes as scale overwhelms'],
+                ['ratio' => 0.10, 'subject' => 'diminishes to a point against the vast surrounding space'],
+            ],
+            'camera_beats'     => [
+                ['time' => 0.00, 'weight' => 1.0, 'move' => 'ESTABLISH'],
+                ['time' => 0.35, 'weight' => 0.9, 'move' => 'T1'],
+                ['time' => 0.75, 'weight' => 0.8, 'move' => 'P2'],
+            ],
+            'physics_triggers' => ['wake_turbulence', 'exhaust_trail', 'scale_reveal'],
+        ],
+        'vehicle_race' => [
+            'phases' => [
+                ['ratio' => 0.15, 'subject' => 'locked in position — engine note climbs to the limiter'],
+                ['ratio' => 0.25, 'subject' => 'launch — all four wheels clawing for grip'],
+                ['ratio' => 0.35, 'subject' => 'in full race mode — apex to apex at maximum attack'],
+                ['ratio' => 0.25, 'subject' => 'pushes the absolute limit — every input precise, no margin for error'],
+            ],
+            'camera_beats'     => [
+                ['time' => 0.00, 'weight' => 1.0, 'move' => 'ESTABLISH'],
+                ['time' => 0.40, 'weight' => 0.9, 'move' => 'D1'],
+                ['time' => 0.80, 'weight' => 0.8, 'move' => 'FOLLOW', 'context' => 'car at racing speed'],
+            ],
+            'physics_triggers' => ['tire_smoke', 'exhaust_shimmer', 'dust_spray'],
+        ],
+        'craft_precision' => [
+            'phases' => [
+                ['ratio' => 0.20, 'subject' => 'positions with micron-level precision over the target'],
+                ['ratio' => 0.25, 'subject' => 'executes the primary task — focused, deliberate, exact'],
+                ['ratio' => 0.30, 'subject' => 'applies measured force at the exact point of contact'],
+                ['ratio' => 0.25, 'subject' => 'withdraws cleanly — result achieved with perfect accuracy'],
+            ],
+            'camera_beats'     => [
+                ['time' => 0.00, 'weight' => 1.0, 'move' => 'ESTABLISH'],
+                ['time' => 0.45, 'weight' => 0.9, 'move' => 'P1'],
+                ['time' => 0.85, 'weight' => 0.7, 'move' => 'P2'],
+            ],
+            'physics_triggers' => ['spark_flash', 'precision_glint'],
+        ],
         'generic_action' => [
             'phases' => [
                 ['ratio' => 0.15, 'subject' => 'reads the situation, prepares for the action'],
@@ -283,6 +334,7 @@ final class ActionPlanner
 
     /** Action type → object carried/used by the subject */
     private const ACTION_OBJECT = [
+        'vehicle_flight' => '', 'vehicle_race' => '', 'craft_precision' => '',
         'fb_throw' => 'football', 'fb_catch' => 'football', 'fb_run' => 'football',
         'fb_kick' => 'football',  'fb_celebrate' => '', 'fb_tackle' => '', 'fb_dive' => '',
         'bb_dunk' => 'basketball', 'bb_shoot' => 'basketball', 'bb_handle' => 'basketball',

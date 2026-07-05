@@ -1,0 +1,20 @@
+SCENE
+Stock Market Crash, dramatic high-contrast rim light, high dramatic tension.
+
+CAMERA
+Camera tracks alongside the moving subject, steadily pulling back to reveal the surroundings. Subject body line directs attention toward the focal point of the action.
+
+ACTION
+[0–0.8s] Fast aggressive push — camera opens on immediate visual impact before the subject is named or its context declared, low ambient light narrowing the entire world to this single point of presence — only presence registers — identity and context are withheld. Subject presence registers before declaration. Flat atmospheric haze diffused through grey overcast sky. Coaches on the sideline gesturing urgently.
+[0.8–2s] Steady accelerated motion — camera builds toward subject through warming intensifying light, subject detail layer emerging. Subject pattern emerging — subject body at natural depth. Secondary elements respond to primary action — background energy builds in reaction.
+[2–3.5s] Camera decelerates abruptly, holds — rack focus pulls from ambient blur in bright warm peak light — peak clarity as the decisive detail becomes the only legible thing in the frame. Stock trader at maximum expression — full subject at natural depth. Environmental depth — background motion provides spatial context for the subject.
+[3.5–5s] Steady accelerated motion — resolution frame in bright warm wide light — the full context asserts the scale and weight of the action. Stock trader completes the arc — complete environmental scale. Full spatial scale — secondary motion reveals depth and distance relationships. Crowd murmur building into a growing roar.
+
+ENVIRONMENT
+Flat atmospheric haze diffused through grey overcast sky. Fabric hangs heavy, no wind effect — still and deliberate. Coaches on the sideline gesturing urgently. Crowd murmur building into a growing roar.
+
+STYLE
+Hyperrealistic, photographic quality, professional cinema camera.
+
+CONTINUITY
+Same stock trader. Scene: dramatic overcast, twilight, high contrast. Maintain camera: 85mm lens, eye-level, steady.

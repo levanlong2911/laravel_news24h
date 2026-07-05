@@ -1,0 +1,357 @@
+version: "1.0"
+description: "AFOS Core Production Schema — ISA of AI Filmmaking OS (frozen v1.0)"
+php_namespace_root: "App\\Services\\AI\\AFOS"
+php_types_dir: "app/Services/AI/AFOS/Types"
+python_output_dir: "d:/1. Work/8. Project auto video/AI VIDEO/media_runtime/afos"
+
+# ═══════════════════════════════════════════════════════════════════════
+# ENUMS — Primitive Type System
+# All components share these. No component defines its own enum.
+# ═══════════════════════════════════════════════════════════════════════
+
+enums:
+
+  # ── Creative Layer ────────────────────────────────────────────────────
+
+  Emotion:
+    - SERENITY
+    - POWER
+    - WONDER
+    - TRIUMPH
+    - CURIOSITY
+    - TENSION
+    - LUXURY
+    - ISOLATION
+
+  Narrative:
+    - REVEAL_BEAUTY
+    - DEMONSTRATE_POWER
+    - EVOKE_ASPIRATION
+    - DOCUMENT_CRAFT
+    - CAPTURE_MOMENT
+    - SHOW_SCALE
+
+  Tempo:
+    - MEDITATIVE
+    - MEASURED
+    - BUILDING
+    - URGENT
+    - EXPLOSIVE
+
+  Experience:
+    - IMMERSION
+    - EXCITEMENT
+    - ASPIRATION
+    - EDUCATION
+    - EMOTION
+
+  Domain:
+    - LUXURY_ARCHITECTURE
+    - SPORTS
+    - SUPERYACHT
+    - HYPERCAR
+    - DOCUMENTARY
+    - FASHION
+    - AUTOMOTIVE
+    - ARCHITECTURE
+
+  Audience:
+    - ULTRA_HNWI
+    - ASPIRATIONAL
+    - MASS
+    - ENTHUSIAST
+    - PROFESSIONAL
+
+  Platform:
+    - YOUTUBE
+    - INSTAGRAM_REEL
+    - CINEMA
+    - OOH
+    - BRAND_SITE
+
+  ProductionGoal:
+    - SHOWCASE
+    - INSPIRE
+    - DOCUMENT
+    - SELL
+    - ANNOUNCE
+
+  CameraPhilosophy:
+    - SLOW_OBSERVATION
+    - DYNAMIC_TRACKING
+    - FPV_EXPLORATION
+    - CINEMATIC_ORBIT
+    - MACRO_INTIMACY
+    - ARCHITECTURAL_STATIC
+
+  CutFrequency:
+    - MINIMAL
+    - SLOW
+    - MEDIUM
+    - FAST
+    - AGGRESSIVE
+
+  ColorPhilosophy:
+    - WARM_GOLDEN
+    - COOL_BLUE
+    - NEUTRAL_DESATURATED
+    - HIGH_CONTRAST
+    - SOFT_MUTED
+
+  # ── IR Layer ─────────────────────────────────────────────────────────
+
+  GoalType:
+    # Shot Goal IR: what cinematic action this shot performs
+    - REVEAL       # show something previously hidden
+    - ESTABLISH    # introduce a subject or setting
+    - FOLLOW       # track a moving subject
+    - DISCOVER     # lead viewer through an environment
+    - TRANSITION   # bridge two emotional states
+    - RESOLVE      # close a tension arc
+
+  NarrativeFunction:
+    # Where in the story arc this shot sits
+    - ESTABLISH
+    - BUILD
+    - REVEAL
+    - RESOLVE
+
+  # ── Composition Layer ─────────────────────────────────────────────────
+
+  CompositionRule:
+    - RULE_OF_THIRDS
+    - GOLDEN_RATIO
+    - SYMMETRY
+    - LEAD_ROOM
+    - NEGATIVE_LEAD
+    - CENTER_WEIGHT
+
+  DepthLayer:
+    - FOREGROUND
+    - MIDGROUND
+    - BACKGROUND
+
+  EyeFlowDirection:
+    - LEFT_TO_RIGHT
+    - RIGHT_TO_LEFT
+    - TOP_TO_BOTTOM
+    - DIAGONAL_TL_BR
+    - DIAGONAL_TR_BL
+    - CENTRIPETAL    # eye drawn toward center
+
+  NegativeSpaceDirection:
+    - LEFT
+    - RIGHT
+    - TOP
+    - BOTTOM
+
+  # ── Camera Layer ──────────────────────────────────────────────────────
+
+  CameraMovementType:
+    - PUSH_IN
+    - PULL_OUT
+    - TRACKING
+    - ORBIT
+    - CRANE_UP
+    - CRANE_DOWN
+    - STATIC
+    - FPV
+    - HANDHELD
+    - DRONE_DESCEND
+    - DRONE_ASCEND
+
+  DOFLevel:
+    - SHALLOW      # subject sharp, background blurred
+    - MEDIUM
+    - DEEP         # everything sharp
+
+  FramingType:
+    - EXTREME_CLOSE
+    - CLOSE
+    - MEDIUM
+    - WIDE
+    - EXTREME_WIDE
+
+  CameraHeight:
+    - GROUND
+    - ANKLE
+    - KNEE
+    - HIP
+    - WAIST
+    - CHEST
+    - EYE
+    - ABOVE_HEAD
+    - DRONE_LOW
+    - DRONE_HIGH
+
+  # ── Production State ──────────────────────────────────────────────────
+
+  ShotStatus:
+    - PLANNED
+    - COMPILED
+    - QUEUED
+    - RENDERING
+    - RENDERED
+    - QA_PENDING
+    - QA_PASSED
+    - QA_FAILED
+    - LOCKED
+    - REVISION_NEEDED
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# ARTIFACTS — Typed value objects, one per pipeline stage
+# Format:
+#   fieldName: EnumType               (shorthand, required, non-list)
+#   fieldName:
+#     type: Type
+#     nullable: true                  (optional field)
+#     list: true                      (array of type)
+# ═══════════════════════════════════════════════════════════════════════
+
+artifacts:
+
+  # ── TIER 1: Creative Layer ────────────────────────────────────────────
+
+  creative:
+
+    CreativeBrief:
+      description: "Business context — the 'client brief'. Source of all downstream decisions."
+      fields:
+        domain: Domain
+        subDomain: string            # "villa" | "superyacht" | "f1" — free-form within domain
+        audience: Audience
+        brand: string                # "aman" | "ferrari" — used by Director for tone calibration
+        platform: Platform
+        durationSec: int
+        goal: ProductionGoal
+        constraints:
+          type: string
+          list: true                 # ["NO_PEOPLE", "NO_TEXT_OVERLAY", "NO_FAST_CUTS"]
+
+    Intent:
+      description: "Answers: what should the viewer FEEL? Not how to shoot it."
+      fields:
+        primaryEmotion: Emotion
+        secondaryEmotion:
+          type: Emotion
+          nullable: true
+        narrative: Narrative
+        tempo: Tempo
+        viewerExperience: Experience
+        desiredTakeaway: string      # bounded NL: "I want to live there" (max ~200 chars)
+
+    DirectorProfile:
+      description: "Narrative + pacing philosophy. Does not decide lens or lighting."
+      fields:
+        name: string
+        observationWeight: float     # 0–1: tendency to observe vs act
+        motionWeight: float          # 0–1: camera motion preference
+        revealWeight: float          # 0–1: preference for dramatic reveals
+        negativeSpaceWeight: float   # 0–1: use of empty space as device
+        symmetryWeight: float        # 0–1
+        cutFrequency: CutFrequency
+        cameraPhilosophy: CameraPhilosophy
+        colorPhilosophy: ColorPhilosophy
+
+    CinematographyProfile:
+      description: "Visual language — lens, lighting, motion style. Set by DP, not Director."
+      fields:
+        name: string
+        lensVocabularyMm:
+          type: int
+          list: true                 # preferred focal lengths e.g. [35, 85, 135]
+        lightingStyle: string        # "GOLDEN_HOUR_SOFT" | "HDR_DRAMATIC" | "INTERIOR_GLOW"
+        motionStyle: string          # "SLOW_PUSH" | "ENERGETIC_HANDHELD" | "LOCKED_STATIC"
+        depthLayersPreferred: int    # 1–4
+
+  # ── TIER 2: IR Layer ──────────────────────────────────────────────────
+
+  ir:
+
+    ShotGoalIR:
+      description: >
+        DECLARATIVE. Cinematic intent only — no camera implementation.
+        goalTarget is an EntityRef (string ID) resolved against DomainBible.AssetBible at runtime.
+        This keeps ShotGoalIR domain-agnostic: same type works for 'pool_reflection' (luxury)
+        or 'football' (sports) without a hardcoded global enum.
+      fields:
+        shotId: string
+        durationSec: float
+        goalType: GoalType
+        goalTarget: string           # EntityRef: "pool_reflection" | "football" | "hull_bow"
+        viewerShouldNotice:
+          type: string
+          list: true                 # EntityRef[] — prioritized attention targets
+        viewerShouldIgnore:
+          type: string
+          list: true                 # EntityRef[] — suppress in composition
+        emotion: Emotion
+        energy: float                # 0.0–1.0, sampled from RhythmTimeline at shot midpoint
+        narrativeFunction: NarrativeFunction
+
+    CompositionIR:
+      description: >
+        Output of Composition Solver (CSP). WHAT occupies the frame and WHERE.
+        No camera parameters yet — those are derived by CameraPlanner.
+      fields:
+        shotId: string
+        primarySubjectEntity: string      # EntityRef
+        primarySubjectFrameX: float       # 0.0–1.0 (left→right)
+        primarySubjectFrameY: float       # 0.0–1.0 (top→bottom)
+        primarySubjectScale: float        # 0.0–1.0 (fraction of frame)
+        negativeSpaceDirection: NegativeSpaceDirection
+        negativeSpaceAmount: float        # 0.0–1.0
+        foregroundEntity:
+          type: string
+          nullable: true                  # EntityRef
+        midgroundEntity:
+          type: string
+          nullable: true
+        backgroundEntity:
+          type: string
+          nullable: true
+        compositionRule: CompositionRule
+        eyeFlowDirection: EyeFlowDirection
+        decisionRationale: string         # why solver chose this layout
+
+    CameraIR:
+      description: >
+        IMPERATIVE. Derived geometrically from CompositionIR by CameraPlanner.
+        This is what Render Backend serializes — it contains no creative decisions.
+      fields:
+        shotId: string
+        focalLengthMm: int
+        aperture: float                   # f-stop e.g. 1.8, 2.8, 5.6
+        dof: DOFLevel
+        startHeight: CameraHeight
+        endHeight: CameraHeight
+        movementType: CameraMovementType
+        velocityCurve:
+          type: float
+          list: true                      # e.g. [0.05, 0.2, 0.7, 1.0] — normalized 0–1
+        framing: FramingType
+        movementMotivation: string        # human-readable: "follows ball release trajectory"
+        estimatedDistanceM: float         # geometric calc: distance to achieve primarySubjectScale
+
+  # ── TIER 3: Production Management ─────────────────────────────────────
+
+  production:
+
+    ProductionState:
+      description: >
+        Shot lifecycle. Shot-isolated: one shot in REVISION_NEEDED
+        does not affect LOCKED shots.
+      fields:
+        shotId: string
+        status: ShotStatus
+        lockedAt:
+          type: string              # ISO datetime
+          nullable: true
+        failureReason:
+          type: string
+          nullable: true
+        retryCount: int
+        decisionTrace:
+          type: string
+          list: true                # JSON-encoded DecisionEvent[] for this shot

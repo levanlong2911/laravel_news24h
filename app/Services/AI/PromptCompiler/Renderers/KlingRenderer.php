@@ -125,6 +125,26 @@ final class KlingRenderer
         ],
     ];
 
+    /**
+     * Velocity DSL token → Kling-specific camera motion phrase.
+     *
+     * Tokens are model-agnostic (emitted by CameraEnergyPlanner).
+     * This table is the ONLY place that knows Kling's preferred vocabulary.
+     * Swap table entries when targeting a different provider.
+     *
+     * Kling responds better to concrete motion verbs than to adverbs
+     * ("rapid drone dive" > "explosive velocity burst").
+     */
+    private const VELOCITY_PHRASES = [
+        'burst'  => 'Rapid drone dive —',
+        'rush'   => 'Fast aggressive push —',
+        'push'   => 'Steady accelerated motion —',
+        'brake'  => 'Camera decelerates abruptly, holds —',
+        'hover'  => 'Near-static hold —',
+        'static' => 'Locked frame —',
+        'natural'=> '',
+    ];
+
     /** Lens code → perceptual effect (not technical spec) */
     private const LENS_EFFECT = [
         '24'  => 'Ultra-wide perspective with environmental context',
@@ -310,9 +330,20 @@ final class KlingRenderer
             $end   = self::fmt((float) ($seg['end']   ?? 1));
 
             $parts = [];
-            if (($seg['camera']      ?? '') !== '') {
-                $parts[] = rtrim($seg['camera'], '.') . '.';
+
+            // Velocity DSL token → Kling-specific motion phrase prepended to camera directive.
+            $token        = $seg['velocity_token'] ?? '';
+            $velPhrase    = self::VELOCITY_PHRASES[$token] ?? '';
+            $cameraText   = $seg['camera'] ?? '';
+
+            if ($cameraText !== '') {
+                $parts[] = $velPhrase !== ''
+                    ? $velPhrase . ' ' . lcfirst(rtrim($cameraText, '.')) . '.'
+                    : rtrim($cameraText, '.') . '.';
+            } elseif ($velPhrase !== '') {
+                $parts[] = rtrim($velPhrase, ' —') . '.';
             }
+
             if (($seg['subject']     ?? '') !== '') {
                 $parts[] = ucfirst(rtrim($seg['subject'], '.')) . '.';
             }
@@ -549,6 +580,430 @@ final class KlingRenderer
         }
 
         return implode(' ', $sentences);
+    }
+
+    /**
+     * Compact renderer for text-to-video (Kling 5-second clips).
+     *
+     * Single dense paragraph — no block headers, no timestamps.
+     * Each beat starts with a fast-motion verb the model actually executes.
+     * Target: 500–700 chars.
+     *
+     * Text-to-video reads this as a VISUAL DESCRIPTION, not a director script.
+     * "Fast zoom to eyes" → model executes zoom.
+     * "[0–0.5s] snap zoom locks..." → model ignores the timestamp, misses the verb.
+     */
+    public static function renderCompact(PromptDocument $doc, array $dsl = []): string
+    {
+        $lensCode    = $dsl['lens']         ?? '50';
+        $lightCode   = $dsl['light']        ?? '';
+        $emoCode     = $dsl['emo']          ?? 'CRAFT';
+        $sceneTitle  = $dsl['scene_title']  ?? '';
+        $timeline    = $dsl['timeline']     ?? [];
+        $physics     = $dsl['physics']      ?? [];
+
+        $parts = [];
+
+        // ── Scene (1 tight line) ──────────────────────────────────────────
+        $light = self::LIGHT_BRIEF[$lightCode] ?? '';
+        $mood  = self::MOOD_BRIEF[$emoCode]    ?? '';
+        $scene = implode(', ', array_filter([$sceneTitle, $light, $mood]));
+        $parts[] = $scene . '.';
+
+        // ── Beats (motion-verb first, each ≤90 chars) ────────────────────
+        foreach ($timeline as $seg) {
+            $token   = $seg['velocity_token'] ?? 'natural';
+            $prefix  = self::COMPACT_VELOCITY[$token] ?? '';
+            $camera  = trim(rtrim($seg['camera']  ?? '', '. '));
+            $subject = trim(rtrim($seg['subject'] ?? '', '. '));
+
+            // Truncate camera sentence to first clause (at dash or comma)
+            $camera = self::firstClause($camera, 70);
+
+            $beat = $prefix !== ''
+                ? $prefix . lcfirst($camera)
+                : ucfirst($camera);
+
+            if ($subject !== '') {
+                $shortSub = self::firstClause($subject, 60);
+                $beat    .= '. ' . ucfirst($shortSub);
+            }
+
+            if ($beat !== '') {
+                $parts[] = rtrim($beat, '. ') . '.';
+            }
+        }
+
+        // ── Physics micro-detail (most cinematic layer only, 1 phrase) ───
+        $microLayer = $physics['micro_motion'] ?? $physics['atmosphere'] ?? [];
+        if (!empty($microLayer[0])) {
+            $parts[] = ucfirst(rtrim((string) $microLayer[0], '. ')) . '.';
+        }
+
+        // ── Style (compressed) ───────────────────────────────────────────
+        $lens  = self::LENS_EFFECT[$lensCode] ?? '';
+        $style = 'Cinematic, hyperrealistic, no text overlays';
+        if ($lens !== '') {
+            $style .= '. ' . $lens;
+        }
+        $parts[] = $style . '.';
+
+        return implode(' ', $parts);
+    }
+
+    /**
+     * Velocity token → compact motion-verb prefix for text-to-video.
+     * Short, imperative, visual. Model treats these as "do this now".
+     */
+    private const COMPACT_VELOCITY = [
+        'burst'  => 'Fast zoom — ',
+        'rush'   => 'Rapid push-in — ',
+        'push'   => 'Steady push — ',
+        'brake'  => 'Camera snaps still — ',
+        'hover'  => 'Hold — ',
+        'static' => '',
+        'natural'=> '',
+    ];
+
+    /**
+     * Return text up to the first em-dash, period, or comma, capped at $max chars.
+     * Keeps the most important clause and drops elaboration.
+     */
+    private static function firstClause(string $text, int $max): string
+    {
+        // Cut at first em-dash (elaboration separator in BeatFusionEngine output)
+        $dashPos = mb_strpos($text, ' — ');
+        if ($dashPos !== false && $dashPos < $max) {
+            $text = mb_substr($text, 0, $dashPos);
+        }
+
+        if (mb_strlen($text) <= $max) {
+            return $text;
+        }
+
+        // Cut at last word boundary before $max
+        $cut       = mb_substr($text, 0, $max);
+        $lastSpace = mb_strrpos($cut, ' ');
+        return $lastSpace ? mb_substr($cut, 0, $lastSpace) : $cut;
+    }
+
+    // ── Cinematic narrative renderer ────────────────────────────────────────
+
+    /**
+     * Physical body-motion sentences per action type and beat.
+     *
+     * 'hook'       — Subject state before the action begins (declarative, still).
+     * 'escalation' — Used after "As": the loading/approach phase (no period — joins camera).
+     * 'reveal'     — Peak action sentence (full, ends with period in buildCinematic).
+     * 'payoff'     — null: payoff is camera + environment only.
+     *
+     * %actor% is replaced at render time with $dsl['sub']['actor'].
+     */
+    /**
+     * Body motion sentences + synchronized camera choreography per action type and beat.
+     *
+     * Body fields  (hook / escalation / reveal):
+     *   hook       — Subject state before action (declarative, still).
+     *   escalation — Gerund form used after "As ": the loading phase.
+     *   reveal     — Peak action sentence (full).
+     *
+     * Camera choreography fields (cam_*):
+     *   cam_hook       — Starting position + framing height: where the camera IS.
+     *   cam_escalation — Movement arc: start position → movement verb → end position + body reference.
+     *   cam_reveal     — Camera at the decisive moment: exact position + what fills frame + instant.
+     *   cam_payoff     — Resolution arc: how the camera exits the moment.
+     *
+     * cam_* replaces the generic ScenePlanner camera sentence for that beat.
+     * Omit any cam_* key to fall back to ScenePlanner sentence + velocity prefix.
+     */
+    /**
+     * Body motion sentences + synchronized camera choreography + progressive environment.
+     *
+     * Body fields  (hook / escalation / reveal):
+     *   hook       — Subject state before action (declarative, still).
+     *   escalation — Gerund form used after "As ": the loading phase.
+     *   reveal     — Peak action sentence (full, complete chain).
+     *
+     * Camera choreography (cam_*) — each sentence encodes start position, velocity curve, end position, and lens:
+     *   cam_hook       — LOCKED position: height, framing, lens, DOF.
+     *   cam_escalation — velocity curve: near-still → accelerates → peak, referenced to body state.
+     *   cam_reveal     — peak velocity moment + subject handoff (e.g. ball becomes primary subject).
+     *   cam_payoff     — deceleration arc + subject exit; what the camera settles on.
+     *
+     * Progressive environment (env_*) — what the environment does at each specific beat:
+     *   env_hook       — atmospheric opening state: what is still, what barely moves.
+     *   env_escalation — environment begins responding: particles lift, fabric moves.
+     *   env_reveal     — environment peak reaction: debris, displacement, pressure.
+     *   (payoff handled by PAYOFF_REACTION table — not duplicated here)
+     *
+     * cam_* and env_* override generic ScenePlanner sentences when present.
+     */
+    private const BODY_MOTION_BEAT = [
+        'throw' => [
+            // Body motion chain
+            'hook'           => 'The %actor% stands locked behind center — back foot loaded, knees bent, shoulders squared, eyes methodically reading the defensive line through clouds of frozen breath',
+            'escalation'     => 'his plant foot drives hard into frozen turf, hips fire explosively and rotate through, torso coils and whips — throwing shoulder drops then accelerates violently through the release zone',
+            'reveal'         => 'His entire body uncoils in one continuous explosive chain — elbow snaps high, wrist fires through the release point, ball rockets off fingertips at full arm extension — back foot lifts off the turf, bodyweight surges completely forward, throwing arm follows through across his chest',
+            // Camera: locked position → velocity curve → lens language → subject handoff
+            'cam_hook'       => 'A locked-off 85mm telephoto holds completely still at waist level — telephoto compression isolating the quarterback against the frozen field, shallow depth of field keeping the defensive line in soft background blur, zero camera movement',
+            'cam_escalation' => 'the camera begins near-motionless at hip-level, then accelerates steadily upward and forward — building speed in sync with the loading momentum — arriving at maximum velocity in a tight over-the-shoulder position, shallow DOF holding background compression throughout the rise',
+            'cam_reveal'     => 'At peak velocity the camera drives into an extreme telephoto close-up on the throwing hand and ball — shallow DOF collapsing background to pure blur — then the ball becomes the primary subject: the camera pivots off the quarterback and tracks the spiraling football as it leaves his fingertips, the quarterback instantly receding into background blur',
+            'cam_payoff'     => 'the camera decelerates from maximum speed into a sweeping wide orbital arc — ball still visible tracing its spiral against the stadium sky — quarterback a small silhouette below as the full stadium scale asserts itself',
+            // Progressive environment: beat-by-beat atmosphere
+            'env_hook'       => 'frozen breath vapor drifts in slow controlled wisps; snow crystals hang suspended in warm amber floodlight; crowd completely silent in held anticipation',
+            'env_escalation' => 'snow particles begin lifting from the turf at the plant foot; jersey fabric ripples violently with the sudden weight transfer; crowd begins leaning forward as one',
+            'env_reveal'     => 'snow and turf debris explode upward from the impact zone; the ball\'s departure sends a visible pressure wave through the frozen air around his hand',
+        ],
+        'dunk' => [
+            'hook'           => 'The %actor% gathers speed toward the basket, body low and coiled for the explosion',
+            'escalation'     => 'he plants hard and explodes upward, knees driving high, rising above the rim',
+            'reveal'         => 'He reaches full vertical extension — hand grips and slams the ball through the rim with full force, arm following through below the net',
+            'cam_hook'       => 'A locked low-angle shot holds below knee height, wide enough to show the court stretching and the basket in the far distance — zero movement, compressed telephoto perspective',
+            'cam_escalation' => 'the camera begins stationary at floor level, then accelerates upward tracking the rise — speed increasing with vertical momentum — arriving at rim height at full velocity as the player crests above the basket',
+            'cam_reveal'     => 'The camera holds locked at rim height at the exact instant of contact — hand, ball, and rim fill the frame at peak sharpness, background crowd in shallow-DOF blur',
+            'cam_payoff'     => 'the camera decelerates and drops in a sweeping arc below the net, pulling back to reveal the full court as the crowd erupts above',
+            'env_hook'       => 'sneaker squeak echoes on hardwood; crowd noise compressed into low murmur; court lights reflect off polished floor',
+            'env_escalation' => 'crowd noise rises as the player lifts; jerseys and shorts ripple with the acceleration upward',
+            'env_reveal'     => 'net snaps violently downward; backboard trembles from the force; crowd sound peaks instantly',
+        ],
+        'kick' => [
+            'hook'           => 'The %actor% stands twelve yards back, breath controlled, body coiled and completely still',
+            'escalation'     => 'he strides forward with measured pace, plant foot locking hard into the turf on the final step',
+            'reveal'         => 'His striking leg swings through with maximum force — the ball launches off his boot in a clean arc',
+            'cam_hook'       => 'A wide locked static frame shows the full kicker and both goalposts — telephoto compression collapsing the distance, zero camera movement, crowd a soft blur behind',
+            'cam_escalation' => 'the camera rushes low along the ground from behind the kicker — starting near-still then accelerating hard, closing the distance rapidly as the plant foot drops and the leg cocks back',
+            'cam_reveal'     => 'The camera snaps to a locked lateral position exactly level with the plant foot at the moment of contact — boot and ball filling the frame, the turf exploding in a small burst beneath the impact',
+            'cam_payoff'     => 'the camera deceleration-tilts upward to track the ball in flight against the sky, uprights visible as the target, crowd rising below',
+            'env_hook'       => 'stadium breath-hold; distant crowd murmur settles to near-silence; wind just perceptible in the flags',
+            'env_escalation' => 'turf grass bends slightly with the approaching stride; ambient crowd tension rises audibly',
+            'env_reveal'     => 'turf explodes in a small burst at contact point; ball launches with a dull thud through still air',
+        ],
+        'cruise' => [
+            'hook'           => 'The %actor% cuts through open ocean, hull cleaving the water cleanly ahead of a long white wake',
+            'escalation'     => 'it accelerates into open water, wake foam churning white and wide behind the stern as speed builds',
+            'reveal'         => 'It emerges from the sun\'s glint at full speed — bow spray flying wide off the hull in long explosive arcs',
+            'cam_hook'       => 'A locked high drone shot holds wide and completely still — full hull length visible against open ocean horizon, telephoto compression flattening the perspective, wake a clean white line behind',
+            'cam_escalation' => 'the drone descends and accelerates forward alongside the hull — starting slow at altitude, building speed as it drops — matching vessel velocity at hull level as bow spray begins to build',
+            'cam_reveal'     => 'The camera drops to water level at the bow at maximum speed — spray and foam explode across the full frame, lens catching the full force of the bow wave at its peak',
+            'cam_payoff'     => 'the drone decelerates sharply and climbs in a banking arc — vessel receding to a small white shape against the vast ocean, wake the only evidence of its passage',
+            'env_hook'       => 'ocean surface glassy far from the hull; wake a clean steady line; sky wide and open',
+            'env_escalation' => 'wake broadens and whitens; bow spray begins lifting; surface chop increases with speed',
+            'env_reveal'     => 'bow spray erupts in full force, arcing wide in long white sheets; hull vibration visible in the water surface on both sides',
+        ],
+        'default' => [
+            'hook'           => 'The %actor% holds position, energy compressed and ready to release',
+            'escalation'     => 'the action builds and accelerates toward the decisive moment',
+            'reveal'         => 'The decisive moment arrives at full force — nothing held back',
+            'cam_hook'       => 'A medium locked shot holds steady, telephoto compression framing the subject with shallow DOF separating it from the scene behind',
+            'cam_escalation' => 'the camera begins near-still, then accelerates toward the subject — building speed as the action builds — arriving at a tighter frame at full velocity',
+            'cam_reveal'     => 'The camera holds at maximum velocity as the action peaks — subject filling the frame, background in complete DOF blur',
+            'cam_payoff'     => 'the camera decelerates into a wide pull-back arc, the full scene asserting itself in the aftermath',
+            'env_hook'       => 'environment holds in opening stillness; only subtle ambient movement',
+            'env_escalation' => 'environment begins responding as energy builds; secondary motion accumulates',
+            'env_reveal'     => 'environment reacts at peak force — maximum secondary motion, particles, displacement',
+        ],
+    ];
+
+    /** How the environment reacts at the payoff beat, keyed by emotion code. */
+    private const PAYOFF_REACTION = [
+        'POWER'  => 'the stadium detonates — crowd surges from seats in a wave, thick breath clouds burst upward in frozen air, turf debris scatters from the force, flags snap violently, amber floodlights flood the erupting chaos',
+        'JOY'    => 'the crowd bursts to life — energy flooding the frame from every direction',
+        'EPIC'   => 'the full scale of the environment asserts itself — subject suddenly small against the vastness',
+        'TENSE'  => 'the stadium holds its breath, tension suspended in the air unresolved',
+        'AWE'    => 'the ocean stretches to the horizon — vast, indifferent, impossibly wide',
+        'DRAMA'  => 'players and crowd react simultaneously, stadium sound rising from silence to roar',
+        'CALM'   => 'the environment settles into stillness, the action complete and at rest',
+        'CRAFT'  => 'the technique reveals itself — precise, complete, nothing wasted',
+        'HOOK'   => 'energy saturates every corner of the frame from the first second',
+        'FEAR'   => 'the silence deepens, the environment holding tension unresolved',
+        'REVEAL' => 'the context clarifies — scale and meaning becoming apparent',
+    ];
+
+    /**
+     * Velocity token → camera action prefix for escalation/reveal beats in cinematic prose.
+     * Injected before the ScenePlanner camera sentence to force aggressive camera language.
+     * Empty string = pass through unchanged.
+     */
+    private const CINEMATIC_CAM_RUSH = [
+        'burst'   => 'the camera explodes forward — ',
+        'rush'    => 'the camera rushes in hard — ',
+        'push'    => 'the camera surges steadily — ',
+        'brake'   => 'the camera cuts hard and holds — ',
+        'hover'   => '',
+        'static'  => '',
+        'natural' => '',
+    ];
+
+    /** One-sentence feeling statement appended at the end, keyed by emotion. */
+    private const CLOSING_STATEMENT = [
+        'POWER'  => 'The entire action feels explosive, physically powerful, and cinematically inevitable.',
+        'JOY'    => 'The moment radiates pure elation — contagious and absolutely real.',
+        'EPIC'   => 'The shot feels large — larger than any single moment could contain.',
+        'TENSE'  => 'The tension is unresolved, suspended like a held breath.',
+        'AWE'    => 'The scale overwhelms — the subject dwarfed by the world it moves through.',
+        'CRAFT'  => 'The craft is fully visible — nothing hidden, nothing wasted.',
+        'HOOK'   => 'From the first frame, the viewer cannot look away.',
+    ];
+
+    /**
+     * Cinematic narrative renderer for text-to-video.
+     *
+     * Output: continuous prose screenplay — action verbs, temporal connectors,
+     * and environment reactions. Written so the model executes motion, not tags.
+     *
+     *   hook:       Subject state. Atmosphere physics. Camera snap-in (full sentence).
+     *   escalation: As [body motion], [camera sentence].
+     *   reveal:     [Body motion]. [Camera/rack focus]. [Physics interaction].
+     *   payoff:     Without cutting, [camera] while [environment erupts].
+     *   closing:    One-sentence feeling statement.
+     *   style:      Cinematic suffix.
+     */
+    /**
+     * Cinematic narrative renderer for text-to-video.
+     *
+     * Produces one continuous screenplay paragraph — no paragraph breaks between beats.
+     * Each camera sentence has a start position, movement verb, and end position
+     * referenced to the body's current state (choreography, not label replacement).
+     *
+     * Beat access is indexed (not sequential foreach) so each beat can reference
+     * what comes next or before it — enabling proper temporal connectors.
+     *
+     * Priority: action-specific cam_* choreography > velocity-augmented ScenePlanner sentence.
+     */
+    public static function renderCinematic(PromptDocument $doc, array $dsl = []): string
+    {
+        $action   = $dsl['sub']['action'] ?? '';
+        $actor    = $dsl['sub']['actor']  ?? 'the subject';
+        $lensCode = $dsl['lens']          ?? '85';
+        $emoCode  = $dsl['emo']           ?? 'POWER';
+        $timeline = $dsl['timeline']      ?? [];
+        $physics  = $dsl['physics']       ?? [];
+        $reveal   = $dsl['reveal']        ?? [];
+
+        if ($timeline === []) {
+            return self::renderCompact($doc, $dsl);
+        }
+
+        // Index beats by name for look-ahead access — avoids blind sequential iteration.
+        $beats = [];
+        foreach ($timeline as $seg) {
+            $b = $seg['beat'] ?? '';
+            if ($b !== '') {
+                $beats[$b] = $seg;
+            }
+        }
+
+        $motionSeq   = self::BODY_MOTION_BEAT[$action] ?? self::BODY_MOTION_BEAT['default'];
+        $micro       = rtrim(($physics['micro_motion'] ?? [])[0] ?? '', '. ');
+        $atmosphere  = rtrim(($physics['atmosphere']   ?? [])[0] ?? '', '. ');
+        $interaction = rtrim(($physics['interaction']  ?? [])[0] ?? '', '. ');
+
+        // Action-specific per-beat environment overrides generic ScenePlanner physics when present.
+        $envHook       = isset($motionSeq['env_hook'])       ? rtrim($motionSeq['env_hook'],       '. ') : null;
+        $envEscalation = isset($motionSeq['env_escalation']) ? rtrim($motionSeq['env_escalation'], '. ') : null;
+        $envReveal     = isset($motionSeq['env_reveal'])     ? rtrim($motionSeq['env_reveal'],     '. ') : null;
+
+        $parts = [];
+
+        // ── Hook: opening body state + environment + camera establishes locked position ──
+        $hookBody    = rtrim(str_replace('%actor%', $actor, $motionSeq['hook'] ?? ''), '.');
+        $hookEnvText = $envHook ?? ($micro ?: $atmosphere);  // env_hook > micro_motion > atmosphere
+        $hookSeg     = $beats['hook'] ?? [];
+        // Action-specific camera choreography takes priority over ScenePlanner sentence
+        $hookCamText = $motionSeq['cam_hook']
+            ?? rtrim($hookSeg['camera'] ?? '', '. ');
+
+        if ($hookBody !== '') {
+            $parts[] = $hookBody . '.';
+        }
+        if ($hookEnvText !== '') {
+            $parts[] = ucfirst($hookEnvText) . '.';
+        }
+        if ($hookCamText !== '') {
+            $parts[] = ucfirst($hookCamText) . '.';
+        }
+
+        // ── Escalation: loading body motion + environment builds + camera accelerates ──
+        $escalSeg  = $beats['escalation'] ?? [];
+        $escalBody = $motionSeq['escalation'] ?? '';
+        $escalVel  = $escalSeg['velocity_token'] ?? '';
+
+        if (isset($motionSeq['cam_escalation'])) {
+            // Action-specific: camera choreography already references body state
+            $escalCamText = $motionSeq['cam_escalation'];
+        } else {
+            // Generic fallback: velocity prefix + ScenePlanner sentence
+            $camRush      = self::CINEMATIC_CAM_RUSH[$escalVel] ?? '';
+            $rawCam       = rtrim($escalSeg['camera'] ?? '', '. ');
+            $escalCamText = $camRush !== '' ? $camRush . lcfirst($rawCam) : ucfirst($rawCam);
+        }
+
+        if ($escalBody !== '' && $escalCamText !== '') {
+            $parts[] = 'As ' . $escalBody . ', ' . lcfirst(rtrim($escalCamText, '.')) . '.';
+        } elseif ($escalCamText !== '') {
+            $parts[] = ucfirst($escalCamText) . '.';
+        }
+        // Per-beat environment for escalation injected as its own sentence after the camera move
+        if ($envEscalation !== null && $envEscalation !== '') {
+            $parts[] = ucfirst($envEscalation) . '.';
+        }
+
+        // ── Reveal: peak action body + camera at maximum velocity + subject handoff ──
+        $revealSeg  = $beats['reveal'] ?? [];
+        $revealBody = rtrim($motionSeq['reveal'] ?? '', '. —');
+        $revealVel  = $revealSeg['velocity_token'] ?? '';
+
+        if (isset($motionSeq['cam_reveal'])) {
+            $revealCamText = $motionSeq['cam_reveal'];
+        } else {
+            $revealInstr   = rtrim($reveal['camera_instruction'] ?? '', '. —');
+            $rawRevCam     = rtrim($revealInstr ?: ($revealSeg['camera'] ?? ''), '. —');
+            $camRush       = self::CINEMATIC_CAM_RUSH[$revealVel] ?? '';
+            $revealCamText = $camRush !== ''
+                ? ucfirst(rtrim($camRush, ' — ')) . ': ' . lcfirst($rawRevCam)
+                : ucfirst($rawRevCam);
+        }
+
+        // env_reveal > physics interaction — environment peak reaction at moment of release
+        $revealEnvText = $envReveal ?? ($interaction !== '' ? $interaction : null);
+
+        if ($revealBody !== '') {
+            $parts[] = $revealBody . '.';
+        }
+        if ($revealCamText !== '') {
+            $parts[] = $revealCamText . '.';
+        }
+        if ($revealEnvText !== null && $revealEnvText !== '') {
+            $parts[] = ucfirst($revealEnvText) . '.';
+        }
+
+        // ── Payoff: environment erupts + camera resolves the motion arc ───────
+        $payoffSeg = $beats['payoff'] ?? [];
+        $envReact  = self::PAYOFF_REACTION[$emoCode] ?? 'the environment reacts to the moment';
+
+        $camPayoff = $motionSeq['cam_payoff']
+            ?? self::firstClause(rtrim($payoffSeg['camera'] ?? '', '. '), 80);
+
+        if ($camPayoff !== '') {
+            $parts[] = 'Without cutting, ' . lcfirst($camPayoff) . ' while ' . $envReact . '.';
+        } else {
+            $parts[] = 'Without cutting, ' . $envReact . '.';
+        }
+
+        // ── Closing feeling statement + style ─────────────────────────────────
+        $closing = self::CLOSING_STATEMENT[$emoCode] ?? '';
+        if ($closing !== '') {
+            $parts[] = $closing;
+        }
+
+        $lens  = self::LENS_EFFECT[$lensCode] ?? '';
+        $style = 'Cinematic, hyperrealistic, no text overlays';
+        if ($lens !== '') {
+            $style .= '. ' . $lens;
+        }
+        $parts[] = $style . '.';
+
+        return implode(' ', array_filter($parts));
     }
 
     /** Format a float duration: drop .0 if whole, keep 1 decimal otherwise. */

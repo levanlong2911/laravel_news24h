@@ -1,0 +1,221 @@
+{
+    "domain": "automotive",
+    "scenes": {
+        "Studio hero shot": {
+            "semantic_hash": "7d54fb4ae5a7781d3974b3180c9013d4549113493f7a8f18217a9ccf20d1707e",
+            "goal_target": "studio_setup",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_automotive-sh1",
+                "semantic": {
+                    "entity_id": "studio_setup",
+                    "goal_type": "establish",
+                    "emotion": "luxury",
+                    "narrative_function": "build",
+                    "camera_movement": "static",
+                    "camera_start_height": "eye",
+                    "focal_length_mm": 50,
+                    "framing": "close",
+                    "composition_rule": "rule_of_thirds",
+                    "negative_space_dir": "right",
+                    "tempo": "measured"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The studio setup occupies the frame with commanding presence. Precise light describes every material with care \u2014 no surface is accidental, each catches light at a deliberate angle; the space breathes with the weight of considered craft. The camera holds completely locked at eye level, not a millimeter of drift \u2014 the stillness itself becomes the statement, on a 50mm telephoto with medium depth of field preserving environmental context. Rule-of-thirds framing \u2014 subject anchored at the intersection, horizon dividing the frame with classical authority. Eye flow traces naturally from left to right \u2014 the reading direction lending the composition a forward momentum. Every detail communicates care. Nothing in frame is accidental. The space earns the privilege of being watched. Cinematic, hyperrealistic, no text overlays. Standard lens (50mm), neutral perspective compression. f\/2.8. Measured pacing \u2014 slow and deliberate.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "7d54fb4ae5a7781d3974b3180c9013d4549113493f7a8f18217a9ccf20d1707e"
+            }
+        },
+        "Glass roof detail": {
+            "semantic_hash": "5fe35d7e645fb889a0dc3b26328f2159a308fa5f8dc5374dbb7cf1449ce03902",
+            "goal_target": "glass_panel",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_automotive-sh2",
+                "semantic": {
+                    "entity_id": "glass_panel",
+                    "goal_type": "establish",
+                    "emotion": "luxury",
+                    "narrative_function": "build",
+                    "camera_movement": "crane_up",
+                    "camera_start_height": "hip",
+                    "focal_length_mm": 135,
+                    "framing": "close",
+                    "composition_rule": "rule_of_thirds",
+                    "negative_space_dir": "right",
+                    "tempo": "measured"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The glass panel occupies the frame with commanding presence. Precise light describes every material with care \u2014 no surface is accidental, each catches light at a deliberate angle; the space breathes with the weight of considered craft. The camera rises on a smooth crane from at hip height to above head height \u2014 ascending without interruption, the ground releasing into a broader field, on a 135mm telephoto with shallow depth of field isolating the subject against background blur. Rule-of-thirds framing \u2014 subject anchored at the intersection, horizon dividing the frame with classical authority. Eye flow traces naturally from left to right \u2014 the reading direction lending the composition a forward momentum. Every detail communicates care. Nothing in frame is accidental. The space earns the privilege of being watched. Cinematic, hyperrealistic, no text overlays. Telephoto compression (135mm), background fully collapsed. f\/1.8. Measured pacing \u2014 slow and deliberate.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "5fe35d7e645fb889a0dc3b26328f2159a308fa5f8dc5374dbb7cf1449ce03902"
+            }
+        },
+        "Car reveal": {
+            "semantic_hash": "6e0dbe07944eb290803b93f2dd00222fb2c45e6e59ecb5c42c475679ce92a509",
+            "goal_target": "vehicle",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_automotive-sh3",
+                "semantic": {
+                    "entity_id": "vehicle",
+                    "goal_type": "reveal",
+                    "emotion": "wonder",
+                    "narrative_function": "establish",
+                    "camera_movement": "orbit",
+                    "camera_start_height": "waist",
+                    "focal_length_mm": 35,
+                    "framing": "close",
+                    "composition_rule": "rule_of_thirds",
+                    "negative_space_dir": "right",
+                    "tempo": "meditative"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The vehicle occupies the frame with commanding presence. Light arrives from an unexpected angle, making familiar forms suddenly strange; the environment withholds something just off-frame, drawing the eye further. The camera performs a slow orbital arc at waist height \u2014 moving around the subject as if examining it from every angle simultaneously, on a 35mm telephoto with medium depth of field preserving environmental context. Rule-of-thirds framing \u2014 subject anchored at the intersection, horizon dividing the frame with classical authority. Eye flow traces naturally from left to right \u2014 the reading direction lending the composition a forward momentum. The shot radiates discovery \u2014 an invitation the viewer cannot refuse, a question that opens into another question. Cinematic, hyperrealistic, no text overlays. Wide-angle perspective (35mm), natural environmental relationship. f\/2.8. Meditative pacing \u2014 single sustained move.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "6e0dbe07944eb290803b93f2dd00222fb2c45e6e59ecb5c42c475679ce92a509"
+            }
+        },
+        "Car tracking": {
+            "semantic_hash": "5de91f2fdea38fe9f33c2b68a83a59f06e8e1f0bfa26aad71034d5f189f926fa",
+            "goal_target": "vehicle",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_automotive-sh4",
+                "semantic": {
+                    "entity_id": "vehicle",
+                    "goal_type": "reveal",
+                    "emotion": "power",
+                    "narrative_function": "reveal",
+                    "camera_movement": "tracking",
+                    "camera_start_height": "chest",
+                    "focal_length_mm": 85,
+                    "framing": "close",
+                    "composition_rule": "negative_lead",
+                    "negative_space_dir": "left",
+                    "tempo": "urgent"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The vehicle occupies the frame with commanding presence. Contrast defines every plane \u2014 light compressed against shadow with no mid-tone to soften the force; the environment holds tension like a coiled spring. The left side breathes open space into the composition. The camera tracks alongside at chest height, maintaining constant distance while the environment slides through the frame, on a 85mm telephoto with shallow depth of field isolating the subject against background blur. Negative-space lead \u2014 the subject pressed toward the edge, the open frame pulling the eye deeper. Eye flow moves against convention, right to left \u2014 creating a subtle resistance the viewer must lean into. The frame holds contained force \u2014 energy waiting for release, compressed into perfect cinematic stillness before the inevitable explosion. Cinematic, hyperrealistic, no text overlays. Short telephoto (85mm), subject separated from background. f\/1.8. Urgent rhythm \u2014 compressed timing, forward pressure.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "5de91f2fdea38fe9f33c2b68a83a59f06e8e1f0bfa26aad71034d5f189f926fa"
+            }
+        },
+        "Wheel detail": {
+            "semantic_hash": "d63c24e4cbba00cb4c3d2b55b905778ab9725a3cd0ff5d63219eb8c169c1516d",
+            "goal_target": "wheel_detail",
+            "entity_match": false,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_automotive-sh5",
+                "semantic": {
+                    "entity_id": "wheel_detail",
+                    "goal_type": "establish",
+                    "emotion": "luxury",
+                    "narrative_function": "build",
+                    "camera_movement": "orbit",
+                    "camera_start_height": "waist",
+                    "focal_length_mm": 135,
+                    "framing": "close",
+                    "composition_rule": "rule_of_thirds",
+                    "negative_space_dir": "right",
+                    "tempo": "measured"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The wheel detail occupies the frame with commanding presence. Precise light describes every material with care \u2014 no surface is accidental, each catches light at a deliberate angle; the space breathes with the weight of considered craft. The camera performs a slow orbital arc at waist height \u2014 moving around the subject as if examining it from every angle simultaneously, on a 135mm telephoto with shallow depth of field isolating the subject against background blur. Rule-of-thirds framing \u2014 subject anchored at the intersection, horizon dividing the frame with classical authority. Eye flow traces naturally from left to right \u2014 the reading direction lending the composition a forward momentum. Every detail communicates care. Nothing in frame is accidental. The space earns the privilege of being watched. Cinematic, hyperrealistic, no text overlays. Telephoto compression (135mm), background fully collapsed. f\/1.8. Measured pacing \u2014 slow and deliberate.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "d63c24e4cbba00cb4c3d2b55b905778ab9725a3cd0ff5d63219eb8c169c1516d"
+            }
+        },
+        "Interior cockpit": {
+            "semantic_hash": "238f31d497a9cb0b090cd7842f658b8748e0926b8946138341e21f61ca980a84",
+            "goal_target": "interior",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_automotive-sh6",
+                "semantic": {
+                    "entity_id": "interior",
+                    "goal_type": "establish",
+                    "emotion": "luxury",
+                    "narrative_function": "build",
+                    "camera_movement": "crane_up",
+                    "camera_start_height": "hip",
+                    "focal_length_mm": 24,
+                    "framing": "close",
+                    "composition_rule": "rule_of_thirds",
+                    "negative_space_dir": "right",
+                    "tempo": "measured"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The sun-lit interior occupies the frame with commanding presence. Precise light describes every material with care \u2014 no surface is accidental, each catches light at a deliberate angle; the space breathes with the weight of considered craft. The camera rises on a smooth crane from at hip height to above head height \u2014 ascending without interruption, the ground releasing into a broader field, on a 24mm telephoto with medium depth of field preserving environmental context. Rule-of-thirds framing \u2014 subject anchored at the intersection, horizon dividing the frame with classical authority. Eye flow traces naturally from left to right \u2014 the reading direction lending the composition a forward momentum. Every detail communicates care. Nothing in frame is accidental. The space earns the privilege of being watched. Cinematic, hyperrealistic, no text overlays. Ultra-wide perspective (\u226424mm), full environmental context. f\/2.8. Measured pacing \u2014 slow and deliberate.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "238f31d497a9cb0b090cd7842f658b8748e0926b8946138341e21f61ca980a84"
+            }
+        },
+        "Carbon fiber texture": {
+            "semantic_hash": "caeff263a197683c29c321539fa536eda0a10ca6c45966857936a2c8d92a8dac",
+            "goal_target": "composite_material",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_automotive-sh7",
+                "semantic": {
+                    "entity_id": "composite_material",
+                    "goal_type": "establish",
+                    "emotion": "luxury",
+                    "narrative_function": "build",
+                    "camera_movement": "crane_up",
+                    "camera_start_height": "waist",
+                    "focal_length_mm": 135,
+                    "framing": "close",
+                    "composition_rule": "rule_of_thirds",
+                    "negative_space_dir": "right",
+                    "tempo": "measured"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The composite material occupies the frame with commanding presence. Precise light describes every material with care \u2014 no surface is accidental, each catches light at a deliberate angle; the space breathes with the weight of considered craft. The camera rises on a smooth crane from at waist height to above head height \u2014 ascending without interruption, the ground releasing into a broader field, on a 135mm telephoto with shallow depth of field isolating the subject against background blur. Rule-of-thirds framing \u2014 subject anchored at the intersection, horizon dividing the frame with classical authority. Eye flow traces naturally from left to right \u2014 the reading direction lending the composition a forward momentum. Every detail communicates care. Nothing in frame is accidental. The space earns the privilege of being watched. Cinematic, hyperrealistic, no text overlays. Telephoto compression (135mm), background fully collapsed. f\/1.8. Measured pacing \u2014 slow and deliberate.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "caeff263a197683c29c321539fa536eda0a10ca6c45966857936a2c8d92a8dac"
+            }
+        },
+        "Road launch": {
+            "semantic_hash": "47310c53a6ba0ffd7a31a36b51b0de577829fc58a6d6a54c33cc0d18e410e9e8",
+            "goal_target": "road_launch",
+            "entity_match": false,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_automotive-sh8",
+                "semantic": {
+                    "entity_id": "road_launch",
+                    "goal_type": "reveal",
+                    "emotion": "power",
+                    "narrative_function": "reveal",
+                    "camera_movement": "tracking",
+                    "camera_start_height": "chest",
+                    "focal_length_mm": 85,
+                    "framing": "close",
+                    "composition_rule": "negative_lead",
+                    "negative_space_dir": "left",
+                    "tempo": "urgent"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The road launch occupies the frame with commanding presence. Contrast defines every plane \u2014 light compressed against shadow with no mid-tone to soften the force; the environment holds tension like a coiled spring. The left side breathes open space into the composition. The camera tracks alongside at chest height, maintaining constant distance while the environment slides through the frame, on a 85mm telephoto with shallow depth of field isolating the subject against background blur. Negative-space lead \u2014 the subject pressed toward the edge, the open frame pulling the eye deeper. Eye flow moves against convention, right to left \u2014 creating a subtle resistance the viewer must lean into. The frame holds contained force \u2014 energy waiting for release, compressed into perfect cinematic stillness before the inevitable explosion. Cinematic, hyperrealistic, no text overlays. Short telephoto (85mm), subject separated from background. f\/1.8. Urgent rhythm \u2014 compressed timing, forward pressure.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "47310c53a6ba0ffd7a31a36b51b0de577829fc58a6d6a54c33cc0d18e410e9e8"
+            }
+        }
+    }
+}

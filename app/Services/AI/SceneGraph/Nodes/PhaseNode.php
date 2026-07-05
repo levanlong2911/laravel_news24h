@@ -18,17 +18,23 @@ final class PhaseNode
         public readonly string $camera,
         public readonly string $environment,
         public readonly string $secondary,
+        /** DSL token from CameraEnergyPlanner — KlingSerializer translates to model-specific phrase */
+        public readonly string $velocityToken = '',
+        /** Beat name from CinematicBeatPlanner — used by SecondaryMotionPlanner injection */
+        public readonly string $beat          = '',
     ) {}
 
     public static function from(array $data): self
     {
         return new self(
-            start:       (float) ($data['start']       ?? 0.0),
-            end:         (float) ($data['end']         ?? 1.0),
-            subject:     $data['subject']     ?? '',
-            camera:      $data['camera']      ?? '',
-            environment: $data['environment'] ?? '',
-            secondary:   $data['secondary']   ?? '',
+            start:         (float) ($data['start']          ?? 0.0),
+            end:           (float) ($data['end']            ?? 1.0),
+            subject:       $data['subject']      ?? '',
+            camera:        $data['camera']       ?? '',
+            environment:   $data['environment']  ?? '',
+            secondary:     $data['secondary']    ?? '',
+            velocityToken: $data['velocity_token'] ?? '',
+            beat:          $data['beat']           ?? '',
         );
     }
 
@@ -47,6 +53,12 @@ final class PhaseNode
         }
         if ($this->secondary !== '') {
             $out['secondary'] = $this->secondary;
+        }
+        if ($this->velocityToken !== '') {
+            $out['velocity_token'] = $this->velocityToken;
+        }
+        if ($this->beat !== '') {
+            $out['beat'] = $this->beat;
         }
         return $out;
     }

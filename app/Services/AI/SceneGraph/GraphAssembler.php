@@ -11,8 +11,14 @@ use App\Services\AI\PromptAST\Serializers\KlingSerializer;
 use App\Services\AI\PromptCompiler\Compiler;
 use App\Services\AI\ProviderResolver;
 use App\Services\AI\SceneGraph\ContinuityEngine;
+use App\Services\AI\AFOS\Backend\BackendCapabilityRegistry;
+use App\Services\AI\AFOS\Backend\KlingCapability;
+use App\Services\AI\AFOS\Observability\TraceCollector;
+use App\Services\AI\AFOS\Passes\AfosPassManager;
+use App\Services\AI\AFOS\Planning\ShotGoalIRAdapter;
 use App\Services\AI\SceneGraph\SceneGraphBuilder;
 use App\Services\AI\SceneGraph\SceneGraphValidator;
+use App\Services\AI\ScenePlanner\ScenePlanningResult;
 use App\Services\AI\ScenePlanner\ScenePlanner;
 use Illuminate\Support\Facades\Log;
 
@@ -84,7 +90,31 @@ final class GraphAssembler
             'total_duration_ms'=> $totalDurationMs,
             'estimated_cost'   => ProviderPricing::buildSummary($costsByProvider, $totalDurationSec),
             'scenes'           => $compiledScenes,
+            'narration_text'   => $this->buildNarration($project),
         ];
+    }
+
+    /**
+     * Builds a 60-word narration script from the article summary for TTS voice-over.
+     * 60 words ≈ 15 s at a comfortable speaking pace (4 words/sec).
+     */
+    private function buildNarration(VideoProject $project): string
+    {
+        $text = $project->article?->summary
+             ?: $project->article?->meta_description
+             ?: '';
+
+        if (! $text) {
+            return '';
+        }
+
+        $clean = preg_replace('/\s+/', ' ', trim(strip_tags(
+            html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8')
+        )));
+
+        $words = preg_split('/\s+/', $clean, -1, PREG_SPLIT_NO_EMPTY);
+
+        return implode(' ', array_slice($words, 0, 60));
     }
 
     /**
@@ -134,8 +164,10 @@ final class GraphAssembler
 
             $provider = ProviderResolver::resolveFromDsl($enrichedDsl);
 
-            // Sprint 6: AST pipeline for Kling. Legacy compiler path for unimplemented providers.
-            if ($provider === 'kling') {
+            // Sprint 6+: provider dispatch — AFOS IR path (feature-flagged), AST path, legacy compiler
+            if ($provider === 'kling' && config('afos.enabled', false)) {
+                $prompt = $this->compileViaAfos($planningResult);
+            } elseif ($provider === 'kling') {
                 $ast    = PromptBlockAssembler::assemble($shotGraph);
                 $ast    = (new PromptNormalizer())->normalize($ast);
                 $prompt = (new KlingSerializer())->serialize($ast);
@@ -164,5 +196,37 @@ final class GraphAssembler
         }
 
         return $compiledShots;
+    }
+
+    // ── AFOS IR pipeline (Phase A) ────────────────────────────────────────────
+
+    private function compileViaAfos(ScenePlanningResult $result): string
+    {
+        // Register backend capabilities (idempotent — safe to call per shot)
+        BackendCapabilityRegistry::register(KlingCapability::make());
+
+        $trace = config('afos.trace', false)
+            ? new TraceCollector($result->shotId())
+            : null;
+
+        // Adapter: legacy ScenePlanningResult → AFOS typed IR
+        $shotGoalIR = ShotGoalIRAdapter::toShotGoalIR($result);
+        $director   = ShotGoalIRAdapter::toDirectorProfile($result);
+        $dp         = ShotGoalIRAdapter::toCinematographyProfile($result);
+        $intent     = ShotGoalIRAdapter::toIntent($result);
+
+        $trace?->record('shot_goal_ir',     $shotGoalIR->toArray());
+        $trace?->record('intent',           $intent->toArray());
+        $trace?->record('director_profile', $director->toArray());
+        $trace?->record('cinema_profile',   $dp->toArray());
+
+        // PassManager owns all pass orchestration — GraphAssembler never calls passes directly
+        $prompt = AfosPassManager::defaults()->compile(
+            $shotGoalIR, $director, $dp, $intent, $trace
+        );
+
+        $trace?->flush();
+
+        return $prompt;
     }
 }

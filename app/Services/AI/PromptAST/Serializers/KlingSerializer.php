@@ -209,6 +209,25 @@ final class KlingSerializer implements PromptSerializer
         '200' => 'Extreme telephoto, subject separated from background',
     ];
 
+    /**
+     * Velocity DSL token → Kling-specific camera motion phrase.
+     *
+     * Emitted by CameraEnergyPlanner (model-agnostic token).
+     * This table is the Kling-specific translation. Other serializers
+     * (VeoSerializer, RunwaySerializer) will have their own tables.
+     *
+     * Kling responds better to concrete camera verbs than to adjectives.
+     */
+    private const VELOCITY_PHRASES = [
+        'burst'  => 'Rapid drone dive —',
+        'rush'   => 'Fast aggressive push —',
+        'push'   => 'Steady accelerated motion —',
+        'brake'  => 'Camera decelerates abruptly, holds —',
+        'hover'  => 'Near-static hold —',
+        'static' => 'Locked frame —',
+        'natural'=> '',
+    ];
+
     /** DSL light code → fallback physics layer when PhysicsPlanner has no output */
     private const PHYSICS_LAYER = [
         'W1' => 'Cold breath visible in freezing air. Snowflakes drift through amber stadium light. Jersey fabric ripples with body momentum.',
@@ -347,18 +366,32 @@ final class KlingSerializer implements PromptSerializer
      * Serialize PhaseNode[] → ACTION timestamp segments.
      * Each segment: "[0–Xs] Camera. Subject. Environment. Secondary."
      */
+    /**
+     * Serialize PhaseNode[] → ACTION timestamp segments.
+     * Each segment: "[0–Xs] VelPhrase Camera. Subject. Environment. Secondary."
+     *
+     * velocity_token from CameraEnergyPlanner is translated here to the
+     * Kling-specific motion phrase and prepended to the camera directive.
+     */
     private function serializeTimeline(TimelineBlock $tl): string
     {
         $lines = [];
         foreach ($tl->phases as $phase) {
             /** @var PhaseNode $phase */
-            $start = $this->fmt($phase->start);
-            $end   = $this->fmt($phase->end);
+            $start     = $this->fmt($phase->start);
+            $end       = $this->fmt($phase->end);
+            $velPhrase = self::VELOCITY_PHRASES[$phase->velocityToken] ?? '';
 
             $parts = [];
             if ($phase->camera !== '') {
-                $parts[] = rtrim($phase->camera, '.') . '.';
+                $cameraText = rtrim($phase->camera, '.');
+                $parts[]    = $velPhrase !== ''
+                    ? $velPhrase . ' ' . lcfirst($cameraText) . '.'
+                    : $cameraText . '.';
+            } elseif ($velPhrase !== '') {
+                $parts[] = rtrim($velPhrase, ' —') . '.';
             }
+
             if ($phase->subject !== '') {
                 $parts[] = ucfirst(rtrim($phase->subject, '.')) . '.';
             }

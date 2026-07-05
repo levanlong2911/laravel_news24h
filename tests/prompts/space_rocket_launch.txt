@@ -1,0 +1,21 @@
+SCENE
+Climactic moment. Rocket Launch, golden hour side lighting, overwhelming scale.
+
+CAMERA
+Drone camera descends from high altitude, rapid upward tilt revealing scene with urgency. Handheld energy throughout. lower third framing.
+
+ACTION
+[0–1.5s] Rapid drone dive — drone dives from cloud cover at extreme velocity before the subject below can be named or identified, dark cool cloud light dissolving all structure and identity below — only velocity and scale are given — identity is withheld. Object motion registers below. Golden dust motes floating in angled afternoon light. Crowd looking skyward in a collective upward reaction.
+[1.5–3.5s] Fast aggressive push — hard 60-degree banking turn through warming golden light through clearing atmosphere, cloud wisps clearing at frame edge. Vessel silhouette emerging through atmosphere — vessel silhouette emerging in mid-depth. Exhaust or rotor wash flattens vegetation below — loose particles stream in the slipstream.
+[3.5–5.5s] Near-static hold — camera pierces cloud base in bright warm golden afternoon light — slow close orbit at surface height as the hull waterline dominates — nothing else competes. Rocket surface texture, defining lines, and wake trail fully visible at eye-level — hull and deck at natural depth. Subject shadow moves across ground — terrain features pass in sharp detail.
+[5.5–8s] Camera decelerates abruptly, holds — camera pulls back 300m in rich golden hour light — the horizon line draws attention to the full scale of things. Rocket becomes a point of beauty against infinite horizon — infinite ocean surface and sky filling frame. Landscape scale revealed — shadows of clouds move across terrain — distant motion adds depth.
+[8–10s] Near-static hold — camera holds wide in softening warm light — the vanishing point holds until the scene closes. Rocket rests in natural environment — ocean fills entire frame. Environmental disturbance settles — natural ground motion resumes. A visible wave of reaction moving through the stands.
+
+ENVIRONMENT
+Golden dust motes floating in angled afternoon light. Long shadows extending from every figure. Hair and loose fabric lift slightly in the afternoon breeze. Crowd looking skyward in a collective upward reaction. A visible wave of reaction moving through the stands.
+
+STYLE
+Hyperrealistic, photographic quality, professional cinema camera. Minimal motion blur.
+
+CONTINUITY
+Same rocket. Scene: golden hour, warm orange. Maintain camera: 35mm lens, aerial, handheld.

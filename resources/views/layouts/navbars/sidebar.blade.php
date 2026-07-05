@@ -103,6 +103,12 @@
                         <p>Video Approval</p>
                     </a>
                 </li>
+                <li class="nav-item {{ str_starts_with(request()->path(), 'benchmark') ? 'menu-open' : '' }}">
+                    <a href="{{ route('benchmark.sessions') }}" class="nav-link d-inline-flex {{ str_starts_with(request()->path(), 'benchmark') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-chart-line"></i>
+                        <p>Benchmark</p>
+                    </a>
+                </li>
                 @if(auth()->user()->isAdmin())
                 <li class="nav-item {{ ($route == 'claude-usage') ? $menu ?? '' : '' }}">
                     <a href="{{ route('admin.claude-usage') }}" class="nav-link d-inline-flex {{ ($action == 'admin-claude-usage') ? $active ?? '' : '' }}">

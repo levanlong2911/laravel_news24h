@@ -1,0 +1,20 @@
+SCENE
+Soccer Penalty Kick, golden hour side lighting, coiled anticipation.
+
+CAMERA
+Camera tracks alongside the moving subject, aggressively pushing in, rapidly closing distance to the subject. Handheld energy throughout. Kicking leg extension line aims toward the uprights — eye follows the trajectory.
+
+ACTION
+[0–0.5s] Rapid drone dive — snap zoom locks on athlete's eyes to compress the entire world to a single point of will, dark amber stadium light swallowing every surrounding distraction — only the face and its locked resolve exist in the frame. Athlete eyes locked. Golden dust motes floating in angled afternoon light. Crowd holding their collective breath in silence.
+[0.5–1.5s] Fast aggressive push — aggressive handheld push-in through bright warm floodlights at full power, jersey fabric and arm loaded in foreground. Athletic form becoming readable — body and plant foot at mid-depth. Cleats dig into turf — snow or grass spray from plant foot — jersey strains at shoulder seam during wind-up.
+[1.5–2.3s] Camera decelerates abruptly, holds — rack focus pulls from ambient blur in cold bright clinical light — camera holds at peak action moment as the release point becomes impossible to look away from. Soccer player at maximum extension — full body at extension. Finger pressure visible on equipment grip — wrist tendons tighten — micro-motion of hands and wrists.
+[2.3–5s] Steady accelerated motion — wide reveal in warm celebration light — the stadium scale asserts itself beyond the athlete and the throw. Soccer player's action plays out against environmental scale — full stadium visible. Boot makes clean, solid contact at the center of the football. Stillness in the stands — even flags hang motionless.
+
+ENVIRONMENT
+Golden dust motes floating in angled afternoon light. Long shadows extending from every figure. Hair and loose fabric lift slightly in the afternoon breeze. Boot makes clean, solid contact at the center of the football. Ball visibly deforms momentarily on impact before leaving the foot. Plant foot presses into the turf to stabilize the full kick. Crowd holding their collective breath in silence. Stillness in the stands — even flags hang motionless.
+
+STYLE
+Hyperrealistic, photographic quality, professional cinema camera.
+
+CONTINUITY
+Same soccer player. Scene: golden hour, warm orange. Maintain camera: 85mm lens, eye-level, handheld.

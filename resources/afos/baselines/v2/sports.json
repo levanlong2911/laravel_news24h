@@ -1,0 +1,221 @@
+{
+    "domain": "sports",
+    "scenes": {
+        "Action shot": {
+            "semantic_hash": "cdf2896b7000d8cc3559defb8bfe1cfd02843c32903fc7c6c9c175587425d7b7",
+            "goal_target": "sports_action",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_sports-sh1",
+                "semantic": {
+                    "entity_id": "sports_action",
+                    "goal_type": "reveal",
+                    "emotion": "power",
+                    "narrative_function": "reveal",
+                    "camera_movement": "tracking",
+                    "camera_start_height": "chest",
+                    "focal_length_mm": 85,
+                    "framing": "close",
+                    "composition_rule": "negative_lead",
+                    "negative_space_dir": "left",
+                    "tempo": "urgent"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The sports action occupies the frame with commanding presence. Contrast defines every plane \u2014 light compressed against shadow with no mid-tone to soften the force; the environment holds tension like a coiled spring. The left side breathes open space into the composition. The camera tracks alongside at chest height, maintaining constant distance while the environment slides through the frame, on a 85mm telephoto with shallow depth of field isolating the subject against background blur. Negative-space lead \u2014 the subject pressed toward the edge, the open frame pulling the eye deeper. Eye flow moves against convention, right to left \u2014 creating a subtle resistance the viewer must lean into. The frame holds contained force \u2014 energy waiting for release, compressed into perfect cinematic stillness before the inevitable explosion. Cinematic, hyperrealistic, no text overlays. Short telephoto (85mm), subject separated from background. f\/1.8. Urgent rhythm \u2014 compressed timing, forward pressure.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "cdf2896b7000d8cc3559defb8bfe1cfd02843c32903fc7c6c9c175587425d7b7"
+            }
+        },
+        "Stadium": {
+            "semantic_hash": "674fe30f3ec42cdca9c52b0dff0e4bb103cc92559b708bf361277173c77cb8de",
+            "goal_target": "sports_venue",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_sports-sh2",
+                "semantic": {
+                    "entity_id": "sports_venue",
+                    "goal_type": "reveal",
+                    "emotion": "power",
+                    "narrative_function": "reveal",
+                    "camera_movement": "orbit",
+                    "camera_start_height": "waist",
+                    "focal_length_mm": 85,
+                    "framing": "close",
+                    "composition_rule": "negative_lead",
+                    "negative_space_dir": "left",
+                    "tempo": "meditative"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The sports venue occupies the frame with commanding presence. Contrast defines every plane \u2014 light compressed against shadow with no mid-tone to soften the force; the environment holds tension like a coiled spring. The left side breathes open space into the composition. The camera performs a slow orbital arc at waist height \u2014 moving around the subject as if examining it from every angle simultaneously, on a 85mm telephoto with shallow depth of field isolating the subject against background blur. Negative-space lead \u2014 the subject pressed toward the edge, the open frame pulling the eye deeper. Eye flow moves against convention, right to left \u2014 creating a subtle resistance the viewer must lean into. The frame holds contained force \u2014 energy waiting for release, compressed into perfect cinematic stillness before the inevitable explosion. Cinematic, hyperrealistic, no text overlays. Short telephoto (85mm), subject separated from background. f\/1.8. Meditative pacing \u2014 single sustained move.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "674fe30f3ec42cdca9c52b0dff0e4bb103cc92559b708bf361277173c77cb8de"
+            }
+        },
+        "Athlete detail": {
+            "semantic_hash": "97731de395e0ff3094aae2c9538b14cd074ac9fb3d0cd4a2b5efc8b07a7b083f",
+            "goal_target": "subject",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_sports-sh3",
+                "semantic": {
+                    "entity_id": "subject",
+                    "goal_type": "reveal",
+                    "emotion": "power",
+                    "narrative_function": "reveal",
+                    "camera_movement": "tracking",
+                    "camera_start_height": "chest",
+                    "focal_length_mm": 200,
+                    "framing": "close",
+                    "composition_rule": "negative_lead",
+                    "negative_space_dir": "left",
+                    "tempo": "urgent"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The subject occupies the frame with commanding presence. Contrast defines every plane \u2014 light compressed against shadow with no mid-tone to soften the force; the environment holds tension like a coiled spring. The left side breathes open space into the composition. The camera tracks alongside at chest height, maintaining constant distance while the environment slides through the frame, on a 200mm telephoto with shallow depth of field isolating the subject against background blur. Negative-space lead \u2014 the subject pressed toward the edge, the open frame pulling the eye deeper. Eye flow moves against convention, right to left \u2014 creating a subtle resistance the viewer must lean into. The frame holds contained force \u2014 energy waiting for release, compressed into perfect cinematic stillness before the inevitable explosion. Cinematic, hyperrealistic, no text overlays. Long telephoto (200mm), extreme background compression. f\/1.8. Urgent rhythm \u2014 compressed timing, forward pressure.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "97731de395e0ff3094aae2c9538b14cd074ac9fb3d0cd4a2b5efc8b07a7b083f"
+            }
+        },
+        "Arena reveal": {
+            "semantic_hash": "e529f1bde66419a2f73f3e42bc02ddacd03210c93744a245d787919376020bd8",
+            "goal_target": "sports_venue",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_sports-sh4",
+                "semantic": {
+                    "entity_id": "sports_venue",
+                    "goal_type": "reveal",
+                    "emotion": "wonder",
+                    "narrative_function": "establish",
+                    "camera_movement": "crane_up",
+                    "camera_start_height": "hip",
+                    "focal_length_mm": 35,
+                    "framing": "close",
+                    "composition_rule": "rule_of_thirds",
+                    "negative_space_dir": "right",
+                    "tempo": "meditative"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The sports venue occupies the frame with commanding presence. Light arrives from an unexpected angle, making familiar forms suddenly strange; the environment withholds something just off-frame, drawing the eye further. The camera rises on a smooth crane from at hip height to above head height \u2014 ascending without interruption, the ground releasing into a broader field, on a 35mm telephoto with medium depth of field preserving environmental context. Rule-of-thirds framing \u2014 subject anchored at the intersection, horizon dividing the frame with classical authority. Eye flow traces naturally from left to right \u2014 the reading direction lending the composition a forward momentum. The shot radiates discovery \u2014 an invitation the viewer cannot refuse, a question that opens into another question. Cinematic, hyperrealistic, no text overlays. Wide-angle perspective (35mm), natural environmental relationship. f\/2.8. Meditative pacing \u2014 single sustained move.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "e529f1bde66419a2f73f3e42bc02ddacd03210c93744a245d787919376020bd8"
+            }
+        },
+        "Sprint finish": {
+            "semantic_hash": "cdf2896b7000d8cc3559defb8bfe1cfd02843c32903fc7c6c9c175587425d7b7",
+            "goal_target": "sports_action",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_sports-sh5",
+                "semantic": {
+                    "entity_id": "sports_action",
+                    "goal_type": "reveal",
+                    "emotion": "power",
+                    "narrative_function": "reveal",
+                    "camera_movement": "tracking",
+                    "camera_start_height": "chest",
+                    "focal_length_mm": 85,
+                    "framing": "close",
+                    "composition_rule": "negative_lead",
+                    "negative_space_dir": "left",
+                    "tempo": "urgent"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The sports action occupies the frame with commanding presence. Contrast defines every plane \u2014 light compressed against shadow with no mid-tone to soften the force; the environment holds tension like a coiled spring. The left side breathes open space into the composition. The camera tracks alongside at chest height, maintaining constant distance while the environment slides through the frame, on a 85mm telephoto with shallow depth of field isolating the subject against background blur. Negative-space lead \u2014 the subject pressed toward the edge, the open frame pulling the eye deeper. Eye flow moves against convention, right to left \u2014 creating a subtle resistance the viewer must lean into. The frame holds contained force \u2014 energy waiting for release, compressed into perfect cinematic stillness before the inevitable explosion. Cinematic, hyperrealistic, no text overlays. Short telephoto (85mm), subject separated from background. f\/1.8. Urgent rhythm \u2014 compressed timing, forward pressure.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "cdf2896b7000d8cc3559defb8bfe1cfd02843c32903fc7c6c9c175587425d7b7"
+            }
+        },
+        "Team celebration": {
+            "semantic_hash": "6121b3d88601791725308ba83244602e531513d80124245e0cba886adc3f64d1",
+            "goal_target": "subject",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_sports-sh6",
+                "semantic": {
+                    "entity_id": "subject",
+                    "goal_type": "reveal",
+                    "emotion": "triumph",
+                    "narrative_function": "reveal",
+                    "camera_movement": "orbit",
+                    "camera_start_height": "waist",
+                    "focal_length_mm": 85,
+                    "framing": "close",
+                    "composition_rule": "negative_lead",
+                    "negative_space_dir": "left",
+                    "tempo": "building"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The subject occupies the frame with commanding presence. Light floods the space from above and ahead; the environment opens outward as if the world has moved aside to acknowledge the moment. The left side breathes open space into the composition. The camera performs a slow orbital arc at waist height \u2014 moving around the subject as if examining it from every angle simultaneously, on a 85mm telephoto with shallow depth of field isolating the subject against background blur. Negative-space lead \u2014 the subject pressed toward the edge, the open frame pulling the eye deeper. Eye flow moves against convention, right to left \u2014 creating a subtle resistance the viewer must lean into. The moment radiates earned achievement \u2014 real, grounded, impossible to mistake for performance. Cinematic, hyperrealistic, no text overlays. Short telephoto (85mm), subject separated from background. f\/1.8. Building rhythm \u2014 gaining momentum through the shot.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "6121b3d88601791725308ba83244602e531513d80124245e0cba886adc3f64d1"
+            }
+        },
+        "Equipment detail": {
+            "semantic_hash": "5c7a40f9c7d01e4c2abc911af66bca66b785921d598d6b14f45232c480a9b027",
+            "goal_target": "sports_action",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_sports-sh7",
+                "semantic": {
+                    "entity_id": "sports_action",
+                    "goal_type": "establish",
+                    "emotion": "luxury",
+                    "narrative_function": "build",
+                    "camera_movement": "crane_up",
+                    "camera_start_height": "hip",
+                    "focal_length_mm": 135,
+                    "framing": "close",
+                    "composition_rule": "rule_of_thirds",
+                    "negative_space_dir": "right",
+                    "tempo": "measured"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The sports action occupies the frame with commanding presence. Precise light describes every material with care \u2014 no surface is accidental, each catches light at a deliberate angle; the space breathes with the weight of considered craft. The camera rises on a smooth crane from at hip height to above head height \u2014 ascending without interruption, the ground releasing into a broader field, on a 135mm telephoto with shallow depth of field isolating the subject against background blur. Rule-of-thirds framing \u2014 subject anchored at the intersection, horizon dividing the frame with classical authority. Eye flow traces naturally from left to right \u2014 the reading direction lending the composition a forward momentum. Every detail communicates care. Nothing in frame is accidental. The space earns the privilege of being watched. Cinematic, hyperrealistic, no text overlays. Telephoto compression (135mm), background fully collapsed. f\/1.8. Measured pacing \u2014 slow and deliberate.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "5c7a40f9c7d01e4c2abc911af66bca66b785921d598d6b14f45232c480a9b027"
+            }
+        },
+        "Crowd panorama": {
+            "semantic_hash": "9aea47f91ee4dd158363f58928bbb046e4923f06b827a5fcc5fc6c1e8052bca5",
+            "goal_target": "sports_venue",
+            "entity_match": true,
+            "snapshot": {
+                "schema_version": "1.0",
+                "shot_id": "bench_sports-sh8",
+                "semantic": {
+                    "entity_id": "sports_venue",
+                    "goal_type": "reveal",
+                    "emotion": "power",
+                    "narrative_function": "reveal",
+                    "camera_movement": "static",
+                    "camera_start_height": "eye",
+                    "focal_length_mm": 85,
+                    "framing": "close",
+                    "composition_rule": "negative_lead",
+                    "negative_space_dir": "left",
+                    "tempo": "meditative"
+                },
+                "artifacts": {
+                    "compiled_prompt": "The sports venue occupies the frame with commanding presence. Contrast defines every plane \u2014 light compressed against shadow with no mid-tone to soften the force; the environment holds tension like a coiled spring. The left side breathes open space into the composition. The camera holds completely locked at eye level, not a millimeter of drift \u2014 the stillness itself becomes the statement, on a 85mm telephoto with shallow depth of field isolating the subject against background blur. Negative-space lead \u2014 the subject pressed toward the edge, the open frame pulling the eye deeper. Eye flow moves against convention, right to left \u2014 creating a subtle resistance the viewer must lean into. The frame holds contained force \u2014 energy waiting for release, compressed into perfect cinematic stillness before the inevitable explosion. Cinematic, hyperrealistic, no text overlays. Short telephoto (85mm), subject separated from background. f\/1.8. Meditative pacing \u2014 single sustained move.",
+                    "backend": "kling"
+                },
+                "semantic_hash": "9aea47f91ee4dd158363f58928bbb046e4923f06b827a5fcc5fc6c1e8052bca5"
+            }
+        }
+    }
+}

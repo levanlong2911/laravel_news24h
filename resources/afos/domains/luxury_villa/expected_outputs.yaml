@@ -1,0 +1,125 @@
+domain: luxury_villa
+description: "Ground truth for luxury villa IR Fidelity. Vision QA Engine loops over metrics directly."
+version: "1.0"
+
+ground_truth:
+  "Pool at dawn":
+    expected_entity: pool_reflection
+    expected_entity_type: water_feature
+    expected_camera_height: ANKLE
+    expected_motion: STATIC
+    expected_lighting: golden_hour
+    expected_composition: rule_of_thirds
+    qa:
+      metrics:
+        - {id: water_surface_coverage,  type: ratio,   min: 0.5}
+        - {id: reflection_visible,      type: boolean, expected: true}
+        - {id: camera_motion_present,   type: boolean, expected: false}
+        - {id: lighting_quality,        type: enum,    expected: golden_hour}
+        - {id: camera_height,           type: enum,    expected: ankle}
+        - {id: dominant_color_temp,     type: enum,    expected: warm}
+
+  "Stone detail":
+    expected_entity: stone
+    expected_entity_type: material
+    expected_camera_height: EYE
+    expected_motion: SLOW_PUSH
+    expected_lighting: overcast_soft
+    expected_composition: centered_macro
+    qa:
+      metrics:
+        - {id: subject_coverage,        type: ratio,   min: 0.8}
+        - {id: focus_sharpness,         type: score,   min: 0.85}
+        - {id: camera_motion_present,   type: boolean, expected: true}
+        - {id: lighting_quality,        type: enum,    expected: overcast}
+        - {id: motion_type,             type: enum,    expected: slow_push}
+        - {id: primary_subject_type,    type: enum,    expected: material}
+
+  "Terrace view":
+    expected_entity: terrace
+    expected_entity_type: arch_element
+    expected_camera_height: EYE
+    expected_motion: STATIC
+    expected_lighting: warm_window
+    expected_composition: negative_space_right
+    qa:
+      metrics:
+        - {id: camera_motion_present,   type: boolean, expected: false}
+        - {id: lighting_quality,        type: enum,    expected: warm_window}
+        - {id: camera_height,           type: enum,    expected: eye}
+        - {id: primary_subject_type,    type: enum,    expected: arch_element}
+        - {id: sky_coverage,            type: ratio,   max: 0.4}
+
+  "Villa reveal":
+    expected_entity: villa_facade
+    expected_entity_type: structure
+    expected_camera_height: EYE
+    expected_motion: TILT_UP
+    expected_lighting: golden_hour
+    expected_composition: full_frame_reveal
+    qa:
+      metrics:
+        - {id: camera_motion_present,   type: boolean, expected: true}
+        - {id: motion_type,             type: enum,    expected: tilt}
+        - {id: lighting_quality,        type: enum,    expected: golden_hour}
+        - {id: primary_subject_type,    type: enum,    expected: structure}
+        - {id: dominant_color_temp,     type: enum,    expected: warm}
+
+  "Interior living room":
+    expected_entity: interior
+    expected_entity_type: interior
+    expected_camera_height: EYE
+    expected_motion: STATIC
+    expected_lighting: warm_window
+    expected_composition: layered_depth
+    qa:
+      metrics:
+        - {id: camera_motion_present,   type: boolean, expected: false}
+        - {id: lighting_quality,        type: enum,    expected: warm_window}
+        - {id: primary_subject_type,    type: enum,    expected: interior}
+        - {id: human_visible,           type: boolean, expected: false}
+
+  "Poolside at sunset":
+    expected_entity: pool_reflection
+    expected_entity_type: water_feature
+    expected_camera_height: KNEE
+    expected_motion: STATIC
+    expected_lighting: golden_hour
+    expected_composition: golden_ratio
+    qa:
+      metrics:
+        - {id: water_surface_coverage,  type: ratio,   min: 0.3}
+        - {id: reflection_visible,      type: boolean, expected: true}
+        - {id: camera_motion_present,   type: boolean, expected: false}
+        - {id: lighting_quality,        type: enum,    expected: golden_hour}
+        - {id: dominant_color_temp,     type: enum,    expected: warm}
+
+  "Garden landscape":
+    expected_entity: view
+    expected_entity_type: landscape
+    expected_camera_height: EYE
+    expected_motion: STATIC
+    expected_lighting: overcast_soft
+    expected_composition: rule_of_thirds
+    qa:
+      metrics:
+        - {id: camera_motion_present,   type: boolean, expected: false}
+        - {id: lighting_quality,        type: enum,    expected: overcast}
+        - {id: primary_subject_type,    type: enum,    expected: landscape}
+        - {id: human_visible,           type: boolean, expected: false}
+
+  "Night pool illumination":
+    expected_entity: pool_reflection
+    expected_entity_type: water_feature
+    expected_camera_height: ANKLE
+    expected_motion: STATIC
+    expected_lighting: artificial_night
+    expected_composition: centered
+    qa:
+      metrics:
+        - {id: water_surface_coverage,  type: ratio,   min: 0.4}
+        - {id: reflection_visible,      type: boolean, expected: true}
+        - {id: camera_motion_present,   type: boolean, expected: false}
+        - {id: lighting_quality,        type: enum,    expected: artificial_night}
+        - {id: camera_height,           type: enum,    expected: ankle}
+        - {id: dominant_color_temp,     type: enum,    expected: cool}

@@ -1,0 +1,21 @@
+SCENE
+Climactic moment. Tokyo Cityscape at Night, neon-lit urban night, overwhelming scale.
+
+CAMERA
+Drone camera descends from high altitude, slowly pulling back to reveal the surroundings. lower third framing. Subject body line directs attention toward the focal point of the action.
+
+ACTION
+[0–1s] Fast aggressive push — camera opens on immediate visual impact before the subject is named or its context declared, low ambient light narrowing the entire world to this single point of presence — only presence registers — identity and context are withheld. Subject presence registers before declaration. Rain streaks cutting diagonally through the air. Crowd looking skyward in a collective upward reaction.
+[1–3.5s] Steady accelerated motion — camera builds toward subject through warming intensifying light, subject detail layer emerging. Subject pattern emerging — subject body at natural depth. Secondary elements respond to primary action — background energy builds in reaction.
+[3.5–6.5s] Camera decelerates abruptly, holds — rack focus pulls from ambient blur in bright warm peak light — peak clarity as the decisive detail becomes the only legible thing in the frame. Tokyo skyline at maximum expression — full subject at natural depth. Environmental depth — background motion provides spatial context for the subject.
+[6.5–9s] Steady accelerated motion — resolution frame in bright warm wide light — the full context asserts the scale and weight of the action. Tokyo skyline completes the arc — complete environmental scale. Full spatial scale — secondary motion reveals depth and distance relationships.
+[9–10s] Near-static hold — camera holds in bright warm wide light — . Tokyo skyline at rest — complete environmental scale. Environment settles into natural cadence — ambient motion continues. A visible wave of reaction moving through the stands.
+
+ENVIRONMENT
+Rain streaks cutting diagonally through the air. Wet ground surface reflecting ambient light. Uniform soaked and darkened, dripping from the helmet brim. Wet skin and fabric catching light. Crowd looking skyward in a collective upward reaction. A visible wave of reaction moving through the stands.
+
+STYLE
+Hyperrealistic, photographic quality, professional cinema camera. Minimal motion blur.
+
+CONTINUITY
+Same Tokyo skyline. Scene: rainy, night, cool neon. Maintain camera: 35mm lens, aerial, gimbal.

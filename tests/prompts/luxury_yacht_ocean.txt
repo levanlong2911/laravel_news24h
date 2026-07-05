@@ -1,0 +1,21 @@
+SCENE
+Resolution. Luxury Yacht on Open Ocean, golden hour side lighting, peaceful stillness.
+
+CAMERA
+Drone camera descends from high altitude, gently dollying right across the frame.
+
+ACTION
+[0–1.5s] Rapid drone dive — drone dives from cloud cover at extreme velocity before the subject below can be named or identified, dark cool cloud light dissolving all structure and identity below — only velocity and scale are given — identity is withheld. Object motion registers below. Golden dust motes floating in angled afternoon light. Crowd settled and attentive in the background — peaceful observation.
+[1.5–3.5s] Fast aggressive push — hard 60-degree banking turn through warming golden light through clearing atmosphere, cloud wisps clearing at frame edge. Vessel silhouette emerging through atmosphere — vessel silhouette emerging in mid-depth. Bow wave foam sprays from hull at banking speed — water droplets suspended in golden light — curved wake arcs behind.
+[3.5–5.5s] Near-static hold — camera pierces cloud base in bright warm golden afternoon light — slow close orbit at surface height as the hull waterline dominates — nothing else competes. Yacht surface texture, defining lines, and wake trail fully visible at eye-level — hull and deck at natural depth. Wake fans in chevron pattern from hull — sun glints pulse rhythmically on wave faces — hull reflection shimmers below.
+[5.5–8s] Camera decelerates abruptly, holds — camera pulls back 300m in rich golden hour light — the horizon line draws attention to the full scale of things. Yacht becomes a point of beauty against infinite horizon — infinite ocean surface and sky filling frame. Full wake trail stretches toward horizon — seabirds wheel in thermal disturbance overhead — surface foam disperses.
+[8–10s] Near-static hold — camera holds wide in softening warm light — the vanishing point holds until the scene closes. Yacht rests in natural environment — ocean fills entire frame. Ocean surface calms — wake diffuses into gentle swells — distant foam dissolves into deep blue.
+
+ENVIRONMENT
+Golden dust motes floating in angled afternoon light. Long shadows extending from every figure. Hair and loose fabric lift slightly in the afternoon breeze. Crowd settled and attentive in the background — peaceful observation.
+
+STYLE
+Hyperrealistic, photographic quality, professional cinema camera. Minimal motion blur.
+
+CONTINUITY
+Same yacht. Scene: golden hour, warm orange. Maintain camera: 35mm lens, aerial, gimbal.

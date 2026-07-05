@@ -1,0 +1,31 @@
+{
+    "schema_version": "1.0",
+    "shot_id": "golden_lv_pool_dawn",
+    "semantic": {
+        "entity_id": "pool_reflection",
+        "goal_type": "reveal",
+        "emotion": "serenity",
+        "narrative_function": "establish",
+        "camera_movement": "static",
+        "camera_start_height": "ankle",
+        "focal_length_mm": 35,
+        "framing": "wide",
+        "composition_rule": "rule_of_thirds",
+        "negative_space_dir": "right",
+        "tempo": "meditative"
+    },
+    "artifacts": {
+        "compiled_prompt": "The villa pool and its mirror-perfect reflection sits within a wide field of negative space and context, quality of light passing through foreground. Warm golden-hour light moves imperceptibly across still water; the air holds a silence that feels chosen, not empty. The camera holds completely locked at ankle height, just above the surface, not a millimeter of drift — the stillness itself becomes the statement, on a 35mm telephoto with medium depth of field preserving environmental context. Rule-of-thirds framing — subject anchored at the intersection, horizon dividing the frame with classical authority. Eye flow traces naturally from left to right — the reading direction lending the composition a forward momentum. The entire image feels like a held breath — suspended, completely peaceful, inevitable. Time has stopped cooperating with urgency. Cinematic, hyperrealistic, no text overlays. Wide-angle perspective (35mm), natural environmental relationship. f\/2.8. Meditative pacing — single sustained move.",
+        "backend": "kling"
+    },
+    "semantic_hash": "7f21d5878e05268286f70b5325535c66f4be65ef5c90e89495ff9d5b098d1ff0",
+    "diagnostics": [
+        {
+            "severity": "hint",
+            "code": "AFOS1104",
+            "message": "STATIC movement has a non-empty velocity curve — planner inconsistency, curve will be ignored",
+            "pass": "CameraIRValidator",
+            "field": "velocityCurve"
+        }
+    ]
+}

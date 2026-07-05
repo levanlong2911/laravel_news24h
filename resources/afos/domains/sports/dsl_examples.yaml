@@ -1,0 +1,76 @@
+domain: sports
+description: "Sports cinematography — athlete action, venue reveals, detail, celebration"
+version: "1.0"
+
+shots:
+  - scene_title: "Action shot"
+    emo: POWER
+    cam: CLOSE
+    move: D1
+    dur: 3.0
+    lens: "85"
+    light: D1
+    notes: "Peak action moment; athlete at maximum exertion"
+
+  - scene_title: "Stadium"
+    emo: EPIC
+    cam: WIDE
+    move: O1
+    dur: 5.0
+    lens: "35"
+    light: D1
+    notes: "Full stadium aerial reveal; crowd as texture"
+
+  - scene_title: "Athlete detail"
+    emo: POWER
+    cam: CLOSE
+    move: D1
+    dur: 3.0
+    lens: "135"
+    light: D1
+    notes: "Face, muscles, or equipment in extreme close-up"
+
+  - scene_title: "Arena reveal"
+    emo: REVEAL
+    cam: WIDE
+    move: T1
+    dur: 5.0
+    lens: "35"
+    light: D1
+    notes: "Slow tilt reveals full arena from floor to roof"
+
+  - scene_title: "Sprint finish"
+    emo: POWER
+    cam: MEDIUM
+    move: D1
+    dur: 3.0
+    lens: "85"
+    light: D1
+    notes: "Parallel tracking of sprint; finish line approach"
+
+  - scene_title: "Team celebration"
+    emo: JOY
+    cam: WIDE
+    move: O1
+    dur: 5.0
+    lens: "35"
+    light: D1
+    notes: "Team huddle or celebration; euphoric atmosphere"
+
+  - scene_title: "Equipment detail"
+    emo: CRAFT
+    cam: CLOSE
+    move: P1
+    dur: 4.0
+    lens: "135"
+    light: D1
+    notes: "Boots, gloves, or racket in extreme close-up; texture focus"
+
+  - scene_title: "Crowd panorama"
+    emo: EPIC
+    cam: WIDE
+    move: STATIC
+    dur: 5.0
+    lens: "24"
+    light: D1
+    notes: "Full crowd pan; scale and energy of crowd"

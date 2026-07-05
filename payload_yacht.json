@@ -1,0 +1,139 @@
+﻿{
+    "render_uuid": "c7a1a101-7777-409b-8d89-2f169ddfde55",
+    "session_code": "sprint3-baseline",
+    "fixture_slug": "luxury_yacht_ocean",
+    "model": "kling-2.1",
+    "resolution": "1080p",
+    "duration_seconds": 5,
+    "fps": 24,
+    "seed": "12345",
+    "char_count": 2391,
+    "prompt_version": "sprint3_v1",
+    "artifact_path": "renders\/sprint3\/luxury_yacht_ocean\/",
+    "rendered_at": "2026-07-03T09:41:01.231700Z",
+    "prompt_text": "SCENE\nClimactic moment. Luxury superyacht, open ocean, golden hour reveal, golden hour side lighting, overwhelming scale.\n\nCAMERA\nDrone camera descends from high altitude, slowly pulling back to reveal the surroundings, ultra-wide perspective with environmental context. lower third framing. Subject body line directs attention toward the focal point of the action.\n\nACTION\n[0–1s] Rapid drone dive — drone dives from cloud cover at extreme velocity before the subject below can be named or identified, dark cool cloud light dissolving all structure and identity below — only velocity and scale are given — identity is withheld. Object motion registers below. Golden dust motes floating in angled afternoon light. Crowd looking skyward in a collective upward reaction.\n[1–2.5s] Fast aggressive push — hard 60-degree banking turn through warming golden light through clearing atmosphere, cloud wisps clearing at frame edge. Vessel silhouette emerging through atmosphere — vessel silhouette emerging in mid-depth. Bow wave foam sprays from hull at banking speed — water droplets suspended in golden light — curved wake arcs behind.\n[2.5–4s] Near-static hold — camera pierces cloud base in bright warm golden afternoon light — slow close orbit at surface height as the hull waterline dominates — nothing else competes. Luxury yacht surface texture, defining lines, and wake trail fully visible at — hull and deck at natural depth. Wake fans in chevron pattern from hull — sun glints pulse rhythmically on wave faces — hull reflection shimmers below.\n[4–5s] Camera decelerates abruptly, holds — camera pulls back 300m in rich golden hour light — the horizon line draws attention to the full scale of things. Luxury yacht becomes a point of beauty against infinite horizon — infinite ocean surface and sky filling frame. Full wake trail stretches toward horizon — seabirds wheel in thermal disturbance overhead — surface foam disperses. A visible wave of reaction moving through the stands.\n\nENVIRONMENT\nGolden dust motes floating in angled afternoon light. Long shadows extending from every figure. Hair and loose fabric lift slightly in the afternoon breeze. Crowd looking skyward in a collective upward reaction. A visible wave of reaction moving through the stands.\n\nSTYLE\nHighly detailed, cinematic quality, sharp focus. Ultra-wide perspective with environmental context. Minimal motion blur.",
+    "instructions": [
+        {
+            "catalog_code": "snap_zoom",
+            "beat": "hook",
+            "variant_text": "Drone dives from cloud cover at extreme velocity before the subject below can be named or identified, dark cool cloud light dissolving all structure and identity below — only velocity and scale are given — identity is withheld."
+        },
+        {
+            "catalog_code": "pull_back",
+            "beat": "payoff",
+            "variant_text": "Camera pulls back 300m in rich golden hour light — the horizon line draws attention to the full scale of things."
+        },
+        {
+            "catalog_code": "through_cloud",
+            "beat": "reveal",
+            "variant_text": "Camera pierces cloud base in bright warm golden afternoon light — slow close orbit at surface height as the hull waterline dominates — nothing else competes."
+        },
+        {
+            "catalog_code": "slow_orbit",
+            "beat": "payoff",
+            "variant_text": "Camera pulls back 300m in rich golden hour light — the horizon line draws attention to the full scale of things."
+        },
+        {
+            "catalog_code": "sun_glint_pulse",
+            "beat": "reveal",
+            "variant_text": "sun glint pulsing rhythmically on water surface"
+        },
+        {
+            "catalog_code": "wake_foam",
+            "beat": "escalation",
+            "variant_text": "wake foam and spray trailing behind the vessel"
+        },
+        {
+            "catalog_code": "camera_motivation",
+            "beat": "hook",
+            "variant_text": "before the subject below can be named or identified"
+        },
+        {
+            "catalog_code": "atmosphere_active",
+            "beat": "hook",
+            "variant_text": "Drone dives from cloud cover at extreme velocity before the subject below can be named or identified, dark cool cloud light dissolving all structure and identity below — only velocity and scale are given — identity is withheld."
+        },
+        {
+            "catalog_code": "eye_hook_implicit",
+            "beat": "hook",
+            "variant_text": "Drone dives from cloud cover at extreme velocity before the subject below can be named or identified, dark cool cloud light dissolving all structure and identity below — only velocity and scale are given — identity is withheld."
+        },
+        {
+            "catalog_code": "eye_payoff_implicit",
+            "beat": "payoff",
+            "variant_text": "Camera pulls back 300m in rich golden hour light — the horizon line draws attention to the full scale of things."
+        },
+        {
+            "catalog_code": "depth_hook",
+            "beat": "hook",
+            "variant_text": "Object motion registers below."
+        },
+        {
+            "catalog_code": "depth_reveal",
+            "beat": "reveal",
+            "variant_text": "Luxury yacht surface texture, defining lines, and wake trail fully visible at — hull and deck at natural depth."
+        },
+        {
+            "catalog_code": "depth_payoff",
+            "beat": "payoff",
+            "variant_text": "Luxury yacht becomes a point of beauty against infinite horizon — infinite ocean surface and sky filling frame."
+        },
+        {
+            "catalog_code": "identity_withheld",
+            "beat": "hook",
+            "variant_text": "Object motion registers below — identity withheld — only velocity and scale visible through the obscuring layer"
+        },
+        {
+            "catalog_code": "partial_reveal",
+            "beat": "escalation",
+            "variant_text": "Vessel silhouette emerging through atmosphere — hull form and scale becoming legible"
+        }
+    ],
+    "planner_outputs": [
+        {
+            "planner_name": "BeatFusionEngine",
+            "beat": "hook",
+            "raw_text": "Drone dives from cloud cover at extreme velocity before the subject below can be named or identified, dark cool cloud light dissolving all structure and identity below — only velocity and scale are given — identity is withheld."
+        },
+        {
+            "planner_name": "BeatFusionEngine",
+            "beat": "escalation",
+            "raw_text": "Hard 60-degree banking turn through warming golden light through clearing atmosphere, cloud wisps clearing at frame edge."
+        },
+        {
+            "planner_name": "BeatFusionEngine",
+            "beat": "reveal",
+            "raw_text": "Camera pierces cloud base in bright warm golden afternoon light — slow close orbit at surface height as the hull waterline dominates — nothing else competes."
+        },
+        {
+            "planner_name": "BeatFusionEngine",
+            "beat": "payoff",
+            "raw_text": "Camera pulls back 300m in rich golden hour light — the horizon line draws attention to the full scale of things."
+        },
+        {
+            "planner_name": "CameraMotivationPlanner",
+            "beat": "hook",
+            "raw_text": "before the subject below can be named or identified"
+        },
+        {
+            "planner_name": "CameraMotivationPlanner",
+            "beat": "escalation",
+            "raw_text": "as identity resolves through the clearing atmosphere below"
+        },
+        {
+            "planner_name": "CameraMotivationPlanner",
+            "beat": "payoff",
+            "raw_text": "to place the vessel against the true scale of its world"
+        },
+        {
+            "planner_name": "PhysicsPlanner",
+            "beat": "reveal",
+            "raw_text": "hair and loose fabric lift slightly in the afternoon breeze. golden dust motes floating in angled afternoon light. long shadows extending from every figure."
+        },
+        {
+            "planner_name": "RevealPlanner",
+            "beat": "reveal",
+            "raw_text": "Camera pierces cloud base — white mist dissolves to declare subject below —"
+        }
+    ]
+}

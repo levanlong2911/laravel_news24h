@@ -1,0 +1,20 @@
+SCENE
+Wildfire Aerial View, dramatic high-contrast rim light, high dramatic tension.
+
+CAMERA
+Drone camera descends from high altitude, sweeping clockwise around the subject. Subject body line directs attention toward the focal point of the action.
+
+ACTION
+[0–0.5s] Rapid drone dive — snap zoom locks on athlete's eyes to compress the entire world to a single point of will, dark amber stadium light swallowing every surrounding distraction — only the face and its locked resolve exist in the frame. Athlete eyes locked. Flat atmospheric haze diffused through grey overcast sky. Coaches on the sideline gesturing urgently.
+[0.5–1.5s] Fast aggressive push — aggressive handheld push-in through bright warm floodlights at full power, jersey fabric and arm loaded in foreground. Athletic form becoming readable — body and plant foot at mid-depth. Cleats dig into turf — snow or grass spray from plant foot — jersey strains at shoulder seam during wind-up.
+[1.5–2.3s] Camera decelerates abruptly, holds — rack focus pulls from ambient blur in cold bright clinical light — camera holds at peak action moment as the release point becomes impossible to look away from. Firefighter at maximum extension — full body at extension. Finger pressure visible on equipment grip — wrist tendons tighten — micro-motion of hands and wrists.
+[2.3–5s] Steady accelerated motion — wide reveal in warm celebration light — the stadium scale asserts itself beyond the athlete and the throw. Firefighter's action plays out against environmental scale — full stadium visible. Crowd erupts — flags and banners snap — snow or confetti disturbed by crowd wave — breath vapor clouds from thousands. Crowd murmur building into a growing roar.
+
+ENVIRONMENT
+Flat atmospheric haze diffused through grey overcast sky. Fabric hangs heavy, no wind effect — still and deliberate. Coaches on the sideline gesturing urgently. Crowd murmur building into a growing roar.
+
+STYLE
+Hyperrealistic, photographic quality, professional cinema camera.
+
+CONTINUITY
+Same firefighter. Scene: dramatic overcast, twilight, high contrast. Maintain camera: 35mm lens, aerial, steady.

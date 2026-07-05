@@ -1,0 +1,20 @@
+SCENE
+AI Robot Assembly Line, cool industrial light with steam, focused precision.
+
+CAMERA
+Camera reveals extreme fine detail in macro, gently pushing in toward the subject. left third framing.
+
+ACTION
+[0–0.6s] Fast aggressive push — camera drops to surface level before the object reveals form or declares its function, dark controlled light isolating surface texture from form and function — only material surface is available — form and function are withheld. Material texture fills frame. Surface micro-texture fills frame at extreme macro — material grain and imperfections resolve in sharp detail. Crowd watching with focused, appreciative attention.
+[0.6–1.8s] Camera decelerates abruptly, holds — slow 360-degree orbit through clean neutral studio light, object edge and silhouette emerging. Object form emerging at detail level — object body at natural depth. Specular highlight traces across surface as camera orbits — reflections shift and rotate with the angle.
+[1.8–3.6s] Near-static hold — camera orbit completes in bright warm hero light — beauty lighting interaction as the defining detail becomes the only thing that matters in the frame. Robot arm at its most photogenic — complete object at natural display depth. Beauty light creates sharp specular point — dust particles float in the beam above the product — surface glows.
+[3.6–5s] Steady accelerated motion — pull back to full context in bright neutral presentation light — the complete object holds its own against every surrounding. Robot arm purpose and craftsmanship understood — minimal clean environment. Product catches ambient light from all angles — environmental reflections visible on polished surface — depth of field shifts.
+
+ENVIRONMENT
+Crowd watching with focused, appreciative attention.
+
+STYLE
+Hyperrealistic, photographic quality, professional cinema camera.
+
+CONTINUITY
+Same robot arm. Scene: industrial, cool industrial. Maintain camera: 135mm lens, ground-level, gimbal.

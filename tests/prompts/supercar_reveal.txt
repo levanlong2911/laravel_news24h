@@ -1,0 +1,20 @@
+SCENE
+Climactic moment. Supercar Reveal, golden hour side lighting, cinematic grandeur.
+
+CAMERA
+Camera sweeps in a slow orbital arc, sweeping counterclockwise around the subject. Low angle perspective. lower third framing.
+
+ACTION
+[0–1s] Rapid drone dive — drone dives from cloud cover at extreme velocity before the subject below can be named or identified, dark cool cloud light dissolving all structure and identity below — only velocity and scale are given — identity is withheld. Object motion registers below. Golden dust motes floating in angled afternoon light. Crowd as a vast sea of color and motion in the background.
+[1–2.5s] Fast aggressive push — hard 60-degree banking turn through warming golden light through clearing atmosphere, cloud wisps clearing at frame edge. Vessel silhouette emerging through atmosphere — vessel silhouette emerging in mid-depth. Exhaust or rotor wash flattens vegetation below — loose particles stream in the slipstream.
+[2.5–4s] Near-static hold — camera pierces cloud base in bright warm golden afternoon light — slow close orbit at surface height as the hull waterline dominates — nothing else competes. Ferrari surface texture, defining lines, and wake trail fully visible at eye-level — hull and deck at natural depth. Subject shadow moves across ground — terrain features pass in sharp detail.
+[4–5s] Camera decelerates abruptly, holds — camera pulls back 300m in rich golden hour light — the horizon line draws attention to the full scale of things. Ferrari becomes a point of beauty against infinite horizon — infinite ocean surface and sky filling frame. Landscape scale revealed — shadows of clouds move across terrain — distant motion adds depth. Stadium lights sweeping over the crowd in scale.
+
+ENVIRONMENT
+Golden dust motes floating in angled afternoon light. Long shadows extending from every figure. Tire smoke billowing from spinning rear wheels. Dust spray from explosive lateral movement on dry ground. Hair and loose fabric lift slightly in the afternoon breeze. Crowd as a vast sea of color and motion in the background. Stadium lights sweeping over the crowd in scale.
+
+STYLE
+Hyperrealistic, photographic quality, professional cinema camera.
+
+CONTINUITY
+Same Ferrari. Scene: golden hour, warm orange. Maintain camera: 50mm lens, low-angle, gimbal.
