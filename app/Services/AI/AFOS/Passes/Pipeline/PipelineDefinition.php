@@ -16,10 +16,15 @@ use App\Services\AI\AFOS\Passes\Camera\SimpleCameraPass;
 use App\Services\AI\AFOS\Passes\Composition\SimpleCompositionPass;
 use App\Services\AI\AFOS\Passes\Config\CameraPassConfig;
 use App\Services\AI\AFOS\Passes\Config\CompositionPassConfig;
-use App\Services\AI\AFOS\Passes\Prompt\KlingPromptPlanningPass;
+use App\Services\AI\AFOS\Backends\BackendEmitter;
+use App\Services\AI\AFOS\Passes\Prompt\PlannerResolver;
 use App\Services\AI\AFOS\Passes\Stages\BackendStage;
+use App\Services\AI\AFOS\Passes\Stages\CameraArcStage;
 use App\Services\AI\AFOS\Passes\Stages\CameraValidationStage;
+use App\Services\AI\AFOS\Ir\Temporal\Motion\RuleBasedMotionPlanner;
+use App\Services\AI\AFOS\Passes\Stages\MotionBeatStage;
 use App\Services\AI\AFOS\Passes\Stages\ShotValidationStage;
+use App\Services\AI\AFOS\Passes\Stages\FreezeStage;
 use App\Services\AI\AFOS\Passes\Stages\Tier1Stage;
 use App\Services\AI\AFOS\Passes\Stages\Tier2Stage;
 use App\Services\AI\AFOS\Passes\Stages\Tier3Stage;
@@ -70,8 +75,11 @@ final class PipelineDefinition
         $stageClasses ??= [
             \App\Services\AI\AFOS\Passes\Stages\ShotValidationStage::class,
             \App\Services\AI\AFOS\Passes\Stages\Tier1Stage::class,
+            \App\Services\AI\AFOS\Passes\Stages\MotionBeatStage::class,
             \App\Services\AI\AFOS\Passes\Stages\Tier2Stage::class,
+            \App\Services\AI\AFOS\Passes\Stages\CameraArcStage::class,
             \App\Services\AI\AFOS\Passes\Stages\CameraValidationStage::class,
+            \App\Services\AI\AFOS\Passes\Stages\FreezeStage::class,
             \App\Services\AI\AFOS\Passes\Stages\Tier3Stage::class,
             \App\Services\AI\AFOS\Passes\Stages\BackendStage::class,
         ];
@@ -79,16 +87,28 @@ final class PipelineDefinition
         return new self(array_map([$registry, 'resolve'], $stageClasses));
     }
 
-    /** Standard Kling production pipeline — what defaults() uses. */
+    /**
+     * Standard Kling production pipeline — what defaults() uses.
+     *
+     * Level 0: [ShotValidation, Tier1]             — both read only inputs
+     * Level 1: [MotionBeatStage, Tier2]             — parallel; both read CompositionIR
+     * Level 2: [CameraArcStage, CameraValidation]   — parallel; both read CameraIR
+     * Level 3: [FreezeStage]                        — seals TemporalGraph as immutable
+     * Level 4: [Tier3]                              — reads frozen TemporalGraph → PromptIR
+     * Level 5: [BackendStage]                       — PromptIR → compiled string
+     */
     public static function standard(): self
     {
         return new self([
             new ShotValidationStage([new ShotGoalIRValidator()]),
             new Tier1Stage(new SimpleCompositionPass(CompositionPassConfig::defaults())),
+            new MotionBeatStage(new RuleBasedMotionPlanner()),
             new Tier2Stage(new SimpleCameraPass(CameraPassConfig::defaults())),
+            new CameraArcStage(),
             new CameraValidationStage([new CameraIRValidator()]),
-            new Tier3Stage(new KlingPromptPlanningPass()),
-            new BackendStage(),
+            new FreezeStage(),
+            new Tier3Stage(PlannerResolver::withDefaults()),
+            new BackendStage(BackendEmitter::withDefaults()),
         ]);
     }
 

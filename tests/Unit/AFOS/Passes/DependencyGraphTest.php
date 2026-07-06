@@ -29,10 +29,10 @@ class DependencyGraphTest extends TestCase
         $this->assertFalse($this->standardGraph()->hasCycle());
     }
 
-    public function test_standard_pipeline_topological_order_has_six_stages(): void
+    public function test_standard_pipeline_topological_order_has_nine_stages(): void
     {
         $order = $this->standardGraph()->topologicalOrder();
-        $this->assertCount(6, $order);
+        $this->assertCount(9, $order);
     }
 
     public function test_shot_validation_is_entry_point(): void

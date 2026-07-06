@@ -4,6 +4,7 @@ namespace App\Services\AI\AFOS\Passes\Stages;
 
 use App\Services\AI\AFOS\Compiler\Validators\CameraStageValidator;
 use App\Services\AI\AFOS\Ir\CameraIR;
+use App\Services\AI\AFOS\Passes\Pipeline\CompilerPhase;
 use App\Services\AI\AFOS\Passes\Pipeline\CompilerStage;
 use App\Services\AI\AFOS\Passes\Pipeline\PipelineState;
 use App\Services\AI\AFOS\Passes\Pipeline\StageCapability;
@@ -50,6 +51,7 @@ final class CameraValidationStage implements CompilerStage
             cacheable:      false,
             parallelizable: false,
             category:       'validation',
+            phase:          CompilerPhase::VALIDATE,
             capabilities:   [StageCapability::PURE, StageCapability::DETERMINISTIC, StageCapability::READ_ONLY, StageCapability::PARALLEL_SAFE],
         );
     }

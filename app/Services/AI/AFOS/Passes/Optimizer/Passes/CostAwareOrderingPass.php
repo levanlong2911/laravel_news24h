@@ -2,6 +2,7 @@
 
 namespace App\Services\AI\AFOS\Passes\Optimizer\Passes;
 
+use App\Services\AI\AFOS\Passes\Optimizer\DependencyLevelBuilder;
 use App\Services\AI\AFOS\Passes\Optimizer\OptimizationContext;
 use App\Services\AI\AFOS\Passes\Optimizer\OptimizationPass;
 use App\Services\AI\AFOS\Passes\Pipeline\CompilerStage;
@@ -37,33 +38,8 @@ final class CostAwareOrderingPass implements OptimizationPass
             return $stages;
         }
 
-        // Build producedBy: write_fqcn → stage array-index
-        $producedBy = [];
-        foreach ($stages as $i => $stage) {
-            foreach ($stage->metadata()->writes as $write) {
-                $producedBy[$write] = $i;
-            }
-        }
+        $groups = DependencyLevelBuilder::groupByLevel($stages);
 
-        // DP: level[i] = max(level[dep] + 1) for all deps of stage i
-        $stageLevels = array_fill(0, count($stages), 0);
-        foreach ($stages as $i => $stage) {
-            foreach ($stage->metadata()->reads as $read) {
-                if (isset($producedBy[$read])) {
-                    $depLevel       = $stageLevels[$producedBy[$read]];
-                    $stageLevels[$i] = max($stageLevels[$i], $depLevel + 1);
-                }
-            }
-        }
-
-        // Group by level
-        $groups = [];
-        foreach ($stages as $i => $stage) {
-            $groups[$stageLevels[$i]][] = $stage;
-        }
-        ksort($groups);
-
-        // Sort within each level: cheapest estimatedMs first
         foreach ($groups as &$group) {
             usort(
                 $group,

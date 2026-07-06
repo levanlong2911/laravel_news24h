@@ -6,6 +6,7 @@ use App\Services\AI\AFOS\Creative\CinematographyProfile;
 use App\Services\AI\AFOS\Creative\DirectorProfile;
 use App\Services\AI\AFOS\Ir\CompositionIR;
 use App\Services\AI\AFOS\Ir\ShotGoalIR;
+use App\Services\AI\AFOS\Passes\Pipeline\CompilerPhase;
 use App\Services\AI\AFOS\Passes\Pipeline\CompilerStage;
 use App\Services\AI\AFOS\Passes\Pipeline\PipelineState;
 use App\Services\AI\AFOS\Passes\Pipeline\StageCapability;
@@ -72,6 +73,7 @@ final class Tier1Stage implements CompilerStage
             parallelizable: false,
             category:       'transform',
             capabilities:   [StageCapability::PURE, StageCapability::CACHEABLE, StageCapability::DETERMINISTIC, StageCapability::CPU_INTENSIVE, StageCapability::WRITE_IR],
+            phase:          CompilerPhase::LOWER,
         );
     }
 }

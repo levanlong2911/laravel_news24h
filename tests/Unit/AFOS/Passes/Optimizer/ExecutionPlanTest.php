@@ -22,14 +22,16 @@ class ExecutionPlanTest extends TestCase
 
     // ── Level structure ───────────────────────────────────────────────────────
 
-    public function test_standard_pipeline_produces_four_levels(): void
+    public function test_standard_pipeline_produces_six_levels(): void
     {
         $plan = $this->optimizer->optimize($this->def, OptimizationContext::full());
         // Level 0: [ShotValidation, Tier1]
-        // Level 1: [Tier2]
-        // Level 2: [CameraValidation, Tier3]
-        // Level 3: [Backend]
-        $this->assertSame(4, $plan->levelCount());
+        // Level 1: [MotionBeat, Tier2]
+        // Level 2: [CameraArc, CameraValidation]
+        // Level 3: [FreezeStage]
+        // Level 4: [Tier3]
+        // Level 5: [Backend]
+        $this->assertSame(6, $plan->levelCount());
     }
 
     public function test_level_zero_contains_shot_validation_and_tier1(): void
@@ -41,42 +43,58 @@ class ExecutionPlanTest extends TestCase
         $this->assertCount(2, $names);
     }
 
-    public function test_level_one_contains_tier2(): void
+    public function test_level_one_contains_motion_beat_and_tier2(): void
     {
         $plan = $this->optimizer->optimize($this->def, OptimizationContext::full());
         $names = $plan->levels[1]->stageNames();
-        $this->assertSame(['Tier2Stage'], $names);
-    }
-
-    public function test_level_two_contains_camera_validation_and_tier3(): void
-    {
-        $plan = $this->optimizer->optimize($this->def, OptimizationContext::full());
-        $names = $plan->levels[2]->stageNames();
-        $this->assertContains('CameraValidationStage', $names);
-        $this->assertContains('Tier3Stage', $names);
+        $this->assertContains('MotionBeatStage', $names);
+        $this->assertContains('Tier2Stage', $names);
         $this->assertCount(2, $names);
     }
 
-    public function test_level_three_contains_backend(): void
+    public function test_level_two_contains_camera_arc_and_camera_validation(): void
+    {
+        $plan = $this->optimizer->optimize($this->def, OptimizationContext::full());
+        $names = $plan->levels[2]->stageNames();
+        $this->assertContains('CameraArcStage', $names);
+        $this->assertContains('CameraValidationStage', $names);
+        $this->assertCount(2, $names);
+    }
+
+    public function test_level_three_contains_freeze_stage(): void
     {
         $plan = $this->optimizer->optimize($this->def, OptimizationContext::full());
         $names = $plan->levels[3]->stageNames();
+        $this->assertSame(['FreezeStage'], $names);
+    }
+
+    public function test_level_four_contains_tier3(): void
+    {
+        $plan = $this->optimizer->optimize($this->def, OptimizationContext::full());
+        $names = $plan->levels[4]->stageNames();
+        $this->assertSame(['Tier3Stage'], $names);
+    }
+
+    public function test_level_five_contains_backend(): void
+    {
+        $plan = $this->optimizer->optimize($this->def, OptimizationContext::full());
+        $names = $plan->levels[5]->stageNames();
         $this->assertSame(['BackendStage'], $names);
     }
 
     // ── flatStages() ──────────────────────────────────────────────────────────
 
-    public function test_flat_stages_returns_six_in_full_mode(): void
+    public function test_flat_stages_returns_nine_in_full_mode(): void
     {
         $plan = $this->optimizer->optimize($this->def, OptimizationContext::full());
-        $this->assertCount(6, $plan->flatStages());
+        $this->assertCount(9, $plan->flatStages());
     }
 
-    public function test_flat_stages_returns_four_in_draft_mode(): void
+    public function test_flat_stages_returns_seven_in_draft_mode(): void
     {
         $plan = $this->optimizer->optimize($this->def, OptimizationContext::draft());
         // ShotValidation and CameraValidation removed
-        $this->assertCount(4, $plan->flatStages());
+        $this->assertCount(7, $plan->flatStages());
     }
 
     public function test_flat_stages_order_is_topologically_valid(): void
@@ -103,7 +121,7 @@ class ExecutionPlanTest extends TestCase
         $level0 = $plan->levels[0]->stageNames();
         $this->assertSame('ShotValidationStage', $level0[0], 'Cheapest stage must be first in level 0');
 
-        // Level 2: CameraValidation(0.3ms) must come before Tier3(12ms)
+        // Level 2: CameraValidation(0.3ms) must come before CameraArc(1.0ms)
         $level2 = $plan->levels[2]->stageNames();
         $this->assertSame('CameraValidationStage', $level2[0], 'Cheapest stage must be first in level 2');
     }

@@ -56,7 +56,7 @@ class PipelineValidationTest extends TestCase
                 \App\Services\AI\AFOS\Passes\Config\CompositionPassConfig::defaults()
             )),
             // Skip Tier2 — Tier3 reads CameraIR which was never produced
-            new Tier3Stage(new \App\Services\AI\AFOS\Passes\Prompt\KlingPromptPlanningPass()),
+            new Tier3Stage(),
             new BackendStage(),
         );
 
@@ -130,7 +130,7 @@ class PipelineValidationTest extends TestCase
             $this->assertIsBool($meta->deterministic,  "{$meta->name}: deterministic must be bool");
             $this->assertIsBool($meta->cacheable,       "{$meta->name}: cacheable must be bool");
             $this->assertIsBool($meta->parallelizable,  "{$meta->name}: parallelizable must be bool");
-            $this->assertContains($meta->category, ['validation', 'transform', 'serialization'],
+            $this->assertContains($meta->category, ['validation', 'transform', 'serialization', 'barrier'],
                 "{$meta->name}: category must be one of the defined values");
             $this->assertNotEmpty($meta->version, "{$meta->name}: version must not be empty");
         }

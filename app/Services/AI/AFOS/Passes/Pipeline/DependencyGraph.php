@@ -61,6 +61,9 @@ final class DependencyGraph
                 }
 
                 foreach ($producedBy[$fqcn] as $producer) {
+                    if ($producer === $meta->name) {
+                        continue; // skip self-edges (transform stage reads and writes same IR)
+                    }
                     if (!in_array($producer, $upstream[$meta->name], strict: true)) {
                         $upstream[$meta->name][]  = $producer;
                         $downstream[$producer][]  = $meta->name;

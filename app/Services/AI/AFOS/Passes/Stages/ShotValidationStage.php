@@ -4,6 +4,7 @@ namespace App\Services\AI\AFOS\Passes\Stages;
 
 use App\Services\AI\AFOS\Compiler\Validators\ShotGoalStageValidator;
 use App\Services\AI\AFOS\Ir\ShotGoalIR;
+use App\Services\AI\AFOS\Passes\Pipeline\CompilerPhase;
 use App\Services\AI\AFOS\Passes\Pipeline\CompilerStage;
 use App\Services\AI\AFOS\Passes\Pipeline\PipelineState;
 use App\Services\AI\AFOS\Passes\Pipeline\StageCapability;
@@ -55,6 +56,7 @@ final class ShotValidationStage implements CompilerStage
             cacheable:      false,
             parallelizable: false,
             category:       'validation',
+            phase:          CompilerPhase::VALIDATE,
             capabilities:   [StageCapability::PURE, StageCapability::DETERMINISTIC, StageCapability::READ_ONLY, StageCapability::PARALLEL_SAFE],
         );
     }

@@ -5,8 +5,11 @@ namespace Tests\Unit\AFOS\Passes;
 use App\Services\AI\AFOS\Passes\Pipeline\PipelineDefinition;
 use App\Services\AI\AFOS\Passes\Pipeline\StageRegistry;
 use App\Services\AI\AFOS\Passes\Stages\BackendStage;
+use App\Services\AI\AFOS\Passes\Stages\CameraArcStage;
 use App\Services\AI\AFOS\Passes\Stages\CameraValidationStage;
+use App\Services\AI\AFOS\Passes\Stages\MotionBeatStage;
 use App\Services\AI\AFOS\Passes\Stages\ShotValidationStage;
+use App\Services\AI\AFOS\Passes\Stages\FreezeStage;
 use App\Services\AI\AFOS\Passes\Stages\Tier1Stage;
 use App\Services\AI\AFOS\Passes\Stages\Tier2Stage;
 use App\Services\AI\AFOS\Passes\Stages\Tier3Stage;
@@ -16,14 +19,17 @@ class StageRegistryTest extends TestCase
 {
     // ── defaults() ────────────────────────────────────────────────────────────
 
-    public function test_defaults_registers_all_six_stages(): void
+    public function test_defaults_registers_all_nine_stages(): void
     {
         $registry = StageRegistry::defaults();
 
         $this->assertTrue($registry->has(ShotValidationStage::class));
         $this->assertTrue($registry->has(Tier1Stage::class));
+        $this->assertTrue($registry->has(MotionBeatStage::class));
         $this->assertTrue($registry->has(Tier2Stage::class));
+        $this->assertTrue($registry->has(CameraArcStage::class));
         $this->assertTrue($registry->has(CameraValidationStage::class));
+        $this->assertTrue($registry->has(FreezeStage::class));
         $this->assertTrue($registry->has(Tier3Stage::class));
         $this->assertTrue($registry->has(BackendStage::class));
     }
@@ -31,7 +37,7 @@ class StageRegistryTest extends TestCase
     public function test_defaults_registered_classes_count(): void
     {
         $classes = StageRegistry::defaults()->registeredClasses();
-        $this->assertCount(6, $classes);
+        $this->assertCount(9, $classes);
     }
 
     // ── resolve() ─────────────────────────────────────────────────────────────
@@ -118,10 +124,10 @@ class StageRegistryTest extends TestCase
 
     // ── fromRegistry() on PipelineDefinition ──────────────────────────────────
 
-    public function test_from_registry_produces_six_stage_pipeline(): void
+    public function test_from_registry_produces_nine_stage_pipeline(): void
     {
         $def = PipelineDefinition::fromRegistry(StageRegistry::defaults());
-        $this->assertCount(6, $def->stages());
+        $this->assertCount(9, $def->stages());
     }
 
     public function test_from_registry_stage_order_matches_standard(): void
@@ -195,7 +201,7 @@ class StageRegistryTest extends TestCase
         );
 
         $this->assertNotEmpty($snap->artifacts->compiledPrompt);
-        $this->assertCount(6, $snap->profiles);
+        $this->assertCount(9, $snap->profiles);
     }
 
     // ── Auto-resolve (zero-arg stage) ─────────────────────────────────────────

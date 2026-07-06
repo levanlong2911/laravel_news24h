@@ -166,8 +166,8 @@ class StageCostTest extends TestCase
         $def  = PipelineDefinition::standard();
         $cost = $def->estimatedCost();
 
-        // ShotValidation(0.5) + Tier1(8) + Tier2(6) + CameraValidation(0.3) + Tier3(12) + Backend(2)
-        $this->assertEqualsWithDelta(28.8, $cost->estimatedMs, 0.001);
+        // ShotValidation(0.5) + Tier1(8) + MotionBeat(1.5) + Tier2(6) + CameraArc(1.0) + CameraValidation(0.3) + FreezeStage(0.05) + Tier3(12) + Backend(2)
+        $this->assertEqualsWithDelta(31.35, $cost->estimatedMs, 0.001);
         $this->assertSame(0, $cost->estimatedTokens);
         $this->assertSame(0.0, $cost->estimatedCostUSD);
     }
@@ -193,7 +193,7 @@ class StageCostTest extends TestCase
         $snap    = AfosPassManager::defaults()->compileWithSnapshot(...$this->inputs());
         $metrics = $snap->metrics();
 
-        $this->assertEqualsWithDelta(28.8, $metrics->estimatedMs, 0.001);
+        $this->assertEqualsWithDelta(31.35, $metrics->estimatedMs, 0.001);
         $this->assertSame(0, $metrics->estimatedTokens);
         $this->assertSame(0.0, $metrics->estimatedCostUSD);
     }
@@ -206,7 +206,7 @@ class StageCostTest extends TestCase
         $this->assertArrayHasKey('estimated_ms', $arr);
         $this->assertArrayHasKey('estimated_tokens', $arr);
         $this->assertArrayHasKey('estimated_cost_usd', $arr);
-        $this->assertEqualsWithDelta(28.8, $arr['estimated_ms'], 0.001);
+        $this->assertEqualsWithDelta(31.35, $arr['estimated_ms'], 0.001);
     }
 
     public function test_snapshot_estimated_cost_not_in_to_array(): void

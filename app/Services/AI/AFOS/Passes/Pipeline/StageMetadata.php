@@ -21,25 +21,27 @@ namespace App\Services\AI\AFOS\Passes\Pipeline;
 final class StageMetadata
 {
     public function __construct(
-        public readonly string    $name,
+        public readonly string        $name,
         /** @var string[] FQCN or primitive key, e.g. ShotGoalIR::class or 'backendId' */
-        public readonly array     $reads,
+        public readonly array         $reads,
         /** @var string[] FQCN or primitive key this stage writes to PipelineState */
-        public readonly array     $writes,
+        public readonly array         $writes,
         /** Structured cost estimate: StageCost::cpu(ms) or StageCost::model(ms, tokens, usd). */
-        public readonly StageCost $cost,
-        public readonly string $description   = '',
-        public readonly string $version       = '1.0',
+        public readonly StageCost     $cost,
+        public readonly string        $description   = '',
+        public readonly string        $version       = '1.0',
         /** True when same input always produces identical output (enables caching). */
-        public readonly bool   $deterministic  = true,
+        public readonly bool          $deterministic  = true,
         /** Whether the stage output can be memoised given the same input hash. */
-        public readonly bool   $cacheable      = false,
+        public readonly bool          $cacheable      = false,
         /** True when the stage has no dependencies on previous stage side-effects. */
-        public readonly bool   $parallelizable = false,
-        /** Broad category: 'validation' | 'transform' | 'serialization' */
-        public readonly string $category       = 'transform',
+        public readonly bool          $parallelizable = false,
+        /** Broad category: 'validation' | 'transform' | 'serialization' | 'barrier' */
+        public readonly string        $category       = 'transform',
         /** @var StageCapability[] Fine-grained capability set for scheduler / optimizer. */
-        public readonly array  $capabilities   = [],
+        public readonly array         $capabilities   = [],
+        /** Compiler lifecycle phase: BUILD | FREEZE | OPTIMIZE | LOWER | EMIT | VALIDATE */
+        public readonly CompilerPhase $phase          = CompilerPhase::BUILD,
     ) {}
 
     public function hasCapability(StageCapability $cap): bool
@@ -51,6 +53,7 @@ final class StageMetadata
     {
         return array_filter([
             'name'           => $this->name,
+            'phase'          => $this->phase->value,
             'reads'          => array_map($this->shortName(...), $this->reads),
             'writes'         => array_map($this->shortName(...), $this->writes),
             'cost'           => $this->cost->toArray(),

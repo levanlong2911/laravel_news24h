@@ -22,6 +22,9 @@ use App\Services\AI\AFOS\Passes\Events\PipelineEventBus;
 use App\Services\AI\AFOS\Passes\Optimizer\ExecutionPlan;
 use App\Services\AI\AFOS\Passes\Optimizer\OptimizationContext;
 use App\Services\AI\AFOS\Passes\Optimizer\PassOptimizer;
+use App\Services\AI\AFOS\Passes\Scheduler\Scheduler;
+use App\Services\AI\AFOS\Passes\Pipeline\PipelineInputs;
+use App\Services\AI\AFOS\Passes\Scheduler\SequentialScheduler;
 use App\Services\AI\AFOS\Passes\Events\StageFailed;
 use App\Services\AI\AFOS\Passes\Events\StageFinished;
 use App\Services\AI\AFOS\Passes\Events\StageStarted;
@@ -62,6 +65,7 @@ final class AfosPassManager
     private ?CompilerCache     $cache            = null;
     private ?PassOptimizer     $optimizer        = null;
     private OptimizationContext $optimizerContext;
+    private ?Scheduler         $scheduler        = null;
 
     /** @param CompilerStage[] $stages */
     public function __construct(private array $stages)
@@ -99,6 +103,20 @@ final class AfosPassManager
         $clone                  = clone $this;
         $clone->optimizer       = $optimizer;
         $clone->optimizerContext = $context ?? OptimizationContext::full();
+        return $clone;
+    }
+
+    /**
+     * Attach a Scheduler; returns an immutable clone.
+     *
+     * When a scheduler is set AND an optimizer is attached, compileWithSnapshot()
+     * delegates stage execution to the scheduler instead of the manual profiling loop.
+     * Use SequentialScheduler for debugging, ParallelScheduler for production.
+     */
+    public function withScheduler(Scheduler $scheduler): self
+    {
+        $clone            = clone $this;
+        $clone->scheduler = $scheduler;
         return $clone;
     }
 
@@ -172,9 +190,13 @@ final class AfosPassManager
 
     public function compileFromContext(CompilerContext $ctx): PromptIRSnapshot
     {
-        return $this->compileWithSnapshot(
-            $ctx->shot, $ctx->director, $ctx->dp, $ctx->intent, $ctx->trace, $ctx->diagnostics
-        );
+        // CompilerContext is the public API entry point (caller-facing, owns diagnostics pre-init).
+        // PipelineInputs is the compiler-internal form (carries backendId, no diagnostics).
+        // Boundary: CompilerContext → PipelineInputs → PipelineState.
+        return $this->runPipeline(new PipelineState(
+            inputs: new PipelineInputs($ctx->shot, $ctx->director, $ctx->dp, $ctx->intent, 'kling', $ctx->trace),
+            bag:    $ctx->diagnostics,
+        ));
     }
 
     /**
@@ -192,27 +214,37 @@ final class AfosPassManager
         ?TraceCollector       $trace       = null,
         ?DiagnosticBag        $diagnostics = null,
     ): PromptIRSnapshot {
-        $state = new PipelineState(
-            shot:      $shot,
-            director:  $director,
-            dp:        $dp,
-            intent:    $intent,
-            bag:       $diagnostics ?? new DiagnosticBag(),
-            backendId: 'kling',
-            trace:     $trace,
-        );
+        return $this->runPipeline(new PipelineState(
+            inputs: new PipelineInputs($shot, $director, $dp, $intent, 'kling', $trace),
+            bag:    $diagnostics ?? new DiagnosticBag(),
+        ));
+    }
+
+    /**
+     * Core execution engine — runs the optimizer/scheduler loop and returns a snapshot.
+     *
+     * Both compileWithSnapshot() and compileFromContext() delegate here after constructing
+     * their respective PipelineState. This is the single point of pipeline execution.
+     */
+    private function runPipeline(PipelineState $state): PromptIRSnapshot
+    {
 
         // Run optimizer to get the execution plan (may remove or reorder stages)
-        $plan         = null;
-        $stagesToRun  = $this->stages;
+        $plan        = null;
+        $stagesToRun = $this->stages;
         if ($this->optimizer !== null) {
-            $def          = PipelineDefinition::fromStages(...$this->stages);
-            $plan         = $this->optimizer->optimize($def, $this->optimizerContext);
-            $stagesToRun  = $plan->flatStages();
+            $def         = PipelineDefinition::fromStages(...$this->stages);
+            $plan        = $this->optimizer->optimize($def, $this->optimizerContext);
+            $stagesToRun = $plan->flatStages();
         }
 
         $profiles = [];
 
+        // Scheduler path: delegate level-by-level execution when both optimizer and
+        // scheduler are present. Skips per-stage profiling (metrics come from plan).
+        if ($plan !== null && $this->scheduler !== null) {
+            $state = $this->scheduler->execute($plan, $state);
+        } else {
         foreach ($stagesToRun as $stage) {
             $errBefore  = count($state->bag->errors());
             $warnBefore = count($state->bag->warnings());
@@ -291,6 +323,7 @@ final class AfosPassManager
 
             $profiles[] = $profile;
         }
+        } // end else (profiling loop)
 
         $estimatedCost = $plan?->estimatedCost ?? $this->pipelineEstimatedCost();
 

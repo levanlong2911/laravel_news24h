@@ -8,6 +8,7 @@ use App\Services\AI\AFOS\Creative\DirectorProfile;
 use App\Services\AI\AFOS\Ir\CameraIR;
 use App\Services\AI\AFOS\Ir\CompositionIR;
 use App\Services\AI\AFOS\Passes\CompositionToCameraPass;
+use App\Services\AI\AFOS\Passes\Pipeline\CompilerPhase;
 use App\Services\AI\AFOS\Passes\Pipeline\CompilerStage;
 use App\Services\AI\AFOS\Passes\Pipeline\PipelineState;
 use App\Services\AI\AFOS\Passes\Pipeline\StageCapability;
@@ -82,6 +83,7 @@ final class Tier2Stage implements CompilerStage
             parallelizable: false,
             category:       'transform',
             capabilities:   [StageCapability::PURE, StageCapability::CACHEABLE, StageCapability::DETERMINISTIC, StageCapability::CPU_INTENSIVE, StageCapability::WRITE_IR],
+            phase:          CompilerPhase::LOWER,
         );
     }
 }

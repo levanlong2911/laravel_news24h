@@ -33,8 +33,8 @@ class EventBusTest extends TestCase
         $started  = array_filter($events, fn($e) => $e instanceof StageStarted);
         $finished = array_filter($events, fn($e) => $e instanceof StageFinished);
 
-        $this->assertCount(6, $started,  'One StageStarted per stage');
-        $this->assertCount(6, $finished, 'One StageFinished per stage');
+        $this->assertCount(9, $started,  'One StageStarted per stage');
+        $this->assertCount(9, $finished, 'One StageFinished per stage');
     }
 
     public function test_started_events_carry_metadata(): void

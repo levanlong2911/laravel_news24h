@@ -1,6 +1,16 @@
-[MOTION: high intensity, 2.5s]
-Subtle organic handheld movement, tracking shot following the subject using a 35mm wide lens.
-A custom built scrambler motorcycle powerfully accelerating an open road.
-An open outdoor setting with natural ambient light, organic surroundings, and authentic environmental texture.
-Emotional tone: Raw power. Unbridled force. Visceral energy.
-[QUALITY: high]
+SCENE
+dramatic high-contrast rim light, explosive athletic intensity.
+
+CAMERA
+Camera tracks alongside the moving subject, with intense urgent handheld shake and motion, natural wide perspective.
+
+ACTION
+[0–1s] Camera locks on subject, ready for lateral tracking; hits subject with urgent shaky handheld energy.
+[1–4s] A custom built scrambler motorcycle powerfully accelerating an open road.
+[4–5s] Crowd erupts from seats; flags wave; stadium energy surges through the frame; camera motion resolves.
+
+ENVIRONMENT
+Atmospheric haze drifts through dramatic backlight. Deep shadows contain subtle hidden movement.
+
+STYLE
+Highly detailed, cinematic quality, sharp focus. Natural wide perspective.

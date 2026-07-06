@@ -8,10 +8,14 @@ use App\Services\AI\AFOS\Passes\Camera\SimpleCameraPass;
 use App\Services\AI\AFOS\Passes\Composition\SimpleCompositionPass;
 use App\Services\AI\AFOS\Passes\Config\CameraPassConfig;
 use App\Services\AI\AFOS\Passes\Config\CompositionPassConfig;
-use App\Services\AI\AFOS\Passes\Prompt\KlingPromptPlanningPass;
+use App\Services\AI\AFOS\Passes\Prompt\PlannerResolver;
 use App\Services\AI\AFOS\Passes\Stages\BackendStage;
+use App\Services\AI\AFOS\Passes\Stages\CameraArcStage;
+use App\Services\AI\AFOS\Ir\Temporal\Motion\RuleBasedMotionPlanner;
 use App\Services\AI\AFOS\Passes\Stages\CameraValidationStage;
+use App\Services\AI\AFOS\Passes\Stages\MotionBeatStage;
 use App\Services\AI\AFOS\Passes\Stages\ShotValidationStage;
+use App\Services\AI\AFOS\Passes\Stages\FreezeStage;
 use App\Services\AI\AFOS\Passes\Stages\Tier1Stage;
 use App\Services\AI\AFOS\Passes\Stages\Tier2Stage;
 use App\Services\AI\AFOS\Passes\Stages\Tier3Stage;
@@ -63,16 +67,28 @@ final class StageRegistry
                 fn() => new Tier1Stage(new SimpleCompositionPass(CompositionPassConfig::defaults()))
             )
             ->register(
+                MotionBeatStage::class,
+                fn() => new MotionBeatStage(new RuleBasedMotionPlanner())
+            )
+            ->register(
                 Tier2Stage::class,
                 fn() => new Tier2Stage(new SimpleCameraPass(CameraPassConfig::defaults()))
+            )
+            ->register(
+                CameraArcStage::class,
+                fn() => new CameraArcStage()
             )
             ->register(
                 CameraValidationStage::class,
                 fn() => new CameraValidationStage([new CameraIRValidator()])
             )
             ->register(
+                FreezeStage::class,
+                fn() => new FreezeStage()
+            )
+            ->register(
                 Tier3Stage::class,
-                fn() => new Tier3Stage(new KlingPromptPlanningPass())
+                fn() => new Tier3Stage(PlannerResolver::withDefaults())
             )
             ->register(
                 BackendStage::class,

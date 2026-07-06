@@ -7,6 +7,7 @@ use App\Services\AI\AFOS\Passes\Optimizer\Passes\DeadStageEliminationPass;
 use App\Services\AI\AFOS\Passes\Pipeline\CompilerStage;
 use App\Services\AI\AFOS\Passes\Pipeline\PipelineDefinition;
 use App\Services\AI\AFOS\Passes\Pipeline\StageCost;
+use App\Services\AI\AFOS\Passes\Optimizer\DependencyLevelBuilder;
 
 /**
  * PassOptimizer — applies a sequence of OptimizationPass transformations to a pipeline.
@@ -84,52 +85,13 @@ final class PassOptimizer
 
     // ── Level computation ─────────────────────────────────────────────────────
 
-    /**
-     * Assign each stage to a topological level via DP.
-     *
-     * level[i] = max(level[dep] + 1) for all stages dep that produce something
-     * stage i reads. Stages with no IR dependencies land on level 0.
-     *
-     * @param  CompilerStage[] $stages Must be in valid topological order.
-     * @return ExecutionLevel[]
-     */
+    /** @return ExecutionLevel[] */
     private function computeLevels(array $stages): array
     {
-        if (empty($stages)) {
-            return [];
-        }
-
-        // producedBy[fqcn] = index into $stages
-        $producedBy = [];
-        foreach ($stages as $i => $stage) {
-            foreach ($stage->metadata()->writes as $write) {
-                $producedBy[$write] = $i;
-            }
-        }
-
-        // DP: stages must be in topological order for this to be correct
-        $stageLevels = array_fill(0, count($stages), 0);
-        foreach ($stages as $i => $stage) {
-            foreach ($stage->metadata()->reads as $read) {
-                if (isset($producedBy[$read])) {
-                    $depLevel        = $stageLevels[$producedBy[$read]];
-                    $stageLevels[$i] = max($stageLevels[$i], $depLevel + 1);
-                }
-            }
-        }
-
-        // Group by level, preserving per-level order from the pass pipeline
-        $groups = [];
-        foreach ($stages as $i => $stage) {
-            $groups[$stageLevels[$i]][] = $stage;
-        }
-        ksort($groups);
-
         $levels = [];
-        foreach ($groups as $idx => $stagesAtLevel) {
+        foreach (DependencyLevelBuilder::groupByLevel($stages) as $idx => $stagesAtLevel) {
             $levels[] = new ExecutionLevel($idx, $stagesAtLevel);
         }
-
         return $levels;
     }
 }

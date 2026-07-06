@@ -20,11 +20,11 @@ class DeadStageEliminationTest extends TestCase
 
     // ── Full mode ─────────────────────────────────────────────────────────────
 
-    public function test_full_mode_keeps_all_six_stages(): void
+    public function test_full_mode_keeps_all_nine_stages(): void
     {
         $stages = PipelineDefinition::standard()->stages();
         $result = $this->pass->optimize($stages, OptimizationContext::full());
-        $this->assertCount(6, $result);
+        $this->assertCount(9, $result);
     }
 
     public function test_full_mode_preserves_stage_order(): void
@@ -34,7 +34,11 @@ class DeadStageEliminationTest extends TestCase
         $names  = array_map(fn($s) => $s->name(), $result);
 
         $this->assertSame(
-            ['ShotValidationStage', 'Tier1Stage', 'Tier2Stage', 'CameraValidationStage', 'Tier3Stage', 'BackendStage'],
+            [
+                'ShotValidationStage', 'Tier1Stage', 'MotionBeatStage', 'Tier2Stage',
+                'CameraArcStage', 'CameraValidationStage', 'FreezeStage',
+                'Tier3Stage', 'BackendStage',
+            ],
             $names
         );
     }
@@ -71,11 +75,11 @@ class DeadStageEliminationTest extends TestCase
         $this->assertContains('BackendStage', $names);
     }
 
-    public function test_draft_mode_leaves_four_stages(): void
+    public function test_draft_mode_leaves_seven_stages(): void
     {
         $stages = PipelineDefinition::standard()->stages();
         $result = $this->pass->optimize($stages, OptimizationContext::draft());
-        $this->assertCount(4, $result);
+        $this->assertCount(7, $result);
     }
 
     // ── Custom required outputs ───────────────────────────────────────────────
@@ -166,7 +170,7 @@ class DeadStageEliminationTest extends TestCase
 
         $snap = $manager->compileWithSnapshot(...$this->inputs());
 
-        $this->assertCount(4, $snap->profiles, 'Draft mode skips 2 validation stages');
+        $this->assertCount(7, $snap->profiles, 'Draft mode skips 2 validation stages');
     }
 
     public function test_draft_mode_metrics_shows_two_skipped_stages(): void
@@ -178,8 +182,8 @@ class DeadStageEliminationTest extends TestCase
         $metrics = $snap->metrics();
 
         $this->assertSame(2, $metrics->skippedStages);
-        $this->assertSame(4, $metrics->executedStages);
-        $this->assertSame(6, $metrics->totalStages);
+        $this->assertSame(7, $metrics->executedStages);
+        $this->assertSame(9, $metrics->totalStages);
     }
 
     public function test_full_mode_metrics_shows_zero_skipped_stages(): void
@@ -191,7 +195,7 @@ class DeadStageEliminationTest extends TestCase
         $metrics = $snap->metrics();
 
         $this->assertSame(0, $metrics->skippedStages);
-        $this->assertSame(6, $metrics->executedStages);
+        $this->assertSame(9, $metrics->executedStages);
     }
 
     public function test_snapshot_has_execution_plan_when_optimizer_attached(): void

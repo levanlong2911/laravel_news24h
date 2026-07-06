@@ -7,6 +7,7 @@ use App\Services\AI\AFOS\Passes\AfosPassManager;
 use App\Services\AI\AFOS\Passes\Cache\InMemoryCompilerCache;
 use App\Services\AI\AFOS\Passes\Pipeline\CanonicalSerializer;
 use App\Services\AI\AFOS\Passes\Pipeline\PipelineDefinition;
+use App\Services\AI\AFOS\Passes\Pipeline\PipelineInputs;
 use App\Services\AI\AFOS\Passes\Pipeline\PipelineState;
 use App\Services\AI\AFOS\Passes\Pipeline\StageFingerprint;
 use PHPUnit\Framework\TestCase;
@@ -163,7 +164,7 @@ class CacheManagerTest extends TestCase
 
     public function test_cache_skips_only_cacheable_stages(): void
     {
-        // Tier1, Tier2, Tier3, Backend = 4 CACHEABLE stages
+        // Tier1, MotionBeat, Tier2, CameraArc, TemporalAssembly, Tier3, Backend = 7 CACHEABLE stages
         // ShotValidation, CameraValidation = NOT CACHEABLE (always run)
         $cache   = new InMemoryCompilerCache();
         $manager = AfosPassManager::defaults()->withCache($cache);
@@ -173,8 +174,8 @@ class CacheManagerTest extends TestCase
         $manager->compileWithSnapshot(...$inputs);  // warm run
 
         $stats = $cache->stats();
-        $this->assertSame(4, $stats->hits, '4 CACHEABLE stages should hit on second compile');
-        $this->assertSame(4, $stats->misses, '4 CACHEABLE stages missed on first compile');
+        $this->assertSame(7, $stats->hits, '7 CACHEABLE stages should hit on second compile');
+        $this->assertSame(7, $stats->misses, '7 CACHEABLE stages missed on first compile');
     }
 
     public function test_warm_compile_profiles_show_near_zero_duration_for_cache_hits(): void
@@ -241,7 +242,7 @@ class CacheManagerTest extends TestCase
     private function makeState(?DiagnosticBag $bag = null): PipelineState
     {
         [$shot, $dir, $dp, $intent] = $this->inputs();
-        return new PipelineState($shot, $dir, $dp, $intent, $bag ?? new DiagnosticBag());
+        return new PipelineState(new PipelineInputs($shot, $dir, $dp, $intent), $bag ?? new DiagnosticBag());
     }
 
     private function inputs(): array

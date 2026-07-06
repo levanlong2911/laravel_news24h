@@ -40,6 +40,10 @@ final class PromptIR
         public readonly string $emotionalClose,
         /** Technical quality tag + lens spec + tempo. */
         public readonly string $technicalSpec,
+        /** Time-coded action beats from MotionTrack (null when no TemporalPlan). */
+        public readonly ?string $actionSection  = null,
+        /** Time-coded camera arc from CameraTrack (null when no TemporalPlan). */
+        public readonly ?string $cameraSection  = null,
     ) {}
 
     public function toArray(): array

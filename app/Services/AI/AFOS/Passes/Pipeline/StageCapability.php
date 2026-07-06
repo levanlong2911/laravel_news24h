@@ -61,4 +61,13 @@ enum StageCapability: string
     case WRITE_IR        = 'write_ir';
     /** Writes to external storage or services (logs, DB, cache). */
     case WRITE_EXTERNAL  = 'write_external';
+
+    // ── Pipeline lifecycle ───────────────────────────────────────────────────
+
+    /**
+     * Transitions graph state rather than transforming its content.
+     * The optimizer must never reorder, skip, or parallelize a FREEZE stage —
+     * all writers must complete before it runs, all readers must run after.
+     */
+    case FREEZE          = 'freeze';
 }

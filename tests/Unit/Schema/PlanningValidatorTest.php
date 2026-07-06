@@ -298,6 +298,7 @@ class PlanningValidatorTest extends TestCase
             'planner_version'  => '1.0',
             'compiler_version' => '1.0',
             'workflow_version' => '1.0',
+            'narration_text'   => 'Motorcycle story.',
             'total_scenes'     => 1,
             'total_shots'      => 1,
             'total_duration_ms'=> 2000,

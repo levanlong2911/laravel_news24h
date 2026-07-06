@@ -6,6 +6,7 @@ use App\Services\AI\AFOS\Creative\Intent;
 use App\Services\AI\AFOS\Ir\CameraIR;
 use App\Services\AI\AFOS\Ir\CompositionIR;
 use App\Services\AI\AFOS\Ir\PromptIR;
+use App\Services\AI\AFOS\Ir\Temporal\TrackCollectionView;
 use App\Services\AI\AFOS\Types\CameraHeight;
 use App\Services\AI\AFOS\Types\CameraMovementType;
 use App\Services\AI\AFOS\Types\CompositionRule;
@@ -31,12 +32,26 @@ use App\Services\AI\AFOS\Types\NegativeSpaceDirection;
  * Vocabulary tables (entityToPhrase, framingToVerb, etc.) belong here, not in
  * the backend. The backend is a formatter, not a vocabulary holder.
  */
-final class KlingPromptPlanningPass
+final class KlingPromptPlanningPass implements PromptPlannerInterface
 {
+    public function backendId(): string { return 'kling'; }
     public function name(): string { return 'KlingPromptPlanningPass'; }
 
-    public function run(CameraIR $camera, CompositionIR $composition, Intent $intent): PromptIR
+    /**
+     * PromptPlannerInterface implementation — adapts PromptPlanningInput to the
+     * existing run() signature so the domain logic needs no changes.
+     */
+    public function plan(\App\Services\AI\AFOS\Ir\PromptPlanningInput $input): PromptIR
     {
+        return $this->run($input->camera, $input->composition, $input->intent, $input->temporal);
+    }
+
+    public function run(
+        CameraIR       $camera,
+        CompositionIR  $composition,
+        Intent         $intent,
+        ?TrackCollectionView $temporal = null,
+    ): PromptIR {
         return new PromptIR(
             shotId:            $composition->shotId,
             subjectClause:     $this->subjectClause($composition, $camera),
@@ -45,7 +60,60 @@ final class KlingPromptPlanningPass
             compositionClause: $this->compositionLanguage($composition),
             emotionalClose:    $this->emotionalClose($intent->primaryEmotion),
             technicalSpec:     'Cinematic, hyperrealistic, no text overlays. ' . $this->technicalSpec($camera, $intent),
+            actionSection:     $temporal !== null ? $this->renderActionSection($temporal) : null,
+            cameraSection:     $temporal !== null ? $this->renderCameraSection($temporal) : null,
         );
+    }
+
+    // ── Temporal sections ─────────────────────────────────────────────────────
+
+    private function renderActionSection(TrackCollectionView $plan): ?string
+    {
+        $track = $plan->motion();
+        if ($track === null || $track->eventCount() === 0) {
+            return null;
+        }
+        $lines = [];
+        foreach ($track->beats() as $beat) {
+            $start  = $this->fmtSec($beat->startSec);
+            $end    = $this->fmtSec($beat->endSec);
+            // Build from semantic fields only — $label is debug metadata, never used here.
+            $desc   = ucfirst($beat->actor) . ' ' . str_replace('_', ' ', $beat->channel)
+                    . ' ' . str_replace('_', ' ', $beat->verb);
+            $lines[] = "[{$start}–{$end}s] {$desc}.";
+        }
+        return implode("\n", $lines);
+    }
+
+    private function renderCameraSection(TrackCollectionView $plan): ?string
+    {
+        $track = $plan->camera();
+        if ($track === null || $track->eventCount() === 0) {
+            return null;
+        }
+        $lines = [];
+        foreach ($track->keyframes() as $kf) {
+            $at     = $this->fmtSec($kf->startSec);
+            $size   = ucfirst(str_replace('_', ' ', $kf->frameSize));
+            $action = str_replace('_', ' ', $kf->cameraAction);
+            $parts  = ["{$at}s: {$size}"];
+            if ($action !== 'static' && $action !== 'hold') {
+                $parts[] = $action;
+            }
+            if ($kf->lensMs !== null) {
+                $parts[] = "{$kf->lensMs}mm";
+            }
+            if ($kf->focusTarget !== null) {
+                $parts[] = 'focus ' . str_replace('_', ' ', $kf->focusTarget);
+            }
+            $lines[] = '[' . implode(', ', $parts) . ']';
+        }
+        return implode(' → ', $lines);
+    }
+
+    private function fmtSec(float $v): string
+    {
+        return $v === floor($v) ? (string)(int)$v : number_format($v, 1);
     }
 
     // ── SUBJECT ───────────────────────────────────────────────────────────────

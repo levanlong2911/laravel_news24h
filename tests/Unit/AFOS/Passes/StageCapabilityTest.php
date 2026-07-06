@@ -89,10 +89,12 @@ class StageCapabilityTest extends TestCase
         [$shot, $dir, $dp, $intent] = $inputs;
 
         $state1 = new \App\Services\AI\AFOS\Passes\Pipeline\PipelineState(
-            $shot, $dir, $dp, $intent, new \App\Services\AI\AFOS\Compiler\Diagnostics\DiagnosticBag()
+            new \App\Services\AI\AFOS\Passes\Pipeline\PipelineInputs($shot, $dir, $dp, $intent),
+            new \App\Services\AI\AFOS\Compiler\Diagnostics\DiagnosticBag(),
         );
         $state2 = new \App\Services\AI\AFOS\Passes\Pipeline\PipelineState(
-            $shot, $dir, $dp, $intent, new \App\Services\AI\AFOS\Compiler\Diagnostics\DiagnosticBag()
+            new \App\Services\AI\AFOS\Passes\Pipeline\PipelineInputs($shot, $dir, $dp, $intent),
+            new \App\Services\AI\AFOS\Compiler\Diagnostics\DiagnosticBag(),
         );
 
         $tier1Stage = PipelineDefinition::standard()->stages()[1]; // Tier1Stage
@@ -123,8 +125,12 @@ class StageCapabilityTest extends TestCase
             'narrativeFunction'  => 'establish',
         ]);
 
-        $state1 = new \App\Services\AI\AFOS\Passes\Pipeline\PipelineState($shot1, $dir, $dp, $intent, $bag);
-        $state2 = new \App\Services\AI\AFOS\Passes\Pipeline\PipelineState($shot2, $dir, $dp, $intent, $bag);
+        $state1 = new \App\Services\AI\AFOS\Passes\Pipeline\PipelineState(
+            new \App\Services\AI\AFOS\Passes\Pipeline\PipelineInputs($shot1, $dir, $dp, $intent), $bag,
+        );
+        $state2 = new \App\Services\AI\AFOS\Passes\Pipeline\PipelineState(
+            new \App\Services\AI\AFOS\Passes\Pipeline\PipelineInputs($shot2, $dir, $dp, $intent), $bag,
+        );
 
         $fp1 = StageFingerprint::of($tier1, $state1);
         $fp2 = StageFingerprint::of($tier1, $state2);
@@ -136,7 +142,8 @@ class StageCapabilityTest extends TestCase
     {
         [$shot, $dir, $dp, $intent] = $this->inputs();
         $state = new \App\Services\AI\AFOS\Passes\Pipeline\PipelineState(
-            $shot, $dir, $dp, $intent, new \App\Services\AI\AFOS\Compiler\Diagnostics\DiagnosticBag()
+            new \App\Services\AI\AFOS\Passes\Pipeline\PipelineInputs($shot, $dir, $dp, $intent),
+            new \App\Services\AI\AFOS\Compiler\Diagnostics\DiagnosticBag(),
         );
         $tier1 = PipelineDefinition::standard()->stages()[1];
         $fp    = StageFingerprint::of($tier1, $state);
@@ -156,8 +163,8 @@ class StageCapabilityTest extends TestCase
         $metrics  = $snapshot->metrics();
 
         $this->assertInstanceOf(CompilerMetrics::class, $metrics);
-        $this->assertSame(6, $metrics->totalStages);
-        $this->assertSame(6, $metrics->executedStages);
+        $this->assertSame(9, $metrics->totalStages);
+        $this->assertSame(9, $metrics->executedStages);
         $this->assertGreaterThan(0.0, $metrics->totalMs);
         $this->assertNotNull($metrics->bottleneckStage);
         $this->assertGreaterThan(0.0, $metrics->bottleneckMs);
