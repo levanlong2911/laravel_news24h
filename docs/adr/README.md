@@ -28,6 +28,9 @@ This directory documents significant architectural decisions for the AI Filmmaki
 | [ADR-008](ADR-008-asset-graph.md) | Asset Graph & World Graph | Draft |
 | [ADR-009](ADR-009-knowledge-os.md) | KnowledgeOS / Ontology Engine | Draft |
 | [ADR-010](ADR-010-decision-engine.md) | Decision Engine & Quality Optimization | Draft |
+| [ADR-011](ADR-011-news-video-pipeline.md) | News Video Pipeline — Graph Orchestration | Superseded |
+| [ADR-012](ADR-012-filmos-incremental-architecture.md) | FilmOS Incremental Architecture v1.0 | Accepted |
+| [ADR-013](ADR-013-filmos-meaning-layer.md) | FilmOS Architecture v2.0 — The Meaning Layer | Draft |
 
 **Amendment log:**
 - ADR-002 Amendment A — RenderContext parallel path to backend
@@ -41,6 +44,8 @@ This directory documents significant architectural decisions for the AI Filmmaki
 - ADR-008 — WorldGraph (containment/interaction/state) distinct from AssetDependencyGraph (invalidation)
 - ADR-009 — KnowledgeOS: ontology-based inference layer below FilmOS (IS-A, COVERS, HIDES, REQUIRES)
 - ADR-010 — DecisionEngine: tournament optimization loop; QualityEngine becomes scorer inside it; ShotDecided replaces VideoRendered
+- ADR-011 — News Video Pipeline V7: Graph Orchestration (FactGraph → EventGraph → NarrativeGraph → ViewerIntentGraph → AFOS); superseded by ADR-012
+- ADR-012 — FilmOS Incremental Architecture v1.0: 5-layer system (Knowledge → Decision → Compilation → Rendering → Learning); Decision Ledger as cross-cutting foundation from Phase 1; Confidence Propagation (decay per step, gate at 0.70/0.60); ConstraintEngine (MUST NOT, distinct from DomainStyleProfile SHOULD); 6-phase implementation roadmap; DecisionReplay closes analytics learning loop
 
 ---
 
