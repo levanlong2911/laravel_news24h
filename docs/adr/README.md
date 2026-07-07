@@ -2,6 +2,18 @@
 
 This directory documents significant architectural decisions for the AI Filmmaking OS project.
 
+## Governance documents
+
+| Document | Purpose |
+|----------|---------|
+| [Architecture Freeze v1](../architecture-freeze-v1.md) | Freeze declaration, phase sequencing, vertical slice mandate |
+| [System Contract Specification v1](../scs-v1.md) | Boundary contracts, naming conventions, import rules |
+| [Dependency Graph](../dependency-graph.md) | Module-level dependency map, forbidden imports, circular dep watchlist |
+| [Definition of Done](../definition-of-done.md) | Per-task-type DoD (Domain / Repo / Engine / Stage / Milestone) |
+| [Roadmap / Phase A.5](../roadmap/Phase-A5.md) | **START HERE** — Kling API client, first real video (3–4 days) |
+| [Roadmap / Phase B](../roadmap/Phase-B.md) | FilmOS Core — 8 weeks, 35 tasks with dependencies |
+| [Runtime Design](../runtime/Runtime.md) | Production Orchestrator — Scheduler, Checkpoint, Retry, Cancellation |
+
 ## Index
 
 | ADR | Title | Status |

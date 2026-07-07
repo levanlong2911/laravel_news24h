@@ -24,6 +24,8 @@ class BenchmarkGeneratePrompt extends Command
                             {--seed=12345 : Kling render seed}
                             {--model=kling-2.1 : Kling model version}
                             {--duration=5 : Clip duration in seconds (5 or 10)}
+                            {--renderer=v2 : Prompt renderer: v1=cinematic prose (~680 tokens), v2=priority layers (~250 tokens)}
+                            {--max-tokens=300 : Token budget for v2 renderer}
                             {--json : Output submission payload JSON only}';
 
     protected $description = 'Sprint 3 — Generate Kling prompt + benchmark submission payload for a fixture';
@@ -150,7 +152,11 @@ class BenchmarkGeneratePrompt extends Command
         $dsl        = array_merge($dslBase, ['dur' => (float) $duration]);
         $enriched   = $scenePlanner->enrich($dsl);
         $doc        = PromptDocumentBuilder::build($enriched);
-        $promptText = KlingRenderer::renderCinematic($doc, $enriched);
+        $renderer   = (string) $this->option('renderer');
+        $maxTokens  = (int)   $this->option('max-tokens');
+        $promptText = $renderer === 'v1'
+            ? KlingRenderer::renderCinematic($doc, $enriched)
+            : KlingRenderer::renderLayered($doc, $enriched, $maxTokens);
         $charCount  = mb_strlen($promptText);
 
         // ── Resolve instruction variant texts from the enriched pipeline ─────

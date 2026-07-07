@@ -22,25 +22,26 @@ use App\Services\AI\AFOS\Types\NegativeSpaceDirection;
  * Pipeline tier 3:
  *   CameraIR + CompositionIR + Intent → PromptIR
  *
- * This is the only class that knows Kling's vocabulary and clause structure.
- * Backend (KlingBackend) only receives PromptIR and serializes it — no logic.
+ * This is the only class that knows Kling's clause structure and prose patterns.
+ * Vocabulary (entity phrases, atmosphere variants) is delegated to PhraseCatalogInterface
+ * so Phase B can swap StaticPhraseCatalog for WorldModulePhraseCatalog without
+ * touching this class.
  *
- * Swapping backends: implement a new PromptPlanningPass (VeoPromptPlanningPass,
- * RunwayPromptPlanningPass) and register it in AfosPassManager. Zero changes
- * to composition or camera passes.
- *
- * Vocabulary tables (entityToPhrase, framingToVerb, etc.) belong here, not in
- * the backend. The backend is a formatter, not a vocabulary holder.
+ * Swapping backends: implement VeoPromptPlanningPass / RunwayPromptPlanningPass
+ * and register in PlannerRegistry. Zero changes to composition or camera passes.
  */
 final class KlingPromptPlanningPass implements PromptPlannerInterface
 {
+    private readonly PhraseCatalogInterface $catalog;
+
+    public function __construct(?PhraseCatalogInterface $catalog = null)
+    {
+        $this->catalog = $catalog ?? new StaticPhraseCatalog();
+    }
+
     public function backendId(): string { return 'kling'; }
     public function name(): string { return 'KlingPromptPlanningPass'; }
 
-    /**
-     * PromptPlannerInterface implementation — adapts PromptPlanningInput to the
-     * existing run() signature so the domain logic needs no changes.
-     */
     public function plan(\App\Services\AI\AFOS\Ir\PromptPlanningInput $input): PromptIR
     {
         return $this->run($input->camera, $input->composition, $input->intent, $input->temporal);
@@ -120,63 +121,23 @@ final class KlingPromptPlanningPass implements PromptPlannerInterface
 
     private function subjectClause(CompositionIR $composition, CameraIR $camera): string
     {
-        $entity = $this->entityToPhrase($composition->primarySubjectEntity);
+        $entity = $this->catalog->cinematicPhrase($composition->primarySubjectEntity);
         $scale  = $this->framingToVerb($camera->framing);
 
         $depth = '';
         if ($composition->foregroundEntity && $composition->backgroundEntity) {
-            $fg    = $this->entityToPhrase($composition->foregroundEntity);
-            $bg    = $this->entityToPhrase($composition->backgroundEntity);
+            $fg    = $this->catalog->cinematicPhrase($composition->foregroundEntity);
+            $bg    = $this->catalog->cinematicPhrase($composition->backgroundEntity);
             $depth = ", {$fg} in foreground pulling the eye, {$bg} receding behind";
         } elseif ($composition->foregroundEntity) {
-            $fg    = $this->entityToPhrase($composition->foregroundEntity);
+            $fg    = $this->catalog->cinematicPhrase($composition->foregroundEntity);
             $depth = ", {$fg} passing through foreground";
         } elseif ($composition->backgroundEntity) {
-            $bg    = $this->entityToPhrase($composition->backgroundEntity);
+            $bg    = $this->catalog->cinematicPhrase($composition->backgroundEntity);
             $depth = ", {$bg} dissolving into background";
         }
 
         return "The {$entity} {$scale}{$depth}.";
-    }
-
-    private function entityToPhrase(string $entityRef): string
-    {
-        static $map = [
-            'pool_reflection'  => 'villa pool and its mirror-perfect reflection',
-            'pool_surface'     => 'still pool surface',
-            'reflection'       => 'glass-still reflection',
-            'facade'           => 'stone facade',
-            'villa_facade'     => "villa's travertine facade",
-            'terrace'          => 'travertine terrace',
-            'infinity_edge'    => 'infinity edge meeting the horizon',
-            'infinity_pool'    => 'infinity pool',
-            'courtyard'        => 'open courtyard',
-            'interior'         => 'sun-lit interior',
-            'view'             => 'panoramic view beyond',
-            'horizon'          => 'horizon line',
-            'sky'              => 'open sky',
-            'mountain'         => 'mountain range',
-            'architecture'     => 'architecture',
-            'detail'           => 'architectural detail',
-            'material'         => 'material surface',
-            'stone'            => 'stone surface',
-            'water'            => 'water surface',
-            'glass'            => 'glass panel',
-            'light'            => 'quality of light',
-            'shadow'           => 'shadow pattern',
-            'subject'          => 'subject',
-            'hero_subject'     => 'subject',
-            'vehicle'          => 'vehicle',
-        ];
-
-        $key = strtolower($entityRef);
-        if (isset($map[$key])) {
-            return $map[$key];
-        }
-
-        // EntityRef.displayName is not available here — fall back to
-        // humanising the entity ID. Phase B: pass EntityRef through IR.
-        return str_replace('_', ' ', $key);
     }
 
     private function framingToVerb(FramingType $framing): string
@@ -194,16 +155,7 @@ final class KlingPromptPlanningPass implements PromptPlannerInterface
 
     private function atmosphereClause(Emotion $emotion, CompositionIR $composition): string
     {
-        $base = match ($emotion) {
-            Emotion::SERENITY  => 'Warm golden-hour light moves imperceptibly across still water; the air holds a silence that feels chosen, not empty',
-            Emotion::LUXURY    => 'Precise light describes every material with care — no surface is accidental, each catches light at a deliberate angle; the space breathes with the weight of considered craft',
-            Emotion::WONDER    => 'Light arrives from an unexpected angle, making familiar forms suddenly strange; the environment withholds something just off-frame, drawing the eye further',
-            Emotion::POWER     => 'Contrast defines every plane — light compressed against shadow with no mid-tone to soften the force; the environment holds tension like a coiled spring',
-            Emotion::TRIUMPH   => 'Light floods the space from above and ahead; the environment opens outward as if the world has moved aside to acknowledge the moment',
-            Emotion::CURIOSITY => 'A partial reveal teases what lies beyond; edges hold secrets, the frame is a question more than an answer',
-            Emotion::TENSION   => 'Shadow and highlight compress the space — air feels charged, as if a threshold is about to be crossed',
-            Emotion::ISOLATION => 'Vast, deliberate negative space surrounds the subject; silence is not absence but presence — solitude rendered as sovereignty',
-        };
+        $base = $this->catalog->atmosphereVariant($emotion, $composition->shotId);
 
         if ($composition->negativeSpaceAmount >= 0.40) {
             $dir = match ($composition->negativeSpaceDirection) {

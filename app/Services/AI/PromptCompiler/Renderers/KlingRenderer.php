@@ -203,7 +203,7 @@ final class KlingRenderer
 
     /** Emotion code → 1-word mood for SCENE section */
     private const MOOD_BRIEF = [
-        'POWER'  => 'explosive athletic intensity',
+        'POWER'  => 'powerful athletic intensity',
         'JOY'    => 'celebratory energy',
         'EPIC'   => 'cinematic grandeur',
         'TENSE'  => 'coiled anticipation',
@@ -740,19 +740,21 @@ final class KlingRenderer
      */
     private const BODY_MOTION_BEAT = [
         'throw' => [
-            // Body motion chain
-            'hook'           => 'The %actor% stands locked behind center — back foot loaded, knees bent, shoulders squared, eyes methodically reading the defensive line through clouds of frozen breath',
-            'escalation'     => 'his plant foot drives hard into frozen turf, hips fire explosively and rotate through, torso coils and whips — throwing shoulder drops then accelerates violently through the release zone',
-            'reveal'         => 'His entire body uncoils in one continuous explosive chain — elbow snaps high, wrist fires through the release point, ball rockets off fingertips at full arm extension — back foot lifts off the turf, bodyweight surges completely forward, throwing arm follows through across his chest',
-            // Camera: locked position → velocity curve → lens language → subject handoff
-            'cam_hook'       => 'A locked-off 85mm telephoto holds completely still at waist level — telephoto compression isolating the quarterback against the frozen field, shallow depth of field keeping the defensive line in soft background blur, zero camera movement',
-            'cam_escalation' => 'the camera begins near-motionless at hip-level, then accelerates steadily upward and forward — building speed in sync with the loading momentum — arriving at maximum velocity in a tight over-the-shoulder position, shallow DOF holding background compression throughout the rise',
-            'cam_reveal'     => 'At peak velocity the camera drives into an extreme telephoto close-up on the throwing hand and ball — shallow DOF collapsing background to pure blur — then the ball becomes the primary subject: the camera pivots off the quarterback and tracks the spiraling football as it leaves his fingertips, the quarterback instantly receding into background blur',
-            'cam_payoff'     => 'the camera decelerates from maximum speed into a sweeping wide orbital arc — ball still visible tracing its spiral against the stadium sky — quarterback a small silhouette below as the full stadium scale asserts itself',
-            // Progressive environment: beat-by-beat atmosphere
+            // Body motion: describe OUTCOME and weight transfer, not joint angles.
+            // Avoid: arm extension, elbow angle, fingertip detail — model renders those poorly.
+            // Prefer: hip rotation, body weight, ball trajectory — model renders these well.
+            'hook'           => 'The %actor% stands poised behind center — weight balanced, body compact and still, reading the field with controlled intensity',
+            'escalation'     => 'his weight drives forward from the ground up — explosive hip rotation leading the throw, torso coiling through as bodyweight transfers from back foot to front foot in a single committed motion',
+            'reveal'         => 'The throw releases — the ball spirals cleanly downfield, launched by full body rotation and hip drive rather than arm force alone; his body follows through naturally, momentum carrying him forward, both feet briefly leaving the ground as the throw completes',
+            // Camera: hold still during complex body motion, track ball after release.
+            'cam_hook'       => 'A locked-off 85mm telephoto holds completely still at waist height — telephoto compression isolating the quarterback against the frozen field, shallow depth of field keeping the defensive line in soft background blur',
+            'cam_escalation' => 'the camera holds near-static through the loading phase, then makes one controlled upward arc as the weight commits — arriving at a wide lateral frame at chest height just before release, keeping the full body readable in frame',
+            'cam_reveal'     => 'The camera holds the wide lateral frame as the ball releases — quarterback body and ball visible together for one beat — then pivots smoothly to track the ball\'s spiral trajectory upward against the stadium sky, the quarterback receding naturally into the background',
+            'cam_payoff'     => 'the camera decelerates into a slow wide orbital arc — ball visible tracing its spiral against the stadium sky — quarterback a small balanced figure below as the full stadium scale opens',
+            // Environment: avoid hand references.
             'env_hook'       => 'frozen breath vapor drifts in slow controlled wisps; snow crystals hang suspended in warm amber floodlight; crowd completely silent in held anticipation',
-            'env_escalation' => 'snow particles begin lifting from the turf at the plant foot; jersey fabric ripples violently with the sudden weight transfer; crowd begins leaning forward as one',
-            'env_reveal'     => 'snow and turf debris explode upward from the impact zone; the ball\'s departure sends a visible pressure wave through the frozen air around his hand',
+            'env_escalation' => 'turf compresses under the plant foot; jersey fabric shifts with the body rotation; crowd begins leaning forward as one',
+            'env_reveal'     => 'snow and turf debris kick up from the plant zone; the ball cuts a clean arc through the frozen air, spiral visible against the floodlit sky',
         ],
         'dunk' => [
             'hook'           => 'The %actor% gathers speed toward the basket, body low and coiled for the explosion',
@@ -905,6 +907,9 @@ final class KlingRenderer
 
         $parts = [];
 
+        // Front-load anatomy constraints — these must survive the 2500-char Kling truncation limit.
+        $parts[] = 'Hyperrealistic, anatomically correct human body, accurate limb proportions, natural joint mechanics.';
+
         // ── Hook: opening body state + environment + camera establishes locked position ──
         $hookBody    = rtrim(str_replace('%actor%', $actor, $motionSeq['hook'] ?? ''), '.');
         $hookEnvText = $envHook ?? ($micro ?: $atmosphere);  // env_hook > micro_motion > atmosphere
@@ -997,7 +1002,7 @@ final class KlingRenderer
         }
 
         $lens  = self::LENS_EFFECT[$lensCode] ?? '';
-        $style = 'Cinematic, hyperrealistic, no text overlays';
+        $style = 'Cinematic, no text overlays';
         if ($lens !== '') {
             $style .= '. ' . $lens;
         }
@@ -1005,6 +1010,167 @@ final class KlingRenderer
 
         return implode(' ', array_filter($parts));
     }
+
+    // ── renderLayered() — Priority-layer renderer (v2) ─────────────────────────
+
+    /**
+     * Outcome-focused visual descriptions per action type.
+     *
+     * Describes WHAT THE VIEWER SEES, not biomechanical sequences.
+     * The model interpolates heuristics from its training data — give it the
+     * target visual state, not the physics chain that produces it.
+     *
+     * 'subject' — concise visual identity of the subject
+     * 'action'  — the primary visual outcome at the peak moment
+     * 'payoff'  — what the viewer sees after the peak (ball in air, crowd, etc.)
+     */
+    /**
+     * Semantic scene descriptions per action type — narrative style, not labeled blocks.
+     *
+     * Philosophy (v3):
+     * - Natural flowing sentences, the way a human would describe the scene.
+     * - No joint vocabulary (elbow, wrist, shoulder, knee, hip rotation, torso coiling).
+     * - No "explosive" (triggers AI deformation artifacts) → "controlled", "fluid", "natural".
+     * - No "visual center" (model doesn't understand visual hierarchy) → "stays clearly in frame".
+     * - Anatomy constraints are positive anchors, not negatives.
+     *
+     * 'subject' — one narrative sentence: WHO + WHERE + ATMOSPHERE
+     * 'action'  — what the viewer sees happen: controlled action + what stays in frame
+     * 'payoff'  — the final memorable image: ball, crowd, environment
+     */
+    private const VISUAL_OUTCOME = [
+        'throw' => [
+            // %actor% is replaced with the real article subject (e.g. "Patrick Mahomes")
+            'subject' => '%actor% stands alone beneath warm stadium lights, in full uniform and helmet, ready to throw.',
+            'action'  => 'A smooth, controlled throw. The football rises into a perfect spiral and stays clearly in frame. The motion feels natural and powerful.',
+            'payoff'  => 'The ball spirals cleanly against the stadium sky.',
+        ],
+        'dunk' => [
+            'subject' => '%actor% moves toward the basket with controlled speed, in full uniform.',
+            'action'  => 'One fluid leap, driving the ball cleanly through the rim. The movement feels smooth and powerful.',
+            'payoff'  => 'The net snaps downward. The player holds for a moment at peak height.',
+        ],
+        'kick' => [
+            'subject' => '%actor% stands set in full uniform, behind the ball.',
+            'action'  => 'A clean, fluid kick approach and strike. The ball lifts cleanly and stays clearly visible in frame.',
+            'payoff'  => 'The ball rises in a smooth arc toward the uprights.',
+        ],
+        'cruise' => [
+            'subject' => '%actor% moves at full speed across open ocean in clear daylight.',
+            'action'  => 'The hull cuts cleanly through the water. Bow spray arcs wide off both sides in long white sheets.',
+            'payoff'  => 'The vessel recedes toward the horizon. A long white wake marks its path.',
+        ],
+        'default' => [
+            'subject' => '%actor% stands in position beneath bright lights, focused and still.',
+            'action'  => 'One controlled, fluid movement at full intensity. The motion feels natural and powerful.',
+            'payoff'  => 'The action completes cleanly. The environment reacts naturally.',
+        ],
+    ];
+
+    /**
+     * Camera — max 2 short sentences per action.
+     * Rule: one locked position + one smooth movement only.
+     * No chains, no accelerations, no orbit arcs.
+     */
+    private const CAMERA_LAYERED = [
+        'throw'   => 'Side angle. The camera gently follows the ball into flight.',
+        'dunk'    => 'Low angle from the floor. The camera rises smoothly with the leap.',
+        'kick'    => 'Wide frame, side angle. The camera tilts up to follow the ball.',
+        'cruise'  => 'Drone, wide. Descends gently to hull level.',
+        'default' => 'Locked medium frame, side angle.',
+    ];
+
+    /**
+     * Budget-aware priority-layer renderer for Kling text-to-video (v2).
+     *
+     * Architecture:
+     *   Layer 0 (fixed prefix):  Anatomy/quality anchor — always first, never trimmed.
+     *   Layer 1 (MUST):          Subject identity, primary action outcome, camera behavior.
+     *   Layer 2 (SHOULD):        Scene/environment, action payoff visual.
+     *   Layer 3 (MAY):           Physics micro-detail. Trimmed first if over budget.
+     *   Layer 0 (fixed suffix):  Style close — always last, never trimmed.
+     *
+     * Budget enforcement: MUST layers are included even if over budget (non-negotiable).
+     * SHOULD and MAY layers are included only if space remains. MAY is dropped before SHOULD.
+     *
+     * @param int $maxTokens Target token ceiling (1 token ≈ 4 chars). Default 300.
+     */
+    public static function renderLayered(PromptDocument $doc, array $dsl = [], int $maxTokens = 300): string
+    {
+        $maxChars  = $maxTokens * 4;
+        $action    = $dsl['sub']['action'] ?? '';
+        $actor     = $dsl['sub']['actor']  ?? 'the subject';
+        $lensCode  = $dsl['lens']          ?? '85';
+        $lightCode = $dsl['light']         ?? '';
+        $emoCode   = $dsl['emo']           ?? 'POWER';
+        $physics   = $dsl['physics']       ?? [];
+
+        $outcome = self::VISUAL_OUTCOME[$action] ?? self::VISUAL_OUTCOME['default'];
+        $camText = self::CAMERA_LAYERED[$action]  ?? self::CAMERA_LAYERED['default'];
+        $subject = ucfirst(str_replace('%actor%', $actor, $outcome['subject']));
+
+        // Fixed bookends — never trimmed regardless of budget.
+        // Anatomy prefix: positive count constraints guide the model before anything else.
+        // "single athlete, two arms, two legs" forces the model away from extra-limb artifacts.
+        $prefix = 'Hyperrealistic. Single athlete. Two arms, two legs. Natural anatomy, realistic hands.';
+        $lensEffect = self::LENS_EFFECT[$lensCode] ?? '';
+        $suffix = 'Cinematic, no text overlays' . ($lensEffect !== '' ? '. ' . $lensEffect : '') . '.';
+
+        // Normalize text: strip trailing whitespace/dots, then add exactly one period.
+        // This prevents double periods when constants already end with '.'.
+        $norm = static function (string $s): string {
+            return rtrim($s, '. ') . '.';
+        };
+
+        // Priority layers: [priority, text]
+        // priority 1 = MUST, 2 = SHOULD, 3 = MAY
+        $layers = [
+            [1, $norm($subject)],
+            [1, $norm($outcome['action'])],
+            [1, $norm($camText)],
+            [2, $norm(self::buildLayeredScene($lightCode, $emoCode))],
+            [2, $norm($outcome['payoff'])],
+            [3, $norm(self::buildLayeredPhysics($lightCode, $physics))],
+        ];
+
+        $budget = $maxChars - strlen($prefix) - strlen($suffix) - 10; // 10 = separator overhead
+
+        $body = [];
+        foreach ($layers as [$priority, $text]) {
+            if ($text === '.') { // empty after normalization
+                continue;
+            }
+            $cost = strlen($text) + 1;
+            if ($priority === 1 || $budget >= $cost) {
+                $body[]  = $text;
+                $budget -= $cost;
+            }
+        }
+
+        return implode(' ', array_filter([$prefix, ...$body, $suffix]));
+    }
+
+    private static function buildLayeredScene(string $lightCode, string $emoCode): string
+    {
+        $light = self::LIGHT_BRIEF[$lightCode] ?? '';
+        $mood  = self::MOOD_BRIEF[$emoCode]    ?? '';
+        $parts = array_filter([$light, $mood]);
+        return $parts !== [] ? ucfirst(implode(', ', $parts)) . '.' : '';
+    }
+
+    private static function buildLayeredPhysics(string $lightCode, array $physics): string
+    {
+        // Sprint 3 physics: prefer micro_motion or atmosphere over legacy PHYSICS_LAYER.
+        if ($physics !== []) {
+            $phrase = ($physics['micro_motion'] ?? $physics['atmosphere'] ?? [])[0] ?? '';
+            if ($phrase !== '') {
+                return ucfirst(rtrim((string) $phrase, '. ')) . '.';
+            }
+        }
+        return self::PHYSICS_LAYER[$lightCode] ?? '';
+    }
+
+    // ── Utilities ───────────────────────────────────────────────────────────────
 
     /** Format a float duration: drop .0 if whole, keep 1 decimal otherwise. */
     private static function fmt(float $v): string
