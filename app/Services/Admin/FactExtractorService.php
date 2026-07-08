@@ -42,7 +42,7 @@ class FactExtractorService
         [$context, $framework] = $this->resolveVideoFramework($article->category_id);
 
         $content = $article->content;
-        if (strlen($content) > self::MAX_CONTENT_CHARS) {
+        if (mb_strlen($content) > self::MAX_CONTENT_CHARS) {
             $content = mb_substr($content, 0, self::MAX_CONTENT_CHARS) . "\n\n[Content truncated — extract facts from the above section only.]";
         }
 

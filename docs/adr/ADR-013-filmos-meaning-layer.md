@@ -1,8 +1,9 @@
 # ADR-013: FilmOS Architecture v2.0 — The Meaning Layer
 
-**Status:** Draft  
+**Status:** Amended by ADR-014  
 **Date:** 2026-07-07  
-**Revision:** 2 (refined from initial draft — 8 architectural corrections applied)  
+**Revision:** 3 (5 code bugs fixed: ProductionBudget constructor, VisualStrategy layer placement, dead $function param, modulateByFact accumulation, compressionRatio type)  
+**Superseded by (partial):** ADR-014 replaces SemanticMeaning→MeaningGraph, VisualStrategyResolver→DecisionGraph, DAG log→DAGRuntime, ResourceOrchestrator→FilmKernel, adds HypothesisGenerator  
 **Deciders:** Chief Architect + Project Lead  
 **Amends:** ADR-012 (FilmOS Incremental Architecture v1.0)  
 **Scope:** 8-layer architecture for FilmOS with long-term advantage (3–5 years)
@@ -152,14 +153,12 @@ final class ContextualMeaningResolver implements MeaningResolver
         WorldState       $worldState,
     ): SemanticMeaning {
 
-        $signals = [];
-
         // Step 1: Base signals from asset class (starting point, NOT final answer)
-        $baseSignals = $this->ontologyRegistry->baseSignals($asset->ontologyClassId);
+        $signals = $this->ontologyRegistry->baseSignals($asset->ontologyClassId);
 
         // Step 2: Modulate by facts about this event
         foreach ($facts as $fact) {
-            $signals = $this->modulateByFact($signals, $baseSignals, $fact);
+            $signals = $this->modulateByFact($signals, $fact);
         }
 
         // Step 3: Modulate by narrative position
@@ -186,12 +185,12 @@ final class ContextualMeaningResolver implements MeaningResolver
         );
     }
 
-    private function modulateByFact(array $current, array $base, Fact $fact): array
+    private function modulateByFact(array $signals, Fact $fact): array
     {
         // Example: broken_glass base signal = [danger:0.7, crime:0.5, memory:0.4]
         // Fact: "earthquake measured 6.2" → crime:0.0, danger:0.95, accident:0.8
         // Fact: "art gallery" (from WorldState.location) → art:0.9, memory:0.6, crime:0.0
-        // Modulation is additive with weight normalization
+        // Modulation is additive with weight normalization against current signals
     }
 }
 ```
@@ -225,7 +224,7 @@ namespace App\Services\AI\FilmOS\Intent;
 
 /**
  * From Layer 2 (Meaning). Pure semantic signal.
- * Camera/color/attention NOT here.
+ * Camera/color/attention/movement NOT here — those are Decision Layer concerns.
  */
 final class MeaningContext
 {
@@ -233,7 +232,6 @@ final class MeaningContext
         public readonly SemanticMeaning    $primaryMeaning,   // what does this scene mean?
         public readonly CinematicFunction  $function,         // REVEAL, ESCALATE, ECHO...
         public readonly float              $tensionLevel,     // 0.0–10.0
-        public readonly VisualStrategy     $visualStrategy,   // OBSERVATIONAL, KINETIC, etc.
         public readonly ?string            $referencesShotId, // for ECHO/CALLBACK functions
         public readonly float              $meaningConfidence,
     ) {}
@@ -249,6 +247,7 @@ final class ExecutionContext
         public readonly AttentionNode    $attentionNode,    // must_show, must_avoid
         public readonly NarrativeBeat    $beat,
         public readonly array            $beatFacts,        // Fact[], max 3
+        public readonly VisualStrategy   $visualStrategy,   // resolved by VisualStrategyResolver (Layer 3)
         public readonly DomainStyleRule  $styleRule,        // lens hints, movement hints
         public readonly array            $softConstraints,  // ConstraintViolation[] (SOFT only)
         public readonly float            $sourceConfidence,
@@ -373,12 +372,13 @@ final class VisualStrategyResolver
         // memorial + tension >= 6       → CONTEMPLATIVE
 
         return match(true) {
-            $domain === 'nfl' && $tensionLevel >= 6.0          => VisualStrategy::KINETIC,
-            $domain === 'crime_documentary'                     => VisualStrategy::OBSERVATIONAL,
-            $domain === 'breaking_news' && $tensionLevel >= 5.0 => VisualStrategy::URGENT,
-            $narrativeTone === 'grief'                         => VisualStrategy::CONTEMPLATIVE,
-            $narrativeTone === 'triumph'                       => VisualStrategy::LYRICAL,
-            default                                            => VisualStrategy::OBSERVATIONAL,
+            $function === CinematicFunction::ECHO                   => VisualStrategy::CONTEMPLATIVE,
+            $domain === 'nfl' && $tensionLevel >= 6.0               => VisualStrategy::KINETIC,
+            $domain === 'crime_documentary'                         => VisualStrategy::OBSERVATIONAL,
+            $domain === 'breaking_news' && $tensionLevel >= 5.0     => VisualStrategy::URGENT,
+            $narrativeTone === 'grief'                              => VisualStrategy::CONTEMPLATIVE,
+            $narrativeTone === 'triumph'                            => VisualStrategy::LYRICAL,
+            default                                                 => VisualStrategy::OBSERVATIONAL,
         };
     }
 
@@ -503,7 +503,7 @@ final class CompressedFactGraph
         public readonly array  $archiveRefs,   // ArchiveRef[] — cold: queryable but not loaded
         public readonly array  $summaryFacts,  // SummaryFact[] — cluster summaries
         public readonly int    $originalCount,
-        public readonly int    $compressionRatio, // e.g., 7 (850 → 120)
+        public readonly float  $compressionRatio, // e.g., 7.08 (850 / 120)
     ) {}
 }
 
@@ -679,10 +679,17 @@ final class DispatchDecision
 // Budget envelope per production:
 final class ProductionBudget
 {
-    public readonly float $totalAllocatedUsd;
-    public readonly float $spentUsd;
-    public readonly float $remainingUsd;
-    public readonly array $spendByPriority;  // CRITICAL/IMPORTANT/FILLER breakdown
+    public function __construct(
+        public readonly float $totalAllocatedUsd,
+        public readonly float $spentUsd,
+        public readonly float $remainingUsd,
+        public readonly array $spendByPriority,  // ['CRITICAL' => 0.0, 'IMPORTANT' => 0.0, 'FILLER' => 0.0]
+    ) {}
+
+    public function remaining(): float
+    {
+        return $this->totalAllocatedUsd - $this->spentUsd;
+    }
 }
 ```
 

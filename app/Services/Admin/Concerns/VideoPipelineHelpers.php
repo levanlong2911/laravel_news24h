@@ -20,6 +20,11 @@ use Illuminate\Support\Facades\Log;
  */
 trait VideoPipelineHelpers
 {
+    /** Fallback when Claude returns no visual_anchor — used in StoryPlanner and ScriptGenerator. */
+    protected function defaultVisualAnchor(string $artStyle): string
+    {
+        return "Generic subject matching this topic, {$artStyle}, no logos or trademarked symbols.";
+    }
     /**
      * Replaces the "$context = $this->promptBuilder->contextFor($id); $framework =
      * $context->videoFramework;" pair duplicated across all three services.

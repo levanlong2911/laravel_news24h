@@ -73,7 +73,7 @@ class StoryPlannerService
             );
         }
 
-        $visualAnchor = trim($parsed['visual_anchor'] ?? '') ?: "Generic subject matching this topic, {$artStyle}, no logos or trademarked symbols.";
+        $visualAnchor = trim($parsed['visual_anchor'] ?? '') ?: $this->defaultVisualAnchor($artStyle);
 
         $narrativeArc = $parsed['narrative_arc'] ?? '';
         $contentType = $this->resolveContentType($narrativeArc, $context->domain);

@@ -85,6 +85,7 @@ class ClaudeWriterService
             $body       = curl_exec($ch);
             $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $curlError  = curl_error($ch);
+            curl_close($ch);
 
             $this->releaseConcurrent();    // giải phóng slot ngay sau HTTP call
 
@@ -199,9 +200,11 @@ class ClaudeWriterService
 
     private function releaseConcurrent(): void
     {
-        $current = Cache::get('claude_concurrent', 0);
-        if ($current > 0) {
-            Cache::decrement('claude_concurrent');
+        // Cache::decrement is atomic; clamp at 0 to prevent negative counter
+        // from a prior crash or TOCTOU between get+decrement.
+        $result = Cache::decrement('claude_concurrent');
+        if ($result !== false && $result < 0) {
+            Cache::put('claude_concurrent', 0, 120);
         }
     }
 }

@@ -43,13 +43,16 @@ class ScriptGeneratorService
         $factsJson = json_encode($facts->facts_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         $artStyle = $this->resolveArtStyle($context);
 
+        // Load all existing part numbers in a single query instead of one per part.
+        $existingParts = VideoJob::where('story_plan_id', $plan->id)
+            ->pluck('part_number')
+            ->flip()
+            ->all();
+
         foreach ($plan->parts_outline_json as $partOutline) {
             $partNumber = $partOutline['part_number'];
 
-            $existing = VideoJob::where('story_plan_id', $plan->id)
-                ->where('part_number', $partNumber)
-                ->first();
-            if ($existing) {
+            if (isset($existingParts[$partNumber])) {
                 continue; // idempotent -- never regenerate a part that already has a job
             }
 
@@ -66,7 +69,7 @@ class ScriptGeneratorService
                 'audience' => $context->audience,
                 'tone_notes' => $context->tone_notes,
                 'art_style' => $artStyle,
-                'visual_anchor' => $plan->visual_anchor ?: "Generic subject matching this topic, {$artStyle}, no logos or trademarked symbols.",
+                'visual_anchor' => $plan->visual_anchor ?: $this->defaultVisualAnchor($artStyle),
                 'part_number' => (string) $partNumber,
                 'total_parts' => (string) $plan->total_parts,
                 'beat' => $partOutline['beat'] ?? '',
@@ -80,26 +83,19 @@ class ScriptGeneratorService
 
             $parsed = $this->parseJson($response->text);
             if ($parsed === null || empty($parsed['scenes'])) {
-                // Failure mode #5's spirit applied at part granularity: one bad part
-                // must not stop the rest of this article's parts from being scripted.
-                Log::error('[ScriptGenerator] Failed to generate scenes for part', [
-                    'article_id' => $article->id,
+                // Failure mode #5: one bad part must not stop the rest from being scripted.
+                // WARNING: if any part is skipped, VideoJobController::status() will never
+                // return 'ok' because count(videoJobs) < total_parts. The article will
+                // stay 'pending' in the UI until the cron retries and succeeds on this part.
+                Log::error('[ScriptGenerator] Failed to generate scenes for part — article will stay pending until retry', [
+                    'article_id'  => $article->id,
                     'part_number' => $partNumber,
+                    'total_parts' => $plan->total_parts,
                 ]);
                 continue;
             }
 
-            VideoJob::create([
-                'story_plan_id' => $plan->id,
-                'part_number' => $partNumber,
-                'status' => 'script_ready',
-                'script_json' => [
-                    'hook' => $plan->hook,
-                    'cta' => $partOutline['cta'] ?? null,
-                    'target_seconds' => self::TARGET_SECONDS_PHASE1,
-                    'scenes' => $parsed['scenes'],
-                ],
-            ]);
+            $this->createVideoJob($plan, $partNumber, $parsed['scenes'], $partOutline['cta'] ?? null);
         }
     }
 
@@ -161,15 +157,20 @@ PROMPT;
             return;
         }
 
+        $this->createVideoJob($plan, 1, $parsed['scenes'], null);
+    }
+
+    private function createVideoJob(StoryPlan $plan, int $partNumber, array $scenes, ?string $cta): void
+    {
         VideoJob::create([
             'story_plan_id' => $plan->id,
-            'part_number'   => 1,
+            'part_number'   => $partNumber,
             'status'        => 'script_ready',
             'script_json'   => [
                 'hook'           => $plan->hook,
-                'cta'            => null,
+                'cta'            => $cta,
                 'target_seconds' => self::TARGET_SECONDS_PHASE1,
-                'scenes'         => $parsed['scenes'],
+                'scenes'         => $scenes,
             ],
         ]);
     }

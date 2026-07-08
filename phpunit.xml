@@ -5,11 +5,30 @@
          colors="true"
 >
     <testsuites>
+        <testsuite name="Architecture">
+            <directory>tests/Architecture</directory>
+        </testsuite>
+        <testsuite name="Infrastructure">
+            <directory>tests/Infrastructure</directory>
+        </testsuite>
+        <testsuite name="Property">
+            <directory>tests/Property</directory>
+            <exclude>tests/Property/FilmOS/GraphStressTest.php</exclude>
+        </testsuite>
+        <testsuite name="Chaos">
+            <directory>tests/Chaos</directory>
+        </testsuite>
+        <testsuite name="Golden">
+            <directory>tests/Golden</directory>
+        </testsuite>
         <testsuite name="Unit">
             <directory>tests/Unit</directory>
         </testsuite>
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
+        </testsuite>
+        <testsuite name="Stress">
+            <file>tests/Property/FilmOS/GraphStressTest.php</file>
         </testsuite>
     </testsuites>
     <source>
