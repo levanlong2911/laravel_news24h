@@ -57,13 +57,15 @@ Route::group(
     // Image proxy — bypass CORS khi copy ảnh từ Google Images
     Route::get('/image-proxy', [ArticleController::class, 'imageProxy'])->name('image.proxy');
 
-    // Admin
-    Route::get('/', [AdminController::class, 'index'])->name('admin.index');
-    Route::get('/claude-usage', [ClaudeUsageController::class, 'index'])->middleware('admin')->name('admin.claude-usage');
-    Route::match(['get', 'post'], '/add', [AdminController::class, 'add'])->name('admin.add');
-    Route::match(['get', 'post'], '/update/{id}', [AdminController::class, 'update'])->name('admin.update');
-    Route::match(['get', 'post'], '/delete/{id}', [AdminController::class, 'delete'])->name('admin.delete');
-    Route::match(['get', 'post'], '/detail/{id}', [AdminController::class, 'detail'])->name('admin.detail');
+    // Admin — chỉ admin mới truy cập được
+    Route::group(['middleware' => 'admin'], function () {
+        Route::get('/', [AdminController::class, 'index'])->name('admin.index');
+        Route::get('/claude-usage', [ClaudeUsageController::class, 'index'])->name('admin.claude-usage');
+        Route::match(['get', 'post'], '/add', [AdminController::class, 'add'])->name('admin.add');
+        Route::match(['get', 'post'], '/update/{id}', [AdminController::class, 'update'])->name('admin.update');
+        Route::match(['get', 'post'], '/delete/{id}', [AdminController::class, 'delete'])->name('admin.delete');
+        Route::match(['get', 'post'], '/detail/{id}', [AdminController::class, 'detail'])->name('admin.detail');
+    });
     // category
     Route::group(["prefix" => "category"], function () {
         Route::get("/", [CategoryController::class, "index"])->name("admin.category.index");
@@ -136,8 +138,8 @@ Route::group(
         Route::post('{domain}/api-key', [DomainController::class,'generateApiKey']);
     });
 
-    // prompt frameworks
-    Route::group(['prefix' => 'prompt-framework'], function () {
+    // prompt frameworks — chỉ admin mới truy cập được
+    Route::group(['prefix' => 'prompt-framework', 'middleware' => 'admin'], function () {
         Route::get('/',                   [PromptFrameworkController::class, 'index']) ->name('prompt-framework.index');
         Route::match(['get','post'],'/add',         [PromptFrameworkController::class, 'add'])    ->name('prompt-framework.add');
         Route::match(['get','post'],'/detail/{id}', [PromptFrameworkController::class, 'detail']) ->name('prompt-framework.detail');
