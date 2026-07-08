@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\DecisionDAG;
 
 use App\Services\AI\FilmOS\Graph\GraphNode;
+use App\Services\AI\FilmOS\Snapshot\GraphHashable;
 
-final class DAGNode extends GraphNode
+final class DAGNode extends GraphNode implements GraphHashable
 {
     public function __construct(
         string              $id,
@@ -27,5 +28,11 @@ final class DAGNode extends GraphNode
     public function label(): string
     {
         return "[{$this->type->value}] {$this->id} conf={$this->confidence}";
+    }
+
+    /** @return array<string, string> */
+    public function canonicalData(): array
+    {
+        return ['id' => $this->id, 'type' => $this->type->value];
     }
 }

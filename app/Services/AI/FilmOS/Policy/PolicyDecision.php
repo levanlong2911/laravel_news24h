@@ -69,6 +69,32 @@ final class PolicyDecision
         return !in_array($provider, $this->disabledProviders, strict: true);
     }
 
+    /**
+     * Canonical representation for deterministic hashing.
+     *
+     * Excludes audit trail (appliedPolicies, skippedPolicies) — those are
+     * observational metadata, not decisions. disabledProviders is sorted
+     * alphabetically so insertion order never affects the hash.
+     *
+     * @return array<string, mixed>
+     */
+    public function toCanonicalArray(): array
+    {
+        $disabled = $this->disabledProviders;
+        sort($disabled);
+
+        return [
+            'preferredProvider' => $this->preferredProvider ?: null,
+            'maxLatencyMs'      => $this->maxLatencyMs === PHP_FLOAT_MAX ? null : $this->maxLatencyMs,
+            'qualityCostBias'   => $this->qualityCostBias,
+            'deferExecution'    => $this->deferExecution,
+            'deferForMs'        => $this->deferForMs,
+            'requiredReviewers' => $this->requiredReviewers,
+            'disabledProviders' => $disabled,
+            'metadata'          => $this->metadata,
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function toArray(): array
     {

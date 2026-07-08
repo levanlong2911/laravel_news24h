@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\FilmOS;
 
+use App\Models\Article;
 use App\Services\AI\FilmOS\DecisionDAG\DAGNodeType;
 use App\Services\AI\FilmOS\DecisionDAG\DAGRuntime;
+use App\Services\AI\FilmOS\Snapshot\ExecutionSnapshotBuilder;
 use App\Services\AI\FilmOS\Evaluation\Plugins\EvaluationPlugin;
 use App\Services\AI\FilmOS\Intent\IntentAssembler;
 use App\Services\AI\FilmOS\Kernel\FilmKernel;
@@ -14,6 +16,8 @@ use App\Services\AI\FilmOS\Kernel\MemoryManager;
 use App\Services\AI\FilmOS\Kernel\Plugins\RenderPlugin;
 use App\Services\AI\FilmOS\Kernel\TaskScheduler;
 use App\Services\AI\FilmOS\Kernel\TaskType;
+use App\Services\AI\FilmOS\Knowledge\ArticleFactAdapter;
+use App\Services\AI\FilmOS\Knowledge\ClaudeFilmOSFactExtractor;
 use App\Services\AI\FilmOS\Learning\StubPredictiveLearning;
 use App\Services\AI\FilmOS\Meaning\ContextualMeaningResolver;
 use App\Services\AI\FilmOS\Planning\Estimators\CostEstimator;
@@ -28,6 +32,7 @@ use App\Services\AI\FilmOS\Planning\Strategies\MotionStrategy;
 use App\Services\AI\FilmOS\Planning\SubGoalPlanner;
 use App\Services\AI\FilmOS\Graph\GraphValidation;
 use App\Services\AI\Provider\Kling\KlingVideoProvider;
+use App\Services\Admin\ClaudeWriterService;
 use Illuminate\Console\Command;
 
 /**
@@ -41,13 +46,15 @@ use Illuminate\Console\Command;
 class RunGoldenScenarioCommand extends Command
 {
     protected $signature = 'filmos:run-golden-scenario
-                            {--dry-run : Skip actual Kling API calls, use mock video URLs}';
+                            {--dry-run   : Skip actual Kling API calls, use mock video URLs}
+                            {--article-id= : Run against a real Article from the DB (UUID)}';
 
-    protected $description = 'Run FilmOS Phase 1 Walking Skeleton on the Golden Scenario (cockroach hotel)';
+    protected $description = 'Run FilmOS Phase 1 Walking Skeleton — golden scenario or real article';
 
     public function handle(): int
     {
         $dryRun       = $this->option('dry-run');
+        $articleId    = $this->option('article-id');
         $productionId = 'prod_golden_' . date('Ymd_His');
         $domain       = 'travel_warning';
 
@@ -56,9 +63,29 @@ class RunGoldenScenarioCommand extends Command
         $this->info($dryRun ? "Mode: DRY RUN (no API calls)" : "Mode: LIVE");
         $this->newLine();
 
-        // ── Facts (Golden Scenario Layer 0→1) ─────────────────────────────────
-        $facts = $this->goldenScenarioFacts();
-        $this->line("[L1] FactGraph: " . count($facts) . " facts loaded");
+        // ── Layer 1: Facts ────────────────────────────────────────────────────
+        if ($articleId !== null) {
+            $article = Article::find($articleId);
+            if (!$article) {
+                $this->error("Article not found: {$articleId}");
+                return self::FAILURE;
+            }
+            $this->line("[L1] Loading facts from Article: {$article->title}");
+            $domain  = $this->inferDomain($article);
+            $adapter = new ArticleFactAdapter(
+                new ClaudeFilmOSFactExtractor(new ClaudeWriterService())
+            );
+            $filmFacts = $adapter->factsFor($article, $domain);
+            if (empty($filmFacts)) {
+                $this->error("[L1] FactExtractor returned 0 facts. Check article content.");
+                return self::FAILURE;
+            }
+            $facts = array_map(fn($f) => $f->toArray(), $filmFacts);
+            $this->line("[L1] FactGraph: " . count($facts) . " facts extracted via Claude (domain={$domain})");
+        } else {
+            $facts = $this->goldenScenarioFacts();
+            $this->line("[L1] FactGraph: " . count($facts) . " facts loaded (golden scenario — hardcoded)");
+        }
 
         // ── DAGRuntime (cross-cutting — wraps everything) ─────────────────────
         $runtime = new DAGRuntime($productionId);
@@ -123,7 +150,7 @@ class RunGoldenScenarioCommand extends Command
             operation: fn() => $optimizer->optimize($rawPlan, $objectives, ['domain' => $domain]),
             rationale: "MultiObjectiveOptimizer: breaking_news preset, 4 objectives",
             parentIds: ['meaning_graph'],
-            confidence: $plan->goalConfidence ?? 0.88,
+            confidence: $rawPlan->goalConfidence,
         );
 
         $score = $plan->score;
@@ -162,17 +189,21 @@ class RunGoldenScenarioCommand extends Command
             $kernel->registerPlugin(new RenderPlugin($provider));
         }
 
-        $taskIds = [];
+        $taskIds   = [];
+        $filmTasks = [];
         foreach ($intents as $subGoalId => $intent) {
             $priority = $intent->evaluation->priority;
             $task     = new FilmTask(
-                id:       "render_{$subGoalId}",
-                type:     TaskType::RENDER,
-                priority: $priority,
-                payload:  $intent,
+                id:        "render_{$subGoalId}",
+                type:      TaskType::RENDER,
+                priority:  $priority,
+                payload:   $intent,
+                deadlineMs: 15000,
+                dependsOn: ["intent_{$subGoalId}"],
             );
             $kernel->submit($task);
-            $taskIds[] = $task->id;
+            $taskIds[]   = $task->id;
+            $filmTasks[] = $task;
         }
 
         $renderResults = [];
@@ -277,11 +308,51 @@ class RunGoldenScenarioCommand extends Command
         $this->line("Run: php artisan filmos:explain-shot {$productionId} shot_002_cockroach_closeup");
         $this->line("Run: php artisan filmos:check-invariants {$productionId}");
 
-        // Store DAG in session cache for downstream commands
-        cache()->put("filmos_dag_{$productionId}", serialize($dag), now()->addHours(2));
-        cache()->put("filmos_plan_{$productionId}", serialize($plan), now()->addHours(2));
+        // ── ExecutionSnapshot (Phase A) ───────────────────────────────────────
+        $snapshot = (new ExecutionSnapshotBuilder())->build(
+            productionId: $productionId,
+            dag:          $dag,
+            goalGraph:    $goalGraph,
+            plan:         $plan,
+            intents:      $intents,
+            tasks:        $filmTasks,
+        );
+
+        $this->newLine();
+        $this->info("── ExecutionSnapshot ────────────────────────────");
+        $this->line("  Hash : " . $snapshot->shortHash() . "…");
+        $this->line("  DAG  : " . substr($snapshot->dagHash, 0, 16) . "…");
+        $this->line("  Goals: " . substr($snapshot->goalGraphHash, 0, 16) . "…");
+        $this->line("  PromptIRs: " . substr($snapshot->promptHash, 0, 16) . "…");
+        $gaps = $snapshot->gaps();
+        if (!empty($gaps)) {
+            $this->line("  Gaps (not yet verified): " . implode(', ', $gaps));
+        }
+
+        // Store everything in session cache for downstream commands
+        cache()->put("filmos_dag_{$productionId}",      serialize($dag),      now()->addHours(2));
+        cache()->put("filmos_plan_{$productionId}",     serialize($plan),     now()->addHours(2));
+        cache()->put("filmos_goals_{$productionId}",    serialize($goalGraph), now()->addHours(2));
+        cache()->put("filmos_snapshot_{$productionId}", serialize($snapshot), now()->addHours(2));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Infer FilmOS domain from the article's category slug or title keywords.
+     * Defaults to 'travel_warning' when no clearer signal is found.
+     */
+    private function inferDomain(Article $article): string
+    {
+        $slug = strtolower((string) ($article->category?->slug ?? ''));
+
+        return match (true) {
+            str_contains($slug, 'travel')  => 'travel_warning',
+            str_contains($slug, 'sport')   => 'sports',
+            str_contains($slug, 'finance') => 'finance',
+            str_contains($slug, 'health')  => 'travel_warning', // health → same template for now
+            default                        => 'travel_warning',
+        };
     }
 
     private function goldenScenarioFacts(): array

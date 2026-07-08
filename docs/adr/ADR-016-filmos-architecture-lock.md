@@ -485,7 +485,7 @@ A walking skeleton is complete (crosses all boundaries) but shallow (each compon
 
 ### Phase 1 success criteria
 
-All 5 must pass before Phase 1 is signed off:
+All 6 must pass before Phase 1 is signed off:
 
 **Criterion 1 — End-to-end run:**  
 `php artisan filmos:run-golden-scenario` produces 4 rendered video clips for the "cockroach hotel" article without error.
@@ -502,12 +502,21 @@ Run `php artisan filmos:check-invariants --production=prod_golden_scenario`. Rep
 **Criterion 5 — PlanScore populated:**  
 `$plan->score` is non-null and `meetsHardCaps($objectives)` returns true.
 
+**Criterion 6 — Replay produces identical output:**  
+`php artisan filmos:replay-run {runId}` re-executes a completed run from its persisted DAGRuntime + CheckpointStore and produces the same 4 PromptIRs as the original run. Replay must:
+- Reconstruct all DAG nodes from storage (no re-query to AI providers)
+- Reproduce `DirectorIntent` for each shot identically
+- Emit a diff report: `identical: 4/4 shots` (or list divergences with reasons)
+
+This validates that FilmOS is **deterministically replayable** — a prerequisite for debugging, audit, regression testing, and the Learning Layer (Invariant 5 must hold across replay).
+
 ### Phase 1 artisan commands
 
 ```
-php artisan filmos:run-golden-scenario          # full pipeline, travel_warning domain
-php artisan filmos:explain-shot {productionId} {shotId}  # trace from shot back to facts
-php artisan filmos:check-invariants {productionId}       # validate all 6 invariants
+php artisan filmos:run-golden-scenario               # full pipeline, travel_warning domain
+php artisan filmos:explain-shot {productionId} {shotId}  # trace shot back to facts
+php artisan filmos:check-invariants {productionId}   # validate all 6 invariants
+php artisan filmos:replay-run {runId}                # replay DAG from checkpoint, diff output
 ```
 
 ### Files to create in Phase 1

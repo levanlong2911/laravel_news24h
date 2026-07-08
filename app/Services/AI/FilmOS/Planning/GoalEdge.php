@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Planning;
 
 use App\Services\AI\FilmOS\Graph\GraphEdge;
+use App\Services\AI\FilmOS\Snapshot\GraphHashable;
 
-final class GoalEdge extends GraphEdge
+final class GoalEdge extends GraphEdge implements GraphHashable
 {
     public function __construct(
         string                 $fromId,
@@ -25,5 +26,11 @@ final class GoalEdge extends GraphEdge
     public function label(): string
     {
         return "{$this->fromId} —[{$this->relation->value}]→ {$this->toId}";
+    }
+
+    /** @return array<string, string> */
+    public function canonicalData(): array
+    {
+        return ['from' => $this->fromId, 'to' => $this->toId, 'rel' => $this->relation->value];
     }
 }
