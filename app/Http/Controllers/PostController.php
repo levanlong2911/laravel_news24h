@@ -114,16 +114,12 @@ class PostController extends Controller
 
     public function update(Request $request, $id)
     {
+
         $listPost = $this->postService->getPostById($id);
         if (!$listPost) {
                 return redirect()->route('post.index')->with('error', __('messages.add_error'));
             }
-        $listsCate = $this->categoryService->getListCategory();
-        // if (!auth()->user()->isAdmin()) {
-        //     if ($listPost->author_id !== auth()->id()) {
-        //         abort(403, 'Bạn không có quyền sửa bài viết này');
-        //     }
-        // }
+        $listsCate = $this->categoryService->getAllCategories();
         if($request->isMethod('post')) {
             $this->form->validate($request, 'PostUpdateForm', $listPost->id, $listPost->domain_id);
             $upPost = $this->postService->update($id, $request, $listPost);

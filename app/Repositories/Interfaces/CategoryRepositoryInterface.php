@@ -6,4 +6,5 @@ interface CategoryRepositoryInterface extends RepositoryInterface
 {
     public function getDataListIds($ids);
     public function getListCategory();
+    public function getAllCategories();
 }

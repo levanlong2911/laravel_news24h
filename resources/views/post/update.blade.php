@@ -34,9 +34,6 @@
                     category: {
                         required: true,
                     },
-                    tag_names: {
-                        required: true,
-                    },
                     image: {
                         required: true,
                         url: true,
@@ -57,9 +54,6 @@
                     },
                     category: {
                         required: "{{ __('post.validate_category_required') }}",
-                    },
-                    tag_names: {
-                        required: "{{ __('post.validate_tag_required') }}",
                     },
                     image: {
                         required: "{{ __('post.validate_image_required') }}",
@@ -460,7 +454,7 @@
                                             name="category" id="category">
                                             <option value>Select category</option>
                                             @foreach ($listsCate as $item)
-                                                <option value="{{ $item->id }}" {{ old('category') ? (old('category') == $item->id ? 'selected' : '') : ($listPost->category_id == $item->id ? 'selected' : '') }}>{{  $item->name }}</option>
+                                                <option value="{{ $item->id }}" @selected(old('category', $listPost->category_id) == $item->id)>{{ $item->name }}</option>
                                             @endforeach
                                         </select>
                                         @error('name')

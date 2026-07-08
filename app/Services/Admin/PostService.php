@@ -517,6 +517,8 @@ class PostService
             'thumbnail' => $imageThumbnail,
             'category_id' => $request->category,
         ];
+
+        // dd($params);
         // Cập nhật dữ liệu vào database
         DB::transaction(function () use ($dataPost, $params, $request) {
             $dataPost->update($params);
