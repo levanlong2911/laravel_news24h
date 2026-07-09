@@ -1112,7 +1112,8 @@ final class KlingRenderer
         // Fixed bookends — never trimmed regardless of budget.
         // Anatomy prefix: positive count constraints guide the model before anything else.
         // "single athlete, two arms, two legs" forces the model away from extra-limb artifacts.
-        $prefix = 'Hyperrealistic. Single athlete. Two arms, two legs. Natural anatomy, realistic hands.';
+        $prefix = $dsl['anatomy_prefix']
+            ?? 'Hyperrealistic. Single athlete. Two arms, two legs. Natural anatomy, realistic hands.';
         $lensEffect = self::LENS_EFFECT[$lensCode] ?? '';
         $suffix = 'Cinematic, no text overlays' . ($lensEffect !== '' ? '. ' . $lensEffect : '') . '.';
 

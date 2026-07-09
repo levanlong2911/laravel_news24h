@@ -91,6 +91,13 @@ class FactExtractorService
             );
         }
 
+        if (empty($parsed['facts'])) {
+            throw new \RuntimeException(
+                "FactExtractor: article {$article->id} produced zero extractable facts "
+                . "(confidence={$parsed['confidence']}). Article content may be too thin for video generation."
+            );
+        }
+
         return ArticleFact::create([
             'article_id' => $article->id,
             'facts_json' => $parsed['facts'] ?? [],

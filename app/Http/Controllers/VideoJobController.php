@@ -7,6 +7,7 @@ use App\Models\StoryPlan;
 use App\Models\VideoJob;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 
@@ -87,7 +88,15 @@ class VideoJobController extends Controller
             return response()->json(['status' => 'failed', 'message' => "Đang thử lại (lần {$article->video_failure_count}) -- xem chi tiết trong log"]);
         }
 
-        return response()->json(['status' => 'pending']);
+        $step = Cache::get("video_pipeline_step:{$article->id}");
+        $stepLabel = match ($step) {
+            'extracting_facts' => 'Đang trích xuất dữ liệu bài viết...',
+            'planning_story'   => 'Đang lên kế hoạch câu chuyện...',
+            'writing_script'   => 'Đang viết kịch bản video...',
+            default            => null,
+        };
+
+        return response()->json(['status' => 'pending', 'step' => $step, 'step_label' => $stepLabel]);
     }
 
     public function show(Article $article)

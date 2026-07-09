@@ -22,6 +22,8 @@ use App\Services\AI\FilmOS\Planning\ShotSequencePlan;
 use App\Services\AI\FilmOS\Planning\Strategies\CameraStrategy;
 use App\Services\AI\FilmOS\Planning\Strategies\MotionStrategy;
 use App\Services\AI\FilmOS\Planning\SubGoalPlanner;
+use App\Services\AI\FilmOS\Kernel\FilmTask;
+use App\Services\AI\FilmOS\Kernel\TaskType;
 use App\Services\AI\FilmOS\Snapshot\ExecutionSnapshot;
 use App\Services\AI\FilmOS\Snapshot\ExecutionSnapshotBuilder;
 use Illuminate\Console\Command;
@@ -183,10 +185,9 @@ class ReplayRunCommand extends Command
             fn() => $plan, 'MultiObjectiveOptimizer', ['meaning_graph'], $rawPlan->goalConfidence);
 
         // L4: INTENT nodes
-        $assembler     = new IntentAssembler();
-        $intentPrompts = [];
-        $taskOrder     = [];
-        $intents       = [];
+        $assembler = new IntentAssembler();
+        $intents   = [];
+        $filmTasks = [];
 
         foreach ($ordered as $shot) {
             $intent = $runtime->execute(
@@ -198,9 +199,15 @@ class ReplayRunCommand extends Command
                 ['strategy_plan'],
                 0.91,
             );
-            $intentPrompts[$shot->subGoalId] = RenderPlugin::buildPromptFromIntent($intent);
-            $taskOrder[]                     = "render_{$shot->subGoalId}";
-            $intents[$shot->subGoalId]       = $intent;
+            $intents[$shot->subGoalId] = $intent;
+            $filmTasks[] = new FilmTask(
+                id:         "render_{$shot->subGoalId}",
+                type:       TaskType::RENDER,
+                priority:   $intent->evaluation->priority,
+                payload:    $intent,
+                deadlineMs: 15000,
+                dependsOn:  ["intent_{$shot->subGoalId}"],
+            );
         }
 
         // L6: mock RENDER nodes (dry-run — no real API call)
@@ -240,12 +247,12 @@ class ReplayRunCommand extends Command
         $dag = $runtime->toDecisionDAG();
 
         return (new ExecutionSnapshotBuilder())->build(
-            productionId:  "replay_{$productionId}",
-            dag:           $dag,
-            goalGraph:     $goalGraph,
-            plan:          $plan,
-            intentPrompts: $intentPrompts,
-            taskOrder:     $taskOrder,
+            productionId: "replay_{$productionId}",
+            dag:          $dag,
+            goalGraph:    $goalGraph,
+            plan:         $plan,
+            intents:      $intents,
+            tasks:        $filmTasks,
         );
     }
 

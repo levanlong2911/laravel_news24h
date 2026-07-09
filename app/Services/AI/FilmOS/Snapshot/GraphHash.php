@@ -38,9 +38,13 @@ final class GraphHash
     {
         $nodes = [];
         foreach ($graph->nodes() as $node) {
-            $nodes[$node->id] = $node instanceof GraphHashable
-                ? $node->canonicalData()
-                : ['id' => $node->id, 'label' => $node->label()];
+            if (!$node instanceof GraphHashable) {
+                throw new \LogicException(
+                    sprintf('Node %s (%s) must implement GraphHashable to participate in a canonical hash.',
+                        $node->id, get_class($node))
+                );
+            }
+            $nodes[$node->id] = $node->canonicalData();
         }
         ksort($nodes);
 
@@ -105,6 +109,8 @@ final class GraphHash
      */
     public static function ofTasks(array $tasks): string
     {
+        usort($tasks, fn(FilmTask $a, FilmTask $b) => strcmp($a->id, $b->id));
+
         $canonical = [];
         foreach ($tasks as $task) {
             $deps = $task->dependsOn;

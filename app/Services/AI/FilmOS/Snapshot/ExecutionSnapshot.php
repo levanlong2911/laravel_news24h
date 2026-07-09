@@ -21,6 +21,9 @@ namespace App\Services\AI\FilmOS\Snapshot;
  */
 final class ExecutionSnapshot
 {
+    /** Increment when canonicalHash() field set changes — forces replay mismatch on schema drift. */
+    public const SCHEMA_VERSION = 1;
+
     public function __construct(
         // Schema version — increment when canonicalHash() field set changes
         public readonly int     $schemaVersion,

@@ -141,10 +141,15 @@ If the article is about a real person, describe them as a generic character insp
 role (e.g. "a tall athletic football player in a plain dark jersey, no visible logos"),
 never by name-dropping copyrighted branding.
 
+Classify the content_type based on the story:
+  "visual_image" — the story is primarily about scenes, locations, objects, or visual spectacle (travel, architecture, luxury, nature, animals in their environment).
+  "informational" — the story centres on news events, facts, people, or data.
+
 Respond with ONLY this JSON shape:
 {
   "narrative_arc": "...",
   "mood": "epic|calm|mysterious|tense|hopeful",
+  "content_type": "informational|visual_image",
   "visual_anchor": "...",
   "parts_outline": [
     {"part_number": 1, "beat": "...", "cliffhanger_question": null, "is_final_part": true, "cta": "..."}

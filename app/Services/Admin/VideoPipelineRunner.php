@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Exceptions\VideoFrameworkNotConfiguredException;
 use App\Models\Article;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -35,7 +36,16 @@ class VideoPipelineRunner
      */
     public function resolveTotalParts(Article $article): int
     {
-        return 1;
+        $score = (int) ($article->viral_score ?? 0);
+        $max   = (int) config('video.parts_per_topic', 3);
+
+        $parts = match(true) {
+            $score >= 70 => 3,
+            $score >= 40 => 2,
+            default      => 1,
+        };
+
+        return min($parts, $max);
     }
 
     public function run(Article $article, int $partsPerTopic = 0): array
@@ -51,17 +61,24 @@ class VideoPipelineRunner
             return ['status' => 'failed', 'message' => 'Bài này đang được xử lý (bởi cron hoặc người khác) -- thử lại sau ít phút.'];
         }
 
-        $article = $article->fresh();
-        // L10: use viral_score to decide total_parts; caller's hint is ignored when 0
+        $article    = $article->fresh();
         $totalParts = $partsPerTopic > 0 ? $partsPerTopic : $this->resolveTotalParts($article);
+        $cacheKey   = "video_pipeline_step:{$article->id}";
 
         try {
+            Cache::put($cacheKey, 'extracting_facts', 600);
             $facts = $article->articleFact ?? $this->factExtractor->run($article);
+
+            Cache::put($cacheKey, 'planning_story', 600);
             $plan = $article->storyPlan ?? $this->storyPlanner->run($article, $facts, $totalParts);
+
+            Cache::put($cacheKey, 'writing_script', 600);
             $this->scriptGenerator->run($article, $facts, $plan);
 
+            Cache::forget($cacheKey);
             return ['status' => 'ok', 'message' => "{$plan->total_parts} part(s) scripted"];
         } catch (VideoFrameworkNotConfiguredException $e) {
+            Cache::forget($cacheKey);
             $this->skipPermanently($article, $e->getMessage());
             Log::info('[VideoPipelineRunner] Skipping article permanently: ' . $e->getMessage(), [
                 'article_id' => $article->id,
@@ -69,6 +86,7 @@ class VideoPipelineRunner
 
             return ['status' => 'skipped', 'message' => $e->getMessage()];
         } catch (\Throwable $e) {
+            Cache::forget($cacheKey);
             $this->recordFailure($article, $e->getMessage());
             Log::error('[VideoPipelineRunner] Article failed: ' . $e->getMessage(), [
                 'article_id' => $article->id,

@@ -43,6 +43,12 @@ class ClaudeWriterService
 
     public function generate(string $prompt, string $modelType = 'haiku', string $system = ''): ClaudeResponse
     {
+        Log::debug('[ClaudeWriterService] prompt', [
+            'model'  => $modelType,
+            'system' => $system ?: '(none)',
+            'prompt' => $prompt,
+        ]);
+
         $model     = self::MODELS[$modelType]     ?? self::MODELS['haiku'];
         $maxTokens = self::MAX_TOKENS[$modelType] ?? 2048;
 

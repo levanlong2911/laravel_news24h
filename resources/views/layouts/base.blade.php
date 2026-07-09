@@ -184,13 +184,17 @@
                         .then(r => r.json())
                         .then(data => {
                             if (data.status === 'ok') {
-                                toastr.success('Video AI hoàn thành: "' + item.title + '" -- ' + data.message);
+                                toastr.success('Video AI hoàn thành: "' + item.title + '" — ' + data.message);
                                 removePending(item.id);
                             } else if (data.status === 'skipped' || data.status === 'failed') {
                                 toastr.error('Video AI lỗi "' + item.title + '": ' + data.message);
                                 removePending(item.id);
+                            } else if (data.step_label && data.step_label !== item.lastStep) {
+                                // Step changed — show a brief info toast so the user knows which stage is running
+                                toastr.info(data.step_label + '<br><small>' + item.title + '</small>', 'Đang xử lý...', { timeOut: 8000, escapeHtml: false });
+                                const list = getPending().map(p => p.id === item.id ? Object.assign({}, p, { lastStep: data.step_label }) : p);
+                                setPending(list);
                             }
-                            // status === 'pending' -- keep polling, no toast yet
                         })
                         .catch(function () {}); // network hiccup -- just retry next interval
                 });

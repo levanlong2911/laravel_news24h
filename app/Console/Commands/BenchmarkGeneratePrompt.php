@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Article;
+use App\Services\Admin\ClaudeWriterService;
 use App\Services\AI\PromptCompiler\PromptDocumentBuilder;
 use App\Services\AI\PromptCompiler\Renderers\KlingRenderer;
 use App\Services\AI\ScenePlanner\ScenePlanner;
@@ -21,6 +23,7 @@ class BenchmarkGeneratePrompt extends Command
 {
     protected $signature = 'benchmark:generate-prompt
                             {--fixture=nfl_quarterback_throw : Fixture slug to generate prompt for}
+                            {--article= : Article UUID — Claude haiku extracts DSL from article content (overrides --fixture)}
                             {--seed=12345 : Kling render seed}
                             {--model=kling-2.1 : Kling model version}
                             {--duration=5 : Clip duration in seconds (5 or 10)}
@@ -134,19 +137,28 @@ class BenchmarkGeneratePrompt extends Command
         ],
     ];
 
-    public function handle(ScenePlanner $scenePlanner): int
+    public function handle(ScenePlanner $scenePlanner, ClaudeWriterService $claude): int
     {
-        $fixture  = $this->option('fixture');
-        $seed     = $this->option('seed');
-        $model    = $this->option('model');
-        $duration = (int) $this->option('duration');
-        $jsonOnly = $this->option('json');
+        $fixture   = $this->option('fixture');
+        $articleId = $this->option('article');
+        $seed      = $this->option('seed');
+        $model     = $this->option('model');
+        $duration  = (int) $this->option('duration');
+        $jsonOnly  = $this->option('json');
 
-        $dslBase = self::FIXTURE_DSL[$fixture] ?? null;
-        if ($dslBase === null) {
-            $this->error("Unknown fixture: {$fixture}");
-            $this->line('Available: ' . implode(', ', array_keys(self::FIXTURE_DSL)));
-            return self::FAILURE;
+        if ($articleId) {
+            $dslBase = $this->dslFromArticle($articleId, $claude);
+            if ($dslBase === null) {
+                return self::FAILURE;
+            }
+            $fixture = 'article_' . substr($articleId, 0, 8);
+        } else {
+            $dslBase = self::FIXTURE_DSL[$fixture] ?? null;
+            if ($dslBase === null) {
+                $this->error("Unknown fixture: {$fixture}");
+                $this->line('Available: ' . implode(', ', array_keys(self::FIXTURE_DSL)));
+                return self::FAILURE;
+            }
         }
 
         $dsl        = array_merge($dslBase, ['dur' => (float) $duration]);
@@ -377,5 +389,68 @@ class BenchmarkGeneratePrompt extends Command
         }
 
         return $outputs;
+    }
+
+    /**
+     * Call Claude haiku to extract cinematic DSL fields from a raw article.
+     * Returns array compatible with FIXTURE_DSL, or null on failure.
+     */
+    private function dslFromArticle(string $articleId, ClaudeWriterService $claude): ?array
+    {
+        $article = Article::find($articleId);
+        if (!$article) {
+            $this->error("Article not found: {$articleId}");
+            return null;
+        }
+
+        $excerpt = mb_substr(strip_tags((string) ($article->content ?? '')), 0, 1500);
+
+        $prompt = <<<PROMPT
+You are a cinematic director. Read this news article and choose DSL parameters for a single 5-second Kling video clip that best represents the article visually.
+
+Article title: {$article->title}
+Article content: {$excerpt}
+
+Return ONLY a JSON object with these exact fields (no explanation, no markdown):
+{
+  "scene_title": "one sentence describing the most visual scene",
+  "cam": "one of: WIDE|MEDIUM|CLOSE|MACRO|ORBITAL|TRACKING|AERIAL|POV",
+  "move": "one of: STATIC|P1|P2|D1|D2|O1|O2|H1|T1|T2",
+  "lens": "one of: 24|35|50|85|135|200",
+  "light": "one of: W1|W2|G1|N1|N2|D1|S1|S2|C1|C2",
+  "emo": "one of: HOOK|CRAFT|AWE|TENSE|DRAMA|REVEAL|CALM|POWER|JOY|FEAR|EPIC",
+  "motion_level": "one of: high|medium|low",
+  "sub": {
+    "actor": "main subject (person, animal, object)",
+    "action": "what the subject is doing",
+    "obj": "object involved (empty string if none)"
+  },
+  "camera_goal": "what this shot should make the viewer feel or understand",
+  "anatomy_prefix": "short Kling anatomy/realism constraint for the subject, e.g. 'Hyperrealistic. Single beagle dog. Four legs, floppy ears, tricolor fur. Natural canine anatomy.' or 'Hyperrealistic. Single person. Two arms, two legs. Natural anatomy, realistic hands.' — match the actual subject type exactly"
+}
+
+Light codes: W1=warm golden, W2=amber sunset, G1=golden hour, N1=night neon, N2=moonlit, D1=dramatic rim, S1=soft window, S2=studio, C1=clinical, C2=industrial
+Move codes: STATIC=locked, P1=push-in, P2=pull-back, D1=dolly right, D2=dolly left, O1=orbital CW, O2=orbital CCW, H1=handheld, T1=tilt-up, T2=tilt-down
+PROMPT;
+
+        $quiet = $this->option('json');
+        if (!$quiet) $this->line("\n[DSL] Calling Claude haiku for article: \"{$article->title}\"...");
+        $response = $claude->generate($prompt, 'haiku');
+
+        $text = trim($response->text);
+        // Strip markdown code fences if present
+        $text = preg_replace('/^```(?:json)?\s*/i', '', $text);
+        $text = preg_replace('/\s*```$/', '', $text);
+
+        $dsl = json_decode($text, true);
+        if (!is_array($dsl) || empty($dsl['cam'])) {
+            $this->error("[DSL] Claude returned unparseable response:\n{$text}");
+            return null;
+        }
+
+        if (!$quiet) $this->line("[DSL] Extracted: cam={$dsl['cam']} move={$dsl['move']} emo={$dsl['emo']} lens={$dsl['lens']} light={$dsl['light']}");
+        if (!$quiet) $this->line("[DSL] Subject: {$dsl['sub']['actor']} / {$dsl['sub']['action']}");
+
+        return $dsl;
     }
 }

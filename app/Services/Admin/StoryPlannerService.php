@@ -7,6 +7,8 @@ use App\Models\ArticleFact;
 use App\Models\StoryPlan;
 use App\Models\VideoAnalytic;
 use App\Services\Admin\Concerns\VideoPipelineHelpers;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -67,16 +69,24 @@ class StoryPlannerService
         $this->logVideoCost($article->id, 'story_planner', 'sonnet', $response);
 
         $parsed = $this->parseJson($response->text);
+
+        if ($parsed === null || empty($parsed['parts_outline'])) {
+            Log::info('[StoryPlanner] Retrying after unparseable response', ['article_id' => $article->id]);
+            $response = $this->claude->generate($prompt, 'sonnet', $framework->system_prompt);
+            $this->logVideoCost($article->id, 'story_planner_retry', 'sonnet', $response);
+            $parsed = $this->parseJson($response->text);
+        }
+
         if ($parsed === null || empty($parsed['parts_outline'])) {
             throw new \RuntimeException(
-                "StoryPlanner: Claude returned unparseable/empty JSON for article {$article->id}."
+                "StoryPlanner: Claude returned unparseable/empty JSON for article {$article->id} (2 attempts)."
             );
         }
 
         $visualAnchor = trim($parsed['visual_anchor'] ?? '') ?: $this->defaultVisualAnchor($artStyle);
 
         $narrativeArc = $parsed['narrative_arc'] ?? '';
-        $contentType = $this->resolveContentType($narrativeArc, $context->domain);
+        $contentType = $parsed['content_type'] ?? 'informational';
 
         return StoryPlan::create([
             'article_id' => $article->id,
@@ -85,7 +95,7 @@ class StoryPlannerService
             'mood' => $parsed['mood'] ?? 'epic',
             'content_type' => $contentType,
             'visual_anchor' => $visualAnchor,
-            'total_parts' => $totalParts,
+            'total_parts' => count($parsed['parts_outline']),
             'parts_outline_json' => $parsed['parts_outline'],
         ]);
     }
@@ -98,6 +108,13 @@ class StoryPlannerService
      * Returns empty string when no analytics data exists yet (first-run safe).
      */
     private function buildAnalyticsHint(string $categoryId): string
+    {
+        return Cache::remember("video_analytics_hint:{$categoryId}", 3600, function () use ($categoryId) {
+            return $this->queryAnalyticsHint($categoryId);
+        });
+    }
+
+    private function queryAnalyticsHint(string $categoryId): string
     {
         $top = VideoAnalytic::selectRaw(
                 'story_plans.narrative_arc,
@@ -134,17 +151,4 @@ class StoryPlannerService
             . "Bias your narrative arc and mood toward similar patterns when relevant.";
     }
 
-    private function resolveContentType(string $narrativeArc, string $domain): string
-    {
-        $visualKeywords = ['yacht', 'superyacht', 'construction', 'travel', 'luxury', 'architecture', 'scenic'];
-        $text = strtolower($narrativeArc . ' ' . $domain);
-
-        foreach ($visualKeywords as $keyword) {
-            if (str_contains($text, $keyword)) {
-                return 'visual_image';
-            }
-        }
-
-        return 'informational';
-    }
 }

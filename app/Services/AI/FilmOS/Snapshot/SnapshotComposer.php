@@ -53,7 +53,7 @@ final class SnapshotComposer
         $phase = $this->planning->build($dag, $goalGraph, $plan, $intents, $tasks);
 
         return new ExecutionSnapshot(
-            schemaVersion:      1,
+            schemaVersion:      ExecutionSnapshot::SCHEMA_VERSION,
             executionId:        'exec_' . $productionId,
             productionId:       $productionId,
             capturedAt:         microtime(true),
