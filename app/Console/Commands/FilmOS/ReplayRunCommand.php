@@ -22,10 +22,10 @@ use App\Services\AI\FilmOS\Planning\ShotSequencePlan;
 use App\Services\AI\FilmOS\Planning\Strategies\CameraStrategy;
 use App\Services\AI\FilmOS\Planning\Strategies\MotionStrategy;
 use App\Services\AI\FilmOS\Planning\SubGoalPlanner;
-use App\Services\AI\FilmOS\Kernel\FilmTask;
-use App\Services\AI\FilmOS\Kernel\TaskType;
+use App\Services\AI\FilmOS\Snapshot\DeterminismManifest;
 use App\Services\AI\FilmOS\Snapshot\ExecutionSnapshot;
-use App\Services\AI\FilmOS\Snapshot\ExecutionSnapshotBuilder;
+use App\Services\AI\FilmOS\Snapshot\SnapshotComposer;
+use App\Services\AI\FilmOS\Snapshot\TaskDescriptor;
 use Illuminate\Console\Command;
 
 /**
@@ -185,9 +185,9 @@ class ReplayRunCommand extends Command
             fn() => $plan, 'MultiObjectiveOptimizer', ['meaning_graph'], $rawPlan->goalConfidence);
 
         // L4: INTENT nodes
-        $assembler = new IntentAssembler();
-        $intents   = [];
-        $filmTasks = [];
+        $assembler   = new IntentAssembler();
+        $intents     = [];
+        $descriptors = [];
 
         foreach ($ordered as $shot) {
             $intent = $runtime->execute(
@@ -200,13 +200,12 @@ class ReplayRunCommand extends Command
                 0.91,
             );
             $intents[$shot->subGoalId] = $intent;
-            $filmTasks[] = new FilmTask(
+            $descriptors[] = new TaskDescriptor(
                 id:         "render_{$shot->subGoalId}",
-                type:       TaskType::RENDER,
-                priority:   $intent->evaluation->priority,
-                payload:    $intent,
-                deadlineMs: 15000,
+                type:       'render',
+                priority:   $intent->evaluation->priority->value,
                 dependsOn:  ["intent_{$shot->subGoalId}"],
+                deadlineMs: 15000.0,
             );
         }
 
@@ -246,13 +245,17 @@ class ReplayRunCommand extends Command
 
         $dag = $runtime->toDecisionDAG();
 
-        return (new ExecutionSnapshotBuilder())->build(
+        $worldVersion = hash('sha256', json_encode($facts, JSON_THROW_ON_ERROR));
+        $manifest     = DeterminismManifest::current($worldVersion);
+
+        return (new SnapshotComposer())->composeFromPlan(
             productionId: "replay_{$productionId}",
+            manifest:     $manifest,
             dag:          $dag,
             goalGraph:    $goalGraph,
             plan:         $plan,
             intents:      $intents,
-            tasks:        $filmTasks,
+            descriptors:  $descriptors,
         );
     }
 

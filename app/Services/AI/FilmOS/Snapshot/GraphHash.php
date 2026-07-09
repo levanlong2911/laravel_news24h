@@ -5,124 +5,66 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Snapshot;
 
 use App\Services\AI\FilmOS\Graph\Graph;
-use App\Services\AI\FilmOS\Intent\DirectorIntent;
-use App\Services\AI\FilmOS\Kernel\FilmTask;
 
 /**
- * Deterministic sha256 hashing for FilmOS graph structures and intent/task layers.
+ * Deterministic SHA-256 hash of a Graph's topology.
  *
- * All methods produce canonical hashes: identical inputs → identical output across runs.
+ * Responsibilities (single):
+ *   Produce a stable hash of graph structure (nodes + edges).
+ *   Intent hashing  → PromptHashBuilder
+ *   Task hashing    → SchedulerHashBuilder
+ *   Policy hashing  → PolicyHashBuilder
  *
- * GraphHashable contract (nodes / edges):
- *   Use canonicalData() when available — structural fields (id, type) only.
- *   Fall back to {id, label} for graph types not yet implementing GraphHashable.
+ * HashSerializer is injected so that Replay Servers in other runtimes
+ * (Rust, Go, Node) can use the same format (MessagePack, CBOR, etc.)
+ * and produce identical hashes without re-implementing json_encode semantics.
  *
- * PromptHash contract (ofIntents):
- *   Hash ExecutionContext structural fields (mustShow, mustAvoid, visualStrategy,
- *   styleRule, beat) — NOT the rendered prompt string. Stable across template changes.
- *
- * SchedulerHash contract (ofTasks):
- *   Hash task topology (id, type, priority, dependsOn, deadlineMs) — NOT payload
- *   (DirectorIntent) or runtime state (startedAt, attempts, taskId from provider).
+ * Node contract  (HashableNode):  canonicalNode()  → CanonicalNode
+ * Edge contract  (HashableEdge):  canonicalEdge()  → CanonicalEdge
+ *   Edges without HashableEdge fall back to {from, to} only.
+ *   Nodes without HashableNode throw LogicException — structural contract required.
  */
 final class GraphHash
 {
+    public function __construct(
+        private readonly HashSerializer $serializer = new JsonHashSerializer(),
+    ) {}
+
     /**
      * Canonical topology hash of a Graph.
      *
-     * Nodes sorted by id (ksort). Edges sorted lexicographically after JSON-encoding
-     * their canonical data. Uses GraphHashable::canonicalData() when available;
-     * falls back to {id, label} for non-implementing types.
+     * Nodes:  sorted by id (ksort) — canonical key order.
+     * Edges:  each serialized independently, then sorted lexicographically.
+     *
+     * @throws \LogicException if any node does not implement HashableNode
      */
-    public static function of(Graph $graph): string
+    public function of(Graph $graph): string
     {
         $nodes = [];
         foreach ($graph->nodes() as $node) {
-            if (!$node instanceof GraphHashable) {
-                throw new \LogicException(
-                    sprintf('Node %s (%s) must implement GraphHashable to participate in a canonical hash.',
-                        $node->id, get_class($node))
-                );
+            if (!$node instanceof HashableNode) {
+                throw new \LogicException(sprintf(
+                    'Node %s (%s) must implement HashableNode to participate in a canonical hash.',
+                    $node->id,
+                    get_class($node),
+                ));
             }
-            $nodes[$node->id] = $node->canonicalData();
+            $nodes[$node->id] = $node->canonicalNode()->toArray();
         }
         ksort($nodes);
 
         $edges = [];
         foreach ($graph->edges() as $edge) {
-            $edges[] = json_encode(
-                $edge instanceof GraphHashable
-                    ? $edge->canonicalData()
+            $edges[] = $this->serializer->serialize(
+                $edge instanceof HashableEdge
+                    ? $edge->canonicalEdge()->toArray()
                     : ['from' => $edge->fromId, 'to' => $edge->toId],
-                JSON_THROW_ON_ERROR,
             );
         }
         sort($edges);
 
-        return hash('sha256', json_encode(
+        return hash('sha256', $this->serializer->serialize(
             ['nodes' => $nodes, 'edges' => $edges],
-            JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
         ));
-    }
-
-    /**
-     * Canonical hash of the intent layer: structural ExecutionContext fields per shot.
-     *
-     * Hashes WHAT the director decided (mustShow, mustAvoid, visualStrategy, styleRule, beat),
-     * not HOW the prompt was rendered. This makes the hash stable across prompt template edits
-     * while still catching changes in directorial intent.
-     *
-     * @param  array<string, DirectorIntent> $intents  subGoalId → DirectorIntent
-     */
-    public static function ofIntents(array $intents): string
-    {
-        ksort($intents);
-        $canonical = [];
-        foreach ($intents as $id => $intent) {
-            $mustShow  = $intent->execution->mustShow;
-            $mustAvoid = $intent->execution->mustAvoid;
-            $styleRule = $intent->execution->styleRule;
-            sort($mustShow);
-            sort($mustAvoid);
-            ksort($styleRule);
-
-            $canonical[$id] = [
-                'shotId'         => $intent->shotId,
-                'beat'           => $intent->execution->beat->value,
-                'mustShow'       => $mustShow,
-                'mustAvoid'      => $mustAvoid,
-                'visualStrategy' => $intent->execution->visualStrategy->value,
-                'styleRule'      => $styleRule,
-            ];
-        }
-        return hash('sha256', json_encode($canonical, JSON_THROW_ON_ERROR));
-    }
-
-    /**
-     * Canonical hash of the scheduler task topology.
-     *
-     * Hashes (id, type, priority, dependsOn sorted, deadlineMs) — NOT payload
-     * (DirectorIntent objects) or provider-assigned task IDs. dependsOn is sorted
-     * so insertion order does not affect the hash.
-     *
-     * @param  FilmTask[] $tasks  in submission order
-     */
-    public static function ofTasks(array $tasks): string
-    {
-        usort($tasks, fn(FilmTask $a, FilmTask $b) => strcmp($a->id, $b->id));
-
-        $canonical = [];
-        foreach ($tasks as $task) {
-            $deps = $task->dependsOn;
-            sort($deps);
-            $canonical[] = [
-                'id'         => $task->id,
-                'type'       => $task->type->value,
-                'priority'   => $task->priority->value,
-                'dependsOn'  => $deps,
-                'deadlineMs' => $task->deadlineMs,
-            ];
-        }
-        return hash('sha256', json_encode($canonical, JSON_THROW_ON_ERROR));
     }
 }

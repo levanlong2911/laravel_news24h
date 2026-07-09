@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Planning;
 
 use App\Services\AI\FilmOS\Graph\GraphNode;
-use App\Services\AI\FilmOS\Snapshot\GraphHashable;
+use App\Services\AI\FilmOS\Snapshot\CanonicalNode;
+use App\Services\AI\FilmOS\Snapshot\HashableNode;
 
-final class GoalNode extends GraphNode implements GraphHashable
+final class GoalNode extends GraphNode implements HashableNode
 {
     public function __construct(
         string                 $id,
@@ -34,9 +35,8 @@ final class GoalNode extends GraphNode implements GraphHashable
         return "{$this->id} [{$this->type->value}] p={$this->priority}";
     }
 
-    /** @return array<string, string> */
-    public function canonicalData(): array
+    public function canonicalNode(): CanonicalNode
     {
-        return ['id' => $this->id, 'type' => $this->type->value];
+        return new CanonicalNode(id: $this->id, type: $this->type->value);
     }
 }

@@ -5,23 +5,36 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\ExecutionGraph;
 
 /**
- * Kết quả sau một lần chạy ExecutionRuntime.
- * Bất biến sau khi được tạo ra.
+ * Result of one ExecutionRuntime::run() call.
  *
- * Bao gồm ExecutionMetrics để MetaPlanner và Learning
- * có dữ liệu thực tế thay vì chỉ dựa trên mô hình.
+ * Immutable after creation.
+ *
+ * Phase B additions:
+ *   states        — Map<taskId, ExecutionRuntimeState>; canonical mutable state
+ *                   for ExecutionLayerBuilder. Never read ExecutionNode fields for hashing.
+ *   checkpointLog — ordered CheckpointEntry[] emitted by the runtime; used by
+ *                   ExecutionLayerBuilder::buildCheckpointHash() without touching timestamps.
  */
 final class ExecutionResult
 {
     public function __construct(
-        public readonly ExecutionGraph  $graph,
-        public readonly float           $totalElapsedMs,
-        /** @var string[] node IDs thực sự được chạy trong lần này */
-        public readonly array           $executedNodeIds,
-        /** @var string[] node IDs bị bỏ qua (đã COMPLETED hoặc dep FAILED) */
-        public readonly array           $skippedNodeIds,
-        public readonly bool            $resumedFromCheckpoint,
+        public readonly ExecutionGraph   $graph,
+        public readonly float            $totalElapsedMs,
+
+        /** @var string[] node IDs actually executed in this run */
+        public readonly array            $executedNodeIds,
+
+        /** @var string[] node IDs skipped (already COMPLETED or dep FAILED) */
+        public readonly array            $skippedNodeIds,
+
+        public readonly bool             $resumedFromCheckpoint,
         public readonly ExecutionMetrics $metrics = new ExecutionMetrics(),
+
+        /** @var array<string, ExecutionRuntimeState>  taskId → state */
+        public readonly array            $states        = [],
+
+        /** @var CheckpointEntry[]  one entry per saveCheckpoint() call, in emission order */
+        public readonly array            $checkpointLog = [],
     ) {}
 
     public function isFullyCompleted(): bool
@@ -48,6 +61,7 @@ final class ExecutionResult
             'executedCount'         => count($this->executedNodeIds),
             'skippedFromCheckpoint' => count($this->skippedNodeIds),
             'resumedFromCheckpoint' => $this->resumedFromCheckpoint,
+            'checkpointEntries'     => count($this->checkpointLog),
             'metrics'               => $this->metrics->toArray(),
         ]);
     }

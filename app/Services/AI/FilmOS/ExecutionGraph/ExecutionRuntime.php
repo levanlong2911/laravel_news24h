@@ -18,6 +18,14 @@ use App\Services\AI\FilmOS\Graph\GraphAlgorithms;
  * HOW engine: topoSort → execute → checkpoint → resume.
  * Emits domain events at every lifecycle boundary (optional EventBus).
  * ADR-018: ExecutionGraph is recorder, ExecutionRuntime is runner.
+ *
+ * Dual tracking (Phase B):
+ *   ExecutionNode        — mutable; keeps ExecutionGraph queries working.
+ *   ExecutionRuntimeState — canonical mutable state for the snapshot layer.
+ *   CheckpointEntry[]    — explicit checkpoint log; no timestamp derivation needed.
+ *
+ * ExecutionLayerBuilder reads ONLY from ExecutionRuntimeState + CheckpointEntry[].
+ * It never reads ExecutionNode mutable fields directly.
  */
 final class ExecutionRuntime
 {
@@ -36,16 +44,28 @@ final class ExecutionRuntime
         ExecutionGraph $graph,
         array          $handlers,
     ): ExecutionResult {
-        $startTime = hrtime(true) / 1e6;
-        $resumed   = false;
-        $metrics   = new ExecutionMetrics();
+        $startTime     = hrtime(true) / 1e6;
+        $resumed       = false;
+        $metrics       = new ExecutionMetrics();
+        $cpOrdinal     = 0;
 
-        // Check for existing checkpoint — resume if found
+        /** @var array<string, ExecutionRuntimeState> $states */
+        $states        = [];
+        /** @var CheckpointEntry[] $checkpointLog */
+        $checkpointLog = [];
+
+        // ── Resume from checkpoint if available ────────────────────────────────
         $checkpoint = $this->checkpoints->load($executionId);
         if ($checkpoint !== null) {
             $graph   = $checkpoint;
             $resumed = true;
             $metrics->rollbackCount++;
+        }
+
+        // ── Initialise ExecutionRuntimeState from current node status ──────────
+        // For fresh runs: all PENDING. For resumed runs: approximated from node state.
+        foreach ($graph->nodes() as $node) {
+            $states[$node->taskId] = ExecutionRuntimeState::fromNode($node);
         }
 
         $this->eventBus?->dispatch(new ExecutionStartedEvent(
@@ -60,42 +80,50 @@ final class ExecutionRuntime
 
         foreach ($sorted as $node) {
             /** @var ExecutionNode $node */
+            $state = $states[$node->taskId];
 
-            // Already COMPLETED từ checkpoint → skip
+            // Already COMPLETED from checkpoint → skip
             if ($node->isCompleted()) {
                 $skipped[] = $node->id;
                 $metrics->recordNodeSkipped();
                 continue;
             }
 
-            // SKIPPED từ trước (dep đã failed) → giữ nguyên
+            // SKIPPED from before (dep already failed) → keep
             if ($node->isSkipped()) {
                 $skipped[] = $node->id;
                 $metrics->recordNodeSkipped();
                 continue;
             }
 
-            // Kiểm tra hard dependencies
+            // Hard dependency check
             if (!$this->allHardDepsCompleted($graph, $node->id)) {
-                $node->status = ExecutionNodeStatus::SKIPPED;
-                $skipped[]    = $node->id;
+                // ── SKIPPED ──
+                $node->status  = ExecutionNodeStatus::SKIPPED;
+                $state->status = ExecutionNodeStatus::SKIPPED;
+                $skipped[]     = $node->id;
                 $metrics->recordNodeSkipped();
+
+                $checkpointLog[] = new CheckpointEntry($node->taskId, 'skipped', ++$cpOrdinal);
                 $this->saveCheckpoint($executionId, $graph, $metrics);
                 continue;
             }
 
-            // Execute
-            $wasFailedBefore  = $node->isFailed();
-            $node->status     = ExecutionNodeStatus::RUNNING;
+            // ── Execute ────────────────────────────────────────────────────────
+            $wasFailedBefore = $node->isFailed();
+            $node->status    = ExecutionNodeStatus::RUNNING;
+            $state->status   = ExecutionNodeStatus::RUNNING;
+
             $node->startedAt  = microtime(true);
+            $state->startedAt = $node->startedAt;
 
             if ($wasFailedBefore) {
-                // Resume: node được re-run sau failure
                 $retryDelayMs = ($node->completedAt !== null)
                     ? (microtime(true) - $node->completedAt) * 1000
                     : 0.0;
                 $node->retryCount++;
-                $node->error = null;
+                $node->error  = null;
+                $state->error = null;
                 $metrics->recordRetry($retryDelayMs);
             }
 
@@ -103,35 +131,54 @@ final class ExecutionRuntime
                 $handler = $handlers[$node->taskId]
                     ?? throw new \RuntimeException("No handler for task: {$node->taskId}");
 
-                $node->result      = $handler();
+                $output = $handler();
+
+                // ── COMPLETED ──────────────────────────────────────────────────
+                $node->result      = $output;
                 $node->status      = ExecutionNodeStatus::COMPLETED;
                 $node->completedAt = microtime(true);
 
+                $state->result      = $output;
+                $state->status      = ExecutionNodeStatus::COMPLETED;
+                $state->completedAt = $node->completedAt;
+                $state->recordAttempt(ExecutionNodeStatus::COMPLETED);
+
                 $elapsedMs = $node->elapsedMs() ?? 0.0;
                 $metrics->recordNodeCompleted($node->id, $elapsedMs);
-                $this->eventBus?->dispatch(new NodeCompletedEvent($executionId, $node->id, $node->taskId, $elapsedMs));
+                $this->eventBus?->dispatch(new NodeCompletedEvent(
+                    $executionId, $node->id, $node->taskId, $elapsedMs,
+                ));
             } catch (\Throwable $e) {
+                // ── FAILED ────────────────────────────────────────────────────
                 $node->status      = ExecutionNodeStatus::FAILED;
                 $node->error       = $e->getMessage();
                 $node->completedAt = microtime(true);
 
-                // Extract provider from error message if present (convention: "provider:name message")
+                $state->status      = ExecutionNodeStatus::FAILED;
+                $state->error       = $e->getMessage();
+                $state->completedAt = $node->completedAt;
+                $state->recordAttempt(ExecutionNodeStatus::FAILED);
+
                 $provider = str_starts_with($e->getMessage(), 'provider:')
                     ? explode(' ', substr($e->getMessage(), 9), 2)[0]
                     : null;
                 $metrics->recordNodeFailed($node->id, $provider);
-                $this->eventBus?->dispatch(new NodeFailedEvent($executionId, $node->id, $node->taskId, $e->getMessage(), $node->retryCount, $provider));
+                $this->eventBus?->dispatch(new NodeFailedEvent(
+                    $executionId, $node->id, $node->taskId,
+                    $e->getMessage(), $node->retryCount, $provider,
+                ));
             }
 
             $executed[] = $node->id;
+
+            $checkpointLog[] = new CheckpointEntry($node->taskId, $state->status->value, ++$cpOrdinal);
             $this->saveCheckpoint($executionId, $graph, $metrics);
         }
 
-        $totalMs                = (hrtime(true) / 1e6) - $startTime;
+        $totalMs                 = (hrtime(true) / 1e6) - $startTime;
         $metrics->totalElapsedMs = $totalMs;
         $metrics->computeCriticalPath();
 
-        // Clear checkpoint only on full success
         if ($graph->isFullyCompleted() && !$graph->hasFailures()) {
             $this->checkpoints->clear($executionId);
         }
@@ -152,16 +199,25 @@ final class ExecutionRuntime
             skippedNodeIds:        $skipped,
             resumedFromCheckpoint: $resumed,
             metrics:               $metrics,
+            states:                $states,
+            checkpointLog:         $checkpointLog,
         );
     }
 
-    private function saveCheckpoint(string $executionId, ExecutionGraph $graph, ExecutionMetrics $metrics): void
-    {
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    private function saveCheckpoint(
+        string         $executionId,
+        ExecutionGraph $graph,
+        ExecutionMetrics $metrics,
+    ): void {
         $serialized = serialize($graph);
         $this->checkpoints->save($executionId, $graph);
         $sizeBytes = strlen($serialized);
         $metrics->recordCheckpoint($sizeBytes);
-        $this->eventBus?->dispatch(new CheckpointSavedEvent($executionId, $sizeBytes, $metrics->completedCount));
+        $this->eventBus?->dispatch(new CheckpointSavedEvent(
+            $executionId, $sizeBytes, $metrics->completedCount,
+        ));
     }
 
     private function allHardDepsCompleted(ExecutionGraph $graph, string $nodeId): bool

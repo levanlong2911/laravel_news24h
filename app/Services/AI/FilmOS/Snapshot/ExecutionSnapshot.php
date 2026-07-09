@@ -11,52 +11,54 @@ namespace App\Services\AI\FilmOS\Snapshot;
  * Two runs with identical input MUST produce identical canonicalHash().
  *
  * Fields are added incrementally as subsystems are wired:
- *   Phase 1 (now):  dagHash, goalGraphHash, promptHash, schedulerHash
+ *   Phase A (now):  dagHash, goalGraphHash, promptHash, schedulerHash, policyHash
  *   Phase B:        executionGraphHash, checkpointHash, retrySequenceHash
  *   Phase C:        capabilityHash, providerRouteHash
- *   Phase D+:       eventBusHash, policyHash
+ *   Phase D:        eventBusHash
  *
- * Null fields are explicitly tracked via gaps() so the report
- * shows what is and isn't yet verified.
+ * Null fields are tracked via gaps() so reports show what is and isn't yet verified.
  */
 final class ExecutionSnapshot
 {
-    /** Increment when canonicalHash() field set changes — forces replay mismatch on schema drift. */
+    /**
+     * Increment when the set of fields in canonicalHash() changes.
+     * This forces a deterministic mismatch on schema drift — never silent failure.
+     */
     public const SCHEMA_VERSION = 1;
 
     public function __construct(
-        // Schema version — increment when canonicalHash() field set changes
-        public readonly int     $schemaVersion,
+        // Versioned manifest — covers schema, compiler, backend, grammar, world, policy
+        public readonly DeterminismManifest $manifest,
 
         // Identity
         public readonly string  $executionId,
         public readonly string  $productionId,
         public readonly float   $capturedAt,
 
-        // Phase 1 — Planning layer (available now)
-        public readonly string  $dagHash,            // DecisionDAG topology
-        public readonly string  $goalGraphHash,      // GoalGraph topology
-        public readonly string  $promptHash,         // sha256 of all PromptIRs (canonical)
-        public readonly ?string $schedulerHash,      // task submission order (null until scheduler captured)
+        // Phase A — Planning layer
+        public readonly string  $dagHash,
+        public readonly string  $goalGraphHash,
+        public readonly string  $promptHash,
+        public readonly ?string $schedulerHash,
 
-        // Phase B — Execution layer (available after Provider Test Harness)
-        public readonly ?string $executionGraphHash, // ExecutionGraph topology + node statuses
-        public readonly ?string $checkpointHash,     // checkpoint sequence (ordered node completions)
-        public readonly ?string $retrySequenceHash,  // [nodeId → retryCount] ordered
+        // Phase B — Execution layer
+        public readonly ?string $executionGraphHash,
+        public readonly ?string $checkpointHash,
+        public readonly ?string $retrySequenceHash,
 
         // Phase C — Provider + Capability layer
-        public readonly ?string $capabilityHash,     // CapabilityRegistry snapshot
-        public readonly ?string $providerRouteHash,  // which provider handled which task
+        public readonly ?string $capabilityHash,
+        public readonly ?string $providerRouteHash,
 
-        // Phase D+ — Policy + Event layer
-        public readonly ?string $policyHash,         // PolicyDecision per shot
-        public readonly ?string $eventBusHash,       // EventBus event sequence
+        // Phase A (policy) / Phase D (event)
+        public readonly ?string $policyHash,
+        public readonly ?string $eventBusHash,
     ) {}
 
     /**
      * Canonical hash of all fields that MUST be identical for determinism.
      *
-     * Excludes: capturedAt, executionId (these are run-specific metadata).
+     * Excludes: capturedAt, executionId — run-specific metadata.
      * Null fields are included as the literal string "null" so their
      * absence is still part of the comparison (prevents false positives
      * when Phase B fields are added to one run but not another).
@@ -64,7 +66,7 @@ final class ExecutionSnapshot
     public function canonicalHash(): string
     {
         return hash('sha256', json_encode([
-            'schemaVersion'      => $this->schemaVersion,
+            'manifest'           => $this->manifest->canonicalHash(),
             'dagHash'            => $this->dagHash,
             'goalGraphHash'      => $this->goalGraphHash,
             'promptHash'         => $this->promptHash,
@@ -80,27 +82,25 @@ final class ExecutionSnapshot
     }
 
     /**
-     * Fields still null in this snapshot.
-     * Each entry represents a gap in determinism coverage.
-     *
+     * Fields still null — each represents a gap in determinism coverage.
      * @return string[]
      */
     public function gaps(): array
     {
         $gaps = [];
-        if ($this->schedulerHash === null)      $gaps[] = 'schedulerHash (Phase 1)';
+        if ($this->schedulerHash === null)      $gaps[] = 'schedulerHash (Phase A)';
         if ($this->executionGraphHash === null) $gaps[] = 'executionGraphHash (Phase B)';
         if ($this->checkpointHash === null)     $gaps[] = 'checkpointHash (Phase B)';
         if ($this->retrySequenceHash === null)  $gaps[] = 'retrySequenceHash (Phase B)';
         if ($this->capabilityHash === null)     $gaps[] = 'capabilityHash (Phase C)';
         if ($this->providerRouteHash === null)  $gaps[] = 'providerRouteHash (Phase C)';
-        if ($this->policyHash === null)         $gaps[] = 'policyHash (Phase D)';
+        if ($this->policyHash === null)         $gaps[] = 'policyHash (Phase A / Policy wired)';
         if ($this->eventBusHash === null)       $gaps[] = 'eventBusHash (Phase D)';
         return $gaps;
     }
 
     /**
-     * Diff two snapshots: returns field-level details for each diverging field.
+     * Field-level diff of two snapshots.
      * @return array<string, array{original: string|null, replay: string|null}>
      */
     public function diffWith(self $other): array
@@ -128,7 +128,6 @@ final class ExecutionSnapshot
         return $diffs;
     }
 
-    /** Short string representation — useful in table output. */
     public function shortHash(): string
     {
         return substr($this->canonicalHash(), 0, 12);

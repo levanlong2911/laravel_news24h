@@ -7,7 +7,9 @@ namespace App\Console\Commands\FilmOS;
 use App\Models\Article;
 use App\Services\AI\FilmOS\DecisionDAG\DAGNodeType;
 use App\Services\AI\FilmOS\DecisionDAG\DAGRuntime;
-use App\Services\AI\FilmOS\Snapshot\ExecutionSnapshotBuilder;
+use App\Services\AI\FilmOS\Snapshot\DeterminismManifest;
+use App\Services\AI\FilmOS\Snapshot\SnapshotComposer;
+use App\Services\AI\FilmOS\Snapshot\TaskDescriptor;
 use App\Services\AI\FilmOS\Evaluation\Plugins\EvaluationPlugin;
 use App\Services\AI\FilmOS\Intent\IntentAssembler;
 use App\Services\AI\FilmOS\Kernel\FilmKernel;
@@ -309,13 +311,18 @@ class RunGoldenScenarioCommand extends Command
         $this->line("Run: php artisan filmos:check-invariants {$productionId}");
 
         // ── ExecutionSnapshot (Phase A) ───────────────────────────────────────
-        $snapshot = (new ExecutionSnapshotBuilder())->build(
+        $worldVersion = hash('sha256', json_encode($facts, JSON_THROW_ON_ERROR));
+        $manifest     = DeterminismManifest::current($worldVersion);
+        $descriptors  = array_map(fn(FilmTask $t) => TaskDescriptor::fromFilmTask($t), $filmTasks);
+
+        $snapshot = (new SnapshotComposer())->composeFromPlan(
             productionId: $productionId,
+            manifest:     $manifest,
             dag:          $dag,
             goalGraph:    $goalGraph,
             plan:         $plan,
             intents:      $intents,
-            tasks:        $filmTasks,
+            descriptors:  $descriptors,
         );
 
         $this->newLine();

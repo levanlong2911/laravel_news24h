@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\DecisionDAG;
 
 use App\Services\AI\FilmOS\Graph\GraphNode;
-use App\Services\AI\FilmOS\Snapshot\GraphHashable;
+use App\Services\AI\FilmOS\Snapshot\CanonicalNode;
+use App\Services\AI\FilmOS\Snapshot\HashableNode;
 
-final class DAGNode extends GraphNode implements GraphHashable
+final class DAGNode extends GraphNode implements HashableNode
 {
     public function __construct(
         string              $id,
@@ -30,9 +31,8 @@ final class DAGNode extends GraphNode implements GraphHashable
         return "[{$this->type->value}] {$this->id} conf={$this->confidence}";
     }
 
-    /** @return array<string, string> */
-    public function canonicalData(): array
+    public function canonicalNode(): CanonicalNode
     {
-        return ['id' => $this->id, 'type' => $this->type->value];
+        return new CanonicalNode(id: $this->id, type: $this->type->value);
     }
 }

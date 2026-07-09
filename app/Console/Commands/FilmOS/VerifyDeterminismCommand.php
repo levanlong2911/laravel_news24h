@@ -21,8 +21,10 @@ use App\Services\AI\FilmOS\Planning\Strategies\CameraStrategy;
 use App\Services\AI\FilmOS\Planning\Strategies\MotionStrategy;
 use App\Services\AI\FilmOS\Planning\SubGoalPlanner;
 use App\Services\AI\FilmOS\Learning\StubPredictiveLearning;
+use App\Services\AI\FilmOS\Snapshot\DeterminismManifest;
 use App\Services\AI\FilmOS\Snapshot\ExecutionSnapshot;
-use App\Services\AI\FilmOS\Snapshot\ExecutionSnapshotBuilder;
+use App\Services\AI\FilmOS\Snapshot\SnapshotComposer;
+use App\Services\AI\FilmOS\Snapshot\TaskDescriptor;
 use Illuminate\Console\Command;
 
 /**
@@ -168,10 +170,9 @@ class VerifyDeterminismCommand extends Command
             fn() => $plan, 'MultiObjectiveOptimizer', ['meaning_graph'], $rawPlan->goalConfidence);
 
         // L4: INTENT nodes
-        $assembler     = new IntentAssembler();
-        $intentPrompts = [];
-        $taskOrder     = [];
-        $intents       = [];
+        $assembler   = new IntentAssembler();
+        $intents     = [];
+        $descriptors = [];
 
         foreach ($ordered as $shot) {
             $intent = $runtime->execute(
@@ -181,9 +182,14 @@ class VerifyDeterminismCommand extends Command
                 ['strategy_plan'],
                 0.91,
             );
-            $intentPrompts[$shot->subGoalId] = RenderPlugin::buildPromptFromIntent($intent);
-            $taskOrder[]                     = "render_{$shot->subGoalId}";
-            $intents[$shot->subGoalId]       = $intent;
+            $intents[$shot->subGoalId] = $intent;
+            $descriptors[] = new TaskDescriptor(
+                id:         "render_{$shot->subGoalId}",
+                type:       'render',
+                priority:   $intent->evaluation->priority->value,
+                dependsOn:  ["intent_{$shot->subGoalId}"],
+                deadlineMs: 15000.0,
+            );
         }
 
         // L6: mock RENDER nodes (dry-run)
@@ -222,13 +228,17 @@ class VerifyDeterminismCommand extends Command
 
         $dag = $runtime->toDecisionDAG();
 
-        return (new ExecutionSnapshotBuilder())->build(
-            productionId:  $runId,
-            dag:           $dag,
-            goalGraph:     $goalGraph,
-            plan:          $plan,
-            intentPrompts: $intentPrompts,
-            taskOrder:     $taskOrder,
+        $worldVersion = hash('sha256', json_encode($facts, JSON_THROW_ON_ERROR));
+        $manifest     = DeterminismManifest::current($worldVersion);
+
+        return (new SnapshotComposer())->composeFromPlan(
+            productionId: $runId,
+            manifest:     $manifest,
+            dag:          $dag,
+            goalGraph:    $goalGraph,
+            plan:         $plan,
+            intents:      $intents,
+            descriptors:  $descriptors,
         );
     }
 
