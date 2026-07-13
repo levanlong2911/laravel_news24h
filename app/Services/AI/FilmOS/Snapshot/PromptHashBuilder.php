@@ -11,13 +11,24 @@ use App\Services\AI\FilmOS\Intent\DirectorIntent;
  *
  * Hashes WHAT the director decided — not how the prompt string was rendered.
  * Fields hashed from ExecutionContext:
- *   shotId, beat, mustShow (sorted), mustAvoid (sorted), visualStrategy, styleRule (ksorted)
+ *   shotId, beat, beatFactIds (sorted), mustShow (sorted), mustAvoid (sorted),
+ *   visualStrategy, styleRule (ksorted), softConstraints (ksorted)
+ *
+ * Excluded (non-deterministic or runtime-only):
+ *   sourceConfidence — float derived from LLM, not stable across replays
  *
  * Stable across prompt template refactors. Changes only when directorial
- * intent itself changes (different shot, different visual strategy, etc.).
+ * intent itself changes (different shot, different facts, different constraints).
+ *
+ * Sort flags: SORT_STRING used for all list sorts — locale-independent, explicit.
+ * HashSerializer is injected so encoding flags match across all hash builders.
  */
 final class PromptHashBuilder
 {
+    public function __construct(
+        private readonly HashSerializer $serializer = new JsonHashSerializer(),
+    ) {}
+
     /**
      * @param  array<string, DirectorIntent> $intents  subGoalId → DirectorIntent
      */
@@ -27,23 +38,30 @@ final class PromptHashBuilder
         $canonical = [];
 
         foreach ($intents as $id => $intent) {
-            $mustShow  = $intent->execution->mustShow;
-            $mustAvoid = $intent->execution->mustAvoid;
-            $styleRule = $intent->execution->styleRule;
-            sort($mustShow);
-            sort($mustAvoid);
-            ksort($styleRule);
+            $mustShow       = $intent->execution->mustShow;
+            $mustAvoid      = $intent->execution->mustAvoid;
+            $beatFactIds    = $intent->execution->beatFactIds;
+            $styleRule      = $intent->execution->styleRule;
+            $softConstraints = $intent->execution->softConstraints;
+
+            sort($mustShow,    SORT_STRING);
+            sort($mustAvoid,   SORT_STRING);
+            sort($beatFactIds, SORT_STRING);
+            $styleRule       = CanonicalArray::deepSort($styleRule);
+            $softConstraints = CanonicalArray::deepSort($softConstraints);
 
             $canonical[$id] = [
-                'shotId'         => $intent->shotId,
-                'beat'           => $intent->execution->beat->value,
-                'mustShow'       => $mustShow,
-                'mustAvoid'      => $mustAvoid,
-                'visualStrategy' => $intent->execution->visualStrategy->value,
-                'styleRule'      => $styleRule,
+                'shotId'          => $intent->shotId,
+                'beat'            => $intent->execution->beat->value,
+                'beatFactIds'     => $beatFactIds,
+                'mustShow'        => $mustShow,
+                'mustAvoid'       => $mustAvoid,
+                'visualStrategy'  => $intent->execution->visualStrategy->value,
+                'styleRule'       => $styleRule,
+                'softConstraints' => $softConstraints,
             ];
         }
 
-        return hash('sha256', json_encode($canonical, JSON_THROW_ON_ERROR));
+        return $this->serializer->sha256($canonical);
     }
 }

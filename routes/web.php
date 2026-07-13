@@ -32,7 +32,7 @@ use Illuminate\Http\Request;
 // });
 
 // ── Benchmark Annotation UI ───────────────────────────────────────────────────
-Route::prefix('benchmark')->name('benchmark.')->group(function () {
+Route::prefix('benchmark')->middleware('auth')->name('benchmark.')->group(function () {
     Route::get('/',                            [AnnotationController::class, 'sessions'])->name('sessions');
     Route::get('/session/{session}',           [AnnotationController::class, 'renders'])->name('renders');
     Route::get('/annotate/{uuid}',             [AnnotationController::class, 'annotate'])->name('annotate');

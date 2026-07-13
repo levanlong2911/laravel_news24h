@@ -16,9 +16,15 @@ namespace App\Services\AI\FilmOS\Snapshot;
  *
  * Tasks are sorted by id before hashing so submission order does not matter —
  * only the task graph topology is captured.
+ *
+ * HashSerializer is injected so encoding flags match across all hash builders.
  */
 final class SchedulerHashBuilder
 {
+    public function __construct(
+        private readonly HashSerializer $serializer = new JsonHashSerializer(),
+    ) {}
+
     /**
      * @param  TaskDescriptor[] $descriptors
      */
@@ -30,9 +36,8 @@ final class SchedulerHashBuilder
 
         usort($descriptors, fn(TaskDescriptor $a, TaskDescriptor $b) => strcmp($a->id, $b->id));
 
-        return hash('sha256', json_encode(
+        return $this->serializer->sha256(
             array_map(fn(TaskDescriptor $d) => $d->toArray(), $descriptors),
-            JSON_THROW_ON_ERROR,
-        ));
+        );
     }
 }

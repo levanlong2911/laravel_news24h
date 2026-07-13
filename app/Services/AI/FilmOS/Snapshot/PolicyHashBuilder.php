@@ -12,19 +12,23 @@ use App\Services\AI\FilmOS\Policy\PolicyDecision;
  * Uses PolicyDecision::toCanonicalArray() which:
  *   - Excludes appliedPolicies / skippedPolicies (audit log, not decisions)
  *   - Sorts disabledProviders alphabetically
+ *   - Sorts metadata keys (ksort) so insertion order never affects the hash
  * This ensures hash reflects DECISIONS only, not observational metadata.
+ *
+ * HashSerializer is injected so encoding flags match across all hash builders.
  */
 final class PolicyHashBuilder
 {
+    public function __construct(
+        private readonly HashSerializer $serializer = new JsonHashSerializer(),
+    ) {}
+
     public function build(?PolicyDecision $policy): ?string
     {
         if ($policy === null) {
             return null;
         }
 
-        return hash('sha256', json_encode(
-            $policy->toCanonicalArray(),
-            JSON_THROW_ON_ERROR,
-        ));
+        return $this->serializer->sha256($policy->toCanonicalArray());
     }
 }

@@ -1,0 +1,18 @@
+{
+    "traceId": "golden-sports-touchdown-001",
+    "version": 1,
+    "shotId": "hook_1",
+    "durationSeconds": 5,
+    "renderInstructions": {
+        "description": "Quarterback throws touchdown pass under stadium lights",
+        "camera": "close_up",
+        "visualStrategy": "urgent"
+    },
+    "constraints": {
+        "duration": 5
+    },
+    "metadata": {
+        "priority": 1
+    },
+    "attributes": []
+}

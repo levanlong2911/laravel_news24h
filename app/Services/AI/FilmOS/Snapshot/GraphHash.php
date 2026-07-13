@@ -63,8 +63,6 @@ final class GraphHash
         }
         sort($edges);
 
-        return hash('sha256', $this->serializer->serialize(
-            ['nodes' => $nodes, 'edges' => $edges],
-        ));
+        return $this->serializer->sha256(['nodes' => $nodes, 'edges' => $edges]);
     }
 }

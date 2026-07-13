@@ -78,7 +78,7 @@ class MediaJobApiController extends Controller
         });
 
         if ($claimed === null) {
-            return response()->json(['message' => 'No claimable jobs'], 204);
+            return response()->noContent();  // RFC 7230 §3.3 — 204 must not carry a body
         }
 
         return response()->json([

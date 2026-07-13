@@ -9,10 +9,11 @@ use App\Services\AI\FilmOS\Graph\GraphNode;
 final class MeaningNode extends GraphNode
 {
     public function __construct(
-        string              $id,
-        public readonly string $concept,
-        public readonly float  $weight,
-        public readonly string $evidence,
+        string                          $id,
+        public readonly string          $concept,
+        public readonly float           $weight,
+        public readonly string          $evidence,
+        public readonly ?CinematicFunction $cinematicFunction = null,
     ) {
         parent::__construct($id);
     }

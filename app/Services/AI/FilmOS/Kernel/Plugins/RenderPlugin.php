@@ -42,7 +42,7 @@ final class RenderPlugin implements KernelPlugin
             prompt:          $prompt,
             negativePrompt:  'text overlay, logo, watermark, blurry, low quality, distorted',
             durationSeconds: 5,
-            aspectRatio:     '16:9',
+            aspectRatio:     '9:16',
         );
 
         try {

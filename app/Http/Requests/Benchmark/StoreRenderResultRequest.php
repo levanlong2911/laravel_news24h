@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class StoreRenderResultRequest extends FormRequest
 {
-    public function authorize(): bool { return true; }
+    public function authorize(): bool { return $this->user() !== null; }
 
     public function rules(): array
     {
@@ -15,7 +15,7 @@ class StoreRenderResultRequest extends FormRequest
             'render_uuid'             => 'required|uuid',
 
             'session_code'            => 'required|string|exists:bm_sessions,code',
-            'fixture_slug'            => 'required|string|exists:bm_fixtures,slug',
+            'fixture_slug'            => 'required|string|max:128',
             'model'                   => 'required|string|max:64',
             'resolution'              => 'nullable|string|max:16',
             'duration_seconds'        => 'required|integer|min:1|max:60',

@@ -25,7 +25,7 @@ use App\Services\AI\FilmOS\Planning\ShotSequencePlan;
  *
  * Phase contracts:
  *   Phase B — ExecutionLayerBuilder:
- *     executionGraphHash: node id + status.value (NOT elapsedMs, startedAt)
+ *     executionTopologyHash: (taskId, status.value) per node + (from, to, rel) per edge (NOT elapsedMs)
  *     checkpointHash:     ordered list of (nodeId, completedAt-ordinal) — NOT wall-clock time
  *     retrySequenceHash:  ordered list of (nodeId, retryCount) — NOT timestamps
  *
@@ -33,8 +33,9 @@ use App\Services\AI\FilmOS\Planning\ShotSequencePlan;
  *     capabilityHash:    (nodeId, capabilityType.value) — NOT display name, description, version
  *     providerRouteHash: (taskId → providerId) — NOT latency, response headers
  *
- *   Phase D — EventLayerBuilder:
- *     eventBusHash: (eventType.value, sourceNodeId) in emission order — NOT timestamp, uuid, payload
+ *   Phase E — EventLayerBuilder:
+ *     eventBusHash: (eventName, ordinal, canonicalData()) in emission order
+ *                   NOT: occurredAt, executionId, errorMessage, elapsedMs, cost, quotaRemaining
  */
 final class SnapshotComposer
 {
@@ -45,6 +46,9 @@ final class SnapshotComposer
     /**
      * Compose a full ExecutionSnapshot from a manifest and one or more sections.
      *
+     * Phase D: sections are stored directly on the snapshot — no field extraction.
+     * ExecutionSnapshot::canonicalHash() iterates sections at hash time.
+     *
      * @param SnapshotSection ...$sections  Phase A: PlanningSection; Phase B+: additional sections
      */
     public function compose(
@@ -52,31 +56,27 @@ final class SnapshotComposer
         DeterminismManifest  $manifest,
         SnapshotSection      ...$sections,
     ): ExecutionSnapshot {
-        $fields = [];
         foreach ($sections as $section) {
-            $fields += $section->fields();
+            $provided   = array_keys($section->fields());
+            $declared   = array_merge($section::requiredFields(), $section::optionalFields());
+
+            $missing    = array_diff($section::requiredFields(), $provided);
+            $undeclared = array_diff($provided, $declared);
+
+            if (!empty($missing)) {
+                throw new MissingRequiredSnapshotFieldException($section::name(), array_values($missing));
+            }
+            if (!empty($undeclared)) {
+                throw new UndeclaredSnapshotFieldException($section::name(), array_values($undeclared));
+            }
         }
 
         return new ExecutionSnapshot(
-            manifest:           $manifest,
-            executionId:        'exec_' . $productionId,
-            productionId:       $productionId,
-            capturedAt:         microtime(true),
-
-            dagHash:            $fields['dagHash'],
-            goalGraphHash:      $fields['goalGraphHash'],
-            promptHash:         $fields['promptHash'],
-            schedulerHash:      $fields['schedulerHash'] ?? null,
-
-            executionGraphHash: $fields['executionGraphHash'] ?? null,
-            checkpointHash:     $fields['checkpointHash']     ?? null,
-            retrySequenceHash:  $fields['retrySequenceHash']  ?? null,
-
-            capabilityHash:     $fields['capabilityHash']     ?? null,
-            providerRouteHash:  $fields['providerRouteHash']  ?? null,
-
-            policyHash:         $fields['policyHash']         ?? null,
-            eventBusHash:       $fields['eventBusHash']       ?? null,
+            manifest:     $manifest,
+            executionId:  'exec_' . $productionId,
+            productionId: $productionId,
+            capturedAt:   microtime(true),
+            sections:     $sections,
         );
     }
 

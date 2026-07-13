@@ -27,9 +27,19 @@ import requests
 # Config
 # ---------------------------------------------------------------------------
 
-LARAVEL_BASE_URL = os.environ.get("LARAVEL_URL", "http://localhost/news24h/public")
+LARAVEL_BASE_URL = os.environ.get("LARAVEL_URL", "http://127.0.0.1:8000")
 API_URL          = f"{LARAVEL_BASE_URL}/api/benchmark/render-result"
 API_TIMEOUT      = 30  # seconds
+
+# Set LARAVEL_API_TOKEN to a Sanctum personal access token, e.g.:
+#   export LARAVEL_API_TOKEN=$(php artisan tinker --execute="echo \App\Models\User::first()->createToken('benchmark')->plainTextToken;")
+API_TOKEN = os.environ.get("LARAVEL_API_TOKEN", "")
+
+
+def _auth_headers() -> dict:
+    if not API_TOKEN:
+        return {}
+    return {"Authorization": f"Bearer {API_TOKEN}"}
 
 
 def submit_render(
@@ -81,7 +91,7 @@ def submit_render(
         "planner_outputs":  planner_outputs or [],
     }
 
-    resp = requests.post(API_URL, json=payload, timeout=API_TIMEOUT)
+    resp = requests.post(API_URL, json=payload, headers=_auth_headers(), timeout=API_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 

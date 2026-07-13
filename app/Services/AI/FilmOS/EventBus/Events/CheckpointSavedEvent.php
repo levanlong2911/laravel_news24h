@@ -29,4 +29,12 @@ final class CheckpointSavedEvent extends AbstractFilmOSEvent
             'completedNodeCount'  => $this->completedNodeCount,
         ];
     }
+
+    public function canonicalData(): array
+    {
+        return [
+            'completedNodeCount' => $this->completedNodeCount,
+            // excluded: executionId (run-instance), checkpointSizeBytes (storage detail)
+        ];
+    }
 }

@@ -31,4 +31,12 @@ final class NodeCompletedEvent extends AbstractFilmOSEvent
             'elapsedMs'   => $this->elapsedMs,
         ];
     }
+
+    public function canonicalData(): array
+    {
+        return [
+            'taskId' => $this->taskId,
+            // excluded: executionId, nodeId (run-instance IDs), elapsedMs (timing)
+        ];
+    }
 }

@@ -131,20 +131,35 @@ class VideoApprovalController extends Controller
     /** Bulk delete selected jobs. */
     public function bulkDestroy(Request $request): RedirectResponse
     {
-        $ids = $request->input('ids', []);
+        // Sanitize to positive integers — prevents non-integer ID injection.
+        $ids = array_values(array_filter(
+            array_map('intval', (array) $request->input('ids', [])),
+            fn(int $id) => $id > 0,
+        ));
+
         if (empty($ids)) {
             return redirect()->route('video-approval.index')->with('error', 'Chưa chọn video nào.');
         }
 
-        $jobs = VideoJob::whereIn('id', $ids)->get();
+        // Scope to deletable statuses only — approved jobs that are already published
+        // must not be deleted via bulk action; they require an explicit single destroy.
+        $jobs = VideoJob::whereIn('id', $ids)
+            ->whereNotIn('approval_status', ['approved'])
+            ->get();
+
+        $skipped = count($ids) - $jobs->count();
         foreach ($jobs as $job) {
             if ($job->video_path) Storage::disk('public')->delete($job->video_path);
             if ($job->thumbnail_path) Storage::disk('public')->delete($job->thumbnail_path);
             $job->delete();
         }
 
-        return redirect()->route('video-approval.index')
-            ->with('success', "Đã xóa {$jobs->count()} video.");
+        $message = "Đã xóa {$jobs->count()} video.";
+        if ($skipped > 0) {
+            $message .= " ({$skipped} video đã approved bị bỏ qua — xóa từng cái thủ công nếu cần.)";
+        }
+
+        return redirect()->route('video-approval.index')->with('success', $message);
     }
 
     /** Regenerate — resets to script_ready so Python re-renders. */

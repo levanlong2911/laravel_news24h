@@ -48,8 +48,11 @@ final class FinalizeRenderJob implements ShouldQueue
         $run    = PipelineRun::findOrFail($this->pipelineRunId);
         $output = (array) ($run->output_json ?? []);
 
-        // Idempotency: already finalized.
-        if ($run->status === 'completed') {
+        // Idempotency: both status AND event emission are tracked independently.
+        // Checking only status=completed is insufficient — the event may not have fired
+        // if the worker was killed between update() and event() on a previous attempt.
+        // We only short-circuit when the event has been confirmed emitted.
+        if (isset($output['event_render_completed_at'])) {
             return;
         }
 
@@ -63,25 +66,41 @@ final class FinalizeRenderJob implements ShouldQueue
             );
         }
 
-        $finalizedAt = now()->toIso8601String();
+        $finalizedAt = $output['finalized_at'] ?? now()->toIso8601String();
 
-        $run->update([
-            'status'      => 'completed',
-            'output_json' => array_merge($output, [
-                'schema_name'    => 'render_output',
-                'schema_version' => 1,
-                'render_status'  => RenderVideoStatus::COMPLETED->value,
-                'finalized_at'   => $finalizedAt,
-            ]),
-            'finished_at' => now(),
-        ]);
+        // Step 1: mark DB completed (idempotent — safe to repeat if previous attempt
+        // wrote status=completed but was killed before the event fired).
+        if ($run->status !== 'completed') {
+            $run->update([
+                'status'      => 'completed',
+                'output_json' => array_merge($output, [
+                    'schema_name'    => 'render_output',
+                    'schema_version' => 1,
+                    'render_status'  => RenderVideoStatus::COMPLETED->value,
+                    'finalized_at'   => $finalizedAt,
+                ]),
+                'finished_at' => now(),
+            ]);
+            $output = (array) ($run->refresh()->output_json ?? []);
+        }
 
+        // Step 2: fire event. If killed here, next retry re-enters because
+        // event_render_completed_at is absent — fires event again.
+        // RenderCompleted listeners must be idempotent.
         event(new RenderCompleted(
             pipelineRunId:  $this->pipelineRunId,
             finalizedAt:    $finalizedAt,
             providerTaskId: $output['provider_task_id'] ?? null,
             provider:       $output['provider'] ?? null,
         ));
+
+        // Step 3: mark event as emitted — the true idempotency key for this job.
+        $run->update([
+            'output_json' => array_merge(
+                (array) ($run->refresh()->output_json ?? []),
+                ['event_render_completed_at' => now()->toIso8601String()],
+            ),
+        ]);
     }
 
     public function failed(\Throwable $e): void

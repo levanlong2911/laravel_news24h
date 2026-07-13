@@ -36,6 +36,7 @@ Route::prefix('ads')->group(function () {
 });
 
 Route::prefix('benchmark')
+    ->middleware('auth:sanctum')
     ->withoutMiddleware(\App\Http\Middleware\DomainContext::class)
     ->group(function () {
         Route::post('render-result', [RenderResultController::class, 'store']);

@@ -190,7 +190,7 @@ class BenchmarkGeneratePrompt extends Command
                 'seed'             => $seed,
                 'char_count'       => $charCount,
                 'prompt_version'   => 'sprint3_v1',
-                'artifact_path'    => "renders/sprint3/{$fixture}/",
+                'artifact_path'    => "renders/sprint3-baseline/{$fixture}/",
                 'rendered_at'      => now()->toISOString(),
                 'prompt_text'      => $promptText,
                 'instructions'     => $instructions,

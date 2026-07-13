@@ -1,0 +1,8 @@
+{
+    "model_name": "kling-v1",
+    "prompt": "Quarterback throws touchdown pass under stadium lights, extreme close-up shot, fast-paced dynamic cinematography",
+    "cfg_scale": 0.5,
+    "mode": "std",
+    "duration": "5",
+    "aspect_ratio": "16:9"
+}

@@ -35,4 +35,15 @@ final class ExecutionFinishedEvent extends AbstractFilmOSEvent
             'totalElapsedMs' => $this->totalElapsedMs,
         ];
     }
+
+    public function canonicalData(): array
+    {
+        return [
+            'fullyCompleted' => $this->fullyCompleted,
+            'completedCount' => $this->completedCount,
+            'failedCount'    => $this->failedCount,
+            'skippedCount'   => $this->skippedCount,
+            // excluded: executionId (run-instance), totalElapsedMs (timing)
+        ];
+    }
 }

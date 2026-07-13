@@ -58,6 +58,13 @@ class VideoJobController extends Controller
      */
     public function generate(Article $article): RedirectResponse
     {
+        // Cache::add() is atomic: returns false when the key already exists.
+        // TTL of 10 min covers the longest pipeline run; the artisan process
+        // clears "video_pipeline_step:{id}" on completion so status() reflects truth.
+        if (!Cache::add("video_generating:{$article->id}", 1, now()->addMinutes(10))) {
+            return back()->with('error', "Video cho \"{$article->title}\" đang được tạo, vui lòng chờ.");
+        }
+
         Process::path(base_path())->start([
             PHP_BINARY, 'artisan', 'video:process-articles', "--article={$article->id}",
         ]);
@@ -134,13 +141,18 @@ class VideoJobController extends Controller
     /** Bulk delete selected articles and their video pipelines. */
     public function bulkDestroy(Request $request): RedirectResponse
     {
-        $ids = $request->input('ids', []);
+        // Sanitize to positive integers — prevents non-integer ID injection.
+        $ids = array_values(array_filter(
+            array_map('intval', (array) $request->input('ids', [])),
+            fn(int $id) => $id > 0,
+        ));
+
         if (empty($ids)) {
             return redirect()->route('video-job.index')->with('error', 'Chưa chọn bài nào.');
         }
 
         $count = 0;
-        foreach (Article::whereIn('id', $ids)->get() as $article) {
+        foreach (Article::published()->whereIn('id', $ids)->get() as $article) {
             $this->deleteArticleWithVideos($article);
             $count++;
         }

@@ -8,7 +8,6 @@ namespace App\Services\AI\FilmOS\Snapshot;
  * Phase A snapshot section — planning layer hashes.
  *
  * Produced by PlanningSnapshotBuilder and consumed by SnapshotComposer.
- * Field keys match ExecutionSnapshot constructor parameter names exactly.
  */
 final class PlanningSection implements SnapshotSection
 {
@@ -19,6 +18,15 @@ final class PlanningSection implements SnapshotSection
         public readonly ?string $schedulerHash,
         public readonly ?string $policyHash,
     ) {}
+
+    public static function name(): string { return 'planning'; }
+
+    public static function requiredFields(): array
+    {
+        return ['dagHash', 'goalGraphHash', 'promptHash', 'schedulerHash', 'policyHash'];
+    }
+
+    public static function optionalFields(): array { return []; }
 
     public function fields(): array
     {

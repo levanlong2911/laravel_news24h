@@ -40,7 +40,13 @@ class AnnotationController extends Controller
                 ];
             });
 
-        return view('benchmark.sessions', compact('sessions'));
+        return view("benchmark.sessions", [
+            "route" => "benchmark",
+            "action" => "benchmark-sessions",
+            "menu" => "menu-open",
+            "active" => "active",
+            'session' => $sessions
+        ]);
     }
 
     // ── Render list (per session, grouped by fixture) ─────────────────────────
@@ -57,7 +63,14 @@ class AnnotationController extends Controller
 
         $byFixture = $renders->groupBy(fn($r) => $r->fixture->slug);
 
-        return view('benchmark.renders', compact('session', 'byFixture'));
+        return view("benchmark.renders", [
+            "route" => "benchmark",
+            "action" => "benchmark-renders",
+            "menu" => "menu-open",
+            "active" => "active",
+            'session' => $session,
+            'byFixture' => $byFixture
+        ]);
     }
 
     // ── Annotation view ───────────────────────────────────────────────────────
@@ -94,7 +107,17 @@ class AnnotationController extends Controller
         // Video URL: try to detect a local MP4 from artifact_path
         $videoUrl = $this->resolveVideoUrl($render->artifact_path);
 
-        return view('benchmark.annotate', compact('render', 'byBeat', 'prev', 'next', 'videoUrl'));
+        return view("benchmark.annotate", [
+            "route" => "benchmark",
+            "action" => "benchmark-annotate",
+            "menu" => "menu-open",
+            "active" => "active",
+            'render' => $render,
+            'byBeat' => $byBeat,
+            'prev' => $prev,
+            'next' => $next,
+            'videoUrl' => $videoUrl,
+        ]);
     }
 
     // ── Save annotation ───────────────────────────────────────────────────────
@@ -181,12 +204,21 @@ class AnnotationController extends Controller
         if ($artifactPath === null || $artifactPath === '') {
             return null;
         }
-        // artifact_path may be "renders/sprint3/nfl/run1/"
-        // Look for video.mp4 inside that path relative to public/
-        $mp4 = rtrim($artifactPath, '/') . '/video.mp4';
-        if (file_exists(public_path($mp4))) {
-            return asset($mp4);
+
+        // Resolve the full path and confirm it stays inside public/.
+        // Rejects any artifact_path containing ../ sequences or symlinks escaping public/.
+        $mp4        = rtrim($artifactPath, '/') . '/video.mp4';
+        $resolved   = realpath(public_path($mp4));
+        $publicRoot = realpath(public_path());
+
+        if ($resolved === false || $publicRoot === false) {
+            return null;
         }
-        return null;
+
+        if (!str_starts_with($resolved, $publicRoot . DIRECTORY_SEPARATOR)) {
+            return null;
+        }
+
+        return asset($mp4);
     }
 }

@@ -1,0 +1,8 @@
+{
+    "model_name": "kling-v1",
+    "prompt": "Stock market analyst reviews live data on trading floor, wide angle shot, slow deliberate cinematography",
+    "cfg_scale": 0.5,
+    "mode": "std",
+    "duration": "10",
+    "aspect_ratio": "16:9"
+}

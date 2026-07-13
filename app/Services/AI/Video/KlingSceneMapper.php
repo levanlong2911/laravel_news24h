@@ -80,6 +80,31 @@ final class KlingSceneMapper
         'indoor:cloudy' => 'S1',
     ];
 
+    /**
+     * Subject-type keywords for anatomy_prefix inference.
+     * Checked in order: first match wins.
+     *
+     * 'vehicle'   — no human anatomy (cars, yachts, planes, …)
+     * 'animal'    — four-legged/non-human anatomy
+     * 'landscape' — no figures (stadiums, skylines, nature)
+     * 'group'     — multiple people
+     * default     — single human athlete
+     */
+    private const SUBJECT_PATTERNS = [
+        'vehicle'   => '/\b(yacht|ship|boat|vessel|car|supercar|truck|suv|van|bus|train|plane|jet|helicopter|drone|motorcycle|bike|f1|formula|moto)\b/i',
+        'animal'    => '/\b(dog|cat|horse|lion|tiger|bear|wolf|eagle|bird|fish|shark|dolphin|beagle|labrador|golden|retriever|poodle|husky|bulldog|gorilla|cheetah|elephant|deer|fox|rabbit|parrot|penguin|seal)\b/i',
+        'landscape' => '/\b(stadium|arena|court|pitch|track|circuit|field|city|skyline|beach|ocean|mountain|forest|desert|river|bridge|building|skyscraper|crowd|audience|fans)\b/i',
+        'group'     => '/\b(players|team|squad|athletes|runners|cyclists|swimmers|fighters|soldiers|fans|crowd|group|multiple|duo|pair)\b/i',
+    ];
+
+    private const ANATOMY_PREFIX = [
+        'vehicle'   => 'Hyperrealistic. %s. Detailed exterior, chrome surfaces, accurate proportions. No human figures, no floating limbs.',
+        'animal'    => 'Hyperrealistic. %s. Correct animal anatomy, natural fur/feathers/scales. No human features, no clothing.',
+        'landscape' => 'Hyperrealistic. %s. Photographic detail, accurate perspective, natural lighting. No extra figures.',
+        'group'     => 'Hyperrealistic. Multiple people. Natural human anatomy, realistic proportions, correct limb count per person.',
+        'default'   => 'Hyperrealistic. Single athlete. Two arms, two legs. Natural anatomy, realistic hands.',
+    ];
+
     /** Maps action_type → motion_level for ScenePlanner */
     private const ACTION_TO_MOTION = [
         'throw'     => 'high',
@@ -115,20 +140,40 @@ final class KlingSceneMapper
         $lightKey = "{$tod}:{$weather}";
 
         return [
-            'scene_title'  => $setting,
-            'cam'          => self::CAMERA_TO_CAM[$camera]    ?? 'MEDIUM',
-            'move'         => 'P1',
-            'lens'         => self::CAMERA_TO_LENS[$camera]   ?? '85',
-            'light'        => self::LIGHT_MAP[$lightKey]      ?? 'S2',
-            'emo'          => self::MOOD_TO_EMO[$mood]        ?? 'POWER',
-            'motion_level' => self::ACTION_TO_MOTION[$action] ?? 'medium',
-            'dur'          => (float) ($scene['duration_seconds'] ?? 5),
-            'shot_order'   => $shotOrder,
-            'sub'          => [
+            'scene_title'    => $setting,
+            'cam'            => self::CAMERA_TO_CAM[$camera]    ?? 'MEDIUM',
+            'move'           => 'P1',
+            'lens'           => self::CAMERA_TO_LENS[$camera]   ?? '85',
+            'light'          => self::LIGHT_MAP[$lightKey]      ?? 'S2',
+            'emo'            => self::MOOD_TO_EMO[$mood]        ?? 'POWER',
+            'motion_level'   => self::ACTION_TO_MOTION[$action] ?? 'medium',
+            'dur'            => (float) ($scene['duration_seconds'] ?? 5),
+            'shot_order'     => $shotOrder,
+            'anatomy_prefix' => $this->anatomyPrefix($subject),
+            'sub'            => [
                 'actor'  => $subject,
                 'action' => self::ACTION_TO_KLING[$action] ?? 'default',
                 'obj'    => '',
             ],
         ];
+    }
+
+    /**
+     * Derives an anatomy constraint string from the subject description.
+     * Prevents KlingRenderer from applying "Single athlete" anatomy to animals,
+     * vehicles, landscapes, and group shots.
+     */
+    private function anatomyPrefix(string $subject): string
+    {
+        foreach (self::SUBJECT_PATTERNS as $type => $pattern) {
+            if (preg_match($pattern, $subject)) {
+                $template = self::ANATOMY_PREFIX[$type];
+                return str_contains($template, '%s')
+                    ? sprintf($template, ucfirst($subject))
+                    : $template;
+            }
+        }
+
+        return self::ANATOMY_PREFIX['default'];
     }
 }

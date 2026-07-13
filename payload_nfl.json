@@ -1,0 +1,149 @@
+{
+    "render_uuid": "9995c9a4-b781-4729-836d-07ccc8d590ff",
+    "session_code": "sprint3-baseline",
+    "fixture_slug": "nfl_quarterback_throw",
+    "model": "kling-2.1",
+    "resolution": "1080p",
+    "duration_seconds": 5,
+    "fps": 24,
+    "seed": "12345",
+    "char_count": 616,
+    "prompt_version": "sprint3_v1",
+    "artifact_path": "renders\/sprint3-baseline\/nfl_quarterback_throw\/",
+    "rendered_at": "2026-07-10T08:58:16.108283Z",
+    "prompt_text": "Hyperrealistic. Single athlete. Two arms, two legs. Natural anatomy, realistic hands. NFL quarterback stands alone beneath warm stadium lights, in full uniform and helmet, ready to throw. A smooth, controlled throw. The football rises into a perfect spiral and stays clearly in frame. The motion feels natural and powerful. Side angle. The camera gently follows the ball into flight. Warm amber stadium floodlights, powerful athletic intensity. The ball spirals cleanly against the stadium sky. Cold breath vapor visible on each exhale. Cinematic, no text overlays. Telephoto compression with shallow depth of field.",
+    "instructions": [
+        {
+            "catalog_code": "snap_zoom",
+            "beat": "hook",
+            "variant_text": "Snap zoom locks on athlete's eyes to compress the entire world to a single point of will, dark amber stadium light swallowing every surrounding distraction — only the face and its locked resolve exist in the frame."
+        },
+        {
+            "catalog_code": "push_in",
+            "beat": "escalation",
+            "variant_text": "Aggressive handheld push-in through bright warm floodlights at full power, jersey fabric and arm loaded in foreground."
+        },
+        {
+            "catalog_code": "abrupt_decel",
+            "beat": "reveal",
+            "variant_text": "Rack focus pulls from ambient blur in cold bright clinical light — camera holds at peak action moment as the release point becomes impossible to look away from."
+        },
+        {
+            "catalog_code": "rack_focus",
+            "beat": "reveal",
+            "variant_text": "Rack focus pulls from ambient blur in cold bright clinical light — camera holds at peak action moment as the release point becomes impossible to look away from."
+        },
+        {
+            "catalog_code": "cold_breath",
+            "beat": "hook",
+            "variant_text": "cold breath vapor visible on each exhale"
+        },
+        {
+            "catalog_code": "jersey_tension",
+            "beat": "reveal",
+            "variant_text": "jersey stretches at the shoulder seam during full torso rotation"
+        },
+        {
+            "catalog_code": "crowd_motion_blur",
+            "beat": "escalation",
+            "variant_text": "crowd rising from seats as the play unfolds"
+        },
+        {
+            "catalog_code": "camera_motivation",
+            "beat": "hook",
+            "variant_text": "to compress the entire world to a single point of will"
+        },
+        {
+            "catalog_code": "atmosphere_active",
+            "beat": "hook",
+            "variant_text": "Snap zoom locks on athlete's eyes to compress the entire world to a single point of will, dark amber stadium light swallowing every surrounding distraction — only the face and its locked resolve exist in the frame."
+        },
+        {
+            "catalog_code": "eye_hook_implicit",
+            "beat": "hook",
+            "variant_text": "Snap zoom locks on athlete's eyes to compress the entire world to a single point of will, dark amber stadium light swallowing every surrounding distraction — only the face and its locked resolve exist in the frame."
+        },
+        {
+            "catalog_code": "eye_payoff_implicit",
+            "beat": "payoff",
+            "variant_text": "Wide reveal in warm celebration light — the stadium scale asserts itself beyond the athlete and the throw."
+        },
+        {
+            "catalog_code": "depth_hook",
+            "beat": "hook",
+            "variant_text": "Athlete eyes locked."
+        },
+        {
+            "catalog_code": "depth_escalation",
+            "beat": "escalation",
+            "variant_text": "Athletic form becoming readable — body and plant foot at mid-depth."
+        },
+        {
+            "catalog_code": "depth_reveal",
+            "beat": "reveal",
+            "variant_text": "NFL quarterback at maximum extension — full body at extension."
+        },
+        {
+            "catalog_code": "depth_payoff",
+            "beat": "payoff",
+            "variant_text": "NFL quarterback's action plays out against environmental scale — full stadium visible."
+        },
+        {
+            "catalog_code": "identity_withheld",
+            "beat": "hook",
+            "variant_text": "Athlete eyes locked — body language and intensity before any action context is given"
+        },
+        {
+            "catalog_code": "partial_reveal",
+            "beat": "escalation",
+            "variant_text": "Athletic form becoming readable — power and intention loading in the pre-action phase"
+        }
+    ],
+    "planner_outputs": [
+        {
+            "planner_name": "BeatFusionEngine",
+            "beat": "hook",
+            "raw_text": "Snap zoom locks on athlete's eyes to compress the entire world to a single point of will, dark amber stadium light swallowing every surrounding distraction — only the face and its locked resolve exist in the frame."
+        },
+        {
+            "planner_name": "BeatFusionEngine",
+            "beat": "escalation",
+            "raw_text": "Aggressive handheld push-in through bright warm floodlights at full power, jersey fabric and arm loaded in foreground."
+        },
+        {
+            "planner_name": "BeatFusionEngine",
+            "beat": "reveal",
+            "raw_text": "Rack focus pulls from ambient blur in cold bright clinical light — camera holds at peak action moment as the release point becomes impossible to look away from."
+        },
+        {
+            "planner_name": "BeatFusionEngine",
+            "beat": "payoff",
+            "raw_text": "Wide reveal in warm celebration light — the stadium scale asserts itself beyond the athlete and the throw."
+        },
+        {
+            "planner_name": "CameraMotivationPlanner",
+            "beat": "hook",
+            "raw_text": "to compress the entire world to a single point of will"
+        },
+        {
+            "planner_name": "CameraMotivationPlanner",
+            "beat": "escalation",
+            "raw_text": "as the body commits toward an action that cannot be recalled"
+        },
+        {
+            "planner_name": "CameraMotivationPlanner",
+            "beat": "payoff",
+            "raw_text": "to place the moment against the full magnitude of its stage"
+        },
+        {
+            "planner_name": "PhysicsPlanner",
+            "beat": "reveal",
+            "raw_text": "cold breath vapor visible on each exhale. jersey fabric moves with body momentum in the cold air. football compresses into the quarterback's palm grip on the release."
+        },
+        {
+            "planner_name": "RevealPlanner",
+            "beat": "reveal",
+            "raw_text": "Rack focus pulls from ambient blur — subject sharpens into decisive clarity —"
+        }
+    ]
+}

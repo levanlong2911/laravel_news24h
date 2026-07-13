@@ -1,0 +1,18 @@
+{
+    "traceId": "golden-finance-001",
+    "version": 1,
+    "shotId": "analysis_1",
+    "durationSeconds": 10,
+    "renderInstructions": {
+        "camera": "wide",
+        "description": "Stock market analyst reviews live data on trading floor",
+        "visualStrategy": "contemplative"
+    },
+    "constraints": {
+        "duration": 10
+    },
+    "metadata": {
+        "priority": 2
+    },
+    "attributes": []
+}

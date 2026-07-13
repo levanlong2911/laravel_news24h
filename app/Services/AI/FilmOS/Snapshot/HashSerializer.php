@@ -22,4 +22,15 @@ interface HashSerializer
      * @param array<string, mixed> $data
      */
     public function serialize(array $data): string;
+
+    /**
+     * Serialize $data and return its SHA-256 hex digest.
+     *
+     * Single source of truth for all canonical hashing — no caller should call
+     * hash('sha256', ...) + serialize() separately. Changing the digest algorithm
+     * (e.g. SHA-512, BLAKE3) requires updating only this method.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function sha256(array $data): string;
 }

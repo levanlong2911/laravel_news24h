@@ -12,7 +12,8 @@ namespace App\Services\AI\FilmOS\Capability;
 enum CapabilityType: string
 {
     case TEXT_TO_IMAGE  = 'text_to_image';
-    case IMAGE_TO_VIDEO = 'image_to_video';
+    case TEXT_TO_VIDEO  = 'text_to_video';   // Kling T2V — no image precursor required
+    case IMAGE_TO_VIDEO = 'image_to_video';   // requires TEXT_TO_IMAGE precursor
     case LIPSYNC        = 'lipsync';
     case VOICE          = 'voice';
     case UPSCALE        = 'upscale';
@@ -24,6 +25,7 @@ enum CapabilityType: string
     {
         return match ($this) {
             self::TEXT_TO_IMAGE  => 'Text → Image',
+            self::TEXT_TO_VIDEO  => 'Text → Video',
             self::IMAGE_TO_VIDEO => 'Image → Video',
             self::LIPSYNC        => 'Lip Sync',
             self::VOICE          => 'Voice',

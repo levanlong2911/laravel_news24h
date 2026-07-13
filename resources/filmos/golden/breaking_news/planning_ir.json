@@ -1,0 +1,19 @@
+{
+    "traceId": "golden-breaking-news-001",
+    "version": 1,
+    "shotId": "lead_1",
+    "shotOrder": 1,
+    "goalId": "shot_lead",
+    "renderHints": {
+        "description": "Breaking news reporter at scene of major event",
+        "camera": "medium_shot",
+        "visualStrategy": "documentary",
+        "style": "journalism"
+    },
+    "constraints": {
+        "duration": 8
+    },
+    "attributes": {
+        "priority": 1
+    }
+}

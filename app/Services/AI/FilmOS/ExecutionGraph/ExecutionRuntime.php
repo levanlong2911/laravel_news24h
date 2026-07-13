@@ -11,6 +11,7 @@ use App\Services\AI\FilmOS\EventBus\Events\ExecutionStartedEvent;
 use App\Services\AI\FilmOS\EventBus\Events\NodeCompletedEvent;
 use App\Services\AI\FilmOS\EventBus\Events\NodeFailedEvent;
 use App\Services\AI\FilmOS\Graph\GraphAlgorithms;
+use Illuminate\Support\Str;
 
 /**
  * Orchestrates task execution over an ExecutionGraph.
@@ -96,36 +97,39 @@ final class ExecutionRuntime
                 continue;
             }
 
-            // Hard dependency check
+            // Hard dependency check → SKIPPED
             if (!$this->allHardDepsCompleted($graph, $node->id)) {
-                // ── SKIPPED ──
-                $node->status  = ExecutionNodeStatus::SKIPPED;
-                $state->status = ExecutionNodeStatus::SKIPPED;
-                $skipped[]     = $node->id;
+                $node->status          = ExecutionNodeStatus::SKIPPED;
+                $states[$node->taskId] = $state->transitionTo(ExecutionNodeStatus::SKIPPED);
+                $state                 = $states[$node->taskId];
+                $skipped[]             = $node->id;
                 $metrics->recordNodeSkipped();
 
-                $checkpointLog[] = new CheckpointEntry($node->taskId, 'skipped', ++$cpOrdinal);
+                [$eventId, $parentId] = $this->nextEventIds($checkpointLog);
+                $checkpointLog[] = new CheckpointEntry($node->taskId, 'skipped', ++$cpOrdinal, $eventId, $parentId);
                 $this->saveCheckpoint($executionId, $graph, $metrics);
                 continue;
             }
 
-            // ── Execute ────────────────────────────────────────────────────────
-            $wasFailedBefore = $node->isFailed();
-            $node->status    = ExecutionNodeStatus::RUNNING;
-            $state->status   = ExecutionNodeStatus::RUNNING;
-
-            $node->startedAt  = microtime(true);
-            $state->startedAt = $node->startedAt;
+            // ── Transition to RUNNING ──────────────────────────────────────────
+            $wasFailedBefore  = $node->isFailed();
+            $now              = microtime(true);
+            $node->status     = ExecutionNodeStatus::RUNNING;
+            $node->startedAt  = $now;
+            $runOverrides     = ['startedAt' => $now];
 
             if ($wasFailedBefore) {
                 $retryDelayMs = ($node->completedAt !== null)
-                    ? (microtime(true) - $node->completedAt) * 1000
+                    ? ($now - $node->completedAt) * 1000
                     : 0.0;
                 $node->retryCount++;
-                $node->error  = null;
-                $state->error = null;
+                $node->error           = null;
+                $runOverrides['error'] = null;   // explicit null to clear on retry
                 $metrics->recordRetry($retryDelayMs);
             }
+
+            $states[$node->taskId] = $state->transitionTo(ExecutionNodeStatus::RUNNING, $runOverrides);
+            $state                 = $states[$node->taskId];
 
             try {
                 $handler = $handlers[$node->taskId]
@@ -138,10 +142,13 @@ final class ExecutionRuntime
                 $node->status      = ExecutionNodeStatus::COMPLETED;
                 $node->completedAt = microtime(true);
 
-                $state->result      = $output;
-                $state->status      = ExecutionNodeStatus::COMPLETED;
-                $state->completedAt = $node->completedAt;
-                $state->recordAttempt(ExecutionNodeStatus::COMPLETED);
+                $states[$node->taskId] = $state
+                    ->transitionTo(ExecutionNodeStatus::COMPLETED, [
+                        'result'      => $output,
+                        'completedAt' => $node->completedAt,
+                    ])
+                    ->withAttempt(ExecutionNodeStatus::COMPLETED);
+                $state = $states[$node->taskId];
 
                 $elapsedMs = $node->elapsedMs() ?? 0.0;
                 $metrics->recordNodeCompleted($node->id, $elapsedMs);
@@ -154,10 +161,13 @@ final class ExecutionRuntime
                 $node->error       = $e->getMessage();
                 $node->completedAt = microtime(true);
 
-                $state->status      = ExecutionNodeStatus::FAILED;
-                $state->error       = $e->getMessage();
-                $state->completedAt = $node->completedAt;
-                $state->recordAttempt(ExecutionNodeStatus::FAILED);
+                $states[$node->taskId] = $state
+                    ->transitionTo(ExecutionNodeStatus::FAILED, [
+                        'error'       => $e->getMessage(),
+                        'completedAt' => $node->completedAt,
+                    ])
+                    ->withAttempt(ExecutionNodeStatus::FAILED);
+                $state = $states[$node->taskId];
 
                 $provider = str_starts_with($e->getMessage(), 'provider:')
                     ? explode(' ', substr($e->getMessage(), 9), 2)[0]
@@ -171,7 +181,8 @@ final class ExecutionRuntime
 
             $executed[] = $node->id;
 
-            $checkpointLog[] = new CheckpointEntry($node->taskId, $state->status->value, ++$cpOrdinal);
+            [$eventId, $parentId] = $this->nextEventIds($checkpointLog);
+            $checkpointLog[] = new CheckpointEntry($node->taskId, $state->status->value, ++$cpOrdinal, $eventId, $parentId);
             $this->saveCheckpoint($executionId, $graph, $metrics);
         }
 
@@ -218,6 +229,22 @@ final class ExecutionRuntime
         $this->eventBus?->dispatch(new CheckpointSavedEvent(
             $executionId, $sizeBytes, $metrics->completedCount,
         ));
+    }
+
+    /**
+     * Generate the next (eventId, parentEventId) pair for a checkpoint entry.
+     * parentEventId is the eventId of the last entry already in the log.
+     *
+     * @param  CheckpointEntry[]  $checkpointLog
+     * @return array{string, string|null}
+     */
+    private function nextEventIds(array $checkpointLog): array
+    {
+        $parentEventId = $checkpointLog !== []
+            ? $checkpointLog[array_key_last($checkpointLog)]->eventId
+            : null;
+
+        return [Str::uuid()->toString(), $parentEventId];
     }
 
     private function allHardDepsCompleted(ExecutionGraph $graph, string $nodeId): bool

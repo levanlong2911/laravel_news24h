@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\AI\FilmOS\Policy;
 
+use App\Services\AI\FilmOS\Snapshot\CanonicalArray;
+
 /**
  * Mutable accumulator that PolicyEngine builds as policies fire.
  *
@@ -83,6 +85,9 @@ final class PolicyDecision
         $disabled = $this->disabledProviders;
         sort($disabled);
 
+        // metadata is a free-form keyed array; deep-sort so nested insertion order never affects the hash.
+        $metadata = CanonicalArray::deepSort($this->metadata);
+
         return [
             'preferredProvider' => $this->preferredProvider ?: null,
             'maxLatencyMs'      => $this->maxLatencyMs === PHP_FLOAT_MAX ? null : $this->maxLatencyMs,
@@ -91,7 +96,7 @@ final class PolicyDecision
             'deferForMs'        => $this->deferForMs,
             'requiredReviewers' => $this->requiredReviewers,
             'disabledProviders' => $disabled,
-            'metadata'          => $this->metadata,
+            'metadata'          => $metadata,
         ];
     }
 

@@ -37,6 +37,12 @@ final class GoalNode extends GraphNode implements HashableNode
 
     public function canonicalNode(): CanonicalNode
     {
-        return new CanonicalNode(id: $this->id, type: $this->type->value);
+        return new CanonicalNode(
+            id:   $this->id,
+            type: $this->type->value,
+            // maxShots is structural — it determines how many shots this goal produces.
+            // A change from maxShots=1 to maxShots=2 must produce a different goalGraphHash.
+            data: ['maxShots' => $this->maxShots],
+        );
     }
 }

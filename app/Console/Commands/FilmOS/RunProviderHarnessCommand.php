@@ -247,17 +247,19 @@ class RunProviderHarnessCommand extends Command
         $this->info("ExecutionSnapshot — Phase A + Phase B:");
         $this->line("  canonicalHash : " . $snapshot->shortHash() . "…");
 
+        $short = static fn(?string $h): string => $h !== null ? substr($h, 0, 16) . '…' : 'null';
+
         $phaseA = [
-            ['dagHash',       substr($snapshot->dagHash,       0, 16) . '…'],
-            ['goalGraphHash', substr($snapshot->goalGraphHash, 0, 16) . '…'],
-            ['promptHash',    substr($snapshot->promptHash,    0, 16) . '…'],
-            ['schedulerHash', $snapshot->schedulerHash ? substr($snapshot->schedulerHash, 0, 16) . '…' : 'null'],
-            ['policyHash',    $snapshot->policyHash    ? substr($snapshot->policyHash,    0, 16) . '…' : 'null'],
+            ['dagHash',       $short($snapshot->get('dagHash'))],
+            ['goalGraphHash', $short($snapshot->get('goalGraphHash'))],
+            ['promptHash',    $short($snapshot->get('promptHash'))],
+            ['schedulerHash', $short($snapshot->get('schedulerHash'))],
+            ['policyHash',    $short($snapshot->get('policyHash'))],
         ];
         $phaseB = [
-            ['executionGraphHash', substr($result->executionSection->executionGraphHash, 0, 16) . '…'],
-            ['checkpointHash',     substr($result->executionSection->checkpointHash,     0, 16) . '…'],
-            ['retrySequenceHash',  substr($result->executionSection->retrySequenceHash,  0, 16) . '…'],
+            ['executionTopologyHash', $short($result->executionSection->executionTopologyHash)],
+            ['checkpointHash',        $short($result->executionSection->checkpointHash)],
+            ['retrySequenceHash',     $short($result->executionSection->retrySequenceHash)],
         ];
 
         $this->line("  Phase A:");

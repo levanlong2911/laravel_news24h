@@ -35,4 +35,15 @@ final class NodeFailedEvent extends AbstractFilmOSEvent
             'provider'     => $this->provider,
         ];
     }
+
+    public function canonicalData(): array
+    {
+        return [
+            'taskId'     => $this->taskId,
+            'retryCount' => $this->retryCount,
+            // excluded: executionId, nodeId (run-instance IDs),
+            //           errorMessage (non-deterministic text),
+            //           provider (routing decision captured in Phase C ProviderSection)
+        ];
+    }
 }

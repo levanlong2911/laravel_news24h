@@ -28,6 +28,7 @@ final class DeterminismManifest
         public readonly string $grammarVersion,
         public readonly string $worldVersion,
         public readonly string $policyVersion,
+        private readonly HashSerializer $serializer = new JsonHashSerializer(),
     ) {}
 
     /**
@@ -53,14 +54,14 @@ final class DeterminismManifest
      */
     public function canonicalHash(): string
     {
-        return hash('sha256', json_encode([
+        return $this->serializer->sha256([
             'schemaVersion'   => $this->schemaVersion,
             'compilerVersion' => $this->compilerVersion,
             'backendVersion'  => $this->backendVersion,
             'grammarVersion'  => $this->grammarVersion,
             'worldVersion'    => $this->worldVersion,
             'policyVersion'   => $this->policyVersion,
-        ], JSON_THROW_ON_ERROR));
+        ]);
     }
 
     /** @return array<string, string|int> */

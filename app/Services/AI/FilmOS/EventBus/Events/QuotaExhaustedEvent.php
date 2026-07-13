@@ -29,4 +29,12 @@ final class QuotaExhaustedEvent extends AbstractFilmOSEvent
             'lastProviderAttempted' => $this->lastProviderAttempted,
         ];
     }
+
+    public function canonicalData(): array
+    {
+        return [
+            'capability'            => $this->capability->value,
+            'lastProviderAttempted' => $this->lastProviderAttempted,
+        ];
+    }
 }

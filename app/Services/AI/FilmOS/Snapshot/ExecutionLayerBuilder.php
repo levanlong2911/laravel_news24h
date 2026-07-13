@@ -13,7 +13,7 @@ use App\Services\AI\FilmOS\ExecutionGraph\ExecutionRuntimeState;
  * Builds Phase B snapshot hashes.
  *
  * Data sources:
- *   ExecutionGraph          — topology only (nodes + edges); used for executionGraphHash
+ *   ExecutionGraph          — topology only (nodes + edges); used for executionTopologyHash
  *   ExecutionRuntimeState[] — all mutable runtime state; used for all three hashes
  *   CheckpointEntry[]       — ordered checkpoint log emitted by ExecutionRuntime
  *
@@ -23,7 +23,7 @@ use App\Services\AI\FilmOS\ExecutionGraph\ExecutionRuntimeState;
  *
  * Three hash contracts (ADR-016 Phase B):
  *
- *   executionGraphHash
+ *   executionTopologyHash
  *     topology: (taskId, status.value) per node; (from, to, rel) per edge.
  *     status comes from ExecutionRuntimeState — NOT ExecutionNode.
  *     Two runs with same topology + same terminal statuses MUST match.
@@ -55,9 +55,9 @@ final class ExecutionLayerBuilder
         array          $checkpointLog,
     ): ExecutionSection {
         return new ExecutionSection(
-            executionGraphHash: $this->buildExecutionGraphHash($graph, $states),
-            checkpointHash:     $this->buildCheckpointHash($checkpointLog),
-            retrySequenceHash:  $this->buildRetrySequenceHash($states),
+            executionTopologyHash: $this->buildExecutionTopologyHash($graph, $states),
+            checkpointHash:        $this->buildCheckpointHash($checkpointLog),
+            retrySequenceHash:     $this->buildRetrySequenceHash($states),
         );
     }
 
@@ -66,8 +66,9 @@ final class ExecutionLayerBuilder
     /**
      * Topology hash: (taskId, status.value) per node + (from, to, rel) per edge.
      * Status is read from ExecutionRuntimeState — never from ExecutionNode.
+     * Renamed from buildExecutionGraphHash in Phase D (more accurate: hashes topology + runtime status).
      */
-    private function buildExecutionGraphHash(ExecutionGraph $graph, array $states): string
+    private function buildExecutionTopologyHash(ExecutionGraph $graph, array $states): string
     {
         $nodes = [];
         foreach ($graph->nodes() as $node) {
@@ -89,10 +90,7 @@ final class ExecutionLayerBuilder
         }
         sort($edges);
 
-        return hash('sha256', $this->serializer->serialize([
-            'nodes' => $nodes,
-            'edges' => $edges,
-        ]));
+        return $this->serializer->sha256(['nodes' => $nodes, 'edges' => $edges]);
     }
 
     /**
@@ -110,7 +108,7 @@ final class ExecutionLayerBuilder
             $checkpointLog,
         );
 
-        return hash('sha256', $this->serializer->serialize($canonical));
+        return $this->serializer->sha256($canonical);
     }
 
     /**
@@ -134,6 +132,6 @@ final class ExecutionLayerBuilder
             array_values($states),
         );
 
-        return hash('sha256', $this->serializer->serialize($canonical));
+        return $this->serializer->sha256($canonical);
     }
 }

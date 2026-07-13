@@ -7,9 +7,12 @@ namespace App\Console\Commands\FilmOS;
 use App\Models\Article;
 use App\Services\AI\FilmOS\DecisionDAG\DAGNodeType;
 use App\Services\AI\FilmOS\DecisionDAG\DAGRuntime;
+use App\Services\AI\FilmOS\Snapshot\ArtifactLayerBuilder;
 use App\Services\AI\FilmOS\Snapshot\DeterminismManifest;
+use App\Services\AI\FilmOS\Snapshot\PlanningSnapshotBuilder;
 use App\Services\AI\FilmOS\Snapshot\SnapshotComposer;
 use App\Services\AI\FilmOS\Snapshot\TaskDescriptor;
+use App\Services\AI\FilmOS\Testing\GoldenScenarioPipeline;
 use App\Services\AI\FilmOS\Evaluation\Plugins\EvaluationPlugin;
 use App\Services\AI\FilmOS\Intent\IntentAssembler;
 use App\Services\AI\FilmOS\Kernel\FilmKernel;
@@ -85,7 +88,7 @@ class RunGoldenScenarioCommand extends Command
             $facts = array_map(fn($f) => $f->toArray(), $filmFacts);
             $this->line("[L1] FactGraph: " . count($facts) . " facts extracted via Claude (domain={$domain})");
         } else {
-            $facts = $this->goldenScenarioFacts();
+            $facts = GoldenScenarioPipeline::facts();
             $this->line("[L1] FactGraph: " . count($facts) . " facts loaded (golden scenario — hardcoded)");
         }
 
@@ -310,27 +313,23 @@ class RunGoldenScenarioCommand extends Command
         $this->line("Run: php artisan filmos:explain-shot {$productionId} shot_002_cockroach_closeup");
         $this->line("Run: php artisan filmos:check-invariants {$productionId}");
 
-        // ── ExecutionSnapshot (Phase A) ───────────────────────────────────────
-        $worldVersion = hash('sha256', json_encode($facts, JSON_THROW_ON_ERROR));
-        $manifest     = DeterminismManifest::current($worldVersion);
-        $descriptors  = array_map(fn(FilmTask $t) => TaskDescriptor::fromFilmTask($t), $filmTasks);
+        // ── ExecutionSnapshot (Phase A + Phase F) ────────────────────────────
+        $worldVersion    = hash('sha256', json_encode($facts, JSON_THROW_ON_ERROR));
+        $manifest        = DeterminismManifest::current($worldVersion);
+        $descriptors     = array_map(fn(FilmTask $t) => TaskDescriptor::fromFilmTask($t), $filmTasks);
 
-        $snapshot = (new SnapshotComposer())->composeFromPlan(
-            productionId: $productionId,
-            manifest:     $manifest,
-            dag:          $dag,
-            goalGraph:    $goalGraph,
-            plan:         $plan,
-            intents:      $intents,
-            descriptors:  $descriptors,
-        );
+        $planningSection = (new PlanningSnapshotBuilder())->build($dag, $goalGraph, $plan, $intents, $descriptors);
+        $artifactSection = (new ArtifactLayerBuilder())->build($renderResults);
+
+        $snapshot = (new SnapshotComposer())->compose($productionId, $manifest, $planningSection, $artifactSection);
 
         $this->newLine();
         $this->info("── ExecutionSnapshot ────────────────────────────");
-        $this->line("  Hash : " . $snapshot->shortHash() . "…");
-        $this->line("  DAG  : " . substr($snapshot->dagHash, 0, 16) . "…");
-        $this->line("  Goals: " . substr($snapshot->goalGraphHash, 0, 16) . "…");
-        $this->line("  PromptIRs: " . substr($snapshot->promptHash, 0, 16) . "…");
+        $this->line("  Hash      : " . $snapshot->shortHash() . "…");
+        $this->line("  DAG       : " . substr($snapshot->get('dagHash') ?? '', 0, 16) . "…");
+        $this->line("  Goals     : " . substr($snapshot->get('goalGraphHash') ?? '', 0, 16) . "…");
+        $this->line("  PromptIRs : " . substr($snapshot->get('promptHash') ?? '', 0, 16) . "…");
+        $this->line("  Artifacts : " . substr($snapshot->get('artifactBundleHash') ?? '', 0, 16) . "…");
         $gaps = $snapshot->gaps();
         if (!empty($gaps)) {
             $this->line("  Gaps (not yet verified): " . implode(', ', $gaps));
@@ -362,41 +361,4 @@ class RunGoldenScenarioCommand extends Command
         };
     }
 
-    private function goldenScenarioFacts(): array
-    {
-        return [
-            [
-                'id'              => 'F1',
-                'text'            => 'Cockroach infestation found in multiple guest rooms',
-                'category'        => 'EVIDENCE',
-                'visual_relevance'=> 'HIGH',
-                'confidence'      => 0.95,
-                'visual_hint'     => 'cockroach on hotel bedsheet',
-            ],
-            [
-                'id'              => 'F2',
-                'text'            => 'Health department issued formal warning',
-                'category'        => 'RESULT',
-                'visual_relevance'=> 'MEDIUM',
-                'confidence'      => 0.92,
-                'visual_hint'     => 'official health department notice document',
-            ],
-            [
-                'id'              => 'F3',
-                'text'            => 'Travelers advised to avoid property',
-                'category'        => 'RESULT',
-                'visual_relevance'=> 'MEDIUM',
-                'confidence'      => 0.88,
-                'visual_hint'     => 'travel advisory overlay text',
-            ],
-            [
-                'id'              => 'F4',
-                'text'            => 'Sunset Palace Resort, Bali — 3-star rated',
-                'category'        => 'CONTEXT',
-                'visual_relevance'=> 'HIGH',
-                'confidence'      => 0.90,
-                'visual_hint'     => 'hotel exterior, Bali architecture',
-            ],
-        ];
-    }
 }

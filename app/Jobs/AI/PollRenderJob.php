@@ -8,6 +8,7 @@ use App\Services\AI\Provider\Circuit\ProviderUnavailableException;
 use App\Services\AI\Provider\ProviderRegistry;
 use App\Services\AI\Provider\RenderVideoStatus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -129,28 +130,41 @@ final class PollRenderJob implements ShouldQueue
                 return;
             }
 
-            // Transition to STORING — StoreArtifactJob will download, checksum, and mark completed.
-            $run->update([
-                'output_json' => array_merge($output, [
-                    'schema_name'    => 'render_output',
-                    'schema_version' => 1,
-                    'render_status'  => RenderVideoStatus::STORING->value,
-                    'poll_attempts'  => $this->pollAttempt + 1,
-                    'artifact'       => [
-                        'cdn_url'           => $artifact->videoUrl,
-                        'cdn_thumbnail_url' => $artifact->thumbnailUrl,
-                        'duration_seconds'  => $artifact->durationSeconds,
-                    ],
-                ]),
-            ]);
+            // Transition to STORING — atomic: update DB and enqueue StoreArtifactJob together.
+            // afterCommit() ensures the job is dispatched only after the transaction commits.
+            // If the process is killed between update() and dispatch(), the transaction rolls back
+            // and the idempotency guard (cdn_url absent) lets the next retry re-enter this path.
+            $pipelineRunId    = $this->pipelineRunId;
+            $taskId           = $this->taskId;
+            $pollAttempt      = $this->pollAttempt;
+            $renderQueue      = (string) config('ai.render_queue', 'rendering');
 
-            StoreArtifactJob::dispatch(
-                $this->pipelineRunId,
-                $this->taskId,
-                $artifact->videoUrl,
-                $artifact->thumbnailUrl,
-                $artifact->durationSeconds,
-            )->onQueue((string) config('ai.render_queue', 'rendering'));
+            DB::transaction(function () use (
+                $run, $output, $artifact,
+                $pipelineRunId, $taskId, $pollAttempt, $renderQueue,
+            ): void {
+                $run->update([
+                    'output_json' => array_merge($output, [
+                        'schema_name'    => 'render_output',
+                        'schema_version' => 1,
+                        'render_status'  => RenderVideoStatus::STORING->value,
+                        'poll_attempts'  => $pollAttempt + 1,
+                        'artifact'       => [
+                            'cdn_url'           => $artifact->videoUrl,
+                            'cdn_thumbnail_url' => $artifact->thumbnailUrl,
+                            'duration_seconds'  => $artifact->durationSeconds,
+                        ],
+                    ]),
+                ]);
+
+                StoreArtifactJob::dispatch(
+                    $pipelineRunId,
+                    $taskId,
+                    $artifact->videoUrl,
+                    $artifact->thumbnailUrl,
+                    $artifact->durationSeconds,
+                )->afterCommit()->onQueue($renderQueue);
+            });
         } else {
             $run->update([
                 'status'      => 'failed',

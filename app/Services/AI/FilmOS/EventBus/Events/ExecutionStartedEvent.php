@@ -29,4 +29,13 @@ final class ExecutionStartedEvent extends AbstractFilmOSEvent
             'resumedFromCheckpoint' => $this->resumedFromCheckpoint,
         ];
     }
+
+    public function canonicalData(): array
+    {
+        return [
+            'nodeCount'             => $this->nodeCount,
+            'resumedFromCheckpoint' => $this->resumedFromCheckpoint,
+            // excluded: executionId (run-instance identifier)
+        ];
+    }
 }

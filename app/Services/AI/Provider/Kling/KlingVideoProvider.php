@@ -27,8 +27,13 @@ final class KlingVideoProvider implements RenderVideoProvider
 
     public static function fromConfig(): self
     {
+        // Prefer FAL proxy when FAL_API_KEY is set; fall back to direct JWT client.
+        $client = config('kling.fal_api_key')
+            ? FalKlingApiClient::fromConfig()
+            : KlingApiClient::fromConfig();
+
         return new self(
-            client:   KlingApiClient::fromConfig(),
+            client:   $client,
             model:    (string) config('kling.default_model', 'kling-v1'),
             mode:     (string) config('kling.default_mode', 'std'),
             cfgScale: (float)  config('kling.cfg_scale', 0.5),

@@ -30,7 +30,13 @@ final class RenderResultService
 
         return DB::transaction(function () use ($data) {
             $session = BmSession::where('code', $data['session_code'])->firstOrFail();
-            $fixture = BmFixture::where('slug', $data['fixture_slug'])->firstOrFail();
+            $fixture = BmFixture::firstOrCreate(
+                ['slug' => $data['fixture_slug']],
+                [
+                    'name'           => $data['fixture_slug'],
+                    'scene_category' => $this->inferSceneCategory($data['fixture_slug']),
+                ]
+            );
 
             // Preload all lookup maps in two queries
             $plannerMap        = BmPlanner::pluck('id', 'name');          // name → id
@@ -149,6 +155,20 @@ final class RenderResultService
             BmInstructionInstance::insert($rows);
         }
         return count($rows);
+    }
+
+    private function inferSceneCategory(string $slug): string
+    {
+        return match (true) {
+            str_starts_with($slug, 'article_')    => 'generic',
+            str_contains($slug, 'sport')          => 'athletic_action',
+            str_contains($slug, 'quarterback')    => 'athletic_action',
+            str_contains($slug, 'aerial')         => 'aerial_vehicle',
+            str_contains($slug, 'yacht')          => 'aerial_vehicle',
+            str_contains($slug, 'landscape')      => 'landscape_nature',
+            str_contains($slug, 'product')        => 'product_craft',
+            default                               => 'generic',
+        };
     }
 
     private function buildResponse(BmRender $render, bool $alreadyExisted, int $instCount = 0): array
