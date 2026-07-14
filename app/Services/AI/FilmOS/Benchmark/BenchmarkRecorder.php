@@ -45,6 +45,7 @@ final class BenchmarkRecorder
                 'assetUrl'  => $result->assetUrl,
                 'duration'  => $result->duration,
             ],
+            ordinal:        $planningIr->shotOrder,   // join identity for C.8A
         );
     }
 }

@@ -17,5 +17,10 @@ final class BenchmarkResult
         public readonly float  $latencySeconds,
         public readonly float  $qualityScore,
         public readonly array  $attributes = [],
+        /** Shot ordinal — the JOIN IDENTITY for C.8A knowledge analysis.
+         *  goalId is a business identifier (renamable) kept for trace/debug.
+         *  Nullable additive field: pre-C.8A results remain valid but cannot
+         *  be joined to narrative knowledge. */
+        public readonly ?int   $ordinal = null,
     ) {}
 }
