@@ -28,6 +28,7 @@ final class BenchmarkRepository
             'provider'        => $result->provider,
             'planner_name'    => $result->plannerName,
             'goal_id'         => $result->goalId,
+            'ordinal'         => $result->ordinal,
             'request_id'      => (string) ($result->attributes['requestId'] ?? ''),
             'asset_url'       => (string) ($result->attributes['assetUrl'] ?? ''),
             'duration'        => (float)  ($result->attributes['duration']  ?? 0.0),
@@ -113,6 +114,7 @@ final class BenchmarkRepository
             latencySeconds: (float) $row->latency_seconds,
             qualityScore:   (float) $row->quality_score,
             attributes:     $attributes,
+            ordinal:        $row->ordinal !== null ? (int) $row->ordinal : null,
         );
     }
 
