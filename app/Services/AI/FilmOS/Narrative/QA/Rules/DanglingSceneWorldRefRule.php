@@ -22,17 +22,15 @@ final class DanglingSceneWorldRefRule implements NarrativeRule
         return 'scene.dangling_world_ref';
     }
 
-    public function check(NarrativeAuditContext $context): array
+    public function check(NarrativeAuditContext $context): iterable
     {
-        $findings = [];
-
         foreach ($context->scene()->allNodes() as $nodeId => $node) {
             $ref = $node->worldObjectRef;
 
             if ($ref !== null && !$context->world()->hasObject($ref)) {
                 // ERROR but not blocking: the node still renders from its own
                 // label/type; only its world grounding is missing.
-                $findings[] = new NarrativeFinding(
+                yield new NarrativeFinding(
                     severity:  FindingSeverity::ERROR,
                     category:  FindingCategory::SCENE,
                     code:      self::CODE,
@@ -43,7 +41,5 @@ final class DanglingSceneWorldRefRule implements NarrativeRule
                 );
             }
         }
-
-        return $findings;
     }
 }

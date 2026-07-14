@@ -27,10 +27,9 @@ final class EmotionWithoutIntroductionRule implements NarrativeRule
         return 'character.emotion_without_introduction';
     }
 
-    public function check(NarrativeAuditContext $context): array
+    public function check(NarrativeAuditContext $context): iterable
     {
         $introduced = [];
-        $orphans    = [];
 
         foreach ($context->timeline()->events() as $event) {
             if ($event instanceof CharacterIntroducedEvent) {
@@ -45,7 +44,7 @@ final class EmotionWithoutIntroductionRule implements NarrativeRule
                 // ERROR but not blocking: the projection already dropped the
                 // orphan emotion, so the compile can proceed — the finding
                 // records the planner bug, the consumer decides what to do.
-                $orphans[] = new NarrativeFinding(
+                yield new NarrativeFinding(
                     severity:  FindingSeverity::ERROR,
                     category:  FindingCategory::CHARACTER,
                     code:      self::CODE,
@@ -57,7 +56,5 @@ final class EmotionWithoutIntroductionRule implements NarrativeRule
                 );
             }
         }
-
-        return $orphans;
     }
 }

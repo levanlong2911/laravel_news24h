@@ -26,6 +26,12 @@ interface NarrativeRule
     /** Stable identifier of this rule, e.g. "camera.missing". Frozen once shipped. */
     public function ruleId(): string;
 
-    /** @return NarrativeFinding[] empty array when the narrative is clean */
-    public function check(NarrativeAuditContext $context): array;
+    /**
+     * Yields nothing when the narrative is clean. Returning iterable (not array)
+     * lets rules `yield` findings as they scan — no per-rule array building,
+     * and the API holds unchanged whether there are 6 rules or 1000.
+     *
+     * @return iterable<NarrativeFinding>
+     */
+    public function check(NarrativeAuditContext $context): iterable;
 }

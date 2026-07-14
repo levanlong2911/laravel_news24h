@@ -24,14 +24,30 @@ final class NarrativeAuditReport
         return $this->findings;
     }
 
+    /** True when the audit produced no findings at all — not even INFO. */
+    public function isClean(): bool
+    {
+        return $this->findings === [];
+    }
+
     public function hasErrors(): bool
     {
         return $this->errorCount() > 0;
     }
 
+    public function hasWarnings(): bool
+    {
+        return $this->warningCount() > 0;
+    }
+
     public function errorCount(): int
     {
         return count($this->bySeverity(FindingSeverity::ERROR));
+    }
+
+    public function warningCount(): int
+    {
+        return count($this->bySeverity(FindingSeverity::WARNING));
     }
 
     /** @return NarrativeFinding[] */

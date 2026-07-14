@@ -27,15 +27,13 @@ final class MissingCameraRule implements NarrativeRule
         return 'camera.missing';
     }
 
-    public function check(NarrativeAuditContext $context): array
+    public function check(NarrativeAuditContext $context): iterable
     {
-        $findings = [];
-
         foreach ($context->story()->shots as $shot) {
             $ordinal = $shot['ordinal'];
 
             if ($context->scene()->getCamera($ordinal) === null) {
-                $findings[] = new NarrativeFinding(
+                yield new NarrativeFinding(
                     severity:  FindingSeverity::ERROR,
                     category:  FindingCategory::CAMERA,
                     code:      self::CODE,
@@ -47,7 +45,5 @@ final class MissingCameraRule implements NarrativeRule
                 );
             }
         }
-
-        return $findings;
     }
 }

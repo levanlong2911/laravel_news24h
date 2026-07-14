@@ -26,15 +26,13 @@ final class CameraFocusNodeExistsRule implements NarrativeRule
         return 'camera.focus_node_missing';
     }
 
-    public function check(NarrativeAuditContext $context): array
+    public function check(NarrativeAuditContext $context): iterable
     {
-        $findings = [];
-
         foreach ($context->scene()->allCameras() as $ordinal => $camera) {
             $focus = $camera->focusNodeId;
 
             if ($focus !== null && !$context->scene()->hasNode($focus)) {
-                $findings[] = new NarrativeFinding(
+                yield new NarrativeFinding(
                     severity:  FindingSeverity::WARNING,
                     category:  FindingCategory::CAMERA,
                     code:      self::CODE,
@@ -46,7 +44,5 @@ final class CameraFocusNodeExistsRule implements NarrativeRule
                 );
             }
         }
-
-        return $findings;
     }
 }

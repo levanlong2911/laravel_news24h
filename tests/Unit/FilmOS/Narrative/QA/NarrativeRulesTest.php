@@ -61,7 +61,7 @@ final class NarrativeRulesTest extends TestCase
         // Emotion for 'ghost' — never introduced. Projection drops it; timeline keeps it.
         $bootstrapper->changeEmotion('ghost', $this->emotion(), ordinal: 1);
 
-        $findings = (new EmotionWithoutIntroductionRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new EmotionWithoutIntroductionRule())->check($this->ctx($timeline)), false);
 
         $this->assertCount(1, $findings);
         $this->assertSame(EmotionWithoutIntroductionRule::CODE, $findings[0]->code);
@@ -77,7 +77,7 @@ final class NarrativeRulesTest extends TestCase
         $bootstrapper->introduceCharacters([$this->profile('hero')]);
         $bootstrapper->changeEmotion('hero', $this->emotion(), ordinal: 1);
 
-        $findings = (new EmotionWithoutIntroductionRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new EmotionWithoutIntroductionRule())->check($this->ctx($timeline)), false);
 
         $this->assertEmpty($findings);
     }
@@ -91,7 +91,7 @@ final class NarrativeRulesTest extends TestCase
         $bootstrapper->introduceCharacters([$this->profile('hero')]);
         $bootstrapper->introduceCharacters([$this->profile('hero')], ordinal: 2);
 
-        $findings = (new DuplicateIntroductionRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new DuplicateIntroductionRule())->check($this->ctx($timeline)), false);
 
         $this->assertCount(1, $findings);
         $this->assertSame(DuplicateIntroductionRule::CODE, $findings[0]->code);
@@ -105,7 +105,7 @@ final class NarrativeRulesTest extends TestCase
 
         $bootstrapper->introduceCharacters([$this->profile('hero'), $this->profile('villain')]);
 
-        $findings = (new DuplicateIntroductionRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new DuplicateIntroductionRule())->check($this->ctx($timeline)), false);
 
         $this->assertEmpty($findings);
     }
@@ -120,7 +120,7 @@ final class NarrativeRulesTest extends TestCase
             new CharacterProfile(id: 'hero', label: 'Hero', appearance: AttributeBag::empty(), worldObjectRef: 'missing_obj'),
         ]);
 
-        $findings = (new DanglingCharacterWorldRefRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new DanglingCharacterWorldRefRule())->check($this->ctx($timeline)), false);
 
         $this->assertCount(1, $findings);
         $this->assertSame(DanglingCharacterWorldRefRule::CODE, $findings[0]->code);
@@ -140,7 +140,7 @@ final class NarrativeRulesTest extends TestCase
             new CharacterProfile(id: 'hero', label: 'Hero', appearance: AttributeBag::empty(), worldObjectRef: 'hero_obj'),
         ]);
 
-        $findings = (new DanglingCharacterWorldRefRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new DanglingCharacterWorldRefRule())->check($this->ctx($timeline)), false);
 
         $this->assertEmpty($findings);
     }
@@ -158,7 +158,7 @@ final class NarrativeRulesTest extends TestCase
             ordinal:   0,
         );
 
-        $findings = (new DanglingSceneWorldRefRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new DanglingSceneWorldRefRule())->check($this->ctx($timeline)), false);
 
         $this->assertCount(1, $findings);
         $this->assertSame(DanglingSceneWorldRefRule::CODE, $findings[0]->code);
@@ -176,7 +176,7 @@ final class NarrativeRulesTest extends TestCase
             ordinal:   0,
         );
 
-        $findings = (new DanglingSceneWorldRefRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new DanglingSceneWorldRefRule())->check($this->ctx($timeline)), false);
 
         $this->assertEmpty($findings);
     }
@@ -194,7 +194,7 @@ final class NarrativeRulesTest extends TestCase
         // Camera only for shot 0 — shot 1 is uncompilable
         $bootstrapper->setupScene(nodes: [], relations: [], camera: $this->camera(), ordinal: 0);
 
-        $findings = (new MissingCameraRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new MissingCameraRule())->check($this->ctx($timeline)), false);
 
         $this->assertCount(1, $findings);
         $this->assertSame(MissingCameraRule::CODE, $findings[0]->code);
@@ -212,7 +212,7 @@ final class NarrativeRulesTest extends TestCase
         ]);
         $bootstrapper->setupScene(nodes: [], relations: [], camera: $this->camera(), ordinal: 0);
 
-        $findings = (new MissingCameraRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new MissingCameraRule())->check($this->ctx($timeline)), false);
 
         $this->assertEmpty($findings);
     }
@@ -230,7 +230,7 @@ final class NarrativeRulesTest extends TestCase
             ordinal:   0,
         );
 
-        $findings = (new CameraFocusNodeExistsRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new CameraFocusNodeExistsRule())->check($this->ctx($timeline)), false);
 
         $this->assertCount(1, $findings);
         $this->assertSame(CameraFocusNodeExistsRule::CODE, $findings[0]->code);
@@ -250,7 +250,7 @@ final class NarrativeRulesTest extends TestCase
             ordinal:   0,
         );
 
-        $findings = (new CameraFocusNodeExistsRule())->check($this->ctx($timeline));
+        $findings = iterator_to_array((new CameraFocusNodeExistsRule())->check($this->ctx($timeline)), false);
 
         $this->assertEmpty($findings);
     }

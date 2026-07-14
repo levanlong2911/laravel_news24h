@@ -71,7 +71,9 @@ final class NarrativeAuditorTest extends TestCase
         $report = $this->auditor()->audit($timeline, $this->project($timeline));
 
         $this->assertEmpty($report->findings());
+        $this->assertTrue($report->isClean());
         $this->assertFalse($report->hasErrors());
+        $this->assertFalse($report->hasWarnings());
         $this->assertSame(0, $report->errorCount());
     }
 
@@ -93,8 +95,11 @@ final class NarrativeAuditorTest extends TestCase
         $report = $this->auditor()->audit($timeline, $this->project($timeline));
 
         $this->assertCount(3, $report->findings());
+        $this->assertFalse($report->isClean());
         $this->assertTrue($report->hasErrors());
+        $this->assertTrue($report->hasWarnings());
         $this->assertSame(2, $report->errorCount());
+        $this->assertSame(1, $report->warningCount());
         $this->assertCount(1, $report->warnings());
     }
 

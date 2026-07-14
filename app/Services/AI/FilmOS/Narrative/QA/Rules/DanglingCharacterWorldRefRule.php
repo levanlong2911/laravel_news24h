@@ -23,17 +23,15 @@ final class DanglingCharacterWorldRefRule implements NarrativeRule
         return 'character.dangling_world_ref';
     }
 
-    public function check(NarrativeAuditContext $context): array
+    public function check(NarrativeAuditContext $context): iterable
     {
-        $findings = [];
-
         foreach ($context->characters()->allCharacters() as $characterId => $memory) {
             $ref = $memory->profile->worldObjectRef;
 
             if ($ref !== null && !$context->world()->hasObject($ref)) {
                 // ERROR but not blocking: the shot still compiles; the broken
                 // reference means world context for this character is missing.
-                $findings[] = new NarrativeFinding(
+                yield new NarrativeFinding(
                     severity:  FindingSeverity::ERROR,
                     category:  FindingCategory::CHARACTER,
                     code:      self::CODE,
@@ -44,7 +42,5 @@ final class DanglingCharacterWorldRefRule implements NarrativeRule
                 );
             }
         }
-
-        return $findings;
     }
 }

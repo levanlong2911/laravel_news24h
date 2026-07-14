@@ -26,7 +26,7 @@ final class DuplicateIntroductionRule implements NarrativeRule
         return 'character.duplicate_introduction';
     }
 
-    public function check(NarrativeAuditContext $context): array
+    public function check(NarrativeAuditContext $context): iterable
     {
         /** @var array<string, int> */
         $counts = [];
@@ -37,10 +37,9 @@ final class DuplicateIntroductionRule implements NarrativeRule
             }
         }
 
-        $findings = [];
         foreach ($counts as $characterId => $count) {
             if ($count > 1) {
-                $findings[] = new NarrativeFinding(
+                yield new NarrativeFinding(
                     severity:  FindingSeverity::WARNING,
                     category:  FindingCategory::CHARACTER,
                     code:      self::CODE,
@@ -51,7 +50,5 @@ final class DuplicateIntroductionRule implements NarrativeRule
                 );
             }
         }
-
-        return $findings;
     }
 }
