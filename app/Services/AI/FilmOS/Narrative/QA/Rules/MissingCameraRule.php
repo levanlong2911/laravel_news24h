@@ -29,19 +29,17 @@ final class MissingCameraRule implements NarrativeRule
 
     public function check(NarrativeAuditContext $context): iterable
     {
-        foreach ($context->story()->shots as $shot) {
-            $ordinal = $shot['ordinal'];
-
-            if ($context->scene()->getCamera($ordinal) === null) {
+        foreach ($context->story()->allShots() as $shot) {
+            if ($context->scene()->getCamera($shot->ordinal) === null) {
                 yield new NarrativeFinding(
                     severity:  FindingSeverity::ERROR,
                     category:  FindingCategory::CAMERA,
                     code:      self::CODE,
-                    message:   "Shot '{$shot['shotId']}' (ordinal {$ordinal}) has no camera configuration.",
+                    message:   "Shot '{$shot->shotId}' (ordinal {$shot->ordinal}) has no camera configuration.",
                     ruleId:    $this->ruleId(),
                     blocking:  true,
-                    subjectId: $shot['shotId'],
-                    ordinal:   $ordinal,
+                    subjectId: $shot->shotId,
+                    ordinal:   $shot->ordinal,
                 );
             }
         }

@@ -40,15 +40,15 @@ final class D0PipelineTest extends TestCase
 
         $state = $projector->project($timeline);
 
-        $this->assertCount(3, $state->story->shots);
+        $this->assertCount(3, $state->story->allShots());
         $this->assertSame(3, $state->metadata->eventCount);
         $this->assertSame(2, $state->metadata->lastOrdinal);
 
         // First shot (ordinal 0) must be 'hook'
-        $first = $state->story->shots[0];
-        $this->assertSame('hook', $first['shotId']);
-        $this->assertSame(0,      $first['ordinal']);
-        $this->assertSame('leaf', $first['goalType']);
+        $first = $state->story->shotAt(0);
+        $this->assertSame('hook', $first?->shotId);
+        $this->assertSame(0,      $first?->ordinal);
+        $this->assertSame('leaf', $first?->goalType);
     }
 
     public function test_projection_order_matches_goal_node_iteration_order(): void
@@ -65,7 +65,7 @@ final class D0PipelineTest extends TestCase
 
         $state = (new DefaultTimelineProjector([new ShotPlannedProjectionHandler()]))->project($timeline);
 
-        $shotIds = array_column($state->story->shots, 'shotId');
+        $shotIds = array_map(fn($shot) => $shot->shotId, array_values($state->story->allShots()));
         $this->assertSame(['a', 'b', 'c'], $shotIds);
     }
 

@@ -28,15 +28,16 @@ final class GoalDecomposer
         $graph = new GoalGraph('root');
         $graph->addNode(new GoalNode('root', 'Cinematic story', GoalNodeType::ROOT, 0.88));
 
-        foreach ($narrative->orderedBeats() as $beat) {
-            /** @var NarrativeNode $beat */
-            $goalId = "shot_{$beat->beat}";
+        foreach ($narrative->orderedBeats() as $node) {
+            /** @var NarrativeNode $node */
+            $goalId = "shot_{$node->beat->value}";
             $graph->addNode(new GoalNode(
                 $goalId,
-                ucfirst(str_replace('_', ' ', $beat->concept)),
+                ucfirst(str_replace('_', ' ', $node->concept)),
                 GoalNodeType::LEAF,
-                $beat->weight,
+                $node->weight,
                 maxShots: 1,
+                beat:     $node->beat,   // typed pass-through from NarrativeStructureBuilder
             ));
             $graph->addEdge(new GoalEdge('root', $goalId, GoalRelation::REQUIRES));
         }

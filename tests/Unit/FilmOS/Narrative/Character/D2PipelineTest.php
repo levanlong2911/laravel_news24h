@@ -216,7 +216,7 @@ final class D2PipelineTest extends TestCase
 
         $state = $projector->project($timeline);
 
-        $this->assertCount(1, $state->story->shots);                                            // D0
+        $this->assertCount(1, $state->story->allShots());                                            // D0
         $this->assertTrue($state->world->hasObject('villa'));                                   // D3
         $this->assertTrue($state->scene->hasNode('hero_node'));                                 // D4
         $this->assertSame(EmotionalState::DETERMINATION, $state->characters->emotionAt('hero', 0)?->state); // D2

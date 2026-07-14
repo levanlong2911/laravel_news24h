@@ -7,6 +7,7 @@ namespace App\Services\AI\FilmOS\Narrative\Timeline;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterMemory;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterProfile;
+use App\Services\AI\FilmOS\Narrative\Story\StoryShot;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneNode;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneRelation;
@@ -19,8 +20,8 @@ use App\Services\AI\FilmOS\Narrative\World\WorldObject;
 
 final class NarrativeStateBuilder
 {
-    // Story domain (D0) — filled by ShotPlannedProjectionHandler
-    /** @var array<int, array{shotId: string, ordinal: int, goalType: string, description: string}> */
+    // Story domain (D0/D1) — filled by ShotPlannedProjectionHandler
+    /** @var array<int, StoryShot> keyed by shot ordinal (last-write-wins per ordinal) */
     private array $shots = [];
 
     // World domain (D3) — filled by WorldObjectPlaced/Removed/FactAsserted handlers
@@ -45,18 +46,10 @@ final class NarrativeStateBuilder
     /** @var array<string, array<int, CharacterEmotion>> [characterId => [ordinal => emotion]] */
     private array $characterEmotions     = [];
 
-    public function addShot(
-        string $shotId,
-        int    $ordinal,
-        string $goalType,
-        string $description,
-    ): void {
-        $this->shots[] = [
-            'shotId'      => $shotId,
-            'ordinal'     => $ordinal,
-            'goalType'    => $goalType,
-            'description' => $description,
-        ];
+    /** Builder receives the VO — same pattern as upsertWorldObject/introduceCharacter. */
+    public function addShot(StoryShot $shot): void
+    {
+        $this->shots[$shot->ordinal] = $shot;  // last-write-wins per ordinal
     }
 
     // World domain (D3) API

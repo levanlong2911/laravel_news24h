@@ -6,8 +6,8 @@ namespace App\Services\AI\FilmOS\Narrative\QA;
 
 use App\Services\AI\FilmOS\Narrative\Character\CharacterView;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneView;
+use App\Services\AI\FilmOS\Narrative\Story\StoryView;
 use App\Services\AI\FilmOS\Narrative\Timeline\NarrativeState;
-use App\Services\AI\FilmOS\Narrative\Timeline\Projection\StoryProjection;
 use App\Services\AI\FilmOS\Narrative\Timeline\SemanticTimeline;
 use App\Services\AI\FilmOS\Narrative\World\WorldView;
 
@@ -41,7 +41,7 @@ final class NarrativeAuditContext
 
     // Domain shortcuts — rules read the domain they audit without walking $state
 
-    public function story(): StoryProjection
+    public function story(): StoryView
     {
         return $this->state->story;
     }

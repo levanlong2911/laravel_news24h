@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Planning;
 
 use App\Services\AI\FilmOS\Graph\GraphNode;
+use App\Services\AI\FilmOS\Narrative\Story\StoryBeat;
 use App\Services\AI\FilmOS\Snapshot\CanonicalNode;
 use App\Services\AI\FilmOS\Snapshot\HashableNode;
 
@@ -16,6 +17,8 @@ final class GoalNode extends GraphNode implements HashableNode
         public readonly GoalNodeType $type,
         public readonly float        $priority,
         public readonly int          $maxShots = 1,
+        /** Cinematic beat carried from NarrativeNode — pass-through, never derived from $id. */
+        public readonly ?StoryBeat   $beat = null,
     ) {
         parent::__construct($id);
     }

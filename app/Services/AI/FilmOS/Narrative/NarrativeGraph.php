@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Narrative;
 
 use App\Services\AI\FilmOS\Graph\Graph;
+use App\Services\AI\FilmOS\Narrative\Story\StoryBeat;
 
 /**
  * Ordered cinematic structure derived from a MeaningGraph.
@@ -14,15 +15,13 @@ use App\Services\AI\FilmOS\Graph\Graph;
  */
 final class NarrativeGraph extends Graph
 {
-    private const BEAT_ORDER = ['hook', 'escalation', 'reveal', 'payoff'];
-
     public function isEmpty(): bool
     {
         return $this->nodeCount() === 0;
     }
 
     /**
-     * Returns NarrativeNodes in cinematic order.
+     * Returns NarrativeNodes in cinematic order (StoryBeat case declaration order).
      *
      * @return NarrativeNode[]
      */
@@ -30,13 +29,13 @@ final class NarrativeGraph extends Graph
     {
         $byBeat = [];
         foreach ($this->nodes() as $node) {
-            $byBeat[$node->beat] = $node;
+            $byBeat[$node->beat->value] = $node;
         }
 
         $ordered = [];
-        foreach (self::BEAT_ORDER as $beat) {
-            if (isset($byBeat[$beat])) {
-                $ordered[] = $byBeat[$beat];
+        foreach (StoryBeat::cases() as $beat) {
+            if (isset($byBeat[$beat->value])) {
+                $ordered[] = $byBeat[$beat->value];
             }
         }
 

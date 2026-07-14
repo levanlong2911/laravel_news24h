@@ -127,7 +127,7 @@ final class D3PipelineTest extends TestCase
         $state = $projector->project($timeline);
 
         // D0 story layer intact
-        $this->assertCount(2, $state->story->shots);
+        $this->assertCount(2, $state->story->allShots());
         // D3 world layer intact
         $this->assertTrue($state->world->hasObject('hero'));
         $this->assertSame('sunny', $state->world->getFact('weather')?->value);

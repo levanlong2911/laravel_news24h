@@ -26,7 +26,9 @@ final class DefaultTimelineProjectorTest extends TestCase
         $state1 = $projector->project($timeline);
         $state2 = $projector->project($timeline);
 
-        $this->assertSame($state1->story->shots, $state2->story->shots);
+        // assertEquals (structural): each projection builds fresh StoryShot VOs,
+        // so identity differs by design — purity means equal VALUES.
+        $this->assertEquals($state1->story->allShots(), $state2->story->allShots());
         $this->assertSame($state1->metadata->eventCount, $state2->metadata->eventCount);
     }
 
@@ -50,7 +52,7 @@ final class DefaultTimelineProjectorTest extends TestCase
 
         $this->assertSame(0, $state->metadata->eventCount);
         $this->assertSame(-1, $state->metadata->lastOrdinal);
-        $this->assertEmpty($state->story->shots);
+        $this->assertEmpty($state->story->allShots());
     }
 
     // ── Invariant: upToOrdinal filters replayed events ────────────────────────
@@ -62,7 +64,7 @@ final class DefaultTimelineProjectorTest extends TestCase
 
         $state = $projector->project($timeline, upToOrdinal: 1);
 
-        $this->assertCount(2, $state->story->shots);
+        $this->assertCount(2, $state->story->allShots());
         $this->assertSame(2, $state->metadata->eventCount);
         $this->assertSame(1, $state->metadata->lastOrdinal);
     }

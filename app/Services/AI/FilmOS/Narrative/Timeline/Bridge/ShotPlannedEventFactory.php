@@ -30,6 +30,7 @@ final class ShotPlannedEventFactory
                 shotId:      $shotId,
                 goalType:    $node->type->value,
                 description: $node->description,
+                beat:        $node->beat,   // pass-through — factory has no beat logic
             );
             $ordinal++;
         }

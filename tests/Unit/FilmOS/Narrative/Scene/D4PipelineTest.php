@@ -194,7 +194,7 @@ final class D4PipelineTest extends TestCase
 
         $state = $projector->project($timeline);
 
-        $this->assertCount(1, $state->story->shots);                              // D0
+        $this->assertCount(1, $state->story->allShots());                              // D0
         $this->assertTrue($state->world->hasObject('hero'));                      // D3
         $this->assertTrue($state->scene->hasNode('hero_node'));                   // D4
         $this->assertSame(ShotType::CLOSE_UP, $state->scene->getCamera(0)?->shotType); // D4
