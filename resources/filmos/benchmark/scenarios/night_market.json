@@ -1,0 +1,88 @@
+{
+    "schema_version": 1,
+    "id": "night_market",
+    "suite": "world",
+    "level": "A",
+    "difficulty": "medium",
+    "duration_seconds": 10,
+
+    "primary_learning_dimension": "environment_richness",
+    "secondary_learning_dimensions": ["lighting", "particles"],
+    "stress_dimensions": ["mixed_light_sources", "steam_and_smoke", "crowd_background", "neon_reflection"],
+
+    "goal": "The audience should be able to smell the market — steam, smoke and neon stacked so dense that one small stall feels like the centre of the world.",
+
+    "facts": [
+        { "id": "F1", "text": "A narrow market alley glows with stacked neon signs after rain",       "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.95, "visual_hint": "neon reflected in wet pavement" },
+        { "id": "F2", "text": "A noodle vendor works a flaming wok behind clouds of steam",           "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.94, "visual_hint": "wok flame flaring through steam" },
+        { "id": "F3", "text": "Skewers char over coals, smoke curling up through hanging lanterns",   "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.92, "visual_hint": "grill smoke through red lanterns" },
+        { "id": "F4", "text": "A finished bowl lands steaming on the counter for a waiting customer", "category": "RESULT",   "visual_relevance": "MEDIUM", "confidence": 0.89, "visual_hint": "steaming bowl under stall light" }
+    ],
+
+    "world_objects": [
+        { "id": "alley_obj",  "type": "location",  "label": "Night market alley", "attributes": { "surface": "wet after rain", "signage": "stacked neon" } },
+        { "id": "vendor_obj", "type": "character", "label": "Noodle vendor",      "attributes": { "station": "flaming wok" } },
+        { "id": "stall_obj",  "type": "prop",      "label": "Noodle stall",       "attributes": { "lighting": "bare bulb and lanterns" } }
+    ],
+
+    "world_facts": {
+        "time": "night after rain",
+        "light": "neon signs, red lanterns, wok flame, bare bulbs",
+        "atmosphere": "steam, grill smoke, drifting rain mist",
+        "crowd": "shoulder-to-shoulder shoppers, soft focus",
+        "sound": "sizzle, chatter, distant scooters"
+    },
+
+    "characters": [
+        {
+            "id": "vendor",
+            "label": "Noodle vendor",
+            "world_object_ref": "vendor_obj",
+            "appearance": { "outfit": "white apron, rolled sleeves, towel over shoulder", "build": "wiry, weathered" }
+        }
+    ],
+
+    "emotion_arc": {
+        "vendor": [
+            { "at": "baseline",   "state": "neutral",       "intensity": "subtle" },
+            { "at": "escalation", "state": "determination", "intensity": "moderate", "cause": "flame surging under the tossed wok" },
+            { "at": "payoff",     "state": "joy",           "intensity": "subtle",   "cause": "the finished bowl landing exactly right" }
+        ]
+    },
+
+    "shots": {
+        "hook": {
+            "importance": "required",
+            "action": "The camera drifts down a narrow alley of stacked neon reflected in wet pavement, crowds parting around food stalls",
+            "camera": { "shot_type": "establishing", "angle": "eye_level", "movement": "dolly", "lens": "wide", "focus_node": "alley_node" },
+            "ending_frame": "A burst of wok flame flares deep in the alley"
+        },
+        "escalation": {
+            "importance": "required",
+            "action": "The vendor tosses the wok through a column of steam, flame wrapping the pan as smoke curls up through red lanterns",
+            "camera": { "shot_type": "medium", "angle": "eye_level", "movement": "handheld", "lens": "normal", "focus_node": "vendor_node" },
+            "ending_frame": "Noodles arc through the firelight and land back in the pan"
+        },
+        "payoff": {
+            "importance": "required",
+            "action": "A steaming bowl lands on the worn counter, neon and lantern light swimming in the broth",
+            "camera": { "shot_type": "close_up", "angle": "high", "movement": "static", "lens": "normal", "focus_node": "bowl_node" },
+            "ending_frame": "Steam rises off the bowl into the tangle of neon above"
+        }
+    },
+
+    "scene_nodes": {
+        "hook": [
+            { "id": "alley_node",  "type": "background", "label": "Neon alley",    "world_object_ref": "alley_obj" },
+            { "id": "neon_node",   "type": "light",      "label": "Stacked neon",  "world_object_ref": "alley_obj" }
+        ],
+        "escalation": [
+            { "id": "vendor_node", "type": "subject",    "label": "Noodle vendor", "world_object_ref": "vendor_obj" },
+            { "id": "flame_node",  "type": "light",      "label": "Wok flame",     "world_object_ref": "stall_obj" }
+        ],
+        "payoff": [
+            { "id": "bowl_node",   "type": "subject",    "label": "Steaming bowl", "world_object_ref": "stall_obj" },
+            { "id": "alley_node",  "type": "background", "label": "Neon alley",    "world_object_ref": "alley_obj" }
+        ]
+    }
+}

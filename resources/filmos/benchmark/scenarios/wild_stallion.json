@@ -1,0 +1,74 @@
+{
+    "schema_version": 1,
+    "id": "wild_stallion",
+    "suite": "motion",
+    "level": "A",
+    "difficulty": "medium",
+    "duration_seconds": 10,
+
+    "primary_learning_dimension": "physics",
+    "secondary_learning_dimensions": ["continuity", "camera_tracking"],
+    "stress_dimensions": ["quadruped_gait", "mane_and_dust_dynamics", "gallop_cycle_continuity"],
+
+    "goal": "The audience should feel unbroken animal power — a gallop so fluid the horse seems to pour across the plain rather than run.",
+
+    "facts": [
+        { "id": "F1", "text": "A black stallion stands alone on a golden plain at low sun",           "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.95, "visual_hint": "silhouetted horse in backlit grass" },
+        { "id": "F2", "text": "It rears against the skyline, forelegs cutting the light",             "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.93, "visual_hint": "rearing silhouette, mane flying" },
+        { "id": "F3", "text": "It breaks into a full gallop, hooves throwing dust into the low sun",  "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.95, "visual_hint": "dust trail glowing behind the gallop" },
+        { "id": "F4", "text": "It crests a rise and drops from sight, dust hanging in the light",     "category": "RESULT",   "visual_relevance": "MEDIUM", "confidence": 0.87, "visual_hint": "empty ridge line with settling dust" }
+    ],
+
+    "world_objects": [
+        { "id": "stallion_obj", "type": "animal",   "label": "Black stallion", "attributes": { "coat": "black", "state": "wild" } },
+        { "id": "plain_obj",    "type": "location", "label": "Golden plain",   "attributes": { "grass": "tall, dry" } }
+    ],
+
+    "world_facts": {
+        "time": "golden hour",
+        "light": "low backlight through dust and grass",
+        "weather": "dry wind",
+        "terrain": "open grass plain with a low rise",
+        "sound": "wind, then drumming hooves"
+    },
+
+    "characters": [],
+
+    "emotion_arc": {},
+
+    "shots": {
+        "hook": {
+            "importance": "required",
+            "action": "The black stallion stands motionless in backlit grass, mane lifting in the wind, then rears against the skyline",
+            "camera": { "shot_type": "wide", "angle": "low", "movement": "static", "lens": "telephoto", "focus_node": "stallion_node" },
+            "ending_frame": "Its forelegs strike back down and the first stride explodes forward"
+        },
+        "escalation": {
+            "importance": "required",
+            "action": "The stallion stretches into full gallop across the plain, hooves throwing dust that ignites in the low sun",
+            "camera": { "shot_type": "medium", "angle": "eye_level", "movement": "tracking", "lens": "telephoto", "focus_node": "stallion_node" },
+            "ending_frame": "Muscle and mane move as one continuous wave at full speed"
+        },
+        "payoff": {
+            "importance": "required",
+            "action": "It crests the rise at full stride and drops from sight, leaving a curtain of golden dust hanging in the light",
+            "camera": { "shot_type": "wide", "angle": "low", "movement": "pan", "lens": "wide", "focus_node": "stallion_node" },
+            "ending_frame": "The empty ridge line glows through slowly settling dust"
+        }
+    },
+
+    "scene_nodes": {
+        "hook": [
+            { "id": "stallion_node", "type": "subject",    "label": "Black stallion", "world_object_ref": "stallion_obj" },
+            { "id": "plain_node",    "type": "background", "label": "Golden plain",   "world_object_ref": "plain_obj" }
+        ],
+        "escalation": [
+            { "id": "stallion_node", "type": "subject",    "label": "Galloping stallion", "world_object_ref": "stallion_obj" },
+            { "id": "dust_node",     "type": "background", "label": "Backlit dust trail", "world_object_ref": "plain_obj" }
+        ],
+        "payoff": [
+            { "id": "stallion_node", "type": "subject",    "label": "Stallion on the rise", "world_object_ref": "stallion_obj" },
+            { "id": "plain_node",    "type": "background", "label": "Ridge line",           "world_object_ref": "plain_obj" }
+        ]
+    }
+}

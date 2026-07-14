@@ -1,0 +1,72 @@
+{
+    "schema_version": 1,
+    "id": "perfume_macro_droplet",
+    "suite": "camera",
+    "level": "A",
+    "difficulty": "easy",
+    "duration_seconds": 8,
+
+    "primary_learning_dimension": "lens_choice",
+    "secondary_learning_dimensions": ["focus_control", "lighting"],
+    "stress_dimensions": ["macro_detail", "liquid_physics"],
+
+    "goal": "The audience should feel luxurious stillness sharpen into a single perfect instant when the droplet strikes the glass.",
+
+    "facts": [
+        { "id": "F1", "text": "An amber perfume bottle stands on black glass in a dark studio",     "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.96, "visual_hint": "backlit amber bottle on reflective black" },
+        { "id": "F2", "text": "A single golden droplet forms at the rim of the open bottle",        "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.94, "visual_hint": "droplet swelling in rim light" },
+        { "id": "F3", "text": "The droplet falls and strikes the glass surface in slow motion",     "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.95, "visual_hint": "crown splash frozen mid-bloom" },
+        { "id": "F4", "text": "Ripples settle into a mirror reflection of the bottle",              "category": "RESULT",   "visual_relevance": "MEDIUM", "confidence": 0.88, "visual_hint": "still reflection doubling the bottle" }
+    ],
+
+    "world_objects": [
+        { "id": "bottle_obj",  "type": "prop",     "label": "Amber perfume bottle", "attributes": { "material": "cut glass", "liquid": "golden" } },
+        { "id": "studio_obj",  "type": "location", "label": "Dark studio",          "attributes": { "surface": "black glass" } }
+    ],
+
+    "world_facts": {
+        "light": "single warm rim light in darkness",
+        "surface": "reflective black glass",
+        "atmosphere": "still air, faint mist",
+        "speed": "extreme slow motion"
+    },
+
+    "characters": [],
+
+    "emotion_arc": {},
+
+    "shots": {
+        "hook": {
+            "importance": "required",
+            "action": "The amber bottle emerges from darkness as rim light slides across its cut-glass facets",
+            "camera": { "shot_type": "close_up", "angle": "eye_level", "movement": "dolly", "lens": "telephoto", "focus_node": "bottle_node" },
+            "ending_frame": "A golden droplet swells at the rim, holding the only point of light"
+        },
+        "escalation": {
+            "importance": "optional",
+            "action": "The droplet stretches, trembles, and releases in extreme slow motion",
+            "camera": { "shot_type": "extreme_close_up", "angle": "eye_level", "movement": "static", "lens": "telephoto", "focus_node": "droplet_node" },
+            "ending_frame": "The droplet hangs mid-air, a perfect golden sphere"
+        },
+        "payoff": {
+            "importance": "required",
+            "action": "The droplet strikes the black glass and blooms into a crown splash that settles into a mirror reflection of the bottle",
+            "camera": { "shot_type": "extreme_close_up", "angle": "low", "movement": "static", "lens": "telephoto", "focus_node": "splash_node" },
+            "ending_frame": "Ripples fade until the bottle and its reflection stand perfectly doubled"
+        }
+    },
+
+    "scene_nodes": {
+        "hook": [
+            { "id": "bottle_node", "type": "subject", "label": "Perfume bottle", "world_object_ref": "bottle_obj" },
+            { "id": "rim_light_node", "type": "light", "label": "Warm rim light", "world_object_ref": "studio_obj" }
+        ],
+        "escalation": [
+            { "id": "droplet_node", "type": "subject", "label": "Golden droplet", "world_object_ref": "bottle_obj" }
+        ],
+        "payoff": [
+            { "id": "splash_node", "type": "subject",    "label": "Crown splash",   "world_object_ref": "bottle_obj" },
+            { "id": "bottle_node", "type": "background", "label": "Perfume bottle", "world_object_ref": "bottle_obj" }
+        ]
+    }
+}
