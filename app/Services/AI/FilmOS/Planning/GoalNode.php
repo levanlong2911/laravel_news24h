@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Planning;
 
 use App\Services\AI\FilmOS\Graph\GraphNode;
+use App\Services\AI\FilmOS\Narrative\Story\EndingFrame;
 use App\Services\AI\FilmOS\Narrative\Story\StoryBeat;
 use App\Services\AI\FilmOS\Snapshot\CanonicalNode;
 use App\Services\AI\FilmOS\Snapshot\HashableNode;
@@ -19,6 +20,8 @@ final class GoalNode extends GraphNode implements HashableNode
         public readonly int          $maxShots = 1,
         /** Cinematic beat carried from NarrativeNode — pass-through, never derived from $id. */
         public readonly ?StoryBeat   $beat = null,
+        /** Narrative outcome of the shot — typed pass-through like $beat. */
+        public readonly ?EndingFrame $endingFrame = null,
     ) {
         parent::__construct($id);
     }

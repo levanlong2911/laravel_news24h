@@ -6,6 +6,7 @@ namespace Tests\Unit\FilmOS\Narrative\Story;
 
 use App\Services\AI\FilmOS\Meaning\ContextualMeaningResolver;
 use App\Services\AI\FilmOS\Narrative\NarrativeStructureBuilder;
+use App\Services\AI\FilmOS\Narrative\Story\EndingFrame;
 use App\Services\AI\FilmOS\Narrative\Story\StoryBeat;
 use App\Services\AI\FilmOS\Narrative\Story\StoryShot;
 use App\Services\AI\FilmOS\Narrative\Timeline\Bridge\ShotPlannedEventFactory;
@@ -103,6 +104,36 @@ final class D1PipelineTest extends TestCase
 
         $this->assertNull($state->story->shotAt(5));
         $this->assertCount(1, $state->story->allShots());
+    }
+
+    // ── EndingFrame: typed pass-through, same chain as beat ──────────────────
+
+    public function test_ending_frame_flows_typed_through_pipeline(): void
+    {
+        $ending    = new EndingFrame('Ball disappears into the night sky');
+        $goalNodes = [
+            'shot_payoff' => new GoalNode(
+                id:          'shot_payoff',
+                description: 'The final throw',
+                type:        GoalNodeType::LEAF,
+                priority:    1.0,
+                beat:        StoryBeat::PAYOFF,
+                endingFrame: $ending,
+            ),
+        ];
+
+        $state = $this->project($goalNodes);
+
+        $this->assertSame($ending, $state->story->shotAt(0)?->endingFrame,
+            'ending must be the exact instance passed through — typed, never re-derived');
+        $this->assertSame('Ball disappears into the night sky', $state->story->shotAt(0)?->endingFrame?->description);
+    }
+
+    public function test_shot_without_ending_frame_defaults_to_null(): void
+    {
+        $state = $this->project(['shot_1' => $this->leaf('shot_1', 'Main shot')]);
+
+        $this->assertNull($state->story->shotAt(0)?->endingFrame);
     }
 
     // ── latestShot convenience API ────────────────────────────────────────────

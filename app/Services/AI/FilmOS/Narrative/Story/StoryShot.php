@@ -17,10 +17,12 @@ namespace App\Services\AI\FilmOS\Narrative\Story;
 final class StoryShot
 {
     public function __construct(
-        public readonly string     $shotId,
-        public readonly int        $ordinal,
-        public readonly string     $goalType,
-        public readonly string     $description,
-        public readonly ?StoryBeat $beat = null,
+        public readonly string       $shotId,
+        public readonly int          $ordinal,
+        public readonly string       $goalType,
+        public readonly string       $description,
+        public readonly ?StoryBeat   $beat = null,
+        /** Narrative outcome — additive extension approved 2026-07-13 (escape-valve review). */
+        public readonly ?EndingFrame $endingFrame = null,
     ) {}
 }

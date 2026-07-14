@@ -30,6 +30,7 @@ final class ShotPlannedProjectionHandler implements ProjectionHandler
             goalType:    $event->goalType,
             description: $event->description,
             beat:        $event->beat,
+            endingFrame: $event->endingFrame,
         ));
     }
 }
