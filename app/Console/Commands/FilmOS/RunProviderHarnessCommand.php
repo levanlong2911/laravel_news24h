@@ -13,6 +13,7 @@ use App\Services\AI\FilmOS\Intent\IntentAssembler;
 use App\Services\AI\FilmOS\Kernel\Plugins\RenderPlugin;
 use App\Services\AI\FilmOS\Learning\StubPredictiveLearning;
 use App\Services\AI\FilmOS\Meaning\ContextualMeaningResolver;
+use App\Services\AI\FilmOS\Narrative\NarrativeStructureBuilder;
 use App\Services\AI\FilmOS\Planning\Estimators\CostEstimator;
 use App\Services\AI\FilmOS\Planning\Estimators\LatencyEstimator;
 use App\Services\AI\FilmOS\Planning\GoalDecomposer;
@@ -75,8 +76,9 @@ class RunProviderHarnessCommand extends Command
         $resolver  = new ContextualMeaningResolver();
         $meaning   = $resolver->resolve($facts, $domain);
 
+        $narrative  = (new NarrativeStructureBuilder())->build($meaning);
         $decomposer = new GoalDecomposer();
-        $goalGraph  = $decomposer->decompose($meaning, $domain);
+        $goalGraph  = $decomposer->decompose($narrative);
         $leaves     = $goalGraph->leaves();
 
         $subGoalPlanner = new SubGoalPlanner([new CameraStrategy(), new MotionStrategy()]);

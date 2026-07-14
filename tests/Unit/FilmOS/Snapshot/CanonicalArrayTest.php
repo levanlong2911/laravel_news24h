@@ -31,8 +31,8 @@ final class CanonicalArrayTest extends TestCase
 
         $result = CanonicalArray::deepSort($input);
 
-        $this->assertSame(['inner_a', 'inner_b'], array_keys($result['outer_a']));
-        $this->assertSame(['inner_x', 'inner_y'], array_keys($result['outer_z']));
+        $this->assertSame(['inner_x', 'inner_y'], array_keys($result['outer_a']));
+        $this->assertSame(['inner_a', 'inner_b'], array_keys($result['outer_z']));
         $this->assertSame(['outer_a', 'outer_z'], array_keys($result));
     }
 

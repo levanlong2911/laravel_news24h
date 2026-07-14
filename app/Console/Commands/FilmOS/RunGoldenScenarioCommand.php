@@ -25,6 +25,7 @@ use App\Services\AI\FilmOS\Knowledge\ArticleFactAdapter;
 use App\Services\AI\FilmOS\Knowledge\ClaudeFilmOSFactExtractor;
 use App\Services\AI\FilmOS\Learning\StubPredictiveLearning;
 use App\Services\AI\FilmOS\Meaning\ContextualMeaningResolver;
+use App\Services\AI\FilmOS\Narrative\NarrativeStructureBuilder;
 use App\Services\AI\FilmOS\Planning\Estimators\CostEstimator;
 use App\Services\AI\FilmOS\Planning\Estimators\LatencyEstimator;
 use App\Services\AI\FilmOS\Planning\GoalDecomposer;
@@ -122,8 +123,9 @@ class RunGoldenScenarioCommand extends Command
 
         // ── Layer 3: GoalGraph + Planning ──────────────────────────────────────
         $this->line("[L3] Decomposing GoalGraph…");
+        $narrative  = (new NarrativeStructureBuilder())->build($meaning);
         $decomposer = new GoalDecomposer();
-        $goalGraph  = $decomposer->decompose($meaning, $domain);
+        $goalGraph  = $decomposer->decompose($narrative);
         $leaves     = $goalGraph->leaves();
         $this->line("  leaves=" . count($leaves) . ", totalShots={$goalGraph->totalShots()}");
 

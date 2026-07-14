@@ -11,6 +11,7 @@ use App\Services\AI\FilmOS\Intent\IntentAssembler;
 use App\Services\AI\FilmOS\Kernel\Plugins\RenderPlugin;
 use App\Services\AI\FilmOS\Learning\StubPredictiveLearning;
 use App\Services\AI\FilmOS\Meaning\ContextualMeaningResolver;
+use App\Services\AI\FilmOS\Narrative\NarrativeStructureBuilder;
 use App\Services\AI\FilmOS\Planning\Estimators\CostEstimator;
 use App\Services\AI\FilmOS\Planning\Estimators\LatencyEstimator;
 use App\Services\AI\FilmOS\Planning\GoalDecomposer;
@@ -21,6 +22,8 @@ use App\Services\AI\FilmOS\Planning\ShotSequencePlan;
 use App\Services\AI\FilmOS\Planning\Strategies\CameraStrategy;
 use App\Services\AI\FilmOS\Planning\Strategies\MotionStrategy;
 use App\Services\AI\FilmOS\Planning\SubGoalPlanner;
+use App\Services\AI\FilmOS\Policy\PolicyContext;
+use App\Services\AI\FilmOS\Policy\PolicyEngine;
 use App\Services\AI\FilmOS\Snapshot\ArtifactLayerBuilder;
 use App\Services\AI\FilmOS\Snapshot\DeterminismManifest;
 use App\Services\AI\FilmOS\Snapshot\ExecutionSnapshot;
@@ -109,8 +112,9 @@ final class GoldenScenarioPipeline
         $meaning  = $resolver->resolve($facts, $domain);
 
         // ── L3: GoalGraph + Planning ──────────────────────────────────────────
+        $narrative  = (new NarrativeStructureBuilder())->build($meaning);
         $decomposer = new GoalDecomposer();
-        $goalGraph  = $decomposer->decompose($meaning, $domain);
+        $goalGraph  = $decomposer->decompose($narrative);
 
         $subGoalPlanner = new SubGoalPlanner([new CameraStrategy(), new MotionStrategy()]);
         $sequenceOpt    = new SequenceOptimizer();
@@ -126,6 +130,15 @@ final class GoldenScenarioPipeline
         $objectives = PlanObjectives::breakingNews();
         $rawPlan    = new ShotSequencePlan("plan_{$runId}", $goalGraph, $ordered, 0.88);
         $plan       = $optimizer->optimize($rawPlan, $objectives, ['domain' => $domain]);
+
+        // Policy layer — same flow as PolicyAwarePlanner (decide → attach), so the
+        // snapshot carries a real policyHash. Empty registry = all-default decision,
+        // fully deterministic; fixed context mirrors the hardcoded facts above.
+        $policyDecision = (new PolicyEngine())->decide(PolicyContext::from([
+            'content_type' => 'breaking_news',
+            'domain'       => $domain,
+        ]));
+        $plan = $plan->withPolicyDecision($policyDecision);
 
         // ── DAGRuntime: full trace (L1 → L7) ─────────────────────────────────
         $runtime = new DAGRuntime($runId);

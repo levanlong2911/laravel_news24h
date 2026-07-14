@@ -125,7 +125,9 @@ final class ExecutionSnapshotTest extends TestCase
             sections:     [$section],
         );
 
-        $this->assertSame(['policyHash', 'schedulerHash'], $snapshot->gaps());
+        // Contract: gaps() returns null fields in section declaration order
+        // (schedulerHash precedes policyHash in PlanningSection::fields()).
+        $this->assertSame(['schedulerHash', 'policyHash'], $snapshot->gaps());
     }
 
     /** @test */

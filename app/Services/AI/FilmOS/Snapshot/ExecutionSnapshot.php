@@ -78,6 +78,7 @@ final class ExecutionSnapshot
 
     /**
      * Fields that are null across all sections — each is a gap in determinism coverage.
+     * Returned in section field declaration order (the subsystem's canonical ordering).
      * @return string[]
      */
     public function gaps(): array
