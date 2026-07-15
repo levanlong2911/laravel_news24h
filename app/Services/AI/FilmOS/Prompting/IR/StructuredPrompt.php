@@ -25,16 +25,24 @@ final class StructuredPrompt
 {
     /**
      * @param array<int, ShotPrompt>                                         $shots       keyed by shot ordinal
+     * @param SubjectDescriptor[]                                            $subjects    primary-first, then first-appearance order
      * @param \App\Services\AI\FilmOS\Narrative\Production\VisualMotif[]     $motifs
      * @param \App\Services\AI\FilmOS\Narrative\Production\VisualConstraint[] $constraints
      */
     public function __construct(
         private readonly array           $shots = [],
+        private readonly array           $subjects = [],
         private readonly ?DirectorIntent $directorIntent = null,
         private readonly array           $motifs = [],
         private readonly array           $constraints = [],
         private readonly ?HeroMoment     $heroMoment = null,
     ) {}
+
+    /** @return SubjectDescriptor[] deduped by world-object id; primary first, then first appearance */
+    public function subjects(): array
+    {
+        return $this->subjects;
+    }
 
     /** @return array<int, ShotPrompt> keyed by shot ordinal */
     public function shots(): array

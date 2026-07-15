@@ -14,12 +14,13 @@ use App\Services\AI\FilmOS\Narrative\World\WorldView;
 use App\Services\AI\FilmOS\Prompting\IR\PromptEnvironment;
 use App\Services\AI\FilmOS\Prompting\IR\ShotPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
+use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
 
 /**
  * The bridge from Knowledge Layer to Prompt Layer.
  *
  *   NarrativeState (4 Views) + NarrativeAuditReport
- *       → NarrativePromptCompiler → StructuredPrompt → PromptRendererAdapter → vendor string
+ *       → NarrativePromptCompiler → StructuredPrompt → PromptRenderer → RenderedPrompt
  *
  * SPRINT-3 PREVENTION RULE (frozen 2026-07-13):
  * "Compiler organizes prompt knowledge into Prompt IR. It never performs
@@ -83,11 +84,74 @@ final class NarrativePromptCompiler
 
         return new StructuredPrompt(
             shots:          $shots,
+            subjects:       $this->selectSubjects($scene, $world),
             directorIntent: $production->intent(),
             motifs:         $production->motifs(),
             constraints:    $production->constraints(),
             heroMoment:     $production->heroMoment(),
         );
+    }
+
+    /**
+     * Selects the video's subjects for the vendor boundary: the WorldObjects
+     * that at least one scene node references — never all of WorldView.
+     *
+     * A SceneNode is only a bridge; the descriptor represents the WorldObject
+     * identity, so many nodes referencing the same object collapse into one.
+     * A subject isPrimary when a camera focuses (in any shot) a node that
+     * references it. Order is deterministic: primary first, then first
+     * appearance in scene-node placement order — stable across vendors and
+     * snapshot tests.
+     *
+     * @return SubjectDescriptor[]
+     */
+    private function selectSubjects(SceneView $scene, WorldView $world): array
+    {
+        // World objects a camera focuses somewhere → primary.
+        $primary = [];
+        foreach ($scene->allCameras() as $camera) {
+            $focus = $camera->focusNodeId;
+            if ($focus === null) {
+                continue;
+            }
+            $node = $scene->allNodes()[$focus] ?? null;
+            if ($node?->worldObjectRef !== null) {
+                $primary[$node->worldObjectRef] = true;
+            }
+        }
+
+        // One descriptor per referenced world object, in first-appearance order.
+        $subjects = [];
+        $order    = [];
+        $index    = 0;
+        foreach ($scene->allNodes() as $node) {
+            $ref = $node->worldObjectRef;
+            if ($ref === null || isset($subjects[$ref])) {
+                continue;
+            }
+            $object = $world->allObjects()[$ref] ?? null;
+            if ($object === null) {
+                continue;   // dangling ref — D4.DANGLING_WORLD_REF is a QA concern, not the compiler's
+            }
+            $subjects[$ref] = new SubjectDescriptor(
+                id:         $object->id,
+                type:       $object->type,
+                label:      $object->label,
+                attributes: $object->attributes,
+                isPrimary:  isset($primary[$ref]),
+            );
+            $order[$ref] = $index++;
+        }
+
+        $list = array_values($subjects);
+        usort($list, static function (SubjectDescriptor $a, SubjectDescriptor $b) use ($order): int {
+            if ($a->isPrimary !== $b->isPrimary) {
+                return $a->isPrimary ? -1 : 1;   // primary first
+            }
+            return $order[$a->id] <=> $order[$b->id];   // then first appearance
+        });
+
+        return $list;
     }
 
     /** @return array<int, true> ordinals that cannot be compiled */
