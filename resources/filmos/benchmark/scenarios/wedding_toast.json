@@ -1,0 +1,108 @@
+{
+    "schema_version": 1,
+    "id": "wedding_toast",
+    "suite": "emotion",
+    "level": "A",
+    "difficulty": "medium",
+    "duration_seconds": 10,
+
+    "primary_learning_dimension": "reaction_shot",
+    "secondary_learning_dimensions": ["beat_pacing", "emotion_intensity"],
+    "stress_dimensions": ["multi_subject_emotion", "crowd_background", "laughter_to_tears_transition"],
+
+    "goal": "The audience should ride the room's laughter straight into unexpected tears, feeling how one sentence turns a joke into a farewell.",
+
+    "facts": [
+        { "id": "F1", "text": "The best man stands with a raised glass before a full reception hall", "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.95, "visual_hint": "raised champagne glass, fairy lights" },
+        { "id": "F2", "text": "His opening story has the whole room laughing",                         "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.92, "visual_hint": "guests laughing at round tables" },
+        { "id": "F3", "text": "Mid-sentence his voice cracks as he mentions their late father",        "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.93, "visual_hint": "smile faltering, glass lowering" },
+        { "id": "F4", "text": "The groom rises and embraces his brother before the toast ends",        "category": "RESULT",   "visual_relevance": "HIGH",   "confidence": 0.91, "visual_hint": "two brothers embracing as the room stands" }
+    ],
+
+    "world_objects": [
+        { "id": "bestman_obj", "type": "character", "label": "Best man",        "attributes": { "holding": "champagne glass" } },
+        { "id": "groom_obj",   "type": "character", "label": "Groom",           "attributes": { "relation": "brother of best man" } },
+        { "id": "hall_obj",    "type": "location",  "label": "Reception hall",  "attributes": { "decor": "fairy lights, round tables" } }
+    ],
+
+    "world_facts": {
+        "time": "evening reception",
+        "light": "warm fairy lights and candle centrepieces",
+        "crowd": "eighty seated guests",
+        "sound": "laughter fading to silence",
+        "occasion": "wedding toast"
+    },
+
+    "characters": [
+        {
+            "id": "bestman",
+            "label": "Best man",
+            "world_object_ref": "bestman_obj",
+            "appearance": { "outfit": "navy suit, loosened tie", "build": "stocky" }
+        },
+        {
+            "id": "groom",
+            "label": "Groom",
+            "world_object_ref": "groom_obj",
+            "appearance": { "outfit": "black tuxedo, white boutonniere", "build": "lean" }
+        }
+    ],
+
+    "emotion_arc": {
+        "bestman": [
+            { "at": "baseline",   "state": "joy",     "intensity": "moderate" },
+            { "at": "hook",       "state": "joy",     "intensity": "intense",  "cause": "the room laughing at his story" },
+            { "at": "escalation", "state": "sadness", "intensity": "intense",  "cause": "their late father surfacing mid-sentence" },
+            { "at": "payoff",     "state": "joy",     "intensity": "moderate", "cause": "his brother's embrace carrying the toast home" }
+        ],
+        "groom": [
+            { "at": "baseline",   "state": "joy",           "intensity": "intense" },
+            { "at": "escalation", "state": "sadness",       "intensity": "moderate", "cause": "hearing his father named" },
+            { "at": "payoff",     "state": "determination", "intensity": "moderate", "cause": "rising to hold his brother up" }
+        ]
+    },
+
+    "shots": {
+        "hook": {
+            "importance": "required",
+            "action": "The best man holds court with a raised glass while the whole hall laughs at his story",
+            "camera": { "shot_type": "medium", "angle": "eye_level", "movement": "dolly", "lens": "normal", "focus_node": "bestman_node" },
+            "ending_frame": "He glances down at his notes and his smile flickers"
+        },
+        "escalation": {
+            "importance": "required",
+            "action": "His voice cracks on their father's name and the laughter dies into ringing silence",
+            "camera": { "shot_type": "close_up", "angle": "eye_level", "movement": "static", "lens": "telephoto", "focus_node": "bestman_node" },
+            "ending_frame": "His glass lowers as he fights to finish the sentence"
+        },
+        "reveal": {
+            "importance": "optional",
+            "action": "Across the silent room the groom's face crumples from smile to grief in a single held look",
+            "camera": { "shot_type": "close_up", "angle": "eye_level", "movement": "static", "lens": "telephoto", "focus_node": "groom_node" },
+            "ending_frame": "The groom pushes back his chair"
+        },
+        "payoff": {
+            "importance": "required",
+            "action": "The groom crosses the floor and embraces his brother as the whole room rises to its feet",
+            "camera": { "shot_type": "wide", "angle": "eye_level", "movement": "dolly", "lens": "normal", "focus_node": "brothers_node" },
+            "ending_frame": "Two brothers hold each other under the fairy lights, glasses raised around them"
+        }
+    },
+
+    "scene_nodes": {
+        "hook": [
+            { "id": "bestman_node", "type": "subject",    "label": "Best man",        "world_object_ref": "bestman_obj" },
+            { "id": "hall_node",    "type": "background", "label": "Laughing guests", "world_object_ref": "hall_obj" }
+        ],
+        "escalation": [
+            { "id": "bestman_node", "type": "subject",    "label": "Best man",        "world_object_ref": "bestman_obj" }
+        ],
+        "reveal": [
+            { "id": "groom_node",   "type": "subject",    "label": "Groom",           "world_object_ref": "groom_obj" }
+        ],
+        "payoff": [
+            { "id": "brothers_node", "type": "subject",   "label": "Embracing brothers", "world_object_ref": "groom_obj" },
+            { "id": "hall_node",     "type": "background", "label": "Standing guests",   "world_object_ref": "hall_obj" }
+        ]
+    }
+}

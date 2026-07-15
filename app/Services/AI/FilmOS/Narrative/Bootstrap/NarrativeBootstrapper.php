@@ -7,6 +7,8 @@ namespace App\Services\AI\FilmOS\Narrative\Bootstrap;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEventFactory;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterProfile;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceDesign;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceEventFactory;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionPlan;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
@@ -42,6 +44,7 @@ final class NarrativeBootstrapper
         private readonly SceneEventFactory       $sceneFactory,
         private readonly CharacterEventFactory   $characterFactory,
         private readonly ProductionEventFactory  $productionFactory,
+        private readonly PerformanceEventFactory  $performanceFactory,
         private readonly TimelineRecorder        $recorder,
     ) {}
 
@@ -124,6 +127,17 @@ final class NarrativeBootstrapper
     {
         $this->recorder->append(
             $this->productionFactory->planned($plan, $productionId),
+        );
+    }
+
+    /**
+     * Records the acting design. One design per production —
+     * see PerformanceDirectedEvent invariant.
+     */
+    public function directPerformance(PerformanceDesign $design, string $productionId = 'default'): void
+    {
+        $this->recorder->append(
+            $this->performanceFactory->directed($design, $productionId),
         );
     }
 }

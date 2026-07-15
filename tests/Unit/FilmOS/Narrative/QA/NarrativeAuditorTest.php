@@ -8,6 +8,7 @@ use App\Services\AI\FilmOS\Narrative\Bootstrap\NarrativeBootstrapper;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotionChangedHandler;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEventFactory;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceEventFactory;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterIntroducedHandler;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterProfile;
@@ -261,7 +262,8 @@ final class NarrativeAuditorTest extends TestCase
             shotFactory:      new ShotPlannedEventFactory(),
             sceneFactory:     new SceneEventFactory($clock),
             characterFactory:  new CharacterEventFactory($clock),
-            productionFactory: new ProductionEventFactory($clock),
+            productionFactory:  new ProductionEventFactory($clock),
+            performanceFactory: new PerformanceEventFactory($clock),
             recorder:         new TimelineRecorder($timeline),
         );
 

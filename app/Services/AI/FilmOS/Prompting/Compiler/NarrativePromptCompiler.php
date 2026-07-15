@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Prompting\Compiler;
 
 use App\Services\AI\FilmOS\Narrative\Character\CharacterView;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceView;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionView;
 use App\Services\AI\FilmOS\Narrative\QA\NarrativeAuditReport;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneView;
@@ -31,7 +32,7 @@ use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
  * no FEAR → "terrified". All vendor phrasing lives in adapters. If prose
  * appears in this class, the Prompt IR layer has failed its purpose.
  *
- * BOUNDARY (same as KnowledgeExtractor): reads only the five View interfaces
+ * BOUNDARY (same as KnowledgeExtractor): reads only the six View interfaces
  * and NarrativeAuditReport. Knows nothing of Timeline internals, Projection
  * classes, MeaningGraph, or GoalGraph.
  *
@@ -54,6 +55,7 @@ final class NarrativePromptCompiler
         SceneView            $scene,
         WorldView            $world,
         ProductionView       $production,
+        PerformanceView      $performance,
         NarrativeAuditReport $audit,
     ): StructuredPrompt {
         $blockedOrdinals = $this->blockedOrdinals($audit);
@@ -75,6 +77,7 @@ final class NarrativePromptCompiler
                 endingFrame:     $shot->endingFrame,
                 durationSeconds: $production->durationAt($shot->ordinal),
                 energy:          $production->energyAt($shot->ordinal),
+                performances:    $performance->performancesAt($shot->ordinal),
             );
         }
 

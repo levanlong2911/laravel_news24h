@@ -13,6 +13,13 @@ use App\Services\AI\FilmOS\Narrative\Production\DirectorIntent;
 use App\Services\AI\FilmOS\Narrative\Production\EnergyPoint;
 use App\Services\AI\FilmOS\Narrative\Production\HeroMoment;
 use App\Services\AI\FilmOS\Narrative\Production\MotifImportance;
+use App\Services\AI\FilmOS\Narrative\Performance\CharacterPerformance;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceChannel;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceCue;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceDesign;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceDirectedHandler;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceEventFactory;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceIntent;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionPlan;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionPlannedHandler;
@@ -129,7 +136,7 @@ final class NarrativePromptCompilerTest extends TestCase
         $state = $projector->project($timeline);
         $audit = (new NarrativeAuditor([new MissingCameraRule()]))->audit($timeline, $state);
         $ir    = (new NarrativePromptCompiler())->compile(
-            $state->story, $state->characters, $state->scene, $state->world, $state->production, $audit,
+            $state->story, $state->characters, $state->scene, $state->world, $state->production, $state->performance, $audit,
         );
 
         $this->assertNotNull($ir->shotAt(0));
@@ -190,6 +197,40 @@ final class NarrativePromptCompilerTest extends TestCase
         $this->assertSame(2.5, $ir->shotAt(0)?->durationSeconds);
     }
 
+    // ── Performance (acting) is COPIED into IR — cue order preserved ─────────
+
+    public function test_performance_flows_into_ir_with_cue_order(): void
+    {
+        [$timeline, $projector, $bootstrapper] = $this->buildStack();
+
+        $bootstrapper->bootstrap(worldObjects: [], worldFacts: [], goalNodes: [
+            's0' => $this->leaf('s0', 'The throw'),
+        ]);
+        $bootstrapper->setupScene(nodes: [], relations: [], camera: $this->camera(), ordinal: 0);
+        $bootstrapper->directPerformance(new PerformanceDesign([
+            new CharacterPerformance('qb', 0,
+                new PerformanceIntent('suppress fear'),
+                [
+                    new PerformanceCue('holds breath', PerformanceChannel::BREATH),
+                    new PerformanceCue('jaw tightens', PerformanceChannel::FACE),
+                    new PerformanceCue('commits to the throw'),
+                ],
+            ),
+        ]));
+
+        $shot = $this->compile($timeline, $projector)->shotAt(0);
+
+        $this->assertArrayHasKey('qb', $shot?->performances ?? []);
+        $qb = $shot->performances['qb'];
+        // Copied semantic knowledge — intent stays intent, cues stay cues, order intact.
+        // "He briefly holds his breath, his jaw tightens…" is ADAPTER prose, not IR.
+        $this->assertSame('suppress fear', $qb->intent?->intent);
+        $this->assertSame(
+            ['holds breath', 'jaw tightens', 'commits to the throw'],
+            array_map(fn($c) => $c->description, $qb->cues),
+        );
+    }
+
     // ── Empty narrative → empty IR ────────────────────────────────────────────
 
     public function test_empty_narrative_compiles_to_empty_ir(): void
@@ -209,7 +250,7 @@ final class NarrativePromptCompilerTest extends TestCase
         $state = $projector->project($timeline);
 
         return (new NarrativePromptCompiler())->compile(
-            $state->story, $state->characters, $state->scene, $state->world, $state->production,
+            $state->story, $state->characters, $state->scene, $state->world, $state->production, $state->performance,
             new NarrativeAuditReport([]),
         );
     }
@@ -232,6 +273,7 @@ final class NarrativePromptCompilerTest extends TestCase
             new SceneRelationEstablishedHandler(),
             new CameraConfiguredHandler(),
             new ProductionPlannedHandler(),
+            new PerformanceDirectedHandler(),
         ]);
 
         $bootstrapper = new NarrativeBootstrapper(
@@ -239,7 +281,8 @@ final class NarrativePromptCompilerTest extends TestCase
             shotFactory:      new ShotPlannedEventFactory(),
             sceneFactory:     new SceneEventFactory($clock),
             characterFactory:  new CharacterEventFactory($clock),
-            productionFactory: new ProductionEventFactory($clock),
+            productionFactory:  new ProductionEventFactory($clock),
+            performanceFactory: new PerformanceEventFactory($clock),
             recorder:         new TimelineRecorder($timeline),
         );
 

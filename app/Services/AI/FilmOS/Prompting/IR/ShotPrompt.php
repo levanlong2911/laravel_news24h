@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Prompting\IR;
 
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
+use App\Services\AI\FilmOS\Narrative\Performance\CharacterPerformance;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
 use App\Services\AI\FilmOS\Narrative\Story\EndingFrame;
 use App\Services\AI\FilmOS\Narrative\Story\StoryBeat;
@@ -39,6 +40,9 @@ final class ShotPrompt
         public readonly ?float               $durationSeconds = null,
         /** Cinematic energy 0–100 from the production energy curve — copied, never interpreted. */
         public readonly ?int                 $energy = null,
+        /** @var array<string, CharacterPerformance> characterId => acting direction for THIS shot —
+         *  copied from PerformanceView; adapters turn cue sequences into prose. */
+        public readonly array                $performances = [],
     ) {}
 
     /** Convenience for adapters — avoids repeated count() checks; NOT an emotion selector. */

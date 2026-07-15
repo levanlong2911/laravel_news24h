@@ -10,6 +10,8 @@ use App\Services\AI\FilmOS\Narrative\Bootstrap\NarrativeBootstrapper;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotionChangedHandler;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEventFactory;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterIntroducedHandler;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceDirectedHandler;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceEventFactory;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionPlannedHandler;
 use App\Services\AI\FilmOS\Narrative\QA\NarrativeAuditor;
@@ -87,6 +89,7 @@ class FilmOSServiceProvider extends ServiceProvider
                 new SceneRelationEstablishedHandler(),     // priority 300
                 new CameraConfiguredHandler(),             // priority 300
                 new ProductionPlannedHandler(),            // priority 400 — Production (staging)
+                new PerformanceDirectedHandler(),          // priority 500 — Performance (acting)
             ]);
         });
 
@@ -113,14 +116,20 @@ class FilmOSServiceProvider extends ServiceProvider
             return new ProductionEventFactory($this->app->make(Clock::class));
         });
 
+        // Performance Layer (acting knowledge)
+        $this->app->bind(PerformanceEventFactory::class, function () {
+            return new PerformanceEventFactory($this->app->make(Clock::class));
+        });
+
         $this->app->bind(NarrativeBootstrapper::class, function () {
             return new NarrativeBootstrapper(
                 worldFactory:     $this->app->make(WorldEventFactory::class),
                 shotFactory:      $this->app->make(ShotPlannedEventFactory::class),
                 sceneFactory:     $this->app->make(SceneEventFactory::class),
                 characterFactory:  $this->app->make(CharacterEventFactory::class),
-                productionFactory: $this->app->make(ProductionEventFactory::class),
-                recorder:          $this->app->make(TimelineRecorder::class),
+                productionFactory:  $this->app->make(ProductionEventFactory::class),
+                performanceFactory: $this->app->make(PerformanceEventFactory::class),
+                recorder:           $this->app->make(TimelineRecorder::class),
             );
         });
 

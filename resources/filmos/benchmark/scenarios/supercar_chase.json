@@ -1,0 +1,75 @@
+{
+    "schema_version": 1,
+    "id": "supercar_chase",
+    "suite": "motion",
+    "level": "A",
+    "difficulty": "hard",
+    "duration_seconds": 10,
+
+    "primary_learning_dimension": "continuity",
+    "secondary_learning_dimensions": ["motion_complexity", "camera_tracking"],
+    "stress_dimensions": ["high_speed_background_blur", "two_vehicle_spacing", "tunnel_light_strobing", "drift_physics"],
+
+    "goal": "The audience should feel the gap between hunter and hunted shrink metre by metre, until one drift decides it.",
+
+    "facts": [
+        { "id": "F1", "text": "Two supercars thread night traffic on an elevated expressway",         "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.94, "visual_hint": "two low silhouettes weaving between taillights" },
+        { "id": "F2", "text": "The orange car dives into a tunnel with the silver car closing",       "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.93, "visual_hint": "tunnel lights strobing over carbon and glass" },
+        { "id": "F3", "text": "The silver car feints outside and cuts inside on the tunnel exit curve", "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.94, "visual_hint": "drift line crossing under the other car" },
+        { "id": "F4", "text": "The silver car emerges ahead as both hit the open bridge",             "category": "RESULT",   "visual_relevance": "HIGH",   "confidence": 0.90, "visual_hint": "positions swapped at the tunnel mouth" }
+    ],
+
+    "world_objects": [
+        { "id": "orange_car_obj", "type": "vehicle",  "label": "Orange supercar", "attributes": { "color": "orange", "position": "leading" } },
+        { "id": "silver_car_obj", "type": "vehicle",  "label": "Silver supercar", "attributes": { "color": "silver", "position": "chasing" } },
+        { "id": "expressway_obj", "type": "location", "label": "Elevated expressway and tunnel", "attributes": { "traffic": "sparse night traffic" } }
+    ],
+
+    "world_facts": {
+        "time": "night",
+        "light": "sodium tunnel strobes, city glow, taillight streaks",
+        "road": "dry asphalt, elevated expressway into tunnel curve",
+        "speed": "well beyond traffic flow",
+        "sound": "twin engines echoing in the tunnel"
+    },
+
+    "characters": [],
+
+    "emotion_arc": {},
+
+    "shots": {
+        "hook": {
+            "importance": "required",
+            "action": "Two supercars weave through sparse night traffic, the silver car surging up to the orange car's rear wing",
+            "camera": { "shot_type": "wide", "angle": "high", "movement": "tracking", "lens": "normal", "focus_node": "pair_node" },
+            "ending_frame": "Both cars dive toward the tunnel mouth nose to tail"
+        },
+        "escalation": {
+            "importance": "required",
+            "action": "Tunnel lights strobe over both bodies as the silver car feints outside, the gap between them closing to nothing",
+            "camera": { "shot_type": "medium", "angle": "low", "movement": "tracking", "lens": "telephoto", "focus_node": "silver_node" },
+            "ending_frame": "The silver car's nose swings hard toward the inside line"
+        },
+        "payoff": {
+            "importance": "required",
+            "action": "The silver car drifts across the exit curve, crossing under the orange car and emerging ahead onto the open bridge",
+            "camera": { "shot_type": "wide", "angle": "eye_level", "movement": "pan", "lens": "wide", "focus_node": "silver_node" },
+            "ending_frame": "Positions swapped, both cars flare out of the tunnel into the city glow"
+        }
+    },
+
+    "scene_nodes": {
+        "hook": [
+            { "id": "pair_node",   "type": "subject",    "label": "Both supercars",   "world_object_ref": "orange_car_obj" },
+            { "id": "road_node",   "type": "background", "label": "Night expressway", "world_object_ref": "expressway_obj" }
+        ],
+        "escalation": [
+            { "id": "silver_node", "type": "subject",    "label": "Silver supercar",  "world_object_ref": "silver_car_obj" },
+            { "id": "orange_node", "type": "subject",    "label": "Orange supercar",  "world_object_ref": "orange_car_obj" }
+        ],
+        "payoff": [
+            { "id": "silver_node", "type": "subject",    "label": "Silver supercar",  "world_object_ref": "silver_car_obj" },
+            { "id": "orange_node", "type": "background", "label": "Orange supercar",  "world_object_ref": "orange_car_obj" }
+        ]
+    }
+}

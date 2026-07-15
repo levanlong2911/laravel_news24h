@@ -7,12 +7,14 @@ namespace App\Services\AI\FilmOS\Narrative\Timeline;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterMemory;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterProfile;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceDesign;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionPlan;
 use App\Services\AI\FilmOS\Narrative\Story\StoryShot;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneNode;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneRelation;
 use App\Services\AI\FilmOS\Narrative\Timeline\Projection\CharacterProjection;
+use App\Services\AI\FilmOS\Narrative\Timeline\Projection\PerformanceProjection;
 use App\Services\AI\FilmOS\Narrative\Timeline\Projection\ProductionProjection;
 use App\Services\AI\FilmOS\Narrative\Timeline\Projection\SceneProjection;
 use App\Services\AI\FilmOS\Narrative\Timeline\Projection\StoryProjection;
@@ -42,6 +44,9 @@ final class NarrativeStateBuilder
 
     // Production domain — filled by ProductionPlannedHandler (last-write-wins)
     private ?ProductionPlan $productionPlan = null;
+
+    // Performance domain — filled by PerformanceDirectedHandler (last-write-wins)
+    private ?PerformanceDesign $performanceDesign = null;
 
     // Character domain (D2) — filled by CharacterIntroduced/EmotionChanged handlers
     /** @var array<string, CharacterProfile> keyed by characterId */
@@ -126,6 +131,13 @@ final class NarrativeStateBuilder
         $this->productionPlan = $plan;
     }
 
+    // Performance domain API — last-write-wins; duplicate design = future QA anomaly
+
+    public function setPerformanceDesign(PerformanceDesign $design): void
+    {
+        $this->performanceDesign = $design;
+    }
+
     public function build(int $schemaVersion, ProjectionMetadata $metadata): NarrativeState
     {
         $memories = [];
@@ -145,6 +157,7 @@ final class NarrativeStateBuilder
             world:         new WorldProjection($this->worldObjects, $this->worldFacts),
             scene:         new SceneProjection($this->sceneNodes, $this->sceneRelations, $this->sceneCameras),
             production:    new ProductionProjection($this->productionPlan),
+            performance:   new PerformanceProjection($this->performanceDesign),
         );
     }
 }

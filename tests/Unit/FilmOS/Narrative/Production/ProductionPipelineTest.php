@@ -14,6 +14,7 @@ use App\Services\AI\FilmOS\Narrative\Production\DirectorIntent;
 use App\Services\AI\FilmOS\Narrative\Production\EnergyPoint;
 use App\Services\AI\FilmOS\Narrative\Production\HeroMoment;
 use App\Services\AI\FilmOS\Narrative\Production\MotifImportance;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceEventFactory;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionPlan;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionPlannedHandler;
@@ -173,7 +174,8 @@ final class ProductionPipelineTest extends TestCase
             shotFactory:       new ShotPlannedEventFactory(),
             sceneFactory:      new SceneEventFactory($clock),
             characterFactory:  new CharacterEventFactory($clock),
-            productionFactory: new ProductionEventFactory($clock),
+            productionFactory:  new ProductionEventFactory($clock),
+            performanceFactory: new PerformanceEventFactory($clock),
             recorder:          new TimelineRecorder($timeline),
         );
 
