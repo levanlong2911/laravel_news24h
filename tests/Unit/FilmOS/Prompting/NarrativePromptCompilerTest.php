@@ -8,6 +8,17 @@ use App\Services\AI\FilmOS\Narrative\Bootstrap\NarrativeBootstrapper;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotionChangedHandler;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEventFactory;
+use App\Services\AI\FilmOS\Narrative\Production\ConstraintMode;
+use App\Services\AI\FilmOS\Narrative\Production\DirectorIntent;
+use App\Services\AI\FilmOS\Narrative\Production\EnergyPoint;
+use App\Services\AI\FilmOS\Narrative\Production\HeroMoment;
+use App\Services\AI\FilmOS\Narrative\Production\MotifImportance;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionPlan;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionPlannedHandler;
+use App\Services\AI\FilmOS\Narrative\Production\ShotTiming;
+use App\Services\AI\FilmOS\Narrative\Production\VisualConstraint;
+use App\Services\AI\FilmOS\Narrative\Production\VisualMotif;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterIntroducedHandler;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterProfile;
 use App\Services\AI\FilmOS\Narrative\Character\EmotionalState;
@@ -118,7 +129,7 @@ final class NarrativePromptCompilerTest extends TestCase
         $state = $projector->project($timeline);
         $audit = (new NarrativeAuditor([new MissingCameraRule()]))->audit($timeline, $state);
         $ir    = (new NarrativePromptCompiler())->compile(
-            $state->story, $state->characters, $state->scene, $state->world, $audit,
+            $state->story, $state->characters, $state->scene, $state->world, $state->production, $audit,
         );
 
         $this->assertNotNull($ir->shotAt(0));
@@ -146,6 +157,39 @@ final class NarrativePromptCompilerTest extends TestCase
         $this->assertSame(EmotionalState::FEAR, $ir->shotAt(1)?->emotions['hero']->state);
     }
 
+    // ── Production knowledge is COPIED into IR, never interpreted ────────────
+
+    public function test_production_knowledge_flows_into_ir(): void
+    {
+        [$timeline, $projector, $bootstrapper] = $this->buildStack();
+
+        $bootstrapper->bootstrap(worldObjects: [], worldFacts: [], goalNodes: [
+            's0' => $this->leaf('s0', 'Shot 0'),
+        ]);
+        $bootstrapper->setupScene(nodes: [], relations: [], camera: $this->camera(), ordinal: 0);
+        $bootstrapper->planProduction(new ProductionPlan(
+            intent:       new DirectorIntent('Audience must believe all is lost.'),
+            motifs:       [new VisualMotif('spiral', MotifImportance::PRIMARY)],
+            constraints:  [new VisualConstraint(target: 'ball', rule: 'leaving the frame', mode: ConstraintMode::NEVER)],
+            heroMoment:   new HeroMoment(0, 'ball overhead'),
+            energyPoints: [new EnergyPoint(0, 90)],
+            timings:      [new ShotTiming(0, 2.5)],
+        ));
+
+        $ir = $this->compile($timeline, $projector);
+
+        // Production-level — copied semantic knowledge
+        $this->assertSame('Audience must believe all is lost.', $ir->directorIntent()?->objective);
+        $this->assertSame('spiral', $ir->motifs()[0]->label);
+        $this->assertSame(ConstraintMode::NEVER, $ir->constraints()[0]->mode);
+        $this->assertSame('ball', $ir->constraints()[0]->target);
+        $this->assertSame(0, $ir->heroMoment()?->ordinal);
+
+        // Per-shot — energy copied AS-IS (90 stays 90; "camera shake" is adapter territory)
+        $this->assertSame(90,  $ir->shotAt(0)?->energy);
+        $this->assertSame(2.5, $ir->shotAt(0)?->durationSeconds);
+    }
+
     // ── Empty narrative → empty IR ────────────────────────────────────────────
 
     public function test_empty_narrative_compiles_to_empty_ir(): void
@@ -165,7 +209,7 @@ final class NarrativePromptCompilerTest extends TestCase
         $state = $projector->project($timeline);
 
         return (new NarrativePromptCompiler())->compile(
-            $state->story, $state->characters, $state->scene, $state->world,
+            $state->story, $state->characters, $state->scene, $state->world, $state->production,
             new NarrativeAuditReport([]),
         );
     }
@@ -187,13 +231,15 @@ final class NarrativePromptCompilerTest extends TestCase
             new SceneNodeRemovedHandler(),
             new SceneRelationEstablishedHandler(),
             new CameraConfiguredHandler(),
+            new ProductionPlannedHandler(),
         ]);
 
         $bootstrapper = new NarrativeBootstrapper(
             worldFactory:     new WorldEventFactory($clock),
             shotFactory:      new ShotPlannedEventFactory(),
             sceneFactory:     new SceneEventFactory($clock),
-            characterFactory: new CharacterEventFactory($clock),
+            characterFactory:  new CharacterEventFactory($clock),
+            productionFactory: new ProductionEventFactory($clock),
             recorder:         new TimelineRecorder($timeline),
         );
 

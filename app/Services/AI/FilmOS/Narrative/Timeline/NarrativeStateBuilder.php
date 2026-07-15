@@ -7,11 +7,13 @@ namespace App\Services\AI\FilmOS\Narrative\Timeline;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterMemory;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterProfile;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionPlan;
 use App\Services\AI\FilmOS\Narrative\Story\StoryShot;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneNode;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneRelation;
 use App\Services\AI\FilmOS\Narrative\Timeline\Projection\CharacterProjection;
+use App\Services\AI\FilmOS\Narrative\Timeline\Projection\ProductionProjection;
 use App\Services\AI\FilmOS\Narrative\Timeline\Projection\SceneProjection;
 use App\Services\AI\FilmOS\Narrative\Timeline\Projection\StoryProjection;
 use App\Services\AI\FilmOS\Narrative\Timeline\Projection\WorldProjection;
@@ -37,6 +39,9 @@ final class NarrativeStateBuilder
     private array $sceneRelations = [];
     /** @var array<int, CameraConfiguration> keyed by shot ordinal */
     private array $sceneCameras   = [];
+
+    // Production domain — filled by ProductionPlannedHandler (last-write-wins)
+    private ?ProductionPlan $productionPlan = null;
 
     // Character domain (D2) — filled by CharacterIntroduced/EmotionChanged handlers
     /** @var array<string, CharacterProfile> keyed by characterId */
@@ -114,6 +119,13 @@ final class NarrativeStateBuilder
         $this->characterEmotions[$characterId][$ordinal] = $emotion;
     }
 
+    // Production domain API — last-write-wins; duplicate plan = future QA anomaly
+
+    public function setProductionPlan(ProductionPlan $plan): void
+    {
+        $this->productionPlan = $plan;
+    }
+
     public function build(int $schemaVersion, ProjectionMetadata $metadata): NarrativeState
     {
         $memories = [];
@@ -132,6 +144,7 @@ final class NarrativeStateBuilder
             characters:    new CharacterProjection($memories),
             world:         new WorldProjection($this->worldObjects, $this->worldFacts),
             scene:         new SceneProjection($this->sceneNodes, $this->sceneRelations, $this->sceneCameras),
+            production:    new ProductionProjection($this->productionPlan),
         );
     }
 }

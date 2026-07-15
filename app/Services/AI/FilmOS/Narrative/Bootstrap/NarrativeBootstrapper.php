@@ -7,6 +7,8 @@ namespace App\Services\AI\FilmOS\Narrative\Bootstrap;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEventFactory;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterProfile;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionPlan;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneEventFactory;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneNode;
@@ -39,6 +41,7 @@ final class NarrativeBootstrapper
         private readonly ShotPlannedEventFactory $shotFactory,
         private readonly SceneEventFactory       $sceneFactory,
         private readonly CharacterEventFactory   $characterFactory,
+        private readonly ProductionEventFactory  $productionFactory,
         private readonly TimelineRecorder        $recorder,
     ) {}
 
@@ -109,6 +112,18 @@ final class NarrativeBootstrapper
     ): void {
         $this->recorder->append(
             $this->characterFactory->emotionChange($characterId, $emotion, $ordinal),
+        );
+    }
+
+    /**
+     * Records the production's staging plan (intent, conflicts, motifs,
+     * constraints, hero moment, energy curve, timings). One plan per
+     * production — see ProductionPlannedEvent invariant.
+     */
+    public function planProduction(ProductionPlan $plan, string $productionId = 'default'): void
+    {
+        $this->recorder->append(
+            $this->productionFactory->planned($plan, $productionId),
         );
     }
 }

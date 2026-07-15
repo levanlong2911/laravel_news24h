@@ -6,6 +6,7 @@ namespace Tests\Unit\FilmOS\Narrative\World;
 
 use App\Services\AI\FilmOS\Narrative\Bootstrap\NarrativeBootstrapper;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEventFactory;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneEventFactory;
 use App\Services\AI\FilmOS\Narrative\Timeline\Bridge\ShotPlannedEventFactory;
 use App\Services\AI\FilmOS\Narrative\Timeline\Bridge\ShotPlannedProjectionHandler;
@@ -198,7 +199,8 @@ final class D3PipelineTest extends TestCase
             worldFactory:     new WorldEventFactory(new SystemClock()),
             shotFactory:      new ShotPlannedEventFactory(),
             sceneFactory:     new SceneEventFactory(new SystemClock()),
-            characterFactory: new CharacterEventFactory(new SystemClock()),
+            characterFactory:  new CharacterEventFactory(new SystemClock()),
+            productionFactory: new ProductionEventFactory(new SystemClock()),
             recorder:         new TimelineRecorder($timeline),
         );
     }

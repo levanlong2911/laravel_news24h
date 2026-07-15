@@ -35,6 +35,10 @@ final class ShotPrompt
         public readonly ?CameraConfiguration $camera,
         public readonly PromptEnvironment    $environment,
         public readonly ?EndingFrame         $endingFrame = null,
+        /** Pacing decision from ProductionView — copied, never interpreted here. */
+        public readonly ?float               $durationSeconds = null,
+        /** Cinematic energy 0–100 from the production energy curve — copied, never interpreted. */
+        public readonly ?int                 $energy = null,
     ) {}
 
     /** Convenience for adapters — avoids repeated count() checks; NOT an emotion selector. */

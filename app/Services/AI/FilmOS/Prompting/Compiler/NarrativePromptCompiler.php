@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Prompting\Compiler;
 
 use App\Services\AI\FilmOS\Narrative\Character\CharacterView;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionView;
 use App\Services\AI\FilmOS\Narrative\QA\NarrativeAuditReport;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneView;
 use App\Services\AI\FilmOS\Narrative\Story\StoryView;
@@ -30,9 +31,14 @@ use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
  * no FEAR → "terrified". All vendor phrasing lives in adapters. If prose
  * appears in this class, the Prompt IR layer has failed its purpose.
  *
- * BOUNDARY (same as KnowledgeExtractor): reads only the four View interfaces
+ * BOUNDARY (same as KnowledgeExtractor): reads only the five View interfaces
  * and NarrativeAuditReport. Knows nothing of Timeline internals, Projection
  * classes, MeaningGraph, or GoalGraph.
+ *
+ * PRODUCTION RULE (frozen 2026-07-13): the compiler COPIES production
+ * knowledge into the IR — it never converts it into render decisions.
+ * energy=90 is copied as energy=90; "strong camera shake" is an adapter
+ * decision. ProductionView → Prompt IR, never ProductionView → Render Decision.
  *
  * BLOCKING GATE: shots carrying a blocking QA finding (e.g. D4.NO_CAMERA)
  * are excluded from the IR — not policy, physical incapability: a shot with
@@ -47,6 +53,7 @@ final class NarrativePromptCompiler
         CharacterView        $characters,
         SceneView            $scene,
         WorldView            $world,
+        ProductionView       $production,
         NarrativeAuditReport $audit,
     ): StructuredPrompt {
         $blockedOrdinals = $this->blockedOrdinals($audit);
@@ -59,17 +66,25 @@ final class NarrativePromptCompiler
             }
 
             $shots[$shot->ordinal] = new ShotPrompt(
-                ordinal:     $shot->ordinal,
-                beat:        $shot->beat,
-                action:      $shot->description,
-                emotions:    $this->emotionsAt($characters, $shot->ordinal),
-                camera:      $scene->getCamera($shot->ordinal),
-                environment: $environment,
-                endingFrame: $shot->endingFrame,
+                ordinal:         $shot->ordinal,
+                beat:            $shot->beat,
+                action:          $shot->description,
+                emotions:        $this->emotionsAt($characters, $shot->ordinal),
+                camera:          $scene->getCamera($shot->ordinal),
+                environment:     $environment,
+                endingFrame:     $shot->endingFrame,
+                durationSeconds: $production->durationAt($shot->ordinal),
+                energy:          $production->energyAt($shot->ordinal),
             );
         }
 
-        return new StructuredPrompt($shots);
+        return new StructuredPrompt(
+            shots:          $shots,
+            directorIntent: $production->intent(),
+            motifs:         $production->motifs(),
+            constraints:    $production->constraints(),
+            heroMoment:     $production->heroMoment(),
+        );
     }
 
     /** @return array<int, true> ordinals that cannot be compiled */

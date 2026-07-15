@@ -6,6 +6,7 @@ namespace Tests\Unit\FilmOS\Narrative\Scene;
 
 use App\Services\AI\FilmOS\Narrative\Bootstrap\NarrativeBootstrapper;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEventFactory;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraAngle;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraMovement;
@@ -244,7 +245,8 @@ final class D4PipelineTest extends TestCase
             worldFactory:     new WorldEventFactory($clock),
             shotFactory:      new ShotPlannedEventFactory(),
             sceneFactory:     new SceneEventFactory($clock),
-            characterFactory: new CharacterEventFactory($clock),
+            characterFactory:  new CharacterEventFactory($clock),
+            productionFactory: new ProductionEventFactory($clock),
             recorder:         new TimelineRecorder($timeline),
         );
 

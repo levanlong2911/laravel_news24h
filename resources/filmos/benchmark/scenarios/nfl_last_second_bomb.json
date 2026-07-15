@@ -1,0 +1,281 @@
+{
+    "id": "nfl_last_second_bomb",
+    "suite": "camera",
+    "level": "A",
+    "difficulty": "medium",
+    "primary_learning_dimension": "camera_tracking",
+    "secondary_learning_dimensions": [
+        "emotion_hold",
+        "lens_choice"
+    ],
+    "stress_dimensions": [
+        "motion_complexity",
+        "crowd_scale",
+        "occlusion"
+    ],
+    "scenario": {
+        "facts": [
+            {
+                "id": "F1",
+                "text": "Three seconds remain in the fourth quarter, team trails by four points",
+                "category": "CONTEXT",
+                "visual_relevance": "HIGH",
+                "confidence": 0.95,
+                "visual_hint": "scoreboard under stadium lights"
+            },
+            {
+                "id": "F2",
+                "text": "Pass rush collapses the pocket from both edges",
+                "category": "EVIDENCE",
+                "visual_relevance": "HIGH",
+                "confidence": 0.93,
+                "visual_hint": "two defenders converging"
+            },
+            {
+                "id": "F3",
+                "text": "Quarterback escapes right and launches a sixty-yard throw",
+                "category": "EVIDENCE",
+                "visual_relevance": "HIGH",
+                "confidence": 0.96,
+                "visual_hint": "deep spiral against evening sky"
+            },
+            {
+                "id": "F4",
+                "text": "The receiver is a distant silhouette as the whistle sounds",
+                "category": "RESULT",
+                "visual_relevance": "MEDIUM",
+                "confidence": 0.85,
+                "visual_hint": "lone figure downfield"
+            }
+        ],
+        "world_objects": [
+            {
+                "id": "qb_obj",
+                "type": "character",
+                "label": "Quarterback",
+                "attributes": {
+                    "team": "red",
+                    "number": "12"
+                }
+            },
+            {
+                "id": "stadium_obj",
+                "type": "location",
+                "label": "Open-air stadium",
+                "attributes": {
+                    "capacity": "packed"
+                }
+            }
+        ],
+        "world_facts": {
+            "time_remaining": "3 seconds",
+            "score_difference": "-4",
+            "quarter": "4",
+            "crowd": "roaring",
+            "weather": "cold",
+            "light": "fading evening"
+        },
+        "characters": [
+            {
+                "id": "qb",
+                "label": "Quarterback",
+                "world_object_ref": "qb_obj",
+                "appearance": {
+                    "outfit": "red jersey number 12, white helmet",
+                    "build": "tall athletic"
+                }
+            }
+        ]
+    },
+    "production": {
+        "director_intent": "The audience should believe the quarterback has already lost. Only after the ball leaves his hand should hope return.",
+        "conflicts": [
+            {
+                "description": "pocket collapsing from both edges",
+                "type": "physical"
+            },
+            {
+                "description": "three seconds on the clock",
+                "type": "time"
+            },
+            {
+                "description": "receiver too far to reach",
+                "type": "physical"
+            },
+            {
+                "description": "crowd noise drowning the count",
+                "type": "social"
+            }
+        ],
+        "motifs": [
+            {
+                "label": "spiral",
+                "importance": "primary"
+            },
+            {
+                "label": "cold breath",
+                "importance": "secondary"
+            },
+            {
+                "label": "stadium lights",
+                "importance": "secondary"
+            },
+            {
+                "label": "silhouette",
+                "importance": "secondary"
+            }
+        ],
+        "constraints": [
+            {
+                "target": "crowd",
+                "rule": "blocking the quarterback",
+                "mode": "never"
+            },
+            {
+                "target": "football",
+                "rule": "leaving the frame",
+                "mode": "never"
+            },
+            {
+                "target": "receiver",
+                "rule": "shown before the throw",
+                "mode": "never"
+            },
+            {
+                "target": "football",
+                "rule": "visible after release",
+                "mode": "always"
+            }
+        ],
+        "hero_moment": {
+            "ordinal": 2,
+            "description": "Ball exactly overhead against the stadium lights, receiver a distant silhouette, whole stadium frozen mid-breath"
+        },
+        "energy_curve": [
+            {
+                "ordinal": 0,
+                "value": 35,
+                "reason": "held breath — stadium goes quiet"
+            },
+            {
+                "ordinal": 1,
+                "value": 75,
+                "reason": "defenders one step away"
+            },
+            {
+                "ordinal": 2,
+                "value": 100,
+                "reason": "ball leaves hand"
+            }
+        ],
+        "timings": [
+            {
+                "ordinal": 0,
+                "duration_seconds": 2.0
+            },
+            {
+                "ordinal": 1,
+                "duration_seconds": 1.2
+            },
+            {
+                "ordinal": 2,
+                "duration_seconds": 2.5
+            }
+        ]
+    },
+    "shots": {
+        "hook": {
+            "action": "The stadium noise cuts to held breath as the quarterback reads the collapsing pocket",
+            "camera": {
+                "shot_type": "close_up",
+                "angle": "eye_level",
+                "movement": "handheld",
+                "lens": "telephoto",
+                "focus": "qb_node"
+            },
+            "ending_frame": "His eyes lock on something far downfield"
+        },
+        "escalation": {
+            "action": "He escapes right with two defenders closing from both sides",
+            "camera": {
+                "shot_type": "medium",
+                "angle": "low",
+                "movement": "tracking",
+                "lens": "normal",
+                "focus": "qb_node"
+            },
+            "ending_frame": "His back foot plants hard into the turf"
+        },
+        "payoff": {
+            "action": "He launches a sixty-yard spiral into the fading evening sky as the final whistle begins",
+            "camera": {
+                "shot_type": "wide",
+                "angle": "low",
+                "movement": "tilt",
+                "lens": "wide"
+            },
+            "ending_frame": "The ball disappears into the stadium lights, receiver a distant silhouette"
+        }
+    },
+    "scene_nodes": {
+        "hook": [
+            {
+                "id": "qb_node",
+                "type": "subject",
+                "label": "Quarterback",
+                "world_object_ref": "qb_obj"
+            }
+        ],
+        "escalation": [
+            {
+                "id": "qb_node",
+                "type": "subject",
+                "label": "Quarterback",
+                "world_object_ref": "qb_obj"
+            }
+        ],
+        "payoff": [
+            {
+                "id": "qb_node",
+                "type": "subject",
+                "label": "Quarterback",
+                "world_object_ref": "qb_obj"
+            }
+        ]
+    },
+    "emotion_arc": {
+        "qb": [
+            {
+                "at": "baseline",
+                "state": "neutral",
+                "intensity": "subtle"
+            },
+            {
+                "at": "hook",
+                "state": "fear",
+                "intensity": "moderate",
+                "cause": "pocket collapsing from both edges"
+            },
+            {
+                "at": "escalation",
+                "state": "fear",
+                "intensity": "intense",
+                "cause": "defenders one step away"
+            },
+            {
+                "at": "payoff",
+                "state": "determination",
+                "intensity": "intense",
+                "cause": "one open window downfield"
+            }
+        ]
+    },
+    "_schema_notes": {
+        "version": 2,
+        "sections": "scenario = the world and its rules; production = staging decisions (maps 1:1 onto ProductionPlan); shots = the shot plan. Authored by humans in v1 — the scenario author IS the director planner; a future Director Planner generates the production section instead.",
+        "authored_beats": "shots{} keyed by beat is AUTHORITATIVE for the runner. scenario.facts[] are context today and become derivation-benchmark input when MeaningResolver gains real intelligence.",
+        "semantic_only": "Every text field states WHAT happens or WHAT must hold (semantic intent) — never vendor prompt wording. Prompt IR is semantic, never stylistic.",
+        "ordinal_mapping": "hook=0, escalation=1, payoff=2 (runner assigns ordinals in StoryBeat case order); production.hero_moment/energy_curve/timings reference those ordinals.",
+        "typed_fields": "conflicts carry ConflictType (physical/environmental/psychological/social/time); constraints are target+rule+mode; energy points carry reason — all learnable knowledge, never bare strings."
+    }
+}

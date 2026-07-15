@@ -10,6 +10,7 @@ use App\Services\AI\FilmOS\Narrative\Bootstrap\NarrativeBootstrapper;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotionChangedHandler;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEventFactory;
+use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterIntroducedHandler;
 use App\Services\AI\FilmOS\Narrative\Character\CharacterProfile;
 use App\Services\AI\FilmOS\Narrative\Character\EmotionalState;
@@ -188,7 +189,8 @@ final class KnowledgeExtractorTest extends TestCase
             worldFactory:     new WorldEventFactory($clock),
             shotFactory:      new ShotPlannedEventFactory(),
             sceneFactory:     new SceneEventFactory($clock),
-            characterFactory: new CharacterEventFactory($clock),
+            characterFactory:  new CharacterEventFactory($clock),
+            productionFactory: new ProductionEventFactory($clock),
             recorder:         new TimelineRecorder($timeline),
         );
 
