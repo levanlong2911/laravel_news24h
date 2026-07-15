@@ -116,13 +116,14 @@ Omit the whole key when not authored. Keyed `beat → characterId → direction`
 | Enum | Values |
 |---|---|
 | StoryBeat | `hook`, `escalation`, `reveal`, `payoff` (declaration order = cinematic order) |
+| WorldObjectType | `character`, `prop`, `location`, `environment`, `vehicle`, `animal` — what a world object IS ("what exists?") |
 | ShotType | `establishing`, `wide`, `medium`, `close_up`, `extreme_close_up`, `two_shot`, `insert` |
 | CameraAngle | `eye_level`, `high`, `low`, `dutch`, `birds_eye`, `worms_eye`, `over_shoulder` |
 | CameraMovement | `static`, `pan`, `tilt`, `tracking`, `dolly`, `zoom`, `handheld` |
 | LensType | `wide`, `normal`, `telephoto` |
 | EmotionalState | `neutral`, `joy`, `fear`, `anger`, `sadness`, `determination`, `surprise` |
 | EmotionIntensity | `subtle`, `moderate`, `intense` |
-| SceneNodeType | `camera`, `subject`, `background`, `light` |
+| SceneNodeType | `camera`, `subject`, `background`, `light` — how a node PARTICIPATES visually ("how it participates?"). Orthogonal to WorldObjectType: a sun is a world `environment` object appearing as a scene `light` node — never a world `light` |
 | ConflictType | `physical`, `environmental`, `psychological`, `social`, `time` |
 | MotifImportance | `primary`, `secondary` |
 | ConstraintMode | `never`, `always` |

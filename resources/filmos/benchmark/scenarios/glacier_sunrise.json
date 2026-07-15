@@ -5,25 +5,69 @@
     "level": "A",
     "difficulty": "easy",
     "duration_seconds": 10,
-
     "primary_learning_dimension": "lighting",
-    "secondary_learning_dimensions": ["environment_richness", "camera_movement"],
-    "stress_dimensions": ["ice_translucency", "color_temperature_shift"],
-
+    "secondary_learning_dimensions": [
+        "environment_richness",
+        "camera_movement"
+    ],
+    "stress_dimensions": [
+        "ice_translucency",
+        "color_temperature_shift"
+    ],
     "goal": "The audience should feel the silence of a frozen world catch fire, cold blue turning to gold in one continuous breath.",
-
     "facts": [
-        { "id": "F1", "text": "A glacier valley lies in pre-dawn blue shadow, utterly still",        "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.96, "visual_hint": "blue ice field under fading stars" },
-        { "id": "F2", "text": "First sunlight strikes the highest ice pinnacle",                     "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.94, "visual_hint": "gold rim igniting on a seracs tip" },
-        { "id": "F3", "text": "The light line slides down the glacier face, turning ice translucent gold", "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.93, "visual_hint": "moving boundary of gold over blue" },
-        { "id": "F4", "text": "Mist rises off the ice as the valley fills with warm light",          "category": "RESULT",   "visual_relevance": "MEDIUM", "confidence": 0.88, "visual_hint": "glowing mist over golden ice" }
+        {
+            "id": "F1",
+            "text": "A glacier valley lies in pre-dawn blue shadow, utterly still",
+            "category": "CONTEXT",
+            "visual_relevance": "HIGH",
+            "confidence": 0.96,
+            "visual_hint": "blue ice field under fading stars"
+        },
+        {
+            "id": "F2",
+            "text": "First sunlight strikes the highest ice pinnacle",
+            "category": "EVIDENCE",
+            "visual_relevance": "HIGH",
+            "confidence": 0.94,
+            "visual_hint": "gold rim igniting on a seracs tip"
+        },
+        {
+            "id": "F3",
+            "text": "The light line slides down the glacier face, turning ice translucent gold",
+            "category": "EVIDENCE",
+            "visual_relevance": "HIGH",
+            "confidence": 0.93,
+            "visual_hint": "moving boundary of gold over blue"
+        },
+        {
+            "id": "F4",
+            "text": "Mist rises off the ice as the valley fills with warm light",
+            "category": "RESULT",
+            "visual_relevance": "MEDIUM",
+            "confidence": 0.88,
+            "visual_hint": "glowing mist over golden ice"
+        }
     ],
-
     "world_objects": [
-        { "id": "glacier_obj", "type": "location", "label": "Glacier valley", "attributes": { "ice_color": "deep blue", "scale": "kilometres" } },
-        { "id": "sun_obj",     "type": "light",    "label": "Rising sun",     "attributes": { "temperature": "warm gold" } }
+        {
+            "id": "glacier_obj",
+            "type": "location",
+            "label": "Glacier valley",
+            "attributes": {
+                "ice_color": "deep blue",
+                "scale": "kilometres"
+            }
+        },
+        {
+            "id": "sun_obj",
+            "type": "environment",
+            "label": "Rising sun",
+            "attributes": {
+                "temperature": "warm gold"
+            }
+        }
     ],
-
     "world_facts": {
         "time": "minutes before and after sunrise",
         "weather": "clear, windless, extreme cold",
@@ -31,43 +75,82 @@
         "sound": "total silence, distant ice crack",
         "atmosphere": "thin mist rising off the ice"
     },
-
     "characters": [],
-
     "emotion_arc": {},
-
     "shots": {
         "hook": {
             "importance": "required",
             "action": "The frozen valley waits in deep blue shadow, the last stars fading above serrated ice ridges",
-            "camera": { "shot_type": "establishing", "angle": "high", "movement": "static", "lens": "wide", "focus_node": "glacier_node" },
+            "camera": {
+                "shot_type": "establishing",
+                "angle": "high",
+                "movement": "static",
+                "lens": "wide",
+                "focus_node": "glacier_node"
+            },
             "ending_frame": "A hairline of gold ignites on the highest pinnacle"
         },
         "escalation": {
             "importance": "required",
             "action": "The sunrise line slides down the glacier face, blue ice turning translucent gold wherever it passes",
-            "camera": { "shot_type": "wide", "angle": "eye_level", "movement": "pan", "lens": "telephoto", "focus_node": "lightline_node" },
+            "camera": {
+                "shot_type": "wide",
+                "angle": "eye_level",
+                "movement": "pan",
+                "lens": "telephoto",
+                "focus_node": "lightline_node"
+            },
             "ending_frame": "The moving boundary of light reaches the valley floor"
         },
         "payoff": {
             "importance": "required",
             "action": "Mist rises glowing off the ice as warm light floods the entire valley",
-            "camera": { "shot_type": "wide", "angle": "low", "movement": "dolly", "lens": "wide", "focus_node": "glacier_node" },
+            "camera": {
+                "shot_type": "wide",
+                "angle": "low",
+                "movement": "dolly",
+                "lens": "wide",
+                "focus_node": "glacier_node"
+            },
             "ending_frame": "The sun clears the ridge, flaring across a valley turned to gold"
         }
     },
-
     "scene_nodes": {
         "hook": [
-            { "id": "glacier_node", "type": "background", "label": "Glacier valley",   "world_object_ref": "glacier_obj" }
+            {
+                "id": "glacier_node",
+                "type": "background",
+                "label": "Glacier valley",
+                "world_object_ref": "glacier_obj"
+            }
         ],
         "escalation": [
-            { "id": "lightline_node", "type": "light",     "label": "Sunrise boundary", "world_object_ref": "sun_obj" },
-            { "id": "glacier_node",   "type": "background", "label": "Glacier face",    "world_object_ref": "glacier_obj" }
+            {
+                "id": "lightline_node",
+                "type": "light",
+                "label": "Sunrise boundary",
+                "world_object_ref": "sun_obj"
+            },
+            {
+                "id": "glacier_node",
+                "type": "background",
+                "label": "Glacier face",
+                "world_object_ref": "glacier_obj"
+            }
         ],
         "payoff": [
-            { "id": "glacier_node", "type": "background", "label": "Golden valley",    "world_object_ref": "glacier_obj" },
-            { "id": "sun_node",     "type": "light",      "label": "Risen sun",        "world_object_ref": "sun_obj" }
+            {
+                "id": "glacier_node",
+                "type": "background",
+                "label": "Golden valley",
+                "world_object_ref": "glacier_obj"
+            },
+            {
+                "id": "sun_node",
+                "type": "light",
+                "label": "Risen sun",
+                "world_object_ref": "sun_obj"
+            }
         ]
     }
 }
