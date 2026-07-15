@@ -86,6 +86,15 @@ final class KlingPromptRendererTest extends TestCase
         $this->assertStringContainsString('extra limbs', $out->negative);   // standard guard
     }
 
+    public function test_always_constraints_reinforce_the_positive_prompt(): void
+    {
+        $out = $this->render($this->fullPrompt());
+
+        // ALWAYS constraint must appear in positive, never negative.
+        $this->assertStringContainsString('keep the football visible after release', $out->positive);
+        $this->assertStringNotContainsString('football visible after release', (string) $out->negative);
+    }
+
     public function test_motifs_and_hero_moment_appear(): void
     {
         $out = $this->render($this->fullPrompt());
@@ -158,7 +167,10 @@ final class KlingPromptRendererTest extends TestCase
             subjects:       [$this->subject(WorldObjectType::CHARACTER, 'Hero')],
             directorIntent: new \App\Services\AI\FilmOS\Narrative\Production\DirectorIntent('all is lost'),
             motifs:         [new VisualMotif('spiral', MotifImportance::PRIMARY)],
-            constraints:    [new VisualConstraint('crowd', 'blocking the hero', ConstraintMode::NEVER)],
+            constraints:    [
+                new VisualConstraint('crowd', 'blocking the hero', ConstraintMode::NEVER),
+                new VisualConstraint('football', 'visible after release', ConstraintMode::ALWAYS),
+            ],
             heroMoment:     new \App\Services\AI\FilmOS\Narrative\Production\HeroMoment(1, 'ball overhead'),
         );
     }

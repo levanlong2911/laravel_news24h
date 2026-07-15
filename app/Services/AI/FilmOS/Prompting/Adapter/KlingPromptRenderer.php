@@ -5,16 +5,9 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Prompting\Adapter;
 
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
-use App\Services\AI\FilmOS\Narrative\Character\EmotionalState;
-use App\Services\AI\FilmOS\Narrative\Character\EmotionIntensity;
 use App\Services\AI\FilmOS\Narrative\Production\ConstraintMode;
 use App\Services\AI\FilmOS\Narrative\Production\MotifImportance;
-use App\Services\AI\FilmOS\Narrative\Scene\CameraAngle;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
-use App\Services\AI\FilmOS\Narrative\Scene\CameraMovement;
-use App\Services\AI\FilmOS\Narrative\Scene\LensType;
-use App\Services\AI\FilmOS\Narrative\Scene\ShotType;
-use App\Services\AI\FilmOS\Narrative\World\WorldObjectType;
 use App\Services\AI\FilmOS\Prompting\IR\ShotPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
@@ -99,6 +92,7 @@ final class KlingPromptRenderer implements PromptRenderer
             $this->subjectsLine($prompt->subjects()),
             $this->environment($prompt),
             $this->beats($prompt),
+            $this->mustShow($prompt),
             $this->style($prompt),
         ], static fn(string $s): bool => $s !== '');
 
@@ -201,6 +195,18 @@ final class KlingPromptRenderer implements PromptRenderer
         }
 
         return 'STYLE: ' . implode('; ', $bits) . '.';
+    }
+
+    /** ALWAYS constraints reinforce the positive prompt (NEVER go to the negative). */
+    private function mustShow(StructuredPrompt $prompt): string
+    {
+        $rules = [];
+        foreach ($prompt->constraints() as $c) {
+            if ($c->mode === ConstraintMode::ALWAYS) {
+                $rules[] = "keep the {$c->target} {$c->rule}";
+            }
+        }
+        return $rules === [] ? '' : 'ALWAYS: ' . implode('; ', $rules) . '.';
     }
 
     private function negative(StructuredPrompt $prompt): ?string

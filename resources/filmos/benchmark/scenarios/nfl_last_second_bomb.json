@@ -1,5 +1,5 @@
 {
-    "schema_version": 1,
+    "schema_version": 2,
     "id": "nfl_last_second_bomb",
     "suite": "camera",
     "level": "A",
@@ -174,5 +174,165 @@
                 "world_object_ref": "qb_obj"
             }
         ]
+    },
+    "production": {
+        "director_intent": "The audience should believe the quarterback has already lost. Only after the ball leaves his hand should hope return.",
+        "conflicts": [
+            {
+                "description": "pocket collapsing from both edges",
+                "type": "physical"
+            },
+            {
+                "description": "three seconds on the clock",
+                "type": "time"
+            },
+            {
+                "description": "receiver too far to reach",
+                "type": "physical"
+            },
+            {
+                "description": "crowd noise drowning the count",
+                "type": "social"
+            }
+        ],
+        "motifs": [
+            {
+                "label": "spiral",
+                "importance": "primary"
+            },
+            {
+                "label": "cold breath",
+                "importance": "secondary"
+            },
+            {
+                "label": "stadium lights",
+                "importance": "secondary"
+            },
+            {
+                "label": "silhouette",
+                "importance": "secondary"
+            }
+        ],
+        "constraints": [
+            {
+                "target": "crowd",
+                "rule": "blocking the quarterback",
+                "mode": "never"
+            },
+            {
+                "target": "football",
+                "rule": "leaving the frame",
+                "mode": "never"
+            },
+            {
+                "target": "receiver",
+                "rule": "shown before the throw",
+                "mode": "never"
+            },
+            {
+                "target": "football",
+                "rule": "visible after release",
+                "mode": "always"
+            }
+        ],
+        "hero_moment": {
+            "at": "payoff",
+            "description": "Ball exactly overhead against the stadium lights, receiver a distant silhouette, whole stadium frozen mid-breath"
+        },
+        "energy_curve": [
+            {
+                "at": "hook",
+                "value": 35,
+                "reason": "held breath, stadium goes quiet"
+            },
+            {
+                "at": "escalation",
+                "value": 75,
+                "reason": "defenders one step away"
+            },
+            {
+                "at": "payoff",
+                "value": 100,
+                "reason": "ball leaves hand"
+            }
+        ],
+        "timings": [
+            {
+                "at": "hook",
+                "duration_seconds": 2.0
+            },
+            {
+                "at": "escalation",
+                "duration_seconds": 1.2
+            },
+            {
+                "at": "payoff",
+                "duration_seconds": 2.5
+            }
+        ]
+    },
+    "performance": {
+        "hook": {
+            "qb": {
+                "intent": "suppress fear",
+                "motivation": "does not want teammates to see doubt",
+                "cues": [
+                    {
+                        "description": "scans the collapsing pocket",
+                        "channel": "gaze"
+                    },
+                    {
+                        "description": "half breath",
+                        "channel": "breath"
+                    },
+                    {
+                        "description": "grip tightens on the ball",
+                        "channel": "hands"
+                    }
+                ]
+            }
+        },
+        "escalation": {
+            "qb": {
+                "intent": "controlled panic",
+                "cues": [
+                    {
+                        "description": "eyes flick left then snap forward",
+                        "channel": "gaze"
+                    },
+                    {
+                        "description": "shoulders square mid-stride",
+                        "channel": "posture"
+                    },
+                    {
+                        "description": "jaw clenches",
+                        "channel": "face"
+                    }
+                ]
+            }
+        },
+        "payoff": {
+            "qb": {
+                "intent": "total commitment",
+                "motivation": "nothing left to protect",
+                "cues": [
+                    {
+                        "description": "holds breath",
+                        "channel": "breath"
+                    },
+                    {
+                        "description": "eyes lock downfield",
+                        "channel": "gaze"
+                    },
+                    {
+                        "description": "full-body release into the throw"
+                    },
+                    {
+                        "description": "follow-through hangs in the air",
+                        "channel": "posture"
+                    }
+                ]
+            }
+        }
     }
 }
