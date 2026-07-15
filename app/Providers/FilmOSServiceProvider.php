@@ -13,6 +13,9 @@ use App\Services\AI\FilmOS\Narrative\Character\CharacterIntroducedHandler;
 use App\Services\AI\FilmOS\Narrative\Performance\PerformanceDirectedHandler;
 use App\Services\AI\FilmOS\Narrative\Performance\PerformanceEventFactory;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
+use App\Services\AI\FilmOS\Prompting\Adapter\DefaultPromptRendererRegistry;
+use App\Services\AI\FilmOS\Prompting\Adapter\KlingPromptRenderer;
+use App\Services\AI\FilmOS\Prompting\Adapter\PromptRendererRegistry;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionPlannedHandler;
 use App\Services\AI\FilmOS\Narrative\QA\NarrativeAuditor;
 use App\Services\AI\FilmOS\Narrative\QA\Rules\CameraFocusNodeExistsRule;
@@ -119,6 +122,13 @@ class FilmOSServiceProvider extends ServiceProvider
         // Performance Layer (acting knowledge)
         $this->app->bind(PerformanceEventFactory::class, function () {
             return new PerformanceEventFactory($this->app->make(Clock::class));
+        });
+
+        // Prompt renderers (vendor boundary) — register providers here; adding Veo/Runway is one line
+        $this->app->bind(PromptRendererRegistry::class, function () {
+            return new DefaultPromptRendererRegistry([
+                new KlingPromptRenderer(),
+            ]);
         });
 
         $this->app->bind(NarrativeBootstrapper::class, function () {

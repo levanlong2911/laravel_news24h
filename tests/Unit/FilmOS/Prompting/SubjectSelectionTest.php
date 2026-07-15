@@ -102,7 +102,7 @@ final class SubjectSelectionTest extends TestCase
     {
         $scenario['id'] = $id;   // id field must equal filename
         file_put_contents("{$this->dir}/{$id}.json", json_encode($scenario, JSON_THROW_ON_ERROR));
-        $state = (new ScenarioBootstrapper())->assemble((new ScenarioLoader($this->dir))->fromId($id));
+        $state = (new ScenarioBootstrapper())->assemble((new ScenarioLoader($this->dir))->fromId($id))->state;
 
         return (new NarrativePromptCompiler())->compile(
             $state->story, $state->characters, $state->scene, $state->world,

@@ -86,7 +86,7 @@ final class ScenarioBootstrapper
         private readonly Clock $clock = new SystemClock(),
     ) {}
 
-    public function assemble(ScenarioDocument $doc): NarrativeState
+    public function assemble(ScenarioDocument $doc): AssembledScenario
     {
         $beats = BeatOrdinalMap::fromBeats(array_map(
             static fn(string $beat) => StoryBeat::from($beat),
@@ -137,7 +137,7 @@ final class ScenarioBootstrapper
             $bootstrapper->directPerformance($this->performanceDesign($doc->performance, $beats));
         }
 
-        return $this->projector()->project($timeline);
+        return new AssembledScenario($timeline, $this->projector()->project($timeline));
     }
 
     // ── Builders ────────────────────────────────────────────────────────────

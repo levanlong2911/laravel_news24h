@@ -121,7 +121,7 @@ final class ScenarioBootstrapperTest extends TestCase
         $data['id'] = $id;   // id field must equal filename
         file_put_contents("{$this->dir}/{$id}.json", json_encode($data, JSON_THROW_ON_ERROR));
         $doc = (new ScenarioLoader($this->dir))->fromId($id);
-        return (new ScenarioBootstrapper())->assemble($doc);
+        return (new ScenarioBootstrapper())->assemble($doc)->state;
     }
 
     private function fullV2Scenario(): array
