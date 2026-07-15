@@ -65,6 +65,17 @@ flat v1 structure is unchanged; nothing is wrapped or renamed.
    never in lockstep. A `schema_version: 1` file carrying a `production`
    section is a contract error (`ScenarioCatalogTest` will reject it).
 
+9. **`facts[]` is narrative truth; `world_facts` is visual world state.**
+   `facts[]` = what is true in the story, used for reasoning and NOT required
+   to render ("three seconds left, down by four"). `world_facts` = what a
+   camera can SEE: weather, temperature, wind, light, fog, smoke, dust, embers,
+   crowd. **Anything that cannot be directly perceived by a camera MUST NOT
+   appear in `world_facts`** (score, quarter, time_remaining, health, ammo,
+   morale) — it belongs in `facts[]`. The compiler flattens `world_facts`
+   verbatim into PromptEnvironment, so a non-visual world fact leaks into every
+   vendor prompt (Kling, Veo, Runway…). Keeping the split clean means no
+   renderer ever needs to know business/game semantics.
+
 ## Field reference
 
 | Field | Type | Notes |
