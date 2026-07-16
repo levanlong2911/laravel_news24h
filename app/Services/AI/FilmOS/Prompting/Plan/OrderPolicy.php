@@ -37,7 +37,6 @@ final class OrderPolicy
         // Per beat: frame it, populate it, aim it, then play it.
         'camera'             => 10,
         'in_frame'           => 20,
-        'focus'              => 30,
         'action'             => 40,
         'emotion'            => 50,
         'performance_cue'    => 60,

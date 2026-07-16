@@ -187,7 +187,12 @@ final class RenderPlanner
         $items = [];
 
         if ($shot->camera !== null) {
-            $items[] = new PlanItem(PlanSlot::CAMERA, $this->importance->for(PlanSlot::CAMERA), $this->order->for(PlanSlot::CAMERA), $shot->camera);
+            // The camera and its aim are one fact: a setup includes what it points at.
+            $direction = new CameraDirection(
+                $shot->camera,
+                $shot->focusSubjectId !== null ? ($subjects[$shot->focusSubjectId] ?? null) : null,
+            );
+            $items[] = new PlanItem(PlanSlot::CAMERA, $this->importance->for(PlanSlot::CAMERA), $this->order->for(PlanSlot::CAMERA), $direction);
         }
 
         // STAGING: only what the scene actually places in this beat.
@@ -201,9 +206,6 @@ final class RenderPlanner
             $items[] = new PlanItem(PlanSlot::IN_FRAME, $this->importance->for(PlanSlot::IN_FRAME), $this->order->for(PlanSlot::IN_FRAME), $inFrame);
         }
 
-        if ($shot->focusSubjectId !== null && isset($subjects[$shot->focusSubjectId])) {
-            $items[] = new PlanItem(PlanSlot::FOCUS, $this->importance->for(PlanSlot::FOCUS), $this->order->for(PlanSlot::FOCUS), $subjects[$shot->focusSubjectId]);
-        }
 
         // What happens is never expendable.
         $items[] = new PlanItem(PlanSlot::ACTION, $this->importance->for(PlanSlot::ACTION), $this->order->for(PlanSlot::ACTION), $shot->action);

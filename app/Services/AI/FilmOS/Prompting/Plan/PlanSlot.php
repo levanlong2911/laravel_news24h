@@ -29,9 +29,8 @@ enum PlanSlot: string
     case MOTIF_SECONDARY    = 'motif_secondary';    // VisualMotif[]
 
     // ── Per beat ──────────────────────────────────────────────────────────────
-    case CAMERA           = 'camera';            // CameraConfiguration
+    case CAMERA           = 'camera';            // CameraDirection (setup + what it aims at)
     case IN_FRAME         = 'in_frame';          // SubjectDescriptor[]
-    case FOCUS            = 'focus';             // SubjectDescriptor
     case ACTION           = 'action';            // string (authored beat action — data, not wording)
     case EMOTION          = 'emotion';           // CharacterEmotion
     case PERFORMANCE_CUE  = 'performance_cue';   // PerformanceCue

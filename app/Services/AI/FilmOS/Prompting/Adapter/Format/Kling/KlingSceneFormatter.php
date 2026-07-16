@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\AI\FilmOS\Prompting\Adapter\Format\Kling;
 
-use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
 use App\Services\AI\FilmOS\Prompting\Adapter\Format\SlotFormatter;
+use App\Services\AI\FilmOS\Prompting\Plan\CameraDirection;
 use App\Services\AI\FilmOS\Prompting\Plan\PlanSlot;
 
 /**
@@ -64,14 +64,32 @@ final class KlingSceneFormatter implements SlotFormatter
         };
     }
 
-    private function camera(CameraConfiguration $cam): string
+    /** Camera moves that chase something; the rest simply rest on it. */
+    private const FOLLOWING = ['tilt', 'tracking', 'pan', 'dolly', 'zoom'];
+
+    /**
+     * The setup AND its target in one sentence. "Tilting up to follow the
+     * football" is a move with a purpose; "tilting up" plus a separate "Focus:
+     * Football" is a move and a wish, and Kling reads the first far better.
+     */
+    private function camera(CameraDirection $direction): string
     {
-        return $this->sentence(implode(', ', array_filter([
+        $cam  = $direction->camera;
+        $tags = implode(', ', array_filter([
             self::SHOT_TYPE[$cam->shotType->value] ?? $cam->shotType->value,
             self::LENS[$cam->lens->value]          ?? $cam->lens->value,
             self::ANGLE[$cam->angle->value]        ?? '',
             self::MOVEMENT[$cam->movement->value]  ?? $cam->movement->value,
-        ])));
+        ]));
+
+        if ($direction->focus !== null) {
+            $subject = lcfirst($direction->focus->label);
+            $tags .= in_array($cam->movement->value, self::FOLLOWING, true)
+                ? " to follow the {$subject}"      // the move chases it
+                : ", held on the {$subject}";      // the move rests on it
+        }
+
+        return $this->sentence($tags);
     }
 
     /** @param array<string, string> $details factKey => value */

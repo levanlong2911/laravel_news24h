@@ -9,7 +9,7 @@ use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
 use App\Services\AI\FilmOS\Prompting\Plan\PlanSlot;
 
 /**
- * Everything about who is on screen. Six slots, one formatter — the payload is
+ * Everything about who is on screen. Five slots, one formatter — the payload is
  * the same SubjectDescriptor in all of them and only the slot says whether it
  * means the cast, the staging, the attention, or the anatomy guard. That is
  * exactly why dispatch is by slot and not by type.
@@ -33,7 +33,6 @@ final class KlingSubjectFormatter implements SlotFormatter
             PlanSlot::SUBJECT_BACKGROUND,
             PlanSlot::ANATOMY,
             PlanSlot::IN_FRAME,
-            PlanSlot::FOCUS,
         ];
     }
 
@@ -45,7 +44,6 @@ final class KlingSubjectFormatter implements SlotFormatter
             PlanSlot::SUBJECT_BACKGROUND => 'Background: ' . $this->described($payload) . '.',
             PlanSlot::ANATOMY            => $this->anatomy($payload),
             PlanSlot::IN_FRAME           => 'In frame: ' . $this->named($payload) . '.',
-            PlanSlot::FOCUS              => 'Focus: ' . $payload->label . '.',
             default                      => '',
         };
     }

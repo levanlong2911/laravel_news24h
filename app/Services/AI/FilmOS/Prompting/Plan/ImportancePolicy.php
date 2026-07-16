@@ -48,7 +48,6 @@ final class ImportancePolicy
 
         // Render control: understood correctly, still shot wrong.
         'camera'             => PlanImportance::CRITICAL,   // wrong shot size / lens
-        'focus'              => PlanImportance::CRITICAL,   // camera follows the wrong thing
         'in_frame'           => PlanImportance::CRITICAL,   // wrong staging; subjects appear that must not
         'constraint_always'  => PlanImportance::CRITICAL,   // a hard rule; losing it loses the ball
         'constraint_never'   => PlanImportance::CRITICAL,   // negative prompt — unbudgeted anyway
