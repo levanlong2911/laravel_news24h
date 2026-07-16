@@ -30,14 +30,27 @@ final class ScenarioRenderCommandTest extends TestCase
         $this->assertStringContainsString('"model_name": "kling-v1"', $output);
         $this->assertStringContainsString('no credit was spent', $output);
 
-        // Article data is wired end-to-end: facts[].visual_hint + character appearance reach the prompt.
-        $this->assertStringContainsString('KEY VISUALS', $output);
-        $this->assertStringContainsStringIgnoringCase('two defenders converging', $output);   // facts[F2].visual_hint
-        $this->assertStringContainsString('red jersey number 12', $output);                   // character.appearance
-        $this->assertLessThan(                                                                 // ranked HIGH before MEDIUM
-            stripos($output, 'lone figure downfield'),
-            stripos($output, 'two defenders converging'),
-        );
+        // Article data reaches the prompt: the character's authored appearance
+        // identifies the subject the camera follows.
+        $this->assertStringContainsString('red jersey number 12', $output);   // character.appearance
+
+        // Staging and attention are per beat, so the payoff can follow the ball
+        // while the receiver stays out of the earlier beats entirely.
+        $this->assertStringContainsString('In frame:', $output);
+        $this->assertStringContainsString('Focus: Football', $output);
+    }
+
+    public function test_budget_drops_optional_content_before_critical_content(): void
+    {
+        Artisan::call('filmos:render', ['id' => 'nfl_last_second_bomb', '--dry-run' => true]);
+        $output = Artisan::output();
+
+        // CRITICAL survives: the look, what happens, the payoff frame.
+        $this->assertStringContainsString('broadcast sports footage', $output);
+        $this->assertStringContainsString('FINAL SHOT', $output);
+        // OPTIONAL enrichment (article fact hints) yields to the word budget —
+        // beat actions already own what happens, so nothing is said twice.
+        $this->assertStringNotContainsString('KEY VISUALS', $output);
     }
 
     public function test_real_path_runs_the_bridge_and_reports_the_asset(): void

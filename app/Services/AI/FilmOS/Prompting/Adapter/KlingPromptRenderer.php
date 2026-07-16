@@ -5,43 +5,53 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Prompting\Adapter;
 
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
-use App\Services\AI\FilmOS\Narrative\Performance\PerformanceChannel;
-use App\Services\AI\FilmOS\Narrative\Performance\PerformanceCue;
-use App\Services\AI\FilmOS\Narrative\Production\ConflictType;
-use App\Services\AI\FilmOS\Narrative\Production\ConstraintMode;
-use App\Services\AI\FilmOS\Narrative\Production\MotifImportance;
+use App\Services\AI\FilmOS\Narrative\Production\VisualConstraint;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
-use App\Services\AI\FilmOS\Narrative\Scene\SceneNodeType;
-use App\Services\AI\FilmOS\Prompting\IR\ShotPrompt;
-use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
-use App\Services\AI\FilmOS\Prompting\IR\VisualStyle;
+use App\Services\AI\FilmOS\Prompting\Plan\BeatPlan;
+use App\Services\AI\FilmOS\Prompting\Plan\PlanImportance;
+use App\Services\AI\FilmOS\Prompting\Plan\PlanItem;
+use App\Services\AI\FilmOS\Prompting\Plan\PlanSlot;
+use App\Services\AI\FilmOS\Prompting\Plan\RenderPlan;
 
 /**
- * The Cinematic Renderer for Kling — the ONLY place Kling wording exists.
+ * Says a RenderPlan in Kling's language. Nothing else.
  *
- * Its job is NOT "semantic -> English". It is to DIRECT: translate the IR into
- * the visual language a video model consumes — labelled storyboard blocks, a
- * subject the eye follows, camera as tags, emotion as facial/body behaviour,
- * energy as motion, continuity as an explicit instruction. Every phrase is a
- * MAPPING of data already in the IR (like TELEPHOTO -> "85mm"); it invents no
- * facts. Where a beat's own data runs out (exact spatial layout, rule-of-thirds
- * composition), that is a future planner's job, not fabrication here.
+ * It does not decide what belongs in the prompt, what owns what, what is
+ * redundant, or what matters — the RenderPlanner already did, without knowing
+ * this class exists. This adapter answers only two questions, and both are
+ * things only it can know:
  *
- * Pass 3 (2026-07-15) — cinematic upgrades, all from existing IR:
- *   - labelled blocks (SUBJECTS / ENVIRONMENT / CONFLICT / beat labels / FINAL
- *     SHOT / VISUAL LANGUAGE / CAMERA / STYLE) — models parse blocks, not prose;
- *   - subject lock from SubjectDescriptor::isPrimary (what the eye follows);
- *   - emotion -> facial/body behaviour (FEAR -> "eyes wide, jaw tight");
- *   - energy -> motion language (100 -> "explosive motion");
- *   - filmable conflicts (PHYSICAL/ENVIRONMENTAL) surface; abstract ones drop;
- *   - performance cues filtered by channel (gross-motor only) and capped;
- *   - emotion kept only on close shots; camera continuity stated explicitly;
- *   - the beat's ending_frame and the hero moment become strong closing images.
+ *   HOW to say each slot in Kling's idiom (enum → phrase, tags not prose);
+ *   HOW MUCH fits, because only the vendor's own wording has a word cost, and
+ *   ~200 words is a fact about Kling, not about the story.
+ *
+ * Budget rule: CRITICAL is always said. IMPORTANT and OPTIONAL are said while
+ * there is room, in the plan's order. Dropping is triage the plan already ranked
+ * — this class never re-decides importance, it just stops writing.
+ *
+ * Adding a vendor = a new class over the same RenderPlan. Adding knowledge =
+ * a new PlanSlot, which surfaces here as an unhandled case rather than a
+ * silently missing sentence.
  */
 final class KlingPromptRenderer implements PromptRenderer
 {
-    /** Compact, tag-style camera vocabulary — Kling reads tags better than prose. */
+    /** Kling degrades on long prompts; this is a Kling fact, hence it lives here. */
+    private const WORD_BUDGET = 200;
+
+    /** VisualStyle → the Kling look for that genre. */
+    private const STYLE_LOOK = [
+        'cinematic'          => 'Hyperrealistic cinematic footage, film grain, shallow depth of field, sharp focus.',
+        'sports_documentary' => 'Hyperrealistic broadcast sports footage, long-lens documentary look, natural colour, sharp focus.',
+        'nature_documentary' => 'Hyperrealistic wildlife documentary footage, long-lens, natural colour, no grain.',
+        'luxury_commercial'  => 'Glossy high-end commercial footage, high contrast, specular highlights, pristine surfaces.',
+        'vintage_film'       => 'Vintage 35mm film footage, visible grain, halation, slightly faded colour.',
+        'digital_clean'      => 'Clean modern digital footage, crisp detail, neutral colour, no grain.',
+        'horror'             => 'Cold desaturated footage, deep shadows, low-key lighting, unsettling stillness.',
+        'anime'              => 'Hand-drawn anime animation, cel shading, expressive linework.',
+        'comic'              => 'Comic-book illustration style, bold ink outlines, flat graphic colour.',
+    ];
+
     private const SHOT_TYPE = [
         'establishing'     => 'wide establishing shot',
         'wide'             => 'wide shot',
@@ -52,14 +62,10 @@ final class KlingPromptRenderer implements PromptRenderer
         'insert'           => 'insert shot',
     ];
 
-    private const LENS = [
-        'wide'      => '24mm',
-        'normal'    => '35mm',
-        'telephoto' => '85mm',
-    ];
+    private const LENS = ['wide' => '24mm', 'normal' => '35mm', 'telephoto' => '85mm'];
 
     private const ANGLE = [
-        'eye_level'     => '',            // default framing — omit to save tokens
+        'eye_level'     => '',
         'high'          => 'high angle',
         'low'           => 'low angle',
         'dutch'         => 'dutch tilt',
@@ -78,7 +84,7 @@ final class KlingPromptRenderer implements PromptRenderer
         'handheld' => 'handheld',
     ];
 
-    /** Emotion rendered as observable facial/body behaviour — what a camera sees. */
+    /** Emotion as observable behaviour — what a camera sees, not a label. */
     private const EMOTION_VISUAL = [
         'neutral'       => 'calm, even expression',
         'joy'           => 'open smile, bright eyes',
@@ -89,41 +95,26 @@ final class KlingPromptRenderer implements PromptRenderer
         'surprise'      => 'eyes wide, brows raised, mouth parted',
     ];
 
-    /** Anatomy constraint keyed by WorldObjectType — the yacht-lesson guard. */
+    /** WorldObjectType → anatomy guard (the yacht lesson). */
     private const ANATOMY = [
         'character' => 'natural human anatomy, correct limb count, realistic hands',
         'animal'    => 'correct animal anatomy, natural coat, no human features',
         'vehicle'   => 'accurate mechanical detail, no human figures, no floating limbs',
     ];
 
-    /** VisualStyle → the Kling look for that genre. One entry per enum case. */
-    private const STYLE_LOOK = [
-        'cinematic'          => 'Hyperrealistic cinematic footage, film grain, shallow depth of field, sharp focus.',
-        'sports_documentary' => 'Hyperrealistic broadcast sports footage, long-lens documentary look, natural colour, motion-tracked, sharp focus.',
-        'nature_documentary' => 'Hyperrealistic wildlife documentary footage, long-lens, natural colour, no grain, patient observational framing.',
-        'luxury_commercial'  => 'Glossy high-end commercial footage, high contrast, specular highlights, pristine surfaces, controlled lighting.',
-        'vintage_film'       => 'Vintage 35mm film footage, visible grain, halation, slightly faded colour.',
-        'digital_clean'      => 'Clean modern digital footage, crisp detail, neutral colour, no grain.',
-        'horror'             => 'Cold desaturated footage, deep shadows, low-key lighting, unsettling stillness.',
-        'anime'              => 'Hand-drawn anime animation, cel shading, expressive linework.',
-        'comic'              => 'Comic-book illustration style, bold ink outlines, flat graphic colour.',
-    ];
-
-    /** Shot types close enough for facial emotion to read on screen. */
-    private const CLOSE_SHOTS = ['close_up', 'extreme_close_up'];
-
-    /** Conflicts a camera can actually show; the rest are abstract and drop. */
-    private const FILMABLE_CONFLICTS = [ConflictType::PHYSICAL, ConflictType::ENVIRONMENTAL];
-
-    /**
-     * Channels Kling cannot render legibly: micro-expression (eyes, face),
-     * breath, and voice (the video is silent). Cues on these channels drop.
-     */
-    private const UNRENDERABLE_CHANNELS = [
-        PerformanceChannel::GAZE,
-        PerformanceChannel::FACE,
-        PerformanceChannel::BREATH,
-        PerformanceChannel::VOICE,
+    /** Which labelled block each global/ending/constraint slot belongs to. */
+    private const BLOCK = [
+        'subject_primary'    => 'SUBJECTS',
+        'subject_secondary'  => 'SUBJECTS',
+        'subject_background' => 'SUBJECTS',
+        'anatomy'            => 'SUBJECTS',
+        'environment'        => 'ENVIRONMENT',
+        'motif_primary'      => 'VISUAL LANGUAGE',
+        'motif_secondary'    => 'VISUAL LANGUAGE',
+        'conflict'           => 'KEY VISUALS',
+        'key_visual'         => 'KEY VISUALS',
+        'hero_moment'        => 'FINAL SHOT',
+        'constraint_always'  => 'STYLE',
     ];
 
     public function provider(): ProviderId
@@ -131,154 +122,262 @@ final class KlingPromptRenderer implements PromptRenderer
         return ProviderId::KLING;
     }
 
-    public function render(StructuredPrompt $prompt): RenderedPrompt
+    public function render(RenderPlan $plan): RenderedPrompt
     {
-        $blocks = [
-            $this->medium($prompt),
-            $this->subjectsBlock($prompt),
-            $this->environmentBlock($prompt),
-            $this->keyVisualsBlock($prompt),
-        ];
-        $labels = $this->subjectLabelsById($prompt);
-        foreach ($this->orderedShots($prompt) as $shot) {
-            $blocks[] = $this->beatBlock($shot, $labels);
-        }
-        $blocks[] = $this->finalShotBlock($prompt);
-        $blocks[] = $this->visualLanguageBlock($prompt);
-        $blocks[] = $this->cameraBlock($prompt);
-        $blocks[] = $this->styleBlock($prompt);
-
-        $blocks = array_filter($blocks, static fn(string $b): bool => $b !== '');
+        $kept = $this->withinBudget($plan);
 
         return new RenderedPrompt(
-            positive: implode("\n\n", $blocks),
-            negative: $this->negative($prompt),
-            metadata: $this->metadata($prompt),
+            positive: $this->assemble($plan, $kept),
+            negative: $this->negative($plan),
+            metadata: $this->metadata($plan),
         );
     }
 
-    // ── Blocks ────────────────────────────────────────────────────────────────
+    // ── Budget ────────────────────────────────────────────────────────────────
 
     /**
-     * The look, from the authored VisualStyle — NOT hardcoded, because an NFL
-     * play, a wildlife documentary and a car commercial must not come out as
-     * the same footage. Each style maps to Kling's own wording here.
+     * Say everything CRITICAL, then keep saying while there is room. The plan's
+     * order is obeyed inside each tier; importance is never re-judged here.
+     *
+     * @return array<int, true> keyed by spl_object_id of the surviving items
      */
-    private function medium(StructuredPrompt $prompt): string
+    private function withinBudget(RenderPlan $plan): array
     {
-        $style = $prompt->visualStyle() ?? VisualStyle::CINEMATIC;
-        return self::STYLE_LOOK[$style->value];
-    }
+        $kept  = [];
+        $words = 0;
 
-    /** Who the eye follows — PRIMARY from SubjectDescriptor::isPrimary, plus anatomy. */
-    private function subjectsBlock(StructuredPrompt $prompt): string
-    {
-        // Three weights, so the model knows what the eye follows: a focused
-        // subject, a supporting subject, and background.
-        $primary = [];
-        $secondary = [];
-        $background = [];
-        foreach ($prompt->subjects() as $s) {
-            if ($s->isPrimary) {
-                $primary[] = $this->subjectLabel($s);
-            } elseif ($s->nodeType === SceneNodeType::BACKGROUND) {
-                $background[] = $this->subjectLabel($s);
-            } else {
-                $secondary[] = $this->subjectLabel($s);
+        $all = $this->positiveItems($plan);
+
+        foreach ([PlanImportance::CRITICAL, PlanImportance::IMPORTANT, PlanImportance::OPTIONAL] as $tier) {
+            // Within a tier, obey the plan's ORDER across the whole plan, not the
+            // order beats happen to be listed in. Otherwise the first beat eats the
+            // budget and the last one starves — losing the payoff's focus while an
+            // earlier beat keeps its motion word. Order cuts the same slot from
+            // every beat at once, which is what makes the drop fair.
+            $tierItems = array_values(array_filter($all, static fn(PlanItem $i): bool => $i->importance === $tier));
+            usort($tierItems, static fn(PlanItem $a, PlanItem $b): int => $a->order <=> $b->order);
+
+            foreach ($tierItems as $item) {
+                $line = $this->line($item);
+                if ($line === '') {
+                    continue;
+                }
+                $cost = str_word_count($line);
+                if ($tier !== PlanImportance::CRITICAL && $words + $cost > self::WORD_BUDGET) {
+                    continue;   // no room — the plan already said this is what to lose
+                }
+                $kept[spl_object_id($item)] = true;
+                $words += $cost;
             }
         }
 
+        return $kept;
+    }
+
+    /**
+     * Everything that competes for the positive prompt's budget. NEVER
+     * constraints are excluded: they are a separate field with no word pressure.
+     *
+     * @return PlanItem[]
+     */
+    private function positiveItems(RenderPlan $plan): array
+    {
+        $items = $plan->global;
+        foreach ($plan->beats as $beat) {
+            foreach ($beat->items as $item) {
+                $items[] = $item;
+            }
+        }
+        foreach ([...$plan->ending, ...$plan->constraints] as $item) {
+            if ($item->slot !== PlanSlot::CONSTRAINT_NEVER) {
+                $items[] = $item;
+            }
+        }
+        return $items;
+    }
+
+    // ── Assembly ──────────────────────────────────────────────────────────────
+
+    /** @param array<int, true> $kept */
+    private function assemble(RenderPlan $plan, array $kept): string
+    {
+        $blocks = [];
+
+        // The look opens the prompt with no label — it is the medium, not a section.
+        foreach ($plan->global as $item) {
+            if ($item->slot === PlanSlot::VISUAL_STYLE && isset($kept[spl_object_id($item)])) {
+                $blocks[] = $this->line($item);
+            }
+        }
+
+        $blocks = [...$blocks, ...$this->labelledBlocks($plan->global, $kept)];
+
+        foreach ($plan->beats as $beat) {
+            $lines = $this->lines($beat->items, $kept);
+            if ($lines !== []) {
+                $blocks[] = $this->beatLabel($beat) . "\n" . implode("\n", $lines);
+            }
+        }
+
+        $blocks = [
+            ...$blocks,
+            ...$this->labelledBlocks($plan->ending, $kept),
+            $this->styleBlock($plan, $kept),
+        ];
+
+        return implode("\n\n", array_filter($blocks, static fn(string $b): bool => $b !== ''));
+    }
+
+    /**
+     * Kling boilerplate plus the plan's ALWAYS constraints. The boilerplate is
+     * this vendor's standing instructions — Kling resets framing between beats
+     * unless told to hold, and its "no text" must be narrowed to overlays so it
+     * stops erasing in-world signage the scene asked for. Same status as the
+     * negative prompt's standard terms: vendor constants, not story content.
+     *
+     * @param array<int, true> $kept
+     */
+    private function styleBlock(RenderPlan $plan, array $kept): string
+    {
+        $lines = [
+            'Sharp focus. No overlaid text, no subtitles, no watermark, no captions.',
+            "One continuous cinematic shot, never cutting. Hold each beat's focus subject in frame throughout.",
+        ];
+        foreach ($plan->constraints as $item) {
+            if ($item->slot === PlanSlot::CONSTRAINT_ALWAYS && isset($kept[spl_object_id($item)])) {
+                $lines[] = $this->line($item);
+            }
+        }
+
+        return "STYLE\n" . implode("\n", $lines);
+    }
+
+    /**
+     * Group items into their labelled blocks, preserving plan order.
+     *
+     * @param PlanItem[]       $items
+     * @param array<int, true> $kept
+     * @return string[]
+     */
+    private function labelledBlocks(array $items, array $kept): array
+    {
+        $byBlock = [];
+        foreach ($items as $item) {
+            $label = self::BLOCK[$item->slot->value] ?? null;
+            if ($label === null || !isset($kept[spl_object_id($item)])) {
+                continue;
+            }
+            $line = $this->line($item);
+            if ($line !== '') {
+                $byBlock[$label][] = $line;
+            }
+        }
+
+        $blocks = [];
+        foreach ($byBlock as $label => $lines) {
+            $blocks[] = $label . "\n" . implode("\n", $lines);
+        }
+        return $blocks;
+    }
+
+    /**
+     * @param PlanItem[]       $items
+     * @param array<int, true> $kept
+     * @return string[]
+     */
+    private function lines(array $items, array $kept): array
+    {
         $lines = [];
-        if ($primary !== []) {
-            $lines[] = 'Primary: ' . $this->join($primary) . '.';
+        foreach ($items as $item) {
+            if (!isset($kept[spl_object_id($item)])) {
+                continue;
+            }
+            $line = $this->line($item);
+            if ($line !== '') {
+                $lines[] = $line;
+            }
         }
-        if ($secondary !== []) {
-            $lines[] = 'Secondary: ' . $this->join($secondary) . '.';
-        }
-        if ($background !== []) {
-            $lines[] = 'Background: ' . $this->join($background) . '.';
-        }
-        if (($anatomy = $this->anatomy($prompt->subjects())) !== '') {
-            $lines[] = $anatomy;
-        }
-        return $this->block('SUBJECTS', $lines);
+        return $lines;
+    }
+
+    private function beatLabel(BeatPlan $beat): string
+    {
+        return $beat->beat !== null ? strtoupper($beat->beat->value) : 'SHOT ' . ($beat->ordinal + 1);
+    }
+
+    // ── Wording: one slot, one phrase ─────────────────────────────────────────
+
+    private function line(PlanItem $item): string
+    {
+        return match ($item->slot) {
+            PlanSlot::VISUAL_STYLE       => self::STYLE_LOOK[$item->payload->value] ?? self::STYLE_LOOK['cinematic'],
+            PlanSlot::SUBJECT_PRIMARY    => 'Primary: ' . $this->subjectList($item->payload) . '.',
+            PlanSlot::SUBJECT_SECONDARY  => 'Secondary: ' . $this->subjectList($item->payload) . '.',
+            PlanSlot::SUBJECT_BACKGROUND => 'Background: ' . $this->subjectList($item->payload) . '.',
+            PlanSlot::ANATOMY            => $this->anatomy($item->payload),
+            PlanSlot::ENVIRONMENT        => $this->environment($item->payload),
+            PlanSlot::MOTIF_PRIMARY      => 'Primary motif: ' . $this->motifList($item->payload) . '.',
+            PlanSlot::MOTIF_SECONDARY    => 'Secondary: ' . $this->motifList($item->payload) . '.',
+            PlanSlot::KEY_VISUAL         => ucfirst(rtrim($item->payload->hint, '.')) . '.',
+            PlanSlot::CONFLICT           => ucfirst(rtrim($item->payload->description, '.')) . '.',
+            PlanSlot::CAMERA             => ucfirst($this->cameraPhrase($item->payload)) . '.',
+            PlanSlot::IN_FRAME           => 'In frame: ' . $this->join($this->labels($item->payload)) . '.',
+            PlanSlot::FOCUS              => 'Focus: ' . $item->payload->label . '.',
+            PlanSlot::ACTION             => rtrim($item->payload, '.') . '.',
+            PlanSlot::EMOTION            => ucfirst($this->emotionVisual($item->payload)) . '.',
+            PlanSlot::PERFORMANCE_CUE    => ucfirst(rtrim($item->payload->description, '.')) . '.',
+            PlanSlot::MOTION             => ucfirst($this->motionWord($item->payload)) . '.',
+            PlanSlot::ENDING_FRAME       => ucfirst(rtrim($item->payload->description, '.')) . '.',
+            PlanSlot::HERO_MOMENT        => "Freeze the frame, everything goes still.\n"
+                                            . ucfirst(rtrim($item->payload->description, '.')) . '.',
+            PlanSlot::CONSTRAINT_ALWAYS  => $this->alwaysPhrase($item->payload),
+            PlanSlot::CONSTRAINT_NEVER   => '',   // negative prompt only
+        };
+    }
+
+    /** @param SubjectDescriptor[] $subjects */
+    private function subjectList(array $subjects): string
+    {
+        return $this->join(array_map(fn(SubjectDescriptor $s): string => $this->subjectLabel($s), $subjects));
     }
 
     private function subjectLabel(SubjectDescriptor $s): string
     {
-        // Prefer the character's authored appearance (outfit, build) over bare
-        // world-object attributes — richer, article-accurate identity.
+        // Authored appearance beats bare world-object attributes: richer identity.
         $detail = $s->appearance !== [] ? array_values($s->appearance) : array_values($s->attributes->all());
         return $detail === [] ? $s->label : $s->label . ' (' . implode(', ', $detail) . ')';
     }
 
-    /**
-     * The concrete things the frame must contain — one consolidated visual-facts
-     * block. Article visuals (facts[].visual_hint, already ranked by relevance)
-     * come first, then any filmable conflict (PHYSICAL/ENVIRONMENTAL) not already
-     * stated; abstract conflicts (a clock, inner doubt, crowd noise) have no
-     * image and drop. Merging conflicts here avoids a second, overlapping block.
-     */
-    private function keyVisualsBlock(StructuredPrompt $prompt): string
+    /** @param SubjectDescriptor[] $subjects @return string[] */
+    private function labels(array $subjects): array
     {
-        $lines = [];
-        $seen  = [];
-
-        foreach ($prompt->keyVisuals() as $visual) {
-            $this->addVisual($visual->hint, $lines, $seen);
-        }
-        foreach ($prompt->conflicts() as $conflict) {
-            if (in_array($conflict->type, self::FILMABLE_CONFLICTS, true)) {
-                $this->addVisual($conflict->description, $lines, $seen);
-            }
-        }
-
-        return $this->block('KEY VISUALS', $lines);
-    }
-
-    /**
-     * @param string[]            $lines
-     * @param array<string, true> $seen
-     */
-    private function addVisual(string $text, array &$lines, array &$seen): void
-    {
-        $key = strtolower(trim($text));
-        if ($key === '' || isset($seen[$key])) {
-            return;
-        }
-        $seen[$key] = true;
-        $lines[]    = ucfirst(rtrim($text, '.')) . '.';
+        return array_values(array_unique(array_map(static fn(SubjectDescriptor $s): string => $s->label, $subjects)));
     }
 
     /** @param SubjectDescriptor[] $subjects */
     private function anatomy(array $subjects): string
     {
-        $lines = [];
+        $guards = [];
         foreach ($subjects as $s) {
             $guard = self::ANATOMY[$s->type->value] ?? null;
             if ($guard !== null) {
-                $lines[$guard] = true;   // dedupe identical guards
+                $guards[$guard] = true;   // two vehicles → one guard
             }
         }
-        return $lines === [] ? '' : ucfirst(implode('. ', array_keys($lines))) . '.';
+        return $guards === [] ? '' : ucfirst(implode('. ', array_keys($guards))) . '.';
     }
 
-    /**
-     * Setting as a visual line. Uses the world-fact KEY to give each value a
-     * concrete noun (crowd/light) — phrasing, adapter territory. Only visual
-     * world state reaches here (world_facts is scoped upstream).
-     */
-    private function environmentBlock(StructuredPrompt $prompt): string
+    /** @param array<string, string> $details factKey => value */
+    private function environment(array $details): string
     {
-        $details = [];
-        foreach ($prompt->shots() as $shot) {
-            foreach ($shot->environment->details as $key => $value) {
-                $details[$this->envPhrase((string) $key, (string) $value)] = true;
-            }
+        $phrases = [];
+        foreach ($details as $key => $value) {
+            $phrases[$this->envPhrase($key, $value)] = true;
         }
-        return $details === [] ? '' : $this->block('ENVIRONMENT', [ucfirst(implode(', ', array_keys($details))) . '.']);
+        return $phrases === [] ? '' : ucfirst(implode(', ', array_keys($phrases))) . '.';
     }
 
+    /** The fact KEY gives the value a concrete noun — phrasing, hence adapter work. */
     private function envPhrase(string $key, string $value): string
     {
         return match ($key) {
@@ -288,179 +387,15 @@ final class KlingPromptRenderer implements PromptRenderer
         };
     }
 
-    /** @return ShotPrompt[] ordered by ordinal */
-    private function orderedShots(StructuredPrompt $prompt): array
+    /** @param \App\Services\AI\FilmOS\Narrative\Production\VisualMotif[] $motifs */
+    private function motifList(array $motifs): string
     {
-        $shots = $prompt->shots();
-        ksort($shots);
-        return array_values($shots);
+        return $this->join(array_map(static fn($m): string => $m->label, $motifs));
     }
 
-    /**
-     * @param array<string, string> $labels worldObjectId => plain label
-     */
-    private function beatBlock(ShotPrompt $shot, array $labels): string
+    private function alwaysPhrase(VisualConstraint $c): string
     {
-        $lines = [];
-        if ($shot->camera !== null) {
-            $lines[] = ucfirst($this->cameraPhrase($shot->camera)) . '.';
-        }
-        // Staging for THIS beat — who is actually in frame here. Being in the
-        // cast is not being in every shot; this is what keeps a subject out of
-        // a beat it must not appear in.
-        $inFrame = [];
-        foreach ($shot->visibleSubjectIds as $id) {
-            if (isset($labels[$id])) {
-                $inFrame[] = $labels[$id];
-            }
-        }
-        if ($inFrame !== []) {
-            $lines[] = 'In frame: ' . $this->join($inFrame) . '.';
-        }
-        // Attention for THIS beat — what the eye follows here, not globally.
-        if ($shot->focusSubjectId !== null && isset($labels[$shot->focusSubjectId])) {
-            $lines[] = 'Focus: ' . $labels[$shot->focusSubjectId] . '.';
-        }
-        $lines[] = rtrim($shot->action, '.') . '.';
-        if ($this->isCloseShot($shot->camera)) {
-            foreach ($shot->emotions as $emotion) {
-                $lines[] = ucfirst($this->emotionVisual($emotion)) . '.';
-            }
-        }
-        if (($cue = $this->leadCue($shot)) !== null) {
-            $lines[] = ucfirst(rtrim($cue, '.')) . '.';
-        }
-        if (($motion = $this->motionWord($shot->energy)) !== '') {
-            $lines[] = ucfirst($motion) . '.';
-        }
-        if ($shot->endingFrame !== null) {
-            $lines[] = ucfirst(rtrim($shot->endingFrame->description, '.')) . '.';   // authored closing image
-        }
-
-        return $this->block($this->beatLabel($shot), $lines);
-    }
-
-    private function beatLabel(ShotPrompt $shot): string
-    {
-        return $shot->beat !== null ? strtoupper($shot->beat->value) : 'SHOT ' . ($shot->ordinal + 1);
-    }
-
-    /** The hero moment as a held, isolated climax — its own emphatic block. */
-    private function finalShotBlock(StructuredPrompt $prompt): string
-    {
-        $hero = $prompt->heroMoment();
-        if ($hero === null) {
-            return '';
-        }
-        return $this->block('FINAL SHOT', [
-            'Freeze the frame, everything goes still.',
-            ucfirst(rtrim($hero->description, '.')) . '.',
-        ]);
-    }
-
-    /** Motifs as directorial guidance, ranked PRIMARY vs secondary. */
-    private function visualLanguageBlock(StructuredPrompt $prompt): string
-    {
-        $primary = [];
-        $secondary = [];
-        foreach ($prompt->motifs() as $motif) {
-            if ($motif->importance === MotifImportance::PRIMARY) {
-                $primary[] = $motif->label;
-            } else {
-                $secondary[] = $motif->label;
-            }
-        }
-        $lines = [];
-        if ($primary !== []) {
-            $lines[] = 'Primary motif: ' . $this->join($primary) . '.';
-        }
-        if ($secondary !== []) {
-            $lines[] = 'Secondary: ' . $this->join($secondary) . '.';
-        }
-        return $this->block('VISUAL LANGUAGE', $lines);
-    }
-
-    /**
-     * Explicit continuity — Kling resets between beats unless told to hold the
-     * shot. It names no subject: attention is per-beat (see each beat's Focus),
-     * so a global "locked on X" would contradict the beat that focuses something else.
-     */
-    private function cameraBlock(StructuredPrompt $prompt): string
-    {
-        return $this->block('CAMERA', [
-            'One continuous cinematic shot, never cutting. Hold each beat\'s focus subject in frame through the whole beat.',
-        ]);
-    }
-
-    /** @return array<string, string> worldObjectId => plain label, for per-beat focus */
-    private function subjectLabelsById(StructuredPrompt $prompt): array
-    {
-        $labels = [];
-        foreach ($prompt->subjects() as $s) {
-            $labels[$s->id] = $s->label;
-        }
-        return $labels;
-    }
-
-    /** Style baseline plus ALWAYS constraints, phrased as strong persistence. */
-    private function styleBlock(StructuredPrompt $prompt): string
-    {
-        // "no text" must forbid OVERLAYS, not physical signage: a scoreboard or
-        // a jersey number is part of the world and may legitimately be in frame.
-        // Saying it precisely avoids contradicting the scene's own key visuals.
-        $lines = ['Sharp focus. No overlaid text, no subtitles, no watermark, no captions.'];
-        foreach ($prompt->constraints() as $c) {
-            if ($c->mode === ConstraintMode::ALWAYS) {
-                $lines[] = ucfirst("keep the {$c->target} {$c->rule} in every frame; never lose the {$c->target}") . '.';
-            }
-        }
-        return $this->block('STYLE', $lines);
-    }
-
-    private function negative(StructuredPrompt $prompt): ?string
-    {
-        // "text overlay" not bare "text" — bare "text" also suppresses legitimate
-        // in-world signage (scoreboard, jersey numbers) the scene explicitly wants.
-        $terms = ['extra limbs', 'deformed hands', 'warping', 'text overlay', 'subtitles', 'watermark'];
-
-        foreach ($prompt->constraints() as $c) {
-            if ($c->mode === ConstraintMode::NEVER) {
-                $terms[] = trim("{$c->target} {$c->rule}");
-            }
-        }
-
-        return $terms === [] ? null : implode(', ', $terms);
-    }
-
-    /** @return array<string, mixed> */
-    private function metadata(StructuredPrompt $prompt): array
-    {
-        $duration = 0.0;
-        $energyPeak = null;
-        foreach ($prompt->shots() as $shot) {
-            $duration += $shot->durationSeconds ?? 0.0;
-            if ($shot->energy !== null) {
-                $energyPeak = max($energyPeak ?? 0, $shot->energy);
-            }
-        }
-
-        $meta = ['provider' => ProviderId::KLING->value];
-        if ($duration > 0.0) {
-            $meta['duration_seconds'] = $duration;
-        }
-        if ($energyPeak !== null) {
-            $meta['energy_peak'] = $energyPeak;
-        }
-        return $meta;
-    }
-
-    // ── Phrase helpers ────────────────────────────────────────────────────────
-
-    /** A labelled storyboard block: "LABEL\nline.\nline." — empty if no lines. */
-    private function block(string $label, array $lines): string
-    {
-        $lines = array_values(array_filter($lines, static fn(string $l): bool => $l !== ''));
-        return $lines === [] ? '' : $label . "\n" . implode("\n", $lines);
+        return ucfirst("keep the {$c->target} {$c->rule} in every frame; never lose the {$c->target}") . '.';
     }
 
     /** Compact tags, not prose: "close-up, 85mm, low angle, tracking". */
@@ -474,22 +409,14 @@ final class KlingPromptRenderer implements PromptRenderer
         ]));
     }
 
-    private function isCloseShot(?CameraConfiguration $cam): bool
-    {
-        return $cam !== null && in_array($cam->shotType->value, self::CLOSE_SHOTS, true);
-    }
-
     private function emotionVisual(CharacterEmotion $emotion): string
     {
         return self::EMOTION_VISUAL[$emotion->state->value] ?? $emotion->state->value;
     }
 
-    /** Energy (0–100) → motion intensity language. Copied signal, not invented. */
-    private function motionWord(?int $energy): string
+    /** Energy → motion intensity. The plan supplies the number; Kling gets the word. */
+    private function motionWord(int $energy): string
     {
-        if ($energy === null) {
-            return '';
-        }
         return match (true) {
             $energy >= 85 => 'explosive motion',
             $energy >= 55 => 'urgent motion',
@@ -498,26 +425,45 @@ final class KlingPromptRenderer implements PromptRenderer
         };
     }
 
-    /**
-     * The single, most legible performance cue for a beat — the first cue on a
-     * gross-motor channel (HANDS/POSTURE) or no channel. Micro-expression, breath,
-     * and voice cues are skipped because Kling cannot render them.
-     */
-    private function leadCue(ShotPrompt $shot): ?string
+    private function negative(RenderPlan $plan): ?string
     {
-        foreach ($shot->performances as $performance) {
-            foreach ($performance->cues as $cue) {
-                if ($this->isRenderable($cue)) {
-                    return $cue->description;
+        // "text overlay" not bare "text": bare "text" also suppresses in-world
+        // signage (a scoreboard, a jersey number) the scene explicitly asks for.
+        $terms = ['extra limbs', 'deformed hands', 'warping', 'text overlay', 'subtitles', 'watermark'];
+
+        foreach ($plan->constraints as $item) {
+            if ($item->slot === PlanSlot::CONSTRAINT_NEVER) {
+                $terms[] = trim("{$item->payload->target} {$item->payload->rule}");
+            }
+        }
+
+        return implode(', ', $terms);
+    }
+
+    /**
+     * Clip length is NOT reported here any more: it is the scenario's authored
+     * duration, which the render command reads straight from the document. It
+     * was only ever a sum of beat timings that happened to pass through the
+     * prompt, and the plan has no reason to carry it.
+     *
+     * @return array<string, mixed>
+     */
+    private function metadata(RenderPlan $plan): array
+    {
+        $energyPeak = null;
+        foreach ($plan->beats as $beat) {
+            foreach ($beat->items as $item) {
+                if ($item->slot === PlanSlot::MOTION) {
+                    $energyPeak = max($energyPeak ?? 0, (int) $item->payload);
                 }
             }
         }
-        return null;
-    }
 
-    private function isRenderable(PerformanceCue $cue): bool
-    {
-        return !in_array($cue->channel, self::UNRENDERABLE_CHANNELS, true);
+        $meta = ['provider' => ProviderId::KLING->value];
+        if ($energyPeak !== null) {
+            $meta['energy_peak'] = $energyPeak;
+        }
+        return $meta;
     }
 
     /** @param string[] $items */

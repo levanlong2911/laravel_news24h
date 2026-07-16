@@ -174,8 +174,10 @@ final class KlingPromptRendererTest extends TestCase
         $out = $this->render($this->fullPrompt());
 
         $this->assertSame('kling', $out->metadata['provider']);
-        $this->assertSame(4.5, $out->metadata['duration_seconds']);   // 2.0 + 2.5
         $this->assertSame(100, $out->metadata['energy_peak']);
+        // Clip length is the scenario's authored duration, read by the render
+        // command from the document — it is not the prompt's business.
+        $this->assertArrayNotHasKey('duration_seconds', $out->metadata);
     }
 
     public function test_key_visuals_from_article_are_rendered(): void
@@ -217,9 +219,16 @@ final class KlingPromptRendererTest extends TestCase
         );
     }
 
+    /**
+     * The pipeline under test is planner → renderer: the planner decides what is
+     * allowed in, the renderer only words it. Tests assert the MAPPING
+     * (typed knowledge → phrase kind), never exact prose.
+     */
     private function render(StructuredPrompt $p): \App\Services\AI\FilmOS\Prompting\Adapter\RenderedPrompt
     {
-        return (new KlingPromptRenderer())->render($p);
+        return (new KlingPromptRenderer())->render(
+            (new \App\Services\AI\FilmOS\Prompting\Plan\RenderPlanner())->plan($p),
+        );
     }
 
     private function subject(WorldObjectType $type, string $label): SubjectDescriptor

@@ -17,6 +17,7 @@ use App\Services\AI\FilmOS\Planning\BeatOrdinalMap;
 use App\Services\AI\FilmOS\Prompting\Adapter\ProviderId;
 use App\Services\AI\FilmOS\Prompting\Adapter\PromptRendererRegistry;
 use App\Services\AI\FilmOS\Prompting\Compiler\NarrativePromptCompiler;
+use App\Services\AI\FilmOS\Prompting\Plan\RenderPlanner;
 use Illuminate\Console\Command;
 
 /**
@@ -62,7 +63,8 @@ final class ScenarioPreviewCommand extends Command
             FactVisuals::fromFacts($doc->facts),
             $doc->visualStyle,
         );
-        $rendered = $registry->get($providerId)->render($ir);
+        $plan     = (new RenderPlanner())->plan($ir);
+        $rendered = $registry->get($providerId)->render($plan);
 
         $beats = BeatOrdinalMap::fromBeats(array_map(
             static fn(string $b) => StoryBeat::from($b),

@@ -12,6 +12,7 @@ use App\Services\AI\FilmOS\Narrative\QA\NarrativeAuditor;
 use App\Services\AI\FilmOS\Prompting\Adapter\ProviderId;
 use App\Services\AI\FilmOS\Prompting\Adapter\PromptRendererRegistry;
 use App\Services\AI\FilmOS\Prompting\Compiler\NarrativePromptCompiler;
+use App\Services\AI\FilmOS\Prompting\Plan\RenderPlanner;
 use App\Services\AI\FilmOS\Prompting\Render\KlingRenderRequestBuilder;
 use App\Services\AI\FilmOS\Prompting\Render\RenderOptions;
 use App\Services\AI\FilmOS\Prompting\Render\RenderRequest;
@@ -75,7 +76,8 @@ final class ScenarioRenderCommand extends Command
             FactVisuals::fromFacts($doc->facts),
             $doc->visualStyle,
         );
-        $rendered = $renderers->get($providerId)->render($ir);
+        $plan     = (new RenderPlanner())->plan($ir);
+        $rendered = $renderers->get($providerId)->render($plan);
 
         // Bridge: RenderedPrompt -> RenderRequest -> provider payload.
         $builder = $builders->get($providerId);
