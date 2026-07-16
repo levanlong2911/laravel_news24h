@@ -230,10 +230,27 @@ partly measuring a different bug.
 Wider than Phase 1A, and the reason the ADRs came before the code:
 
 ```
-   Boundary  →  Implementation  →  Measurement  →  Residual analysis  →  New abstraction
-      ↑                                                                        │
-      └────────────────────────────────────────────────────────────────────────┘
+   Boundary
+      ↓
+   Implementation
+      ↓
+   Measurement
+      ↓
+   Remove known noise        §10.2 — without this the rest is not residual analysis
+      ↓                             but error aggregation
+   Residual analysis         §10.1 — reproducible; a projection onto the feature
+      ↓                             space the model already has
+   Vocabulary extension      §10.1 — not automatable; it CHANGES that space
+      ↓
+   New abstraction
+      ↓
+   (Boundary again)
 ```
+
+The two middle steps are not two grades of the same work — they are **different operations**.
+Residual analysis *projects* onto the existing feature space; vocabulary extension *changes* the
+space. The gap between them is the gap between *"these two failures are alike"* and *"these two
+failures are alike along a dimension the model has no word for"*.
 
 > **Do not optimise what is working. Model what the residual — after known noise is removed — has in
 > common.**
@@ -249,8 +266,11 @@ This is also what the session that produced ADR-019 got wrong first: seeing a ba
 for the formatter. The formatter was working. The residual shared one shape — **information discarded
 upstream and re-invented downstream** — and that is what had to be modelled.
 
-A new module earns its existence when the residual repeatedly points at something the current
-abstractions cannot express. Never before.
+> **A new abstraction is justified not when we can imagine it, but when the residual repeatedly
+> demands a dimension the current language cannot express.**
+
+"Never before" is the rule. That sentence is why the rule exists — which is the part that survives
+contact with an abstraction nobody has thought of yet.
 
 ### 10.1 Residual analysis is not clustering
 
@@ -293,3 +313,14 @@ never
 Dropping the first step costs the pipeline its causality. This is why §9.1 and §10 are one argument:
 **improving the lens before cleaning the data only makes the contamination easier to see, not easier
 to understand.**
+
+It also sets a standard for the benchmark itself that this ADR had not previously named. Reproducible
+and deterministic are not sufficient. A benchmark must be **causally isolating**: each residual must
+correspond to *one* unmodelled mechanism, not a mixture of several. Without that it answers *"several
+things are wrong here"* — true, and useless — instead of **"this is what to build next"**, which is
+the only question worth running it for.
+
+And it gives the loop a self-check with teeth: **analysing a residual that still contains known causes
+is not residual analysis. It is error aggregation.** By that standard the coverage figure in §9.1 is
+not yet admissible evidence for anything, and saying so costs nothing today and saves a wrong module
+later.
