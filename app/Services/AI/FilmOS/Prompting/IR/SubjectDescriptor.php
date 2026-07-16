@@ -26,11 +26,13 @@ use App\Services\AI\FilmOS\Narrative\World\WorldObjectType;
  */
 final class SubjectDescriptor
 {
+    /** @param array<string, string> $appearance visual-continuity detail from the character (outfit, build…) */
     public function __construct(
         public readonly string          $id,          // WorldObject id
         public readonly WorldObjectType $type,
         public readonly string          $label,
         public readonly AttributeBag    $attributes,
         public readonly bool            $isPrimary,   // a camera focuses this subject in some shot
+        public readonly array           $appearance = [],
     ) {}
 }

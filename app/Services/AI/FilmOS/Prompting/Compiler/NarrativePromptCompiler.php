@@ -10,7 +10,9 @@ use App\Services\AI\FilmOS\Narrative\Production\ProductionView;
 use App\Services\AI\FilmOS\Narrative\QA\NarrativeAuditReport;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneView;
 use App\Services\AI\FilmOS\Narrative\Story\StoryView;
+use App\Services\AI\FilmOS\Narrative\World\WorldObjectType;
 use App\Services\AI\FilmOS\Narrative\World\WorldView;
+use App\Services\AI\FilmOS\Prompting\IR\KeyVisual;
 use App\Services\AI\FilmOS\Prompting\IR\PromptEnvironment;
 use App\Services\AI\FilmOS\Prompting\IR\ShotPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
@@ -50,6 +52,10 @@ use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
  */
 final class NarrativePromptCompiler
 {
+    /**
+     * @param KeyVisual[] $keyVisuals article-derived visual details (facts[].visual_hint),
+     *                                organized here by relevance; the article's own priority.
+     */
     public function compile(
         StoryView            $story,
         CharacterView        $characters,
@@ -58,6 +64,7 @@ final class NarrativePromptCompiler
         ProductionView       $production,
         PerformanceView      $performance,
         NarrativeAuditReport $audit,
+        array                $keyVisuals = [],
     ): StructuredPrompt {
         $blockedOrdinals = $this->blockedOrdinals($audit);
         $environment     = $this->flattenEnvironment($world);
@@ -84,11 +91,12 @@ final class NarrativePromptCompiler
 
         return new StructuredPrompt(
             shots:          $shots,
-            subjects:       $this->selectSubjects($scene, $world),
-            directorIntent: $production->intent(),
+            subjects:       $this->selectSubjects($scene, $world, $this->appearanceByObject($characters)),
             motifs:         $production->motifs(),
             constraints:    $production->constraints(),
             heroMoment:     $production->heroMoment(),
+            conflicts:      $production->conflictPlan()?->conflicts ?? [],
+            keyVisuals:     $this->rankKeyVisuals($keyVisuals),
         );
     }
 
@@ -103,9 +111,10 @@ final class NarrativePromptCompiler
      * appearance in scene-node placement order — stable across vendors and
      * snapshot tests.
      *
+     * @param array<string, array<string, string>> $appearanceByObject worldObjectId => appearance
      * @return SubjectDescriptor[]
      */
-    private function selectSubjects(SceneView $scene, WorldView $world): array
+    private function selectSubjects(SceneView $scene, WorldView $world, array $appearanceByObject): array
     {
         // World objects a camera focuses somewhere → primary.
         $primary = [];
@@ -139,6 +148,7 @@ final class NarrativePromptCompiler
                 label:      $object->label,
                 attributes: $object->attributes,
                 isPrimary:  isset($primary[$ref]),
+                appearance: $appearanceByObject[$ref] ?? [],
             );
             $order[$ref] = $index++;
         }
@@ -152,6 +162,42 @@ final class NarrativePromptCompiler
         });
 
         return $list;
+    }
+
+    /**
+     * Appearance (visual-continuity detail) per world object, taken from the
+     * character that references it — so the renderer can identify the subject
+     * by outfit/build (article-authored), not just world-object attributes.
+     *
+     * @return array<string, array<string, string>> worldObjectId => appearance
+     */
+    private function appearanceByObject(CharacterView $characters): array
+    {
+        $map = [];
+        foreach ($characters->allCharacters() as $memory) {
+            $ref = $memory->profile->worldObjectRef;
+            if ($ref !== null) {
+                $map[$ref] = $memory->profile->appearance->all();
+            }
+        }
+        return $map;
+    }
+
+    /**
+     * Organize key visuals by the article's own priority (visual_relevance) —
+     * most-relevant first. Semantic organization (ordering typed data), never
+     * phrasing: the renderer decides how to word them.
+     *
+     * @param KeyVisual[] $keyVisuals
+     * @return KeyVisual[]
+     */
+    private function rankKeyVisuals(array $keyVisuals): array
+    {
+        usort(
+            $keyVisuals,
+            static fn(KeyVisual $a, KeyVisual $b): int => $b->relevance->rank() <=> $a->relevance->rank(),
+        );
+        return $keyVisuals;
     }
 
     /** @return array<int, true> ordinals that cannot be compiled */
@@ -174,6 +220,16 @@ final class NarrativePromptCompiler
     private function flattenEnvironment(WorldView $world): PromptEnvironment
     {
         $details = [];
+
+        // Location / environment world objects ARE the visual setting — surface
+        // them (keyed by id) even when no scene node references them, so the
+        // stadium/room/field the story happens in reaches the prompt. Setting
+        // first, then atmospheric facts (crowd/weather/light).
+        foreach ($world->allObjects() as $object) {
+            if ($object->type === WorldObjectType::LOCATION || $object->type === WorldObjectType::ENVIRONMENT) {
+                $details[$object->id] = $object->label;
+            }
+        }
         foreach ($world->allFacts() as $key => $fact) {
             $details[$key] = $fact->value;
         }

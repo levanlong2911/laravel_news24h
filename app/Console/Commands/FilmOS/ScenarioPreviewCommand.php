@@ -7,6 +7,7 @@ namespace App\Console\Commands\FilmOS;
 use App\Services\AI\FilmOS\Benchmark\Scenario\Preview\ConsolePreviewFormatter;
 use App\Services\AI\FilmOS\Benchmark\Scenario\Preview\JsonPreviewFormatter;
 use App\Services\AI\FilmOS\Benchmark\Scenario\Preview\ScenarioPreview;
+use App\Services\AI\FilmOS\Benchmark\Scenario\FactVisuals;
 use App\Services\AI\FilmOS\Benchmark\Scenario\ScenarioBootstrapper;
 use App\Services\AI\FilmOS\Benchmark\Scenario\ScenarioLoader;
 use App\Services\AI\FilmOS\Benchmark\Scenario\ScenarioSchemaException;
@@ -58,6 +59,7 @@ final class ScenarioPreviewCommand extends Command
         $ir = (new NarrativePromptCompiler())->compile(
             $state->story, $state->characters, $state->scene, $state->world,
             $state->production, $state->performance, $audit,
+            FactVisuals::fromFacts($doc->facts),
         );
         $rendered = $registry->get($providerId)->render($ir);
 

@@ -16,6 +16,9 @@ use App\Services\AI\FilmOS\Narrative\Production\ProductionEventFactory;
 use App\Services\AI\FilmOS\Prompting\Adapter\DefaultPromptRendererRegistry;
 use App\Services\AI\FilmOS\Prompting\Adapter\KlingPromptRenderer;
 use App\Services\AI\FilmOS\Prompting\Adapter\PromptRendererRegistry;
+use App\Services\AI\FilmOS\Prompting\Render\DefaultRenderRequestBuilderRegistry;
+use App\Services\AI\FilmOS\Prompting\Render\KlingRenderRequestBuilder;
+use App\Services\AI\FilmOS\Prompting\Render\RenderRequestBuilderRegistry;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionPlannedHandler;
 use App\Services\AI\FilmOS\Narrative\QA\NarrativeAuditor;
 use App\Services\AI\FilmOS\Narrative\QA\Rules\CameraFocusNodeExistsRule;
@@ -130,6 +133,17 @@ class FilmOSServiceProvider extends ServiceProvider
                 new KlingPromptRenderer(),
             ]);
         });
+
+        // Render-request builders (RenderedPrompt -> provider payload) — symmetric to the renderers
+        $this->app->bind(RenderRequestBuilderRegistry::class, function () {
+            return new DefaultRenderRequestBuilderRegistry([
+                new KlingRenderRequestBuilder(),
+            ]);
+        });
+
+        // Execution runtime for the benchmark render path (filmos:render). Same
+        // wiring as the production pipeline; resolvable so tests can swap a fake client.
+        $this->app->bind(RenderRuntime::class, fn () => $this->buildRenderRuntime());
 
         $this->app->bind(NarrativeBootstrapper::class, function () {
             return new NarrativeBootstrapper(

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Prompting\Adapter;
 
 use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceChannel;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceCue;
+use App\Services\AI\FilmOS\Narrative\Production\ConflictType;
 use App\Services\AI\FilmOS\Narrative\Production\ConstraintMode;
 use App\Services\AI\FilmOS\Narrative\Production\MotifImportance;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
@@ -13,14 +16,30 @@ use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
 
 /**
- * Renders a StructuredPrompt into a Kling prompt (positive + negative + knobs).
+ * The Cinematic Renderer for Kling — the ONLY place Kling wording exists.
  *
- * This is the ONLY place Kling wording exists. Every enum → phrase mapping,
- * the anatomy guard from SubjectDescriptor::$type, the beat-by-beat structure,
- * and NEVER/ALWAYS constraint phrasing live here — the IR stays semantic.
+ * Its job is NOT "semantic -> English". It is to DIRECT: translate the IR into
+ * the visual language a video model consumes — labelled storyboard blocks, a
+ * subject the eye follows, camera as tags, emotion as facial/body behaviour,
+ * energy as motion, continuity as an explicit instruction. Every phrase is a
+ * MAPPING of data already in the IR (like TELEPHOTO -> "85mm"); it invents no
+ * facts. Where a beat's own data runs out (exact spatial layout, rule-of-thirds
+ * composition), that is a future planner's job, not fabrication here.
+ *
+ * Pass 3 (2026-07-15) — cinematic upgrades, all from existing IR:
+ *   - labelled blocks (SUBJECTS / ENVIRONMENT / CONFLICT / beat labels / FINAL
+ *     SHOT / VISUAL LANGUAGE / CAMERA / STYLE) — models parse blocks, not prose;
+ *   - subject lock from SubjectDescriptor::isPrimary (what the eye follows);
+ *   - emotion -> facial/body behaviour (FEAR -> "eyes wide, jaw tight");
+ *   - energy -> motion language (100 -> "explosive motion");
+ *   - filmable conflicts (PHYSICAL/ENVIRONMENTAL) surface; abstract ones drop;
+ *   - performance cues filtered by channel (gross-motor only) and capped;
+ *   - emotion kept only on close shots; camera continuity stated explicitly;
+ *   - the beat's ending_frame and the hero moment become strong closing images.
  */
 final class KlingPromptRenderer implements PromptRenderer
 {
+    /** Compact, tag-style camera vocabulary — Kling reads tags better than prose. */
     private const SHOT_TYPE = [
         'establishing'     => 'wide establishing shot',
         'wide'             => 'wide shot',
@@ -31,46 +50,41 @@ final class KlingPromptRenderer implements PromptRenderer
         'insert'           => 'insert shot',
     ];
 
+    private const LENS = [
+        'wide'      => '24mm',
+        'normal'    => '35mm',
+        'telephoto' => '85mm',
+    ];
+
     private const ANGLE = [
-        'eye_level'     => 'at eye level',
-        'high'          => 'from a high angle',
-        'low'           => 'from a low angle',
-        'dutch'         => 'with a dutch tilt',
-        'birds_eye'     => "from a bird's-eye view",
-        'worms_eye'     => "from a worm's-eye view",
-        'over_shoulder' => 'over the shoulder',
+        'eye_level'     => '',            // default framing — omit to save tokens
+        'high'          => 'high angle',
+        'low'           => 'low angle',
+        'dutch'         => 'dutch tilt',
+        'birds_eye'     => "bird's-eye view",
+        'worms_eye'     => "worm's-eye view",
+        'over_shoulder' => 'over-the-shoulder',
     ];
 
     private const MOVEMENT = [
-        'static'   => 'locked-off camera',
+        'static'   => 'locked-off',
         'pan'      => 'panning',
-        'tilt'     => 'tilting to follow the action',
-        'tracking' => 'tracking the subject',
-        'dolly'    => 'a smooth dolly move',
-        'zoom'     => 'zooming',
-        'handheld' => 'urgent handheld motion',
+        'tilt'     => 'tilting up',
+        'tracking' => 'tracking',
+        'dolly'    => 'dolly move',
+        'zoom'     => 'zoom',
+        'handheld' => 'handheld',
     ];
 
-    private const LENS = [
-        'wide'      => '24mm wide lens',
-        'normal'    => '35mm natural lens',
-        'telephoto' => '85mm telephoto compression',
-    ];
-
-    private const EMOTION = [
-        'neutral'       => 'neutral',
-        'joy'           => 'joyful',
-        'fear'          => 'fearful',
-        'anger'         => 'angry',
-        'sadness'       => 'sorrowful',
-        'determination' => 'determined',
-        'surprise'      => 'startled',
-    ];
-
-    private const INTENSITY = [
-        'subtle'   => 'faintly',
-        'moderate' => '',
-        'intense'  => 'intensely',
+    /** Emotion rendered as observable facial/body behaviour — what a camera sees. */
+    private const EMOTION_VISUAL = [
+        'neutral'       => 'calm, even expression',
+        'joy'           => 'open smile, bright eyes',
+        'fear'          => 'eyes wide, jaw tight, shallow breath',
+        'anger'         => 'brows drawn down, jaw clenched',
+        'sadness'       => 'downcast eyes, heavy brow',
+        'determination' => 'narrowed eyes, set jaw, forward lean',
+        'surprise'      => 'eyes wide, brows raised, mouth parted',
     ];
 
     /** Anatomy constraint keyed by WorldObjectType — the yacht-lesson guard. */
@@ -80,6 +94,23 @@ final class KlingPromptRenderer implements PromptRenderer
         'vehicle'   => 'accurate mechanical detail, no human figures, no floating limbs',
     ];
 
+    /** Shot types close enough for facial emotion to read on screen. */
+    private const CLOSE_SHOTS = ['close_up', 'extreme_close_up'];
+
+    /** Conflicts a camera can actually show; the rest are abstract and drop. */
+    private const FILMABLE_CONFLICTS = [ConflictType::PHYSICAL, ConflictType::ENVIRONMENTAL];
+
+    /**
+     * Channels Kling cannot render legibly: micro-expression (eyes, face),
+     * breath, and voice (the video is silent). Cues on these channels drop.
+     */
+    private const UNRENDERABLE_CHANNELS = [
+        PerformanceChannel::GAZE,
+        PerformanceChannel::FACE,
+        PerformanceChannel::BREATH,
+        PerformanceChannel::VOICE,
+    ];
+
     public function provider(): ProviderId
     {
         return ProviderId::KLING;
@@ -87,23 +118,107 @@ final class KlingPromptRenderer implements PromptRenderer
 
     public function render(StructuredPrompt $prompt): RenderedPrompt
     {
-        $sections = array_filter([
-            $this->anatomy($prompt->subjects()),
-            $this->subjectsLine($prompt->subjects()),
-            $this->environment($prompt),
-            $this->beats($prompt),
-            $this->mustShow($prompt),
-            $this->style($prompt),
-        ], static fn(string $s): bool => $s !== '');
+        $blocks = [
+            $this->medium(),
+            $this->subjectsBlock($prompt),
+            $this->environmentBlock($prompt),
+            $this->keyVisualsBlock($prompt),
+        ];
+        foreach ($this->orderedShots($prompt) as $shot) {
+            $blocks[] = $this->beatBlock($shot);
+        }
+        $blocks[] = $this->finalShotBlock($prompt);
+        $blocks[] = $this->visualLanguageBlock($prompt);
+        $blocks[] = $this->cameraBlock($prompt);
+        $blocks[] = $this->styleBlock($prompt);
+
+        $blocks = array_filter($blocks, static fn(string $b): bool => $b !== '');
 
         return new RenderedPrompt(
-            positive: implode("\n\n", $sections),
+            positive: implode("\n\n", $blocks),
             negative: $this->negative($prompt),
             metadata: $this->metadata($prompt),
         );
     }
 
-    // ── Sections ──────────────────────────────────────────────────────────────
+    // ── Blocks ────────────────────────────────────────────────────────────────
+
+    private function medium(): string
+    {
+        return 'Hyperrealistic cinematic footage, film grain, shallow depth of field, sharp focus.';
+    }
+
+    /** Who the eye follows — PRIMARY from SubjectDescriptor::isPrimary, plus anatomy. */
+    private function subjectsBlock(StructuredPrompt $prompt): string
+    {
+        $primary = [];
+        $secondary = [];
+        foreach ($prompt->subjects() as $s) {
+            if ($s->isPrimary) {
+                $primary[] = $this->subjectLabel($s);
+            } else {
+                $secondary[] = $this->subjectLabel($s);
+            }
+        }
+
+        $lines = [];
+        if ($primary !== []) {
+            $lines[] = 'Primary: ' . $this->join($primary) . '.';
+        }
+        if ($secondary !== []) {
+            $lines[] = 'Secondary: ' . $this->join($secondary) . '.';
+        }
+        if (($anatomy = $this->anatomy($prompt->subjects())) !== '') {
+            $lines[] = $anatomy;
+        }
+        return $this->block('SUBJECTS', $lines);
+    }
+
+    private function subjectLabel(SubjectDescriptor $s): string
+    {
+        // Prefer the character's authored appearance (outfit, build) over bare
+        // world-object attributes — richer, article-accurate identity.
+        $detail = $s->appearance !== [] ? array_values($s->appearance) : array_values($s->attributes->all());
+        return $detail === [] ? $s->label : $s->label . ' (' . implode(', ', $detail) . ')';
+    }
+
+    /**
+     * The concrete things the frame must contain — one consolidated visual-facts
+     * block. Article visuals (facts[].visual_hint, already ranked by relevance)
+     * come first, then any filmable conflict (PHYSICAL/ENVIRONMENTAL) not already
+     * stated; abstract conflicts (a clock, inner doubt, crowd noise) have no
+     * image and drop. Merging conflicts here avoids a second, overlapping block.
+     */
+    private function keyVisualsBlock(StructuredPrompt $prompt): string
+    {
+        $lines = [];
+        $seen  = [];
+
+        foreach ($prompt->keyVisuals() as $visual) {
+            $this->addVisual($visual->hint, $lines, $seen);
+        }
+        foreach ($prompt->conflicts() as $conflict) {
+            if (in_array($conflict->type, self::FILMABLE_CONFLICTS, true)) {
+                $this->addVisual($conflict->description, $lines, $seen);
+            }
+        }
+
+        return $this->block('KEY VISUALS', $lines);
+    }
+
+    /**
+     * @param string[]            $lines
+     * @param array<string, true> $seen
+     */
+    private function addVisual(string $text, array &$lines, array &$seen): void
+    {
+        $key = strtolower(trim($text));
+        if ($key === '' || isset($seen[$key])) {
+            return;
+        }
+        $seen[$key] = true;
+        $lines[]    = ucfirst(rtrim($text, '.')) . '.';
+    }
 
     /** @param SubjectDescriptor[] $subjects */
     private function anatomy(array $subjects): string
@@ -112,101 +227,133 @@ final class KlingPromptRenderer implements PromptRenderer
         foreach ($subjects as $s) {
             $guard = self::ANATOMY[$s->type->value] ?? null;
             if ($guard !== null) {
-                $lines[$guard] = true;   // dedupe identical guards (two vehicles → one line)
+                $lines[$guard] = true;   // dedupe identical guards
             }
         }
-        return $lines === [] ? '' : 'Hyperrealistic. ' . ucfirst(implode('. ', array_keys($lines))) . '.';
+        return $lines === [] ? '' : ucfirst(implode('. ', array_keys($lines))) . '.';
     }
 
     /**
-     * Environment rendered ONCE (world facts are baseline/global, not per-beat).
-     * NOTE: emits every world-fact value — including narrative ones (score,
-     * quarter). Filtering visual vs narrative facts is an open design decision.
+     * Setting as a visual line. Uses the world-fact KEY to give each value a
+     * concrete noun (crowd/light) — phrasing, adapter territory. Only visual
+     * world state reaches here (world_facts is scoped upstream).
      */
-    private function environment(StructuredPrompt $prompt): string
+    private function environmentBlock(StructuredPrompt $prompt): string
     {
         $details = [];
         foreach ($prompt->shots() as $shot) {
-            foreach ($shot->environment->details as $value) {
-                $details[$value] = true;   // dedupe across beats
+            foreach ($shot->environment->details as $key => $value) {
+                $details[$this->envPhrase((string) $key, (string) $value)] = true;
             }
         }
-        return $details === [] ? '' : 'ENVIRONMENT: ' . implode(', ', array_keys($details)) . '.';
+        return $details === [] ? '' : $this->block('ENVIRONMENT', [ucfirst(implode(', ', array_keys($details))) . '.']);
     }
 
-    /** @param SubjectDescriptor[] $subjects */
-    private function subjectsLine(array $subjects): string
+    private function envPhrase(string $key, string $value): string
     {
-        if ($subjects === []) {
-            return '';
-        }
-        $parts = array_map(
-            static fn(SubjectDescriptor $s): string => $s->label,
-            $subjects,
-        );
-        return 'Featuring ' . $this->join($parts) . '.';
+        return match ($key) {
+            'crowd' => "{$value} crowd",
+            'light' => "{$value} light",
+            default => $value,
+        };
     }
 
-    private function beats(StructuredPrompt $prompt): string
+    /** @return ShotPrompt[] ordered by ordinal */
+    private function orderedShots(StructuredPrompt $prompt): array
     {
         $shots = $prompt->shots();
-        ksort($shots);   // ordinal order
-
-        $segments = [];
-        foreach ($shots as $shot) {
-            $segments[] = $this->beatSegment($shot);
-        }
-        return implode(' ', $segments);
+        ksort($shots);
+        return array_values($shots);
     }
 
-    private function beatSegment(ShotPrompt $shot): string
+    private function beatBlock(ShotPrompt $shot): string
     {
-        $clauses = [rtrim($shot->action, '.')];
-
+        $lines = [];
         if ($shot->camera !== null) {
-            $clauses[] = $this->cameraPhrase($shot->camera);
+            $lines[] = ucfirst($this->cameraPhrase($shot->camera)) . '.';
         }
-        foreach ($shot->emotions as $emotion) {
-            $clauses[] = $this->emotionPhrase($emotion);
-        }
-        foreach ($shot->performances as $performance) {
-            $cues = array_map(static fn($c) => $c->description, $performance->cues);
-            if ($cues !== []) {
-                $clauses[] = $this->join($cues);
+        $lines[] = rtrim($shot->action, '.') . '.';
+        if ($this->isCloseShot($shot->camera)) {
+            foreach ($shot->emotions as $emotion) {
+                $lines[] = ucfirst($this->emotionVisual($emotion)) . '.';
             }
         }
+        if (($cue = $this->leadCue($shot)) !== null) {
+            $lines[] = ucfirst(rtrim($cue, '.')) . '.';
+        }
+        if (($motion = $this->motionWord($shot->energy)) !== '') {
+            $lines[] = ucfirst($motion) . '.';
+        }
+        if ($shot->endingFrame !== null) {
+            $lines[] = ucfirst(rtrim($shot->endingFrame->description, '.')) . '.';   // authored closing image
+        }
 
-        return implode(', ', array_filter($clauses)) . '.';
+        return $this->block($this->beatLabel($shot), $lines);
     }
 
-    private function style(StructuredPrompt $prompt): string
+    private function beatLabel(ShotPrompt $shot): string
     {
-        $bits = ['cinematic, sharp focus, no text overlays'];
+        return $shot->beat !== null ? strtoupper($shot->beat->value) : 'SHOT ' . ($shot->ordinal + 1);
+    }
 
-        // Motifs — PRIMARY repeated more emphatically.
+    /** The hero moment as a held, isolated climax — its own emphatic block. */
+    private function finalShotBlock(StructuredPrompt $prompt): string
+    {
+        $hero = $prompt->heroMoment();
+        if ($hero === null) {
+            return '';
+        }
+        return $this->block('FINAL SHOT', [
+            'Freeze the frame, everything goes still.',
+            ucfirst(rtrim($hero->description, '.')) . '.',
+        ]);
+    }
+
+    /** Motifs as directorial guidance, ranked PRIMARY vs secondary. */
+    private function visualLanguageBlock(StructuredPrompt $prompt): string
+    {
+        $primary = [];
+        $secondary = [];
         foreach ($prompt->motifs() as $motif) {
-            $bits[] = $motif->importance === MotifImportance::PRIMARY
-                ? "recurring {$motif->label} motif throughout"
-                : $motif->label;
+            if ($motif->importance === MotifImportance::PRIMARY) {
+                $primary[] = $motif->label;
+            } else {
+                $secondary[] = $motif->label;
+            }
         }
-
-        if (($hero = $prompt->heroMoment()) !== null) {
-            $bits[] = "hero frame: {$hero->description}";
+        $lines = [];
+        if ($primary !== []) {
+            $lines[] = 'Primary motif: ' . $this->join($primary) . '.';
         }
-
-        return 'STYLE: ' . implode('; ', $bits) . '.';
+        if ($secondary !== []) {
+            $lines[] = 'Secondary: ' . $this->join($secondary) . '.';
+        }
+        return $this->block('VISUAL LANGUAGE', $lines);
     }
 
-    /** ALWAYS constraints reinforce the positive prompt (NEVER go to the negative). */
-    private function mustShow(StructuredPrompt $prompt): string
+    /** Explicit continuity — Kling resets between beats unless told to hold the shot. */
+    private function cameraBlock(StructuredPrompt $prompt): string
     {
-        $rules = [];
+        $lock = 'locked on the action';
+        foreach ($prompt->subjects() as $s) {
+            if ($s->isPrimary) {
+                $lock = 'locked on the ' . lcfirst($s->label);
+                break;
+            }
+        }
+        return $this->block('CAMERA', ["One continuous cinematic shot, {$lock}, never cutting."]);
+    }
+
+    /** Style baseline plus ALWAYS constraints, phrased as strong persistence. */
+    private function styleBlock(StructuredPrompt $prompt): string
+    {
+        $lines = ['Cinematic, sharp focus, no text.'];
         foreach ($prompt->constraints() as $c) {
             if ($c->mode === ConstraintMode::ALWAYS) {
-                $rules[] = "keep the {$c->target} {$c->rule}";
+                $lines[] = ucfirst("keep the {$c->target} {$c->rule} in every frame; never lose the {$c->target}") . '.';
             }
         }
-        return $rules === [] ? '' : 'ALWAYS: ' . implode('; ', $rules) . '.';
+        return $this->block('STYLE', $lines);
     }
 
     private function negative(StructuredPrompt $prompt): ?string
@@ -246,23 +393,68 @@ final class KlingPromptRenderer implements PromptRenderer
 
     // ── Phrase helpers ────────────────────────────────────────────────────────
 
+    /** A labelled storyboard block: "LABEL\nline.\nline." — empty if no lines. */
+    private function block(string $label, array $lines): string
+    {
+        $lines = array_values(array_filter($lines, static fn(string $l): bool => $l !== ''));
+        return $lines === [] ? '' : $label . "\n" . implode("\n", $lines);
+    }
+
+    /** Compact tags, not prose: "close-up, 85mm, low angle, tracking". */
     private function cameraPhrase(CameraConfiguration $cam): string
     {
-        return implode(' ', array_filter([
+        return implode(', ', array_filter([
             self::SHOT_TYPE[$cam->shotType->value] ?? $cam->shotType->value,
+            self::LENS[$cam->lens->value]          ?? $cam->lens->value,
             self::ANGLE[$cam->angle->value]        ?? '',
-            'with ' . (self::MOVEMENT[$cam->movement->value] ?? $cam->movement->value),
-            '(' . (self::LENS[$cam->lens->value] ?? $cam->lens->value) . ')',
+            self::MOVEMENT[$cam->movement->value]  ?? $cam->movement->value,
         ]));
     }
 
-    private function emotionPhrase(CharacterEmotion $emotion): string
+    private function isCloseShot(?CameraConfiguration $cam): bool
     {
-        $state     = self::EMOTION[$emotion->state->value] ?? $emotion->state->value;
-        $modifier  = self::INTENSITY[$emotion->intensity->value] ?? '';
-        $adjective = trim("{$modifier} {$state}");
-        $because   = $emotion->cause !== null ? " because of {$emotion->cause}" : '';
-        return "{$adjective} expression{$because}";
+        return $cam !== null && in_array($cam->shotType->value, self::CLOSE_SHOTS, true);
+    }
+
+    private function emotionVisual(CharacterEmotion $emotion): string
+    {
+        return self::EMOTION_VISUAL[$emotion->state->value] ?? $emotion->state->value;
+    }
+
+    /** Energy (0–100) → motion intensity language. Copied signal, not invented. */
+    private function motionWord(?int $energy): string
+    {
+        if ($energy === null) {
+            return '';
+        }
+        return match (true) {
+            $energy >= 85 => 'explosive motion',
+            $energy >= 55 => 'urgent motion',
+            $energy >= 25 => 'tense, controlled motion',
+            default       => 'still, held motion',
+        };
+    }
+
+    /**
+     * The single, most legible performance cue for a beat — the first cue on a
+     * gross-motor channel (HANDS/POSTURE) or no channel. Micro-expression, breath,
+     * and voice cues are skipped because Kling cannot render them.
+     */
+    private function leadCue(ShotPrompt $shot): ?string
+    {
+        foreach ($shot->performances as $performance) {
+            foreach ($performance->cues as $cue) {
+                if ($this->isRenderable($cue)) {
+                    return $cue->description;
+                }
+            }
+        }
+        return null;
+    }
+
+    private function isRenderable(PerformanceCue $cue): bool
+    {
+        return !in_array($cue->channel, self::UNRENDERABLE_CHANNELS, true);
     }
 
     /** @param string[] $items */

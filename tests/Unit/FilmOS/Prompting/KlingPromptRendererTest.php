@@ -8,7 +8,10 @@ use App\Services\AI\FilmOS\Narrative\Character\CharacterEmotion;
 use App\Services\AI\FilmOS\Narrative\Character\EmotionalState;
 use App\Services\AI\FilmOS\Narrative\Character\EmotionIntensity;
 use App\Services\AI\FilmOS\Narrative\Performance\CharacterPerformance;
+use App\Services\AI\FilmOS\Narrative\Performance\PerformanceChannel;
 use App\Services\AI\FilmOS\Narrative\Performance\PerformanceCue;
+use App\Services\AI\FilmOS\Narrative\Production\Conflict;
+use App\Services\AI\FilmOS\Narrative\Production\ConflictType;
 use App\Services\AI\FilmOS\Narrative\Production\ConstraintMode;
 use App\Services\AI\FilmOS\Narrative\Production\MotifImportance;
 use App\Services\AI\FilmOS\Narrative\Production\VisualConstraint;
@@ -24,8 +27,10 @@ use App\Services\AI\FilmOS\Prompting\Adapter\KlingPromptRenderer;
 use App\Services\AI\FilmOS\Prompting\Adapter\ProviderId;
 use App\Services\AI\FilmOS\Prompting\IR\PromptEnvironment;
 use App\Services\AI\FilmOS\Prompting\IR\ShotPrompt;
+use App\Services\AI\FilmOS\Prompting\IR\KeyVisual;
 use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
+use App\Services\AI\FilmOS\Prompting\IR\VisualRelevance;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -55,26 +60,78 @@ final class KlingPromptRendererTest extends TestCase
     {
         $out = $this->render($this->fullPrompt());
 
-        $this->assertStringContainsString('close-up', $out->positive);
-        $this->assertStringContainsString('85mm telephoto compression', $out->positive);
+        $this->assertStringContainsStringIgnoringCase('close-up', $out->positive);
+        $this->assertStringContainsString('85mm', $out->positive);   // compact tag, not "telephoto compression"
     }
 
-    public function test_emotion_is_phrased_with_intensity(): void
+    public function test_emotion_renders_as_facial_behaviour_on_a_close_shot(): void
+    {
+        $out = $this->render($this->fullPrompt());   // hook is a close-up
+
+        // Emotion is rendered as observable behaviour a camera sees, not the label.
+        $this->assertStringContainsString('jaw tight', $out->positive);
+        $this->assertStringNotContainsString('fearful', $out->positive);
+    }
+
+    public function test_emotion_is_dropped_on_a_distant_shot(): void
+    {
+        // Emotion does not read at wide distance, so it must not be rendered there.
+        $wide = new ShotPrompt(
+            ordinal: 0, beat: null, action: 'He stands downfield',
+            emotions: ['h' => new CharacterEmotion(EmotionalState::FEAR, EmotionIntensity::INTENSE)],
+            camera: new CameraConfiguration(ShotType::WIDE, CameraAngle::LOW, CameraMovement::STATIC, LensType::WIDE),
+            environment: new PromptEnvironment(),
+        );
+        $out = $this->render(new StructuredPrompt(
+            shots:    [0 => $wide],
+            subjects: [$this->subject(WorldObjectType::CHARACTER, 'Hero')],
+        ));
+
+        $this->assertStringNotContainsString('jaw tight', $out->positive);
+    }
+
+    public function test_filmable_conflict_surfaces_and_abstract_conflict_drops(): void
     {
         $out = $this->render($this->fullPrompt());
 
-        $this->assertStringContainsString('intensely fearful', $out->positive);
+        $this->assertStringContainsStringIgnoringCase('pocket collapsing', $out->positive);   // PHYSICAL — filmable
+        $this->assertStringNotContainsString('clock running out', $out->positive);            // TIME — abstract, dropped
     }
 
-    public function test_performance_cues_appear_in_order(): void
+    public function test_performance_keeps_a_gross_motor_cue_and_caps_at_one_per_beat(): void
     {
-        $out = $this->render($this->fullPrompt());
+        // GAZE is dropped (Kling can't render micro-expression); the first
+        // gross-motor cue survives; any further cue is capped out to stay short.
+        $out = $this->render($this->beatWithCues([
+            new PerformanceCue('eyes flick left', PerformanceChannel::GAZE),
+            new PerformanceCue('grip tightens on the ball', PerformanceChannel::HANDS),
+            new PerformanceCue('shoulders square', PerformanceChannel::POSTURE),
+        ]));
 
-        $holds = strpos($out->positive, 'holds breath');
-        $jaw   = strpos($out->positive, 'jaw tightens');
-        $this->assertNotFalse($holds);
-        $this->assertNotFalse($jaw);
-        $this->assertLessThan($jaw, $holds, 'cue order (temporal) is preserved');
+        $this->assertStringNotContainsStringIgnoringCase('eyes flick', $out->positive, 'GAZE cue must be dropped');
+        $this->assertStringContainsStringIgnoringCase('grip tightens on the ball', $out->positive, 'first gross-motor cue kept');
+        $this->assertStringNotContainsStringIgnoringCase('shoulders square', $out->positive, 'at most one cue per beat');
+    }
+
+    public function test_breath_and_face_cues_are_dropped(): void
+    {
+        $out = $this->render($this->beatWithCues([
+            new PerformanceCue('half breath', PerformanceChannel::BREATH),
+            new PerformanceCue('jaw tightens', PerformanceChannel::FACE),
+        ]));
+
+        $this->assertStringNotContainsStringIgnoringCase('half breath', $out->positive);
+        $this->assertStringNotContainsStringIgnoringCase('jaw tightens', $out->positive);
+    }
+
+    public function test_untagged_cue_is_kept(): void
+    {
+        // A cue with no channel ("full-body release") is gross-motor by nature — keep it.
+        $out = $this->render($this->beatWithCues([
+            new PerformanceCue('full-body release into the throw'),
+        ]));
+
+        $this->assertStringContainsStringIgnoringCase('full-body release into the throw', $out->positive);
     }
 
     public function test_never_constraints_become_negative_prompt(): void
@@ -91,16 +148,25 @@ final class KlingPromptRendererTest extends TestCase
         $out = $this->render($this->fullPrompt());
 
         // ALWAYS constraint must appear in positive, never negative.
-        $this->assertStringContainsString('keep the football visible after release', $out->positive);
+        $this->assertStringContainsStringIgnoringCase('keep the football visible after release', $out->positive);
         $this->assertStringNotContainsString('football visible after release', (string) $out->negative);
     }
 
-    public function test_motifs_and_hero_moment_appear(): void
+    public function test_hero_moment_is_its_own_final_shot_line(): void
     {
         $out = $this->render($this->fullPrompt());
 
+        // Hero moment gets emphasis as its own line, not buried in the style tail.
+        $this->assertStringContainsString('FINAL SHOT', $out->positive);
+        $this->assertStringContainsStringIgnoringCase('ball overhead', $out->positive);
+    }
+
+    public function test_motifs_appear_in_a_visual_language_line(): void
+    {
+        $out = $this->render($this->fullPrompt());
+
+        $this->assertStringContainsString('VISUAL LANGUAGE', $out->positive);
         $this->assertStringContainsString('spiral', $out->positive);
-        $this->assertStringContainsString('hero frame', $out->positive);
     }
 
     public function test_metadata_carries_duration_and_energy_peak(): void
@@ -112,7 +178,44 @@ final class KlingPromptRendererTest extends TestCase
         $this->assertSame(100, $out->metadata['energy_peak']);
     }
 
+    public function test_key_visuals_from_article_are_rendered(): void
+    {
+        // facts[].visual_hint → KEY VISUALS block (compiler ranks; renderer phrases).
+        $out = $this->render(new StructuredPrompt(
+            shots:      [0 => $this->minimalShot()],
+            subjects:   [$this->subject(WorldObjectType::CHARACTER, 'Hero')],
+            keyVisuals: [
+                new KeyVisual('two defenders converging', VisualRelevance::HIGH),
+                new KeyVisual('lone figure downfield', VisualRelevance::MEDIUM),
+            ],
+        ));
+
+        $this->assertStringContainsString('KEY VISUALS', $out->positive);
+        $this->assertStringContainsStringIgnoringCase('two defenders converging', $out->positive);
+        $this->assertStringContainsStringIgnoringCase('lone figure downfield', $out->positive);
+    }
+
+    public function test_subject_renders_authored_appearance_over_bare_attributes(): void
+    {
+        $subject = new SubjectDescriptor(
+            'qb', WorldObjectType::CHARACTER, 'Quarterback', AttributeBag::from(['team' => 'red']),
+            isPrimary: true, appearance: ['outfit' => 'red jersey number 12, white helmet', 'build' => 'tall athletic'],
+        );
+        $out = $this->render(new StructuredPrompt(shots: [0 => $this->minimalShot()], subjects: [$subject]));
+
+        $this->assertStringContainsString('red jersey number 12, white helmet', $out->positive);
+        $this->assertStringContainsString('tall athletic', $out->positive);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private function minimalShot(): ShotPrompt
+    {
+        return new ShotPrompt(
+            ordinal: 0, beat: null, action: 'The subject moves',
+            emotions: [], camera: null, environment: new PromptEnvironment(),
+        );
+    }
 
     private function render(StructuredPrompt $p): \App\Services\AI\FilmOS\Prompting\Adapter\RenderedPrompt
     {
@@ -122,6 +225,20 @@ final class KlingPromptRendererTest extends TestCase
     private function subject(WorldObjectType $type, string $label): SubjectDescriptor
     {
         return new SubjectDescriptor('obj', $type, $label, AttributeBag::empty(), isPrimary: true);
+    }
+
+    /** @param PerformanceCue[] $cues */
+    private function beatWithCues(array $cues): StructuredPrompt
+    {
+        $shot = new ShotPrompt(
+            ordinal: 0, beat: null, action: 'The hero acts',
+            emotions: [], camera: null, environment: new PromptEnvironment(),
+            performances: ['hero' => new CharacterPerformance('hero', 0, null, $cues)],
+        );
+        return new StructuredPrompt(
+            shots:    [0 => $shot],
+            subjects: [$this->subject(WorldObjectType::CHARACTER, 'Hero')],
+        );
     }
 
     private function promptWithSubject(WorldObjectType $type, string $label): StructuredPrompt
@@ -165,13 +282,16 @@ final class KlingPromptRendererTest extends TestCase
         return new StructuredPrompt(
             shots:          [0 => $hook, 1 => $payoff],
             subjects:       [$this->subject(WorldObjectType::CHARACTER, 'Hero')],
-            directorIntent: new \App\Services\AI\FilmOS\Narrative\Production\DirectorIntent('all is lost'),
             motifs:         [new VisualMotif('spiral', MotifImportance::PRIMARY)],
             constraints:    [
                 new VisualConstraint('crowd', 'blocking the hero', ConstraintMode::NEVER),
                 new VisualConstraint('football', 'visible after release', ConstraintMode::ALWAYS),
             ],
             heroMoment:     new \App\Services\AI\FilmOS\Narrative\Production\HeroMoment(1, 'ball overhead'),
+            conflicts:      [
+                new Conflict('pocket collapsing from both edges', ConflictType::PHYSICAL),
+                new Conflict('clock running out', ConflictType::TIME),
+            ],
         );
     }
 }

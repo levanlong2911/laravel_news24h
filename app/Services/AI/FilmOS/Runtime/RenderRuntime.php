@@ -28,7 +28,20 @@ final class RenderRuntime
             );
         }
 
-        $result = $this->client->submit($ir->traceId, $this->serializer->serialize($ir));
+        return $this->runPayload($ir->traceId, $this->serializer->serialize($ir));
+    }
+
+    /**
+     * Execute a provider-ready payload: submit -> poll (with retry/timeout) ->
+     * download. The single home of the execution loop — reused both by run()
+     * (RenderIR path) and by the benchmark path (RenderRequest -> builder ->
+     * payload), so there is no parallel runtime.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public function runPayload(string $traceId, array $payload): ProviderResult
+    {
+        $result = $this->client->submit($traceId, $payload);
         $result = $this->waitForCompletion($result);
 
         if ($result->status === RuntimeEvent::COMPLETED) {

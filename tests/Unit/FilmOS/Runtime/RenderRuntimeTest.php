@@ -131,6 +131,34 @@ final class RenderRuntimeTest extends TestCase
         $this->assertSame(2, $result->metadata['pollCount']);
     }
 
+    // ── runPayload (benchmark render path) ──────────────────────────────────────
+
+    /** @test */
+    public function run_payload_drives_submit_poll_download_without_serializer(): void
+    {
+        // Benchmark path: caller already has a provider payload (from a builder),
+        // so runPayload must never touch the serializer.
+        $this->serializer->expects($this->never())->method('serialize');
+        $this->serializer->expects($this->never())->method('supports');
+
+        $payload = ['prompt' => 'a receiver downfield', 'mode' => 'std', 'duration' => '5'];
+
+        $this->client->expects($this->once())->method('submit')
+            ->with(self::TRACE_ID, $payload)
+            ->willReturn($this->providerResult(RuntimeEvent::SUBMITTED));
+
+        $this->client->expects($this->once())->method('poll')
+            ->willReturn($this->providerResult(RuntimeEvent::COMPLETED));
+
+        $this->client->expects($this->once())->method('download')
+            ->willReturn($this->providerResult(RuntimeEvent::DOWNLOAD_COMPLETED, self::ASSET_URL, 5.0));
+
+        $result = $this->runtime()->runPayload(self::TRACE_ID, $payload);
+
+        $this->assertSame(RuntimeEvent::DOWNLOAD_COMPLETED, $result->status);
+        $this->assertSame(self::ASSET_URL, $result->assetUrl);
+    }
+
     // ── traceId contract ──────────────────────────────────────────────────────
 
     /** @test */

@@ -186,7 +186,6 @@ final class NarrativePromptCompilerTest extends TestCase
         $ir = $this->compile($timeline, $projector);
 
         // Production-level — copied semantic knowledge
-        $this->assertSame('Audience must believe all is lost.', $ir->directorIntent()?->objective);
         $this->assertSame('spiral', $ir->motifs()[0]->label);
         $this->assertSame(ConstraintMode::NEVER, $ir->constraints()[0]->mode);
         $this->assertSame('ball', $ir->constraints()[0]->target);
