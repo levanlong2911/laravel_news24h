@@ -340,6 +340,26 @@ The reason is that the gate answers exactly one **class** of decision:
 
 Silence is not permission and it is not prohibition. It means the claim needs a different argument.
 
+Which sharpens the rule into its real form:
+
+> **Each question discharges exactly one obligation. Never reuse its proof for another layer.**
+
+The §10.3 failure was not weak reasoning. It was **one proof spent twice** — Q3's answer discharged
+the ontology obligation and was then handed to the execution obligation, which it had never been
+about. Naming it that way makes it a checkable error rather than a matter of judgement:
+
+| Question | Discharges | **Cannot** discharge |
+|---|---|---|
+| Is the residual isolated? | benchmark validity | ontology |
+| Is the dimension missing? | ontology | execution |
+| What is its semantic lifetime? | the semantic contract | the runtime algorithm |
+| Boundary invariant or runtime computation? | implementation | ontology |
+
+**No row may cross into the third column.** The last row matters as much as the second and is easier
+to miss: an implementation's convenience never earns a concept. *"The runtime would be simpler with a
+new entity type"* is an ontology claim made by an execution proof, the same error running the other
+way.
+
 ### 10.5 A general question is free; a general answer is not
 
 Ask the widest question that does not smuggle in an answer. For the next phase that is not *"how do
@@ -353,17 +373,23 @@ active participants, or something unnamed rather than location.
 **But breadth of question does not license breadth of answer.** One measured residual is one use
 case. Answering *"semantic lifetime"* with a mechanism general enough to cover weather and emotional
 state would break the standing rule against abstraction without three real cases — and would do it
-while sounding principled, which is the dangerous version. **Ask wide; answer only as wide as the
-evidence.**
+while sounding principled, which is the dangerous version.
+
+> **Generality belongs to questions. Specificity belongs to answers.**
+> Questions should maximise future validity. Answers should minimise unsupported commitments.
 
 The sequence, then, is semantics before location and location before machinery:
 
 1. Which residual is being **de-noised**? (§10.2 — not "which feature is being fixed")
 2. Does the missing information **already exist** in the ontology? (Q3)
 3. If it does, what is its **semantic lifetime**?
+4. Only then: **boundary invariant, or runtime computation?**
 
-Only after (3) does *"boundary invariant or runtime computation"* become a design question at all.
-Ordering it earlier lets implementation answer a question semantics has not finished asking.
+**Read this as a chain of obligations, not a workflow** — the difference is not cosmetic. A workflow
+says *"do these in order"*; a chain of obligations says **you are not yet permitted to ask the next
+question.** Until (2) is discharged, (3) does not exist; until (3) is discharged, (4) is not a valid
+question — asking it early lets implementation answer something semantics has not finished asking,
+and the answer will look reasoned because the steps were all present, just not all earned.
 
 ### 10.1 Residual analysis is not clustering
 
