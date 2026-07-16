@@ -45,4 +45,15 @@ final class PlanningDecisionEvent extends AbstractFilmOSEvent
             'latencyConstrained'      => $this->constrainedMaxLatencyMs < $this->originalMaxLatencyMs,
         ];
     }
+
+    /**
+     * Structural fields for deterministic hashing. The payload is already
+     * deterministic here — counts, policy names, plan-constraint budgets and
+     * booleans, with no executionId, timestamp, or runtime cost — so it doubles
+     * as the canonical data.
+     */
+    public function canonicalData(): array
+    {
+        return $this->payload();
+    }
 }
