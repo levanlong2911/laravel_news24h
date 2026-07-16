@@ -272,6 +272,34 @@ upstream and re-invented downstream** — and that is what had to be modelled.
 "Never before" is the rule. That sentence is why the rule exists — which is the part that survives
 contact with an abstraction nobody has thought of yet.
 
+### 10.3 The gate
+
+Any proposal for a new module answers three questions before it is accepted:
+
+1. **Which residual does it explain?**
+2. **Has that residual been causally isolated?** (§10.2 — otherwise it is error aggregation)
+3. **Is the new dimension genuinely inexpressible in the current ontology?**
+
+Fail any one and the module has not earned its existence yet. Note that none of the three names
+Event Model, Persistent Context or Coverage: when the roadmap turns to Temporal Context, an Intent
+Model, or something unnamed today, the questions are unchanged.
+
+**Question 3 is the one that bites**, and it separates two things this ADR had been treating as one:
+
+| | Residual | Question 3 |
+|---|---|---|
+| **Event Model** | focus misses | *motion* is genuinely absent from the ontology — **inexpressible** |
+| **Persistent context** | unshowable location facts | **expressible today** — an author can simply list the location in every beat's `scene_nodes` |
+
+So persistent context may not be a new abstraction at all. The ontology can already say it; it can
+only say it by **filing an identity fact inside a staging structure**, which §3 forbids. That is a
+*boundary violation*, not an expressiveness gap — and the remedy for a boundary violation is a rule,
+not a module.
+
+Which is the gate working on its first use: it did not approve a module, it asked whether one was
+needed. §9's ordering stands either way — the work still comes first, because it still removes the
+noise. What changes is its expected size.
+
 ### 10.1 Residual analysis is not clustering
 
 **Residual analysis should be reproducible. Residual *interpretation* cannot be fully automated.** An
