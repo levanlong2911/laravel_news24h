@@ -40,37 +40,25 @@ use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
  *   receiver that enters at the payoff is not in the hook, so the contradiction
  *   never reaches the renderer to be papered over with a negative prompt.
  *
- * TRIAGE — importance says what would hurt least to lose. Content that a camera
- *   cannot read is triaged here rather than in the adapter: emotion is planned
- *   only where the shot is close enough to see a face, and of a beat's acting
- *   cues only the first gross-motor one is planned, because current video models
- *   render body movement and not micro-expression, breath or gaze.
+ * TRIAGE — content a camera cannot read is dropped here rather than in the
+ *   adapter: emotion is planned only where the shot is close enough to see a
+ *   face, and of a beat's acting cues only the first gross-motor one, because
+ *   current video models render body movement and not micro-expression, breath
+ *   or gaze. What each slot is worth losing lives in ImportancePolicy.
  *
- * ORDERING — sequence within a section. Kept separate from importance: ordering
+ * ORDERING — sequence, from OrderPolicy. Kept separate from importance: ordering
  *   is dramaturgy, importance is triage, and one integer cannot be both.
+ *
+ * Importance and order are stateless tables rather than pipeline passes: they are
+ * properties of a slot, so a pass that rebuilt every immutable item just to stamp
+ * one field on it would be plumbing, not design.
  */
 final class RenderPlanner
 {
-    /** Global section order. */
-    private const ORDER_STYLE        = 10;
-    private const ORDER_PRIMARY      = 20;
-    private const ORDER_SECONDARY    = 21;
-    private const ORDER_BACKGROUND   = 22;
-    private const ORDER_ANATOMY      = 25;
-    private const ORDER_ENVIRONMENT  = 30;
-    private const ORDER_MOTIF        = 40;
-    private const ORDER_CONFLICT     = 49;
-    private const ORDER_KEY_VISUAL   = 50;
-
-    /** Per-beat order. */
-    private const ORDER_CAMERA   = 10;
-    private const ORDER_IN_FRAME = 20;
-    private const ORDER_FOCUS    = 30;
-    private const ORDER_ACTION   = 40;
-    private const ORDER_EMOTION  = 50;
-    private const ORDER_CUE      = 60;
-    private const ORDER_MOTION   = 70;
-    private const ORDER_ENDING   = 80;
+    public function __construct(
+        private readonly ImportancePolicy $importance = new ImportancePolicy(),
+        private readonly OrderPolicy      $order      = new OrderPolicy(),
+    ) {}
 
     /** Shot sizes where a face is close enough to read. */
     private const CLOSE_SHOTS = [ShotType::CLOSE_UP, ShotType::EXTREME_CLOSE_UP];
@@ -106,7 +94,7 @@ final class RenderPlanner
         $items = [];
 
         if ($prompt->visualStyle() !== null) {
-            $items[] = new PlanItem(PlanSlot::VISUAL_STYLE, PlanImportance::CRITICAL, self::ORDER_STYLE, $prompt->visualStyle());
+            $items[] = new PlanItem(PlanSlot::VISUAL_STYLE, $this->importance->for(PlanSlot::VISUAL_STYLE), $this->order->for(PlanSlot::VISUAL_STYLE), $prompt->visualStyle());
         }
 
         // Identity, grouped by tier. Only the subjects the camera follows are
@@ -123,23 +111,23 @@ final class RenderPlanner
             }
         }
         if ($primary !== []) {
-            $items[] = new PlanItem(PlanSlot::SUBJECT_PRIMARY, PlanImportance::CRITICAL, self::ORDER_PRIMARY, $primary);
+            $items[] = new PlanItem(PlanSlot::SUBJECT_PRIMARY, $this->importance->for(PlanSlot::SUBJECT_PRIMARY), $this->order->for(PlanSlot::SUBJECT_PRIMARY), $primary);
         }
         if ($secondary !== []) {
-            $items[] = new PlanItem(PlanSlot::SUBJECT_SECONDARY, PlanImportance::OPTIONAL, self::ORDER_SECONDARY, $secondary);
+            $items[] = new PlanItem(PlanSlot::SUBJECT_SECONDARY, $this->importance->for(PlanSlot::SUBJECT_SECONDARY), $this->order->for(PlanSlot::SUBJECT_SECONDARY), $secondary);
         }
         if ($background !== []) {
-            $items[] = new PlanItem(PlanSlot::SUBJECT_BACKGROUND, PlanImportance::OPTIONAL, self::ORDER_BACKGROUND, $background);
+            $items[] = new PlanItem(PlanSlot::SUBJECT_BACKGROUND, $this->importance->for(PlanSlot::SUBJECT_BACKGROUND), $this->order->for(PlanSlot::SUBJECT_BACKGROUND), $background);
         }
 
         // The anatomy guard is never expendable: a deformed subject fails the shot.
         if ($prompt->subjects() !== []) {
-            $items[] = new PlanItem(PlanSlot::ANATOMY, PlanImportance::CRITICAL, self::ORDER_ANATOMY, $prompt->subjects());
+            $items[] = new PlanItem(PlanSlot::ANATOMY, $this->importance->for(PlanSlot::ANATOMY), $this->order->for(PlanSlot::ANATOMY), $prompt->subjects());
         }
 
         $environment = $this->environment($prompt);
         if ($environment !== []) {
-            $items[] = new PlanItem(PlanSlot::ENVIRONMENT, PlanImportance::CRITICAL, self::ORDER_ENVIRONMENT, $environment);
+            $items[] = new PlanItem(PlanSlot::ENVIRONMENT, $this->importance->for(PlanSlot::ENVIRONMENT), $this->order->for(PlanSlot::ENVIRONMENT), $environment);
         }
 
         $primaryMotifs = $secondaryMotifs = [];
@@ -151,10 +139,10 @@ final class RenderPlanner
             }
         }
         if ($primaryMotifs !== []) {
-            $items[] = new PlanItem(PlanSlot::MOTIF_PRIMARY, PlanImportance::OPTIONAL, self::ORDER_MOTIF, $primaryMotifs);
+            $items[] = new PlanItem(PlanSlot::MOTIF_PRIMARY, $this->importance->for(PlanSlot::MOTIF_PRIMARY), $this->order->for(PlanSlot::MOTIF_PRIMARY), $primaryMotifs);
         }
         if ($secondaryMotifs !== []) {
-            $items[] = new PlanItem(PlanSlot::MOTIF_SECONDARY, PlanImportance::OPTIONAL, self::ORDER_MOTIF + 1, $secondaryMotifs);
+            $items[] = new PlanItem(PlanSlot::MOTIF_SECONDARY, $this->importance->for(PlanSlot::MOTIF_SECONDARY), $this->order->for(PlanSlot::MOTIF_SECONDARY), $secondaryMotifs);
         }
 
         // OWNERSHIP: beat actions own what happens. A fact hint or a conflict
@@ -164,11 +152,11 @@ final class RenderPlanner
         // camera image at all and are never planned.
         foreach ($prompt->conflicts() as $conflict) {
             if (in_array($conflict->type, self::FILMABLE_CONFLICTS, true)) {
-                $items[] = new PlanItem(PlanSlot::CONFLICT, PlanImportance::OPTIONAL, self::ORDER_CONFLICT, $conflict);
+                $items[] = new PlanItem(PlanSlot::CONFLICT, $this->importance->for(PlanSlot::CONFLICT), $this->order->for(PlanSlot::CONFLICT), $conflict);
             }
         }
         foreach ($prompt->keyVisuals() as $visual) {
-            $items[] = new PlanItem(PlanSlot::KEY_VISUAL, PlanImportance::OPTIONAL, self::ORDER_KEY_VISUAL, $visual);
+            $items[] = new PlanItem(PlanSlot::KEY_VISUAL, $this->importance->for(PlanSlot::KEY_VISUAL), $this->order->for(PlanSlot::KEY_VISUAL), $visual);
         }
 
         return $this->ordered($items);
@@ -199,7 +187,7 @@ final class RenderPlanner
         $items = [];
 
         if ($shot->camera !== null) {
-            $items[] = new PlanItem(PlanSlot::CAMERA, PlanImportance::IMPORTANT, self::ORDER_CAMERA, $shot->camera);
+            $items[] = new PlanItem(PlanSlot::CAMERA, $this->importance->for(PlanSlot::CAMERA), $this->order->for(PlanSlot::CAMERA), $shot->camera);
         }
 
         // STAGING: only what the scene actually places in this beat.
@@ -210,33 +198,33 @@ final class RenderPlanner
             }
         }
         if ($inFrame !== []) {
-            $items[] = new PlanItem(PlanSlot::IN_FRAME, PlanImportance::IMPORTANT, self::ORDER_IN_FRAME, $inFrame);
+            $items[] = new PlanItem(PlanSlot::IN_FRAME, $this->importance->for(PlanSlot::IN_FRAME), $this->order->for(PlanSlot::IN_FRAME), $inFrame);
         }
 
         if ($shot->focusSubjectId !== null && isset($subjects[$shot->focusSubjectId])) {
-            $items[] = new PlanItem(PlanSlot::FOCUS, PlanImportance::IMPORTANT, self::ORDER_FOCUS, $subjects[$shot->focusSubjectId]);
+            $items[] = new PlanItem(PlanSlot::FOCUS, $this->importance->for(PlanSlot::FOCUS), $this->order->for(PlanSlot::FOCUS), $subjects[$shot->focusSubjectId]);
         }
 
         // What happens is never expendable.
-        $items[] = new PlanItem(PlanSlot::ACTION, PlanImportance::CRITICAL, self::ORDER_ACTION, $shot->action);
+        $items[] = new PlanItem(PlanSlot::ACTION, $this->importance->for(PlanSlot::ACTION), $this->order->for(PlanSlot::ACTION), $shot->action);
 
         // TRIAGE: a face only reads when the camera is close to it.
         if ($this->isCloseShot($shot->camera)) {
             foreach ($shot->emotions as $emotion) {
-                $items[] = new PlanItem(PlanSlot::EMOTION, PlanImportance::IMPORTANT, self::ORDER_EMOTION, $emotion);
+                $items[] = new PlanItem(PlanSlot::EMOTION, $this->importance->for(PlanSlot::EMOTION), $this->order->for(PlanSlot::EMOTION), $emotion);
             }
         }
 
         if (($cue = $this->readableCue($shot)) !== null) {
-            $items[] = new PlanItem(PlanSlot::PERFORMANCE_CUE, PlanImportance::IMPORTANT, self::ORDER_CUE, $cue);
+            $items[] = new PlanItem(PlanSlot::PERFORMANCE_CUE, $this->importance->for(PlanSlot::PERFORMANCE_CUE), $this->order->for(PlanSlot::PERFORMANCE_CUE), $cue);
         }
 
         if ($shot->energy !== null) {
-            $items[] = new PlanItem(PlanSlot::MOTION, PlanImportance::IMPORTANT, self::ORDER_MOTION, $shot->energy);
+            $items[] = new PlanItem(PlanSlot::MOTION, $this->importance->for(PlanSlot::MOTION), $this->order->for(PlanSlot::MOTION), $shot->energy);
         }
 
         if ($shot->endingFrame !== null) {
-            $items[] = new PlanItem(PlanSlot::ENDING_FRAME, PlanImportance::CRITICAL, self::ORDER_ENDING, $shot->endingFrame);
+            $items[] = new PlanItem(PlanSlot::ENDING_FRAME, $this->importance->for(PlanSlot::ENDING_FRAME), $this->order->for(PlanSlot::ENDING_FRAME), $shot->endingFrame);
         }
 
         return $items;
@@ -246,7 +234,7 @@ final class RenderPlanner
     private function planEnding(StructuredPrompt $prompt): array
     {
         $hero = $prompt->heroMoment();
-        return $hero === null ? [] : [new PlanItem(PlanSlot::HERO_MOMENT, PlanImportance::CRITICAL, 10, $hero)];
+        return $hero === null ? [] : [new PlanItem(PlanSlot::HERO_MOMENT, $this->importance->for(PlanSlot::HERO_MOMENT), $this->order->for(PlanSlot::HERO_MOMENT), $hero)];
     }
 
     /** @return PlanItem[] */
