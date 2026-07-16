@@ -251,3 +251,45 @@ upstream and re-invented downstream** — and that is what had to be modelled.
 
 A new module earns its existence when the residual repeatedly points at something the current
 abstractions cannot express. Never before.
+
+### 10.1 Residual analysis is not clustering
+
+**Residual analysis should be reproducible. Residual *interpretation* cannot be fully automated.** An
+inspector may cluster failures only along dimensions **already present in the current model**.
+Discovering that every member of a cluster shares a property the model **cannot yet express** is
+precisely the evidence that a new abstraction is required.
+
+This is a limit of expressive power, not a caution about tooling. If an inspector could group by
+*motion*, then motion would already be a dimension of the model — the Event Model would exist and the
+residual would not be a residual. **The step that cannot be automated is the one that supplies a
+dimension the data does not have**, and it cannot be automated by construction.
+
+| Role | Can do |
+|---|---|
+| Inspector | cluster along dimensions the model already has |
+| Architect | recognise that a wholly new dimension is needed |
+
+Worked through: nothing in the Article Model knows what *moves*. But an inspector can still report,
+from data alone and identically for any two people who run it — *"policy chose the topic entity; the
+author chose a different entity; that entity co-occurs with the topic inside one fact"*. That narrows
+twelve beats to two and proves they share a structure. A person then looks at those two and says
+*"both are the thing in flight"* — supplying the dimension. The inspector did not fail; it did the
+only half that is mechanisable.
+
+### 10.2 A reproducible cluster is not automatically a valid abstraction
+
+**Residuals must first be purged of known upstream noise.** Otherwise the inspector may faithfully
+cluster failures produced by several mechanisms at once, yielding a **stable but misleading**
+signature — and a stable wrong answer is worse than a noisy one, because it survives review.
+
+```
+known noise → REMOVE → residual → cluster → human abstraction
+```
+never
+```
+                      residual → cluster → human abstraction
+```
+
+Dropping the first step costs the pipeline its causality. This is why §9.1 and §10 are one argument:
+**improving the lens before cleaning the data only makes the contamination easier to see, not easier
+to understand.**
