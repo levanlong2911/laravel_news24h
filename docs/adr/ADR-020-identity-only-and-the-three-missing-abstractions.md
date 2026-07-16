@@ -342,7 +342,15 @@ Silence is not permission and it is not prohibition. It means the claim needs a 
 
 Which sharpens the rule into its real form:
 
-> **Each question discharges exactly one obligation. Never reuse its proof for another layer.**
+> **An obligation may only be discharged by the evidence that belongs to it.**
+> **Where one obligation depends on another, that dependency must itself be justified, not assumed.**
+
+The second sentence is load-bearing. Proof obligations do not order themselves; ordering comes from
+an actual dependency, and a dependency that holds in one case is not a property of the method. In
+§10.5 the residual must be de-noised before the ontology question means anything — but a DSL with no
+concept of an *actor* at all answers Q3 immediately, with no benchmark and no residual. Importing one
+case's ordering and stating it as the nature of the thing is the same error as spending a proof
+twice, one level up.
 
 The §10.3 failure was not weak reasoning. It was **one proof spent twice** — Q3's answer discharged
 the ontology obligation and was then handed to the execution obligation, which it had never been
@@ -356,9 +364,17 @@ about. Naming it that way makes it a checkable error rather than a matter of jud
 | Boundary invariant or runtime computation? | implementation | ontology |
 
 **No row may cross into the third column.** The last row matters as much as the second and is easier
-to miss: an implementation's convenience never earns a concept. *"The runtime would be simpler with a
-new entity type"* is an ontology claim made by an execution proof, the same error running the other
-way.
+to miss: *"the runtime would be simpler with a new entity type"* is an ontology claim carried by an
+execution proof — the same error running the other way.
+
+But state that as a limit on **proof**, not on **discovery**, or it forbids a real source of insight:
+
+> **Implementation convenience never proves an ontological distinction. At most it motivates
+> returning to the ontology question with new evidence.**
+
+Repeated execution *pain* is a legitimate way to notice that a concept may be missing — it just has
+to go back and win the ontology argument on ontology's terms, rather than being waved through on the
+strength of the code getting tidier.
 
 ### 10.5 A general question is free; a general answer is not
 
@@ -385,11 +401,16 @@ The sequence, then, is semantics before location and location before machinery:
 3. If it does, what is its **semantic lifetime**?
 4. Only then: **boundary invariant, or runtime computation?**
 
-**Read this as a chain of obligations, not a workflow** — the difference is not cosmetic. A workflow
-says *"do these in order"*; a chain of obligations says **you are not yet permitted to ask the next
-question.** Until (2) is discharged, (3) does not exist; until (3) is discharged, (4) is not a valid
-question — asking it early lets implementation answer something semantics has not finished asking,
-and the answer will look reasoned because the steps were all present, just not all earned.
+**Read this as obligations, not a workflow** — the difference is not cosmetic. A workflow says *"do
+these in order"*; obligations say **a step whose premise is not yet discharged is not a valid
+question.** Here (4) depends on (3) and (3) on (2), so asking (4) early lets implementation answer
+what semantics has not finished asking, and the answer looks reasoned because every step was present
+— just not every step earned.
+
+**These dependencies are claims about this case, not about the method** (§10.4). They hold because
+the coverage residual is known to be contaminated and because the information is already in the
+ontology. Somewhere else the same four obligations may be discharged in another order, or
+independently. Assuming the order is the error §10.4 names, one level up.
 
 ### 10.1 Residual analysis is not clustering
 
