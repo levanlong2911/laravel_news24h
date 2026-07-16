@@ -12,14 +12,15 @@
     "goal": "The audience should feel the scale and the secrecy of a 101-metre private object — complete, unrepeatable, and never seen inside.",
 
     "visual_style": "luxury_commercial",
+    "topic_entity": "moonrise_obj",
 
     "facts": [
-        { "id": "F1", "text": "The 2025 Moonrise is 101 metres long, built by Feadship to the same design team as the 2020 original", "category": "CONTEXT", "visual_relevance": "HIGH", "confidence": 0.95, "visual_hint": "a 101-metre grey-hulled megayacht in full profile" },
-        { "id": "F2", "text": "Its satellite receivers are integrated into the superstructure instead of the five mast domes the original carried", "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.93, "visual_hint": "a clean superstructure with no satellite domes on the mast" },
-        { "id": "F3", "text": "It has a higher mast, a longer swim platform and an owner's deck", "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.92, "visual_hint": "a higher mast and an extended swim platform at the stern" },
-        { "id": "F4", "text": "The hull is grey with a vertical bow and elongated hull windows, a modern masculine profile", "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.96, "visual_hint": "elongated windows running the length of a grey hull above a vertical bow" },
-        { "id": "F5", "text": "Moonrise has never been chartered and its interior has never been shown publicly", "category": "CONTEXT", "visual_relevance": "LOW", "confidence": 0.94 },
-        { "id": "F6", "text": "Its support vessel Nebula is 68 metres and carries a full-size hangar for an Airbus H145 helicopter", "category": "RESULT", "visual_relevance": "MEDIUM", "confidence": 0.90, "visual_hint": "a 68-metre support vessel with a helicopter hangar" }
+        { "id": "F1", "text": "The 2025 Moonrise is 101 metres long, built by Feadship to the same design team as the 2020 original", "entity_refs": ["moonrise_obj"], "category": "CONTEXT", "visual_relevance": "HIGH", "confidence": 0.95, "visual_hint": "a 101-metre grey-hulled megayacht in full profile" },
+        { "id": "F2", "text": "Its satellite receivers are integrated into the superstructure instead of the five mast domes the original carried", "entity_refs": ["moonrise_obj"], "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.93, "visual_hint": "a clean superstructure with no satellite domes on the mast" },
+        { "id": "F3", "text": "It has a higher mast, a longer swim platform and an owner's deck", "entity_refs": ["moonrise_obj"], "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.92, "visual_hint": "a higher mast and an extended swim platform at the stern" },
+        { "id": "F4", "text": "The hull is grey with a vertical bow and elongated hull windows, a modern masculine profile", "entity_refs": ["moonrise_obj"], "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.96, "visual_hint": "elongated windows running the length of a grey hull above a vertical bow" },
+        { "id": "F5", "text": "Moonrise has never been chartered and its interior has never been shown publicly", "entity_refs": ["moonrise_obj"], "category": "CONTEXT", "visual_relevance": "LOW", "confidence": 0.94 },
+        { "id": "F6", "text": "Its support vessel Nebula is 68 metres and carries a full-size hangar for an Airbus H145 helicopter", "entity_refs": ["nebula_obj"], "category": "RESULT", "visual_relevance": "MEDIUM", "confidence": 0.90, "visual_hint": "a 68-metre support vessel with a helicopter hangar" }
     ],
 
     "world_objects": [

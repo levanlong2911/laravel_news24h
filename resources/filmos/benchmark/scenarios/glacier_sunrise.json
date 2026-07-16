@@ -16,10 +16,12 @@
     ],
     "goal": "The audience should feel the silence of a frozen world catch fire, cold blue turning to gold in one continuous breath.",
     "visual_style": "nature_documentary",
+    "topic_entity": "glacier_obj",
     "facts": [
         {
             "id": "F1",
             "text": "A glacier valley lies in pre-dawn blue shadow, utterly still",
+            "entity_refs": ["glacier_obj"],
             "category": "CONTEXT",
             "visual_relevance": "HIGH",
             "confidence": 0.96,
@@ -28,6 +30,7 @@
         {
             "id": "F2",
             "text": "First sunlight strikes the highest ice pinnacle",
+            "entity_refs": ["sun_obj", "glacier_obj"],
             "category": "EVIDENCE",
             "visual_relevance": "HIGH",
             "confidence": 0.94,
@@ -36,6 +39,7 @@
         {
             "id": "F3",
             "text": "The light line slides down the glacier face, turning ice translucent gold",
+            "entity_refs": ["sun_obj", "glacier_obj"],
             "category": "EVIDENCE",
             "visual_relevance": "HIGH",
             "confidence": 0.93,
@@ -44,6 +48,7 @@
         {
             "id": "F4",
             "text": "Mist rises off the ice as the valley fills with warm light",
+            "entity_refs": ["glacier_obj", "sun_obj"],
             "category": "RESULT",
             "visual_relevance": "MEDIUM",
             "confidence": 0.88,

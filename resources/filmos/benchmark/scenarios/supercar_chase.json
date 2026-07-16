@@ -13,12 +13,13 @@
     "goal": "The audience should feel the gap between hunter and hunted shrink metre by metre, until one drift decides it.",
 
     "visual_style": "luxury_commercial",
+    "topic_entity": "silver_car_obj",
 
     "facts": [
-        { "id": "F1", "text": "Two supercars thread night traffic on an elevated expressway",         "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.94, "visual_hint": "two low silhouettes weaving between taillights" },
-        { "id": "F2", "text": "The orange car dives into a tunnel with the silver car closing",       "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.93, "visual_hint": "tunnel lights strobing over carbon and glass" },
-        { "id": "F3", "text": "The silver car feints outside and cuts inside on the tunnel exit curve", "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.94, "visual_hint": "drift line crossing under the other car" },
-        { "id": "F4", "text": "The silver car emerges ahead as both hit the open bridge",             "category": "RESULT",   "visual_relevance": "HIGH",   "confidence": 0.90, "visual_hint": "positions swapped at the tunnel mouth" }
+        { "id": "F1", "text": "Two supercars thread night traffic on an elevated expressway", "entity_refs": ["orange_car_obj", "silver_car_obj", "expressway_obj"],         "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.94, "visual_hint": "two low silhouettes weaving between taillights" },
+        { "id": "F2", "text": "The orange car dives into a tunnel with the silver car closing", "entity_refs": ["orange_car_obj", "silver_car_obj", "expressway_obj"],       "category": "EVIDENCE", "visual_relevance": "HIGH",   "confidence": 0.93, "visual_hint": "tunnel lights strobing over carbon and glass" },
+        { "id": "F3", "text": "The silver car feints outside and cuts inside on the tunnel exit curve", "entity_refs": ["silver_car_obj", "orange_car_obj"], "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.94, "visual_hint": "drift line crossing under the other car" },
+        { "id": "F4", "text": "The silver car emerges ahead as both hit the open bridge", "entity_refs": ["silver_car_obj", "orange_car_obj", "expressway_obj"],             "category": "RESULT",   "visual_relevance": "HIGH",   "confidence": 0.90, "visual_hint": "positions swapped at the tunnel mouth" }
     ],
 
     "world_objects": [
