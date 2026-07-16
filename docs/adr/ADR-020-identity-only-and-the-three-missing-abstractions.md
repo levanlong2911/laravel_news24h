@@ -202,3 +202,52 @@ moved into Selection wearing a disguise, and Phase 1A's separation is gone.
 3. **Coverage** — last: it optimises a selection that must first be correct.
 
 Then Phase 2 (extraction), where the boundary gets its real test.
+
+### 9.1 The order is also about what the next measurement can mean
+
+**Persistent Context precedes Coverage not only because it is smaller and already has a consumer, but
+because it removes a known source of measurement noise.** The current coverage score (13/17)
+conflates at least two mechanisms: facts that cannot be selected because required ambient entities
+are never considered present, and the policy's own distribution decisions. Until the former is
+removed, the benchmark cannot attribute the remainder to Coverage Policy with confidence.
+
+**This asymmetry is intentional.** The focus residual is already informative: its remaining failures
+do not depend on location persistence and therefore continue to point at missing event semantics
+(§4.1 stands). The coverage residual is not yet interpretable in the same way, because part of it is
+explained by a known upstream modelling limitation.
+
+> **Not every metric ripens at the same time.** A residual may only be used to design the next module
+> once known sources of noise have been removed from it.
+
+So the roadmap is not decided by which module is smallest. It is decided by **which module makes the
+next measurement mean something.** Building Coverage now would tune a policy against a number that is
+partly measuring a different bug.
+
+---
+
+## 10. The loop this established
+
+Wider than Phase 1A, and the reason the ADRs came before the code:
+
+```
+   Boundary  →  Implementation  →  Measurement  →  Residual analysis  →  New abstraction
+      ↑                                                                        │
+      └────────────────────────────────────────────────────────────────────────┘
+```
+
+> **Do not optimise what is working. Model what the residual — after known noise is removed — has in
+> common.**
+
+A metric answers *how good is it*. A residual answers *what must be built next*. They are not the
+same instrument, and only one of them points anywhere.
+
+Had Phase 1A returned only "10/12", the reflex would have been to tune the policy: add a heuristic,
+shift a weight. Because it returned *"both failures are motion"*, the answer is that **no policy can
+fix it** and an abstraction is missing. Same run, same zero cost, two roadmaps that share nothing.
+
+This is also what the session that produced ADR-019 got wrong first: seeing a bad prompt and reaching
+for the formatter. The formatter was working. The residual shared one shape — **information discarded
+upstream and re-invented downstream** — and that is what had to be modelled.
+
+A new module earns its existence when the residual repeatedly points at something the current
+abstractions cannot express. Never before.
