@@ -71,7 +71,7 @@ final class NarrativePromptCompiler
         ?VisualStyle         $visualStyle = null,
     ): StructuredPrompt {
         $blockedOrdinals = $this->blockedOrdinals($audit);
-        $environment     = $this->flattenEnvironment($world);
+        $environment     = $this->flattenEnvironment($world, $scene);
 
         $shots = [];
         foreach ($story->allShots() as $shot) {
@@ -272,15 +272,28 @@ final class NarrativePromptCompiler
      * Flattens World knowledge into plain detail strings — the domain-decoupling
      * step. SEMANTIC only ('weather' => 'cold'); phrasing is adapter territory.
      */
-    private function flattenEnvironment(WorldView $world): PromptEnvironment
+    private function flattenEnvironment(WorldView $world, SceneView $scene): PromptEnvironment
     {
+        // A world object a scene node references becomes a SUBJECT, and a subject
+        // must not also be recited as scenery: a glacier that the camera is aimed
+        // at is the subject of the shot, not its backdrop. Only unreferenced
+        // locations are setting.
+        $staged = [];
+        foreach ($scene->allNodes() as $node) {
+            if ($node->worldObjectRef !== null) {
+                $staged[$node->worldObjectRef] = true;
+            }
+        }
+
         $details = [];
 
-        // Location / environment world objects ARE the visual setting — surface
-        // them (keyed by id) even when no scene node references them, so the
-        // stadium/room/field the story happens in reaches the prompt. Setting
-        // first, then atmospheric facts (crowd/weather/light).
+        // Location / environment objects that no scene node references ARE the
+        // visual setting — surface them so the stadium/corridor the story happens
+        // in reaches the prompt. Setting first, then atmospheric facts.
         foreach ($world->allObjects() as $object) {
+            if (isset($staged[$object->id])) {
+                continue;   // already a subject — saying it twice is the duplication we exist to prevent
+            }
             if ($object->type === WorldObjectType::LOCATION || $object->type === WorldObjectType::ENVIRONMENT) {
                 $details[$object->id] = $object->label;
             }

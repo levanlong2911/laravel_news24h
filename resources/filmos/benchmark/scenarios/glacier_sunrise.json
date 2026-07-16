@@ -1,5 +1,5 @@
 {
-    "schema_version": 1,
+    "schema_version": 2,
     "id": "glacier_sunrise",
     "suite": "world",
     "level": "A",
@@ -15,6 +15,7 @@
         "color_temperature_shift"
     ],
     "goal": "The audience should feel the silence of a frozen world catch fire, cold blue turning to gold in one continuous breath.",
+    "visual_style": "nature_documentary",
     "facts": [
         {
             "id": "F1",
@@ -72,7 +73,6 @@
         "time": "minutes before and after sunrise",
         "weather": "clear, windless, extreme cold",
         "light": "transition from blue shadow to golden direct sun",
-        "sound": "total silence, distant ice crack",
         "atmosphere": "thin mist rising off the ice"
     },
     "characters": [],
@@ -114,6 +114,69 @@
             },
             "ending_frame": "The sun clears the ridge, flaring across a valley turned to gold"
         }
+    },
+    "production": {
+        "motifs": [
+            {
+                "label": "the advancing line of gold light",
+                "importance": "primary"
+            },
+            {
+                "label": "translucent ice",
+                "importance": "secondary"
+            },
+            {
+                "label": "rising mist",
+                "importance": "secondary"
+            }
+        ],
+        "constraints": [
+            {
+                "target": "people",
+                "rule": "or footprints appearing anywhere on the ice",
+                "mode": "never"
+            },
+            {
+                "target": "line of gold light",
+                "rule": "visible as it moves down the glacier face",
+                "mode": "always"
+            }
+        ],
+        "hero_moment": {
+            "at": "payoff",
+            "description": "The sun clears the ridge and the whole valley stands gold, mist glowing off translucent ice"
+        },
+        "energy_curve": [
+            {
+                "at": "hook",
+                "value": 20,
+                "reason": "the valley lies utterly still in blue shadow"
+            },
+            {
+                "at": "escalation",
+                "value": 55,
+                "reason": "the light line slides down the glacier face"
+            },
+            {
+                "at": "payoff",
+                "value": 90,
+                "reason": "warm light floods the entire valley"
+            }
+        ],
+        "timings": [
+            {
+                "at": "hook",
+                "duration_seconds": 3.5
+            },
+            {
+                "at": "escalation",
+                "duration_seconds": 3.0
+            },
+            {
+                "at": "payoff",
+                "duration_seconds": 3.5
+            }
+        ]
     },
     "scene_nodes": {
         "hook": [

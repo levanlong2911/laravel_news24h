@@ -15,6 +15,7 @@ use App\Services\AI\FilmOS\Narrative\Scene\ShotType;
 use App\Services\AI\FilmOS\Prompting\IR\ShotPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
+use App\Services\AI\FilmOS\Prompting\IR\VisualStyle;
 
 /**
  * Decides WHAT is allowed into the prompt. It never words anything.
@@ -93,9 +94,17 @@ final class RenderPlanner
     {
         $items = [];
 
-        if ($prompt->visualStyle() !== null) {
-            $items[] = new PlanItem(PlanSlot::VISUAL_STYLE, $this->importance->for(PlanSlot::VISUAL_STYLE), $this->order->for(PlanSlot::VISUAL_STYLE), $prompt->visualStyle());
-        }
+        // Always planned. An unauthored scenario still needs a look: emitting
+        // nothing left the prompt with no medium at all, which is worse than the
+        // hardcoded line this replaced. CINEMATIC is the neutral default, and it
+        // is a SEMANTIC choice ("an unspecified piece is a generic cinematic
+        // piece"), so it belongs here rather than hidden in a vendor's fallback.
+        $items[] = new PlanItem(
+            PlanSlot::VISUAL_STYLE,
+            $this->importance->for(PlanSlot::VISUAL_STYLE),
+            $this->order->for(PlanSlot::VISUAL_STYLE),
+            $prompt->visualStyle() ?? VisualStyle::CINEMATIC,
+        );
 
         // Identity, grouped by tier. Only the subjects the camera follows are
         // critical — the rest are named per beat by staging, so the cast list is
