@@ -64,13 +64,16 @@ final class KlingSceneFormatter implements SlotFormatter
         };
     }
 
-    /** Camera moves that chase something; the rest simply rest on it. */
-    private const FOLLOWING = ['tilt', 'tracking', 'pan', 'dolly', 'zoom'];
-
     /**
-     * The setup AND its target in one sentence. "Tilting up to follow the
-     * football" is a move with a purpose; "tilting up" plus a separate "Focus:
-     * Football" is a move and a wish, and Kling reads the first far better.
+     * The setup AND its target in one sentence — a move with a purpose, rather
+     * than a move plus a separate wish that the camera please look somewhere.
+     *
+     * It says "on the X", never "to follow the X". Whether the camera CHASES its
+     * subject or EXPLORES it is the shot's intent, and intent is not derivable
+     * from the movement: the same tracking shot chases a race car and glides
+     * along the hull of a moored yacht. Guessing produced "dolly move to follow
+     * the moonrise" — a camera hurrying after a ship at anchor. Until the plan
+     * carries a camera intent, the honest wording is the neutral one.
      */
     private function camera(CameraDirection $direction): string
     {
@@ -83,10 +86,7 @@ final class KlingSceneFormatter implements SlotFormatter
         ]));
 
         if ($direction->focus !== null) {
-            $subject = lcfirst($direction->focus->label);
-            $tags .= in_array($cam->movement->value, self::FOLLOWING, true)
-                ? " to follow the {$subject}"      // the move chases it
-                : ", held on the {$subject}";      // the move rests on it
+            $tags .= ', on the ' . lcfirst($direction->focus->label);
         }
 
         return $this->sentence($tags);

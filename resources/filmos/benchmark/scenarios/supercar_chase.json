@@ -1,5 +1,5 @@
 {
-    "schema_version": 1,
+    "schema_version": 2,
     "id": "supercar_chase",
     "suite": "motion",
     "level": "A",
@@ -11,6 +11,8 @@
     "stress_dimensions": ["high_speed_background_blur", "two_vehicle_spacing", "tunnel_light_strobing", "drift_physics"],
 
     "goal": "The audience should feel the gap between hunter and hunted shrink metre by metre, until one drift decides it.",
+
+    "visual_style": "luxury_commercial",
 
     "facts": [
         { "id": "F1", "text": "Two supercars thread night traffic on an elevated expressway",         "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.94, "visual_hint": "two low silhouettes weaving between taillights" },
@@ -29,8 +31,7 @@
         "time": "night",
         "light": "sodium tunnel strobes, city glow, taillight streaks",
         "road": "dry asphalt, elevated expressway into tunnel curve",
-        "speed": "well beyond traffic flow",
-        "sound": "twin engines echoing in the tunnel"
+        "speed": "well beyond traffic flow"
     },
 
     "characters": [],
@@ -56,6 +57,36 @@
             "camera": { "shot_type": "wide", "angle": "eye_level", "movement": "pan", "lens": "wide", "focus_node": "silver_node" },
             "ending_frame": "Positions swapped, both cars flare out of the tunnel into the city glow"
         }
+    },
+
+    "production": {
+        "conflicts": [
+            { "description": "the orange car holding the line ahead, nose to tail", "type": "physical" },
+            { "description": "the tunnel exit curve leaving room for only one line", "type": "environmental" }
+        ],
+        "motifs": [
+            { "label": "tunnel light strobing over bodywork", "importance": "primary" },
+            { "label": "taillight streaks", "importance": "secondary" },
+            { "label": "the closing gap between the cars", "importance": "secondary" }
+        ],
+        "constraints": [
+            { "target": "people", "rule": "visible in or around the cars", "mode": "never" },
+            { "target": "cars", "rule": "with the gap between them readable", "mode": "always" }
+        ],
+        "hero_moment": {
+            "at": "payoff",
+            "description": "The silver car crosses under the orange car mid-drift and emerges ahead, both flaring out of the tunnel into the city glow"
+        },
+        "energy_curve": [
+            { "at": "hook",       "value": 50,  "reason": "the silver car surges up to the orange car's rear wing" },
+            { "at": "escalation", "value": 80,  "reason": "the gap closes to nothing under strobing tunnel light" },
+            { "at": "payoff",     "value": 100, "reason": "the drift decides it" }
+        ],
+        "timings": [
+            { "at": "hook",       "duration_seconds": 3.5 },
+            { "at": "escalation", "duration_seconds": 3.0 },
+            { "at": "payoff",     "duration_seconds": 3.5 }
+        ]
     },
 
     "scene_nodes": {

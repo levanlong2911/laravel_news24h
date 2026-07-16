@@ -56,14 +56,22 @@ final class KlingPromptRenderer implements PromptRenderer
     ];
 
     /**
-     * Kling's standing instructions: it resets framing between beats unless told
-     * to hold, and its "no text" must be narrowed to overlays so it stops erasing
-     * in-world signage the scene asked for. CRITICAL, so they are counted against
-     * the budget and never dropped — fixed overhead does not ride free.
+     * Kling's standing instructions. CRITICAL, so they are counted against the
+     * budget and never dropped — fixed overhead does not ride free.
+     *
+     * Kept as short as they can be while still doing their job, because this is
+     * a flat tax on EVERY scenario: at 25 words it was spending an eighth of the
+     * budget and evicting the hero frame from every piece. What was cut and why:
+     *   - "Sharp focus" — every VisualStyle already ends by saying it;
+     *   - "no captions" — "text overlays" already covers it;
+     *   - "hold each beat's focus subject" — each beat now names its own subject
+     *     in the camera line, so this was restating it a fourth time.
+     * "text overlays" stays narrowed: a bare "no text" also erases the in-world
+     * signage a scene may explicitly want.
      */
     private const BOILERPLATE = [
-        'Sharp focus. No overlaid text, no subtitles, no watermark, no captions.',
-        "One continuous cinematic shot, never cutting. Hold each beat's focus subject in frame throughout.",
+        'No text overlays, subtitles or watermarks.',
+        'One continuous shot, no cuts.',
     ];
 
     private readonly FormatterRegistry $formatters;

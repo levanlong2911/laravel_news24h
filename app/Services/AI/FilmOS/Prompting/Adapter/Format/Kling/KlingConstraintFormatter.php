@@ -14,6 +14,12 @@ use App\Services\AI\FilmOS\Prompting\Plan\PlanSlot;
  * ALWAYS becomes positive reinforcement. NEVER says nothing here: it belongs in
  * Kling's negative prompt, a separate field the renderer fills, so it returns ''
  * rather than being special-cased upstream.
+ *
+ * AUTHORING CONVENTION: $target is a BARE noun — "football", "cars", "line of
+ * gold light" — because this supplies the article. Authoring "both cars" yields
+ * "keep the both cars", and no amount of formatter cleverness fixes a target that
+ * already brought its own determiner; guessing at leading quantifiers would be
+ * exactly the brittle string-sniffing this codebase refuses elsewhere.
  */
 final class KlingConstraintFormatter implements SlotFormatter
 {

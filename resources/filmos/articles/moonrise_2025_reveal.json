@@ -1,0 +1,106 @@
+{
+    "schema_version": 2,
+    "id": "moonrise_2025_reveal",
+    "suite": "camera",
+    "level": "A",
+    "difficulty": "easy",
+    "duration_seconds": 10,
+    "primary_learning_dimension": "continuity",
+    "secondary_learning_dimensions": ["lighting"],
+    "stress_dimensions": ["reflective_hull", "large_object_scale", "no_human_reference"],
+
+    "goal": "The audience should feel the scale and the secrecy of a 101-metre private object — complete, unrepeatable, and never seen inside.",
+
+    "visual_style": "luxury_commercial",
+
+    "facts": [
+        { "id": "F1", "text": "The 2025 Moonrise is 101 metres long, built by Feadship to the same design team as the 2020 original", "category": "CONTEXT", "visual_relevance": "HIGH", "confidence": 0.95, "visual_hint": "a 101-metre grey-hulled megayacht in full profile" },
+        { "id": "F2", "text": "Its satellite receivers are integrated into the superstructure instead of the five mast domes the original carried", "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.93, "visual_hint": "a clean superstructure with no satellite domes on the mast" },
+        { "id": "F3", "text": "It has a higher mast, a longer swim platform and an owner's deck", "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.92, "visual_hint": "a higher mast and an extended swim platform at the stern" },
+        { "id": "F4", "text": "The hull is grey with a vertical bow and elongated hull windows, a modern masculine profile", "category": "EVIDENCE", "visual_relevance": "HIGH", "confidence": 0.96, "visual_hint": "elongated windows running the length of a grey hull above a vertical bow" },
+        { "id": "F5", "text": "Moonrise has never been chartered and its interior has never been shown publicly", "category": "CONTEXT", "visual_relevance": "LOW", "confidence": 0.94 },
+        { "id": "F6", "text": "Its support vessel Nebula is 68 metres and carries a full-size hangar for an Airbus H145 helicopter", "category": "RESULT", "visual_relevance": "MEDIUM", "confidence": 0.90, "visual_hint": "a 68-metre support vessel with a helicopter hangar" }
+    ],
+
+    "world_objects": [
+        {
+            "id": "moonrise_obj",
+            "type": "vehicle",
+            "label": "Moonrise",
+            "attributes": {
+                "length": "101 metres",
+                "hull": "grey, vertical bow",
+                "windows": "elongated hull windows",
+                "superstructure": "satellite receivers integrated, no domes",
+                "mast": "high",
+                "stern": "long swim platform"
+            }
+        },
+        {
+            "id": "nebula_obj",
+            "type": "vehicle",
+            "label": "Nebula support vessel",
+            "attributes": {
+                "length": "68 metres",
+                "feature": "full-size helicopter hangar"
+            }
+        }
+    ],
+
+    "world_facts": {},
+
+    "characters": [],
+
+    "emotion_arc": {},
+
+    "shots": {
+        "hook": {
+            "importance": "required",
+            "action": "The grey hull runs unbroken from a vertical bow, elongated windows tracing its length",
+            "camera": { "shot_type": "establishing", "angle": "eye_level", "movement": "dolly", "lens": "wide", "focus_node": "moonrise_node" },
+            "ending_frame": "The vertical bow stands clean and sheer"
+        },
+        "escalation": {
+            "importance": "required",
+            "action": "The superstructure carries no satellite domes, the receivers sitting flush beneath a higher mast",
+            "camera": { "shot_type": "medium", "angle": "low", "movement": "tracking", "lens": "telephoto", "focus_node": "moonrise_node" },
+            "ending_frame": "The mast rises bare against the sky"
+        },
+        "payoff": {
+            "importance": "required",
+            "action": "The long swim platform opens at the stern as the full hundred-and-one metre profile comes into view",
+            "camera": { "shot_type": "wide", "angle": "low", "movement": "dolly", "lens": "wide", "focus_node": "moonrise_node" },
+            "ending_frame": "The 68-metre support vessel sits alongside, its helicopter hangar open"
+        }
+    },
+
+    "scene_nodes": {
+        "hook": [
+            { "id": "moonrise_node", "type": "subject", "label": "Moonrise", "world_object_ref": "moonrise_obj" }
+        ],
+        "escalation": [
+            { "id": "moonrise_node", "type": "subject", "label": "Moonrise", "world_object_ref": "moonrise_obj" }
+        ],
+        "payoff": [
+            { "id": "moonrise_node", "type": "subject", "label": "Moonrise", "world_object_ref": "moonrise_obj" },
+            { "id": "nebula_node", "type": "background", "label": "Nebula support vessel", "world_object_ref": "nebula_obj" }
+        ]
+    },
+
+    "production": {
+        "motifs": [
+            { "label": "the unbroken grey hull line", "importance": "primary" },
+            { "label": "the vertical bow", "importance": "secondary" },
+            { "label": "the domeless superstructure", "importance": "secondary" }
+        ],
+        "constraints": [
+            { "target": "people", "rule": "visible on deck, on the platform or through the windows", "mode": "never" },
+            { "target": "interior", "rule": "visible through the hull windows", "mode": "never" },
+            { "target": "hull line", "rule": "unbroken from bow to stern", "mode": "always" }
+        ],
+        "hero_moment": {
+            "at": "payoff",
+            "description": "The uninterrupted silhouette fills the frame, vertical bow, continuous window line and domeless superstructure reading as one seamless hundred-and-one metre profile"
+        }
+    }
+}

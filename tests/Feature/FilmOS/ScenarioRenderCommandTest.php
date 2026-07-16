@@ -34,11 +34,13 @@ final class ScenarioRenderCommandTest extends TestCase
         // identifies the subject the camera follows.
         $this->assertStringContainsString('red jersey number 12', $output);   // character.appearance
 
-        // Staging and attention are per beat, so the payoff can follow the ball
+        // Staging and attention are per beat, so the payoff aims at the ball
         // while the receiver stays out of the earlier beats entirely. Attention
-        // is said as part of the camera move, not as a separate wish.
+        // is said as part of the camera move, not as a separate wish — and it is
+        // said neutrally ("on the X"), because whether a camera chases or
+        // explores its subject is the shot's intent, not its movement.
         $this->assertStringContainsString('In frame:', $output);
-        $this->assertStringContainsString('to follow the football', $output);
+        $this->assertStringContainsString('on the football', $output);
     }
 
     public function test_budget_drops_optional_content_before_critical_content(): void

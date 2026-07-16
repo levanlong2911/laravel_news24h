@@ -1,5 +1,5 @@
 {
-    "schema_version": 1,
+    "schema_version": 2,
     "id": "horror_hallway",
     "suite": "motion",
     "level": "A",
@@ -11,6 +11,8 @@
     "stress_dimensions": ["flickering_light_occlusion", "figure_appearing_between_frames", "long_corridor_depth", "handheld_panic_motion"],
 
     "goal": "The audience should dread every flicker of the light, because the hallway is only empty while it is lit.",
+
+    "visual_style": "horror",
 
     "facts": [
         { "id": "F1", "text": "A hospital hallway at night is lit by one failing fluorescent tube",  "category": "CONTEXT",  "visual_relevance": "HIGH",   "confidence": 0.95, "visual_hint": "long corridor under a stuttering light" },
@@ -28,9 +30,7 @@
     "world_facts": {
         "time": "3 a.m.",
         "light": "single failing fluorescent, blackouts lasting a breath",
-        "sound": "electrical buzz, distant monitor beeps",
-        "setting": "deserted hospital ward",
-        "rule": "the figure only moves during blackouts"
+        "setting": "deserted hospital ward"
     },
 
     "characters": [
@@ -91,5 +91,62 @@
             { "id": "figure_node",  "type": "subject",    "label": "Standing figure", "world_object_ref": "figure_obj" },
             { "id": "tube_node",    "type": "light",      "label": "Failing tube",    "world_object_ref": "hallway_obj" }
         ]
+    },
+
+    "production": {
+        "conflicts": [
+            { "description": "the figure standing closer after every blackout", "type": "physical" },
+            { "description": "the fluorescent failing, blacking the corridor out for a breath", "type": "environmental" }
+        ],
+        "motifs": [
+            { "label": "the stuttering fluorescent", "importance": "primary" },
+            { "label": "the motionless silhouette", "importance": "secondary" },
+            { "label": "the long corridor receding into dark", "importance": "secondary" }
+        ],
+        "constraints": [
+            { "target": "figure", "rule": "seen moving between positions", "mode": "never" },
+            { "target": "figure", "rule": "unnaturally motionless whenever it is lit", "mode": "always" }
+        ],
+        "hero_moment": {
+            "at": "payoff",
+            "description": "The silhouette fills the frame, closer than the blackout before, still never having been seen to move"
+        },
+        "energy_curve": [
+            { "at": "hook",       "value": 25, "reason": "routine rounds under an annoying flicker" },
+            { "at": "escalation", "value": 65, "reason": "a figure stands where the corridor was empty" },
+            { "at": "payoff",     "value": 95, "reason": "the figure fills the frame after three blackouts" }
+        ],
+        "timings": [
+            { "at": "hook",       "duration_seconds": 3.5 },
+            { "at": "escalation", "duration_seconds": 3.0 },
+            { "at": "payoff",     "duration_seconds": 3.5 }
+        ]
+    },
+
+    "performance": {
+        "hook": {
+            "nurse": {
+                "intent": "bored routine",
+                "cues": [
+                    { "description": "checks door handles as she passes", "channel": "hands" }
+                ]
+            }
+        },
+        "escalation": {
+            "nurse": {
+                "intent": "refusing to believe it",
+                "cues": [
+                    { "description": "flashlight beam trembles on the distant silhouette", "channel": "hands" }
+                ]
+            }
+        },
+        "payoff": {
+            "figure": {
+                "intent": "absolute stillness",
+                "cues": [
+                    { "description": "stands unnaturally still, never seen to move", "channel": "posture" }
+                ]
+            }
+        }
     }
 }

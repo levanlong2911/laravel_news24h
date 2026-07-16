@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AI\FilmOS\Prompting\Adapter\Format\Kling;
 
+use App\Services\AI\FilmOS\Narrative\Scene\SceneNodeType;
 use App\Services\AI\FilmOS\Prompting\Adapter\Format\SlotFormatter;
 use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
 use App\Services\AI\FilmOS\Prompting\Plan\PlanSlot;
@@ -43,9 +44,40 @@ final class KlingSubjectFormatter implements SlotFormatter
             PlanSlot::SUBJECT_SECONDARY  => 'Secondary: ' . $this->described($payload) . '.',
             PlanSlot::SUBJECT_BACKGROUND => 'Background: ' . $this->described($payload) . '.',
             PlanSlot::ANATOMY            => $this->anatomy($payload),
-            PlanSlot::IN_FRAME           => 'In frame: ' . $this->named($payload) . '.',
+            PlanSlot::IN_FRAME           => $this->staging($payload),
             default                      => '',
         };
+    }
+
+    /**
+     * Staging keeps the tier. Listing everything present as one flat set —
+     * "In frame: Moonrise and Nebula support vessel" — tells the model the two
+     * are equals and invites the support vessel to fight the yacht for the shot.
+     * The tier is already in the data (SceneNodeType); flattening it here threw
+     * it away, and the SUBJECTS block cannot be relied on to carry it because
+     * the background tier is OPTIONAL and the budget drops it first.
+     *
+     * @param SubjectDescriptor[] $subjects
+     */
+    private function staging(array $subjects): string
+    {
+        $front = $back = [];
+        foreach ($subjects as $s) {
+            if ($s->nodeType === SceneNodeType::BACKGROUND) {
+                $back[] = $s->label;
+            } else {
+                $front[] = $s->label;
+            }
+        }
+
+        $lines = [];
+        if ($front !== []) {
+            $lines[] = 'In frame: ' . $this->join(array_values(array_unique($front))) . '.';
+        }
+        if ($back !== []) {
+            $lines[] = 'Far behind, small in frame: ' . $this->join(array_values(array_unique($back))) . '.';
+        }
+        return implode("\n", $lines);
     }
 
     /** Full identity: label plus the authored appearance that keeps it consistent. */
@@ -59,14 +91,6 @@ final class KlingSubjectFormatter implements SlotFormatter
             },
             $subjects,
         ));
-    }
-
-    /** Staging only needs names — identity was already established once, globally. */
-    private function named(array $subjects): string
-    {
-        return $this->join(array_values(array_unique(
-            array_map(static fn(SubjectDescriptor $s): string => $s->label, $subjects),
-        )));
     }
 
     private function anatomy(array $subjects): string
