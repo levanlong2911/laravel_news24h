@@ -17,6 +17,7 @@ use App\Services\AI\FilmOS\Narrative\Scene\SceneNodeType;
 use App\Services\AI\FilmOS\Narrative\Scene\ShotType;
 use App\Services\AI\FilmOS\Narrative\Story\StoryBeat;
 use App\Services\AI\FilmOS\Narrative\World\WorldObjectType;
+use App\Services\AI\FilmOS\Prompting\IR\VisualStyle;
 
 /**
  * Parses a scenario JSON file into a validated ScenarioDocument, or throws
@@ -137,6 +138,7 @@ final class ScenarioLoader
             secondaryLearningDimensions: array_values((array) ($d['secondary_learning_dimensions'] ?? [])),
             stressDimensions:            array_values((array) ($d['stress_dimensions'] ?? [])),
             goal:                        (string) $d['goal'],
+            visualStyle:                 $this->validateVisualStyle($id, $d['visual_style'] ?? null),
             facts:                       array_values((array) ($d['facts'] ?? [])),
             worldObjects:                array_values((array) ($d['world_objects'] ?? [])),
             worldFacts:                  (array) ($d['world_facts'] ?? []),
@@ -147,6 +149,19 @@ final class ScenarioLoader
             production:                  $production,
             performance:                 $performance,
         );
+    }
+
+    /** Optional: absent means the renderer falls back to its default look. */
+    private function validateVisualStyle(string $id, mixed $style): ?VisualStyle
+    {
+        if ($style === null) {
+            return null;
+        }
+        if (!is_string($style) || VisualStyle::tryFrom($style) === null) {
+            $known = implode(', ', array_map(static fn(VisualStyle $s) => $s->value, VisualStyle::cases()));
+            throw ScenarioSchemaException::for($id, "'visual_style' must be one of: {$known}");
+        }
+        return VisualStyle::from($style);
     }
 
     /** @return array<string, true> world object ids */

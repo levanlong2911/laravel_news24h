@@ -60,6 +60,7 @@ final class ScenarioPreviewCommand extends Command
             $state->story, $state->characters, $state->scene, $state->world,
             $state->production, $state->performance, $audit,
             FactVisuals::fromFacts($doc->facts),
+            $doc->visualStyle,
         );
         $rendered = $registry->get($providerId)->render($ir);
 

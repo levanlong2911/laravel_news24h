@@ -16,6 +16,7 @@
         "emotion_hold"
     ],
     "goal": "The audience should feel mounting desperation compress into one final act of defiance, released the instant the ball leaves the hand.",
+    "visual_style": "sports_documentary",
     "facts": [
         {
             "id": "F1",
@@ -58,6 +59,50 @@
             "attributes": {
                 "team": "red",
                 "number": "12"
+            }
+        },
+        {
+            "id": "football_obj",
+            "type": "prop",
+            "label": "Football",
+            "attributes": {
+                "state": "carried, then thrown in a deep spiral"
+            }
+        },
+        {
+            "id": "defender_left_obj",
+            "type": "character",
+            "label": "Pass rusher",
+            "attributes": {
+                "side": "left edge",
+                "action": "converging on the quarterback"
+            }
+        },
+        {
+            "id": "defender_right_obj",
+            "type": "character",
+            "label": "Pass rusher",
+            "attributes": {
+                "side": "right edge",
+                "action": "converging on the quarterback"
+            }
+        },
+        {
+            "id": "receiver_obj",
+            "type": "character",
+            "label": "Receiver",
+            "attributes": {
+                "position": "sixty yards downfield",
+                "appearance": "distant silhouette"
+            }
+        },
+        {
+            "id": "crowd_obj",
+            "type": "character",
+            "label": "Crowd",
+            "attributes": {
+                "density": "packed",
+                "state": "roaring"
             }
         },
         {
@@ -144,7 +189,8 @@
                 "shot_type": "wide",
                 "angle": "low",
                 "movement": "tilt",
-                "lens": "wide"
+                "lens": "wide",
+                "focus_node": "football_node"
             },
             "ending_frame": "The ball disappears into the stadium lights, receiver a distant silhouette"
         }
@@ -156,6 +202,30 @@
                 "type": "subject",
                 "label": "Quarterback",
                 "world_object_ref": "qb_obj"
+            },
+            {
+                "id": "football_node",
+                "type": "subject",
+                "label": "Football",
+                "world_object_ref": "football_obj"
+            },
+            {
+                "id": "defender_left_node",
+                "type": "subject",
+                "label": "Pass rusher, left edge",
+                "world_object_ref": "defender_left_obj"
+            },
+            {
+                "id": "defender_right_node",
+                "type": "subject",
+                "label": "Pass rusher, right edge",
+                "world_object_ref": "defender_right_obj"
+            },
+            {
+                "id": "crowd_node",
+                "type": "background",
+                "label": "Crowd",
+                "world_object_ref": "crowd_obj"
             }
         ],
         "escalation": [
@@ -164,14 +234,56 @@
                 "type": "subject",
                 "label": "Quarterback",
                 "world_object_ref": "qb_obj"
+            },
+            {
+                "id": "football_node",
+                "type": "subject",
+                "label": "Football",
+                "world_object_ref": "football_obj"
+            },
+            {
+                "id": "defender_left_node",
+                "type": "subject",
+                "label": "Pass rusher, left edge",
+                "world_object_ref": "defender_left_obj"
+            },
+            {
+                "id": "defender_right_node",
+                "type": "subject",
+                "label": "Pass rusher, right edge",
+                "world_object_ref": "defender_right_obj"
+            },
+            {
+                "id": "crowd_node",
+                "type": "background",
+                "label": "Crowd",
+                "world_object_ref": "crowd_obj"
             }
         ],
         "payoff": [
+            {
+                "id": "football_node",
+                "type": "subject",
+                "label": "Football",
+                "world_object_ref": "football_obj"
+            },
             {
                 "id": "qb_node",
                 "type": "subject",
                 "label": "Quarterback",
                 "world_object_ref": "qb_obj"
+            },
+            {
+                "id": "receiver_node",
+                "type": "subject",
+                "label": "Receiver",
+                "world_object_ref": "receiver_obj"
+            },
+            {
+                "id": "crowd_node",
+                "type": "background",
+                "label": "Crowd",
+                "world_object_ref": "crowd_obj"
             }
         ]
     },

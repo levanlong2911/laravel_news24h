@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\AI\FilmOS\Benchmark\Scenario;
 
+use App\Services\AI\FilmOS\Prompting\IR\VisualStyle;
+
 /**
  * A parsed, VALIDATED, immutable representation of one scenario file.
  *
@@ -43,6 +45,8 @@ final class ScenarioDocument
         public readonly array      $secondaryLearningDimensions,
         public readonly array      $stressDimensions,
         public readonly string     $goal,
+        /** The look this piece is shot in; null = the renderer's default. */
+        public readonly ?VisualStyle $visualStyle,
         public readonly array      $facts,
         public readonly array      $worldObjects,
         public readonly array      $worldFacts,

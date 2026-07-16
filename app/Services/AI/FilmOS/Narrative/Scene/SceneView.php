@@ -20,6 +20,16 @@ interface SceneView
     /** @return array<string, SceneNode> keyed by nodeId */
     public function allNodes(): array;
 
+    /**
+     * The nodes placed FOR a given shot — the scene's time dimension, symmetric
+     * with getCamera($ordinal). allNodes() answers "which nodes exist at all";
+     * this answers "what is in frame in shot N", which is what staging needs
+     * (a receiver that only appears at the payoff must not exist in the hook).
+     *
+     * @return array<string, SceneNode> keyed by nodeId; empty when the shot placed none
+     */
+    public function nodesAt(int $ordinal): array;
+
     /** @return array<string, SceneRelation> keyed by "{fromId}:{toId}:{type}" */
     public function allRelations(): array;
 

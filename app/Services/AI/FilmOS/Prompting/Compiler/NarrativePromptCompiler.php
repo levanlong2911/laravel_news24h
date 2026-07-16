@@ -8,6 +8,8 @@ use App\Services\AI\FilmOS\Narrative\Character\CharacterView;
 use App\Services\AI\FilmOS\Narrative\Performance\PerformanceView;
 use App\Services\AI\FilmOS\Narrative\Production\ProductionView;
 use App\Services\AI\FilmOS\Narrative\QA\NarrativeAuditReport;
+use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
+use App\Services\AI\FilmOS\Narrative\Scene\SceneNodeType;
 use App\Services\AI\FilmOS\Narrative\Scene\SceneView;
 use App\Services\AI\FilmOS\Narrative\Story\StoryView;
 use App\Services\AI\FilmOS\Narrative\World\WorldObjectType;
@@ -17,6 +19,7 @@ use App\Services\AI\FilmOS\Prompting\IR\PromptEnvironment;
 use App\Services\AI\FilmOS\Prompting\IR\ShotPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
+use App\Services\AI\FilmOS\Prompting\IR\VisualStyle;
 
 /**
  * The bridge from Knowledge Layer to Prompt Layer.
@@ -65,6 +68,7 @@ final class NarrativePromptCompiler
         PerformanceView      $performance,
         NarrativeAuditReport $audit,
         array                $keyVisuals = [],
+        ?VisualStyle         $visualStyle = null,
     ): StructuredPrompt {
         $blockedOrdinals = $this->blockedOrdinals($audit);
         $environment     = $this->flattenEnvironment($world);
@@ -75,17 +79,21 @@ final class NarrativePromptCompiler
                 continue;
             }
 
+            $camera = $scene->getCamera($shot->ordinal);
+
             $shots[$shot->ordinal] = new ShotPrompt(
                 ordinal:         $shot->ordinal,
                 beat:            $shot->beat,
                 action:          $shot->description,
                 emotions:        $this->emotionsAt($characters, $shot->ordinal),
-                camera:          $scene->getCamera($shot->ordinal),
+                camera:          $camera,
                 environment:     $environment,
                 endingFrame:     $shot->endingFrame,
                 durationSeconds: $production->durationAt($shot->ordinal),
                 energy:          $production->energyAt($shot->ordinal),
                 performances:    $performance->performancesAt($shot->ordinal),
+                focusSubjectId:  $this->focusSubjectId($scene, $camera),
+                visibleSubjectIds: $this->visibleSubjectIds($scene, $shot->ordinal),
             );
         }
 
@@ -97,6 +105,7 @@ final class NarrativePromptCompiler
             heroMoment:     $production->heroMoment(),
             conflicts:      $production->conflictPlan()?->conflicts ?? [],
             keyVisuals:     $this->rankKeyVisuals($keyVisuals),
+            visualStyle:    $visualStyle,
         );
     }
 
@@ -129,6 +138,20 @@ final class NarrativePromptCompiler
             }
         }
 
+        // How each world object participates visually. A node may appear as a
+        // SUBJECT in one shot and BACKGROUND in another — the strongest wins,
+        // so an object that is ever a subject is never demoted to background.
+        $nodeTypes = [];
+        foreach ($scene->allNodes() as $node) {
+            $ref = $node->worldObjectRef;
+            if ($ref === null) {
+                continue;
+            }
+            if (!isset($nodeTypes[$ref]) || $node->type === SceneNodeType::SUBJECT) {
+                $nodeTypes[$ref] = $node->type;
+            }
+        }
+
         // One descriptor per referenced world object, in first-appearance order.
         $subjects = [];
         $order    = [];
@@ -149,6 +172,7 @@ final class NarrativePromptCompiler
                 attributes: $object->attributes,
                 isPrimary:  isset($primary[$ref]),
                 appearance: $appearanceByObject[$ref] ?? [],
+                nodeType:   $nodeTypes[$ref] ?? SceneNodeType::SUBJECT,
             );
             $order[$ref] = $index++;
         }
@@ -162,6 +186,37 @@ final class NarrativePromptCompiler
         });
 
         return $list;
+    }
+
+    /**
+     * The world objects in frame for THIS shot — staging, from the nodes the
+     * shot placed. Deduped (many nodes may bridge to one object) and ordered by
+     * placement so the adapter reads them in the order the scene declares them.
+     *
+     * @return string[] world-object ids
+     */
+    private function visibleSubjectIds(SceneView $scene, int $ordinal): array
+    {
+        $ids = [];
+        foreach ($scene->nodesAt($ordinal) as $node) {
+            if ($node->worldObjectRef !== null) {
+                $ids[$node->worldObjectRef] = true;
+            }
+        }
+        return array_keys($ids);
+    }
+
+    /**
+     * The world object this shot's camera focuses — resolved from the camera's
+     * focus NODE, because a node is only a bridge and the IR speaks in world
+     * objects. Keeps attention per-beat instead of flattening it to a global flag.
+     */
+    private function focusSubjectId(SceneView $scene, ?CameraConfiguration $camera): ?string
+    {
+        if ($camera?->focusNodeId === null) {
+            return null;
+        }
+        return ($scene->allNodes()[$camera->focusNodeId] ?? null)?->worldObjectRef;
     }
 
     /**

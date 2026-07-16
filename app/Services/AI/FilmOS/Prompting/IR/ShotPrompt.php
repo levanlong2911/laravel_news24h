@@ -43,6 +43,21 @@ final class ShotPrompt
         /** @var array<string, CharacterPerformance> characterId => acting direction for THIS shot —
          *  copied from PerformanceView; adapters turn cue sequences into prose. */
         public readonly array                $performances = [],
+        /**
+         * The world-object id the camera focuses in THIS shot — the attention
+         * graph's time dimension. Attention is per-beat (hook: the quarterback,
+         * payoff: the football); collapsing it into a per-production "primary"
+         * flag loses exactly the information the model needs to hold a subject.
+         * Resolved by the compiler from CameraConfiguration::$focusNodeId.
+         */
+        public readonly ?string              $focusSubjectId = null,
+        /**
+         * @var string[] world-object ids in frame for THIS shot (staging).
+         * A subject can be in the cast without being in every shot: the receiver
+         * exists in the piece but must not appear before the throw. Resolved by
+         * the compiler from SceneView::nodesAt($ordinal).
+         */
+        public readonly array                $visibleSubjectIds = [],
     ) {}
 
     /** Convenience for adapters — avoids repeated count() checks; NOT an emotion selector. */

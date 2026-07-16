@@ -73,6 +73,7 @@ final class ScenarioRenderCommand extends Command
             $state->story, $state->characters, $state->scene, $state->world,
             $state->production, $state->performance, $audit,
             FactVisuals::fromFacts($doc->facts),
+            $doc->visualStyle,
         );
         $rendered = $renderers->get($providerId)->render($ir);
 

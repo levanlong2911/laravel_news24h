@@ -22,6 +22,8 @@ final class SceneNodePlacedHandler implements ProjectionHandler
     public function apply(SemanticEvent $event, ProjectionContext $context): void
     {
         assert($event instanceof SceneNodePlacedEvent);
-        $context->builder->upsertSceneNode($event->node);
+        // Carry the shot ordinal through: the event has always known which shot
+        // placed the node; dropping it was what flattened the scene's timeline.
+        $context->builder->upsertSceneNode($event->node, $event->shotOrdinal());
     }
 }

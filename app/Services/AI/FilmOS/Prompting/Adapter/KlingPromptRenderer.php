@@ -11,9 +11,11 @@ use App\Services\AI\FilmOS\Narrative\Production\ConflictType;
 use App\Services\AI\FilmOS\Narrative\Production\ConstraintMode;
 use App\Services\AI\FilmOS\Narrative\Production\MotifImportance;
 use App\Services\AI\FilmOS\Narrative\Scene\CameraConfiguration;
+use App\Services\AI\FilmOS\Narrative\Scene\SceneNodeType;
 use App\Services\AI\FilmOS\Prompting\IR\ShotPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\StructuredPrompt;
 use App\Services\AI\FilmOS\Prompting\IR\SubjectDescriptor;
+use App\Services\AI\FilmOS\Prompting\IR\VisualStyle;
 
 /**
  * The Cinematic Renderer for Kling — the ONLY place Kling wording exists.
@@ -94,6 +96,19 @@ final class KlingPromptRenderer implements PromptRenderer
         'vehicle'   => 'accurate mechanical detail, no human figures, no floating limbs',
     ];
 
+    /** VisualStyle → the Kling look for that genre. One entry per enum case. */
+    private const STYLE_LOOK = [
+        'cinematic'          => 'Hyperrealistic cinematic footage, film grain, shallow depth of field, sharp focus.',
+        'sports_documentary' => 'Hyperrealistic broadcast sports footage, long-lens documentary look, natural colour, motion-tracked, sharp focus.',
+        'nature_documentary' => 'Hyperrealistic wildlife documentary footage, long-lens, natural colour, no grain, patient observational framing.',
+        'luxury_commercial'  => 'Glossy high-end commercial footage, high contrast, specular highlights, pristine surfaces, controlled lighting.',
+        'vintage_film'       => 'Vintage 35mm film footage, visible grain, halation, slightly faded colour.',
+        'digital_clean'      => 'Clean modern digital footage, crisp detail, neutral colour, no grain.',
+        'horror'             => 'Cold desaturated footage, deep shadows, low-key lighting, unsettling stillness.',
+        'anime'              => 'Hand-drawn anime animation, cel shading, expressive linework.',
+        'comic'              => 'Comic-book illustration style, bold ink outlines, flat graphic colour.',
+    ];
+
     /** Shot types close enough for facial emotion to read on screen. */
     private const CLOSE_SHOTS = ['close_up', 'extreme_close_up'];
 
@@ -119,13 +134,14 @@ final class KlingPromptRenderer implements PromptRenderer
     public function render(StructuredPrompt $prompt): RenderedPrompt
     {
         $blocks = [
-            $this->medium(),
+            $this->medium($prompt),
             $this->subjectsBlock($prompt),
             $this->environmentBlock($prompt),
             $this->keyVisualsBlock($prompt),
         ];
+        $labels = $this->subjectLabelsById($prompt);
         foreach ($this->orderedShots($prompt) as $shot) {
-            $blocks[] = $this->beatBlock($shot);
+            $blocks[] = $this->beatBlock($shot, $labels);
         }
         $blocks[] = $this->finalShotBlock($prompt);
         $blocks[] = $this->visualLanguageBlock($prompt);
@@ -143,19 +159,30 @@ final class KlingPromptRenderer implements PromptRenderer
 
     // ── Blocks ────────────────────────────────────────────────────────────────
 
-    private function medium(): string
+    /**
+     * The look, from the authored VisualStyle — NOT hardcoded, because an NFL
+     * play, a wildlife documentary and a car commercial must not come out as
+     * the same footage. Each style maps to Kling's own wording here.
+     */
+    private function medium(StructuredPrompt $prompt): string
     {
-        return 'Hyperrealistic cinematic footage, film grain, shallow depth of field, sharp focus.';
+        $style = $prompt->visualStyle() ?? VisualStyle::CINEMATIC;
+        return self::STYLE_LOOK[$style->value];
     }
 
     /** Who the eye follows — PRIMARY from SubjectDescriptor::isPrimary, plus anatomy. */
     private function subjectsBlock(StructuredPrompt $prompt): string
     {
+        // Three weights, so the model knows what the eye follows: a focused
+        // subject, a supporting subject, and background.
         $primary = [];
         $secondary = [];
+        $background = [];
         foreach ($prompt->subjects() as $s) {
             if ($s->isPrimary) {
                 $primary[] = $this->subjectLabel($s);
+            } elseif ($s->nodeType === SceneNodeType::BACKGROUND) {
+                $background[] = $this->subjectLabel($s);
             } else {
                 $secondary[] = $this->subjectLabel($s);
             }
@@ -167,6 +194,9 @@ final class KlingPromptRenderer implements PromptRenderer
         }
         if ($secondary !== []) {
             $lines[] = 'Secondary: ' . $this->join($secondary) . '.';
+        }
+        if ($background !== []) {
+            $lines[] = 'Background: ' . $this->join($background) . '.';
         }
         if (($anatomy = $this->anatomy($prompt->subjects())) !== '') {
             $lines[] = $anatomy;
@@ -266,11 +296,30 @@ final class KlingPromptRenderer implements PromptRenderer
         return array_values($shots);
     }
 
-    private function beatBlock(ShotPrompt $shot): string
+    /**
+     * @param array<string, string> $labels worldObjectId => plain label
+     */
+    private function beatBlock(ShotPrompt $shot, array $labels): string
     {
         $lines = [];
         if ($shot->camera !== null) {
             $lines[] = ucfirst($this->cameraPhrase($shot->camera)) . '.';
+        }
+        // Staging for THIS beat — who is actually in frame here. Being in the
+        // cast is not being in every shot; this is what keeps a subject out of
+        // a beat it must not appear in.
+        $inFrame = [];
+        foreach ($shot->visibleSubjectIds as $id) {
+            if (isset($labels[$id])) {
+                $inFrame[] = $labels[$id];
+            }
+        }
+        if ($inFrame !== []) {
+            $lines[] = 'In frame: ' . $this->join($inFrame) . '.';
+        }
+        // Attention for THIS beat — what the eye follows here, not globally.
+        if ($shot->focusSubjectId !== null && isset($labels[$shot->focusSubjectId])) {
+            $lines[] = 'Focus: ' . $labels[$shot->focusSubjectId] . '.';
         }
         $lines[] = rtrim($shot->action, '.') . '.';
         if ($this->isCloseShot($shot->camera)) {
@@ -331,23 +380,35 @@ final class KlingPromptRenderer implements PromptRenderer
         return $this->block('VISUAL LANGUAGE', $lines);
     }
 
-    /** Explicit continuity — Kling resets between beats unless told to hold the shot. */
+    /**
+     * Explicit continuity — Kling resets between beats unless told to hold the
+     * shot. It names no subject: attention is per-beat (see each beat's Focus),
+     * so a global "locked on X" would contradict the beat that focuses something else.
+     */
     private function cameraBlock(StructuredPrompt $prompt): string
     {
-        $lock = 'locked on the action';
+        return $this->block('CAMERA', [
+            'One continuous cinematic shot, never cutting. Hold each beat\'s focus subject in frame through the whole beat.',
+        ]);
+    }
+
+    /** @return array<string, string> worldObjectId => plain label, for per-beat focus */
+    private function subjectLabelsById(StructuredPrompt $prompt): array
+    {
+        $labels = [];
         foreach ($prompt->subjects() as $s) {
-            if ($s->isPrimary) {
-                $lock = 'locked on the ' . lcfirst($s->label);
-                break;
-            }
+            $labels[$s->id] = $s->label;
         }
-        return $this->block('CAMERA', ["One continuous cinematic shot, {$lock}, never cutting."]);
+        return $labels;
     }
 
     /** Style baseline plus ALWAYS constraints, phrased as strong persistence. */
     private function styleBlock(StructuredPrompt $prompt): string
     {
-        $lines = ['Cinematic, sharp focus, no text.'];
+        // "no text" must forbid OVERLAYS, not physical signage: a scoreboard or
+        // a jersey number is part of the world and may legitimately be in frame.
+        // Saying it precisely avoids contradicting the scene's own key visuals.
+        $lines = ['Sharp focus. No overlaid text, no subtitles, no watermark, no captions.'];
         foreach ($prompt->constraints() as $c) {
             if ($c->mode === ConstraintMode::ALWAYS) {
                 $lines[] = ucfirst("keep the {$c->target} {$c->rule} in every frame; never lose the {$c->target}") . '.';
@@ -358,7 +419,9 @@ final class KlingPromptRenderer implements PromptRenderer
 
     private function negative(StructuredPrompt $prompt): ?string
     {
-        $terms = ['extra limbs', 'deformed hands', 'warping', 'text', 'watermark'];
+        // "text overlay" not bare "text" — bare "text" also suppresses legitimate
+        // in-world signage (scoreboard, jersey numbers) the scene explicitly wants.
+        $terms = ['extra limbs', 'deformed hands', 'warping', 'text overlay', 'subtitles', 'watermark'];
 
         foreach ($prompt->constraints() as $c) {
             if ($c->mode === ConstraintMode::NEVER) {

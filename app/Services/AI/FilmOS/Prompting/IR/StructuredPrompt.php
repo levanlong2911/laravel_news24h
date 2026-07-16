@@ -37,8 +37,9 @@ final class StructuredPrompt
         private readonly array       $motifs = [],
         private readonly array       $constraints = [],
         private readonly ?HeroMoment $heroMoment = null,
-        private readonly array       $conflicts = [],
-        private readonly array       $keyVisuals = [],
+        private readonly array        $conflicts = [],
+        private readonly array        $keyVisuals = [],
+        private readonly ?VisualStyle $visualStyle = null,
     ) {}
 
     /** @return SubjectDescriptor[] deduped by world-object id; primary first, then first appearance */
@@ -90,5 +91,11 @@ final class StructuredPrompt
     public function keyVisuals(): array
     {
         return $this->keyVisuals;
+    }
+
+    /** The authored look for this piece; null = let the adapter use its default. */
+    public function visualStyle(): ?VisualStyle
+    {
+        return $this->visualStyle;
     }
 }

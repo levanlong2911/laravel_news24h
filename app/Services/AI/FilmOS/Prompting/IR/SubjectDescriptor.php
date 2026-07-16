@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\AI\FilmOS\Prompting\IR;
 
+use App\Services\AI\FilmOS\Narrative\Scene\SceneNodeType;
 use App\Services\AI\FilmOS\Narrative\Shared\AttributeBag;
 use App\Services\AI\FilmOS\Narrative\World\WorldObjectType;
 
@@ -34,5 +35,12 @@ final class SubjectDescriptor
         public readonly AttributeBag    $attributes,
         public readonly bool            $isPrimary,   // a camera focuses this subject in some shot
         public readonly array           $appearance = [],
+        /**
+         * How this object PARTICIPATES visually (SceneNodeType), as opposed to
+         * what it IS ($type). Gives the adapter a real tier — a focused subject,
+         * a supporting subject, and background are three different weights —
+         * instead of only the primary/not-primary boolean.
+         */
+        public readonly SceneNodeType   $nodeType = SceneNodeType::SUBJECT,
     ) {}
 }

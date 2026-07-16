@@ -41,6 +41,8 @@ final class NarrativeStateBuilder
     private array $sceneRelations = [];
     /** @var array<int, CameraConfiguration> keyed by shot ordinal */
     private array $sceneCameras   = [];
+    /** @var array<int, array<string, SceneNode>> shot ordinal => nodes that shot placed */
+    private array $sceneNodesByOrdinal = [];
 
     // Production domain — filled by ProductionPlannedHandler (last-write-wins)
     private ?ProductionPlan $productionPlan = null;
@@ -81,9 +83,18 @@ final class NarrativeStateBuilder
 
     // Scene domain (D4) API
 
-    public function upsertSceneNode(SceneNode $node): void
+    /**
+     * $ordinal records WHICH SHOT placed the node, so staging can ask what was
+     * in frame at shot N (SceneView::nodesAt). The flat $sceneNodes stays the
+     * latest-state view — both semantics coexist, exactly as with cameras.
+     */
+    public function upsertSceneNode(SceneNode $node, ?int $ordinal = null): void
     {
         $this->sceneNodes[$node->id] = $node;
+
+        if ($ordinal !== null) {
+            $this->sceneNodesByOrdinal[$ordinal][$node->id] = $node;
+        }
     }
 
     public function removeSceneNode(string $nodeId): void
@@ -155,7 +166,7 @@ final class NarrativeStateBuilder
             story:         new StoryProjection($this->shots),
             characters:    new CharacterProjection($memories),
             world:         new WorldProjection($this->worldObjects, $this->worldFacts),
-            scene:         new SceneProjection($this->sceneNodes, $this->sceneRelations, $this->sceneCameras),
+            scene:         new SceneProjection($this->sceneNodes, $this->sceneRelations, $this->sceneCameras, $this->sceneNodesByOrdinal),
             production:    new ProductionProjection($this->productionPlan),
             performance:   new PerformanceProjection($this->performanceDesign),
         );
