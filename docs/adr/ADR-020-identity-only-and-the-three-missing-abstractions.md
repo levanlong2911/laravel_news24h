@@ -319,6 +319,52 @@ Which is the gate working on its first use: it did not approve a module, it aske
 needed — and then declined to answer the next question too. §9's ordering stands either way; the work
 still comes first because it still removes the noise. What changes is its expected size.
 
+### 10.4 The gate is a proof obligation, not a checklist
+
+The failure above generalises, so state it as a rule rather than an anecdote. The gate is not *"three
+Yes answers and you may build"*. It is:
+
+> **To claim anything further, name the question that warrants it.**
+
+It does not forbid inference; it requires each step to show what guarantees it. Applied to §10.3:
+Q3 warranted *"no new vocabulary is needed"*. **No question warranted** *"and therefore no new
+mechanism"* — so that claim fell, and it fell one commit after the gate was written, having been made
+by the person who wrote it.
+
+The reason is that the gate answers exactly one **class** of decision:
+
+| Decision | Question | Warranted by the gate? |
+|---|---|---|
+| **Ontology** — does the system need a new concept to describe the world? | Q3 | **yes** |
+| **Execution** — where and when should it be computed? | — | **no; the gate is silent** |
+
+Silence is not permission and it is not prohibition. It means the claim needs a different argument.
+
+### 10.5 A general question is free; a general answer is not
+
+Ask the widest question that does not smuggle in an answer. For the next phase that is not *"how do
+we persist locations"* — which has already assumed both the problem and its shape — but:
+
+> **What is the semantic lifetime of an entity once it has become active?**
+
+Nothing in that adds vocabulary, and it survives the residual turning out to be camera ownership,
+active participants, or something unnamed rather than location.
+
+**But breadth of question does not license breadth of answer.** One measured residual is one use
+case. Answering *"semantic lifetime"* with a mechanism general enough to cover weather and emotional
+state would break the standing rule against abstraction without three real cases — and would do it
+while sounding principled, which is the dangerous version. **Ask wide; answer only as wide as the
+evidence.**
+
+The sequence, then, is semantics before location and location before machinery:
+
+1. Which residual is being **de-noised**? (§10.2 — not "which feature is being fixed")
+2. Does the missing information **already exist** in the ontology? (Q3)
+3. If it does, what is its **semantic lifetime**?
+
+Only after (3) does *"boundary invariant or runtime computation"* become a design question at all.
+Ordering it earlier lets implementation answer a question semantics has not finished asking.
+
 ### 10.1 Residual analysis is not clustering
 
 **Residual analysis should be reproducible. Residual *interpretation* cannot be fully automated.** An
