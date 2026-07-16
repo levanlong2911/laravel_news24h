@@ -293,12 +293,31 @@ Model, or something unnamed today, the questions are unchanged.
 
 So persistent context may not be a new abstraction at all. The ontology can already say it; it can
 only say it by **filing an identity fact inside a staging structure**, which §3 forbids. That is a
-*boundary violation*, not an expressiveness gap — and the remedy for a boundary violation is a rule,
-not a module.
+*boundary violation*, not an expressiveness gap.
+
+**But note exactly how far that gets, because it is easy to take one step too many.** Question 3
+refutes **new vocabulary**. It does not refute **new mechanism** — those are different layers, and
+both of these pass the gate:
+
+| Remedy | New words? | New mechanism? |
+|---|---|---|
+| *"a location active at one beat stays active until replaced"* | no | no — a **boundary invariant** |
+| *"compute the scene's ambient closure before selection runs"* | no | yes — a **runtime computation** |
+
+Neither adds an entity type, an enum, or a concept. One is a rule; the other is machinery. **The gate
+cannot choose between them**, and reading "no new abstraction" as "no new mechanism" is a conflation
+the gate does not license.
+
+So the opening question of the next phase is narrower than a design — it is a question about *where*:
+
+> **Is location persistence an invariant of the boundary, or a computation of the runtime?**
+
+The answer decides which document moves. A boundary invariant changes **ADR-019**. A runtime
+computation leaves the ontology untouched and produces an implementation.
 
 Which is the gate working on its first use: it did not approve a module, it asked whether one was
-needed. §9's ordering stands either way — the work still comes first, because it still removes the
-noise. What changes is its expected size.
+needed — and then declined to answer the next question too. §9's ordering stands either way; the work
+still comes first because it still removes the noise. What changes is its expected size.
 
 ### 10.1 Residual analysis is not clustering
 
