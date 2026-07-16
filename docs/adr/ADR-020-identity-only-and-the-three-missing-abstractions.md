@@ -37,13 +37,20 @@ was absent from the beat, so the policy fell back to *"hold whatever is present"
 land on the author's choice. That is a refusal to invent a target, not reasoning. Any future report
 that quotes 10/12 without this sentence is quoting folklore.
 
-**The real result is the shape of the residue.** Selection used nothing but identity —
-`Article Model` + who is on screen — and answered roughly four fifths of the problem. Both failures
-fell in the same place, and it was not identity. That matters more than the ratio:
+**Know the sample before quoting the number.** Twelve beats, four scenarios, **all authored by one
+person**. On the current benchmark, identity alone accounts for approximately four fifths of the
+*observed selection agreement* — that is a measurement on this data, not a property of the system,
+and production data may well move it. Read the second decimal place of nothing here.
 
-> **The Entity Model is the floor, not a redundant layer.** What comes next covers the residue rather
-> than replacing it. A new module that negates the old one is a redesign; one that covers what the
-> old one provably cannot is an architecture.
+**The real result is the shape of the residue, which does not depend on the ratio.** Selection used
+nothing but identity — `Article Model` + who is on screen — and both failures fell in the same place,
+and that place was not identity. Had they scattered, identity would be suspect. Had there been none,
+the missing model below would still be invisible. Two failures landing together on *motion* is what
+carries the finding; four-fifths is only how many were left over.
+
+> **On this evidence the Entity Model looks like the floor rather than a redundant layer.** What comes
+> next covers the residue rather than replacing it. A new module that negates the old one is a
+> redesign; one that covers what the old one provably cannot is an architecture.
 
 ---
 
