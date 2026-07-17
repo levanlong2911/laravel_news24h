@@ -99,10 +99,20 @@ final class ScenePlanner
         }
 
         // EXPLAIN — chức năng theo loại nguồn.
+        //
+        // Relation → REVEAL, KHÔNG phải COMPARISON. Đây là điểm ontology sắc:
+        // không phải quan hệ nào cũng là so sánh. `support_vessel_for`,
+        // `original_owner`, `built` là liên kết, không so sánh gì; chỉ
+        // `successor_of` mới thực sự comparison. Muốn phân biệt thì planner phải
+        // hiểu NGHĨA từng loại quan hệ — đó là domain knowledge, đúng chỗ ontology
+        // chết. Nên Scene chỉ nói trung tính "bộc lộ một mối liên hệ"; việc nâng
+        // thành compare/support/lineage là của Editorial, nơi được phép biết
+        // nghĩa quan hệ (§12). Contract enum chưa có value ASSOCIATION trung tính
+        // — nếu sau này cần thì mới đổi contract (§6), chưa trả rent lúc này.
         return [match ($act->source) {
             ActSource::Entity   => ScenePurpose::Detail,
             ActSource::Event    => ScenePurpose::Action,
-            ActSource::Relation => ScenePurpose::Comparison,
+            ActSource::Relation => ScenePurpose::Reveal,
         }];
     }
 

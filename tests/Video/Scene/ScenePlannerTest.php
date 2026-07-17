@@ -139,14 +139,29 @@ class ScenePlannerTest extends TestCase
         $this->assertSame(['moonrise_2020'], $eventScene[0]->subjectIds, 'subject của event là entity của nó');
     }
 
-    public function test_relation_act_becomes_a_comparison_scene_with_both_endpoints(): void
+    /**
+     * Relation → REVEAL (bộc lộ mối liên hệ), KHÔNG phải COMPARISON. Không phải
+     * quan hệ nào cũng là so sánh: support_vessel_for/original_owner là liên kết.
+     * Việc nâng thành compare/support/lineage là của Editorial, nơi được phép
+     * biết nghĩa quan hệ. Scene chỉ khắc hoạ cả hai đầu một cách trung tính.
+     */
+    public function test_relation_act_reveals_a_connection_with_both_endpoints(): void
     {
         $scenes = $this->scenes($this->moonriseGraph());
 
-        $relScene = array_values(array_filter($scenes, fn ($s) => $s->purpose === ScenePurpose::Comparison));
+        // r1 (feadship--built-->moonrise) và r2 (jan_koum--owner-->moonrise) đều
+        // KHÔNG phải so sánh — không scene nào được mang nhãn COMPARISON.
+        $this->assertEmpty(
+            array_filter($scenes, fn ($s) => $s->purpose === ScenePurpose::Comparison),
+            'không quan hệ nào ở đây là so sánh — planner không được tự nhận COMPARISON',
+        );
 
-        $this->assertNotEmpty($relScene, 'act RELATION phải cho scene COMPARISON');
-        $this->assertCount(2, $relScene[0]->subjectIds, 'quan hệ khắc hoạ cả hai đầu');
+        $relScene = array_values(array_filter(
+            $scenes,
+            fn ($s) => $s->purpose === ScenePurpose::Reveal && count($s->subjectIds) === 2,
+        ));
+
+        $this->assertNotEmpty($relScene, 'act RELATION cho scene REVEAL khắc hoạ cả hai đầu');
     }
 
     public function test_last_scene_resolves(): void
