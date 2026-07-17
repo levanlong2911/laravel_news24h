@@ -2,11 +2,6 @@
 
 namespace App\Providers;
 
-use App\Events\AI\ArtifactStored;
-use App\Events\AI\RenderCompleted;
-use App\Events\AI\RenderFailed;
-use App\Events\AI\VideoSubmitted;
-use App\Listeners\AI\LogRenderEvent;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Auth\Listeners\SendEmailVerificationNotification;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -23,12 +18,6 @@ class EventServiceProvider extends ServiceProvider
         Registered::class => [
             SendEmailVerificationNotification::class,
         ],
-
-        // AI render pipeline lifecycle events.
-        VideoSubmitted::class  => [LogRenderEvent::class],
-        ArtifactStored::class  => [LogRenderEvent::class],
-        RenderCompleted::class => [LogRenderEvent::class],
-        RenderFailed::class    => [LogRenderEvent::class],
     ];
 
     /**

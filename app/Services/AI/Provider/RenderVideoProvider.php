@@ -34,7 +34,7 @@ interface RenderVideoProvider
     /**
      * Seconds to wait before the next poll attempt.
      * Each provider implements its own optimal schedule based on typical render times and API quotas.
-     * PollRenderJob delegates entirely to this method — no global backoff table.
+     * There is no global backoff table; the caller delegates entirely to this method.
      */
     public function nextPollDelay(int $attempt, RenderStatusResult $status): int;
 }
