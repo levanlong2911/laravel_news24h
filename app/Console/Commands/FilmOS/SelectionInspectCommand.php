@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\FilmOS;
 
+use App\Services\AI\FilmOS\Benchmark\Selection\AttributionClass;
 use App\Services\AI\FilmOS\Benchmark\Selection\ReferenceSelection;
 use App\Services\AI\FilmOS\Benchmark\Selection\ScenarioSelectionSource;
 use App\Services\AI\FilmOS\Benchmark\Selection\SelectionEvaluator;
@@ -72,7 +73,7 @@ final class SelectionInspectCommand extends Command
             $truths[] = $policy->select($model, $context);
         }
 
-        $report = $evaluator->evaluate($model, $truths, $reference);
+        $report = $evaluator->evaluate($model, $source->beatContexts(), $truths, $reference);
 
         $this->newLine();
         $this->line("<options=bold>══ {$model->id}</> <fg=gray>({$model->visualStyle}, topic={$model->topicEntity})</>");
@@ -116,8 +117,16 @@ final class SelectionInspectCommand extends Command
             $report->coverage() * 100,
         ));
 
-        if ($report->starved() !== []) {
-            $this->line('   <fg=yellow>never shown: ' . implode(', ', $report->starved()) . '</>');
+        // Attribution, not explanation: the class says which layer the observation
+        // is about, the witness proves the class. Neither names a cause, and this
+        // command must not either.
+        foreach ($report->attributions as $a) {
+            $this->line(sprintf(
+                '   <fg=yellow>%-3s unused</> <fg=gray>%-26s</> evidence: %s',
+                $a->factId,
+                $a->class->value,
+                implode(', ', $a->evidence),
+            ));
         }
         if ($report->repeatedEverywhere() !== []) {
             $this->line('   <fg=yellow>said in every beat: ' . implode(', ', $report->repeatedEverywhere()) . '</>');
@@ -144,6 +153,10 @@ final class SelectionInspectCommand extends Command
     {
         $focusHit = $focusAll = $used = $selectable = 0;
         $origins  = [Origin::SHOT_TRUTH->value => 0, Origin::DEFAULT_SEMANTICS->value => 0];
+        $classes  = [];
+        foreach (AttributionClass::cases() as $case) {
+            $classes[$case->value] = 0;
+        }
 
         foreach ($reports as $r) {
             $focusHit   += $r->focusMatches();
@@ -153,6 +166,9 @@ final class SelectionInspectCommand extends Command
             foreach ($origins as $k => $_) {
                 $origins[$k] += $r->originCounts[$k] ?? 0;
             }
+            foreach ($r->attributions as $a) {
+                $classes[$a->class->value]++;
+            }
         }
 
         $total = array_sum($origins) ?: 1;
@@ -161,6 +177,12 @@ final class SelectionInspectCommand extends Command
         $this->line('<options=bold>══ TOTAL</>');
         $this->line(sprintf('   focus agreement with author  %d/%d', $focusHit, $focusAll));
         $this->line(sprintf('   coverage of selectable facts %d/%d', $used, $selectable));
+
+        // Counts only. Whether the benchmark is causally isolating is a READING of
+        // these numbers, and this command does not get to make it.
+        foreach ($classes as $name => $n) {
+            $this->line(sprintf('     %-26s %d', $name, $n));
+        }
         $this->line(sprintf(
             '   origin  shot_truth %.0f%%   default_semantics %.0f%%',
             $origins[Origin::SHOT_TRUTH->value] / $total * 100,

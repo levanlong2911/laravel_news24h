@@ -21,6 +21,7 @@ final class SelectionReport
      * @param FocusComparison[] $focus
      * @param array<string, int> $originCounts
      * @param array<string, ShotTruth> $beats
+     * @param Attribution[] $attributions one per selectable fact no shot used
      */
     public function __construct(
         public readonly string $modelId,
@@ -30,7 +31,34 @@ final class SelectionReport
         public readonly array $focus,
         public readonly array $originCounts,
         public readonly array $beats,
+        public readonly array $attributions = [],
     ) {}
+
+    /**
+     * How much of the coverage shortfall is actually about the policy.
+     *
+     * Everything else is a known mechanism of the benchmark's own staging. A
+     * coverage score that mixes the two is not causally isolating (ADR-020 §10.2)
+     * and cannot be used to judge a distribution policy, however reproducible it is.
+     *
+     * @return Attribution[]
+     */
+    public function coverageSignal(): array
+    {
+        return array_values(array_filter(
+            $this->attributions,
+            static fn (Attribution $a): bool => $a->class->isCoverageSignal(),
+        ));
+    }
+
+    /** @return Attribution[] */
+    public function knownNoise(): array
+    {
+        return array_values(array_filter(
+            $this->attributions,
+            static fn (Attribution $a): bool => !$a->class->isCoverageSignal(),
+        ));
+    }
 
     public function used(): int
     {

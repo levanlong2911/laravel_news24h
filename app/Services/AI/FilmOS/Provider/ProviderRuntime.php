@@ -11,7 +11,8 @@ namespace App\Services\AI\FilmOS\Provider;
  * ProviderLayerBuilder reads the accumulated routes to build providerRouteHash and capabilityHash.
  *
  * This is intentionally thin — it is a record, not an execution engine.
- * Actual provider calls are handled by ProviderHarness (or real API clients in production).
+ * Provider calls themselves belong to the Python runtime; Laravel only records
+ * which route a task was planned onto.
  */
 final class ProviderRuntime
 {

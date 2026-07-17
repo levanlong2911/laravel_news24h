@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\AI\FilmOS\Benchmark\Selection;
 
 use App\Services\AI\FilmOS\Selection\ArticleModel;
+use App\Services\AI\FilmOS\Selection\BeatContext;
 use App\Services\AI\FilmOS\Selection\Origin;
 use App\Services\AI\FilmOS\Selection\ShotTruth;
 
@@ -19,9 +20,20 @@ use App\Services\AI\FilmOS\Selection\ShotTruth;
  */
 final class SelectionEvaluator
 {
-    /** @param ShotTruth[] $truths */
-    public function evaluate(ArticleModel $model, array $truths, ReferenceSelection $reference): SelectionReport
-    {
+    public function __construct(
+        private readonly EligibilityAttributor $attributor = new EligibilityAttributor(),
+    ) {}
+
+    /**
+     * @param BeatContext[] $contexts
+     * @param ShotTruth[] $truths
+     */
+    public function evaluate(
+        ArticleModel $model,
+        array $contexts,
+        array $truths,
+        ReferenceSelection $reference,
+    ): SelectionReport {
         $selectable = [];
         foreach ($model->selectableFacts() as $f) {
             $selectable[$f->id] = 0;
@@ -57,6 +69,7 @@ final class SelectionEvaluator
             focus:        $focus,
             originCounts: $origins,
             beats:        $beats,
+            attributions: $this->attributor->attribute($model, $contexts, $truths),
         );
     }
 }

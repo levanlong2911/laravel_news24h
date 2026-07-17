@@ -7,7 +7,7 @@ namespace App\Services\AI\FilmOS\Provider;
 use RuntimeException;
 
 /**
- * Thrown by MockKlingProvider when a forced failure is triggered.
+ * Thrown when a provider call fails.
  *
  * Message convention: "provider:<name> <code> <reason>"
  * ExecutionRuntime extracts the provider name from this prefix
