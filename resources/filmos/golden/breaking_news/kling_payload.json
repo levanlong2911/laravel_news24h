@@ -1,8 +1,0 @@
-{
-    "model_name": "kling-v1",
-    "prompt": "Breaking news reporter at scene of major event, medium shot, documentary style filming, journalism style",
-    "cfg_scale": 0.5,
-    "mode": "std",
-    "duration": "10",
-    "aspect_ratio": "16:9"
-}

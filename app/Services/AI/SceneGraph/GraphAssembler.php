@@ -11,11 +11,6 @@ use App\Services\AI\PromptAST\Serializers\KlingSerializer;
 use App\Services\AI\PromptCompiler\Compiler;
 use App\Services\AI\ProviderResolver;
 use App\Services\AI\SceneGraph\ContinuityEngine;
-use App\Services\AI\AFOS\Backend\BackendCapabilityRegistry;
-use App\Services\AI\AFOS\Backend\KlingCapability;
-use App\Services\AI\AFOS\Observability\TraceCollector;
-use App\Services\AI\AFOS\Passes\AfosPassManager;
-use App\Services\AI\AFOS\Planning\ShotGoalIRAdapter;
 use App\Services\AI\SceneGraph\SceneGraphBuilder;
 use App\Services\AI\SceneGraph\SceneGraphValidator;
 use App\Services\AI\ScenePlanner\ScenePlanningResult;
@@ -164,10 +159,9 @@ final class GraphAssembler
 
             $provider = ProviderResolver::resolveFromDsl($enrichedDsl);
 
-            // Sprint 6+: provider dispatch — AFOS IR path (feature-flagged), AST path, legacy compiler
-            if ($provider === 'kling' && config('afos.enabled', false)) {
-                $prompt = $this->compileViaAfos($planningResult);
-            } elseif ($provider === 'kling') {
+            // Provider dispatch. Kling compiles from the typed SceneGraph via the AST;
+            // flux and kenburns still compile from the enriched DSL array.
+            if ($provider === 'kling') {
                 $ast    = PromptBlockAssembler::assemble($shotGraph);
                 $ast    = (new PromptNormalizer())->normalize($ast);
                 $prompt = (new KlingSerializer())->serialize($ast);
@@ -198,35 +192,4 @@ final class GraphAssembler
         return $compiledShots;
     }
 
-    // ── AFOS IR pipeline (Phase A) ────────────────────────────────────────────
-
-    private function compileViaAfos(ScenePlanningResult $result): string
-    {
-        // Register backend capabilities (idempotent — safe to call per shot)
-        BackendCapabilityRegistry::register(KlingCapability::make());
-
-        $trace = config('afos.trace', false)
-            ? new TraceCollector($result->shotId())
-            : null;
-
-        // Adapter: legacy ScenePlanningResult → AFOS typed IR
-        $shotGoalIR = ShotGoalIRAdapter::toShotGoalIR($result);
-        $director   = ShotGoalIRAdapter::toDirectorProfile($result);
-        $dp         = ShotGoalIRAdapter::toCinematographyProfile($result);
-        $intent     = ShotGoalIRAdapter::toIntent($result);
-
-        $trace?->record('shot_goal_ir',     $shotGoalIR->toArray());
-        $trace?->record('intent',           $intent->toArray());
-        $trace?->record('director_profile', $director->toArray());
-        $trace?->record('cinema_profile',   $dp->toArray());
-
-        // PassManager owns all pass orchestration — GraphAssembler never calls passes directly
-        $prompt = AfosPassManager::defaults()->compile(
-            $shotGoalIR, $director, $dp, $intent, $trace
-        );
-
-        $trace?->flush();
-
-        return $prompt;
-    }
 }
