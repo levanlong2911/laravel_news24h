@@ -1,0 +1,19 @@
+{
+    "fixture_version": "1.0",
+    "source": {
+        "article_id": "a24744a6-2477-4540-af84-59255cc606f9",
+        "url": "https://www.autoevolution.com/news/the-greatest-superyacht-deal-of-2026-tech-tycoons-megayacht-fetches-370m-272878.html",
+        "publisher": "autoevolution.com",
+        "source_title": "The Greatest Superyacht Deal of 2026: Tech Tycoon’s Megayacht Fetches $370M",
+        "origin": "news24h crawler (DB row) — KHÔNG fetch lại từ web",
+        "frozen_at": "2026-07-17T10:04:19+00:00",
+        "html_sha256": "79f19de01a74e1887843840f255fac6d2f3693d111cca7fe73bfa74f7258566f",
+        "html_bytes": 7444,
+        "db_status": "pending"
+    },
+    "ai_rewrite_check": {
+        "question": "content có phải output của Claude không? Nếu có, trích xuất từ nó là vòng tròn.",
+        "claude_usage_log_hits": 0,
+        "entries": []
+    }
+}
