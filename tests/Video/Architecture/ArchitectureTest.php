@@ -153,6 +153,41 @@ class ArchitectureTest extends TestCase
         );
     }
 
+    /**
+     * §1 — Truth ⊥ Planning. Sau khi Truth Layer đã freeze, đây là ranh giới
+     * quan trọng nhất còn lại.
+     *
+     * Story Planner được đọc VerifiedWorldGraph, nhưng KHÔNG được chạm bất kỳ
+     * provenance nào. VerifiedAttribute MANG Evidence bên trong, nên type system
+     * không chặn được `$entity->attributes['x'][0]->evidence->quote` — chỉ có
+     * test này chặn. Nếu một planner bắt đầu `if (str_contains($quote, 'award'))`
+     * thì toàn bộ Truth Layer vừa xây thành vô nghĩa.
+     *
+     * Giới hạn đã biết: đây là grep, không phải type-level guarantee. Một
+     * projection read-only sẽ chặn triệt để hơn, nhưng đó là abstraction chưa
+     * trả rent (Rule 0) — hiện chỉ có một Planner, grep đủ.
+     */
+    public function test_planning_layer_cannot_reach_truth_provenance(): void
+    {
+        $this->assertNoneOf([
+            '->evidence\b',
+            '->quote\b',
+            '->offset\b',
+            '->rawSegments\b',
+            '\bEvidenceIndex\b',
+            '\bArticleNormalizer\b',
+            '\bRawArticle\b',
+            '\bhtml_sha256\b',
+            '\bSourceFreeze\b',
+            'App\\\\Video\\\\Evidence',
+            'App\\\\Video\\\\Article',
+            'App\\\\Video\\\\Extraction',
+        ], 'Planning Layer KHÔNG được chạm Truth provenance. Story Planner chỉ đọc '
+            . 'VerifiedWorldGraph. Chạm Evidence/quote/offset/EvidenceIndex là xuyên thủng '
+            . 'ranh giới Truth ⊥ Planning. Xem ARCHITECTURE.md §1.',
+            __DIR__ . '/../../../app/Video/Story');
+    }
+
     // ------------------------------------------------------------------
 
     /**
