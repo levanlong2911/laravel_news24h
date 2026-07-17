@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://news24h.local/contracts/renderplan/v1.0/schema.json",
+  "title": "RenderPlan v1.0",
+  "description": "Hop dong duy nhat giua Laravel (Semantic OS) va Python (Compiler + Runtime). Xem docs/video/ARCHITECTURE.md. Laravel emit, Python consume, mot chieu. TUYET DOI khong duoc chua prompt language, ky thuat render, hay ten provider.",
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_version", "plan_id", "article_id", "generated_at", "story", "world", "facts", "acts", "scenes", "timeline", "assets", "continuity"],
+
+  "properties": {
+    "plan_version": { "const": "1.0" },
+    "plan_id":    { "$ref": "#/$defs/uuid" },
+    "article_id": { "$ref": "#/$defs/uuid" },
+    "generated_at": { "type": "string", "format": "date-time" },
+
+    "story": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "language", "target_seconds"],
+      "properties": {
+        "title":    { "type": "string", "minLength": 1 },
+        "language": { "type": "string", "pattern": "^[a-z]{2}$" },
+        "target_seconds": { "type": "integer", "minimum": 5, "maximum": 600 }
+      }
+    },
+
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entities", "relations", "events"],
+      "properties": {
+        "entities":  { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/entity" } },
+        "relations": { "type": "array", "items": { "$ref": "#/$defs/relation" } },
+        "events":    { "type": "array", "items": { "$ref": "#/$defs/event" } }
+      }
+    },
+
+    "facts":    { "type": "array", "items": { "$ref": "#/$defs/fact" } },
+    "acts":     { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/act" } },
+    "scenes":   { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scene" } },
+    "timeline": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/timeline_slot" } },
+    "assets":   { "type": "array", "items": { "$ref": "#/$defs/asset" } },
+
+    "continuity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["invariants", "prohibitions"],
+      "properties": {
+        "invariants":   { "type": "array", "items": { "$ref": "#/$defs/invariant" } },
+        "prohibitions": { "type": "array", "items": { "$ref": "#/$defs/prohibition" } }
+      }
+    }
+  },
+
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "slug": { "type": "string", "pattern": "^[a-z0-9_]+$", "minLength": 1, "maxLength": 64 },
+
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "attributes"],
+      "properties": {
+        "id":   { "$ref": "#/$defs/slug" },
+        "type": {
+          "description": "Ontology chung. KHONG duoc la domain type (superyacht, sports_car). Xem ARCHITECTURE.md §3.",
+          "enum": ["human", "living_object", "vehicle", "building", "landscape", "physical_object", "event", "effect"]
+        },
+        "attributes": {
+          "description": "Thuoc tinh VAT LY, render duoc. Chay xuong ProviderIR. Free-form vi day la domain data (hop le - data, khong phai code).",
+          "type": "object"
+        },
+        "identity": { "$ref": "#/$defs/identity" }
+      }
+    },
+
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "visual_referent"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "visual_referent": {
+          "description": "SEMANTIC: ten nay co ghim xuong mot hinh dang cu the khong? Titanic=true, Jan Koum=false. Laravel KHONG duoc khang dinh model AI biet ten nay - do la viec cua ProviderPass allowlist ben Python. Xem ARCHITECTURE.md §4.",
+          "type": "boolean"
+        },
+        "semantic": {
+          "description": "Danh tinh / nguon goc. KHONG BAO GIO xuong ProviderIR. VD: owner, builder, price.",
+          "type": "object"
+        }
+      }
+    },
+
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "from", "to", "type"],
+      "properties": {
+        "id":   { "$ref": "#/$defs/slug" },
+        "from": { "$ref": "#/$defs/slug" },
+        "to":   { "$ref": "#/$defs/slug" },
+        "type": { "$ref": "#/$defs/slug" }
+      }
+    },
+
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "entity_id"],
+      "properties": {
+        "id":        { "$ref": "#/$defs/slug" },
+        "type":      { "$ref": "#/$defs/slug" },
+        "entity_id": { "$ref": "#/$defs/slug" }
+      }
+    },
+
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "claim", "entity_id"],
+      "properties": {
+        "id":        { "$ref": "#/$defs/slug" },
+        "claim":     { "type": "string", "minLength": 1 },
+        "entity_id": { "$ref": "#/$defs/slug" },
+        "visual_hint": {
+          "description": "Chi tiet hinh anh lay TU BAI BAO. Python KHONG duoc bia them. Xem memory feedback_data_provenance.",
+          "type": "string"
+        }
+      }
+    },
+
+    "act": {
+      "description": "Act = mot node hoac edge cua World Graph duoc chon de ke. Dung MOT ref, khop voi source. Xem ARCHITECTURE.md §3.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ordinal", "source"],
+      "properties": {
+        "id":      { "$ref": "#/$defs/slug" },
+        "ordinal": { "type": "integer", "minimum": 1 },
+        "source":  { "enum": ["ENTITY", "EVENT", "RELATION"] },
+        "entity_ref":   { "$ref": "#/$defs/slug" },
+        "event_ref":    { "$ref": "#/$defs/slug" },
+        "relation_ref": { "$ref": "#/$defs/slug" }
+      },
+      "allOf": [
+        { "if": { "properties": { "source": { "const": "ENTITY" } } },
+          "then": { "required": ["entity_ref"],   "not": { "anyOf": [ { "required": ["event_ref"] }, { "required": ["relation_ref"] } ] } } },
+        { "if": { "properties": { "source": { "const": "EVENT" } } },
+          "then": { "required": ["event_ref"],    "not": { "anyOf": [ { "required": ["entity_ref"] }, { "required": ["relation_ref"] } ] } } },
+        { "if": { "properties": { "source": { "const": "RELATION" } } },
+          "then": { "required": ["relation_ref"], "not": { "anyOf": [ { "required": ["entity_ref"] }, { "required": ["event_ref"] } ] } } }
+      ]
+    },
+
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ordinal", "act_id", "purpose", "subjects", "emotion", "composition", "motion_intent", "camera", "lighting", "physics", "environment"],
+      "properties": {
+        "id":      { "$ref": "#/$defs/slug" },
+        "ordinal": { "type": "integer", "minimum": 1 },
+        "act_id":  { "$ref": "#/$defs/slug" },
+
+        "purpose":     { "enum": ["REVEAL", "ESTABLISH", "PROCESS", "DETAIL", "ACTION", "COMPARISON", "RESOLUTION"] },
+        "emotion":     { "enum": ["MAJESTIC", "TENSE", "CALM", "DRAMATIC", "TRIUMPHANT", "SOMBRE"] },
+        "composition": { "enum": ["CENTERED", "RULE_OF_THIRDS", "SYMMETRICAL", "LEADING_LINES"] },
+
+        "motion_intent": {
+          "description": "Thay the content_type cua kien truc cu. Laravel chi tra loi 'canh nay co can chuyen dong khong?'. Laravel KHONG duoc biet Ken Burns/Kling ton tai. Xem ARCHITECTURE.md §1.",
+          "enum": ["NONE", "LOW", "HIGH"]
+        },
+
+        "subjects": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/slug" } },
+
+        "camera": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["framing", "movement", "speed", "target"],
+          "properties": {
+            "framing":  { "enum": ["WIDE", "MEDIUM", "CLOSE", "DETAIL", "AERIAL"] },
+            "movement": { "enum": ["STATIC", "ORBIT", "PUSH_IN", "PULL_OUT", "PAN", "TRACK"] },
+            "speed":    { "enum": ["SLOW", "MEDIUM", "FAST"] },
+            "target":   { "$ref": "#/$defs/slug" }
+          }
+        },
+
+        "lighting": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "time_of_day", "intensity"],
+          "properties": {
+            "source":      { "enum": ["NATURAL", "ARTIFICIAL", "MIXED"] },
+            "time_of_day": { "enum": ["DAWN", "MORNING", "MIDDAY", "GOLDEN_HOUR", "DUSK", "NIGHT"] },
+            "intensity":   { "enum": ["SOFT", "NEUTRAL", "HARSH"] }
+          }
+        },
+
+        "physics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["medium", "dynamics"],
+          "properties": {
+            "medium":   { "enum": ["AIR", "WATER", "GROUND", "SPACE"] },
+            "dynamics": { "enum": ["STATIC", "GENTLE", "TURBULENT", "VIOLENT"] }
+          }
+        },
+
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["location", "weather"],
+          "properties": {
+            "location": { "type": "string", "minLength": 1 },
+            "weather":  { "enum": ["CLEAR", "CLOUDY", "RAIN", "SNOW", "FOG", "STORM", "INDOOR"] }
+          }
+        },
+
+        "fact_refs":  { "type": "array", "items": { "$ref": "#/$defs/slug" } },
+        "asset_refs": { "type": "array", "items": { "$ref": "#/$defs/slug" } }
+      }
+    },
+
+    "timeline_slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scene_id", "start_sec", "end_sec"],
+      "properties": {
+        "scene_id":  { "$ref": "#/$defs/slug" },
+        "start_sec": { "type": "number", "minimum": 0 },
+        "end_sec":   { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "entity_id", "required"],
+      "properties": {
+        "id":        { "$ref": "#/$defs/slug" },
+        "kind":      { "$ref": "#/$defs/slug" },
+        "entity_id": { "$ref": "#/$defs/slug" },
+        "required":  { "type": "boolean" }
+      }
+    },
+
+    "invariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_id", "attribute", "value", "scope"],
+      "properties": {
+        "entity_id": { "$ref": "#/$defs/slug" },
+        "attribute": { "$ref": "#/$defs/slug" },
+        "value":     {},
+        "scope":     { "type": "string", "pattern": "^(always|scene:[a-z0-9_]+)$" }
+      }
+    },
+
+    "prohibition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_id", "attribute", "value", "reason"],
+      "properties": {
+        "entity_id": { "$ref": "#/$defs/slug" },
+        "attribute": { "$ref": "#/$defs/slug" },
+        "value":     {},
+        "reason":    { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

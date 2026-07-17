@@ -1,0 +1,264 @@
+{
+  "plan_version": "1.0",
+  "plan_id": "0198f3a1-4b2c-4d3e-8f10-2a3b4c5d6e7f",
+  "article_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "generated_at": "2026-07-17T10:00:00Z",
+
+  "story": {
+    "title": "Moonrise sold for EUR 325M",
+    "language": "en",
+    "target_seconds": 60
+  },
+
+  "world": {
+    "entities": [
+      {
+        "id": "moonrise2025",
+        "type": "vehicle",
+        "attributes": {
+          "length_m": 101,
+          "hull_color": "grey",
+          "bow": "vertical",
+          "satellite": "integrated",
+          "domes": false,
+          "mast": "higher",
+          "swim_platform": "long"
+        },
+        "identity": {
+          "name": "Moonrise",
+          "visual_referent": true,
+          "semantic": {
+            "builder": "Feadship",
+            "owner": "Jan Koum",
+            "price_eur": 325000000
+          }
+        }
+      },
+      {
+        "id": "moonrise2020",
+        "type": "vehicle",
+        "attributes": {
+          "length_m": 99.95,
+          "beam_m": 15.5,
+          "volume_gt": 4000,
+          "hull_color": "grey",
+          "bow": "vertical",
+          "engines": "2 MTU",
+          "top_speed_knots": 19.5
+        },
+        "identity": {
+          "name": "Moonrise (2020)",
+          "visual_referent": true,
+          "semantic": {
+            "builder": "Feadship",
+            "designer": "Remi Tessier"
+          }
+        }
+      },
+      {
+        "id": "shipyard",
+        "type": "building",
+        "attributes": {
+          "kind": "dry_dock",
+          "material": "steel"
+        }
+      },
+      {
+        "id": "ocean",
+        "type": "landscape",
+        "attributes": {
+          "surface": "open_water"
+        }
+      }
+    ],
+
+    "relations": [
+      { "id": "r1", "from": "moonrise2025", "to": "moonrise2020", "type": "successor_of" },
+      { "id": "r2", "from": "moonrise2025", "to": "shipyard",     "type": "built_at" }
+    ],
+
+    "events": [
+      { "id": "e1", "type": "construction", "entity_id": "moonrise2025" },
+      { "id": "e2", "type": "sale",         "entity_id": "moonrise2025" }
+    ]
+  },
+
+  "facts": [
+    {
+      "id": "f_length",
+      "claim": "measures 101 metres",
+      "entity_id": "moonrise2025",
+      "visual_hint": "vertical bow, grey hull, long swim platform"
+    },
+    {
+      "id": "f_satellite",
+      "claim": "uses integrated satellite receivers instead of radome housings",
+      "entity_id": "moonrise2025",
+      "visual_hint": "clean superstructure, no dome housings, higher mast"
+    },
+    {
+      "id": "f_build",
+      "claim": "built by Feadship from steel plate",
+      "entity_id": "moonrise2025",
+      "visual_hint": "bare steel hull sections in dry dock, workers at scale"
+    },
+    {
+      "id": "f_speed",
+      "claim": "twin MTU engines give a top speed of 19.5 knots",
+      "entity_id": "moonrise2020",
+      "visual_hint": "bow wave, wake trailing astern"
+    },
+    {
+      "id": "f_predecessor",
+      "claim": "predecessor measures 99.95 metres with a 15.5 metre beam",
+      "entity_id": "moonrise2020",
+      "visual_hint": "near-identical grey hull and vertical bow, marginally shorter"
+    },
+    {
+      "id": "f_sale",
+      "claim": "sold for EUR 325 million",
+      "entity_id": "moonrise2025",
+      "visual_hint": "moored at dusk, lit from within"
+    }
+  ],
+
+  "acts": [
+    { "id": "a1", "ordinal": 1, "source": "ENTITY",   "entity_ref": "moonrise2025" },
+    { "id": "a2", "ordinal": 2, "source": "EVENT",    "event_ref": "e1" },
+    { "id": "a3", "ordinal": 3, "source": "ENTITY",   "entity_ref": "moonrise2025" },
+    { "id": "a4", "ordinal": 4, "source": "ENTITY",   "entity_ref": "moonrise2020" },
+    { "id": "a5", "ordinal": 5, "source": "RELATION", "relation_ref": "r1" },
+    { "id": "a6", "ordinal": 6, "source": "EVENT",    "event_ref": "e2" }
+  ],
+
+  "scenes": [
+    {
+      "id": "s1", "ordinal": 1, "act_id": "a1",
+      "purpose": "REVEAL",
+      "subjects": ["moonrise2025"],
+      "emotion": "MAJESTIC",
+      "composition": "CENTERED",
+      "motion_intent": "LOW",
+      "camera":      { "framing": "WIDE", "movement": "ORBIT", "speed": "SLOW", "target": "moonrise2025" },
+      "lighting":    { "source": "NATURAL", "time_of_day": "GOLDEN_HOUR", "intensity": "SOFT" },
+      "physics":     { "medium": "WATER", "dynamics": "GENTLE" },
+      "environment": { "location": "open ocean", "weather": "CLEAR" },
+      "fact_refs":   ["f_length"],
+      "asset_refs":  ["as_hull"]
+    },
+    {
+      "id": "s2", "ordinal": 2, "act_id": "a2",
+      "purpose": "PROCESS",
+      "subjects": ["moonrise2025", "shipyard"],
+      "emotion": "DRAMATIC",
+      "composition": "LEADING_LINES",
+      "motion_intent": "LOW",
+      "camera":      { "framing": "MEDIUM", "movement": "TRACK", "speed": "SLOW", "target": "shipyard" },
+      "lighting":    { "source": "ARTIFICIAL", "time_of_day": "MIDDAY", "intensity": "HARSH" },
+      "physics":     { "medium": "GROUND", "dynamics": "STATIC" },
+      "environment": { "location": "dry dock", "weather": "INDOOR" },
+      "fact_refs":   ["f_build"],
+      "asset_refs":  ["as_hull", "as_dock"]
+    },
+    {
+      "id": "s3", "ordinal": 3, "act_id": "a3",
+      "purpose": "DETAIL",
+      "subjects": ["moonrise2025"],
+      "emotion": "CALM",
+      "composition": "SYMMETRICAL",
+      "motion_intent": "NONE",
+      "camera":      { "framing": "DETAIL", "movement": "PUSH_IN", "speed": "SLOW", "target": "moonrise2025" },
+      "lighting":    { "source": "MIXED", "time_of_day": "MIDDAY", "intensity": "SOFT" },
+      "physics":     { "medium": "AIR", "dynamics": "STATIC" },
+      "environment": { "location": "interior lobby", "weather": "INDOOR" },
+      "fact_refs":   ["f_satellite"],
+      "asset_refs":  ["as_interior"]
+    },
+    {
+      "id": "s4", "ordinal": 4, "act_id": "a4",
+      "purpose": "ACTION",
+      "subjects": ["moonrise2020"],
+      "emotion": "TRIUMPHANT",
+      "composition": "RULE_OF_THIRDS",
+      "motion_intent": "HIGH",
+      "camera":      { "framing": "WIDE", "movement": "TRACK", "speed": "FAST", "target": "moonrise2020" },
+      "lighting":    { "source": "NATURAL", "time_of_day": "MIDDAY", "intensity": "NEUTRAL" },
+      "physics":     { "medium": "WATER", "dynamics": "TURBULENT" },
+      "environment": { "location": "open ocean", "weather": "CLEAR" },
+      "fact_refs":   ["f_speed"],
+      "asset_refs":  ["as_hull"]
+    },
+    {
+      "id": "s5", "ordinal": 5, "act_id": "a5",
+      "purpose": "COMPARISON",
+      "subjects": ["moonrise2025", "moonrise2020"],
+      "emotion": "CALM",
+      "composition": "SYMMETRICAL",
+      "motion_intent": "LOW",
+      "camera":      { "framing": "AERIAL", "movement": "PULL_OUT", "speed": "SLOW", "target": "moonrise2025" },
+      "lighting":    { "source": "NATURAL", "time_of_day": "MORNING", "intensity": "NEUTRAL" },
+      "physics":     { "medium": "WATER", "dynamics": "GENTLE" },
+      "environment": { "location": "open ocean", "weather": "CLEAR" },
+      "fact_refs":   ["f_predecessor", "f_length"],
+      "asset_refs":  ["as_hull"]
+    },
+    {
+      "id": "s6", "ordinal": 6, "act_id": "a6",
+      "purpose": "ESTABLISH",
+      "subjects": ["moonrise2025"],
+      "emotion": "DRAMATIC",
+      "composition": "CENTERED",
+      "motion_intent": "NONE",
+      "camera":      { "framing": "MEDIUM", "movement": "STATIC", "speed": "SLOW", "target": "moonrise2025" },
+      "lighting":    { "source": "NATURAL", "time_of_day": "DUSK", "intensity": "SOFT" },
+      "physics":     { "medium": "WATER", "dynamics": "GENTLE" },
+      "environment": { "location": "marina", "weather": "CLEAR" },
+      "fact_refs":   ["f_sale"],
+      "asset_refs":  ["as_hull"]
+    },
+    {
+      "id": "s7", "ordinal": 7, "act_id": "a6",
+      "purpose": "RESOLUTION",
+      "subjects": ["moonrise2025", "ocean"],
+      "emotion": "MAJESTIC",
+      "composition": "CENTERED",
+      "motion_intent": "LOW",
+      "camera":      { "framing": "AERIAL", "movement": "PULL_OUT", "speed": "SLOW", "target": "moonrise2025" },
+      "lighting":    { "source": "NATURAL", "time_of_day": "DUSK", "intensity": "SOFT" },
+      "physics":     { "medium": "WATER", "dynamics": "GENTLE" },
+      "environment": { "location": "open ocean", "weather": "CLEAR" },
+      "fact_refs":   ["f_sale"],
+      "asset_refs":  ["as_hull"]
+    }
+  ],
+
+  "timeline": [
+    { "scene_id": "s1", "start_sec": 0,  "end_sec": 5  },
+    { "scene_id": "s2", "start_sec": 5,  "end_sec": 10 },
+    { "scene_id": "s3", "start_sec": 10, "end_sec": 18 },
+    { "scene_id": "s4", "start_sec": 18, "end_sec": 25 },
+    { "scene_id": "s5", "start_sec": 25, "end_sec": 35 },
+    { "scene_id": "s6", "start_sec": 35, "end_sec": 45 },
+    { "scene_id": "s7", "start_sec": 45, "end_sec": 60 }
+  ],
+
+  "assets": [
+    { "id": "as_hull",     "kind": "structure", "entity_id": "moonrise2025", "required": true  },
+    { "id": "as_dock",     "kind": "structure", "entity_id": "shipyard",     "required": true  },
+    { "id": "as_interior", "kind": "interior",  "entity_id": "moonrise2025", "required": false }
+  ],
+
+  "continuity": {
+    "invariants": [
+      { "entity_id": "moonrise2025", "attribute": "hull_color", "value": "grey",       "scope": "always" },
+      { "entity_id": "moonrise2025", "attribute": "bow",        "value": "vertical",   "scope": "always" },
+      { "entity_id": "moonrise2025", "attribute": "satellite",  "value": "integrated", "scope": "always" },
+      { "entity_id": "moonrise2025", "attribute": "length_m",   "value": 101,          "scope": "always" },
+      { "entity_id": "moonrise2020", "attribute": "hull_color", "value": "grey",       "scope": "always" },
+      { "entity_id": "moonrise2020", "attribute": "bow",        "value": "vertical",   "scope": "always" }
+    ],
+    "prohibitions": [
+      { "entity_id": "moonrise2025", "attribute": "domes", "value": true, "reason": "2025 refit uses integrated receivers, not radome housings" }
+    ]
+  }
+}
