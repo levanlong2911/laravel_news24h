@@ -9,3 +9,10 @@
 /.github export-ignore
 CHANGELOG.md export-ignore
 .styleci.yml export-ignore
+
+# Nguồn bài báo đã đóng băng và phản hồi LLM đã ghi là BẰNG CHỨNG THEO TỪNG BYTE.
+# Source Freeze lưu SHA-256 của đúng chuỗi byte đó; `text=auto` ở trên sẽ chuẩn
+# hoá xuống dòng, đổi hash, và làm kiểm tra toàn vẹn fail trên clone mới hoặc CI
+# Linux — đúng thứ Source Freeze sinh ra để chặn. Git không được đụng vào chúng.
+tests/Video/fixtures/articles/** -text
+tests/Video/fixtures/recordings/** -text
