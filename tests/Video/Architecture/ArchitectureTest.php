@@ -169,7 +169,7 @@ class ArchitectureTest extends TestCase
      */
     public function test_planning_layer_cannot_reach_truth_provenance(): void
     {
-        $this->assertNoneOf([
+        $banned = [
             '->evidence\b',
             '->quote\b',
             '->offset\b',
@@ -182,10 +182,17 @@ class ArchitectureTest extends TestCase
             'App\\\\Video\\\\Evidence',
             'App\\\\Video\\\\Article',
             'App\\\\Video\\\\Extraction',
-        ], 'Planning Layer KHÔNG được chạm Truth provenance. Story Planner chỉ đọc '
+        ];
+
+        $why = 'Planning Layer KHÔNG được chạm Truth provenance. Planner chỉ đọc '
             . 'VerifiedWorldGraph. Chạm Evidence/quote/offset/EvidenceIndex là xuyên thủng '
-            . 'ranh giới Truth ⊥ Planning. Xem ARCHITECTURE.md §1.',
-            __DIR__ . '/../../../app/Video/Story');
+            . 'ranh giới Truth ⊥ Planning. Xem ARCHITECTURE.md §1.';
+
+        // Mọi thư mục thuộc Planning Layer. Thêm phase mới (Intent, Asset...) thì
+        // thêm vào đây — ranh giới áp cho toàn tầng, không riêng Story.
+        foreach (['Story', 'Scene'] as $dir) {
+            $this->assertNoneOf($banned, $why, __DIR__ . '/../../../app/Video/' . $dir);
+        }
     }
 
     // ------------------------------------------------------------------
