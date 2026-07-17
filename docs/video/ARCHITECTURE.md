@@ -374,10 +374,14 @@ Ranh giới duy nhất. Versioned. JSON Schema gác cổng cả hai đầu.
       "composition": "CENTERED",
       "motion_intent": "LOW",              // NONE|LOW|HIGH — thay content_type
 
-      "camera":      { "framing": "WIDE", "movement": "ORBIT", "speed": "SLOW", "target": "moonrise2025" },
-      "lighting":    { "source": "NATURAL", "time_of_day": "GOLDEN_HOUR", "intensity": "SOFT" },
-      "physics":     { "medium": "WATER", "dynamics": "GENTLE" },
-      "environment": { "location": "OCEAN", "weather": "CLEAR" },
+      "camera":    { "framing": "WIDE", "movement": "ORBIT", "speed": "SLOW", "target": "moonrise2025" },
+
+      // Editorial taste — LUÔN có mặt, không phụ thuộc chủ đề (§13)
+      "aesthetic": { "emotion": "MAJESTIC", "composition": "CENTERED", "light_intensity": "SOFT", "light_grade": "GOLDEN" },
+
+      // World facts từ Truth — TẤT CẢ optional, vắng khi Truth im lặng (§13).
+      // Provider tự điền bằng world-knowledge của nó khi vắng.
+      "world":     { "medium": "WATER", "location": "open ocean", "time_of_day": "GOLDEN_HOUR", "weather": "CLEAR", "light_source": "NATURAL" },
 
       "fact_refs": ["f1"],
       "asset_refs": ["as_hull"]
@@ -411,14 +415,15 @@ Ranh giới duy nhất. Versioned. JSON Schema gác cổng cả hai đầu.
 | `camera.framing` | `WIDE · MEDIUM · CLOSE · DETAIL · AERIAL` |
 | `camera.movement` | `STATIC · ORBIT · PUSH_IN · PULL_OUT · PAN · TRACK` |
 | `camera.speed` | `SLOW · MEDIUM · FAST` |
-| `lighting.source` | `NATURAL · ARTIFICIAL · MIXED` |
-| `lighting.time_of_day` | `DAWN · MORNING · MIDDAY · GOLDEN_HOUR · DUSK · NIGHT` |
-| `lighting.intensity` | `SOFT · NEUTRAL · HARSH` |
-| `physics.medium` | `AIR · WATER · GROUND · SPACE` |
-| `physics.dynamics` | `STATIC · GENTLE · TURBULENT · VIOLENT` |
 | `scene.purpose` | `REVEAL · ESTABLISH · PROCESS · DETAIL · ACTION · COMPARISON · RESOLUTION` |
-| `scene.emotion` | `MAJESTIC · TENSE · CALM · DRAMATIC · TRIUMPHANT · SOMBRE` |
-| `scene.composition` | `CENTERED · RULE_OF_THIRDS · SYMMETRICAL · LEADING_LINES` |
+| `aesthetic.emotion` | `MAJESTIC · TENSE · CALM · DRAMATIC · TRIUMPHANT · SOMBRE` |
+| `aesthetic.composition` | `CENTERED · RULE_OF_THIRDS · SYMMETRICAL · LEADING_LINES` |
+| `aesthetic.light_intensity` | `SOFT · NEUTRAL · HARSH` |
+| `aesthetic.light_grade` | `WARM · COOL · NEUTRAL · GOLDEN · NOIR` |
+| `world.medium` *(opt)* | `AIR · WATER · GROUND · SPACE` |
+| `world.time_of_day` *(opt)* | `DAWN · MORNING · MIDDAY · GOLDEN_HOUR · DUSK · NIGHT` |
+| `world.weather` *(opt)* | `CLEAR · CLOUDY · RAIN · SNOW · FOG · STORM · INDOOR` |
+| `world.light_source` *(opt)* | `NATURAL · ARTIFICIAL · MIXED` |
 
 `purpose` dùng `PROCESS` chứ không phải `CONSTRUCTION` — `CONSTRUCTION` là domain, `PROCESS` là ontology (hợp cả với sư tử đang rình mồi).
 
@@ -443,14 +448,13 @@ app/Video/
 ├── Editorial/       EditorialPolicy (data), EditorialInterpreter (generic code)
 ├── Story/           StoryPlanner, StoryGraph, Act
 ├── Scene/           ScenePlanner, SceneGraph, Scene
-├── Intent/          CameraIntent, LightingIntent, PhysicsIntent, MotionIntent, Composition
-├── Knowledge/       CharacterLibrary, VehicleLibrary, StyleLibrary   ← data, không phải code
-├── Asset/           AssetPlanner, AssetRequirement
-├── Timeline/        TimelinePlanner, Timeline, TimelineSlot
-├── Continuity/      ContinuityPlanner, Invariant, Prohibition
-├── Rules/           BusinessRuleEngine
-├── RenderPlan/      RenderPlanBuilder, RenderPlan, Serializer
+├── Intent/          IntentPlanner, IntentScene, CameraIntent, MotionIntent  ← camera+motion (P3)
+├── Timeline/        TimelinePlanner, TimedScene, TimeRange                  ← scheduler cơ học (P4)
+├── Editorial/       EditorialPolicy (data), EditorialInterpreter (generic)  ← taste + fill-missing (P5)
+├── Knowledge/       CharacterLibrary, VehicleLibrary, StyleLibrary   ← data, không phải code (khi cần)
+├── RenderPlan/      RenderPlanAssembler, Serializer                          ← projection + validate (P5)
 └── Pipeline/        VideoPlanningPipeline
+# BỎ: Asset/ (projection, không phải planner) · Continuity/, Rules/ hoà vào Editorial
 ```
 
 ### Python — `media_runtime/`
@@ -503,11 +507,12 @@ Không phải convention. Không phải review. **Test thật, CI đỏ.**
 | # | Việc | Xong khi |
 |---|---|---|
 | **0** | ✅ RenderPlan JSON Schema + golden fixture Moonrise + Architecture Tests | ✅ 16 PHP + 13 Python xanh; hai bên đọc chung 1 file schema |
-| **1** | Laravel: **Truth Layer** — Normalizer → Evidence Index → LLM Extractor → Gatekeeper → Verified World Graph (§11) | Moonrise dựng từ bài báo thật; claim không có evidence bị reject; Gatekeeper deterministic; fixture Phase 0 được **sinh lại** từ pipeline |
-| **2** | Laravel: Story Graph (từ World Graph) → Scene Graph | acts suy ra từ Entity/Event/Relation, **không** từ topic |
-| **3** | Laravel: Intent + Knowledge libraries | camera/lighting/physics/motion intent có cấu trúc |
-| **4** | Laravel: Asset + Timeline | timeline phủ kín `target_seconds`, không chồng lấn |
-| **5** | Laravel: **Editorial Interpreter** (§12) + Continuity + Rules → emit | `prohibitions` sinh từ Editorial (KHÔNG từ Fact Extractor); RenderPlan pass schema; Architecture Tests xanh |
+| **1** | ✅ Laravel: **Truth Layer** — Normalizer → Evidence Index → LLM Extractor → Gatekeeper → Verified World Graph (§11) | ✅ Moonrise dựng từ bài thật; Precision 94%; Gatekeeper deterministic |
+| **2** | ✅ Laravel: Story Graph → Scene Graph | ✅ Act = node\|edge, importance = centrality; Scene = decomposition ngữ nghĩa |
+| **3** | ✅ Laravel: Intent Planner — camera + motion | ✅ camera suy từ ScenePurpose, ranh giới đóng bằng type (không thấy EntityType) |
+| **4** | ✅ Laravel: Timeline Planner | ✅ scheduler cơ học, TimeRange, gapless, phủ kín target |
+| **~~4b~~** | ~~Asset Planner~~ — **BỎ** (Rule 0): `subject_ids → assets[]` chỉ là projection; dedup/cache là provider optimization thuộc Python. `assets[]` emit thẳng ở Assembler. AssetOptimizer (nếu có) đứng SAU RenderPlan bên Python, không chen giữa semantic pipeline. | — |
+| **5** | Laravel: **Editorial Interpreter** (§12, taste + fill-missing) → **RenderPlanAssembler** → emit | Editorial fill chỗ Truth im lặng (KHÔNG overwrite); Assembler ráp Truth+Story+Scene+Intent+Timeline → RenderPlan pass schema |
 | **6** | Python: VideoIR Builder | fixture → VideoIR, không mất dữ liệu |
 | **7** | Python: Pass pipeline | mỗi pass test riêng; ContinuityPass gỡ được `domes` |
 | **8** | Python: ProviderIR + Prompt Compiler + allowlist | prompt Moonrise sinh 100% từ IR; không rò `Jan Koum`/`Feadship` |
@@ -535,6 +540,7 @@ Không phải convention. Không phải review. **Test thật, CI đỏ.**
 - **2026-07-17** — **Evidence never crosses the boundary.** RenderPlan là post-verification. Python không có quyền nghi ngờ semantic; thấy evidence là sẽ có cám dỗ `if weak → repair`, mà "sửa" của Python chỉ là bịa vì nó không đọc bài báo. Debug qua `plan_id`.
 - **2026-07-17** — **LLM không được cấp offset.** LLM trả `evidence_quote` nguyên văn; Gatekeeper tự `find()` trong Evidence Index để sinh offset. LLM đếm ký tự rất tệ và sẽ bịa offset trông hợp lý — tin nó là mất tính deterministic ở một chỗ kín đáo. Cách này bắt luôn ca LLM bịa cả câu trích.
 - **2026-07-17** — **Từ `DERIVED` bị cấm trong code**, đổi thành `NORMALIZED_VALUE`. Lý do: `DERIVED` mời gọi diễn giải rộng, `INFERRED` sẽ chui vào qua cửa đó.
+- **2026-07-17** — **Data Classification (§13): World fact ⊥ Editorial taste ⊥ Model prior.** Đổi contract: scene tách thành `aesthetic{}` (required, Editorial) và `world{}` (optional, Truth). `physics`/`environment`/`lighting.time_of_day` từ required → optional trong `world`. Lý do: `physics.medium=WATER` là world fact không phải taste; World Graph chưa có location (recall gap) nên Editorial không được bịa. Vắng thì để trống, provider tự điền bằng model prior. Bỏ Asset Planner (projection, không trả rent) — `assets[]` emit ở Assembler.
 - **2026-07-17 (do TEST ĐỎ phát hiện, không do tranh luận)** — **`prohibitions` đổi nguồn sinh: Fact Extractor → Editorial Interpreter.** `domes: false` không qua nổi Gatekeeper vì nó là editorial interpretation, không phải verified fact. KHÔNG nới Gatekeeper. Editorial = trạm đầu của Planning Layer, **không phải tầng mới** (chi phí kiến trúc ≈ 0). Đúng **một** abstraction: `EditorialPolicy` (data) + `EditorialInterpreter` (generic code) — không chia 5 khái niệm cho 1 use case. Ba luật: knowledge là data không phải code · interpreter generic · read-only over World Graph (đã được type system bảo đảm miễn phí). Xem §12.
 
 ---
@@ -694,3 +700,29 @@ Editorial là nơi **duy nhất được phép** dùng world knowledge. Nó cũn
 Không gọi Claude. Không gọi LLM. Không inference. Nó là Rule Engine + Policies + Knowledge Base — **deterministic**.
 
 Khác biệt với Gatekeeper: Gatekeeper **cấm** mọi external knowledge; Editorial **được phép** có. Nhưng cả hai đều deterministic, và cả hai đều không gọi AI.
+
+---
+
+## 13. Data Classification — World Fact ⊥ Editorial Taste ⊥ Model Prior
+
+> Ranh giới quan trọng thứ ba, sau "Truth ⊥ Planning" (§1) và "Evidence never crosses boundary" (§1).
+
+Mỗi trường mô tả một scene thuộc **đúng một** trong ba loại tri thức. Trộn hai loại vào một trường là lỗi kiến trúc.
+
+| Loại | Nguồn | Trong RenderPlan | Vắng thì sao |
+|---|---|---|---|
+| **World fact** | Truth (có evidence) | `scene.world.*` — **optional** | **để trống**, KHÔNG default, KHÔNG suy luận |
+| **Editorial taste** | Editorial policy (data) | `scene.aesthetic.*` — **required** | điền default thẩm mỹ |
+| **Model prior** | world-knowledge của provider | *không xuất hiện* | provider tự điền lúc render |
+
+**Bốn luật:**
+
+1. **World fact chỉ sinh từ Truth** và có thể vắng. `world.medium`, `world.location`, `world.time_of_day`, `world.weather`, `world.light_source` — emit khi Truth có, omit khi không.
+2. **Editorial chỉ sinh aesthetic metadata.** `aesthetic.emotion`, `aesthetic.composition`, `aesthetic.light_intensity`, `aesthetic.light_grade` — luôn có, default thẩm mỹ khi không có gì đặc biệt.
+3. **Thiếu world fact KHÔNG được thay bằng suy luận hay mặc định.** "Missing" phải phân loại: missing aesthetic → fill; missing fact → leave missing. Không phải cứ thiếu là điền.
+4. **Provider được phép dùng world-knowledge của chính nó khi world fact vắng** — đó là trách nhiệm của provider, không phải của semantic pipeline. Prompt "cinematic wide shot of a 99.95m grey-hulled vessel" không có "on water" vẫn ra du thuyền trên biển, vì Flux/Kling *biết* tàu thì nổi.
+
+**Vì sao điều này quan trọng:** nó tách bạch *knowledge* (Truth), *taste* (Editorial), và *model priors* (provider). Editorial trở thành đúng nghĩa — chỉ làm đẹp, không bao giờ tạo/sửa/suy fact. Và nó tự giải quyết Backlog Recall: khi Extractor bắt thêm `location = Caribbean`, RenderPlan tự giàu hơn mà **Editorial không sửa một dòng code**. Nâng chất lượng Truth làm output giàu hơn, không làm Editorial phức tạp hơn — đó là dấu hiệu kiến trúc đúng.
+
+**Editorial được phép:** thêm · làm đẹp · nhấn mạnh · giảm nhẹ.
+**Editorial KHÔNG được phép:** tạo fact · sửa fact · suy fact.

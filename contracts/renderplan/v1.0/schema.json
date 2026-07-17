@@ -156,15 +156,13 @@
     "scene": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "ordinal", "act_id", "purpose", "subjects", "emotion", "composition", "motion_intent", "camera", "lighting", "physics", "environment"],
+      "required": ["id", "ordinal", "act_id", "purpose", "subjects", "motion_intent", "camera", "aesthetic"],
       "properties": {
         "id":      { "$ref": "#/$defs/slug" },
         "ordinal": { "type": "integer", "minimum": 1 },
         "act_id":  { "$ref": "#/$defs/slug" },
 
         "purpose":     { "enum": ["REVEAL", "ESTABLISH", "PROCESS", "DETAIL", "ACTION", "COMPARISON", "RESOLUTION"] },
-        "emotion":     { "enum": ["MAJESTIC", "TENSE", "CALM", "DRAMATIC", "TRIUMPHANT", "SOMBRE"] },
-        "composition": { "enum": ["CENTERED", "RULE_OF_THIRDS", "SYMMETRICAL", "LEADING_LINES"] },
 
         "motion_intent": {
           "description": "Thay the content_type cua kien truc cu. Laravel chi tra loi 'canh nay co can chuyen dong khong?'. Laravel KHONG duoc biet Ken Burns/Kling ton tai. Xem ARCHITECTURE.md §1.",
@@ -185,34 +183,29 @@
           }
         },
 
-        "lighting": {
+        "aesthetic": {
+          "description": "Editorial taste — LUON co mat, khong phu thuoc chu de. Day KHONG phai fact; Editorial dien default tham my khi khong co gi dac biet. Xem ARCHITECTURE.md §13.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["source", "time_of_day", "intensity"],
+          "required": ["emotion", "composition", "light_intensity", "light_grade"],
           "properties": {
-            "source":      { "enum": ["NATURAL", "ARTIFICIAL", "MIXED"] },
-            "time_of_day": { "enum": ["DAWN", "MORNING", "MIDDAY", "GOLDEN_HOUR", "DUSK", "NIGHT"] },
-            "intensity":   { "enum": ["SOFT", "NEUTRAL", "HARSH"] }
+            "emotion":         { "enum": ["MAJESTIC", "TENSE", "CALM", "DRAMATIC", "TRIUMPHANT", "SOMBRE"] },
+            "composition":     { "enum": ["CENTERED", "RULE_OF_THIRDS", "SYMMETRICAL", "LEADING_LINES"] },
+            "light_intensity": { "enum": ["SOFT", "NEUTRAL", "HARSH"] },
+            "light_grade":     { "enum": ["WARM", "COOL", "NEUTRAL", "GOLDEN", "NOIR"] }
           }
         },
 
-        "physics": {
+        "world": {
+          "description": "World FACTS tu Truth — TAT CA optional. Vang khi Truth khong co bang chung; KHONG BAO GIO thay bang default hay suy luan. Provider tu dien bang world-knowledge cua no khi vang (trach nhiem cua provider, khong phai semantic pipeline). Xem ARCHITECTURE.md §13.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["medium", "dynamics"],
           "properties": {
-            "medium":   { "enum": ["AIR", "WATER", "GROUND", "SPACE"] },
-            "dynamics": { "enum": ["STATIC", "GENTLE", "TURBULENT", "VIOLENT"] }
-          }
-        },
-
-        "environment": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["location", "weather"],
-          "properties": {
-            "location": { "type": "string", "minLength": 1 },
-            "weather":  { "enum": ["CLEAR", "CLOUDY", "RAIN", "SNOW", "FOG", "STORM", "INDOOR"] }
+            "medium":       { "enum": ["AIR", "WATER", "GROUND", "SPACE"] },
+            "location":     { "type": "string", "minLength": 1 },
+            "time_of_day":  { "enum": ["DAWN", "MORNING", "MIDDAY", "GOLDEN_HOUR", "DUSK", "NIGHT"] },
+            "weather":      { "enum": ["CLEAR", "CLOUDY", "RAIN", "SNOW", "FOG", "STORM", "INDOOR"] },
+            "light_source": { "enum": ["NATURAL", "ARTIFICIAL", "MIXED"] }
           }
         },
 

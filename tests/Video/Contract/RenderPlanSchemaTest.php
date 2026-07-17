@@ -236,4 +236,72 @@ class RenderPlanSchemaTest extends TestCase
 
         $this->assertPlanRejected($plan, 'identity thiếu visual_referent — Laravel phải phán đoán §4');
     }
+
+    // ---- World facts (Truth-derived, optional) ⊥ Aesthetic (Editorial, required) — §13 ----
+
+    /**
+     * World fact vắng là HỢP LỆ. Bài báo không nêu địa điểm/thời tiết thì scene
+     * không có `world` — provider tự điền bằng world-knowledge của nó. KHÔNG bịa.
+     */
+    public function test_scene_without_world_facts_is_valid(): void
+    {
+        $plan = $this->fixture();
+        unset($plan->scenes[0]->world);
+
+        $this->assertPlanValid($plan, 'scene thiếu world facts vẫn hợp lệ — Truth im lặng thì để trống');
+    }
+
+    public function test_scene_with_partial_world_facts_is_valid(): void
+    {
+        $plan = $this->fixture();
+        // Chỉ biết medium, không biết location/weather — hợp lệ.
+        $plan->scenes[0]->world = (object) ['medium' => 'WATER'];
+
+        $this->assertPlanValid($plan, 'world facts từng phần vẫn hợp lệ');
+    }
+
+    /**
+     * Aesthetic thì BẮT BUỘC đầy đủ — Editorial luôn phải điền, không có chuyện
+     * scene thiếu cảm xúc/bố cục. Đây là taste, luôn có default.
+     */
+    public function test_scene_without_aesthetic_is_rejected(): void
+    {
+        $plan = $this->fixture();
+        unset($plan->scenes[0]->aesthetic);
+
+        $this->assertPlanRejected($plan, 'aesthetic bắt buộc — Editorial luôn điền');
+    }
+
+    public function test_incomplete_aesthetic_is_rejected(): void
+    {
+        $plan = $this->fixture();
+        unset($plan->scenes[0]->aesthetic->light_grade);
+
+        $this->assertPlanRejected($plan, 'aesthetic thiếu light_grade — phải đủ 4 trường taste');
+    }
+
+    /**
+     * world chỉ chứa FACT có thật trong ontology. Không được nhét trường lạ —
+     * nếu không, một "fact" bịa sẽ lọt qua đúng cái cổng sinh ra để chặn bịa.
+     */
+    public function test_world_rejects_unknown_field(): void
+    {
+        $plan = $this->fixture();
+        $plan->scenes[0]->world->vibe = 'luxurious';
+
+        $this->assertPlanRejected($plan, 'world mang trường lạ ("vibe")');
+    }
+
+    /**
+     * Không được trộn nguồn: một trường taste (emotion) không được nằm trong
+     * world, một fact (medium) không được nằm trong aesthetic. Hình dạng phải
+     * nói rõ field nào là fact, field nào là taste.
+     */
+    public function test_aesthetic_and_world_do_not_leak_into_each_other(): void
+    {
+        $plan = $this->fixture();
+        $plan->scenes[0]->world->emotion = 'MAJESTIC'; // taste lọt vào world
+
+        $this->assertPlanRejected($plan, 'emotion (taste) không được nằm trong world (fact)');
+    }
 }
