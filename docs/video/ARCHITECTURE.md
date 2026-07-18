@@ -726,3 +726,67 @@ Mỗi trường mô tả một scene thuộc **đúng một** trong ba loại tr
 
 **Editorial được phép:** thêm · làm đẹp · nhấn mạnh · giảm nhẹ.
 **Editorial KHÔNG được phép:** tạo fact · sửa fact · suy fact.
+
+---
+
+## 15. Subject Consistency — một ảnh tham chiếu xuyên suốt (Rendering)
+
+> **Yêu cầu (2026-07-18):** trong một video, chủ thể (vd du thuyền) phải là CÙNG MỘT thiết kế xuyên suốt — từ ảnh tới video, từ cảnh thiết kế tới cảnh hoàn thiện.
+
+**Ràng buộc kỹ thuật — không thể vừa T2V thuần vừa nhất quán:**
+- **Text-to-video** (mỗi clip từ chữ, độc lập) → mỗi clip một chủ thể KHÁC. Không có cơ chế giữ nhất quán.
+- **Nhất quán** → bắt buộc có **một ảnh tham chiếu (hero image)** dẫn dắt mọi render → **image-to-video** hoặc **image-to-image**. Không có đường thứ ba.
+
+**Cơ chế:**
+1. Sinh **hero image** MỘT lần (character sheet của chủ thể: định danh từ verified attributes — grey hull, vertical bow...).
+2. Beat có chủ thể hoàn thiện → **image-to-video** từ cùng hero (`kling.py` `character_key` — đã có). Nhất quán MẠNH.
+3. Beat giai đoạn khác (wireframe/hull thô/nội thất) → giữ **ngôn ngữ thiết kế** qua **image-to-image** từ hero (cần Flux img2img — `FluxAdapter` hiện chỉ text→image, là khoảng trống phải bổ sung).
+
+**Bằng chứng:** render "Daybreak" 6 beat bằng T2V/Flux độc lập → 6 con tàu khác nhau về chi tiết. Xác nhận: consistency KHÔNG đến từ prompt (dù pin attributes), mà từ ảnh tham chiếu. Xem memory `project_render_evidence_moonrise`.
+
+---
+
+## 16. Design around Identity — mechanism là strategy hoán đổi
+
+> **Thiết kế hệ thống quanh IDENTITY, không quanh Redux/LoRA.** Identity Package ổn định; cơ chế nhất quán (Redux / LoRA / i2v / model tương lai) là backend hoán đổi; một selector chọn backend.
+
+Cùng pattern "IR ổn định, backend hoán đổi" đã dùng cho provider:
+
+| Ổn định (hợp đồng) | Backend hoán đổi | Chọn backend |
+|---|---|---|
+| **Identity Package** | Redux / LoRA / i2v / future | Strategy selector |
+| RenderPlan | Kling / Veo / Runway | Provider registry |
+
+**Identity Package** (provider/mechanism-độc-lập — mô tả *subject LÀ AI*, không *render bằng gì*):
+```
+├── attributes verified  ← Truth Layer (ADN hình ảnh: grey hull, vertical bow...)
+├── identity             ← VEntity.identity (name, visual_referent)
+├── hero image(s)        ← ảnh tham chiếu render từ attributes
+└── metadata             ← seed, mechanism, embedding
+```
+Truth Layer đã cho nửa định danh (attributes). Hero image neo vào đó. Package KHÔNG biết Redux/LoRA tồn tại.
+
+**Strategy selector — RESERVED SEAM (chưa thi công):** không cần là "AI" ở v1 — như `provider registry` là DATA/rule: `mặc định Redux; subject >N cảnh + budget cao → LoRA`. Chỉ leo "AI selector" khi rule chứng minh không đủ. Cần ≥2 mechanism + 20-video benchmark trước khi build selector (Rule 0).
+
+**Thứ tự (evidence-first):** Identity Package + Redux → validate MỘT subject → đủ tốt mới scale 20-video eval → LoRA chỉ khi Redux không đạt. Đừng dựng eval harness / selector trước khi mechanism chạy được một lần.
+
+---
+
+## 14. Rule 14 — RenderPlan is immutable
+
+> **RenderPlan là artifact CUỐI CÙNG của Semantic Runtime. Sau khi validate thành công, nó KHÔNG BAO GIỜ được mutate.**
+> Mọi optimization, normalization, provider adaptation, caching và prompt synthesis phải diễn ra trên **VideoIR** trong Media Runtime.
+
+Đây là chiếc đinh cuối khoá ranh giới Laravel ↔ Python. Triết lý compiler: frontend sinh IR, IR bất biến ở đường biên, backend biến đổi trên bản sao runtime.
+
+```
+HTML → Semantic Runtime (Laravel) → RenderPlan.json
+════════════════════ FREEZE ════════════════════
+RenderPlan.json → VideoIR → [passes mutate VideoIR] → ProviderIR → prompt
+```
+
+**RenderPlan là document. VideoIR là runtime object.** Sau này `AssetOptimizer`, `ShotMerger`, `PromptOptimizer`, `CacheOptimizer`, `ProviderCapabilityResolver` — tất cả sửa **VideoIR**, không ai được sửa RenderPlan.
+
+Kling đổi API → không sửa RenderPlan. Flux có feature mới → không sửa RenderPlan. Veo cần prompt khác → không sửa RenderPlan. Mọi thay đổi chỉ sau `RenderPlan → VideoIR`.
+
+**Hệ quả — RenderPlan v1.0 FROZEN:** không thêm field nếu chưa thật sự bắt buộc. Ba thứ còn nợ (prohibitions, facts[].visual_hint, world facts từ Recall) là **enrichment**, không phải compile blocker — chúng làm RenderPlan giàu hơn qua chính các tầng đã có, không đổi structure. Làm sau khi Media Runtime chạy ổn.
