@@ -190,7 +190,7 @@ class ArchitectureTest extends TestCase
 
         // Mọi thư mục thuộc Planning Layer. Thêm phase mới (Intent, Asset...) thì
         // thêm vào đây — ranh giới áp cho toàn tầng, không riêng Story.
-        foreach (['Story', 'Scene', 'Intent', 'Timeline'] as $dir) {
+        foreach (['Story', 'Scene', 'Intent', 'Timeline', 'Editorial'] as $dir) {
             $this->assertNoneOf($banned, $why, __DIR__ . '/../../../app/Video/' . $dir);
         }
     }
