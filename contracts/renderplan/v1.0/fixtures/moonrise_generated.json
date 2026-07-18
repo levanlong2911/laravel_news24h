@@ -1,0 +1,830 @@
+{
+    "plan_version": "1.0",
+    "plan_id": "0198f3a1-4b2c-4d3e-8f10-2a3b4c5d6e7f",
+    "article_id": "a24744a6-2477-4540-af84-59255cc606f9",
+    "generated_at": "2026-07-18T00:00:00Z",
+    "story": {
+        "title": "The Greatest Superyacht Deal of 2026: Tech Tycoon’s Megayacht Fetches $370M",
+        "language": "en",
+        "target_seconds": 60
+    },
+    "world": {
+        "entities": [
+            {
+                "id": "moonrise_2020",
+                "type": "vehicle",
+                "attributes": {
+                    "asking_price_eur": 325000000,
+                    "asking_price_usd": 370000000,
+                    "length_meters": 99.95,
+                    "length_feet": 327,
+                    "delivery_year": 2020,
+                    "volume_gt": 4000,
+                    "beam_meters": 15.5,
+                    "beam_feet": 50.8,
+                    "guest_capacity": 16,
+                    "stateroom_count": 8,
+                    "crew_capacity": 32,
+                    "top_speed_knots": 19.5,
+                    "range_nautical_miles": 8000,
+                    "cruising_speed_knots": 16,
+                    "hull_color": "grey",
+                    "hull_material": "steel",
+                    "interior_design_style": "minimalist",
+                    "engine_count": 2,
+                    "engine_power_hp_each": 4813,
+                    "engine_power_kw_each": 3589,
+                    "profile_description": "modern masculine profile",
+                    "bow_type": "vertical",
+                    "onboard_amenity": [
+                        "beach club",
+                        "helipad",
+                        "spa area"
+                    ],
+                    "year_sold": 2026
+                },
+                "identity": {
+                    "name": "Moonrise",
+                    "visual_referent": true
+                }
+            },
+            {
+                "id": "jan_koum",
+                "type": "human",
+                "attributes": {
+                    "occupation": "founder of WhatsApp",
+                    "forbes_2026_billionaire_rank": 166
+                },
+                "identity": {
+                    "name": "Jan Koum",
+                    "visual_referent": false
+                }
+            },
+            {
+                "id": "whatsapp",
+                "type": "physical_object",
+                "attributes": {
+                    "sale_price_usd": 19000000000,
+                    "sale_year": 2014
+                },
+                "identity": {
+                    "name": "WhatsApp",
+                    "visual_referent": true
+                }
+            },
+            {
+                "id": "nebula",
+                "type": "vehicle",
+                "attributes": {
+                    "length_meters": 68,
+                    "length_feet": 223,
+                    "award": "Judges' Special Award at the 2023 World Superyacht Awards",
+                    "heli_hangar_width_meters": 14.5,
+                    "heli_hangar_depth_meters": 12,
+                    "heli_hangar_width_feet": 47.5,
+                    "heli_hangar_depth_feet": 39
+                },
+                "identity": {
+                    "name": "Nebula",
+                    "visual_referent": true
+                }
+            },
+            {
+                "id": "incat_crowther",
+                "type": "building",
+                "attributes": {
+                    "nationality": "Australian"
+                },
+                "identity": {
+                    "name": "Incat Crowther",
+                    "visual_referent": true
+                }
+            },
+            {
+                "id": "astilleros_armon",
+                "type": "building",
+                "attributes": {
+                    "nationality": "Spanish",
+                    "shipyard_count": 7
+                },
+                "identity": {
+                    "name": "Astilleros Armon",
+                    "visual_referent": true
+                }
+            },
+            {
+                "id": "moonrise_2025",
+                "type": "vehicle",
+                "attributes": {
+                    "length_meters": 101,
+                    "length_feet": 330,
+                    "onboard_amenity": [
+                        "bridge-deck cinema",
+                        "hair salon",
+                        "gym",
+                        "massage area"
+                    ]
+                },
+                "identity": {
+                    "name": "Moonrise",
+                    "visual_referent": true
+                }
+            },
+            {
+                "id": "burgess",
+                "type": "building",
+                "attributes": {
+                    "role": "brokerage firm"
+                },
+                "identity": {
+                    "name": "Burgess",
+                    "visual_referent": true
+                }
+            },
+            {
+                "id": "feadship",
+                "type": "building",
+                "attributes": {},
+                "identity": {
+                    "name": "Feadship",
+                    "visual_referent": true
+                }
+            },
+            {
+                "id": "de_voogt_naval_architects",
+                "type": "building",
+                "attributes": {},
+                "identity": {
+                    "name": "De Voogt Naval Architects",
+                    "visual_referent": true
+                }
+            },
+            {
+                "id": "remi_tessier",
+                "type": "human",
+                "attributes": {},
+                "identity": {
+                    "name": "Remi Tessier",
+                    "visual_referent": false
+                }
+            },
+            {
+                "id": "airbus_h145",
+                "type": "vehicle",
+                "attributes": {
+                    "engine_type": "twin-engine"
+                },
+                "identity": {
+                    "name": "Airbus H145",
+                    "visual_referent": true
+                }
+            }
+        ],
+        "relations": [
+            {
+                "id": "r1",
+                "from": "burgess",
+                "to": "moonrise_2020",
+                "type": "represented_seller_of"
+            },
+            {
+                "id": "r2",
+                "from": "jan_koum",
+                "to": "whatsapp",
+                "type": "founded"
+            },
+            {
+                "id": "r3",
+                "from": "jan_koum",
+                "to": "moonrise_2020",
+                "type": "original_owner"
+            },
+            {
+                "id": "r4",
+                "from": "feadship",
+                "to": "moonrise_2020",
+                "type": "built"
+            },
+            {
+                "id": "r5",
+                "from": "de_voogt_naval_architects",
+                "to": "moonrise_2020",
+                "type": "engineered_hull_of"
+            },
+            {
+                "id": "r6",
+                "from": "remi_tessier",
+                "to": "moonrise_2020",
+                "type": "designed_interior_of"
+            },
+            {
+                "id": "r7",
+                "from": "nebula",
+                "to": "moonrise_2020",
+                "type": "support_vessel_for"
+            },
+            {
+                "id": "r8",
+                "from": "incat_crowther",
+                "to": "nebula",
+                "type": "designed"
+            },
+            {
+                "id": "r9",
+                "from": "astilleros_armon",
+                "to": "nebula",
+                "type": "built"
+            },
+            {
+                "id": "r10",
+                "from": "feadship",
+                "to": "moonrise_2025",
+                "type": "built"
+            },
+            {
+                "id": "r11",
+                "from": "de_voogt_naval_architects",
+                "to": "moonrise_2025",
+                "type": "engineered"
+            },
+            {
+                "id": "r12",
+                "from": "jan_koum",
+                "to": "moonrise_2025",
+                "type": "reported_owner"
+            }
+        ],
+        "events": [
+            {
+                "id": "e1",
+                "type": "sale",
+                "entity_id": "moonrise_2020"
+            },
+            {
+                "id": "e2",
+                "type": "delivery",
+                "entity_id": "moonrise_2020"
+            },
+            {
+                "id": "e3",
+                "type": "award_win",
+                "entity_id": "moonrise_2020"
+            },
+            {
+                "id": "e4",
+                "type": "award_win",
+                "entity_id": "nebula"
+            },
+            {
+                "id": "e5",
+                "type": "sale",
+                "entity_id": "whatsapp"
+            },
+            {
+                "id": "e6",
+                "type": "delivery",
+                "entity_id": "moonrise_2025"
+            }
+        ]
+    },
+    "facts": [],
+    "acts": [
+        {
+            "id": "act_1",
+            "ordinal": 1,
+            "source": "ENTITY",
+            "entity_ref": "moonrise_2020"
+        },
+        {
+            "id": "act_2",
+            "ordinal": 2,
+            "source": "EVENT",
+            "event_ref": "e1"
+        },
+        {
+            "id": "act_3",
+            "ordinal": 3,
+            "source": "EVENT",
+            "event_ref": "e2"
+        },
+        {
+            "id": "act_4",
+            "ordinal": 4,
+            "source": "EVENT",
+            "event_ref": "e3"
+        },
+        {
+            "id": "act_5",
+            "ordinal": 5,
+            "source": "ENTITY",
+            "entity_ref": "nebula"
+        },
+        {
+            "id": "act_6",
+            "ordinal": 6,
+            "source": "RELATION",
+            "relation_ref": "r7"
+        },
+        {
+            "id": "act_7",
+            "ordinal": 7,
+            "source": "RELATION",
+            "relation_ref": "r3"
+        },
+        {
+            "id": "act_8",
+            "ordinal": 8,
+            "source": "ENTITY",
+            "entity_ref": "moonrise_2025"
+        }
+    ],
+    "scenes": [
+        {
+            "id": "scene_1",
+            "ordinal": 1,
+            "act_id": "act_1",
+            "purpose": "ESTABLISH",
+            "subjects": [
+                "moonrise_2020"
+            ],
+            "motion_intent": "LOW",
+            "camera": {
+                "framing": "WIDE",
+                "movement": "ORBIT",
+                "speed": "SLOW",
+                "target": "moonrise_2020"
+            },
+            "aesthetic": {
+                "emotion": "CALM",
+                "composition": "CENTERED",
+                "light_intensity": "SOFT",
+                "light_grade": "NEUTRAL"
+            },
+            "asset_refs": [
+                "as_moonrise_2020"
+            ]
+        },
+        {
+            "id": "scene_2",
+            "ordinal": 2,
+            "act_id": "act_1",
+            "purpose": "DETAIL",
+            "subjects": [
+                "moonrise_2020"
+            ],
+            "motion_intent": "NONE",
+            "camera": {
+                "framing": "DETAIL",
+                "movement": "PUSH_IN",
+                "speed": "SLOW",
+                "target": "moonrise_2020"
+            },
+            "aesthetic": {
+                "emotion": "CALM",
+                "composition": "CENTERED",
+                "light_intensity": "SOFT",
+                "light_grade": "NEUTRAL"
+            },
+            "asset_refs": [
+                "as_moonrise_2020"
+            ]
+        },
+        {
+            "id": "scene_3",
+            "ordinal": 3,
+            "act_id": "act_2",
+            "purpose": "ACTION",
+            "subjects": [
+                "moonrise_2020"
+            ],
+            "motion_intent": "HIGH",
+            "camera": {
+                "framing": "MEDIUM",
+                "movement": "TRACK",
+                "speed": "FAST",
+                "target": "moonrise_2020"
+            },
+            "aesthetic": {
+                "emotion": "TENSE",
+                "composition": "RULE_OF_THIRDS",
+                "light_intensity": "HARSH",
+                "light_grade": "COOL"
+            },
+            "asset_refs": [
+                "as_moonrise_2020"
+            ]
+        },
+        {
+            "id": "scene_4",
+            "ordinal": 4,
+            "act_id": "act_3",
+            "purpose": "ACTION",
+            "subjects": [
+                "moonrise_2020"
+            ],
+            "motion_intent": "HIGH",
+            "camera": {
+                "framing": "MEDIUM",
+                "movement": "TRACK",
+                "speed": "FAST",
+                "target": "moonrise_2020"
+            },
+            "aesthetic": {
+                "emotion": "TENSE",
+                "composition": "RULE_OF_THIRDS",
+                "light_intensity": "HARSH",
+                "light_grade": "COOL"
+            },
+            "asset_refs": [
+                "as_moonrise_2020"
+            ]
+        },
+        {
+            "id": "scene_5",
+            "ordinal": 5,
+            "act_id": "act_4",
+            "purpose": "ACTION",
+            "subjects": [
+                "moonrise_2020"
+            ],
+            "motion_intent": "HIGH",
+            "camera": {
+                "framing": "MEDIUM",
+                "movement": "TRACK",
+                "speed": "FAST",
+                "target": "moonrise_2020"
+            },
+            "aesthetic": {
+                "emotion": "TENSE",
+                "composition": "RULE_OF_THIRDS",
+                "light_intensity": "HARSH",
+                "light_grade": "COOL"
+            },
+            "asset_refs": [
+                "as_moonrise_2020"
+            ]
+        },
+        {
+            "id": "scene_6",
+            "ordinal": 6,
+            "act_id": "act_5",
+            "purpose": "DETAIL",
+            "subjects": [
+                "nebula"
+            ],
+            "motion_intent": "NONE",
+            "camera": {
+                "framing": "DETAIL",
+                "movement": "PUSH_IN",
+                "speed": "SLOW",
+                "target": "nebula"
+            },
+            "aesthetic": {
+                "emotion": "CALM",
+                "composition": "CENTERED",
+                "light_intensity": "SOFT",
+                "light_grade": "NEUTRAL"
+            },
+            "asset_refs": [
+                "as_nebula"
+            ]
+        },
+        {
+            "id": "scene_7",
+            "ordinal": 7,
+            "act_id": "act_6",
+            "purpose": "REVEAL",
+            "subjects": [
+                "nebula",
+                "moonrise_2020"
+            ],
+            "motion_intent": "LOW",
+            "camera": {
+                "framing": "WIDE",
+                "movement": "PUSH_IN",
+                "speed": "SLOW",
+                "target": "nebula"
+            },
+            "aesthetic": {
+                "emotion": "CALM",
+                "composition": "RULE_OF_THIRDS",
+                "light_intensity": "SOFT",
+                "light_grade": "WARM"
+            },
+            "asset_refs": [
+                "as_nebula",
+                "as_moonrise_2020"
+            ]
+        },
+        {
+            "id": "scene_8",
+            "ordinal": 8,
+            "act_id": "act_7",
+            "purpose": "REVEAL",
+            "subjects": [
+                "jan_koum",
+                "moonrise_2020"
+            ],
+            "motion_intent": "LOW",
+            "camera": {
+                "framing": "WIDE",
+                "movement": "PUSH_IN",
+                "speed": "SLOW",
+                "target": "jan_koum"
+            },
+            "aesthetic": {
+                "emotion": "CALM",
+                "composition": "RULE_OF_THIRDS",
+                "light_intensity": "SOFT",
+                "light_grade": "WARM"
+            },
+            "asset_refs": [
+                "as_jan_koum",
+                "as_moonrise_2020"
+            ]
+        },
+        {
+            "id": "scene_9",
+            "ordinal": 9,
+            "act_id": "act_8",
+            "purpose": "RESOLUTION",
+            "subjects": [
+                "moonrise_2025"
+            ],
+            "motion_intent": "LOW",
+            "camera": {
+                "framing": "AERIAL",
+                "movement": "PULL_OUT",
+                "speed": "SLOW",
+                "target": "moonrise_2025"
+            },
+            "aesthetic": {
+                "emotion": "MAJESTIC",
+                "composition": "CENTERED",
+                "light_intensity": "SOFT",
+                "light_grade": "GOLDEN"
+            },
+            "asset_refs": [
+                "as_moonrise_2025"
+            ]
+        }
+    ],
+    "timeline": [
+        {
+            "scene_id": "scene_1",
+            "start_sec": 0,
+            "end_sec": 6.666666666666667
+        },
+        {
+            "scene_id": "scene_2",
+            "start_sec": 6.666666666666667,
+            "end_sec": 13.333333333333334
+        },
+        {
+            "scene_id": "scene_3",
+            "start_sec": 13.333333333333334,
+            "end_sec": 20
+        },
+        {
+            "scene_id": "scene_4",
+            "start_sec": 20,
+            "end_sec": 26.666666666666668
+        },
+        {
+            "scene_id": "scene_5",
+            "start_sec": 26.666666666666668,
+            "end_sec": 33.333333333333336
+        },
+        {
+            "scene_id": "scene_6",
+            "start_sec": 33.333333333333336,
+            "end_sec": 40
+        },
+        {
+            "scene_id": "scene_7",
+            "start_sec": 40,
+            "end_sec": 46.666666666666664
+        },
+        {
+            "scene_id": "scene_8",
+            "start_sec": 46.666666666666664,
+            "end_sec": 53.333333333333336
+        },
+        {
+            "scene_id": "scene_9",
+            "start_sec": 53.333333333333336,
+            "end_sec": 60
+        }
+    ],
+    "assets": [
+        {
+            "id": "as_moonrise_2020",
+            "kind": "vehicle",
+            "entity_id": "moonrise_2020",
+            "required": true
+        },
+        {
+            "id": "as_nebula",
+            "kind": "vehicle",
+            "entity_id": "nebula",
+            "required": true
+        },
+        {
+            "id": "as_jan_koum",
+            "kind": "human",
+            "entity_id": "jan_koum",
+            "required": true
+        },
+        {
+            "id": "as_moonrise_2025",
+            "kind": "vehicle",
+            "entity_id": "moonrise_2025",
+            "required": true
+        }
+    ],
+    "continuity": {
+        "invariants": [
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "asking_price_eur",
+                "value": 325000000,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "asking_price_usd",
+                "value": 370000000,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "length_meters",
+                "value": 99.95,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "length_feet",
+                "value": 327,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "delivery_year",
+                "value": 2020,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "volume_gt",
+                "value": 4000,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "beam_meters",
+                "value": 15.5,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "beam_feet",
+                "value": 50.8,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "guest_capacity",
+                "value": 16,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "stateroom_count",
+                "value": 8,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "crew_capacity",
+                "value": 32,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "top_speed_knots",
+                "value": 19.5,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "range_nautical_miles",
+                "value": 8000,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "cruising_speed_knots",
+                "value": 16,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "hull_color",
+                "value": "grey",
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "hull_material",
+                "value": "steel",
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "interior_design_style",
+                "value": "minimalist",
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "engine_count",
+                "value": 2,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "engine_power_hp_each",
+                "value": 4813,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "engine_power_kw_each",
+                "value": 3589,
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "profile_description",
+                "value": "modern masculine profile",
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "bow_type",
+                "value": "vertical",
+                "scope": "always"
+            },
+            {
+                "entity_id": "moonrise_2020",
+                "attribute": "year_sold",
+                "value": 2026,
+                "scope": "always"
+            },
+            {
+                "entity_id": "nebula",
+                "attribute": "length_meters",
+                "value": 68,
+                "scope": "always"
+            },
+            {
+                "entity_id": "nebula",
+                "attribute": "length_feet",
+                "value": 223,
+                "scope": "always"
+            },
+            {
+                "entity_id": "nebula",
+                "attribute": "award",
+                "value": "Judges' Special Award at the 2023 World Superyacht Awards",
+                "scope": "always"
+            },
+            {
+                "entity_id": "nebula",
+                "attribute": "heli_hangar_width_meters",
+                "value": 14.5,
+                "scope": "always"
+            },
+            {
+                "entity_id": "nebula",
+                "attribute": "heli_hangar_depth_meters",
+                "value": 12,
+                "scope": "always"
+            },
+            {
+                "entity_id": "nebula",
+                "attribute": "heli_hangar_width_feet",
+                "value": 47.5,
+                "scope": "always"
+            },
+            {
+                "entity_id": "nebula",
+                "attribute": "heli_hangar_depth_feet",
+                "value": 39,
+                "scope": "always"
+            }
+        ],
+        "prohibitions": []
+    }
+}

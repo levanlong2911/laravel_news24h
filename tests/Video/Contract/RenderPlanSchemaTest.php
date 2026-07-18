@@ -57,6 +57,23 @@ class RenderPlanSchemaTest extends TestCase
         $this->assertPlanValid($this->fixture(), 'Golden fixture Moonrise phải pass schema v1.0');
     }
 
+    /**
+     * Fixture sinh TỪ pipeline (không viết tay) cũng phải luôn hợp lệ. Đây là
+     * neo regression: nếu một thay đổi schema hay Assembler làm output thật gãy,
+     * test này đỏ ngay. Khác với fixture viết tay (tập luyện toàn schema kể cả
+     * world{} + prohibitions), cái này phản ánh NĂNG LỰC THẬT hiện tại.
+     */
+    public function test_pipeline_generated_fixture_is_valid(): void
+    {
+        $path = self::CONTRACT_DIR . '/fixtures/moonrise_generated.json';
+
+        $this->assertFileExists($path, 'Chạy scripts sinh RenderPlan để tạo fixture pipeline');
+        $this->assertPlanValid(
+            json_decode(file_get_contents($path), false, 512, JSON_THROW_ON_ERROR),
+            'RenderPlan sinh từ pipeline phải pass schema',
+        );
+    }
+
     public function test_timeline_covers_target_seconds_without_gaps_or_overlaps(): void
     {
         $plan = $this->fixture();
