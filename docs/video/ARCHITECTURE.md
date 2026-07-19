@@ -790,3 +790,42 @@ RenderPlan.json → VideoIR → [passes mutate VideoIR] → ProviderIR → promp
 Kling đổi API → không sửa RenderPlan. Flux có feature mới → không sửa RenderPlan. Veo cần prompt khác → không sửa RenderPlan. Mọi thay đổi chỉ sau `RenderPlan → VideoIR`.
 
 **Hệ quả — RenderPlan v1.0 FROZEN:** không thêm field nếu chưa thật sự bắt buộc. Ba thứ còn nợ (prohibitions, facts[].visual_hint, world facts từ Recall) là **enrichment**, không phải compile blocker — chúng làm RenderPlan giàu hơn qua chính các tầng đã có, không đổi structure. Làm sau khi Media Runtime chạy ổn.
+
+---
+
+## 17. Design Layer — Design-first, Master Design Asset (Sprint 2, VALIDATED)
+
+> **Prompt-first chết ở consistency. Design-first: thiết kế sinh MỘT LẦN → NGƯỜI duyệt → FREEZE → mọi tầng sau chỉ THỰC HIỆN, không thiết kế lại.** Validated 2026-07-19: 6 beat Daybreak cùng MỘT con tàu từ sketch → blueprint → thi công → nội thất → hạ thủy → vận hành (~$0.80 học phí render).
+
+**Logical Truth ⊥ Physical Truth** (đóng sổ tranh luận "spec làm render source"):
+- **Logical Truth** = `brief.json` (facts + design intent + DNA + constraints + recipes + ontology). Hệ thống SỞ HỮU. Spec text KHÔNG pin được hình học (bằng chứng: 6 prompt cùng descriptors → 5 thiết kế) — spec là *công thức regen + checklist QA*.
+- **Physical Truth** = anchor image ĐÃ ĐƯỢC NGƯỜI DUYỆT + sheet derive từ nó. Renderer chỉ hiểu Physical. Logical *compile* thành Physical qua t2i + human pick.
+
+**DAM — Candidate → Approved → Frozen** (`media_runtime/design/asset.py`):
+```
+design/<subject_id>/
+    brief.json      ← Logical Truth (design_id = identity_hash, content-addressable)
+    candidates/     ← Industrial Design Session; NGƯỜI pick (design review)
+    approved/       ← design.json + sheet.json + cells — nguồn DUY NHẤT cho pipeline sau
+    history/        ← mọi cell bị thay được archive (provenance, rollback)
+```
+- Cell = **3 trục** `view__state__representation` (blueprint = đổi *representation*, construction = đổi *state* — không phải "loại view mới").
+- **Freeze enforce bằng code**: `require_frozen()` chặn render film; `SheetFrozenError` chặn ghi cell sau freeze; `unfreeze()` phải có chủ đích. LoRA sau này train từ `approved/`, không từ candidates.
+- Sheet **mở rộng đơn điệu**: view/state mới derive từ anchor đã freeze → không đổi cell cũ. Chỉ sinh cell CÓ BEAT TIÊU THỤ (Rule 0).
+
+**Production Ontology — domain là DATA** (`design/data/*.json`): beat/cell lấy vocabulary THẬT của stage (`hull_erection`: dry dock, keel blocks, primer đỏ...) thay vì bịa ("workers welding" rỗng — beat 3 hỏng 3 lần trước khi có ontology). Domain mới = thêm file data, không thêm tầng. State axis của sheet lấy giá trị từ ontology.
+
+**Render Router — luật mechanism trả rent bằng render** (`design/router.py`):
+
+| Loại thay đổi so với cell nguồn | Mechanism | Bằng chứng |
+|---|---|---|
+| `none` (cell đúng state+scene) | i2i **strength ≤0.45** | i2i 0.6–0.9 tái sinh ảnh → trôi thiết kế mà vẫn không đổi được scene |
+| `environment` (chỉ đổi bối cảnh) | Kontext dev | beat 5/6 đạt |
+| `representation` (photo→technical...) | Kontext dev | blueprint đạt |
+| `subject_state` (thi công, tháo dỡ) | **Kontext PRO** | dev trượt 3 lần liên tiếp; PRO đạt lần đầu |
+
+- Mọi Kontext prompt **mở đầu bằng mệnh lệnh bảo toàn** (`PRESERVATION_PREFIX` — "Do not alter the subject...") TRƯỚC phần tả scene — đảo thứ tự là trượt.
+- **Mỗi thế hệ sinh ảnh thêm một lớp trôi** → route 1-hop thẳng từ anchor khi có thể; tránh anchor→cell→beat 2-hop cho frame cuối.
+- Negative prompt trên fal flux dev **không được hỗ trợ** — constraint phải vào positive phrasing hoặc backend có negative.
+
+**Vai trò (đúng studio):** Industrial Designer đề xuất (t2i candidates) — **NGƯỜI là design review** (pick + QA 7 điểm: mũi/thân/nhịp cửa sổ/bridge/tỷ lệ boong/màu/nhận-ra-1-giây, 5/7 = freeze). Creative (Producer/Director) không được sửa design — chỉ được nói "reveal the scale", không được đổi bow. RESERVED: Industrial Designer AI đa-concept, Geometry QA tự động (CV/VLM), trục Representation đầy đủ, LoRA-on-sheet (leo khi Kontext PRO không đạt), 3D/CAD (đích 10-năm).
