@@ -50,6 +50,18 @@
         "invariants":   { "type": "array", "items": { "$ref": "#/$defs/invariant" } },
         "prohibitions": { "type": "array", "items": { "$ref": "#/$defs/prohibition" } }
       }
+    },
+
+    "producer": {
+      "description": "Creative direction cap PHIM (Producer role). OPTIONAL - plan khong co van hop le v1.0. Validated bang render 2026-07-19. Xem ARCHITECTURE.md 17.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target_audience": { "type": "string" },
+        "core_conflict":   { "type": "string" },
+        "visual_promise":  { "type": "string" },
+        "emotional_curve": { "type": "array", "items": { "type": "string" } }
+      }
     }
   },
 
@@ -210,7 +222,24 @@
         },
 
         "fact_refs":  { "type": "array", "items": { "$ref": "#/$defs/slug" } },
-        "asset_refs": { "type": "array", "items": { "$ref": "#/$defs/slug" } }
+        "asset_refs": { "type": "array", "items": { "$ref": "#/$defs/slug" } },
+
+        "director_notes": { "$ref": "#/$defs/director_notes" }
+      }
+    },
+
+    "director_notes": {
+      "description": "Y do sang tao cua MOT canh (Director role) — tra loi 'khan gia nen CAM thay gi', KHONG phai prompt. OPTIONAL. Provider-doc-lap: song sot khi doi Kling→Veo. style_shift: canh duoc lech style toan-phim KHI cam xuc doi hoi (bang chung beat 4, 2026-07-19). Xem ARCHITECTURE.md §17.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "narrative_goal":    { "type": "string" },
+        "audience_emotion":  { "type": "string" },
+        "reveal_strategy":   { "type": "string" },
+        "visual_priority":   { "type": "array", "items": { "type": "string" } },
+        "camera_philosophy": { "type": "string" },
+        "avoid":             { "type": "array", "items": { "type": "string" } },
+        "style_shift":       { "type": "string" }
       }
     },
 
