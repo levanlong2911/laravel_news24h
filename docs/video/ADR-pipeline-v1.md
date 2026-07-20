@@ -142,12 +142,38 @@ trong frame — không nhắm vào "engine room" (bên trong thân tàu, không 
 (none/partial/hidden) — metadata cho entity bị che một phần (vd worker đứng sau container)
 để Motion Composer biết không thể "worker waving" nếu tay bị che.
 
-### Motion Complexity Budget
+### Motion/Semantic Density Budget
 
-Reserved (chưa code) — cấp độ `simple/medium/rich` giới hạn số nhóm chuyển động đồng
-thời (`rich ≤ 4 moving groups`). Hôm nay budget thực tế đến từ chính Entity Budget + độ
-dài prompt (bão hoà ~700–2000 chars); formalize thành enum khi có bằng chứng cụ thể
-(Rule 0) — ví dụ một shot vượt budget mà vẫn render tốt, hoặc ngược lại.
+Reserved (chưa code, gộp 2 đề xuất trùng nhau — "Motion Complexity" và "Semantic
+Density" đo cùng một thứ dưới tên khác) — cấp độ `simple/medium/rich` giới hạn số
+thực thể/nhóm chuyển động đồng thời (`rich ≤ 4`). Hôm nay budget thực tế đến từ chính
+Entity Budget + độ dài prompt (bão hoà ~700–2000 chars); formalize thành enum khi có
+bằng chứng cụ thể (Rule 0) — ví dụ một shot vượt budget mà vẫn render tốt, hoặc ngược lại.
+
+### Attention Weight (ĐÃ CÓ — không phải field mới)
+
+`primary_weight`/`secondary_weight`/`environment_weight` trong MotionSpec (0.7/0.2/0.1
+mặc định) CHÍNH LÀ attention budget — quyết định thứ tự ưu tiên trong prompt (AI đọc đầu
+trước). Đã code từ bản MotionComposer đầu tiên; chỉ đổi tên gọi trong comment cho rõ
+nghĩa, không phải bất biến mới.
+
+### Frame Capacity (ĐÃ CODE — `check_frame_capacity()`, 2026-07-20)
+
+Map `camera.framing` (RenderPlan contract, ĐÃ ĐÓNG BĂNG: `WIDE/MEDIUM/CLOSE/DETAIL/
+AERIAL`) → mức chi tiết cho phép. WIDE/AERIAL chỉ thấy dáng người (không mặt); CLOSE/
+DETAIL mới cho phép biểu cảm/chi tiết tay. `check_frame_capacity(framing, *texts)` cảnh
+báo khi Motion Spec đòi hỏi chi tiết vượt khung hình (vd "smile" ở WIDE shot). 2 consumer
+sẵn có (RenderPlan schema + `video_shots.shot_type`) → thoả Rule 1 ngay, không cần VLM.
+
+### Frame Manifest (RESERVED — chính là VLM/Semantic QA đã reserved, đổi tên)
+
+Ý tưởng: tự động phân tích frame ĐÃ RENDER (không phải spec) để sinh visible_entities/
+capacity/occlusion, Motion Composer đọc Manifest thay vì đọc Design. Đúng nguyên lý
+nhưng đòi hỏi vision model phân tích ảnh — không có cách làm bằng code thuần. Đây là
+"Semantic/VLM QA" đã reserved từ ADR v1.0, chỉ đổi tên. Chưa có bằng chứng cần: QA
+Checklist thủ công (mắt người tại gate) đã giải đúng defect thật ($0.60, 2026-07-20)
+với chi phí $0 phát sinh thêm. Kích hoạt khi: quy mô hàng trăm video khiến QA thủ công
+là nút thắt, hoặc tần suất lỗi "entity hứa suông" đủ cao để tự động hoá đáng giá hơn.
 
 ### QA Checklist (trước khi duyệt một shot — hôm nay mắt người, tự động hoá khi có VLM)
 
