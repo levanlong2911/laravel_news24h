@@ -14,12 +14,12 @@ class VideoSessionController extends Controller
 {
     public function index() {
         $sessions = VideoSession::with('project')->withCount('shots')->latest()->get();
-        return view('video-session.index', compact('sessions'));
+        return view('video-session.index', ['sessions' => $sessions, 'route' => 'video-session']);
     }
 
     public function show(string $id) {
         $session = VideoSession::with(['project', 'shots'])->findOrFail($id);
-        return view('video-session.show', compact('session'));
+        return view('video-session.show', ['session' => $session, 'route' => 'video-session']);
     }
 
     // Duyệt / cần sửa / từ chối MỘT shot
