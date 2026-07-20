@@ -170,6 +170,7 @@ Route::group(
         Route::post('/synthesize',                   [ArticleController::class, 'synthesize'])   ->name('article.synthesize');
         Route::post('/{article}/publish',            [ArticleController::class, 'publish'])         ->name('article.publish');
         Route::post('/{article}/unpublish',          [ArticleController::class, 'unpublish'])       ->name('article.unpublish');
+Route::post('/{article}/create-video-session', [\App\Http\Controllers\VideoSessionController::class, 'createFromArticle'])->name('article.createVideoSession');
 Route::get('/{article}/search-images',       [ArticleController::class, 'searchImages'])   ->name('article.searchImages');
         Route::post('/{article}/update-thumbnail',   [ArticleController::class, 'updateThumbnail'])->name('article.updateThumbnail');
         Route::delete('/{article}',                  [ArticleController::class, 'destroy'])    ->name('article.destroy');

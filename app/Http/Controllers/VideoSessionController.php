@@ -50,6 +50,21 @@ class VideoSessionController extends Controller
         return back();
     }
 
+    // Nut "Tao Video" trong cot Actions cua tung bai viet
+    public function createFromArticle(\App\Models\Article $article) {
+        $project = VideoProject::firstOrCreate(
+            ['name' => \Illuminate\Support\Str::limit($article->title, 110, '')],
+            ['subject_id' => $article->id]);
+        $session = VideoSession::create([
+            'project_id' => $project->id,
+            'code' => 'art_' . substr($article->id, 0, 8) . '_' . now()->format('ymd_His'),
+            'status' => 'composing',   // Python Composer poll trang thai nay -> do prompt vao
+            'renderplan_json' => ['article_id' => $article->id],
+        ]);
+        return redirect()->route('video-session.show', $session->id)
+            ->with('status', 'Session da tao - cho Composer sinh prompt');
+    }
+
     // ---------- API cho Python (token: X-Video-Token = env VIDEO_API_TOKEN) ----------
     private function checkToken(Request $r): bool {
         $t = env('VIDEO_API_TOKEN');
