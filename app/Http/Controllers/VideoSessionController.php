@@ -113,6 +113,13 @@ class VideoSessionController extends Controller
         return response()->json(['session_id' => $session->id, 'shots' => count($data['shots'])]);
     }
 
+    // GET /api/video-sessions/composing — runner poll de compose prompt
+    public function apiComposing(Request $r) {
+        if (!$this->checkToken($r)) return response()->json(['error' => 'unauthorized'], 401);
+        return VideoSession::where('status', 'composing')->with('project:id,name,subject_id')
+            ->get(['id', 'project_id', 'code', 'renderplan_json']);
+    }
+
     // GET /api/video-shots/queued — runner Python poll
     public function apiQueued(Request $r) {
         if (!$this->checkToken($r)) return response()->json(['error' => 'unauthorized'], 401);

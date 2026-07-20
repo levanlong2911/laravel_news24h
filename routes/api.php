@@ -34,7 +34,11 @@ Route::prefix('ads')->group(function () {
     Route::get('{position}', [ApiAdvertisementController::class, 'byPosition']);
 });
 
-// Video production API — Python Composer/Runner (token X-Video-Token)
-Route::post('/render-plans',              [\App\Http\Controllers\VideoSessionController::class, 'apiStore']);
-Route::get('/video-shots/queued',         [\App\Http\Controllers\VideoSessionController::class, 'apiQueued']);
-Route::patch('/video-shots/{shotId}/result', [\App\Http\Controllers\VideoSessionController::class, 'apiResult']);
+// Video production API — Python Composer/Runner (token X-Video-Token riêng,
+// bỏ DomainContext vì middleware đó đòi api_key của Domain cho mọi /api/*)
+Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])->group(function () {
+    Route::post('/render-plans',              [\App\Http\Controllers\VideoSessionController::class, 'apiStore']);
+    Route::get('/video-sessions/composing',   [\App\Http\Controllers\VideoSessionController::class, 'apiComposing']);
+    Route::get('/video-shots/queued',         [\App\Http\Controllers\VideoSessionController::class, 'apiQueued']);
+    Route::patch('/video-shots/{shotId}/result', [\App\Http\Controllers\VideoSessionController::class, 'apiResult']);
+});
