@@ -71,3 +71,36 @@ auto prompt-scoring · DB+UI cho motion_frameworks (khi có người vận hành
 
 Đa chủ đề: thêm chủ đề = 3 file data (ontology + motion_frameworks + identity/brief);
 engine dùng chung 100%. Giá trị tích luỹ = chất lượng ontology từng ngành (moat).
+
+---
+
+## AMENDMENT v1.1 — FREEZE (2026-07-19)
+
+**ADR ĐÓNG BĂNG từ thời điểm này.** 80% thời gian = xây + render thật; 20% = chỉnh ADR
+từ dữ liệu vận hành. Thay đổi lớn chỉ chấp nhận khi: 50–100 video đã render, có số liệu
+retention/chi phí/lỗi, hoặc một vấn đề lặp lại không giải được bằng kiến trúc hiện tại.
+KHÔNG thêm tầng mới nếu nó chỉ trả lời lại câu hỏi của tầng cũ.
+
+### Rule 1–3 (hàng rào chống phình, bổ sung cạnh Rule 0)
+
+- **Rule 1:** abstraction chỉ tồn tại khi ≥2 domain dùng chung (ShipPlanner ✗; ActionComposer
+  dùng bởi Ship+Car ✓).
+- **Rule 2:** module chỉ được sinh khi có CONSUMER rõ ràng (input→process→output→consumer;
+  thiếu consumer = không tồn tại; cấm module làm đẹp sơ đồ).
+- **Rule 3:** mọi field trong ontology phải có ≥1 Compiler/Renderer/QA thực sự đọc
+  (field mồ côi = xoá).
+
+### Điều chỉnh spec (5 điểm nhỏ, là DATA không phải module)
+
+1. Ontology: `Stage → Task → Action` (Task = business unit: install_hull_block;
+   Action = motion unit: lift/align/weld/inspect) — mở đường progress/schedule/inspection.
+2. Frame Spec thêm `composition` (rule_of_thirds, hero_position, leading_lines,
+   negative_space) — đạo diễn quyết, không để model tự chọn.
+3. Motion Spec: `physics` → `micro_physics` (cloth, cable, hook, dust, reflection,
+   water ripple) — thứ làm footage "thật".
+4. `style` tách `visual_style` ⊥ `camera_style` (industrial documentary ⊥ Discovery handheld).
+5. Feedback thêm `confidence` per composer output — planner sau này biết chỗ nào cần A/B.
+
+**Cấm vĩnh viễn (trừ khi Rule 1–3 thoả):** Worker/Machine/Lens/Lighting/Environment/Weather
+Planner — tất cả là DATA trong ontology/spec. Chỉ được thêm: Ontology, Motion Framework,
+Prompt Framework, Provider.
