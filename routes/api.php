@@ -33,3 +33,8 @@ Route::prefix('ads')->group(function () {
     Route::get('/', [ApiAdvertisementController::class, 'index']);
     Route::get('{position}', [ApiAdvertisementController::class, 'byPosition']);
 });
+
+// Video production API — Python Composer/Runner (token X-Video-Token)
+Route::post('/render-plans',              [\App\Http\Controllers\VideoSessionController::class, 'apiStore']);
+Route::get('/video-shots/queued',         [\App\Http\Controllers\VideoSessionController::class, 'apiQueued']);
+Route::patch('/video-shots/{shotId}/result', [\App\Http\Controllers\VideoSessionController::class, 'apiResult']);

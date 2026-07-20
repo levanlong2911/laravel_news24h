@@ -147,6 +147,15 @@ Route::group(
         Route::post('/delete',                      [PromptFrameworkController::class, 'delete']) ->name('prompt-framework.delete');
     });
 
+    // video sessions — approval gate: duyệt prompt trên màn hình rồi mới render (ADR v1.1)
+    Route::group(['prefix' => 'video-session'], function () {
+        Route::get('/',                    [\App\Http\Controllers\VideoSessionController::class, 'index'])->name('video-session.index');
+        Route::get('/{id}',                [\App\Http\Controllers\VideoSessionController::class, 'show'])->name('video-session.show');
+        Route::post('/{id}/approve-selected', [\App\Http\Controllers\VideoSessionController::class, 'approveSelected'])->name('video-session.approve-selected');
+        Route::post('/{id}/queue',         [\App\Http\Controllers\VideoSessionController::class, 'queueApproved'])->name('video-session.queue');
+    });
+    Route::post('/video-shot/{shotId}/action', [\App\Http\Controllers\VideoSessionController::class, 'shotAction'])->name('video-shot.action');
+
     // article
     Route::group(['prefix' => 'article'], function () {
         Route::get('/',                              [ArticleController::class, 'index'])      ->name('article.index');
