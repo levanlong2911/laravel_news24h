@@ -4,11 +4,20 @@ namespace Tests\Video\Editorial;
 
 use App\Video\Editorial\Composition;
 use App\Video\Editorial\EditorialInterpreter;
+use App\Video\Editorial\EditorialPolicy;
 use App\Video\Editorial\Emotion;
 use App\Video\Editorial\LightGrade;
 use App\Video\Editorial\LightIntensity;
 use App\Video\Editorial\SceneAesthetic;
+use App\Video\Evidence\Evidence;
+use App\Video\Evidence\EvidenceSource;
+use App\Video\Evidence\ProvenanceLevel;
 use App\Video\Scene\ScenePurpose;
+use App\Video\World\Entity;
+use App\Video\World\EntityType;
+use App\Video\World\Identity;
+use App\Video\World\VerifiedAttribute;
+use App\Video\World\VerifiedWorldGraph;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -97,5 +106,69 @@ class EditorialInterpreterTest extends TestCase
         // phải có ít nhất vài chữ ký khác biệt — nếu tất cả giống nhau thì bảng
         // policy vô dụng.
         $this->assertGreaterThan(3, count(array_unique($seen)), 'bảng editorial quá đơn điệu — gần như mọi scene giống nhau');
+    }
+
+    // ---- prohibitionsFor(): §12, chỗ "no domes" thuộc về ----
+
+    private function ev(): Evidence
+    {
+        return new Evidence('x', EvidenceSource::Body, 0, ProvenanceLevel::Direct);
+    }
+
+    private function entityWithAttribute(string $id, string $attribute, mixed $value): Entity
+    {
+        return new Entity($id, EntityType::Vehicle, [
+            $attribute => [new VerifiedAttribute($attribute, $value, $this->ev(), ProvenanceLevel::Direct)],
+        ], new Identity($id, false, $this->ev()));
+    }
+
+    public function test_prohibitions_empty_when_no_policy_configured(): void
+    {
+        $world = new VerifiedWorldGraph([$this->entityWithAttribute('moonrise', 'builder', 'Feadship')], [], []);
+
+        $this->assertSame([], (new EditorialInterpreter())->prohibitionsFor($world));
+    }
+
+    public function test_prohibition_fires_when_entity_matches_policy(): void
+    {
+        // Đúng ví dụ minh hoạ ARCHITECTURE.md §12: integrated receivers → no domes.
+        $policy = new EditorialPolicy(
+            ['builder' => 'Feadship'],
+            'domes',
+            false,
+            'integrated receivers instead of radomes',
+        );
+        $world = new VerifiedWorldGraph([$this->entityWithAttribute('moonrise', 'builder', 'Feadship')], [], []);
+
+        $prohibitions = (new EditorialInterpreter([$policy]))->prohibitionsFor($world);
+
+        $this->assertSame([[
+            'entity_id' => 'moonrise',
+            'attribute' => 'domes',
+            'value'     => false,
+            'reason'    => 'integrated receivers instead of radomes',
+        ]], $prohibitions);
+    }
+
+    public function test_prohibition_does_not_fire_when_entity_does_not_match(): void
+    {
+        $policy = new EditorialPolicy(['builder' => 'Feadship'], 'domes', false, 'reason');
+        $world  = new VerifiedWorldGraph([$this->entityWithAttribute('other', 'builder', 'Lurssen')], [], []);
+
+        $this->assertSame([], (new EditorialInterpreter([$policy]))->prohibitionsFor($world));
+    }
+
+    public function test_prohibitions_never_mutate_world(): void
+    {
+        // §12 Rule #3: read-only. Type system đã bảo đảm — Entity/attributes
+        // readonly nên không có cách nào viết code vi phạm; test này chỉ xác
+        // nhận giá trị KHÔNG đổi sau khi gọi.
+        $entity = $this->entityWithAttribute('moonrise', 'builder', 'Feadship');
+        $world  = new VerifiedWorldGraph([$entity], [], []);
+        $policy = new EditorialPolicy(['builder' => 'Feadship'], 'domes', false, 'reason');
+
+        (new EditorialInterpreter([$policy]))->prohibitionsFor($world);
+
+        $this->assertSame('Feadship', $entity->value('builder'));
     }
 }

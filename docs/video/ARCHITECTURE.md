@@ -829,3 +829,138 @@ design/<subject_id>/
 - Negative prompt trên fal flux dev **không được hỗ trợ** — constraint phải vào positive phrasing hoặc backend có negative.
 
 **Vai trò (đúng studio):** Industrial Designer đề xuất (t2i candidates) — **NGƯỜI là design review** (pick + QA 7 điểm: mũi/thân/nhịp cửa sổ/bridge/tỷ lệ boong/màu/nhận-ra-1-giây, 5/7 = freeze). Creative (Producer/Director) không được sửa design — chỉ được nói "reveal the scale", không được đổi bow. RESERVED: Industrial Designer AI đa-concept, Geometry QA tự động (CV/VLM), trục Representation đầy đủ, LoRA-on-sheet (leo khi Kontext PRO không đạt), 3D/CAD (đích 10-năm).
+
+---
+
+## 18. AMENDMENT — Hợp nhất Producer/Director, khép ranh giới Compiler (2026-07-21)
+
+> **Bối cảnh:** phát hiện qua rà soát kiến trúc — `session_runner.py` (Python) và
+> `MotionComposer`/`MotionSpec`/`motion_frameworks/*.json` (mô tả ở
+> `ADR-pipeline-v1.md`) đang là **một pipeline THỨ HAI**, chạy song song với
+> pipeline chính tài liệu này mô tả, tự quyết camera/lighting độc lập với
+> `IntentPlanner`/`EditorialInterpreter` — không hề đọc `RenderPlan.json`. Hai
+> nguồn chân lý cho cùng 1 semantic là lỗi kiến trúc, không phải chi tiết cài
+> đặt. Amendment này chốt cách hợp nhất, có bằng chứng bằng code cho từng điểm.
+
+### 18.1 Quyết định đã chốt VÀ ĐÃ CODE (Phase 1–2)
+
+1. **Producer là nhánh song song, KHÔNG phải input của `StoryPlanner`.**
+   `StoryPlanner::plan()` có bất biến **có Architecture Test canh** (chỉ đọc
+   `VerifiedWorldGraph`, ranking bằng graph centrality thuần — xem §2, code
+   `app/Video/Story/StoryPlanner.php` dòng 11-14). Nhét `ProducerOutput` vào
+   chữ ký hàm này sẽ phá bất biến đó. Producer chảy thẳng vào
+   `RenderPlanAssembler::assemble()` (tham số optional thứ 5), emit vào field
+   `producer{}` **đã có sẵn trong `contracts/renderplan/v1.0/schema.json`**
+   (trước đây được note "Validated bằng render 2026-07-19" nhưng chưa ai emit
+   nó — `RenderPlanAssembler` chưa từng ghi field này).
+   ```
+                   VerifiedWorldGraph
+                        │
+           ┌────────────┴────────────┐
+           ▼                         ▼
+    StoryPlanner              Producer (LLM)
+           │                         │
+           ▼                         ▼
+    StoryGraph              ProducerOutput
+           └────────────┬────────────┘
+                        ▼
+               RenderPlanAssembler
+   ```
+   `ProducerOutput` **chỉ chứa narrative** (`target_audience`, `core_conflict`,
+   `visual_promise`, `emotional_curve[]` — đúng tên field trong schema). KHÔNG
+   chứa camera/lighting/action — đó là việc của tầng khác.
+
+   Code: `app/Video/Producer/{ProducerOutput,ProducerInterface,ClaudeProducer,
+   FakeProducer}.php` — đúng pattern `Extractor`/`ClaudeExtractor` (§11).
+   Test: `RenderPlanAssemblerTest::test_producer_never_changes_acts_or_scenes`
+   chứng minh bằng assertion, không chỉ bằng lời — cùng world, có/không có
+   Producer thì `acts`/`scenes` giống hệt nhau (so JSON).
+
+2. **`EditorialInterpreter::prohibitionsFor()` — hoàn thiện gap có bằng
+   chứng.** `RenderPlanAssembler` trước đây hardcode `'prohibitions' => []`
+   với comment "CHƯA xây engine policy" — không phải suy đoán, là code thật.
+   Đã thêm `EditorialPolicy` (data, §12 Rule #1) + method mới
+   `prohibitionsFor(VerifiedWorldGraph $world)` (generic, read-only — §12 Rule
+   #2/#3), tiêm qua constructor `EditorialInterpreter(array $policies = [])`.
+   Mặc định rỗng (không hardcode Feadship/domes vào code) — policy thật thêm
+   khi có ca cần (Rule 0).
+
+   Code: `app/Video/Editorial/EditorialPolicy.php`,
+   `EditorialInterpreter::prohibitionsFor()`. 161/161 test xanh (7 test mới).
+
+### 18.2 Camera/Lighting — một nguồn chân lý duy nhất (IntentPlanner)
+
+`IntentPlanner::plan(SceneGraph $scenes)` (§7, code
+`app/Video/Intent/IntentPlanner.php`) là **nguồn chân lý duy nhất** cho
+`framing`/`movement`/`speed` — deterministic, suy từ `ScenePurpose`, khoá
+bằng type system (hàm không nhận `VerifiedWorldGraph` nên **không làm được**
+domain-branching, không phải "không nên làm"). `EditorialInterpreter::
+aestheticFor()` tương tự cho `emotion`/`composition`/`light_intensity`/
+`light_grade`.
+
+**`DirectorNotes.camera_philosophy` (Python, `media_runtime/director/
+notes.py`) nghỉ hưu khỏi vai trò quyết camera.** Field này có thể tiếp tục
+tồn tại như **sắc thái phong cách** (PromptExpander dịch "stay below the
+ship" → "low-angle shot" là lời văn thêm vào, KHÔNG ghi đè
+`scene.camera.framing/movement/speed` đã quyết) — không xoá file, chỉ giới
+hạn phạm vi.
+
+### 18.3 "Semantic Scene Graph" đã tồn tại — chính là `VerifiedWorldGraph`
+
+Không cần một tầng LLM trích xuất "entities/weight/equipment" mới. Truth
+Layer (§11: `ClaudeExtractor` → `EvidenceGatekeeper` → `VerifiedWorldGraph`)
+đã là nguồn duy nhất cho fact. Bất kỳ tầng nào (Candidate expansion, Director)
+cần fact thật thì đọc `VerifiedWorldGraph`, KHÔNG trích lại từ bài báo — 2 lần
+trích độc lập có thể ra 2 giá trị khác nhau, phá §1 "Evidence never crosses
+the boundary".
+
+### 18.4 Phase 3 — Candidate Expansion + Director (THIẾT KẾ, CHƯA CODE)
+
+**Chưa implement — cần dry-run trước khi tin, đúng kỷ luật "render trước khi
+tin" của dự án.** Ghi lại đây để không mất quyết định.
+
+- `EditorialInterpreter` (hoặc sibling cùng 3 luật §12) thêm method
+  `candidatesFor(Scene, VerifiedWorldGraph): array` — deterministic, đọc fact
+  thật (vd `weight_tons`), sinh **tập hợp lệ** (`hero_candidates`,
+  `primary_candidates`, `physics_candidates`) từ domain rule DATA — KHÔNG
+  quyết trực tiếp nội dung cuối.
+- Director (LLM, vai trò thu hẹp) **chỉ chọn** trong candidates — hero nào,
+  emphasis nào, emotion/reveal gì — KHÔNG tự viết hành động từ đầu, KHÔNG
+  quyết camera. Field output khớp `scene.director_notes{}` **đã có sẵn trong
+  schema** (`narrative_goal`/`audience_emotion`/`reveal_strategy`/
+  `visual_priority`/`camera_philosophy`/`avoid`/`style_shift`) — nhưng CHƯA rõ
+  có đủ chỗ cho nội dung motion (`primary`/`secondary`/`micro_physics`) hay
+  cần field mới; **quyết định khi implement, có dry-run**, không đoán trước.
+
+**Lý do KHÔNG để Ontology tự sinh nội dung trực tiếp từ 1 label ngắn** (vd
+`"install_hull_block"` → tự giãn `primary`/`secondary`): mất tính đặc thù bài
+báo (số liệu, tên thiết bị cụ thể từ `VerifiedWorldGraph`), quay lại đúng vấn
+đề "prompt sơ sài" đã khởi động toàn bộ cuộc rà soát này.
+
+### 18.5 Phase 4 — Python đọc RenderPlan thay vì file tay viết (CHƯA CODE)
+
+`MotionComposer` (`media_runtime/director/motion.py`) đã có sẵn hình dạng
+input khớp gần 100% với RenderPlan.json:
+
+| RenderPlan.json (đã có) | MotionComposer input (đã có) |
+|---|---|
+| `scene.camera.{framing,movement,speed,target}` | `lens_for_framing()`, `camera_phrase()` |
+| `scene.aesthetic.{light_intensity,light_grade}` + `scene.world.{time_of_day,weather,light_source}` | `lighting_phrase()` — đúng 5 tham số |
+
+Việc cần làm: đổi nguồn đọc trong `session_runner.py`/`motion.py` — nhận
+`scene.camera`/`scene.aesthetic`/`scene.world`/(§18.4's output) từ
+`RenderPlan.json` thay vì `MotionSpec.from_file(motion_frameworks/*.json)`.
+Không đổi logic `compose()` đã validate bằng render thật (Sprint 1–3).
+
+### 18.6 Đã cân nhắc và TỪ CHỐI — ghi lại để không đề xuất lại
+
+| Đề xuất | Lý do từ chối |
+|---|---|
+| Cinematographer là LLM agent | `IntentPlanner` đã deterministic, đã ✅ (§9 Phase 3). Trùng rent đã trả. |
+| Scene Planner là LLM agent | `ScenePlanner` đã deterministic, đã ✅ (§9 Phase 2). |
+| Researcher (agent riêng) | Không có consumer khác Producer — vi phạm Rule 1/2. |
+| Reviewer (agent riêng) | `ADR-pipeline-v1.md` v1.2 đã Reserved — QA thủ công ($0) đang đủ, chưa có bằng chứng cần tự động hoá. |
+| Visual Story Analyst (module riêng) | Field trùng: `must_show`/`must_not_show` = `director_notes.visual_priority`/`avoid`; `continuity_objects` = `continuity.invariants` (đã code, deterministic, $0); `visual_risk` cần frame đã duyệt (chưa tồn tại ở giai đoạn này). |
+| `semantic_density` trong bất kỳ contract nào | `ADR-pipeline-v1.md` v1.2 đã Reserved tường minh — "formalize khi có bằng chứng cụ thể". Chưa có render nào chứng minh cần. |
+| Tái cấu trúc `scene.{camera,aesthetic}` thành `scene.visual{}` | Đổi tên thuần tuý, phá test đang xanh, vi phạm §14 "FROZEN — chỉ additive". |
+| Đổi tên `Planner`→`Pass` đồng loạt, bỏ `Producer`/`Director` khỏi code | `Planner` (quyết định) và `Pass` (hạ cấp cơ học, chỉ dùng phía Python post-boundary) là 2 việc khác nhau thật — gộp tên sẽ xoá mất phân biệt đó. Model-independence (mục tiêu nêu ra) đã đạt qua interface `Extractor`/`LlmClient` (§11), không liên quan tên class gọi nó. |

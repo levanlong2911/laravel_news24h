@@ -6,6 +6,7 @@ use App\Video\Evidence\Evidence;
 use App\Video\Evidence\EvidenceSource;
 use App\Video\Evidence\ProvenanceLevel;
 use App\Video\Intent\IntentPlanner;
+use App\Video\Producer\ProducerOutput;
 use App\Video\RenderPlan\RenderPlanAssembler;
 use App\Video\RenderPlan\RenderPlanMeta;
 use App\Video\Scene\ScenePlanner;
@@ -68,7 +69,7 @@ class RenderPlanAssemblerTest extends TestCase
         );
     }
 
-    private function assemble(): array
+    private function assemble(?ProducerOutput $producer = null): array
     {
         $world  = $this->graph();
         $story  = (new StoryPlanner(maxActs: 8))->plan($world);
@@ -85,6 +86,7 @@ class RenderPlanAssemblerTest extends TestCase
                 'en',
                 '2026-07-18T00:00:00Z',
             ),
+            $producer,
         );
     }
 
@@ -173,5 +175,48 @@ class RenderPlanAssemblerTest extends TestCase
         // So sánh dạng JSON: assemble() chứa stdClass (attributes rỗng) nên
         // assertSame trên mảng sẽ so hai instance object khác nhau.
         $this->assertSame(json_encode($this->assemble()), json_encode($this->assemble()));
+    }
+
+    // ---- Producer: metadata song song, KHÔNG đụng world/acts/scenes ----
+
+    public function test_producer_key_absent_when_not_given(): void
+    {
+        $plan = $this->assemble();
+
+        $this->assertArrayNotHasKey('producer', $plan);
+    }
+
+    public function test_producer_key_present_when_given(): void
+    {
+        $producer = new ProducerOutput(
+            'people who follow shipbuilding',
+            'can the yard deliver on time',
+            'watch the hull take shape',
+            ['anticipation', 'tension', 'relief'],
+        );
+
+        $plan = $this->assemble($producer);
+
+        $this->assertSame([
+            'target_audience' => 'people who follow shipbuilding',
+            'core_conflict'   => 'can the yard deliver on time',
+            'visual_promise'  => 'watch the hull take shape',
+            'emotional_curve' => ['anticipation', 'tension', 'relief'],
+        ], $plan['producer']);
+    }
+
+    public function test_producer_never_changes_acts_or_scenes(): void
+    {
+        // Bằng chứng cho quyết định kiến trúc: Producer là nhánh song song,
+        // KHÔNG phải input của StoryPlanner/ScenePlanner (bất biến có test canh
+        // ở StoryPlannerTest/ScenePlannerTest). Cùng world phải ra cùng acts/scenes
+        // dù có Producer hay không.
+        $producer = new ProducerOutput('a', 'b', 'c', ['d']);
+
+        $without = $this->assemble();
+        $with    = $this->assemble($producer);
+
+        unset($without['producer'], $with['producer']);
+        $this->assertSame(json_encode($without), json_encode($with));
     }
 }

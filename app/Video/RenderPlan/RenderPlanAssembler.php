@@ -3,6 +3,7 @@
 namespace App\Video\RenderPlan;
 
 use App\Video\Editorial\EditorialInterpreter;
+use App\Video\Producer\ProducerOutput;
 use App\Video\Story\StoryGraph;
 use App\Video\Timeline\TimedScene;
 use App\Video\Timeline\TimedSceneGraph;
@@ -35,10 +36,11 @@ final class RenderPlanAssembler
         StoryGraph $story,
         TimedSceneGraph $timed,
         RenderPlanMeta $meta,
+        ?ProducerOutput $producer = null,
     ): array {
         $sceneAppearances = $this->countSceneAppearances($timed);
 
-        return [
+        $plan = [
             'plan_version' => '1.0',
             'plan_id'      => $meta->planId,
             'article_id'   => $meta->articleId,
@@ -75,11 +77,20 @@ final class RenderPlanAssembler
                 // Invariant từ TRUTH: thuộc tính đơn-giá-trị của entity xuất hiện
                 // ≥2 scene phải nhất quán xuyên các cú cắt.
                 'invariants' => $this->invariants($world, $sceneAppearances),
-                // Prohibition từ EDITORIAL POLICY (world-knowledge, §12) — CHƯA
-                // xây engine policy; để rỗng. Đây là chỗ "no domes" sẽ thuộc về.
-                'prohibitions' => [],
+                // Prohibition từ EDITORIAL POLICY (world-knowledge, §12) —
+                // sinh bởi EditorialInterpreter::prohibitionsFor(), policy data
+                // tiêm qua constructor (mặc định rỗng khi chưa có policy nào).
+                'prohibitions' => $this->editorial->prohibitionsFor($world),
             ],
         ];
+
+        // Producer là metadata song song — KHÔNG ảnh hưởng world/acts/scenes ở
+        // trên. Optional trong schema; bỏ hẳn key khi không có, không emit rỗng.
+        if ($producer !== null) {
+            $plan['producer'] = $producer->toArray();
+        }
+
+        return $plan;
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Video\Editorial;
 
 use App\Video\Scene\ScenePurpose;
+use App\Video\World\VerifiedWorldGraph;
 
 /**
  * Editorial 5a: điền `aesthetic{}` cho mỗi scene.
@@ -25,6 +26,15 @@ use App\Video\Scene\ScenePurpose;
  */
 final class EditorialInterpreter
 {
+    /**
+     * @param list<EditorialPolicy> $policies §12 Rule #1: du lieu, tiem qua
+     *        constructor — Interpreter khong hardcode Feadship/Ferrari/Moonrise.
+     */
+    public function __construct(
+        private readonly array $policies = [],
+    ) {
+    }
+
     public function aestheticFor(ScenePurpose $purpose): SceneAesthetic
     {
         return match ($purpose) {
@@ -50,5 +60,48 @@ final class EditorialInterpreter
                 Emotion::Majestic, Composition::Centered, LightIntensity::Soft, LightGrade::Golden,
             ),
         };
+    }
+
+    /**
+     * §12 Rule #3: read-only over VerifiedWorldGraph — chi sinh prohibitions,
+     * KHONG BAO GIO sua entity.type/attributes/builder. §12 Rule #2: generic —
+     * ham nay khong biet Feadship/Ferrari/Moonrise ton tai, chi khop $policies.
+     *
+     * @return list<array{entity_id: string, attribute: string, value: mixed, reason: string}>
+     */
+    public function prohibitionsFor(VerifiedWorldGraph $world): array
+    {
+        $prohibitions = [];
+
+        foreach ($world->entities() as $entity) {
+            foreach ($this->policies as $policy) {
+                if (! $this->matches($entity, $policy->match)) {
+                    continue;
+                }
+
+                $prohibitions[] = [
+                    'entity_id' => $entity->id,
+                    'attribute' => $policy->prohibitAttribute,
+                    'value'     => $policy->prohibitValue,
+                    'reason'    => $policy->reason,
+                ];
+            }
+        }
+
+        return $prohibitions;
+    }
+
+    /**
+     * @param array<string, mixed> $match
+     */
+    private function matches(\App\Video\World\Entity $entity, array $match): bool
+    {
+        foreach ($match as $attribute => $expected) {
+            if ($entity->value($attribute) !== $expected) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
