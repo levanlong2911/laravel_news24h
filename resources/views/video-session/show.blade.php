@@ -1,5 +1,5 @@
-@extends('layouts.base', ['title' => 'Review Shots'])
-@section('title', 'Session ' . $session->code)
+@extends('layouts.base', ['title' => __('tag.tag_detail')])
+@section('title', __('tag.tag_detail'))
 @section('content')
 <div class="container-fluid">
 <div class="card card-default"><div class="card-body">
@@ -8,7 +8,7 @@
   Thực chi: <b>${{ number_format($session->cost_actual, 2) }}</b> ·
   Đã duyệt: <b>{{ $session->shots->where('status', 'approved')->count() }}</b> ·
   Queued: <b>{{ $session->shots->where('status', 'queued')->count() }}</b>
-  <form method="post" action="{{ route('video-session.queue', $session->id) }}" style="display:inline" 
+  <form method="post" action="{{ route('video-session.queue', $session->id) }}" style="display:inline"
         onsubmit="return confirm('Render {{ $session->shots->where('status','approved')->count() }} shot đã duyệt (${{ number_format($session->shots->where('status','approved')->sum('cost_estimate'), 2) }})?')">
     @csrf <button class="btn btn-danger btn-sm" {{ $session->shots->where('status','approved')->count() ? '' : 'disabled' }}>🎬 Render các shot đã duyệt</button>
   </form>

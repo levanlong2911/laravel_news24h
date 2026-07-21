@@ -19,6 +19,8 @@ use App\Http\Controllers\ModalConfirmController;
 use App\Http\Controllers\NewsWebController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
+use App\Http\Controllers\VideoSessionController;
+use App\Models\VideoSession;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Response;
@@ -149,12 +151,14 @@ Route::group(
 
     // video sessions — approval gate: duyệt prompt trên màn hình rồi mới render (ADR v1.1)
     Route::group(['prefix' => 'video-session'], function () {
-        Route::get('/',                    [\App\Http\Controllers\VideoSessionController::class, 'index'])->name('video-session.index');
-        Route::get('/{id}',                [\App\Http\Controllers\VideoSessionController::class, 'show'])->name('video-session.show');
-        Route::post('/{id}/approve-selected', [\App\Http\Controllers\VideoSessionController::class, 'approveSelected'])->name('video-session.approve-selected');
-        Route::post('/{id}/queue',         [\App\Http\Controllers\VideoSessionController::class, 'queueApproved'])->name('video-session.queue');
+        Route::get('/',                    [VideoSessionController::class, 'index'])->name('video-session.index');
+        // Route::match(['get','post'],'/add',         [VideoSessionController::class, 'add'])    ->name('video-session.add');
+        Route::match(['get','post'],'/creat-prompt/{id}',[VideoSessionController::class, 'creatPrompt'])       ->name('video-session.creatPrompt');
+        Route::get('/{id}',                [VideoSessionController::class, 'show'])->name('video-session.show');
+        Route::post('/{id}/approve-selected', [VideoSessionController::class, 'approveSelected'])->name('video-session.approve-selected');
+        Route::post('/{id}/queue',         [VideoSessionController::class, 'queueApproved'])->name('video-session.queue');
     });
-    Route::post('/video-shot/{shotId}/action', [\App\Http\Controllers\VideoSessionController::class, 'shotAction'])->name('video-shot.action');
+    Route::post('/video-shot/{shotId}/action', [VideoSessionController::class, 'shotAction'])->name('video-shot.action');
 
     // article
     Route::group(['prefix' => 'article'], function () {
@@ -170,8 +174,7 @@ Route::group(
         Route::post('/synthesize',                   [ArticleController::class, 'synthesize'])   ->name('article.synthesize');
         Route::post('/{article}/publish',            [ArticleController::class, 'publish'])         ->name('article.publish');
         Route::post('/{article}/unpublish',          [ArticleController::class, 'unpublish'])       ->name('article.unpublish');
-Route::post('/{article}/create-video-session', [\App\Http\Controllers\VideoSessionController::class, 'createFromArticle'])->name('article.createVideoSession');
-Route::get('/{article}/search-images',       [ArticleController::class, 'searchImages'])   ->name('article.searchImages');
+        Route::get('/{article}/search-images',       [ArticleController::class, 'searchImages'])   ->name('article.searchImages');
         Route::post('/{article}/update-thumbnail',   [ArticleController::class, 'updateThumbnail'])->name('article.updateThumbnail');
         Route::delete('/{article}',                  [ArticleController::class, 'destroy'])    ->name('article.destroy');
         Route::get('/{article}',                     [ArticleController::class, 'show'])       ->name('article.show');

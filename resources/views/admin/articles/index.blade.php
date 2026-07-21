@@ -224,7 +224,7 @@
                                     <i class="fas fa-robot {{ $article->status === 'processing' ? 'fa-spin' : '' }}"></i>
                                 </button>
                             </form>
-                            <form method="POST" action="{{ route('article.createVideoSession', $article) }}" class="d-inline">
+                            <form method="POST" action="{{ route('video-session.creatPrompt', $article->id) }}" class="d-inline">
                                 @csrf
                                 <button class="btn btn-xs btn-outline-primary" title="Tao Video Prompt">
                                     <i class="fas fa-video"></i>
