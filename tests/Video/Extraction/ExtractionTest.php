@@ -230,4 +230,14 @@ class ExtractionTest extends TestCase
         $this->assertInstanceOf(ExtractionResult::class, $result);
         $this->assertSame(\App\Video\Extraction\CandidateWorldGraph::class, $result->candidates::class);
     }
+
+    public function test_candidate_entity_semantic_claims_defaults_empty_b0_contract_only(): void
+    {
+        // B0 (2026-07-22): field CHỈ tồn tại trong contract, CHƯA nơi nào sinh
+        // hay đọc nó (ClaudeExtractor chưa sinh, Gatekeeper chưa verify). Test
+        // này canh default không đổi ngoài ý muốn khi B1/B2 nối dây sau này.
+        $entity = new \App\Video\Extraction\CandidateEntity('moonrise', 'vehicle');
+
+        $this->assertSame([], $entity->semanticClaims);
+    }
 }

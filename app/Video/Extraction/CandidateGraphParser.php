@@ -67,6 +67,9 @@ final class CandidateGraphParser
                 isset($item['name']) ? (string) $item['name'] : null,
                 (string) ($item['name_quote'] ?? ''),
                 (float) ($item['confidence'] ?? 0.0),
+                // B1 (2026-07-22): parse song song claims thường — CHƯA nơi
+                // nào tiêu thụ ngoài đo precision (xem SemanticClaimPrecisionAnalyzer).
+                $this->claims($item['semantic_claims'] ?? [], (string) $item['id']),
             );
         }
 
@@ -97,6 +100,7 @@ final class CandidateGraphParser
                 // Tuyệt đối không bịa ra một quote mặc định.
                 (string) ($item['evidence_quote'] ?? ''),
                 (float) ($item['confidence'] ?? 0.0),
+                (string) ($item['confidence_reason'] ?? ''),
             );
         }
 

@@ -69,9 +69,9 @@ class RenderPlanAssemblerTest extends TestCase
         );
     }
 
-    private function assemble(?ProducerOutput $producer = null): array
+    private function assemble(?ProducerOutput $producer = null, array $directorNotesByScene = [], ?VerifiedWorldGraph $world = null): array
     {
-        $world  = $this->graph();
+        $world  = $world ?? $this->graph();
         $story  = (new StoryPlanner(maxActs: 8))->plan($world);
         $scenes = (new ScenePlanner())->plan($story, $world);
         $intent = (new IntentPlanner())->plan($scenes);
@@ -87,6 +87,7 @@ class RenderPlanAssemblerTest extends TestCase
                 '2026-07-18T00:00:00Z',
             ),
             $producer,
+            $directorNotesByScene,
         );
     }
 
@@ -210,13 +211,212 @@ class RenderPlanAssemblerTest extends TestCase
         // Bằng chứng cho quyết định kiến trúc: Producer là nhánh song song,
         // KHÔNG phải input của StoryPlanner/ScenePlanner (bất biến có test canh
         // ở StoryPlannerTest/ScenePlannerTest). Cùng world phải ra cùng acts/scenes
-        // dù có Producer hay không.
+        // dù có Producer hay không — TRỪ scene.objective, cố tình phụ thuộc
+        // Producer (2026-07-22, xem test_producer_populates_scene_objective bên
+        // dưới). Đây là field DUY NHẤT được loại khỏi so sánh; mọi field khác
+        // (ordinal/act_id/purpose/subjects/camera/aesthetic/asset_refs) vẫn phải
+        // giống hệt — nếu Producer vô tình làm lệch field khác, test này vẫn đỏ.
         $producer = new ProducerOutput('a', 'b', 'c', ['d']);
 
         $without = $this->assemble();
         $with    = $this->assemble($producer);
 
         unset($without['producer'], $with['producer']);
+        foreach ($with['scenes'] as &$scene) {
+            unset($scene['objective']);
+        }
+        unset($scene);
+
         $this->assertSame(json_encode($without), json_encode($with));
+    }
+
+    public function test_producer_populates_scene_objective_from_visual_promise(): void
+    {
+        $producer = new ProducerOutput('a', 'b', 'watch the hull take shape', ['d']);
+
+        $plan = $this->assemble($producer);
+
+        foreach ($plan['scenes'] as $scene) {
+            $this->assertSame('watch the hull take shape', $scene['objective']);
+        }
+    }
+
+    public function test_scene_objective_absent_when_no_producer(): void
+    {
+        $plan = $this->assemble();
+
+        foreach ($plan['scenes'] as $scene) {
+            $this->assertArrayNotHasKey('objective', $scene);
+        }
+    }
+
+    // ---- world_environment: Sprint 2, 2026-07-22 — cấp video, chỉ khi đúng 1 Landscape ----
+
+    public function test_world_environment_absent_when_no_landscape_entity(): void
+    {
+        $plan = $this->assemble();
+
+        $this->assertArrayNotHasKey('world_environment', $plan);
+    }
+
+    public function test_world_environment_present_and_validates_against_real_schema(): void
+    {
+        $world = new VerifiedWorldGraph(
+            array_merge($this->graph()->entities(), [
+                new Entity('shipyard', EntityType::Landscape, [
+                    'weather'     => $this->attr('weather', 'a light drizzle over the yard'),
+                    'time_of_day' => $this->attr('time_of_day', 'just after sunset'),
+                ]),
+            ]),
+            $this->graph()->relations,
+            $this->graph()->events,
+        );
+
+        $plan = $this->assemble(world: $world);
+
+        $this->assertSame(['weather' => 'RAIN', 'time_of_day' => 'GOLDEN_HOUR'], $plan['world_environment']);
+
+        $decoded = json_decode(json_encode($plan), false);
+        $schema  = json_decode(file_get_contents(self::SCHEMA), false);
+        $result  = (new Validator())->validate($decoded, $schema);
+
+        if ($result->hasError()) {
+            $this->fail('RenderPlan có world_environment KHÔNG pass schema:' . "\n"
+                . json_encode((new ErrorFormatter())->format($result->error()), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        }
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_world_environment_absent_when_two_landscape_entities(): void
+    {
+        $world = new VerifiedWorldGraph(
+            array_merge($this->graph()->entities(), [
+                new Entity('shipyard', EntityType::Landscape, ['weather' => $this->attr('weather', 'clear skies')]),
+                new Entity('open_sea', EntityType::Landscape, ['weather' => $this->attr('weather', 'light rain')]),
+            ]),
+            $this->graph()->relations,
+            $this->graph()->events,
+        );
+
+        $plan = $this->assemble(world: $world);
+
+        $this->assertArrayNotHasKey('world_environment', $plan);
+    }
+
+    // ---- director_notes: Phase 3, ARCHITECTURE.md §18.4 — nối thật, không chỉ code cô lập ----
+
+    public function test_director_notes_key_absent_when_not_given(): void
+    {
+        $plan = $this->assemble();
+
+        foreach ($plan['scenes'] as $scene) {
+            $this->assertArrayNotHasKey('director_notes', $scene);
+        }
+    }
+
+    public function test_director_notes_present_and_validates_against_real_schema(): void
+    {
+        $baseline = $this->assemble();
+        $sceneId  = $baseline['scenes'][0]['id'];
+
+        $directorNotes = [
+            $sceneId => [
+                'hero' => 'moonrise',
+                'primary' => ['type' => 'lift', 'actor' => 'moonrise', 'target' => 'moonrise', 'modifiers' => ['heavy_object']],
+                'secondary' => [
+                    ['type' => 'signal', 'actor' => 'moonrise', 'target' => 'moonrise', 'modifiers' => []],
+                ],
+                'micro_physics' => ['the lifting cable holds under visible tension'],
+                'audience_emotion' => 'awe',
+                'reveal_strategy' => 'delayed',
+            ],
+        ];
+
+        $plan = $this->assemble(null, $directorNotes);
+
+        $this->assertSame($directorNotes[$sceneId], $plan['scenes'][0]['director_notes']);
+
+        // Bằng chứng thật: schema chấp nhận field mới, không chỉ code chạy được.
+        $decoded = json_decode(json_encode($plan), false);
+        $schema  = json_decode(file_get_contents(self::SCHEMA), false);
+        $result  = (new Validator())->validate($decoded, $schema);
+
+        if ($result->hasError()) {
+            $this->fail('RenderPlan có director_notes KHÔNG pass schema:' . "\n"
+                . json_encode((new ErrorFormatter())->format($result->error()), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        }
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_director_notes_only_attaches_to_the_matching_scene_id(): void
+    {
+        $baseline = $this->assemble();
+        if (count($baseline['scenes']) < 2) {
+            $this->markTestSkipped('fixture cần ≥2 scene để test cách ly theo scene id');
+        }
+        $sceneId = $baseline['scenes'][0]['id'];
+
+        $plan = $this->assemble(null, [
+            $sceneId => ['hero' => 'moonrise'],
+        ]);
+
+        $this->assertArrayHasKey('director_notes', $plan['scenes'][0]);
+        for ($i = 1; $i < count($plan['scenes']); $i++) {
+            $this->assertArrayNotHasKey('director_notes', $plan['scenes'][$i]);
+        }
+    }
+
+    // ---- repairAfterDatabaseRoundTrip(): bug thật bắt qua nút 🎬 thật, 2026-07-22 ----
+
+    public function test_repair_converts_empty_attributes_array_back_to_object(): void
+    {
+        // Mô phỏng đúng cái Eloquent array cast trả về sau khi decode JSON:
+        // {} object rỗng -> [] array rỗng, không còn phân biệt được.
+        $plan = ['world' => ['entities' => [
+            ['id' => 'feadship', 'type' => 'building', 'attributes' => []],
+        ]]];
+
+        $repaired = RenderPlanAssembler::repairAfterDatabaseRoundTrip($plan);
+
+        $this->assertInstanceOf(\stdClass::class, $repaired['world']['entities'][0]['attributes']);
+    }
+
+    public function test_repair_leaves_non_empty_attributes_untouched(): void
+    {
+        $plan = ['world' => ['entities' => [
+            ['id' => 'moonrise', 'type' => 'vehicle', 'attributes' => ['hull_color' => 'grey']],
+        ]]];
+
+        $repaired = RenderPlanAssembler::repairAfterDatabaseRoundTrip($plan);
+
+        $this->assertSame(['hull_color' => 'grey'], $repaired['world']['entities'][0]['attributes']);
+    }
+
+    public function test_repair_after_database_round_trip_makes_plan_pass_schema_again(): void
+    {
+        // Bằng chứng đầy đủ: assemble() tươi (đã đúng) -> giả lập round-trip DB
+        // (json_decode assoc=true, chính là cái Eloquent làm) -> FAIL schema ->
+        // repair() -> PASS schema lại.
+        $baseline = $this->assemble();
+        // Ép có ít nhất 1 entity anchor-only để tái hiện đúng bug (Feadship trong
+        // graph() vốn đã anchor-only — xem test_anchor_only_entity_appears_in_world_with_empty_attributes).
+
+        $roundTripped = json_decode(json_encode($baseline), true); // Eloquent array cast decode y hệt kiểu này
+
+        $decoded = json_decode(json_encode($roundTripped), false);
+        $schema  = json_decode(file_get_contents(self::SCHEMA), false);
+        $before  = (new Validator())->validate($decoded, $schema);
+        $this->assertTrue($before->hasError(), 'test tự kiểm: round-trip phải TÁI HIỆN được bug trước khi verify repair() sửa nó');
+
+        $repaired = RenderPlanAssembler::repairAfterDatabaseRoundTrip($roundTripped);
+
+        $decodedRepaired = json_decode(json_encode($repaired), false);
+        $after = (new Validator())->validate($decodedRepaired, $schema);
+        if ($after->hasError()) {
+            $this->fail('repair() KHÔNG sửa được:' . "\n"
+                . json_encode((new ErrorFormatter())->format($after->error()), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        }
+        $this->addToAssertionCount(1);
     }
 }

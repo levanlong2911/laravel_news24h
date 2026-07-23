@@ -76,6 +76,42 @@ class EvidenceGatekeeperTest extends TestCase
         $this->assertSame(ProvenanceLevel::NormalizedValue, $entity->attributes['length_m'][0]->level);
     }
 
+    public function test_accepts_landscape_entity_with_environment_claims(): void
+    {
+        // Chứng minh (2026-07-22, Sprint 1 §environment): ontology đã support
+        // Landscape end-to-end — KHÔNG cần sửa Gatekeeper/schema. Cùng cơ chế
+        // verifyEntity()/verifyClaim() generic dùng cho moonrise (vehicle).
+        $report = $this->gatekeeper->verify(
+            new CandidateWorldGraph([new CandidateEntity('shipyard', 'landscape', [
+                new CandidateClaim('shipyard', 'time_of_day', 'dusk', 'Moonrise under way at dusk'),
+                new CandidateClaim('shipyard', 'location', 'the shipyard', 'built in the shipyard'),
+            ])]),
+            $this->index,
+        );
+
+        $entity = $report->graph->entity('shipyard');
+
+        $this->assertNotNull($entity);
+        $this->assertSame('dusk', $entity->value('time_of_day'));
+        $this->assertSame('the shipyard', $entity->value('location'));
+        $this->assertSame([], $report->rejections);
+    }
+
+    public function test_landscape_claim_without_evidence_is_rejected_not_invented(): void
+    {
+        // Bất biến giữ nguyên cho Landscape y hệt mọi entity khác: không quote
+        // thật trong bài → không sống, dù giá trị nghe hợp lý đến đâu.
+        $report = $this->gatekeeper->verify(
+            new CandidateWorldGraph([new CandidateEntity('shipyard', 'landscape', [
+                new CandidateClaim('shipyard', 'weather', 'clear skies', 'clear skies over the harbour'),
+            ])]),
+            $this->index,
+        );
+
+        $this->assertNull($report->graph->entity('shipyard'));
+        $this->assertSame(RejectionReason::QuoteNotFound, $report->rejections[0]->reason);
+    }
+
     public function test_accepts_evidence_from_table_not_only_body(): void
     {
         $report = $this->gatekeeper->verify(

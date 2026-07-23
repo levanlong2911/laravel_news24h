@@ -964,3 +964,24 @@ Không đổi logic `compose()` đã validate bằng render thật (Sprint 1–3
 | `semantic_density` trong bất kỳ contract nào | `ADR-pipeline-v1.md` v1.2 đã Reserved tường minh — "formalize khi có bằng chứng cụ thể". Chưa có render nào chứng minh cần. |
 | Tái cấu trúc `scene.{camera,aesthetic}` thành `scene.visual{}` | Đổi tên thuần tuý, phá test đang xanh, vi phạm §14 "FROZEN — chỉ additive". |
 | Đổi tên `Planner`→`Pass` đồng loạt, bỏ `Producer`/`Director` khỏi code | `Planner` (quyết định) và `Pass` (hạ cấp cơ học, chỉ dùng phía Python post-boundary) là 2 việc khác nhau thật — gộp tên sẽ xoá mất phân biệt đó. Model-independence (mục tiêu nêu ra) đã đạt qua interface `Extractor`/`LlmClient` (§11), không liên quan tên class gọi nó. |
+
+### 18.7 Decision Placement Principle (meta-invariant, đúc kết 2026-07-21)
+
+> Rút ra sau hơn 40 lượt phản biện quanh vai trò Producer/Director/Cinematographer/
+> Scene Planner — quy tắc này giải thích được MỌI quyết định biên giới đã chốt ở
+> trên, không riêng cho 1 role nào. Dùng nó để xử lý đề xuất mới, thay vì lặp lại
+> toàn bộ chuỗi lập luận.
+
+| Loại quyết định | Đặc điểm | Chủ thể | Ví dụ đã chốt |
+|---|---|---|---|
+| **Subjective** | Không có rule đúng tuyệt đối — cần phán đoán | **LLM** | Producer (core conflict/promise/emotion curve, §18.1); Director (hero emphasis/reveal, §18.4) |
+| **Objective** | Business rule / world-knowledge xác định, không cần "gu" | **Rule Engine** (generic code + data, §12) | `EditorialInterpreter.prohibitionsFor()` (§18.1); `IntentPlanner` (ScenePurpose→camera, §7); candidate expansion (§18.4) |
+| **Syntax** | Chỉ là biến đổi hình thức, không thêm/bớt ý nghĩa | **Compiler** | `MotionComposer`/`lighting_phrase()`/`camera_phrase()` (enum→câu, §18.5); `ProviderPass` (camera→cú pháp Kling/Veo, §7) |
+
+**Hệ quả trực tiếp — mọi giới hạn ở §18.1–18.6 đều suy ra từ đúng 1 dòng này:**
+- Camera bị rút khỏi Director → camera là Objective (grammar cố định theo ScenePurpose), không phải Subjective.
+- Producer không được đụng `StoryPlanner` → ranking Act là Objective (graph centrality), LLM không được ghi đè.
+- `EditorialInterpreter` không được tự sinh fact → fact là Truth (Evidence), không phải Objective-suy-luận-được.
+- `MotionComposer` không được "nghĩ" → nó chỉ làm Syntax, không có tầng nào cho nó Subjective/Objective.
+
+**Luật kèm theo:** vượt ranh giới này (vd để LLM quyết 1 việc Objective, hoặc Rule Engine quyết 1 việc Subjective) đòi hỏi **bằng chứng tường minh** (Rule 0) — không phải vì "kiến trúc đẹp hơn".

@@ -36,6 +36,11 @@
       }
     },
 
+    "world_environment": {
+      "description": "Moi truong CAP VIDEO (khong phai cap scene) - projection tu MOT Landscape entity duy nhat trong World Graph (EditorialInterpreter::environmentFor(), Sprint 2 2026-07-22). OPTIONAL, vang khi Truth khong co hoac co >=2 Landscape entity (khong doan cai nao dung scene nao). Chua co co che gan environment rieng cho tung scene (can quan he located_in giua Landscape va subject - chua co bang chung can, Rule 0). scene.world (duoi $defs/scene) VAN la field rieng, danh cho tuong lai khi co per-scene projection that - hai field nay KHONG duoc dong bo gia.",
+      "$ref": "#/$defs/environment"
+    },
+
     "facts":    { "type": "array", "items": { "$ref": "#/$defs/fact" } },
     "acts":     { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/act" } },
     "scenes":   { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scene" } },
@@ -84,6 +89,19 @@
           "type": "object"
         },
         "identity": { "$ref": "#/$defs/identity" }
+      }
+    },
+
+    "environment": {
+      "description": "Vocabulary dong cho fact moi truong - dung chung boi world_environment (cap video) va scene.world (cap scene, RESERVED). TAT CA optional field - Truth khong co gi thi vang, khong bia.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "medium":       { "enum": ["AIR", "WATER", "GROUND", "SPACE"] },
+        "location":     { "type": "string", "minLength": 1 },
+        "time_of_day":  { "enum": ["DAWN", "MORNING", "MIDDAY", "GOLDEN_HOUR", "DUSK", "NIGHT"] },
+        "weather":      { "enum": ["CLEAR", "CLOUDY", "RAIN", "SNOW", "FOG", "STORM", "INDOOR"] },
+        "light_source": { "enum": ["NATURAL", "ARTIFICIAL", "MIXED"] }
       }
     },
 
@@ -209,27 +227,24 @@
         },
 
         "world": {
-          "description": "World FACTS tu Truth — TAT CA optional. Vang khi Truth khong co bang chung; KHONG BAO GIO thay bang default hay suy luan. Provider tu dien bang world-knowledge cua no khi vang (trach nhiem cua provider, khong phai semantic pipeline). Xem ARCHITECTURE.md §13.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "medium":       { "enum": ["AIR", "WATER", "GROUND", "SPACE"] },
-            "location":     { "type": "string", "minLength": 1 },
-            "time_of_day":  { "enum": ["DAWN", "MORNING", "MIDDAY", "GOLDEN_HOUR", "DUSK", "NIGHT"] },
-            "weather":      { "enum": ["CLEAR", "CLOUDY", "RAIN", "SNOW", "FOG", "STORM", "INDOOR"] },
-            "light_source": { "enum": ["NATURAL", "ARTIFICIAL", "MIXED"] }
-          }
+          "description": "World FACTS cap SCENE tu Truth — TAT CA optional. RESERVED: chua co planner nao gan gia tri rieng cho tung scene (xem top-level world_environment cho projection cap-video hien tai). Vang khi Truth khong co bang chung; KHONG BAO GIO thay bang default hay suy luan. Provider tu dien bang world-knowledge cua no khi vang. Xem ARCHITECTURE.md §13.",
+          "$ref": "#/$defs/environment"
         },
 
         "fact_refs":  { "type": "array", "items": { "$ref": "#/$defs/slug" } },
         "asset_refs": { "type": "array", "items": { "$ref": "#/$defs/slug" } },
+
+        "objective": {
+          "description": "Shot nay dang hoan thanh viec gi cho video, lay tu producer.visual_promise (Producer role, video-level) — copy nguyen van, KHONG phai Compiler tu sinh tu purpose enum. OPTIONAL, vang khi khong co ProducerOutput. Xem ARCHITECTURE.md §17/§18.",
+          "type": "string"
+        },
 
         "director_notes": { "$ref": "#/$defs/director_notes" }
       }
     },
 
     "director_notes": {
-      "description": "Y do sang tao cua MOT canh (Director role) — tra loi 'khan gia nen CAM thay gi', KHONG phai prompt. OPTIONAL. Provider-doc-lap: song sot khi doi Kling→Veo. style_shift: canh duoc lech style toan-phim KHI cam xuc doi hoi (bang chung beat 4, 2026-07-19). Xem ARCHITECTURE.md §17.",
+      "description": "Y do sang tao cua MOT canh (Director role) — tra loi 'khan gia nen CAM thay gi', KHONG phai prompt. OPTIONAL. Provider-doc-lap: song sot khi doi Kling→Veo. style_shift: canh duoc lech style toan-phim KHI cam xuc doi hoi (bang chung beat 4, 2026-07-19). hero/primary/secondary/micro_physics them 2026-07-21/22 (Phase 3, ARCHITECTURE.md §18.4): Director CHI chon (hero id + index candidate), KHONG tu viet cau — primary/secondary la SEMANTIC (type/actor/target), KHONG phai Prompt Language (§18.7 Syntax thuoc Compiler). hero/target co the VANG (khong bia — xem ActionCandidate::toArray()/ActionSelection::resolve()). Xem ARCHITECTURE.md §17/§18.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -239,7 +254,24 @@
         "visual_priority":   { "type": "array", "items": { "type": "string" } },
         "camera_philosophy": { "type": "string" },
         "avoid":             { "type": "array", "items": { "type": "string" } },
-        "style_shift":       { "type": "string" }
+        "style_shift":       { "type": "string" },
+        "hero":              { "$ref": "#/$defs/slug" },
+        "primary":           { "$ref": "#/$defs/action" },
+        "secondary":         { "type": "array", "items": { "$ref": "#/$defs/action" } },
+        "micro_physics":     { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "action": {
+      "description": "Hanh dong SEMANTIC (khong phai cau tieng Anh) — type/actor/target/modifiers. Python Compiler moi dich thanh ngon ngu (§18.7 Syntax). target OPTIONAL: hanh dong tu Event (1 entity, vd 'nas performs') khong co doi tuong tac dong nhu hanh dong tu Relation (2 entity) — KHONG bia target. Xem ActionType.php.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "actor"],
+      "properties": {
+        "type":      { "enum": ["lift", "lower", "align", "guide", "secure", "inspect", "signal", "release", "position", "perform", "triumph", "confront"] },
+        "actor":     { "$ref": "#/$defs/slug" },
+        "target":    { "$ref": "#/$defs/slug" },
+        "modifiers": { "type": "array", "items": { "type": "string" } }
       }
     },
 

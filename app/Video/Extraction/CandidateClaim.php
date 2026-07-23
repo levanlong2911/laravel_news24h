@@ -21,6 +21,14 @@ final class CandidateClaim
          * vẫn bị loại; confidence 0.4 có evidence vẫn được nhận.
          */
         public readonly float $confidence = 0.0,
+        /**
+         * B1.1 (2026-07-22, xem project_benchmark_pilot10_findings memory) —
+         * LLM TỰ khai "verbatim"|"normalized"|"inferred". CHỈ để observability/
+         * benchmark, giống $confidence — Gatekeeper/ValueVerifier KHÔNG đọc
+         * field này để quyết định verify hay không, chỉ để thống kê phân loại
+         * lỗi mà không cần đọc failures bằng mắt.
+         */
+        public readonly string $confidenceReason = '',
     ) {
     }
 }

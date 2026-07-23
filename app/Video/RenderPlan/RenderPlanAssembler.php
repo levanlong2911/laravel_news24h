@@ -29,6 +29,12 @@ final class RenderPlanAssembler
     }
 
     /**
+     * @param array<string, array<string, mixed>> $directorNotesByScene key = scene
+     *        id, value = mảng ĐÃ RESOLVE sẵn (ActionSelection::resolve() +
+     *        EditorialInterpreter::microPhysicsFor() + emotion/reveal — xem
+     *        ActionSelectionTest::test_full_chain_from_world_to_director_notes_shape).
+     *        Assembler KHÔNG tự resolve — đó là business logic, Assembler chỉ
+     *        serialize (khác Producer: ->toArray() không cần context ngoài).
      * @return array<string, mixed> RenderPlan sẵn sàng json_encode + validate schema
      */
     public function assemble(
@@ -37,6 +43,7 @@ final class RenderPlanAssembler
         TimedSceneGraph $timed,
         RenderPlanMeta $meta,
         ?ProducerOutput $producer = null,
+        array $directorNotesByScene = [],
     ): array {
         $sceneAppearances = $this->countSceneAppearances($timed);
 
@@ -64,7 +71,7 @@ final class RenderPlanAssembler
 
             'acts' => array_map([$this, 'actDoc'], $story->acts),
 
-            'scenes'   => array_map(fn (TimedScene $t) => $this->sceneDoc($t), $timed->scenes),
+            'scenes'   => array_map(fn (TimedScene $t) => $this->sceneDoc($t, $directorNotesByScene, $producer), $timed->scenes),
             'timeline' => array_map(fn (TimedScene $t) => [
                 'scene_id'  => $t->intent->scene->id,
                 'start_sec' => $t->time->start,
@@ -84,11 +91,51 @@ final class RenderPlanAssembler
             ],
         ];
 
+        // world_environment: CẤP VIDEO, chỉ có khi Truth có ĐÚNG 1 Landscape
+        // entity (Sprint 2, 2026-07-22). KHÔNG copy xuống scene.world — đó là
+        // field RIÊNG, RESERVED cho per-scene projection thật sau này (cần
+        // located_in, chưa có bằng chứng). Optional, bỏ hẳn key khi rỗng.
+        $environment = $this->editorial->environmentFor($world);
+        if ($environment !== []) {
+            $plan['world_environment'] = $environment;
+        }
+
         // Producer là metadata song song — KHÔNG ảnh hưởng world/acts/scenes ở
         // trên. Optional trong schema; bỏ hẳn key khi không có, không emit rỗng.
         if ($producer !== null) {
             $plan['producer'] = $producer->toArray();
         }
+
+        return $plan;
+    }
+
+    /**
+     * Sửa RenderPlan sau khi đã qua vòng lưu-đọc DB (Eloquent `array` cast decode
+     * JSON với assoc=true — {} object rỗng và [] array rỗng đều thành PHP []; khi
+     * encode lại, PHP không còn cách nào biết cái nào từng là object). Bug thật
+     * bắt được 2026-07-22 qua test nút 🎬 thật: `world.entities[].attributes` của
+     * entity anchor-only (Feadship, Pier 59...) rớt về `[]`, FAIL schema (đòi
+     * object). `assemble()` tươi KHÔNG cần hàm này — chỉ gọi khi đọc lại từ DB
+     * trước khi trả ra ngoài (API cho Python).
+     *
+     * @param array<string, mixed> $plan
+     * @return array<string, mixed>
+     */
+    public static function repairAfterDatabaseRoundTrip(array $plan): array
+    {
+        // KHÔNG dùng `$plan['world']['entities'] ?? []` trong foreach-by-reference
+        // — biểu thức `??` tạo giá trị tạm, `&$entity` sẽ không ghi ngược lại
+        // vào $plan (bug thật, bắt được khi viết test cho chính hàm này).
+        if (! isset($plan['world']['entities']) || ! is_array($plan['world']['entities'])) {
+            return $plan;
+        }
+
+        foreach ($plan['world']['entities'] as &$entity) {
+            if (($entity['attributes'] ?? null) === []) {
+                $entity['attributes'] = new \stdClass();
+            }
+        }
+        unset($entity);
 
         return $plan;
     }
@@ -137,14 +184,15 @@ final class RenderPlanAssembler
     }
 
     /**
+     * @param array<string, array<string, mixed>> $directorNotesByScene
      * @return array<string, mixed>
      */
-    private function sceneDoc(TimedScene $t): array
+    private function sceneDoc(TimedScene $t, array $directorNotesByScene = [], ?ProducerOutput $producer = null): array
     {
         $scene     = $t->intent->scene;
         $aesthetic = $this->editorial->aestheticFor($scene->purpose);
 
-        return [
+        $doc = [
             'id'            => $scene->id,
             'ordinal'       => $scene->ordinal,
             'act_id'        => $scene->actId,
@@ -166,6 +214,24 @@ final class RenderPlanAssembler
             // scene.world CỐ TÌNH vắng: Truth chưa có environment fact. §13.
             'asset_refs' => array_map(fn (string $id) => 'as_' . $id, $scene->subjectIds),
         ];
+
+        // scene.objective = producer.visual_promise copy nguyên văn, KHÔNG phải
+        // Compiler tự sinh từ purpose enum (quyết định 2026-07-22: objective là
+        // Semantic/Producer, không phải Syntax/Compiler — xem thảo luận
+        // ARCHITECTURE.md §18.7). Video-level hiện tại, chưa có bằng chứng thật
+        // cần khác nhau theo từng scene (Rule 0) — chưa xây VideoIntent/
+        // SceneIntentPlanner riêng cho tới khi có bằng chứng đó.
+        if ($producer !== null && $producer->visualPromise !== '') {
+            $doc['objective'] = $producer->visualPromise;
+        }
+
+        // Optional trong schema — bỏ hẳn key khi scene này không có Director
+        // selection (giống producer{}: additive, không emit rỗng).
+        if (isset($directorNotesByScene[$scene->id])) {
+            $doc['director_notes'] = $directorNotesByScene[$scene->id];
+        }
+
+        return $doc;
     }
 
     /**
