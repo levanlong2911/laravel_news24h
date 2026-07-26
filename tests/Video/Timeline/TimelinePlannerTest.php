@@ -18,9 +18,14 @@ use PHPUnit\Framework\TestCase;
  * Timeline là SCHEDULER cơ học, không phải EDITOR.
  *
  * Nó chỉ giải: N scene, T giây → mỗi scene [start, end], phủ kín, không hở,
- * không chồng, giữ thứ tự. Nó KHÔNG được trả lời "scene nào đáng xem hơn" —
- * pacing là taste, thuộc Editorial (Phase 5). Nếu Timeline cân thời lượng theo
- * importance thì nó đã thôi làm scheduler và trở thành editor.
+ * không chồng, giữ thứ tự. Nó KHÔNG tự PHÁT MINH pacing — không đọc World
+ * Graph, không đọc importance của Act, không có "gu" riêng.
+ *
+ * 2026-07-23 (Phase 5 đã hẹn trước): pacing-theo-ScenePurpose giờ CÓ, nhưng
+ * trọng số đến từ `EditorialInterpreter::durationWeightFor()` (cùng "mù World
+ * Graph" như aestheticFor()) — Timeline chỉ CHIA theo trọng số đã cho, không
+ * tự quyết trọng số nào đúng. Ranh giới scheduler/editor vẫn giữ, chỉ input
+ * phong phú hơn (list trọng số thay vì đếm số scene).
  */
 class TimelinePlannerTest extends TestCase
 {
@@ -105,27 +110,50 @@ class TimelinePlannerTest extends TestCase
         $this->assertSame([], $timed);
     }
 
-    // ---- Cơ học: chia đều, KHÔNG theo importance ----
+    // ---- Cơ học: chia theo trọng số Editorial, KHÔNG tự phát minh pacing ----
 
-    public function test_divides_equally_regardless_of_purpose(): void
+    public function test_same_purpose_scenes_still_split_equally(): void
     {
-        // Scene ESTABLISH và scene DETAIL phải cùng thời lượng: Timeline không
-        // biết cái nào "đáng xem hơn". Nếu ESTABLISH dài hơn thì đó là pacing —
-        // sai tầng, đó là việc Editorial.
+        // Cùng ScenePurpose -> cùng trọng số -> vẫn chia đều giữa CHÚNG với
+        // nhau. Không phải "luôn chia đều tuyệt đối" như trước — mà "chia đều
+        // khi trọng số bằng nhau", đúng hệ quả của việc chia theo tỉ lệ.
+        $timed = $this->plan(3, 30.0); // mặc định toàn ScenePurpose::Detail
+
+        $this->assertEqualsWithDelta($timed[0]->time->duration(), $timed[1]->time->duration(), 1e-9);
+        $this->assertEqualsWithDelta($timed[1]->time->duration(), $timed[2]->time->duration(), 1e-9);
+    }
+
+    public function test_action_scene_gets_more_time_than_detail_scene(): void
+    {
+        // Đúng bằng chứng EditorialInterpreter::durationWeightFor(): Action
+        // (1.4) > Detail (0.7) — Action phải được thời lượng dài hơn.
         $scenes = new IntentSceneGraph([
-            $this->intentScene(1, ScenePurpose::Establish),
+            $this->intentScene(1, ScenePurpose::Action),
             $this->intentScene(2, ScenePurpose::Detail),
-            $this->intentScene(3, ScenePurpose::Resolution),
         ]);
 
         $timed = (new TimelinePlanner())->plan($scenes, 30.0)->scenes;
 
-        $d0 = $timed[0]->time->duration();
-        $d1 = $timed[1]->time->duration();
-        $d2 = $timed[2]->time->duration();
+        $this->assertGreaterThan($timed[1]->time->duration(), $timed[0]->time->duration());
+    }
 
-        $this->assertEqualsWithDelta($d0, $d1, 1e-9);
-        $this->assertEqualsWithDelta($d1, $d2, 1e-9);
+    public function test_weighted_durations_still_cover_target_exactly(): void
+    {
+        // Trọng số khác nhau KHÔNG được phá bất biến gapless/phủ kín target.
+        $scenes = new IntentSceneGraph([
+            $this->intentScene(1, ScenePurpose::Establish),
+            $this->intentScene(2, ScenePurpose::Action),
+            $this->intentScene(3, ScenePurpose::Detail),
+            $this->intentScene(4, ScenePurpose::Resolution),
+        ]);
+
+        $timed = (new TimelinePlanner())->plan($scenes, 47.0)->scenes;
+
+        $this->assertSame(0.0, $timed[0]->time->start);
+        $this->assertSame(47.0, end($timed)->time->end);
+        foreach (array_slice($timed, 1) as $i => $scene) {
+            $this->assertSame($timed[$i]->time->end, $scene->time->start);
+        }
     }
 
     public function test_duration_is_derived_from_range(): void

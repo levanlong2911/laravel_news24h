@@ -17,7 +17,10 @@ final class ClaudeProducer implements ProducerInterface
 
     public function __construct(
         private readonly LlmClient $llm,
-        private readonly string $model = 'sonnet',
+        // Haiku (2026-07-23, user chốt) — Producer là "tóm tắt câu chuyện +
+        // narrative framing", không cần model đắt nhất. Xem
+        // project_film_crew_role_mapping.md (memory).
+        private readonly string $model = 'haiku',
     ) {
     }
 

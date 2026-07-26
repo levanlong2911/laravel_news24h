@@ -236,4 +236,86 @@ class StoryPlannerTest extends TestCase
         $this->assertContains(ActSource::Event, $sources, 'sự kiện phải sinh được act');
         $this->assertContains(ActSource::Relation, $sources, 'quan hệ phải sinh được act');
     }
+
+    // ---- Stage-aware ordering (2026-07-23): "quá trình tạo ra vật thể" ----
+
+    /**
+     * Graph có ĐỦ 2 stage khác nhau (designed=1, built=2) — relation "built"
+     * (từ builder ít quan trọng hơn) phải được đẩy lên TRƯỚC relation không có
+     * stage nào, dù importance thấp hơn — vì nó thuộc mạch tự sự thiết kế→thi
+     * công. Đúng ví dụ thật: bài yacht có designed_exterior/designed_interiors
+     * + built_at.
+     */
+    public function test_relations_reordered_by_stage_when_two_or_more_stages_present(): void
+    {
+        $yacht = new Entity('yacht_1', EntityType::Vehicle, [
+            'length_meters' => $this->attr('length_meters', 90),
+            'hull_color'    => $this->attr('hull_color', 'white'),
+        ], new Identity('Yacht One', true, $this->evidence()));
+        $designer = new Entity('studio_x', EntityType::Building, [], new Identity('Studio X', true, $this->evidence()));
+        $builder  = new Entity('yard_x', EntityType::Building, [], new Identity('Yard X', true, $this->evidence()));
+
+        $graph = new VerifiedWorldGraph(
+            [$yacht, $designer, $builder],
+            [
+                new Relation('r_design', 'studio_x', 'yacht_1', 'designed_exterior', $this->evidence()),
+                new Relation('r_build', 'yard_x', 'yacht_1', 'built_at', $this->evidence()),
+            ],
+            [],
+        );
+
+        $acts = (new StoryPlanner(maxActs: 20))->plan($graph)->acts;
+        $relationOrdinals = [];
+        foreach ($acts as $act) {
+            if ($act->source === ActSource::Relation) {
+                $relationOrdinals[$act->sourceId] = $act->ordinal;
+            }
+        }
+
+        $this->assertLessThan(
+            $relationOrdinals['r_build'],
+            $relationOrdinals['r_design'],
+            'designed (stage 1) phải đứng trước built (stage 2)',
+        );
+    }
+
+    /**
+     * CHỈ 1 stage xuất hiện (chỉ "built", không "designed"/"delivered") — KHÔNG
+     * đủ để coi là mạch tự sự tạo-vật-thể thật. Bug thật bắt được: fixture
+     * Moonrise gốc có "built" (r1/r3) nhưng đang kể chuyện BÁN, không phải kể
+     * chuyện ĐÓNG — nếu vẫn reorder sẽ đẩy quan hệ "built" ít quan trọng lên
+     * trước entity moonrise_2020 (quan trọng nhất), sai bất biến "node kết nối
+     * nhiều nhất dẫn đầu".
+     */
+    public function test_single_stage_alone_does_not_trigger_reorder(): void
+    {
+        $acts = (new StoryPlanner())->plan($this->moonriseGraph())->acts;
+
+        $this->assertSame(ActSource::Entity, $acts[0]->source);
+        $this->assertSame('moonrise_2020', $acts[0]->sourceId, 'chỉ 1 stage ("built") không đủ để ghi đè centrality ranking');
+    }
+
+    /**
+     * Domain không có relation/event nào khớp STAGE_KEYWORDS (NFL, tin hành
+     * chính...) — thứ tự phải giữ NGUYÊN như trước khi có tính năng stage,
+     * đúng graceful degrade.
+     */
+    public function test_domain_with_no_stage_keywords_keeps_pure_importance_order(): void
+    {
+        $player = new Entity('player_1', EntityType::Human, [
+            'position' => $this->attr('position', 'quarterback'),
+        ], new Identity('Player One', false, $this->evidence()));
+        $team = new Entity('team_1', EntityType::Building, [], new Identity('Team One', false, $this->evidence()));
+
+        $graph = new VerifiedWorldGraph(
+            [$player, $team],
+            [new Relation('r1', 'player_1', 'team_1', 'traded_to', $this->evidence())],
+            [new Event('e1', 'contract_signing', 'player_1', $this->evidence())],
+        );
+
+        $acts = (new StoryPlanner(maxActs: 20))->plan($graph)->acts;
+
+        $this->assertSame(ActSource::Entity, $acts[0]->source);
+        $this->assertSame('player_1', $acts[0]->sourceId);
+    }
 }

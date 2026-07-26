@@ -85,7 +85,13 @@ final class VideoPlanningPipeline
         $producerOutput = $this->producer->produce($article, $world);
 
         // ---- Creative: Director, mỗi scene — chỉ chọn trong candidates (§18.4) ----
+        // 2026-07-23: Director giữ "nhật ký" các scene VỪA quay (tối đa 3 scene
+        // gần nhất — xem DirectorInterface::select() docblock) để cảnh sau
+        // biết cảnh trước đã chọn hero/emotion/composition gì, giống đạo diễn
+        // thật giữ cả phim trong đầu thay vì quyết từng shot độc lập.
         $directorNotesByScene = [];
+        $directorLog = [];
+        $totalScenes = count($timed->scenes);
         foreach ($timed->scenes as $t) {
             $scene = $t->intent->scene;
 
@@ -94,7 +100,7 @@ final class VideoPlanningPipeline
                 continue; // không có hành động vật lý hợp lệ nào — bỏ qua, không ép Director chọn
             }
 
-            $selection = $this->director->select($candidates, $world, $producerOutput);
+            $selection = $this->director->select($candidates, $world, $producerOutput, $scene->ordinal, $totalScenes, array_slice($directorLog, -3));
             $resolved  = $selection->resolve($candidates['action_candidates']);
             $chosen    = $candidates['action_candidates'][$selection->primaryCandidateIndex];
 
@@ -102,7 +108,15 @@ final class VideoPlanningPipeline
                 'audience_emotion' => $selection->emotion,
                 'reveal_strategy'  => $selection->reveal,
                 'micro_physics'    => $this->editorial->microPhysicsFor($chosen),
+                'composition_note' => $selection->compositionNote,
             ]);
+
+            $directorLog[] = [
+                'ordinal'          => $scene->ordinal,
+                'hero'             => $selection->heroEntity,
+                'emotion'          => $selection->emotion,
+                'composition_note' => $selection->compositionNote,
+            ];
         }
 
         // ---- Emit (§14: RenderPlan bất biến từ đây) ----

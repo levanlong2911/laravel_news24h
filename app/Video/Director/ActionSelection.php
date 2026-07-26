@@ -20,6 +20,15 @@ final class ActionSelection
         public readonly array $secondaryCandidateIndices,
         public readonly string $emotion,
         public readonly string $reveal,
+        /**
+         * Câu dàn cảnh (2026-07-23) — Director ĐƯỢC quyền mô tả tiền cảnh/hậu
+         * cảnh/cái gì nổi bật, nhưng CHỈ ghép từ hero/primary/secondary/
+         * attribute ĐÃ CÓ trong candidates đưa cho nó (xem instruction() của
+         * ClaudeDirector) — vẫn evidence-gated, không được bịa chi tiết mới.
+         * KHÔNG đi qua resolve() (không cần candidates để giải mã, giống
+         * $emotion/$reveal) — VideoPlanningPipeline gắn thẳng vào director_notes.
+         */
+        public readonly string $compositionNote = '',
     ) {
     }
 

@@ -563,4 +563,107 @@ class EditorialInterpreterTest extends TestCase
 
         $this->assertSame('SUCCESS', (new EditorialInterpreter())->environmentDiagnosisFor($world));
     }
+
+    // ---- cameraTargetFor(): 2026-07-23, bug thật scene_5 "world_cup_final_match" ----
+
+    public function test_camera_target_replaced_when_original_is_event_type(): void
+    {
+        // Đúng dữ liệu thật: subjects=['world_cup_final_match', 'metlife_stadium'],
+        // IntentPlanner chọn subjectIds[0] (event) làm target.
+        $event = new Entity('world_cup_final_match', EntityType::Event, []);
+        $stadium = new Entity('metlife_stadium', EntityType::Building, []);
+        $world = new VerifiedWorldGraph([$event, $stadium], [], []);
+        $scene = $this->scene(['world_cup_final_match', 'metlife_stadium']);
+
+        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'world_cup_final_match', $world);
+
+        $this->assertSame('metlife_stadium', $target);
+    }
+
+    public function test_camera_target_replaced_when_original_is_effect_type(): void
+    {
+        $effect = new Entity('explosion_fx', EntityType::Effect, []);
+        $vehicle = new Entity('car_1', EntityType::Vehicle, []);
+        $world = new VerifiedWorldGraph([$effect, $vehicle], [], []);
+        $scene = $this->scene(['explosion_fx', 'car_1']);
+
+        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'explosion_fx', $world);
+
+        $this->assertSame('car_1', $target);
+    }
+
+    public function test_camera_target_unchanged_when_already_visual(): void
+    {
+        $yacht = $this->physicalEntity('yacht_1');
+        $world = new VerifiedWorldGraph([$yacht], [], []);
+        $scene = $this->scene(['yacht_1']);
+
+        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'yacht_1', $world);
+
+        $this->assertSame('yacht_1', $target);
+    }
+
+    public function test_camera_target_kept_when_no_visual_alternative_exists(): void
+    {
+        // Không có subject nào khác để thay — KHÔNG đoán bừa (Rule 0), giữ nguyên.
+        $event = new Entity('world_cup_final_match', EntityType::Event, []);
+        $world = new VerifiedWorldGraph([$event], [], []);
+        $scene = $this->scene(['world_cup_final_match']);
+
+        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'world_cup_final_match', $world);
+
+        $this->assertSame('world_cup_final_match', $target, 'không có lựa chọn khác thì giữ nguyên, không bịa');
+    }
+
+    public function test_camera_target_kept_when_entity_not_found(): void
+    {
+        $world = new VerifiedWorldGraph([], [], []);
+        $scene = $this->scene(['unknown_entity']);
+
+        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'unknown_entity', $world);
+
+        $this->assertSame('unknown_entity', $target);
+    }
+
+    public function test_camera_target_skips_other_event_type_alternatives(): void
+    {
+        // Cả 2 subject đều event — không có lựa chọn "quay được" nào, giữ nguyên.
+        $event1 = new Entity('event_1', EntityType::Event, []);
+        $event2 = new Entity('event_2', EntityType::Event, []);
+        $world = new VerifiedWorldGraph([$event1, $event2], [], []);
+        $scene = $this->scene(['event_1', 'event_2']);
+
+        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'event_1', $world);
+
+        $this->assertSame('event_1', $target);
+    }
+
+    // ---- durationWeightFor(): 2026-07-23, pacing Phase 5 đã hẹn trước ----
+
+    public function test_every_purpose_yields_a_positive_duration_weight(): void
+    {
+        foreach (ScenePurpose::cases() as $purpose) {
+            $this->assertGreaterThan(0.0, (new EditorialInterpreter())->durationWeightFor($purpose));
+        }
+    }
+
+    public function test_action_and_resolution_weigh_more_than_detail_and_comparison(): void
+    {
+        $editorial = new EditorialInterpreter();
+
+        $heavy = min($editorial->durationWeightFor(ScenePurpose::Action), $editorial->durationWeightFor(ScenePurpose::Resolution));
+        $light = max($editorial->durationWeightFor(ScenePurpose::Detail), $editorial->durationWeightFor(ScenePurpose::Comparison));
+
+        $this->assertGreaterThan($light, $heavy, 'Action/Resolution cần đọc lâu hơn Detail/Comparison');
+    }
+
+    public function test_duration_weight_is_deterministic(): void
+    {
+        $editorial = new EditorialInterpreter();
+
+        $this->assertSame(
+            $editorial->durationWeightFor(ScenePurpose::Action),
+            $editorial->durationWeightFor(ScenePurpose::Action),
+        );
+    }
 }

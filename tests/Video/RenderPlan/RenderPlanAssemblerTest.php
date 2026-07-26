@@ -91,6 +91,41 @@ class RenderPlanAssemblerTest extends TestCase
         );
     }
 
+    public function test_scene_camera_target_corrected_when_intent_planner_picks_event_entity(): void
+    {
+        // Đúng dữ liệu thật (bài Tequila yacht, 2026-07-23): relation
+        // world_cup_final_match --held_at--> metlife_stadium trở thành act,
+        // subjectIds = [event, building] — IntentPlanner chọn subjectIds[0]
+        // (event) làm camera.target nếu Assembler không sửa.
+        $world = new VerifiedWorldGraph(
+            [
+                new Entity('world_cup_final_match', EntityType::Event, [], new Identity('World Cup Final', false, $this->ev())),
+                new Entity('metlife_stadium', EntityType::Building, [
+                    'capacity' => $this->attr('capacity', 82500),
+                ], new Identity('MetLife Stadium', true, $this->ev())),
+            ],
+            [new Relation('r1', 'world_cup_final_match', 'metlife_stadium', 'held_at', $this->ev())],
+            [],
+        );
+
+        $plan = $this->assemble(world: $world);
+
+        // scene sinh từ relation "held_at" có 2 subject → có thay thế hợp lệ,
+        // PHẢI được sửa. scene sinh từ chính entity "world_cup_final_match"
+        // (chỉ 1 subject, không gì thay thế) ĐÚNG RA vẫn giữ nguyên — không
+        // check scene đó ở đây, đã có test riêng
+        // (test_camera_target_kept_when_no_visual_alternative_exists).
+        $relationScene = null;
+        foreach ($plan['scenes'] as $scene) {
+            if (count($scene['subjects']) === 2 && in_array('world_cup_final_match', $scene['subjects'], true)) {
+                $relationScene = $scene;
+            }
+        }
+
+        $this->assertNotNull($relationScene, 'phải có scene sinh từ relation held_at (2 subjects)');
+        $this->assertSame('metlife_stadium', $relationScene['camera']['target'], 'camera.target không được là entity type=event');
+    }
+
     public function test_assembled_plan_validates_against_the_real_schema(): void
     {
         $plan   = json_decode(json_encode($this->assemble()), false);

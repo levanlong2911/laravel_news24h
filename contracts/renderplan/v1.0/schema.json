@@ -244,7 +244,7 @@
     },
 
     "director_notes": {
-      "description": "Y do sang tao cua MOT canh (Director role) — tra loi 'khan gia nen CAM thay gi', KHONG phai prompt. OPTIONAL. Provider-doc-lap: song sot khi doi Kling→Veo. style_shift: canh duoc lech style toan-phim KHI cam xuc doi hoi (bang chung beat 4, 2026-07-19). hero/primary/secondary/micro_physics them 2026-07-21/22 (Phase 3, ARCHITECTURE.md §18.4): Director CHI chon (hero id + index candidate), KHONG tu viet cau — primary/secondary la SEMANTIC (type/actor/target), KHONG phai Prompt Language (§18.7 Syntax thuoc Compiler). hero/target co the VANG (khong bia — xem ActionCandidate::toArray()/ActionSelection::resolve()). Xem ARCHITECTURE.md §17/§18.",
+      "description": "Y do sang tao cua MOT canh (Director role) — tra loi 'khan gia nen CAM thay gi', KHONG phai prompt. OPTIONAL. Provider-doc-lap: song sot khi doi Kling→Veo. style_shift: canh duoc lech style toan-phim KHI cam xuc doi hoi (bang chung beat 4, 2026-07-19). hero/primary/secondary/micro_physics them 2026-07-21/22 (Phase 3, ARCHITECTURE.md §18.4): Director CHI chon (hero id + index candidate), KHONG tu viet cau — primary/secondary la SEMANTIC (type/actor/target), KHONG phai Prompt Language (§18.7 Syntax thuoc Compiler). hero/target co the VANG (khong bia — xem ActionCandidate::toArray()/ActionSelection::resolve()). composition_note them 2026-07-23: cau mo ta DAN CANH (tien canh/hau canh, cai gi noi bat) — CHI duoc ghep tu hero/primary/secondary/attribute DA CO trong candidates, KHONG duoc bia chi tiet moi (van evidence-gated, chi doi CACH trinh bay). narrative_goal/visual_priority/camera_philosophy/avoid/style_shift van RESERVED, chua noi day. Xem ARCHITECTURE.md §17/§18.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -258,7 +258,8 @@
         "hero":              { "$ref": "#/$defs/slug" },
         "primary":           { "$ref": "#/$defs/action" },
         "secondary":         { "type": "array", "items": { "$ref": "#/$defs/action" } },
-        "micro_physics":     { "type": "array", "items": { "type": "string" } }
+        "micro_physics":     { "type": "array", "items": { "type": "string" } },
+        "composition_note":  { "type": "string" }
       }
     },
 

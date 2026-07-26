@@ -985,3 +985,426 @@ Không đổi logic `compose()` đã validate bằng render thật (Sprint 1–3
 - `MotionComposer` không được "nghĩ" → nó chỉ làm Syntax, không có tầng nào cho nó Subjective/Objective.
 
 **Luật kèm theo:** vượt ranh giới này (vd để LLM quyết 1 việc Objective, hoặc Rule Engine quyết 1 việc Subjective) đòi hỏi **bằng chứng tường minh** (Rule 0) — không phải vì "kiến trúc đẹp hơn".
+
+### 18.8 Duration có 2 tầng tách biệt — Editorial target ⊥ Renderer capability (2026-07-24)
+
+> Rút ra từ render thật bài Tequila yacht: `TimelinePlanner`/`EditorialInterpreter::
+> durationWeightFor()` (§12, Phase 5, "chia đều theo trọng số `ScenePurpose`") sinh
+> ra số giây **bất kỳ** cho mỗi scene (1.39s, 5.3s, 10.6s...) — nhưng Kling (renderer
+> thật) chỉ nhận **đúng 2 giá trị: 5s hoặc 10s**. Đây KHÔNG phải bug — là 2 tầng
+> khác nhau, dễ nhầm nếu không tách rõ:
+
+| Tầng | Vai trò | Sinh ra bởi | Đơn vị |
+|---|---|---|---|
+| **Editorial target** | "Cảnh này XỨNG ĐÁNG bao nhiêu giây trong bản dựng cuối" — mục tiêu biên tập, theo trọng số `ScenePurpose` (§12) | `TimelinePlanner` (Laravel, deterministic) | số thực bất kỳ |
+| **Renderer capability** | Renderer thật (Kling) chỉ tạo được clip THÔ ở 1 trong 2 độ dài cố định | Provider constraint (fal.ai Kling: 5\|10 clamp) | enum đóng {5, 10} |
+
+**Editorial target KHÔNG BAO GIỜ là lệnh gửi thẳng cho renderer.** Nó là mục tiêu
+cho bước DỰNG (edit/retime) sau khi đã có clip thô — đúng vai trò biên tập viên
+phim thật: quay dư (renderer tạo đủ 5s hoặc 10s), dựng ngắn (cắt/tăng-giảm tốc độ
+khớp đúng Editorial target ở bước ráp cuối). `MotionComposer`/`camera_phrase()`
+(§18.5, Syntax) không đổi vai trò gì — vẫn chỉ dịch enum→câu cho renderer, không
+biết gì về Editorial target.
+
+**Quy tắc chọn renderer capability khi cần tối thiểu hoá phí:** Editorial target
+≤5s → xin Kling tier 5s (rẻ nhất); Editorial target >5s → xin tier 10s (đủ tư liệu
+để retime, không phải "kéo giãn" clip ngắn thành chậm bất thường). Retime luôn là
+bước SAU CÙNG, sau khi đã có clip thô đúng tier.
+
+**Trạng thái (2026-07-24):** bước retime (ffmpeg speed-up/trim theo đúng Editorial
+target) đã làm thủ công 1 lần (video Tequila yacht 11s, dùng lại clip đã render,
+không tốn thêm phí Kling). Bước tự động hoá (chọn tier 5\|10 theo Editorial target
++ retime tự động trong `render_queued_shots.py`) — CHƯA CODE, chờ quyết định có
+cần tự động hoá hay giữ thủ công.
+
+### 18.9 Bài học viết prompt cho Kling — từ render thật, không phải đoán (2026-07-24)
+
+> Rút ra sau khi render 8 scene thật (bài Tequila yacht) + 4 lần render thử
+> nghiệm gộp scene (2 thành công, 2 thất bại) + tra cứu tài liệu Kling chính
+> thức. Chia rõ "đã kiểm chứng bằng render thật" (đáng tin nhất) và "theo tài
+> liệu ngoài, chưa tự kiểm chứng" — không trộn 2 loại.
+
+**Đã kiểm chứng bằng render thật:**
+
+1. **1 shot = 1 chủ thể chính.** Đa chủ thể trong 1 lần render Kling text-to-
+   video KHÔNG hoạt động tốt — đã thử 2 cách (chuyển tiếp mượt bằng camera
+   transition, và neo cả 2 chủ thể ngay đầu prompt) đều thất bại: model hoặc
+   bỏ qua hoàn toàn chủ thể thứ 2, hoặc chỉ cho chủ thể đó xuất hiện như hình
+   nền phụ, không trở thành trọng tâm. Đây là giới hạn model, không phải lỗi
+   viết prompt — không nên tiếp tục thử biến thể câu chữ khác cho use case này.
+2. **Chỉ gộp render khi 2 scene liền kề CÙNG chủ thể + CÙNG `camera.movement`.**
+   Bằng chứng: scene 2+3 bài Tequila yacht (cùng Nas, cùng `PUSH_IN`) gộp
+   thành công, mượt, không lẫn chủ thể. Scene 5+6 (khác chủ thể: yacht → Nas,
+   cùng `TRACK`) gộp thất bại dù prompt viết đúng mọi nguyên tắc chính thức
+   của Kling (subject neo đầu, camera cụ thể, temporal flow, dual-anchor).
+   Quy tắc thực nghiệm (KHÔNG nâng thành kiến trúc cố định — chưa đủ mẫu qua
+   nhiều loại cặp scene khác): merge chỉ an toàn khi cùng chủ thể.
+3. **Chữ nhỏ (nhãn sản phẩm, banner sân khấu, chữ trên màn hình LED) luôn ra
+   chữ giả/không đọc được** ở mọi model video AI hiện nay, không riêng Kling.
+   Không có cách viết prompt nào sửa được — không nên yêu cầu Kling render
+   chữ cụ thể cần đọc rõ; nếu cần chữ đọc được, phải làm ở hậu kỳ (overlay).
+4. **Push-in liên tiếp trên khuôn mặt NGƯỜI ở framing=DETAIL dễ ra khung hình
+   hỏng** — bằng chứng: scene 3 (kế thừa continuity push-in từ scene 2,
+   target=Nas/Human, framing=DETAIL) bị cắt cúp chỉ còn 1 mắt + sống mũi,
+   không dùng được. Scene 3→4 CÙNG chain push-in nhưng target là chai rượu
+   (PhysicalObject) lại KHÔNG hỏng — nên vấn đề thật là "push-in liên tiếp
+   TRÊN MẶT NGƯỜI", không phải "push-in liên tiếp nói chung". Đã sửa thành
+   code — gate tại `tools/session_runner.py`: khi
+   `movement=='PUSH_IN' and target_type=='human' and framing=='DETAIL'`, im
+   lặng (không phát `camera_continuity`) thay vì cộng dồn zoom — tái dùng
+   đúng `entity_type()` đã có (bug #5).
+5. **`world_environment` (fact cấp video) chỉ nên áp cho scene có `camera.
+   framing` đủ rộng (WIDE/MEDIUM/AERIAL, không phải CLOSE/DETAIL) VÀ
+   `camera.target` là loại "nằm trong không gian" (Vehicle/Landscape/
+   Building/PhysicalObject, không phải Human/Event).** Đã sửa thành code —
+   `environment_visible_at()` + `environment_relevant_to()` trong
+   `media_runtime/director/motion.py`, gọi tại `tools/session_runner.py`.
+6. **`camera_continuity` giữa 2 shot liền kề chỉ nên khẳng định khi
+   `camera.movement` (enum) 2 scene THẬT SỰ trùng nhau** — không suy đoán từ
+   câu tiếng Anh đã biên dịch của shot trước (`derive_camera_continuity()` cũ
+   làm vậy, gây câu tự mâu thuẫn: "continuing to push in" đứng cạnh "tracks
+   laterally"). Đã sửa thành code — gate tại `tools/session_runner.py` bằng
+   so sánh `movement == prev_movement` trước khi gọi
+   `derive_camera_continuity()`.
+7. **`objective` (Producer.visual_promise, bối cảnh cấp video) chỉ nên xuất
+   hiện ở scene ĐẦU TIÊN** (`ordinal == 1`), không lặp lại nguyên văn ở mọi
+   scene — lặp lại tốn "attention budget" của model cho nội dung không xuất
+   hiện trong khung hình cụ thể của scene đó. Đã sửa thành code — gate tại
+   `tools/session_runner.py` bằng `scene.ordinal`.
+
+**Theo tài liệu Kling chính thức (fal.ai + kling.ai, chưa tự kiểm chứng riêng
+nhưng đã áp dụng và không thấy bằng chứng ngược lại qua 8+ lần render):**
+
+- Công thức: Subject + Subject Movement + Scene + (Camera + Lighting +
+  Atmosphere) — chủ thể phải neo NGAY ĐẦU prompt. Pipeline hiện tại đã đúng
+  hướng này từ trước (hero luôn đứng đầu câu qua
+  `EditorialInterpreter`/Director), không cần sửa.
+- Camera phải cụ thể ("slow dolly-in, low angle", không phải "cinematic
+  movement" mơ hồ) — `camera_phrase()` (enum→câu cụ thể) đã đúng hướng này.
+- Giới hạn cứng 2500 ký tự/prompt (đã biết từ trước, `_KLING_HARD_LIMIT`
+  trong `motion.py`).
+
+**Trạng thái (2026-07-24):** cả 4 bug (mục #4-7) đã sửa xong, 223/223 test
+Python xanh (đã xác nhận qua render thật lại session Tequila yacht ở mục #5-7,
+mục #4 xác nhận qua 2 test unit — chưa render lại để so trực quan).
+
+### 18.11 Hành động tay có mục đích cụ thể — giới hạn cứng, đã kiểm chứng cả t2v lẫn i2v (2026-07-24)
+
+> Bối cảnh: thử nghiệm hướng "creation-arc" (thiết kế→thi công→hoàn thiện,
+> §18.10-style ý tưởng, CHƯA CODE) — trước khi xây bất kỳ Planner nào, test
+> render thật để biết Kling render được loại nội dung nào. 5 lần render thật
+> ($0.28-0.31/lần), không đoán.
+
+**Đã kiểm chứng: KHÔNG có cách nào (t2v, hay i2v với ảnh khởi đầu chính xác)
+khiến Kling animate được hành động tay có mục đích cụ thể** (vẽ 1 đường nét cụ
+thể, sau này suy rộng ra: hàn, khâu da, đánh bóng):
+
+1. **t2v thuần** ("hand sketches curved hull lines"): tay đứng yên gần như
+   tuyệt đối suốt 5s, nét vẽ ra hình xoắn ốc trừu tượng, không phải hull —
+   Kling không hiểu "sketch hull curve" là hình dạng kỹ thuật cụ thể.
+2. **i2v với ảnh khởi đầu ĐÃ chính xác** (Flux tạo ảnh tay+bút+bản vẽ hull
+   đúng hình, đặt đúng vị trí đang vẽ) + prompt yêu cầu tường minh "pencil tip
+   moving steadily, adding new construction lines": **vẫn thất bại y hệt** —
+   tay/bút/nét vẽ gần như không đổi giữa 8 frame lấy mẫu đều trên 5s. Ảnh khởi
+   đầu chính xác KHÔNG cứu được — chứng minh đây là giới hạn của chính cơ chế
+   animate của Kling, không phải do thiếu dữ liệu hay prompt chưa đủ tốt.
+
+**Công thức đã kiểm chứng hoạt động tốt (2 lần thành công, khác nhau về nội
+dung — không phải may mắn 1 lần):**
+
+- **Flux tạo ảnh (nội dung chính xác, kể cả kỹ thuật: hull blueprint, nhiều
+  người) → Kling image-to-video CHỈ yêu cầu camera chuyển động** (push-in,
+  không yêu cầu chủ thể/tay làm gì cụ thể) → kết quả sạch, camera mượt, nội
+  dung giữ chính xác xuyên suốt.
+- Đã test: (a) bản vẽ hull kỹ thuật đơn (chính xác 100% qua các frame), (b) 4
+  người quây quanh bàn xem bản vẽ, 1 người chỉ tay (danh tính/cử chỉ giữ
+  nguyên, không trôi, không thừa chi) — nhóm nhiều người KHÔNG phải vấn đề,
+  miễn không yêu cầu hành động tay/vật thể phức tạp.
+
+**Quy tắc sản xuất rút ra:** với MỌI nội dung có "ai đó đang làm gì bằng tay"
+(vẽ, hàn, khâu, đánh bóng, lắp ráp) — **không mô tả hành động đang diễn ra**,
+chỉ mô tả **kết quả/bối cảnh tĩnh đã có sẵn** (vd "bản vẽ đã hoàn thành nằm
+trên bàn" thay vì "tay đang vẽ"), rồi để camera tạo chuyển động. Nếu cần cảm
+giác "hành động", dùng Ken Burns (ảnh tĩnh + pan/zoom FFmpeg thuần, xem ví dụ
+`work/clips_s3/1_concept.mp4` — không qua Kling) thay vì kỳ vọng Kling
+animate.
+
+### Đánh giá bằng chứng cho kiến trúc "creation-arc" (lịch sử: bắt đầu từ đề xuất 5-phase Birth/Design/Engineering/Craftsmanship/Experience — xem quyết định chốt 4-phase bên dưới) — CHƯA ĐỦ CƠ SỞ CODE
+
+**Trục rủi ro thật KHÔNG phải "phase nào"** — 5 cái tên Birth/Design/
+Engineering/Craftsmanship/Experience chỉ là khung KỂ CHUYỆN (narrative), không
+phải khung RỦI RO KỸ THUẬT. Trục rủi ro thật, cắt ngang qua cả 5 phase, là:
+
+> **Beat này có bắt buộc mô tả hành động tay/vật thể đang diễn ra hay không?
+> VÀ nội dung đó có cần khớp CHÍNH XÁC 1 hình dạng/quỹ đạo cụ thể, hay chấp
+> nhận được dạng trừu tượng/nghệ thuật?**
+
+- **Nội dung tĩnh/kết quả/bối cảnh, cần chính xác hình dạng** (bản vẽ đã
+  xong, bề mặt đã hoàn thiện, người đứng quan sát) → an toàn nhưng cần Flux
+  trước để đảm bảo đúng hình dạng, rồi Kling i2v chỉ lo camera — đã kiểm
+  chứng 2 lần thành công (bản vẽ hull, team review).
+- **Nội dung chuyển động trừu tượng, KHÔNG cần khớp chính xác 1 hình dạng cụ
+  thể** (đường mô phỏng dòng chảy, hiệu ứng hạt, ánh sáng) → t2v thuần cho
+  ĐÚNG phần chuyển động (mượt, thật sự động) — **nhưng nếu prompt còn 1 phần
+  yêu cầu hình dạng cụ thể lồng bên trong** (vd "flow lines AROUND THE HULL
+  SHAPE"), phần đó vẫn bị rớt y hệt nhóm dưới. Đã kiểm chứng 1 lần (CFD): line
+  chuyển động đúng, nhưng hull biến mất hoàn toàn — **không tự động rẻ hơn
+  Design, vẫn cần Flux nếu có hình dạng cụ thể cần giữ**.
+- **Nội dung yêu cầu hành động tay có mục đích cụ thể, cần chính xác quỹ đạo**
+  (đang vẽ, đang hàn, đang khâu, đang đánh bóng) → **luôn thất bại**, đã kiểm
+  chứng cả t2v lẫn i2v — phải viết lại thành nội dung tĩnh/kết quả, không có
+  ngoại lệ.
+
+| Phase | Trạng thái bằng chứng | Rủi ro thật theo trục hành-động-tay |
+|---|---|---|
+| Birth (mood/ý tưởng) | 1 lần test, hỗn hợp — không khí/ánh sáng đẹp, nhưng test dùng nhầm nội dung có hành động ("architect sketches") lấn sang Design. Nếu viết đúng nghĩa gốc (mood thuần, không hành động) thì rủi ro thấp — chưa test lại đúng scope. |
+| Design (bản vẽ, review) | **Có bằng chứng thật** — 3 lần render, 2 thành công (hull blueprint, team review) đúng công thức. | Thấp — nội dung vốn tĩnh (bản vẽ, review), dễ viết đúng. |
+| Engineering (CFD, kết cấu, động cơ) | **Bằng chứng THẤT BẠI 1 PHẦN** (đính chính 2026-07-24, phát hiện qua xem lại kỹ frame thật) — t2v thuần cho camera push-in mượt + đường mô phỏng chuyển động đúng yêu cầu, NHƯNG **hoàn toàn thiếu hình dáng hull** mà prompt yêu cầu ("flow lines... around the hull shape") — chỉ ra đường trừu tượng trên nền xanh, không nhận diện được đây là mô phỏng quanh 1 con tàu. Đúng lỗi cũ tái diễn: phần chuyển động trừu tượng Kling làm tốt, phần hình dạng cụ thể (hull) bị rớt hoàn toàn, không phải "rẻ hơn Design" như kết luận vội trước đó. | Cần retest với Flux trước (vẽ đúng hull + overlay flow lines) rồi mới i2v — same recipe như Design, KHÔNG rẻ hơn như tưởng. |
+| Craftsmanship (khâu da, đánh bóng, lắp ráp) | **CHƯA TEST**. | **Cao** — bản chất phase này LÀ hành động tay, không tránh được bằng cách đổi chủ thể như Design/Engineering. Bắt buộc viết dạng kết quả tĩnh ("da đã khâu xong, đường chỉ rõ nét") mới an toàn — cần test riêng để xác nhận vẫn giữ được "cảm giác craftsmanship" khi mô tả tĩnh. |
+| Experience (cruising, sunset, lifestyle) | **Có bằng chứng thật gián tiếp** — toàn bộ nửa đầu session này (8 scene Tequila yacht) là nội dung loại Experience. | Thấp — đã kiểm chứng kỹ qua nhiều lần render thật. |
+
+**Kết luận:** không phải "phase nào pass/fail" — mà là **2 trục quy tắc**
+(tránh mô tả hành động tay có mục đích cụ thể; VÀ bất kỳ hình dạng cụ thể nào
+cần giữ đúng — kể cả lồng bên trong nội dung trừu tượng như CFD — đều cần Flux
+trước, không có ngoại lệ "nội dung trừu tượng thì rẻ hơn"). Chỉ **2/5 phase
+có bằng chứng thật vững** (Design, Experience) — **Engineering cần retest**
+(phần chuyển động OK, phần hình dạng hull bị rớt, đính chính 2026-07-24) —
+**Craftsmanship** (rủi ro cao, bản chất LÀ hành động tay, chưa test) và
+**Birth** (cần test lại đúng scope thuần mood, không lẫn hành động) vẫn CHƯA
+có bằng chứng. CHƯA đủ cơ sở để code `CreationArcPlanner` cho cả 5 phase cùng
+lúc.
+
+### Chốt cấu trúc cuối cùng (2026-07-24, quyết định user): 4 phase, không phải 5-6
+
+Sau khi cân nhắc, user quyết định:
+
+- **Bỏ Birth** — trùng vai trò với bước lấy thông tin từ article đã có sẵn
+  trong pipeline (Truth Layer/Extraction) — không cần 1 phase riêng chỉ để
+  "gieo ý tưởng", article thật đã là nguồn ý tưởng.
+- **Bỏ Engineering** — vừa test thất bại 1 phần (hình dáng hull bị rớt khỏi
+  mô phỏng CFD), và không phải nội dung thiết yếu cho video quảng bá.
+- **Giữ Construction** (thi công thô — mới tách ra khỏi Craftsmanship gốc) và
+  **Craftsmanship** (hoàn thiện tinh xảo) làm 2 phase riêng biệt, đúng tương
+  phản công nghiệp/thủ công của các video launch thật (Bugatti, Rolls-Royce).
+
+**Cấu trúc CHỐT: `Design → Construction → Craftsmanship → Experience`**
+
+| Phase | Trạng thái bằng chứng |
+|---|---|
+| Design | ✅ Vững — 2 lần thành công (bản vẽ hull, team review), công thức Flux+i2v camera-only |
+| Construction | ⬜ Chưa test — dự đoán cần mô tả kết quả/hiệu ứng (tia lửa hàn, khung đã ráp) thay vì "công nhân đang hàn" |
+| Craftsmanship | ⬜ Chưa test — rủi ro cao nhất, gần như mọi mô tả tự nhiên đều ngả về hành động tay |
+| Experience | ✅ Vững — toàn bộ nửa đầu session (8 scene Tequila yacht) |
+
+Thứ tự triển khai hợp lý nếu code tiếp: **Design trước** (đã chắc chắn) →
+**Construction** (dự đoán rủi ro trung bình, cần 1 lần test xác nhận) →
+**Craftsmanship** (rủi ro cao nhất, để sau cùng, cần thiết kế riêng để giữ
+"cảm giác thủ công" khi mô tả dạng tĩnh).
+
+### 18.12 Model mới hơn (Kling 2.6 Pro, Veo 3.1) giải quyết được giới hạn hành động tay — nhưng chỉ áp dụng cho MODEL, không phải toàn bộ pipeline (2026-07-24)
+
+> Quan trọng: mọi giới hạn "không animate được hành động tay" ghi ở §18.11 là
+> đo trên **Kling v1.6/standard** (model dùng xuyên suốt session tới thời
+> điểm này). Test lại đúng prompt khó nhất (thợ hàn di chuyển mỏ hàn dọc
+> đường hàn) trên 2 model mới hơn cho kết quả khác hẳn.
+
+**Bằng chứng thật**: cùng 1 prompt hàn (yêu cầu tay+mỏ hàn di chuyển có mục
+đích), test trên 3 model:
+
+| Model | Giá/clip (5-6s, không audio) | Kết quả |
+|---|---|---|
+| Kling v1.6/standard (đã dùng cả session) | $0.28 | Thất bại hoàn toàn — tay/vật thể đứng yên |
+| Kling v2.6/pro | ~$0.35-0.70 | Tay/găng tay hoàn hảo, không méo, tia lửa động thật — nhưng mỏ hàn CHƯA di chuyển rõ dọc đường hàn |
+| **Veo 3.1 Lite** | **~$0.15-0.25 (rẻ hơn cả v1.6!)** | Tương đương Kling 2.6 Pro về chất lượng tay/vật thể, **rẻ hơn** |
+
+**Kết luận: Veo 3.1 Lite vừa RẺ HƠN v1.6 đang dùng, vừa CHẤT LƯỢNG CAO HƠN** cho
+nội dung có tay/công cụ — đáng cân nhắc làm model mặc định thay vì chỉ dùng
+cho case đặc biệt. Cả 2 model mới đều CHƯA đạt phần khó nhất (mỏ hàn di
+chuyển để lại vệt hàn mới, tiến triển theo thời gian) — cần thêm 1 vòng test
+với prompt sửa theo nguyên tắc "observable behavior" bên dưới.
+
+### Nguyên tắc viết prompt mới: "Observable/Measurable Behavior", không phải động từ diễn giải
+
+> Rút ra từ 2 lần tự soi lại frame thật (bắt được cả 2 lần chính mình đánh giá
+> sai lúc đầu — "torch di chuyển đều" và "spark giữ nguyên" đều KHÔNG khớp
+> với 8 frame thật, phải tự sửa lại). Bài học phương pháp: **review video AI
+> phải chỉ ra được TRẠNG THÁI THAY ĐỔI cụ thể giữa các frame, không dùng ấn
+> tượng tổng quát ("motion looks good").**
+
+**Vấn đề của động từ diễn giải** (guides, studies, works, inspects): mô tả Ý
+ĐỊNH của hành động, không mô tả TRẠNG THÁI PHẢI THAY ĐỔI theo thời gian — model
+dễ chỉ render 1 khung hình gần-tĩnh khớp với ý định đó mà không tạo tiến trình
+thật.
+
+**Cách viết thay thế — mô tả hành vi ĐO ĐƯỢC bằng hình ảnh:**
+
+```
+❌ "A welder guides a torch steadily along a seam"          (diễn giải ý định)
+✅ "The torch tip advances across the seam — the contact     (hành vi quan sát được)
+    point visibly progresses and never pauses. A weld bead
+    continuously grows longer behind the moving torch."
+```
+
+Nguyên tắc: mỗi câu mô tả chuyển động phải trả lời được "**điều gì có thể đo/
+đếm được đã đổi khác giữa frame đầu và frame cuối**" (dài ra, tiến lại gần
+hơn, số lượng tăng/giảm) — không chỉ mô tả 1 hành động đang "diễn ra" chung
+chung.
+
+### Nguyên tắc viết prompt cho Veo 3 (tra cứu chính thức, chưa tự kiểm chứng riêng — trừ phần đã test ở trên)
+
+- **Cấu trúc 5-7 phần**: Subject + Action + Scene/Context + Camera + Visual
+  Style + Audio + Negative prompt — không cần đủ mọi phần mỗi lần.
+- **Camera nên tách thành câu RIÊNG**, không nhúng vào câu mô tả hành động
+  chủ thể — vd "The camera pulls back." đứng độc lập, thay vì lồng vào 1 câu
+  dài mô tả cả hành động lẫn camera cùng lúc. Khác với Kling (đã kiểm chứng:
+  camera đứng CUỐI cùng 1 câu ghép vẫn work tốt) — đây là điểm khác biệt giữa
+  2 model, cần test riêng để xác nhận có thật khác hay không.
+- **Veo hiểu thuật ngữ dựng phim**: "match cut", "jump cut", "establishing
+  shot sequence", "montage", "dolly shot", "over-the-shoulder" — có thể dùng
+  trực tiếp, không chỉ mô tả chuyển động camera thuần enum như Kling.
+- **Vật lý mô phỏng tốt hơn** — Veo 3 được quảng cáo mô phỏng vật lý thật tốt
+  hơn (vải, nước, vật thể) — khớp với lý do nên dùng "observable behavior"
+  thay vì diễn giải ý định, vì Veo được tối ưu để MÔ PHỎNG thay đổi vật lý,
+  không chỉ vẽ 1 khung hình đẹp.
+- **Audio**: dùng dấu ngoặc kép cho lời thoại cụ thể, tiền tố "SFX:" cho hiệu
+  ứng âm thanh — hiện dự án đang tắt audio (`generate_audio: false`), chưa
+  dùng tới nhưng ghi lại cho sau này.
+- Giới hạn 2500 ký tự (giống Kling) — chưa xác nhận Veo có giới hạn khác.
+
+### 18.13 TỔNG KẾT — Chốt cấu trúc `Design → Construction → Craftsmanship → Experience` (2026-07-24)
+
+> Tổng hợp toàn bộ bằng chứng render thật thu thập được qua tất cả các lần
+> test creation-arc trong session này (§18.9-18.12). Đây là bản chốt cuối
+> cùng — 4 phase, không phải 5 hay 6 như các đề xuất trước đó.
+
+#### Design ✅ VỮNG
+
+- **Công thức**: Flux tạo ảnh nội dung chính xác → Kling i2v chỉ yêu cầu
+  camera chuyển động (không yêu cầu chủ thể/tay làm gì).
+- **Bằng chứng**: 2/2 lần render thành công — bản vẽ hull kỹ thuật (hình dáng
+  chính xác tuyệt đối xuyên suốt, camera push-in mượt), nhóm 4 người review
+  bản vẽ (danh tính/cử chỉ giữ nguyên, không trôi, không thừa chi).
+- **Rủi ro còn lại**: không có — đã kiểm chứng 2 lần độc lập, khác nội dung.
+
+#### Construction ✅ ĐẠT YÊU CẦU SẢN XUẤT (dùng Kling 2.6 Pro/Veo 3.1 Lite, không dùng v1.6)
+
+- **Bằng chứng**: test bằng Kling v1.6 (t2v) cho kết quả không đạt (góc quay
+  lạ, cần cẩu không thực hiện đúng vai trò, camera gần như không di chuyển).
+  Test lại với **Kling 2.6 Pro** và **Veo 3.1 Lite** (thợ hàn di chuyển mỏ
+  hàn dọc đường hàn) cho chất lượng hình ảnh xuất sắc — tay/găng tay/mỏ hàn
+  hoàn hảo, tia lửa động thật, không artifact — nhưng **mỏ hàn chưa di chuyển
+  rõ rệt dọc đường hàn** như yêu cầu (phần "travel" chưa đạt, phần "chất
+  lượng thị giác + tia lửa" đã đạt).
+- **User đã chấp nhận mức này là đủ dùng** ("Construction test ổn rồi").
+- **Phát hiện quan trọng nhất phase này**: giới hạn "không animate được hành
+  động tay" ghi ở §18.11 chỉ đúng cho **Kling v1.6** — Kling 2.6 Pro và Veo
+  3.1 Lite xử lý tay+công cụ tốt hơn NHIỀU, và **Veo 3.1 Lite còn RẺ HƠN
+  v1.6 đang dùng** (~$0.15-0.25 so với $0.28/5s) — nên cân nhắc đổi model mặc
+  định.
+
+#### Craftsmanship ✅ ĐẠT YÊU CẦU SẢN XUẤT (dùng Veo 3.1 Lite) — chỉ thiếu tiến triển nếu cần kiểu time-lapse
+
+- **Test**: prompt "benchmark v2" cực khó (4 thợ thủ công cùng lúc: khâu da +
+  giữ căng da + đánh bóng (burnisher) theo sau đường may + soi đèn kiểm tra
+  theo sau burnisher) qua Veo 3.1 Lite, cả bản 8s và định hướng 4s.
+- **Kết quả**: hình ảnh/chất liệu da/ánh sáng đạt production-grade (9.6-9.8/10
+  theo review chi tiết), bố cục 4 người đúng, không ghost character, không
+  chồng tay. **NHƯNG hoàn toàn đóng băng — không có tiến triển nào xảy ra
+  suốt 8 giây**: đường may không dài ra, kim không di chuyển, burnisher/đèn
+  soi không "đi theo sau" gì (vì không có gì tiến triển để theo). Chuỗi nhân
+  quả kim→chỉ→mũi khâu→burnisher→đèn soi **không được mô phỏng** (điểm
+  "Causal manufacturing workflow" chỉ 4.5/10 theo review).
+- **Kết luận rút ra**: dồn nhiều điểm khó cùng lúc (đa nhân vật + hành động
+  tay chính xác ×4 + thứ tự thời gian nghiêm ngặt) khiến model chọn giải
+  pháp an toàn — 1 bố cục tĩnh đẹp thay vì thực hiện toàn bộ yêu cầu chuyển
+  động phức tạp. Đây là bằng chứng thật, không phải suy đoán.
+- **Chưa test**: bản đơn giản hơn (1 thợ khâu da, không kèm 3 người khác) —
+  đã thiết kế prompt (dùng nguyên tắc "observable state per second": "one
+  additional visible stitch appears immediately behind the needle" thay vì
+  "finishes exactly one stitch") nhưng CHƯA render để xác nhận bản đơn giản
+  có khắc phục được vấn đề "đóng băng" hay không.
+- **User quyết định dừng test ở đây, chấp nhận mức bằng chứng hiện tại**
+  ("Craftsmanship test như vậy là ổn").
+
+#### Experience ✅ VỮNG
+
+- **Bằng chứng**: toàn bộ nửa đầu session này — 8 scene thật (bài Tequila
+  yacht), nhiều lần render qua Kling v1.6, đã tìm và sửa 4 bug compiler
+  (world_environment sai chủ thể, continuity sai enum, objective lặp lại,
+  push-in liên tiếp trên mặt người). Đã render đủ 8/8 scene, ghép thành video
+  hoàn chỉnh (bản 38.25s, bản 11s retime).
+- **Chưa test lại** với Kling 2.6 Pro/Veo 3.1 Lite — khả năng cao sẽ cải
+  thiện thêm (đặc biệt các scene có người — Nas biểu diễn, đám đông) dựa
+  theo pattern đã thấy ở Construction/Craftsmanship, nhưng chưa có bằng
+  chứng trực tiếp cho riêng phase này.
+
+#### Bảng tổng kết cuối cùng (đã hiệu chỉnh theo đúng tiêu chí sản xuất B-roll, không phải tiêu chí benchmark lý thuyết)
+
+> **Sửa lại 2026-07-24**: đánh giá ban đầu cho Construction/Craftsmanship
+> ("⚠️ chưa hoàn hảo") tự mâu thuẫn với chính lập luận đã dùng để bác đề xuất
+> test 4-người ("đó là bài kiểm tra giới hạn lý thuyết, không phải nhu cầu
+> sản xuất"). Với 1 shot B-roll 5-8s trong video quảng cáo, khán giả xem
+> **hình ảnh có chân thực/đẹp không**, không đo độ dài đường hàn hay đếm mũi
+> khâu. "Tiến triển rõ theo thời gian" chỉ là yêu cầu riêng cho use-case
+> time-lapse ("xem quá trình hoàn thành"), không phải tiêu chí chung cho mọi
+> shot Construction/Craftsmanship.
+
+| Phase | Model đã test | Trạng thái |
+|---|---|---|
+| Design | Flux + Kling v1.6 i2v | ✅ Đạt yêu cầu sản xuất |
+| Construction | Kling v1.6 (fail) → **Kling 2.6 Pro / Veo 3.1 Lite (✅ đạt)** | ✅ Đạt yêu cầu sản xuất (Veo 3.1 Lite/Kling 2.6 Pro, KHÔNG dùng v1.6) |
+| Craftsmanship | Veo 3.1 Lite (4 người, benchmark v2) | ✅ Đạt yêu cầu sản xuất (hình ảnh/chất liệu/ánh sáng production-grade) |
+| Experience | Kling v1.6 (toàn bộ Tequila yacht) | ✅ Vững, đã sửa 4 bug thật |
+
+**Giới hạn riêng (không chặn triển khai, chỉ áp dụng cho use-case time-lapse
+"xem tiến triển"):** cả Construction lẫn Craftsmanship đều CHƯA thể hiện rõ
+tiến triển đo được theo thời gian (mỏ hàn di chuyển dọc đường hàn, mũi khâu
+tăng dần) — nếu 1 shot cụ thể BẮT BUỘC phải "cho thấy quá trình đang hoàn
+thành" (không chỉ là B-roll khí quyển), cần thử nghiệm thêm với prompt
+"observable state per second" cụ thể hơn (§18.12) trước khi dùng cho đúng
+mục đích đó.
+
+**Quyết định chốt (2026-07-24)**: kiến trúc creation-arc 4 phase
+`Design → Construction → Craftsmanship → Experience` — **cả 4 phase đều đạt
+yêu cầu sản xuất**. Nếu triển khai thành code (`CreationArcPlanner` hay
+tương đương, category-gated theo `yacht/moto/cars` — xem thảo luận trước đó
+về category CMS có sẵn): Design dùng Flux+Kling i2v; Construction/Craftsmanship
+dùng **Veo 3.1 Lite** (rẻ nhất, chất lượng tốt) hoặc Kling 2.6 Pro, KHÔNG
+dùng v1.6; Experience giữ nguyên pipeline hiện tại (Kling v1.6 đã kiểm chứng
+kỹ, có thể thử Veo/Kling 2.6 sau để cải thiện thêm nhưng không bắt buộc).
+
+### 18.14 Production ĐÃ ĐỔI sang Veo 3.1 Lite (2026-07-24) — không chỉ là khuyến nghị, đã code thật
+
+> Khác với §18.9-18.13 (chỉ là kết quả thử nghiệm/khuyến nghị), mục này ghi
+> lại **thay đổi code thật đã áp dụng cho toàn bộ pipeline production**
+> (không riêng creation-arc) — quyết định: không có lý do gì để tiếp tục
+> dùng Kling v1.6 làm renderer mặc định nữa, khi Veo 3.1 Lite vừa rẻ hơn vừa
+> chất lượng cao hơn cho MỌI loại nội dung đã test (không chỉ Construction/
+> Craftsmanship — bao gồm cả nội dung có/không có hành động tay).
+
+**Đã sửa** (`D:\1. Work\8. Project auto video\AI VIDEO\`):
+
+- `tools/render_queued_shots.py`: `_MODEL` đổi `fal-ai/kling-video/v1.6/
+  standard/text-to-video` → `fal-ai/veo3.1/lite`. `render_clip()` đổi tham số
+  API cho đúng schema Veo (`resolution: '720p'`, `generate_audio: False`
+  thêm mới; `duration` đổi format số nguyên → chuỗi `"Ns"`, mặc định 5→6 vì
+  Veo không có preset "5s", chỉ nhận "4s"/"6s"/"8s"). Đổi tên hằng số
+  `_KLING_MAX_CHARS` → `_PROMPT_MAX_CHARS` (generic, không còn gắn tên
+  provider cụ thể). Giá fallback mặc định 0.28 → 0.18 ($/clip 6s, 720p,
+  không audio — đúng giá thật đã tra ở §18.12).
+- `tools/session_runner.py`: `render_plan` metadata ở CẢ 2 hàm sinh shot
+  (`_plan_shots()` hardcode cũ và `_plan_shots_from_render_plan()` đường
+  chính) đổi `{'provider': 'kling', 'renderer': 'i2v', 'duration': 5,
+  'cost_estimate': 0.28}` → `{'provider': 'veo', 'renderer': 't2v',
+  'duration': 6, 'cost_estimate': 0.18}` — nhân tiện sửa luôn nhãn
+  `renderer` từ `'i2v'` (đã sai từ trước — renderer thật luôn là text-to-
+  video, chưa từng có bước sinh ảnh nền cho shot 'motion') thành `'t2v'`
+  đúng thực tế.
+- 223/223 test Python xanh sau khi sửa — không test nào hardcode giá trị
+  provider/cost/duration cũ nên không cần cập nhật test.
+
+**Chưa làm** (nằm ngoài phạm vi yêu cầu lần này): `media_runtime/director/
+motion.py::_KLING_HARD_LIMIT` (dùng trong `validate_shot()` preflight check,
+không phải lệnh gọi render thật) vẫn giữ tên/giá trị cũ — không ảnh hưởng
+hành vi render, chỉ là ngưỡng cảnh báo QA, có thể đổi tên sau nếu cần nhất
+quán thuật ngữ.

@@ -15,7 +15,7 @@ final class FakeDirector implements DirectorInterface
     ) {
     }
 
-    public function select(array $candidates, VerifiedWorldGraph $world, ?ProducerOutput $producer): ActionSelection
+    public function select(array $candidates, VerifiedWorldGraph $world, ?ProducerOutput $producer, int $sceneOrdinal = 1, int $totalScenes = 1, array $priorScenes = []): ActionSelection
     {
         return $this->selection;
     }

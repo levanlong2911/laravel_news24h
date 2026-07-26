@@ -10,8 +10,8 @@ use App\Video\World\VerifiedWorldGraph;
 
 /**
  * Editorial — nơi DUY NHẤT world-knowledge (§12) được phép vào Planning Layer.
- * Đúng MỘT abstraction generic + data (§12 Rule #1-3), 5 method là 5 QUYẾT ĐỊNH
- * khác nhau, không phải 5 trách nhiệm khác nhau:
+ * Đúng MỘT abstraction generic + data (§12 Rule #1-3), 7 method là 7 QUYẾT ĐỊNH
+ * khác nhau, không phải 7 trách nhiệm khác nhau:
  *
  *   - aestheticFor()      mù chủ đề — chỉ nhận ScenePurpose, không thấy World Graph
  *   - prohibitionsFor()   đọc World Graph + EditorialPolicy (data) — §12
@@ -19,8 +19,14 @@ use App\Video\World\VerifiedWorldGraph;
  *   - microPhysicsFor()   hệ quả vật lý CỦA hành động đã Director chọn
  *   - environmentFor()    chuẩn hoá fact môi trường (Landscape entity) sang enum
  *                         đóng — CẤP VIDEO, không phải cấp scene (Sprint 2, 2026-07-22)
+ *   - cameraTargetFor()   sửa camera.target khi IntentPlanner chọn máy móc
+ *                         trúng entity không quay được (2026-07-23, §12 vẫn
+ *                         đúng vai: chỉ EntityType xác định, không "gu")
+ *   - durationWeightFor() trọng số pacing theo ScenePurpose — mù World Graph
+ *                         giống aestheticFor() (2026-07-23, TimelinePlanner
+ *                         Phase 5 đã hẹn trước)
  *
- * Cả 4 đều: generic, deterministic, không AI, không state, read-only over
+ * Cả 7 đều: generic, deterministic, không AI, không state, read-only over
  * VerifiedWorldGraph. Xem ARCHITECTURE.md §12, §18.4, §18.7.
  */
 final class EditorialInterpreter
@@ -58,6 +64,28 @@ final class EditorialInterpreter
             ScenePurpose::Resolution => new SceneAesthetic(
                 Emotion::Majestic, Composition::Centered, LightIntensity::Soft, LightGrade::Golden,
             ),
+        };
+    }
+
+    /**
+     * Trọng số thời lượng — CÙNG PATTERN với aestheticFor() (thuần theo
+     * ScenePurpose, mù World Graph, deterministic). Trước đây `TimelinePlanner`
+     * chia đều tuyệt đối, tự nhận "pacing là taste, thuộc Editorial (Phase 5)"
+     * — đây chính là Phase 5 đó, thêm 2026-07-23. `TimelinePlanner` dùng trọng
+     * số này để tính khoảng thời gian [start,end], KHÔNG tự quyết pacing.
+     * Quy ước, không thiêng — 1.0 = trung bình; Action/Resolution cần đọc lâu
+     * hơn Detail/Comparison (cận cảnh nhanh, so sánh gọn).
+     */
+    public function durationWeightFor(ScenePurpose $purpose): float
+    {
+        return match ($purpose) {
+            ScenePurpose::Establish  => 1.0,
+            ScenePurpose::Reveal     => 1.1,
+            ScenePurpose::Detail     => 0.7,
+            ScenePurpose::Action     => 1.4,
+            ScenePurpose::Process    => 1.0,
+            ScenePurpose::Comparison => 0.8,
+            ScenePurpose::Resolution => 1.3,
         };
     }
 
@@ -371,6 +399,45 @@ final class EditorialInterpreter
             $world->entities(),
             fn (Entity $e) => $e->type === EntityType::Landscape,
         ));
+    }
+
+    /** EntityType không có hình dạng vật lý — camera không thể "quay" vào đây. */
+    private const NON_VISUAL_TYPES = [EntityType::Event, EntityType::Effect];
+
+    /**
+     * `IntentPlanner` chọn `camera.target = scene.subjectIds[0]` HOÀN TOÀN máy
+     * móc theo vị trí mảng — nó bị type system chặn không cho biết EntityType
+     * (§1: "camera KHÔNG THỂ phụ thuộc chủ đề"). Method này SỬA lại khi lựa
+     * chọn đó trúng 1 entity không có hình dạng vật lý (`event`/`effect`) VÀ
+     * scene có subject khác thay thế được — Objective 100% (chỉ đọc
+     * EntityType, không cần "gu"), đúng vai Editorial (§12).
+     *
+     * Bug thật (2026-07-23): scene subjects=['world_cup_final_match',
+     * 'metlife_stadium'], IntentPlanner chọn subjectIds[0]='world_cup_final_match'
+     * (type=event) làm camera.target — Kling nhận lệnh "zoom vào 1 sự kiện",
+     * vô nghĩa. Không có subject thay thế hợp lệ thì GIỮ NGUYÊN — không đoán
+     * bừa (Rule 0).
+     */
+    public function cameraTargetFor(SemanticScene $scene, string $originalTarget, VerifiedWorldGraph $world): string
+    {
+        $entity = $world->entity($originalTarget);
+
+        if ($entity === null || ! in_array($entity->type, self::NON_VISUAL_TYPES, true)) {
+            return $originalTarget;
+        }
+
+        foreach ($scene->subjectIds as $id) {
+            if ($id === $originalTarget) {
+                continue;
+            }
+
+            $candidate = $world->entity($id);
+            if ($candidate !== null && ! in_array($candidate->type, self::NON_VISUAL_TYPES, true)) {
+                return $id;
+            }
+        }
+
+        return $originalTarget;
     }
 
     /**

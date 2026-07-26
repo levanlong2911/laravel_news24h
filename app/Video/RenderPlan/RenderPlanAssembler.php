@@ -71,7 +71,7 @@ final class RenderPlanAssembler
 
             'acts' => array_map([$this, 'actDoc'], $story->acts),
 
-            'scenes'   => array_map(fn (TimedScene $t) => $this->sceneDoc($t, $directorNotesByScene, $producer), $timed->scenes),
+            'scenes'   => array_map(fn (TimedScene $t) => $this->sceneDoc($t, $directorNotesByScene, $producer, $world), $timed->scenes),
             'timeline' => array_map(fn (TimedScene $t) => [
                 'scene_id'  => $t->intent->scene->id,
                 'start_sec' => $t->time->start,
@@ -187,10 +187,19 @@ final class RenderPlanAssembler
      * @param array<string, array<string, mixed>> $directorNotesByScene
      * @return array<string, mixed>
      */
-    private function sceneDoc(TimedScene $t, array $directorNotesByScene = [], ?ProducerOutput $producer = null): array
+    private function sceneDoc(TimedScene $t, array $directorNotesByScene = [], ?ProducerOutput $producer = null, ?VerifiedWorldGraph $world = null): array
     {
         $scene     = $t->intent->scene;
         $aesthetic = $this->editorial->aestheticFor($scene->purpose);
+
+        // camera.target: IntentPlanner chọn subjectIds[0] máy móc (bị type
+        // system chặn không cho biết EntityType, §1). Sửa lại khi trúng
+        // entity không quay được (event/effect) — Objective, xem
+        // EditorialInterpreter::cameraTargetFor() (2026-07-23).
+        $cameraTarget = $t->intent->camera->target;
+        if ($world !== null) {
+            $cameraTarget = $this->editorial->cameraTargetFor($scene, $cameraTarget, $world);
+        }
 
         $doc = [
             'id'            => $scene->id,
@@ -203,7 +212,7 @@ final class RenderPlanAssembler
                 'framing'  => $t->intent->camera->framing->value,
                 'movement' => $t->intent->camera->movement->value,
                 'speed'    => $t->intent->camera->speed->value,
-                'target'   => $t->intent->camera->target,
+                'target'   => $cameraTarget,
             ],
             'aesthetic' => [
                 'emotion'         => $aesthetic->emotion->value,
