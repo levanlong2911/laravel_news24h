@@ -7,18 +7,42 @@ use App\Models\CategoryContext;
 use App\Models\FrameworkContentType;
 use App\Models\PromptFramework;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 
 /**
- * PromptSystemSeeder — seeds all prompt infrastructure.
+ * PromptSystemSeeder — dựng toàn bộ hạ tầng prompt cho DB trống.
  *
- * Creates:
- *   8 prompt_frameworks   (one per content domain group)
- *   48 framework_content_types  (6 per framework × 8)
- *   15 categories         (updateOrCreate by slug)
- *   15 category_contexts  (one per category, linked to correct framework)
+ * Tạo:
+ *   8  prompt_frameworks         (mỗi nhóm nội dung một cái)
+ *   48 framework_content_types   (6 × 8)
+ *   15 categories                (khớp theo slug)
+ *   15 category_contexts         (mỗi category một cái, trỏ đúng framework)
  *
- * Safe to re-run (updateOrCreate on all records).
+ * ── HỢP ĐỒNG: seeder CHỈ TẠO, KHÔNG SỬA ──────────────────────────────────────
+ *
+ * Mọi bản ghi đều dùng firstOrCreate. Đã tồn tại thì seeder không đụng vào.
+ * Chạy lại bao nhiêu lần cũng an toàn — và đó là điều kiện bắt buộc, không phải
+ * tiện ích: nội dung prompt sau khi tạo thuộc quyền của migration và admin UI,
+ * không phải file này.
+ *
+ * Trước đây dùng updateOrCreate, và nó đã âm thầm phá dữ liệu:
+ *   • ghi đè phase3_generate → revert sạch các migration patch
+ *   • 'version' => 1 ghi đè version TRƯỚC khi PromptFrameworkObserver::updating()
+ *     đọc, nên change_note ghi sai số và framework tụt về v2
+ *   • ghi đè tone_notes / hook_style / performance_score do admin và pipeline tạo
+ *
+ * ── KHI VIẾT MIGRATION SỬA PROMPT, PHẢI SỬA CẢ FILE NÀY ──────────────────────
+ *
+ * `migrate` chạy TRƯỚC `db:seed`. Trên DB trống, migration patch query bảng rỗng
+ * → no-op → nhưng vẫn ghi là đã apply nên không bao giờ chạy lại. Seeder chạy sau
+ * chèn nội dung của chính nó. Nghĩa là máy cài mới nhận đúng những gì viết ở đây,
+ * KHÔNG nhận patch.
+ *
+ * Đúng chuyện này đã xảy ra: 5 migration (batch 12) no-op, để lại 8 framework
+ * mâu thuẫn với PromptBuilderService::FB_SCHEMA_APPEND cho tới khi
+ * 2026_07_30_000001_resync_fb_asset_rules_to_schema vá lại.
+ *
+ * Vậy nên: migration đưa DB đang chạy tiến lên, seeder giữ trạng thái cuối cùng.
+ * Sửa một cái mà quên cái kia là môi trường mới lại lệch khỏi production.
  */
 class PromptSystemSeeder extends Seeder
 {
@@ -36,21 +60,24 @@ class PromptSystemSeeder extends Seeder
         $created = [];
 
         foreach ($data as $def) {
-            $framework = PromptFramework::updateOrCreate(
+            // firstOrCreate chứ KHÔNG phải updateOrCreate — xem docblock đầu file.
+            // 'version' cố ý vắng: cột đã default(1). Gán tay sẽ ghi đè version của
+            // framework đang tồn tại TRƯỚC khi PromptFrameworkObserver::updating()
+            // đọc nó, nên change_note ghi sai số và version tụt về 2.
+            $framework = PromptFramework::firstOrCreate(
                 ['name' => $def['name']],
                 [
                     'group_description' => $def['group_description'],
                     'system_prompt'     => $def['system_prompt'],
                     'phase1_analyze'    => $def['phase1_analyze'],
                     'phase2_diagnose'   => $def['phase2_diagnose'],
-                    'phase3_generate'   => $def['phase3_generate'],
-                    'version'           => 1,
+                    'phase3_generate'   => $this->phase3For($def['name'], $def['phase3_generate']),
                     'is_active'         => true,
                 ]
             );
 
             foreach ($def['content_types'] as $i => $ct) {
-                FrameworkContentType::updateOrCreate(
+                FrameworkContentType::firstOrCreate(
                     ['framework_id' => $framework->id, 'type_code' => $ct['type_code']],
                     [
                         'type_name'           => $ct['type_name'],
@@ -65,7 +92,12 @@ class PromptSystemSeeder extends Seeder
             }
 
             $created[$def['name']] = $framework->id;
-            $this->command->info("Framework: {$def['name']} ({$framework->id})");
+            $this->command->info(sprintf(
+                '%-7s Framework: %s (%s)',
+                $framework->wasRecentlyCreated ? 'created' : 'kept',
+                $def['name'],
+                $framework->id,
+            ));
         }
 
         return $created;
@@ -76,12 +108,17 @@ class PromptSystemSeeder extends Seeder
     private function seedCategoryContexts(array $frameworkIds): void
     {
         foreach ($this->categoryContextDefinitions($frameworkIds) as $def) {
-            $category = Category::updateOrCreate(
-                ['name' => $def['name']],
-                ['slug' => $def['slug']]
+            // Khớp theo slug, không theo name: slug là khoá ổn định. Đổi tên hiển thị
+            // category mà vẫn khớp theo name thì lần seed sau đẻ ra bản ghi trùng.
+            $category = Category::firstOrCreate(
+                ['slug' => $def['slug']],
+                ['name' => $def['name']]
             );
 
-            CategoryContext::updateOrCreate(
+            // firstOrCreate: tone_notes / hook_style / terminology là thứ admin tinh
+            // chỉnh theo hiệu quả thực tế. performance_score và sample_size do pipeline
+            // ghi. Ghi đè chúng bằng hằng số trong file này là xoá dữ liệu vận hành.
+            $context = CategoryContext::firstOrCreate(
                 ['category_id' => $category->id],
                 [
                     'framework_id'        => $def['framework_id'],
@@ -97,7 +134,12 @@ class PromptSystemSeeder extends Seeder
                 ]
             );
 
-            $this->command->info("Context: {$def['name']} → {$def['domain']}");
+            $this->command->info(sprintf(
+                '%-7s Context: %s → %s',
+                $context->wasRecentlyCreated ? 'created' : 'kept',
+                $def['name'],
+                $def['domain'],
+            ));
         }
     }
 
@@ -127,7 +169,6 @@ class PromptSystemSeeder extends Seeder
                         'trigger_keywords'   => ['win', 'wins', 'won', 'victory', 'champion', 'championship', 'beat', 'defeated', 'clinched', 'playoffs', 'super bowl', 'title'],
                         'tone_profile'       => ['cinematic', 'triumphant', 'earned'],
                         'structure_template' => "① HOOK — Open with the decisive moment or final score\n② CONTEXT — What was at stake; recent history between the teams\n③ PERFORMANCE — Key stats, standout plays, turning points\n④ REACTION — Quotes from QB, coach, key players\n⑤ SIGNIFICANCE — Playoff implications, records broken, what's next",
-                        'sort_order'         => 1,
                         'applicability_score'=> 1.0,
                     ],
                     [
@@ -136,7 +177,6 @@ class PromptSystemSeeder extends Seeder
                         'trigger_keywords'   => ['loss', 'loses', 'lost', 'defeated', 'eliminated', 'blown lead', 'collapsed', 'fall', 'fell'],
                         'tone_profile'       => ['analytical', 'honest', 'forward-looking'],
                         'structure_template' => "① HOOK — The moment the game turned or the final blow\n② CONTEXT — Expectations going in; what went wrong early\n③ BREAKDOWN — Key mistakes, stats, missed opportunities\n④ REACTION — Player/coach accountability\n⑤ PATH FORWARD — What must change, next matchup implications",
-                        'sort_order'         => 2,
                         'applicability_score'=> 1.0,
                     ],
                     [
@@ -145,7 +185,6 @@ class PromptSystemSeeder extends Seeder
                         'trigger_keywords'   => ['injured', 'injury', 'out', 'IR', 'placed on', 'knee', 'shoulder', 'hamstring', 'concussion', 'surgery', 'week-to-week'],
                         'tone_profile'       => ['urgent', 'factual', 'empathetic'],
                         'structure_template' => "① HOOK — Who, what injury, confirmed timeline\n② IMPACT — Depth chart disruption, replacement options\n③ HISTORY — Player's injury record, return track record\n④ TEAM RESPONSE — Coach/GM quotes, roster moves\n⑤ OUTLOOK — Playoff implications, fantasy advice",
-                        'sort_order'         => 3,
                         'applicability_score'=> 1.0,
                     ],
                     [
@@ -154,7 +193,6 @@ class PromptSystemSeeder extends Seeder
                         'trigger_keywords'   => ['signed', 'trade', 'traded', 'released', 'free agent', 'contract', 'deal', 'acquisition', 'extension', 'cut'],
                         'tone_profile'       => ['analytical', 'strategic', 'insider'],
                         'structure_template' => "① HOOK — Player, teams, deal details in one punchy line\n② WHY — Both sides' motivation and what they gain\n③ FIT — How player fits new system; historical comps\n④ REACTION — Analyst takes, insider quotes, fan pulse\n⑤ IMPACT — Playoff picture, salary cap, fantasy value",
-                        'sort_order'         => 4,
                         'applicability_score'=> 1.0,
                     ],
                     [
@@ -163,7 +201,6 @@ class PromptSystemSeeder extends Seeder
                         'trigger_keywords'   => ['drama', 'controversy', 'holdout', 'fined', 'suspended', 'benched', 'conflict', 'feud', 'dispute', 'arrested'],
                         'tone_profile'       => ['measured', 'balanced', 'factual'],
                         'structure_template' => "① HOOK — The controversy/conflict in one line\n② BACKGROUND — What led to this moment\n③ POSITIONS — All sides of the story with evidence\n④ FALLOUT — Immediate consequences, suspensions, fines\n⑤ RESOLUTION — Current status, what comes next",
-                        'sort_order'         => 5,
                         'applicability_score'=> 0.8,
                     ],
                     [
@@ -172,7 +209,6 @@ class PromptSystemSeeder extends Seeder
                         'trigger_keywords'   => ['record', 'milestone', 'stats', 'season', 'career', 'all-time', 'historic', 'best ever', 'performance', 'mvp'],
                         'tone_profile'       => ['celebratory', 'analytical', 'storytelling'],
                         'structure_template' => "① HOOK — The milestone, record, or stat achievement\n② CAREER CONTEXT — Journey to this moment\n③ THE NUMBERS — Key stats broken down simply\n④ COMPARISONS — Peers, historical benchmarks\n⑤ WHAT'S NEXT — Next milestone in reach, season targets",
-                        'sort_order'         => 6,
                         'applicability_score'=> 0.9,
                     ],
                 ],
@@ -802,6 +838,148 @@ class PromptSystemSeeder extends Seeder
         ];
     }
 
+    // ── Domain Laws ───────────────────────────────────────────────────────────
+
+    /**
+     * Bộ luật giọng điệu riêng của từng mảng, chèn vào phase3 ngay trước mục
+     * FACT INTEGRITY. Không có nó thì cả 8 framework viết cùng một giọng.
+     */
+    private const DOMAIN_LAWS = [
+        'nfl_sports' => [
+            'label' => 'NFL',
+            'laws'  => [
+                '• Cap and contract figures are the story, not decoration: give the number, the term, and the guaranteed portion when the source has them.',
+                '• Position decides significance: 70 rushing yards means different things for a rookie back and a franchise back — say which.',
+                '• Seeding and playoff maths belong in the stakes as an actual number, never as "huge implications".',
+                '• Fantasy and betting angles are real reader value — include them only where the source supports a concrete read.',
+            ],
+            'forbidden' => '"must-win" without naming what is lost, "war in the trenches", "wants it more", "gutsy performance", "statement win"',
+        ],
+        'individual_sports' => [
+            'label' => 'INDIVIDUAL SPORTS',
+            'laws'  => [
+                '• Mental game is physical: form streak, pressure, and head-to-head record belong beside the score.',
+                '• Ranking and tournament context always: a result means nothing without draw position or ranking gap.',
+                '• Head-to-head record is a fact — cite it when it exists, not only when it favors the narrative.',
+                '• Write the career moment inside the match moment: what was at stake in this specific game.',
+            ],
+            'forbidden' => '"choke" (name the errors), "fairytale run", "destiny", "all-or-nothing" as a generic phrase, "dream final"',
+        ],
+        'motorsport' => [
+            'label' => 'MOTORSPORT',
+            'laws'  => [
+                '• Race-broadcast cadence: short sentences, high tempo. No lingering on background.',
+                '• Technical vocabulary needs no definition: "DRS", "pit window", "sector time", "understeer", "tyre deg" — use without explanation.',
+                '• Championship context: when a result shifts standings, state the gap in points.',
+                '• Sequence over narrative: lead with the race moment, not the post-race summary.',
+            ],
+            'forbidden' => '"dominant victory", "crashed out" (say "retired" or name the incident), "made history" without naming the record, "motorsport fans will"',
+        ],
+        'luxury_assets' => [
+            'label' => 'LUXURY & ASSETS',
+            'laws'  => [
+                '• Write peer-to-peer, never aspirational. Reader is a collector or buyer, not a spectator.',
+                '• Specs speak: price, provenance, limited run, materials — no superlatives needed.',
+                '• Understatement is credibility. "2.8M. Three ever made." beats "an eye-watering price tag."',
+                '• Attribution always: maker, auction house, designer, year — specific, every time.',
+            ],
+            'forbidden' => '"shocking price", "incredible", "affordable" (never for luxury), "rich" (say "collector" or "buyer"), "jaw-dropping"',
+        ],
+        'travel_mobility' => [
+            'label' => 'TRAVEL & MOBILITY',
+            'laws'  => [
+                '• Reader value is operational: route, date, cabin, price, availability — a story missing all of these is not a travel story.',
+                '• Name the aircraft, the airport code, the square footage, the build cost. Vague scale is useless to someone planning.',
+                '• Compare against the realistic alternative the reader already has, not against a theoretical best.',
+                '• Disruption and safety reporting stays factual and calm — passengers read these while stranded.',
+            ],
+            'forbidden' => '"hidden gem", "game-changer for travellers", "dream home", "paradise", "you can now finally"',
+        ],
+        'lifestyle_living' => [
+            'label' => 'LIFESTYLE & LIVING',
+            'laws'  => [
+                '• Write from inside the culture, not as a reporter observing it.',
+                '• Specific beats generic: a named road, a real dish, a place with a reputation — not "the perfect destination."',
+                '• Let the reader project in: details that place them there, not facts that describe the scene.',
+                '• Community undercurrent: readers share a sensibility — write as one of them, not about them.',
+            ],
+            'forbidden' => '"lifestyle trend", "more and more people", "you need to try", "life-changing experience", "bucket list"',
+        ],
+        'knowledge_discovery' => [
+            'label' => 'KNOWLEDGE & DISCOVERY',
+            'laws'  => [
+                '• Reader implication first: what this means for them, before what was found.',
+                '• Scale analogies make abstract numbers real: "equivalent to 40 minutes of sunlight" beats "2.3 × 10⁻⁴ joules."',
+                '• Precision over certainty: "the study found", "in trial conditions" — never "this proves" or "scientists say."',
+                '• Name the mechanism only if the source explains it — never invent causality.',
+            ],
+            'forbidden' => '"breakthrough", "miracle", "cure", "scientists discover" (name what they found), "could revolutionize", "game-changer"',
+        ],
+        'entertainment_viral' => [
+            'label' => 'ENTERTAINMENT & VIRAL',
+            'laws'  => [
+                '• Wit over enthusiasm: one precise observation beats three exclamation points.',
+                '• Cultural context, not reaction count: what makes this moment matter — not how many people reacted.',
+                '• Specificity kills vagueness: name the clip, the line, the moment — never "the scene everyone is talking about."',
+                '• Never punch down. Irony is welcome; mockery is not.',
+            ],
+            'forbidden' => '"the internet reacted", "fans went wild", "broke the internet", "everyone is talking about", "you won\'t believe"',
+        ],
+    ];
+
+    private const SEP = '══════════════════════════════════════════';
+
+    /**
+     * Ghép phase3 cuối cùng cho một framework: nền chung + DOMAIN LAWS của mảng,
+     * riêng nfl_sports thêm hai luật về câu kết và chuỗi nhân quả.
+     *
+     * PHẢI khớp từng byte với 2026_07_30_000004_reapply_missed_phase3_patches.
+     * Migration đó đưa DB đang chạy tới trạng thái này; hàm này dựng lại đúng
+     * trạng thái đó cho máy cài mới. Lệch một ký tự là hai môi trường sinh bài
+     * bằng hai prompt khác nhau — đúng kiểu lỗi mà docblock đầu file cảnh báo.
+     */
+    private function phase3For(string $name, string $base): string
+    {
+        if (isset(self::DOMAIN_LAWS[$name])) {
+            $domain = self::DOMAIN_LAWS[$name];
+
+            $block = "\n\nDOMAIN LAWS — {$domain['label']}\n"
+                . self::SEP . "\n"
+                . implode("\n", $domain['laws']) . "\n\n"
+                . "FORBIDDEN ({$domain['label']} — add to global list):\n"
+                . $domain['forbidden'];
+
+            // Chèn ngay trước đường kẻ mở đầu mục FACT INTEGRITY
+            $factPos = strpos($base, 'FACT INTEGRITY');
+            if ($factPos !== false) {
+                $sepStart = strrpos(substr($base, 0, $factPos), self::SEP);
+                if ($sepStart !== false) {
+                    $base = substr($base, 0, $sepStart) . $block . "\n\n" . substr($base, $sepStart);
+                }
+            }
+        }
+
+        if ($name === 'nfl_sports') {
+            $base = str_replace(
+                "• Final sentence: forward-looking fact or open consequence\n  Never philosophical. Never preachy.",
+                "• Final sentence: must state a concrete next fact (date, action, roster status, or outcome).\n"
+                . "  Speculative closings are banned: \"whether [X] will\", \"remains to be seen\", \"remains the only question\", \"only [X] can answer\".\n"
+                . "  Never philosophical. Never preachy.",
+                $base
+            );
+
+            $base = str_replace(
+                '• Every sentence must earn its place — if it only restates what the previous said, cut it.',
+                '• Every sentence must earn its place — if it only restates what the previous said, cut it.' . "\n"
+                . '• Causal chain: when the source explicitly states A triggered B, connect them in direct sequence.' . "\n"
+                . '  Bad: "Wilson was released. Lloyd was signed." Good: "Wilson\'s release opened the roster spot Lloyd now fills."',
+                $base
+            );
+        }
+
+        return $base;
+    }
+
     // ── Shared Prompt Templates ───────────────────────────────────────────────
 
     private function sharedPhase1(): string
@@ -909,6 +1087,9 @@ FACT INTEGRITY — NON-NEGOTIABLE
   - dates (years, seasons, timelines)
   - numbers (stats, money, rankings)
   - locations or event names
+  - proper names: never expand, alter, or substitute a name not in the source
+    (e.g. source says 'Wilson' → write 'Wilson', not 'Russell Wilson' or any other Wilson)
+    (e.g. source says 'Payton Wilson' → never change to 'Russell Wilson' or any other person)
 • If a detail is missing → omit it
 • Accuracy is more important than completeness
 
@@ -995,25 +1176,41 @@ QUOTE HANDLING:
 STEP 3 — FACEBOOK ASSETS
 ══════════════════════════════════════════
 FB_IMAGE_TEXT:
-- 1 sentence 60-90 chars. Use a strong active verb (steal, flip, crash, betray, collapse).
+- 1 sentence 70-100 chars. Use a strong active verb (steal, flip, crash, betray, collapse).
 - Technique: Hook + Tension — reveal half the story, keep the best part hidden.
-- Name the threat or rivalry — let reader feel stakes without knowing outcome.
+- MUST include the person's full name or team name — never use "a player", "a back", "the team", or any anonymous reference.
+- Name the specific threat, rivalry, or irony — let reader feel stakes without knowing outcome.
 - No emoji. Write in plain text only.
-- GOOD: 'Miami Could Steal A.J. Brown Before Patriots Get a Shot'
+- GOOD: 'Green Bay is still betting on MarShawn Lloyd — who played one NFL game in two years.'
+-       'Miami Could Steal A.J. Brown Before Patriots Get a Shot'
 -       'Southwest just made Alaska Airlines nervous'
--       'One phone call is about to change everything for Patriots fans.'
+- BAD: "Green Bay is still banking on a back who played once." — anonymous, no proper name.
 - BAD: Two separate fact statements. Literal numbers/dates. Restate the headline. Using emoji.
 - Write in the same language as the article.
 
 FB_POST_CONTENT:
-• 60-150 chars MAX. No bullet points. No lists. Plain paragraphs only.
-• Structure: Hook → Tension → Hidden fact
-• Reveal MAX 2 facts — keep the most specific or surprising fact hidden.
-• Never use conclusion words: obvious, clear, certain, confirmed.
-• "Changes everything" is BANNED — say WHAT changes instead.
-• Name the threat or rivalry in the first line — never bury the conflict.
-• No emoji. No URL. No hashtags. Same language as article.
-• No CTA. Do NOT end with "Find out", "Read more", "Click", "Discover", or any call-to-action.
+• 150-250 chars. Plain text only. No bullet points, emoji, URL, hashtags. Same language as article.
+• Formula: [Named person/team] + [Specific stake] + [Pressure/tension] + [Withheld outcome]
+  Step 1 — Identify exactly who is affected and what they stand to lose or gain.
+  Step 2 — Introduce pressure: deadline, injuries, rival move, contract risk, or expectations.
+  Step 3 — Soft CTA: end with a sentence that makes the reader feel they need the outcome.
+  No explicit instructions ("Find out", "Read more", "Click", "Discover"). Choose one technique:
+    Deadline        → "The window closes Thursday."
+    Withheld ID     → "One team nobody expected is already in contact."
+    Stakes fork     → "Sign him now — or lose him to a rival for nothing."
+    Teased fact     → "Sirmans answered one question. His answer reframes the entire picture."
+    Question        → "Which team made the call nobody expected?"
+    Incomplete fact → "One number explains why Green Bay kept Lloyd over Wilson."
+    Insider signal  → "What Sirmans said off-script tells you everything about his 2026 ceiling."
+    Stakes gap      → "The roster math tells a very different story."
+• Lean into uncertainty, upside, pressure, or controversy naturally.
+• Be specific. Avoid generic suspense ("everything could change", "a decision to make").
+• Avoid generic phrasing: "major update", "huge news", "shocking development", "fans stunned".
+• GOOD: "Smith demanded a trade. His team has 48 hours and $8M to respond — or lose him for nothing."
+• GOOD: "Lloyd is on the roster. Wilson is in Seattle. Training camp answers the only question left."
+• BAD: "Big changes coming soon." — no name, no stake, no tension.
+• BAD: "Find out what happens next." — explicit command, zero information.
+• Do NOT use explicit CTAs: "Find out", "Read more", "Click", "Discover", or any direct instruction.
 
 ══════════════════════════════════════════
 QUALITY GATE — verify before output
@@ -1026,9 +1223,9 @@ QUALITY GATE — verify before output
 [ ] Zero forbidden words or phrases (including "apparently", "seemingly")
 [ ] No sentence explains a mechanism the reader already knows
 [ ] No sentence over 40 words
-[ ] FB image text: Hook + Tension, curiosity gap, ≤70 chars
+[ ] FB image text: 70-100 chars, proper name required, Hook + Tension, no anonymous reference
 [ ] Final sentence forward-looking, not philosophical
-[ ] FB post: 60-150 chars, Hook→Tension→Hidden fact→CTA
+[ ] FB post: 150-250 chars, named + specific stake + pressure + withheld outcome, no generic phrases, no CTA
 [ ] FB post: no bullet points, no URL, no hashtag, no emoji, conflict named in first line
 
 Fail any check → rewrite that section before outputting.
