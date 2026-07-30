@@ -11,6 +11,54 @@ use Illuminate\Support\Facades\Log;
 
 class PromptBuilderService
 {
+    /**
+     * Placeholder được phép trong từng field của PromptFramework.
+     *
+     * Key   = field
+     * Value = placeholder mà pipeline giải được cho field đó
+     *
+     * system_prompt cố ý rỗng: nó KHÔNG đi qua inject() (build() truyền thẳng
+     * vào PromptPayload), nên mọi {placeholder} viết ở đó tới Claude dạng literal.
+     *
+     * structure_template hợp lệ ở phase3 dù inject() không giải nó — nó là
+     * deferred, PromptPayload::sonnetPrompt() mới thay giá trị thật vào.
+     */
+    public const PLACEHOLDERS = [
+        'system_prompt'   => [],
+        'phase1_analyze'  => ['domain', 'audience', 'terminology'],
+        'phase2_diagnose' => ['content_types_block'],
+        'phase3_generate' => [
+            'domain', 'audience', 'terminology',
+            'content_types_block', 'tone_notes', 'hook_style',
+            'structure_template',
+        ],
+    ];
+
+    /**
+     * Placeholder BẮT BUỘC phải có mặt, nếu không giá trị đã tính ra sẽ bị vứt đi lặng lẽ.
+     *
+     * Đây là loại lỗi không để lại dấu vết nào — khác với placeholder gõ sai
+     * (còn sót lại {domian} để mà phát hiện), thiếu placeholder thì chỉ đơn giản
+     * là không có gì xảy ra cả:
+     *
+     *   phase2 thiếu {content_types_block}
+     *     → buildContentTypesBlock() query DB, dựng block, rồi block đó không tới
+     *       Claude. PromptPayload::haikuPrompt() chỉ ghép phase1 . phase2, và
+     *       contentTypesBlock không được đọc ở đâu khác ngoài fingerprint().
+     *
+     *   phase3 thiếu {structure_template}
+     *     → HookEngine detect content type, resolve structure_template, PromptGuard
+     *       xác nhận nó không rỗng — rồi sonnetPrompt() str_replace không khớp gì.
+     *       Sonnet viết bài không có chỉ dẫn cấu trúc nào.
+     */
+    public const REQUIRED_PLACEHOLDERS = [
+        'phase2_diagnose' => ['content_types_block'],
+        'phase3_generate' => ['structure_template'],
+    ];
+
+    // Placeholder giữ lại sau inject() ở phase3 — sonnetPrompt() resolve muộn hơn
+    private const DEFERRED_PHASE3 = ['structure_template'];
+
     // Default output schema khi category chưa config CategoryOutputField
     private const DEFAULT_SCHEMA = <<<'JSON'
 {
@@ -46,6 +94,10 @@ JSON;
   "fb_post_content": "150-250 chars. Plain text only — no bullet points, emoji, URL, hashtags. Formula: [Named person/team] + [Specific stake] + [Pressure/tension] + [Withheld outcome]. End with a soft CTA — choose one: Deadline ('The window closes Thursday.'), Stakes fork ('Sign him now — or lose him for nothing.'), Question ('Which team made the call nobody expected?'), Incomplete fact ('One number explains why Green Bay kept Lloyd over Wilson.'), Insider signal ('What he said off-script tells you everything.'). No explicit CTAs: 'Find out', 'Read more', 'Click', 'Discover'. No generic phrases: 'major update', 'huge news', 'shocking development', 'fans stunned'. Same language as article."
 JSON;
 
+    public function __construct(
+        private PromptGuard $promptGuard,
+    ) {}
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**
@@ -68,6 +120,8 @@ JSON;
             return $this->buildFallback();
         }
 
+        $this->promptGuard->validatePlaceholders($framework->only(array_keys(self::PLACEHOLDERS)));
+
         $contentTypesBlock = $this->buildContentTypesBlock($framework, $context);
         $outputSchema      = $this->buildOutputSchema($categoryId);
 
@@ -88,7 +142,7 @@ JSON;
             'content_types_block' => $contentTypesBlock,
             'tone_notes'          => $context->tone_notes,
             'hook_style'          => $context->hook_style,
-        ], ['structure_template']);
+        ], self::DEFERRED_PHASE3);
 
         Log::debug("[PromptBuilder] Built payload", [
             'category_id' => $categoryId,
@@ -106,6 +160,47 @@ JSON;
             contextId:         $context->id,
             frameworkVersion:  $framework->version,
         );
+    }
+
+    /**
+     * Soi placeholder của một bộ field. KHÔNG throw — trả về danh sách vấn đề.
+     *
+     * PromptGuard::validatePlaceholders() bọc hàm này với ngữ nghĩa throw cho
+     * runtime; PromptFrameworkForm gọi thẳng để hiện lỗi ngay trên form lúc lưu.
+     * Hai đường dùng chung một contract nên không thể lệch nhau.
+     *
+     * Soi template THÔ, trước khi inject. Nếu soi sau thì giá trị vừa chèn vào
+     * (content_types_block, structure_template…) có thể chứa dấu ngoặc nhọn và
+     * bị nhận nhầm là placeholder hỏng.
+     *
+     * @param  array<string, string|null>  $fields  field => nội dung
+     * @return array<string, array{unknown: string[], missing: string[]}>
+     *         Chỉ chứa field có vấn đề; mảng rỗng nghĩa là hợp lệ.
+     */
+    public static function inspectPlaceholders(array $fields): array
+    {
+        $problems = [];
+
+        foreach ($fields as $field => $text) {
+            if (!array_key_exists($field, self::PLACEHOLDERS)) {
+                continue;
+            }
+
+            preg_match_all('/\{[a-z_]+\}/', (string) $text, $m);
+            $found = array_unique($m[0]);
+
+            $allowed = array_map(fn ($k) => "{{$k}}", self::PLACEHOLDERS[$field]);
+            $needed  = array_map(fn ($k) => "{{$k}}", self::REQUIRED_PLACEHOLDERS[$field] ?? []);
+
+            $unknown = array_values(array_diff($found, $allowed));
+            $missing = array_values(array_diff($needed, $found));
+
+            if ($unknown || $missing) {
+                $problems[$field] = ['unknown' => $unknown, 'missing' => $missing];
+            }
+        }
+
+        return $problems;
     }
 
     // ── Private ───────────────────────────────────────────────────────────────
@@ -163,27 +258,36 @@ JSON;
 
     /**
      * Replace {placeholder} trong template với giá trị thực.
-     * Sau inject, kiểm tra unresolved placeholders — log warning + xóa để Claude không nhận literal.
+     *
+     * Soi orphan trên template THÔ (trước khi thay), không phải sau. Soi sau thì
+     * giá trị vừa chèn vào — content_types_block dựng từ structure_template của
+     * admin — có thể chứa dấu ngoặc nhọn và bị nhận nhầm là placeholder hỏng.
+     *
+     * Orphan = placeholder không nằm trong $vars lẫn $deferred. Từ khi
+     * PromptGuard::validatePlaceholders() chặn ở đầu vào, tình huống này chỉ còn
+     * xảy ra khi const PLACEHOLDERS lệch khỏi các lời gọi inject() trong build()
+     * — lỗi lập trình, không phải lỗi nội dung admin viết. Vì vậy log mức error
+     * kèm đủ ngữ cảnh để truy, rồi vẫn xóa đi để Claude không nhận literal.
      */
     private function inject(string $template, array $vars, array $deferred = []): string
     {
+        preg_match_all('/\{[a-z_]+\}/', $template, $matches);
+        $resolvable = array_map(
+            fn ($k) => "{{$k}}",
+            array_merge(array_keys($vars), $deferred)
+        );
+        $orphans = array_values(array_diff(array_unique($matches[0]), $resolvable));
+
         foreach ($vars as $key => $value) {
             $template = str_replace("{{$key}}", (string) $value, $template);
         }
 
-        $count = preg_match_all('/\{[a-z_]+\}/', $template, $matches);
-        if ($count > 0) {
-            $deferredSet  = array_map(fn($k) => "{{$k}}", $deferred);
-            $unresolved   = array_diff($matches[0], $deferredSet);
-
-            if (!empty($unresolved)) {
-                Log::warning('[PromptBuilder] Unresolved placeholders detected', [
-                    'placeholders' => array_values($unresolved),
-                ]);
-                foreach ($unresolved as $p) {
-                    $template = str_replace($p, '', $template);
-                }
-            }
+        if ($orphans) {
+            Log::error('[PromptBuilder] Placeholder không giải được — PLACEHOLDERS lệch khỏi build()?', [
+                'orphans'    => $orphans,
+                'resolvable' => $resolvable,
+            ]);
+            $template = str_replace($orphans, '', $template);
         }
 
         return $template;
@@ -191,17 +295,10 @@ JSON;
 
     /**
      * Fallback khi category chưa có context config.
-     * Dùng framework đầu tiên đang active.
      */
     private function buildFallback(): PromptPayload
     {
-        $framework = PromptFramework::where('is_active', true)
-            ->orderBy('created_at')
-            ->first();
-
-        if (!$framework) {
-            throw new \RuntimeException('[PromptBuilder] No active prompt framework found. Run seeder first.');
-        }
+        $framework = $this->resolveFallbackFramework();
 
         $fallbackSchema = preg_replace('/\}\s*$/', self::FB_SCHEMA_APPEND . "\n}", self::DEFAULT_SCHEMA);
 
@@ -219,5 +316,49 @@ JSON;
             contextId:         null,
             frameworkVersion:  $framework->version,
         );
+    }
+
+    /**
+     * Chọn framework cho nhánh fallback.
+     *
+     * Lấy theo tên cấu hình ở config('prompt.fallback_framework'), không phải
+     * theo "cũ nhất". Cách cũ dùng orderBy('created_at') mà 8 framework do
+     * PromptSystemSeeder tạo có created_at giống nhau tới từng giây — MySQL
+     * không có căn cứ nào để sắp thứ tự, nên cùng một truy vấn trả về
+     * entertainment_viral rồi nfl_sports ở hai lần chạy cách nhau vài phút.
+     * Phase3 của chúng khác nhau (mỗi cái một bộ DOMAIN LAWS) và system_prompt
+     * cũng khác, nên bài cùng một category có thể đổi giọng giữa các lần chạy.
+     *
+     * Không tìm thấy tên đã cấu hình thì mới xét tới thứ tự — và xếp theo name,
+     * thứ duy nhất ở đây thực sự phân biệt được các bản ghi.
+     */
+    private function resolveFallbackFramework(): PromptFramework
+    {
+        $configured = config('prompt.fallback_framework');
+
+        if ($configured) {
+            $framework = PromptFramework::where('name', $configured)
+                ->where('is_active', true)
+                ->first();
+
+            if ($framework) {
+                return $framework;
+            }
+
+            Log::warning('[PromptBuilder] Framework fallback đã cấu hình không dùng được — xếp theo tên để chọn', [
+                'configured' => $configured,
+                'reason'     => 'không tồn tại hoặc is_active = false',
+            ]);
+        }
+
+        $framework = PromptFramework::where('is_active', true)
+            ->orderBy('name')
+            ->first();
+
+        if (!$framework) {
+            throw new \RuntimeException('[PromptBuilder] No active prompt framework found. Run seeder first.');
+        }
+
+        return $framework;
     }
 }
