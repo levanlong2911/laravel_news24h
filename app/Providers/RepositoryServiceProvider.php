@@ -12,6 +12,7 @@ use App\Repositories\Eloquent\KeywordRepository;
 use App\Repositories\Eloquent\NewsWebRepository;
 use App\Repositories\Eloquent\PostRepository;
 use App\Repositories\Eloquent\PostTagRepository;
+use App\Repositories\Eloquent\PromptFrameworkRepository;
 use App\Repositories\Eloquent\RoleRepository;
 use App\Repositories\Eloquent\TagRepository;
 use App\Repositories\Eloquent\WebsiteRepository;
@@ -24,6 +25,7 @@ use App\Repositories\Interfaces\KeywordRepositoryInterface;
 use App\Repositories\Interfaces\NewsWebRepositoryInterface;
 use App\Repositories\Interfaces\PostRepositoryInterface;
 use App\Repositories\Interfaces\PostTagRepositoryInterface;
+use App\Repositories\Interfaces\PromptFrameworkRepositoryInterface;
 use App\Repositories\Interfaces\RepositoryInterface;
 use App\Repositories\Interfaces\RoleRepositoryInterface;
 use App\Repositories\Interfaces\TagRepositoryInterface;
@@ -89,6 +91,10 @@ class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(
             NewsWebRepositoryInterface::class,
             NewsWebRepository::class
+        );
+        $this->app->bind(
+            PromptFrameworkRepositoryInterface::class,
+            PromptFrameworkRepository::class
         );
     }
 
