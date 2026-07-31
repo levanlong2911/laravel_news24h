@@ -9,7 +9,6 @@ return [
     'delete_error' => 'Delete error',
     'user_id_required' => 'Please enter email',
     'password_required' => 'Please enter password',
-    'login_fail' => 'The user name or password is incorrect.',
     'email_format' => 'Please enter a valid email address.',
     'send_email_successful' => 'Send email successful',
     'send_email_error' => 'There was an error sending mail',
@@ -20,8 +19,9 @@ return [
     'import_question_error' => 'Double check your file format or content. The columns follow the rules Question, Answer A, Answer B, Answer C ..., Answer n, Right Answer. Columns Question, Answer A, Answer B, Answer C , Right answer not null',
     'minlength' => 'Mật khẩu phải có ít nhất 8 ký tự.',
     'pattern' => 'Mật khẩu phải bắt đầu bằng chữ cái viết hoa, có ít nhất một ký tự đặc biệt.',
-    'too_many_attempts' => 'Đăng nhập sai 5 lần, vui lòng thử lại trong vài phút',
+    'too_many_attempts' => 'Sai quá nhiều lần. Vui lòng thử lại sau :seconds giây.',
     'login_fail' => 'Email hoặc password không đúng',
     'login_success' => 'Đăng nhập thành công',
+    'session_expired' => 'Phiên làm việc đã hết hạn. Vui lòng nhập lại.',
     'domain_already_exists' => 'Domain đã tồn tại',
 ];

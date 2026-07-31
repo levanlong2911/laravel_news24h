@@ -40,12 +40,23 @@ class RouteServiceProvider extends ServiceProvider
         $this->configureRateLimiting();
     }
 
-    // Rate limiting cho đăng nhập
+    /**
+     * Chặn thô theo IP cho trang đăng nhập.
+     *
+     * Chỉ để chống flood. Việc khoá theo tài khoản do LoginService lo, và nó chỉ
+     * đếm lần SAI rồi xoá sạch khi đăng nhập được — đúng khuôn Laravel Fortify.
+     *
+     * Trước đây chỗ này để perMinute(5) khoá theo email, trùng vai trò với bộ đếm
+     * trong LoginService (cũng 5/phút, cũng theo email). Hai bộ đếm chồng nhau và
+     * bộ ở đây tính CẢ lần đăng nhập đúng, nên đăng xuất rồi vào lại vài lần trong
+     * một phút là bị khoá oan.
+     *
+     * Ngưỡng để rộng: nó là lưới chống flood, không phải cơ chế khoá tài khoản.
+     */
     protected function configureRateLimiting()
     {
         RateLimiter::for('login', function (Request $request) {
-            $email = (string) $request->email;
-            return Limit::perMinute(5)->by($email . '|' . $request->ip());
+            return Limit::perMinute(30)->by($request->ip());
         });
     }
 }
