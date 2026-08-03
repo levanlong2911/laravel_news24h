@@ -14,6 +14,49 @@
   </form>
 </div></div>
 
+{{--
+  Chat luong RenderPlan — CHI CANH BAO, khong chan. Dat NGAY DUOI card tom tat
+  vi nut 🎬 Render (cho tieu tien) nam trong card do: de o duoi bang shots thi
+  nguoi duyet cuon qua nut tieu tien truoc khi thay canh bao.
+
+  Tinh dong trong Controller moi request, khong luu DB. $quality = null khi
+  session khong co renderplan_json (session do Python day ve). Xem
+  App\Video\Analysis\RenderPlanQualityReport va ARCHITECTURE.md §18.19.
+--}}
+@if($quality !== null)
+<div class="card card-default">
+  <div class="card-body">
+    @if($quality['warnings'] === [])
+      <span class="text-success"><b>✔ Chất lượng RenderPlan</b> — không có cảnh báo nào.</span>
+    @else
+      <b>⚠ Chất lượng RenderPlan — {{ count($quality['warnings']) }} cảnh báo</b>
+      <div class="text-muted mb-2"><small>Cảnh báo, KHÔNG chặn render — cân nhắc trước khi bấm 🎬 ở trên.</small></div>
+      @foreach($quality['warnings'] as $warning)
+        <div class="alert alert-warning py-2 mb-2">
+          <b>{{ $warning['code'] }}</b> — {{ $warning['message'] }}
+          @if($warning['detail'] !== [])
+            <details class="mt-1"><summary><small>chi tiết</small></summary>
+              <small><code>{{ json_encode($warning['detail'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</code></small>
+            </details>
+          @endif
+        </div>
+      @endforeach
+    @endif
+
+    <details class="mt-2"><summary><small>Số đo (không phải cảnh báo)</small></summary>
+      <table class="table table-sm table-borderless mb-0"><tbody>
+      @foreach($quality['metrics'] as $name => $value)
+        <tr>
+          <td style="width:260px"><small><code>{{ $name }}</code></small></td>
+          <td><small>{{ is_array($value) ? json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $value }}</small></td>
+        </tr>
+      @endforeach
+      </tbody></table>
+    </details>
+  </div>
+</div>
+@endif
+
 <form method="post" action="{{ route('video-session.approve-selected', $session->id) }}">@csrf
 <button class="btn btn-success btn-sm mb-2">✔ Duyệt các shot đã chọn</button>
 <table class="table table-bordered">

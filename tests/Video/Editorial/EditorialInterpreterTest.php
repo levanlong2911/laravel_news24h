@@ -39,7 +39,7 @@ class EditorialInterpreterTest extends TestCase
 {
     private function aesthetic(ScenePurpose $p): SceneAesthetic
     {
-        return (new EditorialInterpreter())->aestheticFor($p);
+        return (new EditorialInterpreter)->aestheticFor($p);
     }
 
     public function test_every_purpose_yields_a_complete_aesthetic(): void
@@ -131,7 +131,7 @@ class EditorialInterpreterTest extends TestCase
     {
         $world = new VerifiedWorldGraph([$this->entityWithAttribute('moonrise', 'builder', 'Feadship')], [], []);
 
-        $this->assertSame([], (new EditorialInterpreter())->prohibitionsFor($world));
+        $this->assertSame([], (new EditorialInterpreter)->prohibitionsFor($world));
     }
 
     public function test_prohibition_fires_when_entity_matches_policy(): void
@@ -150,15 +150,15 @@ class EditorialInterpreterTest extends TestCase
         $this->assertSame([[
             'entity_id' => 'moonrise',
             'attribute' => 'domes',
-            'value'     => false,
-            'reason'    => 'integrated receivers instead of radomes',
+            'value' => false,
+            'reason' => 'integrated receivers instead of radomes',
         ]], $prohibitions);
     }
 
     public function test_prohibition_does_not_fire_when_entity_does_not_match(): void
     {
         $policy = new EditorialPolicy(['builder' => 'Feadship'], 'domes', false, 'reason');
-        $world  = new VerifiedWorldGraph([$this->entityWithAttribute('other', 'builder', 'Lurssen')], [], []);
+        $world = new VerifiedWorldGraph([$this->entityWithAttribute('other', 'builder', 'Lurssen')], [], []);
 
         $this->assertSame([], (new EditorialInterpreter([$policy]))->prohibitionsFor($world));
     }
@@ -169,7 +169,7 @@ class EditorialInterpreterTest extends TestCase
         // readonly nên không có cách nào viết code vi phạm; test này chỉ xác
         // nhận giá trị KHÔNG đổi sau khi gọi.
         $entity = $this->entityWithAttribute('moonrise', 'builder', 'Feadship');
-        $world  = new VerifiedWorldGraph([$entity], [], []);
+        $world = new VerifiedWorldGraph([$entity], [], []);
         $policy = new EditorialPolicy(['builder' => 'Feadship'], 'domes', false, 'reason');
 
         (new EditorialInterpreter([$policy]))->prohibitionsFor($world);
@@ -202,7 +202,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$crane, $anchor], [], []);
         $scene = $this->scene(['goliathcrane', 'unnamed_dock']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertSame(['goliathcrane'], $candidates['hero_candidates']);
     }
@@ -216,7 +216,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$crane, $block], [$relation], []);
         $scene = $this->scene(['goliathcrane', 'sternblock']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertCount(1, $candidates['action_candidates']);
         /** @var ActionCandidate $action */
@@ -236,7 +236,7 @@ class EditorialInterpreterTest extends TestCase
         ], [$relation], []);
         $scene = $this->scene(['moonrise', 'feadship']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertSame([], $candidates['action_candidates']);
     }
@@ -250,7 +250,7 @@ class EditorialInterpreterTest extends TestCase
         // scene khác, không liên quan gì tới craneA/blockA
         $scene = $this->scene(['unrelated']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertSame([], $candidates['action_candidates']);
     }
@@ -268,7 +268,7 @@ class EditorialInterpreterTest extends TestCase
         );
         $scene = $this->scene(['crane', 'sternblock', 'worker', 'toolbox']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
         $byTarget = [];
         foreach ($candidates['action_candidates'] as $c) {
             $byTarget[$c->target] = $c;
@@ -282,7 +282,7 @@ class EditorialInterpreterTest extends TestCase
     {
         $action = new ActionCandidate(ActionType::Lift, 'crane', 'sternblock', ['heavy_object']);
 
-        $physics = (new EditorialInterpreter())->microPhysicsFor($action);
+        $physics = (new EditorialInterpreter)->microPhysicsFor($action);
 
         $this->assertSame(['the lifting cable holds under visible tension'], $physics);
     }
@@ -291,7 +291,7 @@ class EditorialInterpreterTest extends TestCase
     {
         $action = new ActionCandidate(ActionType::Inspect, 'inspector', 'panel', []);
 
-        $this->assertSame([], (new EditorialInterpreter())->microPhysicsFor($action));
+        $this->assertSame([], (new EditorialInterpreter)->microPhysicsFor($action));
     }
 
     // ---- ActionType::Position: bằng chứng thật qua nút 🎬, bài yacht/sự kiện,
@@ -306,7 +306,7 @@ class EditorialInterpreterTest extends TestCase
         ], [$relation], []);
         $scene = $this->scene(['don_julio_yacht', 'pier_59']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertCount(1, $candidates['action_candidates']);
         $this->assertSame(ActionType::Position, $candidates['action_candidates'][0]->type);
@@ -323,7 +323,7 @@ class EditorialInterpreterTest extends TestCase
         ], [$relation], []);
         $scene = $this->scene(['world_cup_bottle', 'world_cup_final']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertSame([], $candidates['action_candidates']);
     }
@@ -337,7 +337,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$this->physicalEntity('a'), $this->physicalEntity('b')], [$relation], []);
         $scene = $this->scene(['a', 'b']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertSame(ActionType::Position, $candidates['action_candidates'][0]->type);
     }
@@ -346,9 +346,9 @@ class EditorialInterpreterTest extends TestCase
     {
         // Đa domain thật: thuyền neo, xe đậu, máy bay hạ cánh — không riêng yacht.
         return [
-            'boat moored'   => ['moored_at'],
-            'car parked'    => ['parked_in'],
-            'plane landed'  => ['landed_at'],
+            'boat moored' => ['moored_at'],
+            'car parked' => ['parked_in'],
+            'plane landed' => ['landed_at'],
             'ship anchored' => ['anchored_near'],
         ];
     }
@@ -363,7 +363,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$this->physicalEntity('nas')], [], [$event]);
         $scene = $this->scene(['nas']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertCount(1, $candidates['action_candidates']);
         $action = $candidates['action_candidates'][0];
@@ -385,7 +385,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$this->physicalEntity('subject')], [], [$event]);
         $scene = $this->scene(['subject']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertCount(1, $candidates['action_candidates']);
         $this->assertSame($expected, $candidates['action_candidates'][0]->type);
@@ -394,10 +394,10 @@ class EditorialInterpreterTest extends TestCase
     public static function triumphConfrontEvents(): array
     {
         return [
-            'race_victory'   => ['race_victory', ActionType::Triumph],
-            'award_won'      => ['award_won', ActionType::Triumph],
-            'protest_clash'  => ['protest_clash', ActionType::Confront],
-            'break_in'       => ['break_in', ActionType::Confront],
+            'race_victory' => ['race_victory', ActionType::Triumph],
+            'award_won' => ['award_won', ActionType::Triumph],
+            'protest_clash' => ['protest_clash', ActionType::Confront],
+            'break_in' => ['break_in', ActionType::Confront],
         ];
     }
 
@@ -407,7 +407,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$this->physicalEntity('nas'), $this->physicalEntity('other')], [], [$event]);
         $scene = $this->scene(['other']); // nas KHÔNG phải subject của scene này
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertSame([], $candidates['action_candidates']);
     }
@@ -418,7 +418,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$this->physicalEntity('moonrise')], [], [$event]);
         $scene = $this->scene(['moonrise']);
 
-        $candidates = (new EditorialInterpreter())->candidatesFor($scene, $world);
+        $candidates = (new EditorialInterpreter)->candidatesFor($scene, $world);
 
         $this->assertSame([], $candidates['action_candidates']);
     }
@@ -458,7 +458,7 @@ class EditorialInterpreterTest extends TestCase
     {
         $world = new VerifiedWorldGraph([$this->entityWithAttribute('moonrise', 'hull_color', 'grey')], [], []);
 
-        $this->assertSame([], (new EditorialInterpreter())->environmentFor($world));
+        $this->assertSame([], (new EditorialInterpreter)->environmentFor($world));
     }
 
     public function test_environment_empty_when_two_or_more_landscape_entities(): void
@@ -469,26 +469,26 @@ class EditorialInterpreterTest extends TestCase
             $this->landscapeEntity('open_sea', ['weather' => 'light rain']),
         ], [], []);
 
-        $this->assertSame([], (new EditorialInterpreter())->environmentFor($world));
+        $this->assertSame([], (new EditorialInterpreter)->environmentFor($world));
     }
 
     public function test_environment_maps_free_text_to_closed_enum(): void
     {
         $world = new VerifiedWorldGraph([$this->landscapeEntity('shipyard', [
-            'weather'      => 'a light drizzle over the yard',
-            'time_of_day'  => 'just after sunset',
-            'medium'       => 'the open sea',
+            'weather' => 'a light drizzle over the yard',
+            'time_of_day' => 'just after sunset',
+            'medium' => 'the open sea',
             'light_source' => 'natural daylight',
-            'location'     => 'the shipyard',
+            'location' => 'the shipyard',
         ])], [], []);
 
         $this->assertSame([
-            'weather'      => 'RAIN',
-            'time_of_day'  => 'GOLDEN_HOUR',
-            'medium'       => 'WATER',
+            'weather' => 'RAIN',
+            'time_of_day' => 'GOLDEN_HOUR',
+            'medium' => 'WATER',
             'light_source' => 'NATURAL',
-            'location'     => 'the shipyard',
-        ], (new EditorialInterpreter())->environmentFor($world));
+            'location' => 'the shipyard',
+        ], (new EditorialInterpreter)->environmentFor($world));
     }
 
     public function test_environment_maps_river_to_water(): void
@@ -502,7 +502,7 @@ class EditorialInterpreterTest extends TestCase
 
         $this->assertSame(
             ['medium' => 'WATER'],
-            (new EditorialInterpreter())->environmentFor($world),
+            (new EditorialInterpreter)->environmentFor($world),
         );
     }
 
@@ -514,15 +514,15 @@ class EditorialInterpreterTest extends TestCase
             'weather' => 'unusual atmospheric conditions',
         ])], [], []);
 
-        $this->assertSame([], (new EditorialInterpreter())->environmentFor($world));
+        $this->assertSame([], (new EditorialInterpreter)->environmentFor($world));
     }
 
     public function test_environment_never_mutates_world(): void
     {
         $entity = $this->landscapeEntity('shipyard', ['weather' => 'clear skies']);
-        $world  = new VerifiedWorldGraph([$entity], [], []);
+        $world = new VerifiedWorldGraph([$entity], [], []);
 
-        (new EditorialInterpreter())->environmentFor($world);
+        (new EditorialInterpreter)->environmentFor($world);
 
         $this->assertSame('clear skies', $entity->value('weather'));
     }
@@ -533,7 +533,7 @@ class EditorialInterpreterTest extends TestCase
     {
         $world = new VerifiedWorldGraph([$this->entityWithAttribute('moonrise', 'hull_color', 'grey')], [], []);
 
-        $this->assertSame('NO_LANDSCAPE_ENTITY', (new EditorialInterpreter())->environmentDiagnosisFor($world));
+        $this->assertSame('NO_LANDSCAPE_ENTITY', (new EditorialInterpreter)->environmentDiagnosisFor($world));
     }
 
     public function test_diagnosis_multiple_landscapes(): void
@@ -543,7 +543,7 @@ class EditorialInterpreterTest extends TestCase
             $this->landscapeEntity('open_sea', ['weather' => 'light rain']),
         ], [], []);
 
-        $this->assertSame('MULTIPLE_LANDSCAPES', (new EditorialInterpreter())->environmentDiagnosisFor($world));
+        $this->assertSame('MULTIPLE_LANDSCAPES', (new EditorialInterpreter)->environmentDiagnosisFor($world));
     }
 
     public function test_diagnosis_no_matching_attributes(): void
@@ -552,7 +552,7 @@ class EditorialInterpreterTest extends TestCase
             $this->landscapeEntity('shipyard', ['weather' => 'unusual atmospheric conditions']),
         ], [], []);
 
-        $this->assertSame('NO_MATCHING_ATTRIBUTES', (new EditorialInterpreter())->environmentDiagnosisFor($world));
+        $this->assertSame('NO_MATCHING_ATTRIBUTES', (new EditorialInterpreter)->environmentDiagnosisFor($world));
     }
 
     public function test_diagnosis_success(): void
@@ -561,7 +561,7 @@ class EditorialInterpreterTest extends TestCase
             $this->landscapeEntity('shipyard', ['weather' => 'clear skies']),
         ], [], []);
 
-        $this->assertSame('SUCCESS', (new EditorialInterpreter())->environmentDiagnosisFor($world));
+        $this->assertSame('SUCCESS', (new EditorialInterpreter)->environmentDiagnosisFor($world));
     }
 
     // ---- cameraTargetFor(): 2026-07-23, bug thật scene_5 "world_cup_final_match" ----
@@ -575,7 +575,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$event, $stadium], [], []);
         $scene = $this->scene(['world_cup_final_match', 'metlife_stadium']);
 
-        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'world_cup_final_match', $world);
+        $target = (new EditorialInterpreter)->cameraTargetFor($scene, 'world_cup_final_match', $world);
 
         $this->assertSame('metlife_stadium', $target);
     }
@@ -587,7 +587,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$effect, $vehicle], [], []);
         $scene = $this->scene(['explosion_fx', 'car_1']);
 
-        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'explosion_fx', $world);
+        $target = (new EditorialInterpreter)->cameraTargetFor($scene, 'explosion_fx', $world);
 
         $this->assertSame('car_1', $target);
     }
@@ -598,7 +598,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$yacht], [], []);
         $scene = $this->scene(['yacht_1']);
 
-        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'yacht_1', $world);
+        $target = (new EditorialInterpreter)->cameraTargetFor($scene, 'yacht_1', $world);
 
         $this->assertSame('yacht_1', $target);
     }
@@ -610,7 +610,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$event], [], []);
         $scene = $this->scene(['world_cup_final_match']);
 
-        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'world_cup_final_match', $world);
+        $target = (new EditorialInterpreter)->cameraTargetFor($scene, 'world_cup_final_match', $world);
 
         $this->assertSame('world_cup_final_match', $target, 'không có lựa chọn khác thì giữ nguyên, không bịa');
     }
@@ -620,7 +620,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([], [], []);
         $scene = $this->scene(['unknown_entity']);
 
-        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'unknown_entity', $world);
+        $target = (new EditorialInterpreter)->cameraTargetFor($scene, 'unknown_entity', $world);
 
         $this->assertSame('unknown_entity', $target);
     }
@@ -633,7 +633,7 @@ class EditorialInterpreterTest extends TestCase
         $world = new VerifiedWorldGraph([$event1, $event2], [], []);
         $scene = $this->scene(['event_1', 'event_2']);
 
-        $target = (new EditorialInterpreter())->cameraTargetFor($scene, 'event_1', $world);
+        $target = (new EditorialInterpreter)->cameraTargetFor($scene, 'event_1', $world);
 
         $this->assertSame('event_1', $target);
     }
@@ -643,13 +643,13 @@ class EditorialInterpreterTest extends TestCase
     public function test_every_purpose_yields_a_positive_duration_weight(): void
     {
         foreach (ScenePurpose::cases() as $purpose) {
-            $this->assertGreaterThan(0.0, (new EditorialInterpreter())->durationWeightFor($purpose));
+            $this->assertGreaterThan(0.0, (new EditorialInterpreter)->durationWeightFor($purpose));
         }
     }
 
     public function test_action_and_resolution_weigh_more_than_detail_and_comparison(): void
     {
-        $editorial = new EditorialInterpreter();
+        $editorial = new EditorialInterpreter;
 
         $heavy = min($editorial->durationWeightFor(ScenePurpose::Action), $editorial->durationWeightFor(ScenePurpose::Resolution));
         $light = max($editorial->durationWeightFor(ScenePurpose::Detail), $editorial->durationWeightFor(ScenePurpose::Comparison));
@@ -659,11 +659,186 @@ class EditorialInterpreterTest extends TestCase
 
     public function test_duration_weight_is_deterministic(): void
     {
-        $editorial = new EditorialInterpreter();
+        $editorial = new EditorialInterpreter;
 
         $this->assertSame(
             $editorial->durationWeightFor(ScenePurpose::Action),
             $editorial->durationWeightFor(ScenePurpose::Action),
         );
+    }
+
+    // =====================================================================
+    // Khớp từ khoá 3 tầng — thay str_contains() ngày 2026-07-29.
+    //
+    // lookupKeyword() là private, KHÔNG test qua Reflection: cả file này đi
+    // qua API công khai (candidatesFor cho Relation/Event, environmentFor cho
+    // attribute môi trường) — giữ nguyên quy ước đó.
+    // =====================================================================
+
+    private function actionTypeOf(string $eventType): ?ActionType
+    {
+        $event = new Event('e1', $eventType, 'subject', $this->ev());
+        $world = new VerifiedWorldGraph([$this->physicalEntity('subject')], [], [$event]);
+
+        $candidates = (new EditorialInterpreter)->candidatesFor($this->scene(['subject']), $world);
+
+        return $candidates['action_candidates'][0]->type ?? null;
+    }
+
+    // ---- 1. Bốn false positive THẬT của str_contains() — hồi quy phải chặn ----
+
+    /**
+     * @dataProvider substringFalsePositives
+     */
+    public function test_substring_false_positives_no_longer_match(string $eventType, string $why): void
+    {
+        $this->assertNull($this->actionTypeOf($eventType), $why);
+    }
+
+    public static function substringFalsePositives(): array
+    {
+        // Cả 4 đều là type string THẬT do Claude sinh ra, không phải ví dụ bịa.
+        return [
+            // Bug gốc bài Nixie: prompt ra "Nixie aligns  into position" trong
+            // khi bài báo chỉ nói con tàu ĐƯỢC CHUYỂN VÀO xưởng hoàn thiện.
+            'outfitting chứa "fit"' => [
+                'transfer_to_outfitting',
+                '"fit" nằm giữa "outfitting" — chuyển vào xưởng KHÔNG phải căn thẳng',
+            ],
+            'refit chứa "fit"' => [
+                'refit_completed',
+                '"fit" nằm giữa "refit" — hoàn thành đại tu KHÔNG phải căn thẳng',
+            ],
+            'island chứa "land"' => [
+                'island_survey',
+                '"land" nằm giữa "island" — khảo sát đảo KHÔNG phải hạ cánh/đậu',
+            ],
+            'wondered chứa "won"' => [
+                'wondered_about',
+                '"won" nằm giữa "wondered" — thắc mắc KHÔNG phải chiến thắng',
+            ],
+        ];
+    }
+
+    public function test_mainland_does_not_match_land_but_harbor_still_matches_water(): void
+    {
+        // Cùng cơ chế false positive, phía environment: str_contains() cũ khớp
+        // 'land' trong 'mainland' -> GROUND, trong khi giá trị nói về CẢNG (nước).
+        $world = new VerifiedWorldGraph([
+            $this->landscapeEntity('port', ['medium' => 'the mainland harbor']),
+        ], [], []);
+
+        $this->assertSame(
+            ['medium' => 'WATER'],
+            (new EditorialInterpreter)->environmentFor($world),
+        );
+    }
+
+    // ---- 2. Sáu mapping ĐANG ĐÚNG phải sống sót ----
+    //
+    // Đây là lý do KHÔNG dùng exact-token thuần: đo trên dữ liệu thật thì
+    // exact-token làm mất đúng những cái dưới đây. World Graph dùng động từ ĐÃ
+    // CHIA (mô tả việc đã xảy ra), không dùng nguyên mẫu.
+
+    /**
+     * @dataProvider inflectedFormsThatMustKeepWorking
+     */
+    public function test_inflected_real_world_types_still_map(string $eventType, ActionType $expected): void
+    {
+        $this->assertSame($expected, $this->actionTypeOf($eventType));
+    }
+
+    public static function inflectedFormsThatMustKeepWorking(): array
+    {
+        return [
+            // -ed (đang có trong DB, dạng trần không hậu tố _at/_near)
+            'anchored' => ['anchored', ActionType::Position],
+            'moored' => ['moored', ActionType::Position],
+            'performed_song' => ['performed_song', ActionType::Perform],
+            'installed_in' => ['installed_in', ActionType::Align],
+            // -ing
+            'inspecting' => ['inspecting', ActionType::Inspect],
+            // -s
+            'lifts' => ['lifts', ActionType::Lift],
+        ];
+    }
+
+    public function test_secured_needs_the_standalone_d_suffix_rule(): void
+    {
+        // Bẫy đã gặp khi làm: cắt 'ed' ra 'secur' — KHÔNG khớp keyword 'secure'.
+        // Phải có 'd' đứng riêng trong MORPHOLOGY_SUFFIXES mới ra 'secure'.
+        // Nếu ai đó xoá 'd' khỏi bảng hậu tố, test này đỏ.
+        $this->assertSame(ActionType::Secure, $this->actionTypeOf('secured'));
+    }
+
+    public function test_double_consonant_is_undone_for_fitted_but_not_for_outfitting(): void
+    {
+        // MỘT quy tắc, HAI kết quả trái nhau — đây là chỗ dễ code sai nhất:
+        //   'fitted'     -> cắt 'ed'  -> 'fitt'    -> bỏ phụ âm đôi -> 'fit'    KHỚP
+        //   'outfitting' -> cắt 'ing' -> 'outfitt' -> bỏ phụ âm đôi -> 'outfit'  ≠ 'fit'
+        // Nếu xử lý phụ âm đôi được viết thành "cắt bừa cho tới khi khớp" thì
+        // dòng thứ hai sẽ khớp sai và test này đỏ.
+        $this->assertSame(ActionType::Align, $this->actionTypeOf('fitted'));
+        $this->assertNull($this->actionTypeOf('outfitting'));
+    }
+
+    // ---- 3. Thứ tự bảng keyword là LOAD-BEARING ----
+
+    public function test_first_declared_keyword_wins_when_several_match(): void
+    {
+        // "clear storm" khớp CẢ 'storm' lẫn 'clear'. Bảng WEATHER_KEYWORDS khai
+        // 'storm' TRƯỚC 'clear' nên ra STORM — thứ tự bảng quyết định, KHÔNG
+        // phải thứ tự chữ trong câu ('clear' đứng trước trong text).
+        //
+        // Test này tồn tại để chặn việc sắp lại bảng theo alphabet: làm vậy
+        // 'clear' lên trước và kết quả đảo thành CLEAR, sai hẳn nghĩa.
+        $world = new VerifiedWorldGraph([
+            $this->landscapeEntity('sea', ['weather' => 'clear storm']),
+        ], [], []);
+
+        $this->assertSame(
+            ['weather' => 'STORM'],
+            (new EditorialInterpreter)->environmentFor($world),
+        );
+    }
+
+    // ---- 4. GIỚI HẠN ĐÃ BIẾT, khoá lại để nhìn thấy chứ không để im lặng ----
+
+    public function test_multi_token_keyword_only_matches_as_the_whole_value(): void
+    {
+        // Keyword có dấu cách/gạch dưới ('golden hour', 'break_in') CHỈ khớp ở
+        // tầng 1 (cả chuỗi). Nhúng trong câu dài hơn thì KHÔNG khớp, vì tầng
+        // 2/3 chỉ so từng token đơn.
+        //
+        // str_contains() cũ khớp được cả hai. Đây là đánh đổi CÓ Ý: nó là cái
+        // giá phải trả để diệt 4 false positive ở trên. Chưa có bằng chứng thật
+        // nào cho thấy giá trị dạng "shot during the golden hour" từng xuất
+        // hiện (Extractor được yêu cầu trích NGẮN) nên chưa sửa — Rule 0.
+        //
+        // Khi nào phải sửa: gặp giá trị thật kiểu đó. Cách sửa là khớp cụm có
+        // biên từ, KHÔNG phải quay lại str_contains().
+        $editorial = new EditorialInterpreter;
+
+        $exact = new VerifiedWorldGraph([
+            $this->landscapeEntity('yard', ['time_of_day' => 'golden hour']),
+        ], [], []);
+        $this->assertSame(['time_of_day' => 'GOLDEN_HOUR'], $editorial->environmentFor($exact));
+
+        $embedded = new VerifiedWorldGraph([
+            $this->landscapeEntity('yard', ['time_of_day' => 'shot during the golden hour']),
+        ], [], []);
+        $this->assertSame([], $editorial->environmentFor($embedded), 'giới hạn đã biết — xem docblock test này');
+    }
+
+    public function test_irregular_inflection_is_not_handled_by_morphology(): void
+    {
+        // 'won' là quá khứ BẤT QUY TẮC của 'win'. tokenVariants() chỉ cắt hậu tố
+        // ĐỀU ĐẶN nên 'wins' KHÔNG bao giờ ra 'won'.
+        //
+        // Đây là ranh giới đã chọn (§ docblock MORPHOLOGY_SUFFIXES): bất quy tắc
+        // thì thêm ALIAS DATA vào bảng keyword — như 'performance' => Perform đã
+        // làm — KHÔNG nhồi thêm hậu tố vào thuật toán.
+        $this->assertNull($this->actionTypeOf('wins_race'));
+        $this->assertSame(ActionType::Triumph, $this->actionTypeOf('race_won'));
     }
 }

@@ -3,6 +3,8 @@
 /public/build
 /public/hot
 /public/storage
+# Clip Veo render ra — sinh lại được từ RenderPlan, 42MB và lớn dần theo mỗi lượt render
+/public/renders
 /storage/*.key
 /vendor
 .env

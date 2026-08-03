@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Eloquent;
 
+use App\Enums\VideoShotStatus;
 use App\Models\VideoShot;
 use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 
@@ -16,20 +17,20 @@ class VideoShotRepository extends BaseRepository implements VideoShotRepositoryI
     {
         return VideoShot::where('session_id', $sessionId)
             ->whereIn('id', $shotIds)
-            ->update(['status' => 'approved', 'approved_at' => now(), 'review_note' => null]);
+            ->update(['status' => VideoShotStatus::APPROVED->value, 'approved_at' => now(), 'review_note' => null]);
     }
 
     // 🎬 Render — CHỈ shot approved mới vào queue
     public function queueApprovedForSession(string $sessionId): int
     {
         return VideoShot::where('session_id', $sessionId)
-            ->where('status', 'approved')
-            ->update(['status' => 'queued']);
+            ->where('status', VideoShotStatus::APPROVED->value)
+            ->update(['status' => VideoShotStatus::QUEUED->value]);
     }
 
     public function findQueuedWithSession(): iterable
     {
-        return VideoShot::where('status', 'queued')->with('session:id,code')->get();
+        return VideoShot::where('status', VideoShotStatus::QUEUED->value)->with('session:id,code')->get();
     }
 
     public function updateOrCreateShot(array $match, array $attributes): VideoShot

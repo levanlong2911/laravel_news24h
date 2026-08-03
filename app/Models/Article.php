@@ -71,6 +71,11 @@ class Article extends Model
         return $this->belongsTo(\App\Models\Post::class);
     }
 
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
     public function rawArticle()
     {
         return $this->hasOne(RawArticle::class);

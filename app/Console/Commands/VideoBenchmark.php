@@ -87,18 +87,21 @@ class VideoBenchmark extends Command
         $extractorMode = $this->option('extractor');
         if (! in_array($extractorMode, ['fake', 'claude'], true)) {
             $this->error("--extractor phải là 'fake' hoặc 'claude', nhận: {$extractorMode}");
+
             return self::FAILURE;
         }
 
         $mode = $this->option('mode');
         if (! in_array($mode, ['full', 'semantic'], true)) {
             $this->error("--mode phải là 'full' hoặc 'semantic', nhận: {$mode}");
+
             return self::FAILURE;
         }
 
         $articles = $this->resolveArticles();
         if ($articles === []) {
             $this->error('Không có bài nào — dùng --articles=uuid1,uuid2 hoặc --sample=yacht|nfl|mixed10|all');
+
             return self::FAILURE;
         }
 
@@ -108,12 +111,12 @@ class VideoBenchmark extends Command
     }
 
     /**
-     * @param list<array{model: Article, domain: string}> $articles
+     * @param  list<array{model: Article, domain: string}>  $articles
      */
     private function handleFull(array $articles, string $extractorMode): int
     {
-        $runDir = $this->option('out') ?? storage_path('app/benchmarks/' . now()->format('Ymd_His'));
-        $renderPlanDir = $runDir . '/renderplans';
+        $runDir = $this->option('out') ?? storage_path('app/benchmarks/'.now()->format('Ymd_His'));
+        $renderPlanDir = $runDir.'/renderplans';
         if (! is_dir($renderPlanDir)) {
             mkdir($renderPlanDir, 0o755, true);
         }
@@ -129,8 +132,8 @@ class VideoBenchmark extends Command
             ConfidenceAnalyzer::VERSION, EditorialInterpreter::ENVIRONMENT_MAPPING_VERSION,
         ));
 
-        $csvPath = $runDir . '/results.csv';
-        $handle  = fopen($csvPath, 'w');
+        $csvPath = $runDir.'/results.csv';
+        $handle = fopen($csvPath, 'w');
         fputcsv($handle, self::CSV_HEADER);
 
         $bar = $this->output->createProgressBar(count($articles));
@@ -156,7 +159,7 @@ class VideoBenchmark extends Command
 
             if ($result->renderPlan !== null) {
                 file_put_contents(
-                    $renderPlanDir . '/' . $result->articleId . '.json',
+                    $renderPlanDir.'/'.$result->articleId.'.json',
                     json_encode($result->renderPlan, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 );
             }
@@ -174,12 +177,12 @@ class VideoBenchmark extends Command
     }
 
     /**
-     * @param list<array{model: Article, domain: string}> $articles
+     * @param  list<array{model: Article, domain: string}>  $articles
      */
     private function handleSemantic(array $articles, string $extractorMode): int
     {
-        $runDir = $this->option('out') ?? storage_path('app/benchmarks/' . now()->format('Ymd_His'));
-        $failuresDir = $runDir . '/semantic_failures';
+        $runDir = $this->option('out') ?? storage_path('app/benchmarks/'.now()->format('Ymd_His'));
+        $failuresDir = $runDir.'/semantic_failures';
         if (! is_dir($failuresDir)) {
             mkdir($failuresDir, 0o755, true);
         }
@@ -189,8 +192,8 @@ class VideoBenchmark extends Command
             count($articles), $extractorMode,
         ));
 
-        $csvPath = $runDir . '/semantic_results.csv';
-        $handle  = fopen($csvPath, 'w');
+        $csvPath = $runDir.'/semantic_results.csv';
+        $handle = fopen($csvPath, 'w');
         fputcsv($handle, [
             'article_id', 'title', 'domain', 'status', 'error',
             'call_count', 'tokens_in', 'tokens_out', 'cost_usd', 'duration_ms',
@@ -217,7 +220,7 @@ class VideoBenchmark extends Command
 
             if ($result->failures !== []) {
                 file_put_contents(
-                    $failuresDir . '/' . $result->articleId . '.json',
+                    $failuresDir.'/'.$result->articleId.'.json',
                     json_encode($result->failures, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 );
             }
@@ -241,6 +244,7 @@ class VideoBenchmark extends Command
     {
         if ($this->option('articles')) {
             $ids = array_filter(array_map('trim', explode(',', $this->option('articles'))));
+
             return Article::whereIn('id', $ids)->get()
                 ->map(fn (Article $a) => ['model' => $a, 'domain' => ''])
                 ->all();
@@ -272,19 +276,26 @@ class VideoBenchmark extends Command
                 new FakeDirector(new ActionSelection('', 0, [], 'calm', 'immediate')),
             );
 
-            return new BenchmarkRunner($pipeline, new EditorialInterpreter(), new ConfidenceAnalyzer());
+            return new BenchmarkRunner($pipeline, new EditorialInterpreter, new ConfidenceAnalyzer);
         }
 
         $llm = new CostAccumulatingLlmClient(new GatedLlmClient(
             new ClaudeWriterAdapter($this->claudeWriter),
-            new CostCeilingGate(0.05),
+            // Doc CUNG nguon voi production (VideoRenderPlanService) — tranh
+            // configuration drift: doi tran trong config ma benchmark van chay 0.05
+            // thi ket qua benchmark khong con phan anh dung hanh vi that.
+            new CostCeilingGate(config('video.llm_cost_ceiling_usd')),
         ));
 
         // Cùng factory với VideoSessionService (nút 🎬) — đảm bảo benchmark đo
         // ĐÚNG hành vi production thật, kể cả continuity.prohibitions (EditorialPolicy).
-        $pipeline = VideoPipelineFactory::claude($llm, VideoPipelineFactory::productionPolicies());
+        //
+        // `new` trực tiếp, không tiêm qua constructor Command: factory không có
+        // state, và chỉ nhánh --extractor=claude cần tới nó.
+        $factory = new VideoPipelineFactory;
+        $pipeline = $factory->claude($llm, $factory->productionPolicies());
 
-        return new BenchmarkRunner($pipeline, new EditorialInterpreter(), new ConfidenceAnalyzer(), $llm);
+        return new BenchmarkRunner($pipeline, new EditorialInterpreter, new ConfidenceAnalyzer, $llm);
     }
 
     private function semanticRunner(string $extractorMode): SemanticClaimBenchmarkRunner
@@ -295,7 +306,10 @@ class VideoBenchmark extends Command
 
         $llm = new CostAccumulatingLlmClient(new GatedLlmClient(
             new ClaudeWriterAdapter($this->claudeWriter),
-            new CostCeilingGate(0.05),
+            // Doc CUNG nguon voi production (VideoRenderPlanService) — tranh
+            // configuration drift: doi tran trong config ma benchmark van chay 0.05
+            // thi ket qua benchmark khong con phan anh dung hanh vi that.
+            new CostCeilingGate(config('video.llm_cost_ceiling_usd')),
         ));
 
         return new SemanticClaimBenchmarkRunner(new ClaudeExtractor($llm), costTracker: $llm);

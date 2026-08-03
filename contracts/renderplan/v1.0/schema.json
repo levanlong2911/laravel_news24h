@@ -41,6 +41,16 @@
       "$ref": "#/$defs/environment"
     },
 
+    "creative_identity": {
+      "description": "Nhan dang THI GIAC cap VIDEO cua chu the chinh — mau vo, so tang, dang mui, dai kinh... OPTIONAL. Day KHONG phai Truth: bai bao thuong khong noi mau son hay so tang (bang chung bai 'The Sixth Sense' 2026-07-29: Truth chi cho vessel_type + length). Day la LUA CHON EDITORIAL, duoc phep bia, rang buoc duy nhat la BAT BIEN xuyen cac scene. Ton tai vi da chung minh duoc chu KHONG suy doan: 3 clip nhan dung cung mot cau nhan dang tu Truth van ra 3 con tau khac nhau, vi Truth qua ngheo (§18.15). Sibling cua world_environment va cung ban chat: fact cap video, compiler ap per-scene co gating (identity_visible_at). Hai trang thai vi cung mot con tau trong khac han luc dang thi cong va luc hoan thien — do la time cue, khong phai mau thuan. Xem ARCHITECTURE.md §18.16-18.17.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "construction": { "$ref": "#/$defs/identity_state" },
+        "final":        { "$ref": "#/$defs/identity_state" }
+      }
+    },
+
     "facts":    { "type": "array", "items": { "$ref": "#/$defs/fact" } },
     "acts":     { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/act" } },
     "scenes":   { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scene" } },
@@ -235,7 +245,7 @@
         "asset_refs": { "type": "array", "items": { "$ref": "#/$defs/slug" } },
 
         "objective": {
-          "description": "Shot nay dang hoan thanh viec gi cho video, lay tu producer.visual_promise (Producer role, video-level) — copy nguyen van, KHONG phai Compiler tu sinh tu purpose enum. OPTIONAL, vang khi khong co ProducerOutput. Xem ARCHITECTURE.md §17/§18.",
+          "description": "Tai scene nay, nguoi xem can nhan duoc dieu gi. MOT ngu nghia duy nhat, NHIEU NGUON CUNG CAP (§18.18) — (a) producer.visual_promise copy nguyen van, dung khi scene mo ta CUNG trang thai voi thanh pham (da so scene that); (b) planner sinh ra scene tu viet, BAT BUOC khi scene mo ta trang thai KHAC (Creation Arc: ban ve, khoi thep tran — va moi arc sau nay). Nguon doi thi ngu nghia field KHONG doi. Ten field la 'objective' vi §14 FROZEN chi cho additive — dung doc ten nay la 'ban copy cua visual_promise'. TUYET DOI KHONG phai Compiler tu sinh tu purpose enum. OPTIONAL, vang khi khong co nguon nao. Xem ARCHITECTURE.md §17/§18/§18.18.",
           "type": "string"
         },
 
@@ -296,6 +306,20 @@
         "kind":      { "$ref": "#/$defs/slug" },
         "entity_id": { "$ref": "#/$defs/slug" },
         "required":  { "type": "boolean" }
+      }
+    },
+
+    "identity_state": {
+      "description": "Nhan dang thi giac o MOT giai doan vong doi. La OBJECT chu khong phai string thuan — de sau nay them duoc palette/materials/prohibitions/silhouette ma van additive, khong pha contract. Hien chi co visual_identity; them field moi phai co bang chung that, khong them truoc.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["visual_identity"],
+      "properties": {
+        "visual_identity": {
+          "description": "MOT cau mo ta chu the o giai doan nay, dung de compiler nhac lai o moi scene nhin thay duoc dang tong the. KHONG phai prompt hoan chinh — compiler moi ghep no voi camera/lighting/action.",
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
 

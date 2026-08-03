@@ -23,7 +23,7 @@ php artisan test                                     # same via Laravel wrapper
 php vendor/bin/pint                                  # formatter (no pint.json — Laravel preset)
 npm run dev / npm run build                          # Vite (CKEditor + admin assets)
 
-php artisan queue:work                               # jobs: ProcessKeywordJob, WriteArticleJob, WritePostFromArticleJob
+php artisan queue:work                               # only ProcessKeywordJob is ever dispatched (see note below)
 php artisan news:dispatch [--keyword=UUID]           # dispatch crawling for active keywords
 php artisan video:benchmark --sample=mixed10 --extractor=fake    # $0 harness check
 php artisan video:benchmark --sample=mixed10 --extractor=claude  # REAL, costs money — needs approval
@@ -33,7 +33,7 @@ php artisan video:benchmark --sample=mixed10 --extractor=claude  # REAL, costs m
 
 ## Video pipeline architecture (`app/Video/`)
 
-Entry point: `Pipeline/VideoPlanningPipeline::plan(RawArticle, RenderPlanMeta, targetSeconds)` → `array` ready to `json_encode` and validate against `contracts/renderplan/v1.0/schema.json`. Build it via `Pipeline/VideoPipelineFactory::claude($llm, VideoPipelineFactory::productionPolicies())` — the factory exists to guarantee **one** `EditorialInterpreter` instance is shared by the pipeline and the assembler (two instances = policies silently apply in `candidatesFor()` but `continuity.prohibitions` stays empty).
+Entry point: `Pipeline/VideoPlanningPipeline::plan(RawArticle, RenderPlanMeta, targetSeconds)` → `array` ready to `json_encode` and validate against `contracts/renderplan/v1.0/schema.json`. Build it via `VideoPipelineFactory` (injected — instance methods, not static: `$factory->claude($llm, $factory->productionPolicies())`) — the factory exists to guarantee **one** `EditorialInterpreter` instance is shared by the pipeline and the assembler (two instances = policies silently apply in `candidatesFor()` but `continuity.prohibitions` stays empty).
 
 Flow:
 
@@ -70,15 +70,26 @@ Two rules govern whether new code may exist at all:
 
 ## LLM cost safety
 
-`app/Video/Llm/` wraps every paid call: `GatedLlmClient` consults an `ApprovalGate`, and the system default is `DenyByDefaultGate` (refuses everything) — spending requires explicitly passing `CostCeilingGate`. `CostAccumulatingLlmClient` totals spend. `ClaudeWriterAdapter` bridges to `Services/Admin/ClaudeWriterService`, which holds the model ids, per-1M-token pricing, retry/RPM limits, and logs to `ClaudeUsageLog`. `CLAUDE_API_KEY` comes from `config/services.php`.
+`app/Video/Llm/` wraps every paid call **of the video pipeline**: `GatedLlmClient` consults an `ApprovalGate`, and the system default is `DenyByDefaultGate` (refuses everything) — spending requires explicitly passing `CostCeilingGate`.
+
+**The gate does NOT cover the CMS writing path.** `ArticlePipelineService` (:52 haiku, :88 sonnet, :103 sonnet-retry) and `HookEngine` (:207 haiku) call `ClaudeWriterService::generate()` directly, with no gate and no ceiling — `config('video.llm_cost_ceiling_usd')` has no effect there. Only the three video callers (`ClaudeExtractor`, `ClaudeProducer`, `ClaudeDirector`, all defaulting to `haiku`) go through `GatedLlmClient`. Every path ends at the one HTTP call in `ClaudeWriterService::generate()`. `CostAccumulatingLlmClient` totals spend. `ClaudeWriterAdapter` bridges to `Services/Admin/ClaudeWriterService`, which holds the model ids, per-1M-token pricing, retry/RPM limits, and logs to `ClaudeUsageLog`. `CLAUDE_API_KEY` comes from `config/services.php`.
 
 ## Laravel ↔ Python integration
 
-Python polls Laravel over HTTP (`routes/api.php`, all guarded by the `X-Video-Token` header matching `VIDEO_API_TOKEN`):
+**Laravel triggers, Python works** (§18.25 — changed 2026-07-31; it used to be Python polling on a manual run). Both trigger points spawn a detached process and return immediately — the HTTP request never waits on Python:
+
+| Click | Laravel does | then spawns |
+|---|---|---|
+| 🎬 Tạo Video | runs the pipeline, stores `renderplan_json`, `status=composing` | `tools/session_runner.py --session=<code>` — compiles prompts, seconds, $0 |
+| 🎬 Render các shot đã duyệt | `approved → queued`, `status=rendering` | `tools/render_queued_shots.py --session=<code>` — calls Veo, 6-18 min, real money |
+
+Spawning is confined to one class (`PythonRunner`) so `grep` finds every trigger in one place. **A failed spawn is never fatal**: the session stays usable and the UI shows the manual fallback command — the scripts still run standalone.
+
+The HTTP API stays exactly as it was (`routes/api.php`, all guarded by the `X-Video-Token` header matching `VIDEO_API_TOKEN`) — it is how Python reports *back*, and it is also the migration path if Python ever moves to another machine (then go back to polling):
 
 - `POST /api/render-plans` — Python pushes a session + shots (`storeFromPython`)
-- `GET /api/video-sessions/composing` · `GET /api/video-shots/queued` — runner polls
-- `PATCH /api/video-shots/{shotId}/result` — runner reports artifact + cost
+- `GET /api/video-sessions/composing` · `GET /api/video-shots/queued` — still work; used by the standalone/manual runs
+- `PATCH /api/video-shots/{shotId}/result` — runner reports artifact + cost, **once per shot**. That per-shot reporting is what makes a long render crash-safe: finished clips are already saved, and re-clicking Render only picks up what is still `queued`.
 
 Session lifecycle (`VideoSessionService`, no render skips review): `draft → composing → approved | needs_revision → queued → rendered | failed`. The 🎬 button calls `createFromArticleId()`, which runs the real pipeline and stores `renderplan_json` on `VideoSession`.
 
@@ -86,6 +97,8 @@ Session lifecycle (`VideoSessionService`, no render skips review): `draft → co
 
 - Controllers stay thin; logic lives in `app/Services/Admin/*Service.php`; data access goes through `app/Repositories/Interfaces/*` bound to `Repositories/Eloquent/*` in `Providers/RepositoryServiceProvider.php`.
 - `ArticlePipelineService::run()` is the single entry point for AI writing: clean → Haiku → `HookEngine` → `PromptGuard` → Sonnet (+1 retry on parse failure) → `PostGuard` → `PipelineResult`. The caller owns persistence, status updates, and `FeedbackService`. Prompt/guard failures throw (`PromptGuardException`, `PreGuardException`).
+- **AI writing runs synchronously from the controller, not from a queue** — `ArticleController::sendToClaude()` / `synthesize()` call the service directly. `ProcessKeywordJob` (the only job ever dispatched) just crawls via `FetchKeywordNewsService::fetch()` and chains nothing, so crawl → write is **not** automated end to end; a human clicks. Verified 2026-07-30 against the `jobs` table (21 rows, all `ProcessKeywordJob`) and full git history.
+- `WriteArticleJob` is **dead code, deliberately so** — it wraps `ArticlePipelineService` with PreGuard → slot reservation → PostGuard → Post. Four `WriteArticleJob::dispatch()` sites were added in `0a6c927` and removed together in `b7ffde0` ("update code auto news v7"); the reason was never recorded. Kept because that orchestration does not exist on the controller path — wire it back if you want automated writing, don't half-use it. (`WritePostFromArticleJob` was a second, older copy that was **never dispatched once** in the whole history and hard-coded its prompts instead of using `PromptBuilderService` — deleted 2026-07-30.)
 - Prompt templates are versioned in the DB (`PromptFramework`, `PromptVersion`, `PromptMetric`, `CategoryContext`) and assembled by `PromptBuilderService` — edit data, not prompt strings in code.
 - Multi-site: the `DomainContext` middleware scopes requests by domain; the video API routes deliberately opt out of it.
 

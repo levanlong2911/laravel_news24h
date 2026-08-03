@@ -191,6 +191,21 @@ Python:   VideoIR → [RenderIR] → ProviderIR
 
 Vị trí đã chốt. Khi trả được rent thì chèn vào đúng chỗ này — không phá ranh giới nào.
 
+> ### ⚠️ Nửa PYTHON của sơ đồ trên là THIẾT KẾ, không phải đường đang chạy
+>
+> Kiểm bằng import thật (2026-07-30): nửa Laravel (tới `RenderPlan.json`) đúng
+> 100% với code. Nửa Python (`VideoIR Builder → 12 Pass → ProviderIR → Prompt
+> Compiler → Provider Adapter`) **chưa bao giờ trở thành đường chạy thật** —
+> `tools/session_runner.py` không import `media_runtime.compiler` lần nào.
+>
+> Đường Python THẬT, ngắn hơn nhiều:
+> ```
+> RenderPlan.json → session_runner.py → director/motion.py (MotionComposer)
+>                 → compiled_prompt → NGƯỜI DUYỆT → render_queued_shots.py → Veo
+> ```
+> `MotionComposer` làm đúng phần việc Syntax mà Pass pipeline được giao (§18.7),
+> nên **ranh giới §1 vẫn nguyên vẹn**. Xem khối chi tiết ở §9.
+
 ---
 
 ## 3. Ontology chung — điểm sống còn
@@ -319,14 +334,20 @@ Scene  →  VideoIR  →  ProviderIR  →  Prompt
 
 Ranh giới duy nhất. Versioned. JSON Schema gác cổng cả hai đầu.
 
+> **Ví dụ dưới đây đã được VALIDATE bằng chính `contracts/renderplan/v1.0/schema.json`**
+> (2026-07-30). Bản trước đó KHÔNG hợp lệ — nó còn `scene.emotion`/`scene.composition`
+> ở cấp scene (đã bị §13 dời vào `aesthetic{}`), mà schema đặt
+> `additionalProperties: false`, nên ví dụ chuẩn của tài liệu sẽ bị chính schema
+> từ chối. Sửa ví dụ này thì **phải validate lại**, đừng sửa tay rồi tin mắt.
+
 ```jsonc
 {
   "plan_version": "1.0",
-  "plan_id": "uuid",
-  "article_id": "uuid",
-  "generated_at": "2026-07-17T10:00:00Z",
+  "plan_id": "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b",
+  "article_id": "a25f63f3-e22a-42e2-8b8b-21aeb109e72b",
+  "generated_at": "2026-07-30T10:00:00+00:00",
 
-  "story": { "title": "Moonrise sold for €325M", "language": "en", "target_seconds": 60 },
+  "story": { "title": "Moonrise sold for EUR 325M", "language": "en", "target_seconds": 60 },
 
   "world": {
     "entities": [
@@ -334,74 +355,108 @@ Ranh giới duy nhất. Versioned. JSON Schema gác cổng cả hai đầu.
         "id": "moonrise2025",
         "type": "vehicle",                 // ontology chung — KHÔNG phải "superyacht"
         "attributes": {                    // vật lý, render được → xuống ProviderIR
-          "length_m": 101, "hull_color": "grey", "bow": "vertical",
-          "satellite": "integrated", "domes": false, "swim_platform": "long"
+          "length_m": 101,
+          "hull_color": "grey",
+          "bow": "vertical",
+          "amenities": ["beach club", "spa"]   // một tên MANG NHIỀU giá trị là hợp lệ
         },
         "identity": {
           "name": "Moonrise",
           "visual_referent": true,         // semantic: tên ghim một hình dạng cụ thể
-          "semantic": {                    // KHÔNG bao giờ xuống ProviderIR
-            "builder": "Feadship", "owner": "Jan Koum", "price_eur": 325000000
-          }
+          "semantic": { "builder": "Feadship" }   // KHÔNG bao giờ xuống ProviderIR
         }
-      }
+      },
+      { "id": "harbor", "type": "landscape", "attributes": { "weather": "clear skies" } }
     ],
-    "relations": [ { "id": "r1", "from": "moonrise2025", "to": "moonrise2020", "type": "successor_of" } ],
+    "relations": [
+      { "id": "r1", "from": "moonrise2025", "to": "moonrise2020", "type": "successor_of" }
+    ],
     "events": [
-      { "id": "e1", "type": "construction", "entity_id": "moonrise2025" },
-      { "id": "e2", "type": "sale",         "entity_id": "moonrise2025" }
+      { "id": "e1", "type": "construction", "entity_id": "moonrise2025" }
     ]
+  },
+
+  // Fact môi trường CẤP VIDEO (§13). OPTIONAL — vắng khi Truth im lặng hoặc khi
+  // có ≥2 Landscape entity (không đoán cái nào ứng với cảnh nào).
+  "world_environment": { "weather": "CLEAR", "medium": "WATER", "location": "the harbour" },
+
+  // Nhận dạng thị giác BỊA CÓ CHỦ ĐÍCH, cấp VIDEO (§18.17). OPTIONAL.
+  // Hai trạng thái vòng đời; compiler Python chọn theo scene (§18.20).
+  "creative_identity": {
+    "construction": { "visual_identity": "hull still bare grey steel, no paint, no name markings" },
+    "final": { "visual_identity": "dark navy metallic hull, white superstructure, three decks" }
   },
 
   "facts": [
     { "id": "f1", "claim": "measures 101 metres", "entity_id": "moonrise2025",
-      "visual_hint": "vertical bow, grey hull, long swim platform" }
+      "visual_hint": "vertical bow, grey hull" }
   ],
 
   // Act = node|edge của World Graph. Đúng MỘT trong 3 ref.
   "acts": [
     { "id": "a1", "ordinal": 1, "source": "ENTITY",   "entity_ref": "moonrise2025" },
     { "id": "a2", "ordinal": 2, "source": "EVENT",    "event_ref": "e1" },
-    { "id": "a3", "ordinal": 5, "source": "RELATION", "relation_ref": "r1" }
+    { "id": "a3", "ordinal": 3, "source": "RELATION", "relation_ref": "r1" }
   ],
 
   "scenes": [
     {
-      "id": "s1", "ordinal": 1, "act_id": "a1",
+      "id": "scene_1", "ordinal": 1, "act_id": "a1",
       "purpose": "REVEAL",
       "subjects": ["moonrise2025"],
-      "emotion": "MAJESTIC",
-      "composition": "CENTERED",
       "motion_intent": "LOW",              // NONE|LOW|HIGH — thay content_type
 
       "camera":    { "framing": "WIDE", "movement": "ORBIT", "speed": "SLOW", "target": "moonrise2025" },
 
-      // Editorial taste — LUÔN có mặt, không phụ thuộc chủ đề (§13)
+      // Editorial taste — BẮT BUỘC, không phụ thuộc chủ đề (§13).
+      // CHÚ Ý: emotion/composition nằm Ở ĐÂY, KHÔNG ở cấp scene.
       "aesthetic": { "emotion": "MAJESTIC", "composition": "CENTERED", "light_intensity": "SOFT", "light_grade": "GOLDEN" },
 
       // World facts từ Truth — TẤT CẢ optional, vắng khi Truth im lặng (§13).
-      // Provider tự điền bằng world-knowledge của nó khi vắng.
-      "world":     { "medium": "WATER", "location": "open ocean", "time_of_day": "GOLDEN_HOUR", "weather": "CLEAR", "light_source": "NATURAL" },
+      "world":     { "medium": "WATER", "time_of_day": "GOLDEN_HOUR" },
+
+      // "Tại scene này người xem cần nhận được điều gì" — HAI nguồn hợp lệ (§18.18).
+      "objective": "Reveal the scale of the vessel against open water.",
 
       "fact_refs": ["f1"],
-      "asset_refs": ["as_hull"]
+      "asset_refs": ["as_moonrise2025"],
+
+      // Director chọn trong candidates do EditorialInterpreter sinh (§18.4).
+      "director_notes": {
+        "hero": "moonrise2025",
+        "composition_note": "The vessel fills the frame from bow to stern, low horizon behind.",
+        "micro_physics": ["A widening wake lengthens continuously astern."],
+        "avoid": ["exposed radomes"]
+      }
     }
   ],
 
-  "timeline": [ { "scene_id": "s1", "start_sec": 0, "end_sec": 5 } ],
-  "assets":   [ { "id": "as_hull", "kind": "structure", "entity_id": "moonrise2025", "required": true } ],
+  "timeline": [ { "scene_id": "scene_1", "start_sec": 0, "end_sec": 5 } ],
+  "assets":   [ { "id": "as_moonrise2025", "kind": "structure", "entity_id": "moonrise2025", "required": true } ],
 
   "continuity": {
     "invariants": [
-      { "entity_id": "moonrise2025", "attribute": "hull_color", "value": "grey",     "scope": "always" },
-      { "entity_id": "moonrise2025", "attribute": "bow",        "value": "vertical", "scope": "always" }
+      { "entity_id": "moonrise2025", "attribute": "hull_color", "value": "grey", "scope": "always" }
     ],
     "prohibitions": [
-      { "entity_id": "moonrise2025", "attribute": "domes", "value": true, "reason": "2025 refit uses integrated receivers" }
+      { "entity_id": "moonrise2025", "attribute": "domes", "value": true,
+        "reason": "integrated satellite receivers instead of exposed radomes (2025 refit)" }
     ]
+  },
+
+  // Narrative cấp phim (§18.1). OPTIONAL — vắng khi chạy không có Producer.
+  "producer": {
+    "target_audience": "readers who follow luxury and design",
+    "core_conflict": "a record price against an unseen owner",
+    "visual_promise": "Viewers will see a 101-metre vessel move through open water at golden hour.",
+    "emotional_curve": ["CALM", "MAJESTIC"]
   }
 }
 ```
+
+**Field OPTIONAL ở cấp root** (vắng hẳn key, KHÔNG emit rỗng): `world_environment`,
+`creative_identity`, `producer`. **Ở cấp scene**: `world`, `objective`,
+`fact_refs`, `asset_refs`, `director_notes`.
 
 ### Enum đóng
 
@@ -433,52 +488,71 @@ Ranh giới duy nhất. Versioned. JSON Schema gác cổng cả hai đầu.
 
 ### Laravel — `app/Video/` (namespace `App\Video`)
 
+> **Hai cây dưới đây liệt kê thư mục CÓ THẬT** (đối chiếu `ls`, 2026-07-30).
+> Bản trước ghi `Contracts/` và `Knowledge/` (chưa bao giờ tồn tại), liệt kê
+> `Editorial/` hai lần, bỏ sót 4 thư mục đang chạy, và mô tả `media_runtime/
+> compiler/` là *"phần đang thiếu"* trong khi nó đã tồn tại. Sửa cây này thì
+> đối chiếu `ls`, đừng viết theo trí nhớ.
+
 ```
 app/Video/
-├── Contracts/       Planner interfaces
-│
 │   ── TRUTH LAYER — xem §11 ──
 ├── Article/         ArticleNormalizer
-├── Evidence/        EvidenceIndex, Evidence, EvidenceLocator, ProvenanceLevel
-├── Extraction/      LlmExtractor (Hypothesis Generator), CandidateWorldGraph
-├── Gatekeeper/      EvidenceGatekeeper, GatekeeperReport   ← TRÁI TIM của hệ thống
-├── World/           VerifiedWorldGraph, Entity, Relation, Event, Identity
+├── Evidence/        EvidenceIndex, Evidence, ProvenanceLevel, Value/*Normalizer
+├── Extraction/      Extractor (interface), ClaudeExtractor, CandidateGraphParser,
+│                    CandidateWorldGraph, SemanticClaimPrecisionAnalyzer
+├── Gatekeeper/      EvidenceGatekeeper, GatekeeperReport, Rejection   ← TRÁI TIM
+├── World/           VerifiedWorldGraph, Entity, Relation, Event, Identity, EntityType
 │
-│   ── PLANNING LAYER — trạm đầu, xem §12 ──
-├── Editorial/       EditorialPolicy (data), EditorialInterpreter (generic code)
-├── Story/           StoryPlanner, StoryGraph, Act
-├── Scene/           ScenePlanner, SceneGraph, Scene
-├── Intent/          IntentPlanner, IntentScene, CameraIntent, MotionIntent  ← camera+motion (P3)
-├── Timeline/        TimelinePlanner, TimedScene, TimeRange                  ← scheduler cơ học (P4)
-├── Editorial/       EditorialPolicy (data), EditorialInterpreter (generic)  ← taste + fill-missing (P5)
-├── Knowledge/       CharacterLibrary, VehicleLibrary, StyleLibrary   ← data, không phải code (khi cần)
-├── RenderPlan/      RenderPlanAssembler, Serializer                          ← projection + validate (P5)
-└── Pipeline/        VideoPlanningPipeline
-# BỎ: Asset/ (projection, không phải planner) · Continuity/, Rules/ hoà vào Editorial
+│   ── PLANNING LAYER — trạm đầu là Editorial, xem §12 ──
+├── Editorial/       EditorialPolicy (data) + EditorialInterpreter (generic code)
+│                    — taste, prohibitions, candidates, environment, duration weight
+├── Story/           StoryPlanner, StoryGraph, Act, CreationArcPlanner (§18.16)
+├── Scene/           ScenePlanner, SceneGraph, SemanticScene, ScenePurpose
+├── Intent/          IntentPlanner, IntentScene, CameraIntent    ← camera+motion (P3)
+├── Timeline/        TimelinePlanner, TimedScene, TimeRange       ← scheduler cơ học (P4)
+├── Producer/        ProducerOutput, ClaudeProducer, FakeProducer ← narrative cấp phim (§18.1)
+├── Director/        ClaudeDirector, ActionSelection              ← chọn trong candidates (§18.4)
+├── Llm/             LlmClient, ClaudeWriterAdapter, GatedLlmClient,
+│                    CostCeilingGate, DenyByDefaultGate           ← cổng chi phí
+├── Analysis/        BenchmarkRunner, ConfidenceAnalyzer,
+│                    RenderPlanQualityReport (§18.19)             ← quan sát, không chặn
+├── RenderPlan/      RenderPlanAssembler, RenderPlanMeta          ← projection + validate (P5)
+└── Pipeline/        VideoPlanningPipeline, VideoPipelineFactory
+# KHÔNG tồn tại (đừng tạo lại): Contracts/ · Knowledge/ · Asset/ · Continuity/ · Rules/
+# Knowledge library vẫn là DATA — hiện nằm ở config/video.php, không phải class.
 ```
 
 ### Python — `media_runtime/`
 
 ```
 media_runtime/
-├── compiler/          ★ MỚI — phần đang thiếu
-│   ├── video_ir.py       VideoIR (trung lập)
-│   ├── provider_ir.py    ProviderIR (đã tối ưu)
-│   ├── builder.py        RenderPlan.json → VideoIR
-│   ├── pipeline.py       CompilerPipeline
-│   ├── prompt_compiler.py   ProviderIR → prompt (mỏng)
-│   └── passes/
-│       ├── base.py subject.py camera.py lighting.py physics.py
-│       ├── material.py weather.py environment.py motion.py
-│       ├── fx.py audio.py continuity.py provider.py
-├── providers/         ✔ GIỮ — 5 luật FAL/Kling nằm ở đây
-├── render/            ✔ GIỮ — compositor, ffmpeg_builder
-├── assets/            ✔ GIỮ — cache, downloader, uploader
-├── core/              ✔ GIỮ — job_manager, scheduler, metrics
-└── api/               ↻ SỬA — fetch RenderPlan thay job payload cũ
+├── director/          ★ ĐƯỜNG CHÍNH hiện tại — motion.py (MotionComposer, MotionSpec,
+│                      entity_identity_facts, identity_visible, creative_identity_for),
+│                      notes.py, expander.py
+├── compiler/          contract.py (load/validate RenderPlan), video_ir.py, builder.py
+│   └── passes/        base.py · subject.py · camera.py · aesthetic.py ·
+│                      canonicalization.py · validation.py · prompt_compiler.py
+├── design/            asset.py (DAM), router.py, ontology.py, data/*.json   ← §17
+├── identity/          package.py (IdentityPackage)                          ← §16
+├── providers/         luật FAL/Kling/Veo
+├── render/            compositor, ffmpeg_builder
+├── assets/            cache, downloader, uploader
+├── core/              job_manager, scheduler, metrics
+├── models/            data models dùng chung
+├── afos/              di sản kiến trúc cũ — KHÔNG dùng cho đường mới
+└── api/               fetch RenderPlan
+# Điểm vào thật của pipeline: tools/session_runner.py (compose) và
+# tools/render_queued_shots.py (render) — KHÔNG nằm trong media_runtime/.
 ```
 
-`providers/prompt_rewriter.py` → **xoá**. Trách nhiệm chuyển vào `compiler/passes/provider.py`. Đây là chỗ prompt logic đang rò rỉ sai tầng.
+**Danh sách 13 pass ở bản trước là KẾ HOẠCH, không phải thực tế.** `lighting`/
+`physics`/`material`/`weather`/`environment`/`motion`/`fx`/`audio`/`continuity`/
+`provider` chưa bao giờ được viết thành pass riêng — phần lớn logic đó hiện nằm
+trong `director/motion.py` (`lighting_phrase()`, `camera_phrase()`,
+`motion_environment_from_world()`, `motion_negative_from_scene()`). Đây là trạng
+thái thật, không phải nợ cần trả: tách 13 pass khi chưa có trùng lặp là vi phạm
+Rule 0.
 
 ---
 
@@ -486,19 +560,27 @@ media_runtime/
 
 Không phải convention. Không phải review. **Test thật, CI đỏ.**
 
-| Test | Kiểm |
+> **Tất cả nằm trong MỘT file: `tests/Video/Architecture/ArchitectureTest.php`** —
+> quét bằng PHP tokenizer trên `app/Video/`, **bỏ qua comment** (nên viết lý do
+> bằng từ bị cấm trong comment là hợp lệ). Bản trước đặt tên 8 class riêng
+> (`LaravelIsPromptBlindTest`, `NoDomainBranchingTest`…) — **không class nào tồn
+> tại**; nội dung kiểm thì đúng, tên thì bịa.
+
+| Method (tên thật) | Kiểm |
 |---|---|
-| `LaravelIsPromptBlindTest` | `app/Video/` không chứa `prompt`, `negative_prompt`, `cinematic`, `ultra realistic`, `8k`, `masterpiece`, `photorealistic`, `mm lens` |
-| `NoDomainBranchingTest` | `app/Video/` không chứa `yacht`, `superyacht`, `switch ($topic)`, `$topic ===` |
-| `NoRenderTechniqueTest` | `app/Video/` không chứa `ken burns`, `kling`, `flux`, `veo`, `runway`, `content_type` |
-| `ProviderIsSemanticBlindTest` | ProviderIR không chứa giá trị nào từ `identity.semantic` |
-| `EvidenceNeverCrossesBoundaryTest` | RenderPlan schema reject mọi trường `evidence`/`quote`/`span`/`offset`/`provenance`/`confidence` |
-| `GatekeeperIsDeterministicTest` | `app/Video/Gatekeeper/` không import/gọi bất kỳ AI client nào |
-| `NoDerivedWordTest` | Từ `derived` bị cấm trong code — dùng `NORMALIZED_VALUE`. Xem §11 |
-| `EditorialHasNoDomainLiteralsTest` | `app/Video/Editorial/` không chứa `Feadship`, `Ferrari`, `Tesla`, `Lion`, `Moonrise`… — domain chỉ tồn tại trong DỮ LIỆU. Xem §12 |
-| `test_topic_swap_tesla` | Tesla Factory (`building`) → chỉ sửa dữ liệu Laravel, Python không đổi |
-| `test_topic_swap_lion` | Lion (`living_object`) → như trên |
-| `test_provider_swap_veo` | Thêm Veo → 1 ProviderPass + 1 adapter; VideoIR và Laravel không đổi |
+| `test_laravel_is_prompt_blind` | `app/Video/` không chứa `prompt`, `cinematic`, `photorealistic`, `8k`, `mm lens`… (§1) |
+| `test_no_domain_branching` | không chứa `yacht`, `feadship`, `switch ($domain)`, `$topic ===` (§3) |
+| `test_no_render_technique_or_provider` | không chứa `kling`, `flux`, `veo`, `runway`, `ffmpeg`, `ken burns`, `content_type`, `image_to_video` (§1) |
+| `test_contract_keeps_identity_separate_from_attributes` | `identity.semantic` không lẫn vào `attributes` (§4/§5) |
+| `test_gatekeeper_never_calls_ai` | `app/Video/Gatekeeper/` không tham chiếu `claude`/`llm`/`Http::`/`rand`/`now()` (§11) |
+| `test_the_word_derived_is_banned` | từ `derived` bị cấm — dùng `NORMALIZED_VALUE` (§11) |
+| `test_planning_layer_cannot_reach_truth_provenance` | `Story/ Scene/ Intent/ Timeline/ Editorial/` không chạm `->evidence`, `->quote`, `->offset`, `EvidenceIndex`, `RawArticle` (§1) |
+
+**Phía Python** (`tests/`, chạy bằng `.venv`): không có architecture test tương
+đương. `tests/test_renderplan_contract.py` validate RenderPlan bằng
+`jsonschema` — đó là kiểm **contract**, không phải kiểm **ranh giới kiến trúc**.
+Ba test từng ghi ở bản trước (`test_topic_swap_tesla`, `test_topic_swap_lion`,
+`test_provider_swap_veo`) **chưa bao giờ được viết**.
 
 ---
 
@@ -512,13 +594,45 @@ Không phải convention. Không phải review. **Test thật, CI đỏ.**
 | **3** | ✅ Laravel: Intent Planner — camera + motion | ✅ camera suy từ ScenePurpose, ranh giới đóng bằng type (không thấy EntityType) |
 | **4** | ✅ Laravel: Timeline Planner | ✅ scheduler cơ học, TimeRange, gapless, phủ kín target |
 | **~~4b~~** | ~~Asset Planner~~ — **BỎ** (Rule 0): `subject_ids → assets[]` chỉ là projection; dedup/cache là provider optimization thuộc Python. `assets[]` emit thẳng ở Assembler. AssetOptimizer (nếu có) đứng SAU RenderPlan bên Python, không chen giữa semantic pipeline. | — |
-| **5** | Laravel: **Editorial Interpreter** (§12, taste + fill-missing) → **RenderPlanAssembler** → emit | Editorial fill chỗ Truth im lặng (KHÔNG overwrite); Assembler ráp Truth+Story+Scene+Intent+Timeline → RenderPlan pass schema |
-| **6** | Python: VideoIR Builder | fixture → VideoIR, không mất dữ liệu |
-| **7** | Python: Pass pipeline | mỗi pass test riêng; ContinuityPass gỡ được `domes` |
-| **8** | Python: ProviderIR + Prompt Compiler + allowlist | prompt Moonrise sinh 100% từ IR; không rò `Jan Koum`/`Feadship` |
-| **9** | Render end-to-end (⚠ tốn phí — cần approval) | video Moonrise |
+| **5** | ✅ Laravel: **Editorial Interpreter** (§12) → **RenderPlanAssembler** → emit | ✅ Editorial fill chỗ Truth im lặng; Assembler ráp Truth+Story+Scene+Intent+Timeline+Producer+Director → RenderPlan pass schema. Thêm `Producer`/`Director` (§18.1/§18.4) và `CreationArcPlanner` (§18.16) sau khi bảng này viết |
+| **6-8** | ⚠️ Python: VideoIR Builder → Pass pipeline → ProviderIR + Prompt Compiler | **ĐÃ ĐI ĐƯỜNG KHÁC** — xem khối cảnh báo bên dưới |
+| **9** | ✅ Render end-to-end | ✅ Đã render thật nhiều lần: Tequila yacht 8 scene (§18.9), Creation Arc v2 6 scene $1.08 (§18.17). ⚠ vẫn tốn phí — vẫn cần approval từng lần |
 
 **Gate:** mỗi phase test xanh trước khi sang phase sau. Phase 0 cứng nhất — sai contract thì hai bên sai theo.
+
+> ### ⚠️ Phase 6-8 KHÔNG diễn ra như kế hoạch — đọc trước khi sửa Python
+>
+> Bảng này (viết 2026-07-17) dự kiến đường
+> `RenderPlan → VideoIR → 13 Pass → ProviderIR → Prompt`. **Đường đó chưa bao
+> giờ trở thành đường chạy thật.**
+>
+> Kiểm bằng import thật (2026-07-30): `tools/session_runner.py` và
+> `tools/render_queued_shots.py` **không import `media_runtime.compiler` một
+> lần nào**. Consumer duy nhất của `compiler/` là `media_runtime/identity/
+> package.py` — cũng nằm ngoài đường chạy.
+>
+> **Đường THẬT đang chạy:**
+> ```
+> RenderPlan.json
+>     → tools/session_runner.py            (đọc scene, gate identity/environment/continuity)
+>     → media_runtime/director/motion.py   (MotionComposer: enum + field → câu prompt)
+>     → POST /api/render-plans             (Laravel lưu shot + compiled_prompt)
+>     → NGƯỜI DUYỆT  ← §18.19 RenderPlanQualityReport hiển thị ở đây
+>     → tools/render_queued_shots.py       (Veo 3.1 Lite)
+> ```
+>
+> `MotionComposer` giữ đúng vai trò mà kế hoạch giao cho Pass pipeline —
+> **Syntax thuần** (§18.7): dịch enum/field đã quyết bên Laravel thành câu, không
+> tự nghĩ. Ranh giới §1 **không bị phá**; chỉ là nó được thi hành bằng một module
+> thay vì mười ba.
+>
+> **Đây KHÔNG phải nợ phải trả.** Tách 13 pass khi chưa có trùng lặp nào là đúng
+> thứ Rule 0 cấm. Ghi lại để: (a) không ai đi sửa `compiler/passes/` rồi ngạc
+> nhiên vì prompt không đổi; (b) khi thật sự cần tách pass thì biết vị trí đã
+> chốt sẵn.
+>
+> **Còn nợ thật từ Phase 8:** allowlist tên riêng theo provider (§4) — chưa bao
+> giờ thi công, và §18.16 đã ghi rent đã đủ để làm.
 
 ---
 
@@ -730,6 +844,21 @@ Mỗi trường mô tả một scene thuộc **đúng một** trong ba loại tr
 ---
 
 ## 15. Subject Consistency — một ảnh tham chiếu xuyên suốt (Rendering)
+
+> ### ⚠️ MỤC NÀY ĐÃ BỊ THAY THẾ — đọc §18.15 và §18.20 trước
+>
+> Kết luận *"bắt buộc phải có ảnh tham chiếu → image-to-video. **Không có đường
+> thứ ba**"* đúng với bằng chứng năm 2026-07-18, nhưng **kiến trúc hiện tại là
+> text-to-video THUẦN** (chốt §18.14, cơ chế nhất quán ở §18.15/§18.20).
+>
+> Đường thứ ba hoá ra có thật, chỉ yếu hơn: **nhất quán bằng MÔ TẢ** — lặp lại
+> cùng một câu nhận dạng (Truth `entity_identity_facts()` + Creative
+> `creative_identity`) ở mọi scene, qua một cổng visibility chung (§18.20).
+> Yếu hơn ảnh neo, nhưng không cần Flux/Kontext và không có bước i2v.
+>
+> Giữ mục này làm hồ sơ: nếu render thật cho thấy mức lệch identity vẫn không
+> chấp nhận được thì đây là hướng đã biết hoạt động (§17 đã validate), đánh đổi
+> bằng chi phí và độ phức tạp cao hơn.
 
 > **Yêu cầu (2026-07-18):** trong một video, chủ thể (vd du thuyền) phải là CÙNG MỘT thiết kế xuyên suốt — từ ảnh tới video, từ cảnh thiết kế tới cảnh hoàn thiện.
 
@@ -1408,3 +1537,1716 @@ motion.py::_KLING_HARD_LIMIT` (dùng trong `validate_shot()` preflight check,
 không phải lệnh gọi render thật) vẫn giữ tên/giá trị cũ — không ảnh hưởng
 hành vi render, chỉ là ngưỡng cảnh báo QA, có thể đổi tên sau nếu cần nhất
 quán thuật ngữ.
+
+### 18.15 Identity Consistency — Design→Construction→Craftsmanship→Experience phải cùng mô tả MỘT vật thể (2026-07-26)
+
+> Phát hiện khi chuẩn bị render thật Creation Arc lần đầu (bài "Nixie"): 4 pha
+> là **4 lần gọi Veo độc lập, không có ảnh neo chung** (đã bỏ Flux/i2v, chốt
+> text-to-video toàn bộ ở §18.14-phần creation-arc) — không có gì đảm bảo
+> cùng 1 con tàu/xe được vẽ giống nhau xuyên 4 lần sinh. Đây KHÔNG phải lỗi
+> Kling/Veo — đây là giới hạn của kiến trúc text-to-video thuần (không seed
+> ảnh, không character-consistency). Rủi ro lớn nhất là đúng ranh giới
+> Craftsmanship → Experience: pha cuối bịa và scene thật đầu tiên phải trông
+> như CÙNG MỘT sản phẩm, nếu không cả 4-phase feature coi như thất bại.
+
+**Đề xuất đã cân nhắc và BÁC**: kiến trúc "Product Bible / Identity Lock /
+Design DNA / Lifecycle State / Manufacturing Planner / Experience Planner" (9
+tầng mới, hand-authored YAML mô tả sản phẩm). Chẩn đoán của đề xuất này ĐÚNG
+(tính nhất quán phải tới từ dữ liệu, không phải prompt tự bịa) nhưng quy mô
+kiến trúc **vi phạm Rule 0** (rent phải trả bằng trùng lặp ĐANG có, không phải
+dự đoán):
+
+- "Product Bible" ≈ đã có sẵn `Entity.attributes` (Truth Layer, verified bằng
+  chứng thật — vd `hull_color: grey`) — không cần bịa YAML tay mới, tệ hơn vì
+  KHÔNG có evidence đứng sau.
+- "Identity Lock" ≈ đã có sẵn `MotionSpec.static` (semantic lock, immutable).
+- "Manufacturing/Experience/Scene/Shot Planner" tách riêng sẽ trùng lặp
+  `StoryPlanner/ScenePlanner/IntentPlanner/TimelinePlanner` đã có — đúng loại
+  đề xuất đã bị bác ở §18.6 (LLM scene planner, Reviewer/Researcher riêng).
+- "Design DNA" (ngôn ngữ thiết kế thương hiệu) cần dữ liệu bài viết không hề
+  có — làm ngay bây giờ là bịa, phạm "không bằng chứng → không tồn tại".
+
+**Cơ chế thật đã code — Identity Consistency, quy mô tối thiểu:**
+
+`media_runtime/director/motion.py::entity_identity_facts(entity_id,
+world_entities)` — đọc `entity.attributes` (free-form, Truth Layer), CHỈ lấy
+giá trị dạng **CHUỖI** (vd `hull_color='grey'`), bỏ số thuần (vd
+`top_speed_knots=19.5`, `guest_capacity=16` — không giúp model vẽ hình, chỉ
+thêm nhiễu prompt). Lọc theo **KIỂU dữ liệu**, không theo TÊN thuộc tính —
+không đoán tên nào "thuộc visual" theo domain (nếu làm allowlist tên riêng
+cho yacht/moto/cars sẽ vi phạm §1 no domain branching). Sinh câu dạng:
+
+```
+Known real details — hull color: pearl white, hull material: fiberglass.
+```
+
+Nối vào cuối `composition_note` của **MỌI scene** có `camera.target` trỏ tới
+entity đó — trong `tools/session_runner.py::_plan_shots_from_render_plan()`,
+đúng SAU khi `fields` đã gộp từ `motion_camera_lighting_from_scene()` +
+`motion_content_from_scene()`. Đặt ở compiler (Python), KHÔNG đặt trong
+`CreationArcPlanner` (Laravel) — vì compiler là nơi DUY NHẤT thấy TẤT CẢ scene
+(thật lẫn bịa) cùng lúc; đặt trong `CreationArcPlanner` sẽ chỉ phủ 3 scene
+Design/Construction/Craftsmanship, để lọt đúng ranh giới quan trọng nhất
+(Craftsmanship → Experience, scene thật KHÔNG đi qua CreationArcPlanner).
+
+**Giới hạn thật, không giấu**: đây là cơ chế NHẤT QUÁN VỀ MÔ TẢ (textual),
+không phải nhất quán về ẢNH (không seed/reference image) — Veo/Kling vẫn có
+thể vẽ ra 2 kết quả khác nhau dù nhận đúng 1 mô tả, vì không có character-
+consistency provider feature. Đây là cơ chế tốt nhất khả thi ở tầng text-to-
+video thuần; nếu render thật cho thấy mức lệch vẫn không chấp nhận được, quay
+lại Master Design Asset (Flux ảnh neo + i2v — đã validated Sprint 2) là hướng
+đã biết hoạt động, đánh đổi bằng chi phí + độ phức tạp cao hơn.
+
+**Test**: `tests/test_motion.py` (6 test `entity_identity_facts`) +
+`tests/test_session_runner.py` (`test_identity_facts_appended_to_every_scene_
+targeting_the_same_entity`, `test_no_identity_facts_when_target_has_no_string_
+attributes`) — 233/233 Python xanh. `check_frame_capacity()` cũng sửa cùng
+đợt: so khớp substring khiến `'face'` khớp nhầm trong `'surface'` (bug thật
+bắt được khi review prompt Design) — đổi sang so khớp biên từ bên trái
+(`\bkeyword`, giữ được chia động từ như "smiles"/"gripping").
+
+### 18.16 Creation Arc v2 — sửa theo tư liệu thật, Identity Anchor bằng ẢNH (2026-07-26)
+
+> Sau lần render thật đầu tiên (§18.15) và sau khi đối chiếu với **9 ảnh tư
+> liệu thật từ video đóng du thuyền** (nguồn Yachtory) mà người dùng cung cấp.
+> Kết luận nặng: config Creation Arc v1 không chỉ *thiếu*, mà **mô tả sai
+> ngành** ở 2/3 pha. Mục này ghi lại thiết kế v2 TRƯỚC khi sửa code.
+
+#### Bằng chứng: config v1 sai ở đâu
+
+| Pha | v1 viết | Tư liệu thật cho thấy |
+|---|---|---|
+| Design | tay cầm **bút chì** phác **thân tàu nhìn nghiêng** trên giấy can kem | tay cầm **bút** trên **bản vẽ General Arrangement** (nhiều mặt bằng boong + profile view), cạnh **mẫu da/vải**; hoặc **bút marker** tô phối cảnh nội thất |
+| Construction | **mỏ hàn** trên đường hàn, tia lửa, **khung sườn thép trần lộ** | shot chủ lực là **cần trục hạ nguyên khối thượng tầng nhiều tầng** xuống thân ở bến nước; thứ hai là **hạ động cơ** bằng cần trục |
+| Craftsmanship | tay đeo găng **đánh bóng vỏ tàu** | thợ trên **xe nâng cắt kéo**, **mài/fairing thân tàu ĐÃ SƠN TRẮNG** — cách giai đoạn khung thép trần cả năm |
+| Experience | (chưa có — mượn scene thật) | **thành phẩm lúc hoàng hôn**, thân sẫm màu + thượng tầng trắng, rời nhà xưởng ra mặt nước, thủy thủ đứng mũi |
+
+Lỗi nghiêm trọng nhất: v1 **gộp nhầm hai giai đoạn cách nhau cả năm** — hàn
+trên sườn thép trần (đầu) và mài trên vỏ đã sơn (cuối) — vào cùng một mô tả.
+
+#### Cấu trúc v2: 4 pha / 5 scene
+
+```
+Design            → 1 scene   image-first (Kontext → i2v)
+Construction 1    → 1 scene   t2v   — cần trục hạ khối thượng tầng
+Construction 2    → 1 scene   t2v   — cần trục hạ động cơ
+Craftsmanship     → 1 scene   t2v   — mài/fairing vỏ đã sơn
+Experience        → 1 scene   image-first (anchor → i2v)
+```
+
+Quyết định người dùng 2026-07-26: beat động cơ **gộp vào Construction** (không
+thành pha thứ 5 riêng), nhưng **tách làm 2 scene** — vẫn là 4 pha về mặt kể
+chuyện, 5 scene về mặt render.
+
+#### Vì sao Construction dùng t2v, không dùng ảnh neo
+
+Hai lý do độc lập, cả hai đều có bằng chứng:
+
+1. **i2v khóa chết structural transformation.** Ảnh neo mạnh ở camera/
+   micro-motion, yếu ở "dựng ra thứ chưa có". Shot cần trục hạ khối *bản chất*
+   là structural: khối đi xuống, khớp vào, thân tàu dài thêm. Neo nó lại là
+   làm nặng thêm đúng cái đang hỏng (§18.15: đường hàn không dài ra).
+2. **Dung sai identity ở Construction vốn cao nhất.** Lúc còn là khối kim loại
+   trần, con tàu *không* trông giống thành phẩm — cảnh quay thật cũng vậy
+   (ảnh 1/2/4 so với ảnh 9). Người xem không đối chiếu silhouette ở giai đoạn
+   đó. Chỗ i2v yếu nhất trùng đúng chỗ cần identity ít nhất.
+
+Craftsmanship cũng t2v: cận cảnh vật liệu/thợ, không thấy silhouette.
+
+#### Identity Anchor = một tấm ẢNH, không phải JSON
+
+Đề xuất `hero_asset.json` (silhouette/bow/decks/windows/proportions) đã được
+cân nhắc và **bác**, với bằng chứng từ chính bài Nixie: đọc hết 2328 ký tự
+nguồn, bài **không có một chữ nào** về mũi tàu, số tầng, số cửa sổ, mast,
+hay màu sắc. Viết chúng vào JSON là bịa 100% — vi phạm "không bằng chứng →
+không tồn tại".
+
+Quan trọng hơn: **thêm chữ cũng không giải quyết được vấn đề.** Ba clip ở
+§18.15 đã nhận đúng cùng một câu nhận dạng (`Known real details — deck style
+..., deck material: teak, vessel type: charter yacht`) mà vẫn ra ba con tàu
+khác nhau. Chữ không đủ độ phân giải để khóa tỉ lệ và silhouette.
+
+Quyết định người dùng 2026-07-26: **hình dáng/màu sắc ĐƯỢC PHÉP bịa**, ràng
+buộc duy nhất là **bất biến xuyên 4 pha**. Vậy chúng là *lựa chọn editorial*,
+không phải Truth claim — và artifact đúng để khóa chúng là một tấm ảnh.
+
+```
+Truth attributes (có bằng chứng: length, deck_style, deck_material, vessel_type)
+        │  ràng buộc prompt
+        ▼
+   Flux → ẢNH NEO  (thành phẩm, side profile)   ← single source of truth về HÌNH
+        │                        │
+        │ Kontext (i2i)          │ i2v (camera-only)
+        ▼                        ▼
+  bản vẽ GA  → i2v          Experience
+   (Design)
+```
+
+**Phương án (b) — một ảnh neo, bản vẽ DẪN XUẤT từ nó.** Phương án (a) (hai ảnh
+Flux độc lập cho Design và Experience) đã bị loại vì không giải quyết được
+chính vấn đề đang sửa: hai lần sinh độc lập lại ra hai con tàu.
+
+Ảnh 6 trong tư liệu xác nhận đường này tự nhiên: bản vẽ GA thật **có profile
+view** — tức bản vẽ *nhìn thấy được identity*, nên Kontext biến ảnh thành
+phẩm → bản vẽ kỹ thuật là phép biến đổi giữ được hình dáng. (Ảnh 5 — phối
+cảnh nội thất marker — bị loại vì chỉ có nội thất, không neo được silhouette.)
+
+#### Câu hỏi thi công còn TREO — phải test thật, không quyết trên giấy
+
+Design cần khung hình: *bàn làm việc, bản vẽ GA trải ra, bàn tay cầm bút,
+mẫu vật liệu bên cạnh*. Kontext phải đi từ ảnh thành phẩm tới đó bằng cách nào?
+
+- **B1 — một bước**: Kontext làm hết (ảnh tàu → nguyên cảnh bàn vẽ có tay).
+  Ít bước, nhưng edit càng nặng thì identity càng trôi.
+- **B2 — hai bước**: Kontext chỉ đổi ảnh tàu → bản vẽ kỹ thuật sạch; bối cảnh
+  bàn/tay để i2v thêm vào lúc render.
+
+Chưa có bằng chứng bên nào tốt hơn. **Không chốt trên giấy** — chạy thử cả hai
+(chi phí Kontext ~$0.04/ảnh) rồi so identity trước khi ghi vào config.
+
+#### Phases phải tách theo CATEGORY
+
+"Cần trục hạ khối thượng tầng" vô nghĩa với ô tô (dập thân vỏ, robot hàn
+body-in-white, buồng sơn) và với mô tô. Một bộ template không phục vụ được ba
+domain. `config/video.php` đổi từ:
+
+```
+creation_arc.phases = { design, construction, craftsmanship }   ← dùng chung
+```
+
+thành phases **theo từng category**. Vẫn hợp lệ §1 (no domain branching):
+kiến thức domain nằm ở **data**, code tra cứu vẫn tổng quát — không có
+`if ($domain === 'yacht')` nào, không thêm class, không thêm tầng.
+
+**Trạng thái bằng chứng**: chỉ **yacht/superyacht** có tư liệu thật (9 ảnh).
+`cars` và `moto` **CHƯA có tư liệu** — viết template cho chúng lúc này là lặp
+lại đúng sai lầm của v1 (mô tả sai ngành vì đoán). Hai category này để TRỐNG
+cho tới khi có ảnh tham chiếu; category không có phases thì Creation Arc
+không kích hoạt, RenderPlan giữ nguyên (hành vi đã có sẵn — xem
+`CreationArcPlanner::mergeInto()` trả về nguyên `$renderPlan` khi `phases` rỗng).
+
+#### Bí danh tên riêng — thi công cơ chế đã thiết kế từ lâu
+
+"Nixie", "Lürssen", "RWD" đều là tên thật. Hiện "Nixie" được nhét thẳng vào
+cả 4 prompt. Nhưng **Veo không biết Nixie là con tàu nào** — cái tên không
+đóng góp gì cho hình ảnh, chỉ mang rủi ro nhãn hiệu. Đây đúng là cơ chế
+"allowlist tên riêng theo provider ở Python" đã thiết kế từ đầu (bẫy Moonrise,
+§4) nhưng chưa bao giờ thi công. Giờ rent đã trả đủ: rủi ro thật + bằng chứng
+cái tên vô dụng. Thay bằng bí danh trung tính ở **tầng biên dịch prompt
+(Python)**; RenderPlan vẫn giữ tên thật để truy vết.
+
+#### Chi phí ước tính mỗi video (Creation Arc v2)
+
+| Khoản | Số lượng | Đơn giá | Thành tiền |
+|---|---|---|---|
+| Flux ảnh neo | 1 | ~$0.03 | $0.03 |
+| Kontext dẫn xuất bản vẽ | 1 | ~$0.04 | $0.04 |
+| Veo 3.1 Lite 6s | 5 | $0.18 | $0.90 |
+| **Tổng** | | | **~$0.97** |
+
+So với v1 (4 clip t2v = $0.72): tăng ~$0.25/video, đổi lấy identity nhất quán
+và một beat kể chuyện nữa. Vẫn rẻ hơn Kling v1.6 cho cùng số shot.
+
+#### Thứ tự thi công
+
+1. Viết lại `config/video.php` — phases theo category, chỉ yacht/superyacht.
+2. State Transition 4 lớp cho Construction 1/2 và Craftsmanship (§18.12).
+3. Test Kontext B1 vs B2 → chốt, ghi ngược vào mục "câu hỏi treo" ở trên.
+4. Lưu ảnh neo cấp session (`render_queued_shots.py` hiện render từng shot độc
+   lập, chưa có khái niệm artifact dùng chung giữa các shot — đây là phần code
+   mới thật sự duy nhất).
+5. Bí danh tên riêng ở tầng biên dịch.
+
+### 18.17 CHECKPOINT — render v2 thất bại 4/6, thiết kế v3 đã chốt, MỘT câu hỏi kỹ thuật còn treo (2026-07-29)
+
+> Mục này là **điểm dừng có chủ đích** để quay lại debug luồng. Ghi đủ để đọc
+> nguội mà tiếp tục được: bằng chứng render thật, những gì đã chốt, những gì đã
+> bác (kèm lý do), và câu hỏi duy nhất còn chặn việc viết code.
+
+#### Bằng chứng render — session `art_a25f63f3_260729_062733`, bài "The Sixth Sense", 6 clip Veo 3.1 Lite, $1.08
+
+| Scene | Kết quả | Quan sát trực tiếp từ frame |
+|---|---|---|
+| 1 design | ⚠️ | Bố cục đúng (bàn vẽ GA, mẫu da/vải). **Hai ngòi bút** — do prompt tả HAI tay làm hai việc. Bản in phối cảnh trên bàn cho tàu **TRẮNG** |
+| 2 hạ khối | ❌ hỏng nặng | Render **nguyên một du thuyền HOÀN THIỆN** (sơn tên, sơn chống hà) treo trên **ụ nổi ngoài trời**. Frame 0.2s ≈ 5.8s — **khối không hạ xuống**, State Transition thất bại |
+| 3 hạ động cơ | ❌ | Động cơ render đẹp, nhưng bên dưới là **tàu hàng gỉ màu teal**, không có khoang máy |
+| 4 mài vỏ | ❌ | Vỏ **đã sơn bóng + đã có tên**, chỉ **1 thợ**. Sai trình tự (fairing xảy ra trước khi sơn) |
+| 5 ngoại thất | ✅ | Thân tối màu, thủy thủ trên boong mũi, rời shed lúc hoàng hôn, cầu vòm. Đúng prompt |
+| 6 trên boong | ✅ tốt nhất | Sàn teak, hồ bơi, ghế lounge, bàn ăn dưới mái che, nắng vàng |
+
+**Nguyên nhân chung của 2/3/4**: mô tả **vật thể chưa hoàn thiện bằng từ ngữ của
+vật thể hoàn thiện** ("multi-deck superstructure section", "white-painted hull",
+"deck plating of {tên tàu}"). Veo mặc định hoàn thiện nốt. Cách chặn đã xác
+định: **nói thẳng cái gì CHƯA có** — no paint, no windows, no railings, no
+markings, raw cut edges.
+
+**Phát hiện quan trọng — negative prompt KHÔNG chặn được text.**
+`render_queued_shots.py::_DEFAULT_NEGATIVE` **đã chứa** `"watermark, text, logo"`.
+Ba clip vẫn có "The Sixth Sense" sơn to lên thân tàu, chữ bị nhân đôi và méo.
+Kết luận: **phải bỏ tên khỏi prompt dương**, không được trông cậy vào negative.
+
+**Identity lệch, đã đo được**: bản in trong scene 1 cho tàu **trắng**, scene 5
+cho tàu **navy sẫm**. Hai con tàu khác nhau.
+
+#### Kết luận về đường ảnh neo (§18.16): HOÃN, chưa đáng code
+
+Scene 2/3/4 hỏng vì Veo **hiểu sai nội dung**, không phải vì identity trôi. Có
+ảnh neo thì vẫn ra con tàu treo lơ lửng. Sửa prompt trước, render lại, rồi mới
+đánh giá identity có còn là vấn đề không.
+
+#### Đã chốt cho v3 — sau khi rà 5 tài liệu đề xuất từ người dùng
+
+**Kiến trúc**
+
+- **Creative Identity đặt ở COMPILER (Python), KHÔNG ở `CreationArcPlanner`.**
+  Lý do KHÔNG phải là "planner tương lai cũng cần" (suy đoán) mà là lý do đang
+  xảy ra: bài Sixth Sense có **9 scene thật** sau 6 scene arc; đặt ở planner thì
+  9 scene đó chỉ nhận được `"vessel type: motor yacht"` và con tàu sẽ trôi ngay
+  tại ranh giới arc → nội dung thật. Đây đúng là sai lầm §18.15 đã ghi, suýt lặp lại.
+- **Giữ `entity_identity_facts()`** (Truth) và **hợp nhất** với Creative Identity
+  (config). Hai nguồn khác nhau, không thay thế nhau. **Truth THẮNG khi đụng
+  nhau**; Creative chỉ điền chỗ Truth im lặng — cùng tinh thần §13.
+- Key config: `identity.construction` / `identity.final` (không dùng `raw` —
+  scene 2 đã có vỏ thép, khung, mối hàn, không còn "raw").
+- **Design KHÔNG nhận identity nào**: `camera_target = design_drawing`, chủ thể
+  là tờ giấy; bản vẽ kỹ thuật vốn không có màu.
+- `construction_progress` (enum thứ tự + test đơn điệu, tái dùng
+  `ontology.py::check_stage_sequence()` đã có sẵn): **RESERVED**. Rent chưa trả
+  — mới có MỘT phase set (`vessel`), viết một lần. Làm khi có thêm `cars`/`moto`.
+
+**Nội dung — 9 scene, mọi thứ trừ Design diễn ra trong MỘT nhà xưởng kín**
+
+| # | Pha | Trạng thái con tàu (bậc thang hoàn thiện) |
+|---|---|---|
+| 1 | Design — GA + phác nội thất | (studio, không có identity) |
+| 2 | Construction — hạ khối thượng tầng | vỏ thép hở nóc, **chưa có thượng tầng** |
+| 3 | Construction — hạ động cơ | **thượng tầng đã yên vị**, khoang máy hở |
+| 4 | Construction — thi công nội thất | vỏ **đã kín, kính đã lắp**, trong còn dây điện lộ |
+| 5 | Craftsmanship — mài vỏ, nhiều thợ | lắp ráp xong, primer xám → **mảng navy đầu tiên xuất hiện** |
+| 6 | Launch — hạ thủy | hoàn thiện, cửa xưởng mở |
+| 7 | Experience — ngoại thất | hoàn thiện, trên biển |
+| 8 | Experience — trên boong | — |
+| 9 | Experience — nội thất | — |
+
+Bậc thang này là câu trả lời cho phê bình đúng nhất trong 5 tài liệu: *"scene
+2-5 đều là construction nhưng con tàu không thay đổi — người xem không thấy nó
+đang lớn lên."* Chuyển primer→navy **diễn ra trên màn hình** là time cue mạnh
+nhất, và đúng nguyên tắc Observable Behavior (§18.12).
+
+**Màu vỏ: DARK NAVY METALLIC.** Bác `metallic silver` và `pearl white`. Lý do
+quyết định không phải thẩm mỹ: trong xưởng vỏ tàu **vốn đã là kim loại xám**,
+nên thành phẩm màu bạc sẽ khiến trạng thái đầu và cuối trông như nhau — giết
+luôn cảm giác thời gian trôi. Navy cho tương phản tối đa với primer.
+
+**Bỏ tên tàu khỏi mọi scene giai đoạn thi công.** Tên chỉ xuất hiện ở khâu dựng
+(text overlay), ngoài phạm vi pipeline này.
+
+#### Đã BÁC — ghi lại để không đề xuất lại
+
+| Đề xuất | Lý do bác |
+|---|---|
+| `MilestonePlanner` | Không sinh dữ liệu mới — milestone *chính là* phase trong config. Tài liệu còn liệt kê "KEEP: State/Operation/Shot Planner", **không class nào tồn tại** (thật là StoryPlanner/ScenePlanner/IntentPlanner/TimelinePlanner) |
+| Tầng `EMOTION` | Đã có `aesthetic.emotion` (6 enum) → `lighting_phrase()`. Cảm xúc tạo bằng ánh sáng, không bằng cách viết chữ "triumph" vào prompt |
+| Khối `STYLE` dán mọi scene (`ARRI Alexa, anamorphic, shallow DOF, teal-and-amber, 24fps, 4K 16:9`) | Vi phạm `ArchitectureTest` (cấm `cinematic`/`8k`/`mm lens` trong `app/Video/`); dự án render **9:16 dọc** không phải 16:9; "shallow DOF" cứng **đánh nhau** với `lens_for_framing()` vốn cho WIDE = deep focus |
+| Nối `NEGATIVE` vào chuỗi prompt | Negative đi qua **tham số API riêng**. Nối vào prompt dương là mô tả thứ mình không muốn. Và đã chứng minh không chặn được text |
+| Thời lượng 8/9/10/12s | Veo 3.1 Lite chỉ nhận **4s/6s/8s** |
+| One-take 4 phòng (salon→suite→dining→pool→bay ra ngoài) | Veo hỏng cả một cú **orbit đơn** (scene 5 yêu cầu orbit, nó chỉ đẩy tới). Sáu chuyển tiếp không gian là bất khả thi |
+| "Hàng trăm công nhân" | Đám đông không kiểm soát = méo mặt/tay/nhân bản; compiler đã có `crowd` tự thêm negative đúng nhóm lỗi này |
+| Mở rộng Experience thành 8 scene | Bùng nổ phạm vi (thành ~15 scene, 90s bịa) trong khi 6 scene hiện tại còn hỏng 4 |
+| `Product Bible` / `Design DNA` / `Identity Lock` (9 tầng) | Đã bác §18.16 — `Entity.attributes` + `MotionSpec.static` đã là cơ chế tương đương |
+| Điểm số 8.2/10, 7.5/10... | Không rubric, không đo được |
+| Sound design, text overlay, tư liệu giả 1992 | Đúng và hay, nhưng **ngoài pipeline** — hệ này sinh RenderPlan → clip, không có tầng dựng, audio đang tắt |
+
+> **Ghi chú phương pháp**: bốn trong năm tài liệu đề xuất **tự phá identity ngay
+> trong lúc lập luận về identity consistency** — mỗi cái nói một màu vỏ khác
+> nhau (silver → navy → pearl white). Đây là bằng chứng thực nghiệm cho chính
+> nguyên tắc đang xây: màu phải nằm ở **một chỗ duy nhất** (config), không được
+> viết tay lại trong ví dụ.
+
+#### CÂU HỎI TỪNG TREO — ✅ ĐÃ CHỐT (2026-07-30): phương án 2
+
+Compiler là **Python**, nó chỉ đọc `RenderPlan.json`; nó **không đọc được**
+`config/video.php` của Laravel. Vậy chuỗi Creative Identity đi từ Laravel sang
+Python bằng đường nào, khi **RenderPlan v1.0 đã đóng băng** (§14)?
+
+1. ~~`continuity.invariants`~~ — **BÁC**: nó đang chứa dữ liệu Truth đã verify;
+   trộn thông tin bịa vào khiến consumer không phân biệt được.
+2. ✅ **Thêm field cấp video mới** — **ĐÃ CHỌN VÀ ĐÃ CODE.** Root field
+   `creative_identity` (optional, `$defs/identity_state`), đúng tiền lệ
+   `world_environment`. Additive nên không phá §14; `plan_version` vẫn `1.0`.
+3. ~~Ghi sẵn vào `director_notes.composition_note`~~ — **BÁC**: planner-side
+   injection, đúng thứ đã quyết định tránh.
+
+#### Trạng thái code — cập nhật 2026-07-30
+
+- `config/video.php`: `creation_arc` v2 — `categories` map, `phase_sets.vessel`
+  **6 phase** với `camera_target`/`hero` override, **`identity`** (2 trạng thái
+  `construction`/`final`), và **`objective` riêng cho từng pha** (§18.18).
+  **Chưa có**: 9 phase, bậc thang hoàn thiện, phase set cho `cars`/`moto`
+  (thiếu tư liệu ảnh — §18.16).
+- `CreationArcPlanner`: `camera_target`/`hero` override, `mergeInto()`,
+  `creative_identity` passthrough, `objective` theo pha.
+- `RenderPlanQualityReport` (§18.19) — mới; nối vào trang duyệt session,
+  tính động mỗi request, không lưu DB.
+- `motion.py`: `entity_identity_facts()`, `creative_identity_for()`,
+  `identity_variant()`, `identity_visible_at()` và **`identity_visible()`** —
+  predicate hợp nhất (§18.20).
+- `session_runner.py`: gate cả Truth lẫn Creative bằng `identity_visible()`;
+  bỏ qua scene lỗi thay vì sập cả batch.
+- **Test: PHP 328 (Video) + 10 (Feature) + 1 (Unit), Python 294.**
+- DB: 1 session `art_a25f63f3_260729_062733` (15 shot: 6 arc đã render, 9 thật
+  còn `draft`). RenderPlan đang lưu được sinh **TRƯỚC** các bản sửa §18.18/
+  §18.20 — phải chạy lại pipeline trước khi render tiếp, không dùng lại plan cũ.
+
+#### Dọn nợ kỹ thuật phía Laravel (2026-07-29, cùng ngày)
+
+Rà `VideoSessionService` và sửa **3 bug production thật** + tách trách nhiệm.
+Không đổi hành vi nghiệp vụ; toàn bộ có test bảo vệ.
+
+**Bug 1 — transaction bao trùm cả cú gọi LLM.** `createFromArticleId()` mở
+`DB::beginTransaction()` rồi mới gọi pipeline (11+ cú gọi Claude, bằng chứng
+log thật: ~25 giây bài ít scene, 60-90 giây bài nhiều scene). Suốt thời gian
+đó giữ một connection MySQL và khoá hàng `video_projects`; vài người bấm 🎬
+cùng lúc là cạn connection pool hoặc dính lock wait timeout. Đã chuyển
+`build()` ra **ngoài** transaction, transaction chỉ bao phần ghi DB.
+
+**Bug 2 — ngược lại, `storeFromPython()` ghi N+2 lần mà KHÔNG có transaction.**
+Hỏng ở shot thứ 5/15 để lại 4 shot đã ghi và `cost_estimate_total` không bao
+giờ cập nhật. Đã bọc `DB::transaction()` — ở đây bọc là đúng vì toàn bộ là ghi
+DB, không có cú gọi mạng nào bên trong.
+
+**Bug 3 — log nuốt stack trace.** `'error' => $e->getMessage()` khiến không
+biết hỏng ở Extractor, Producer, Director hay `applyCreationArc` — chính vì
+vậy mới phải cắm `dd()` để mò. Đổi thành `'exception' => $e`.
+
+**Tách `VideoRenderPlanService`** (Article → RenderPlan). `VideoSessionService`
+đang gánh hai trách nhiệm: vòng đời session (8 method ngắn) và chạy pipeline AI
+(kéo theo 6 import chẳng liên quan). Đây **không phải abstraction mới** — nó
+soi gương đúng quy ước đã có phía CMS (`CLAUDE.md`: *"ArticlePipelineService::
+run() is the single entry point for AI writing… The caller owns persistence"*).
+Kết quả: 279 → 183 dòng, hết dính `ClaudeWriterService` của CMS.
+
+Kèm theo: trần chi phí LLM từ hằng số trong code → `config('video.
+llm_cost_ceiling_usd')`; quy tắc "hero = entity Vehicle đầu tiên" tách thành
+`findHeroEntity()` có tên thay vì vòng lặp không tên; 14 magic string status →
+`App\Enums\VideoSessionStatus` + `VideoShotStatus`; validate `shots.*.shot_code
+/kind/beat` (ba key `storeFromPython()` truy cập trực tiếp, không có `??`).
+
+**Đã bác, ghi lại để không đề xuất lại**: tách 5 service (Planning/Review/Queue/
+Result/PythonImport) — `queueApproved()` 3 dòng, `approveSelectedShots()` 3
+dòng, dựng class riêng cho method 3 dòng làm code khó đọc hơn; Domain Events
+cho `queueApproved()` — thêm gián tiếp, không rent; `VideoPipelineFactoryInterface`
+— seam để test đã có sẵn ở `LlmClient`; `MetadataFactory` cho `RenderPlanMeta`
+— value object 5 field, bọc factory là nghi thức thừa.
+
+### 18.18 `scene.objective` có HAI nguồn hợp lệ — video promise ⊥ scene intent (2026-07-30)
+
+> Đây là **thay đổi nguồn-sự-thật**, không phải sửa lỗi nhỏ. Nó đảo một quyết
+> định đã chốt 2026-07-22 ("`objective` chỉ có một nguồn: Producer") vì bằng
+> chứng production đã phủ định giả định nền của quyết định đó.
+
+**Giả định cũ và vì sao nó đúng lúc đó.** `RenderPlanAssembler::sceneDoc()` copy
+`producer.visual_promise` vào MỌI scene, kèm ghi chú *"Video-level hiện tại,
+chưa có bằng chứng thật cần khác nhau theo từng scene (Rule 0)"*. Đúng — khi mọi
+scene đều mô tả **cùng một thành phẩm**, một lời hứa dùng chung là đủ.
+
+**Bằng chứng phủ định (2026-07-30).** `RenderPlanQualityReport` chạy trên plan
+thật `art_a25f63f3_260729_062733` báo 6/15 scene thiếu `objective` — đúng 6 scene
+Creation Arc, vì arc chèn SAU assembler. Bản sửa đầu tiên là copy
+`visual_promise` xuống arc. Đọc nội dung thật của promise thì thấy sửa vậy là sai:
+
+> *"Viewers will get to see the gleaming 242-foot Sixth Sense **moving through the
+> postcard-perfect waters of midcoast Maine**, dwarfing lobster boats…"*
+
+Câu đó nói về con tàu **đã hoàn thiện, đang chạy trên biển**. Gán nó cho
+`creation_design` (tờ bản vẽ trên bàn) hay `creation_construction_hull` (khối
+thép trần trong xưởng) là **mô tả vật thể chưa hoàn thiện bằng từ vựng của vật
+thể đã hoàn thiện** — đúng nguyên nhân gốc đã làm render v2 thất bại 4/6 scene
+(§18.17). Thiếu tín hiệu còn tốt hơn tín hiệu mâu thuẫn.
+
+**Kết luận: `objective` không phải một field có một nguồn, mà là chỗ giao của
+HAI abstraction ở hai cấp khác nhau.**
+
+**BẤT BIẾN — `objective` có MỘT ngữ nghĩa duy nhất, nhiều NGUỒN CUNG CẤP.** Đọc
+kỹ chỗ này, vì cách diễn đạt đầu tiên của mục này đã sai và phải sửa lại:
+
+> `scene.objective` luôn trả lời đúng MỘT câu hỏi —
+> **"tại scene này, người xem cần nhận được điều gì?"**
+
+Nó **không** đổi nghĩa theo nguồn. Cái đổi là ai đưa ra câu trả lời:
+
+| Nguồn | Khi nào là câu trả lời ĐÚNG |
+|---|---|
+| `producer.visual_promise` (Producer, LLM) | Khi scene mô tả **cùng trạng thái** với thành phẩm mà promise nói tới — đa số scene thật |
+| Phase template trong `config/video.php` (planner) | Khi scene mô tả **trạng thái khác** — Creation Arc, và mọi arc sau này |
+
+Cách hiểu này giải thích được cả hai chiều, thứ mà cách diễn đạt "hai cấp" cũ
+không làm được: copy `visual_promise` xuống 9 scene thật là **đúng** vì ở đó nó
+tình cờ trả lời trúng câu hỏi trên; copy xuống 6 scene arc là **sai** vì ở đó nó
+trả lời trật — không phải vì "sai cấp".
+
+Hệ quả: thêm `DocumentaryArcPlanner`/`ReenactmentArcPlanner`/`ExplainerArcPlanner`
+sau này **không** làm ngữ nghĩa field thay đổi, chỉ thêm một nguồn nữa. Contract
+đứng yên.
+
+**Luật kèm theo — áp cho mọi planner sau này.** Planner nào sinh scene mà scene
+đó KHÔNG mô tả cùng trạng thái với `visual_promise` thì planner đó **phải** tự
+cấp `objective`. Nếu không, nó sẽ lặp lại đúng bug này. (Cùng lý do §18.7: quyết
+định "scene này phục vụ gì" là Subjective ở cấp scene — nơi biết câu trả lời là
+nơi sinh ra scene, không phải nơi lắp plan.)
+
+**Đã bác, ghi lại để không đề xuất lại:**
+
+| Đề xuất | Lý do từ chối |
+|---|---|
+| Đổi tên `scene.objective` → `scene.intent`/`scene.visual_goal` | Tên hiện tại gây hiểu sai là thật, nhưng §14 FROZEN chỉ cho additive, và phía Python đang đọc đúng tên `objective` — đổi tên phá cả hai repo để đổi một nhãn. Cùng loại đã bị §18.6 từ chối (`scene.visual{}`). **Cách sửa đã dùng:** viết lại `description` trong schema, additive, không phá gì. |
+| Bỏ trống `objective` cho arc và đổi cảnh báo thành "chủ ý" | Chấp nhận để trống một field quan trọng chỉ vì thứ tự pipeline không sinh ra được — không phải lý do thiết kế. |
+| Truyền `visual_promise` vào `CreationArcPlanner::plan()` qua tham số | Sai tầng: `plan()` chỉ sinh scene từ config, không thấy plan thật. Và nếu truyền thì lại là copy promise — đúng thứ vừa bị dữ liệu bác. |
+
+### 18.19 `RenderPlanQualityReport` — thông tin cho cổng duyệt đã có, KHÔNG phải tầng mới (2026-07-30)
+
+Cổng chặn tiêu tiền **đã tồn tại** (`draft → composing → approved | needs_revision
+→ queued → rendered`, không đường render nào bỏ qua duyệt). Cái thiếu là người
+duyệt bấm approve mà không biết plan nghèo dữ liệu tới mức nào. Class này chỉ
+tính con số — không chặn, không đổi trạng thái. Deterministic, không LLM, đọc
+RenderPlan (mảng) nên dùng được cả với `renderplan_json` đọc lại từ DB.
+
+**Dừng ở CẢNH BÁO, không chặn** — không phải vì chưa biết ngưỡng, mà vì pipeline
+CỐ Ý tách Truth/Creative: bài báo nghèo chi tiết thị giác là **bình thường** (bằng
+chứng: bài `a25f63f3` có 0 từ về màu/vật liệu/hình dáng) và `creative_identity`
+tồn tại đúng để lấp chỗ đó. Chặn theo độ giàu visual = nói "bài báo phải giàu
+visual mới được render", trái với chính kiến trúc.
+
+**Prototype trên plan thật TRƯỚC khi code đã loại 2/6 check dự kiến** — ghi lại
+vì đây là tiêu chuẩn cho mọi check thêm sau này:
+
+| Check bị loại | Lý do |
+|---|---|
+| `ANCHOR_ONLY_ENTITIES` (3/7 entity không có attribute) | `Entity::isAnchorOnly()` ghi rõ đây là **hoàn toàn hợp lệ** (Feadship là node thật, tồn tại để neo quan hệ). Cảnh báo = chống lại một quyết định đã ghi trong code. |
+| `camera.target` treo | Bắn 4 lần, **4/4 là cố ý** (`design_drawing`/`marine_engine`/`hull_seam`/`upper_deck`, xem §18.16). Schema định nghĩa `camera.target` là `slug` chứ không ràng buộc entity. Ship = 4 báo động giả mỗi video. Giữ làm **metric**, có test khoá để người sau không "sửa" thành warning. |
+
+**Tiêu chuẩn:** một QA tốt không phải cái báo nhiều lỗi nhất, mà cái có tỷ lệ
+báo động giả gần 0 — để khi nó báo thì người duyệt tin là đáng xem. Ngưỡng
+`minDescriptiveAttributeNames` mặc định 3 là **phỏng đoán từ N=1**, tiêm qua
+constructor, và docblock nói thẳng là chưa hiệu chuẩn.
+
+**Đo độ giàu thị giác bằng KIỂU DỮ LIỆU, không bằng tên attribute** — lọc theo
+tên (`hull_color`, `material`…) là nhồi kiến thức ngành vào code, đúng thứ §1
+cấm. Giá trị chuỗi ≈ mô tả, giá trị số ≈ số đo. Đếm **số tên khác nhau**, không
+đếm tổng giá trị (cùng `vessel_type` lặp ở 3 entity không giàu hơn 1). Cùng
+nguyên tắc đã dùng ở `motion.py::entity_identity_facts()`.
+
+### 18.20 Identity visibility — MỘT predicate, không phải hai tiêu chí (2026-07-30)
+
+> Sửa §18.15/§18.17. Phát hiện khi kiểm một câu hỏi khác (`creative_identity` có
+> tới `creation_experience_onboard` không) — câu hỏi đó hoá ra **không phải bug**,
+> nhưng phép kiểm lộ ra hai lỗi nặng hơn.
+
+**Nguyên nhân gốc: hai cơ chế identity dùng HAI tiêu chí visibility khác nhau.**
+
+| Cơ chế | Quyết định theo | Ngữ nghĩa |
+|---|---|---|
+| `entity_identity_facts()` (Truth) | `camera.target` | "camera đang nhìn vật nào" |
+| `creative_identity_for()` (Creative) | `framing` | "khung có đủ rộng không" |
+
+Hai câu hỏi khác nhau ⇒ hai kết quả lệch nhau. Truth **tình cờ** đúng (tra id
+không thấy thì trả rỗng); Creative không có lớp chặn nào.
+
+**Bằng chứng đo trên config production** (script chạy thẳng hàm thật, không đoán):
+
+| scene | framing | camera.target | Creative bị chèn? |
+|---|---|---|---|
+| `creation_design` | MEDIUM | `design_drawing` | 🔴 CÓ — khung chiếu **tờ bản vẽ** lại nhận *"dark navy metallic hull, white superstructure, raked plumb bow…"* |
+| `creation_experience_onboard` | MEDIUM | `upper_deck` | 🔴 CÓ — camera **đứng trên boong** lại nhận mô tả con tàu nhìn từ ngoài |
+| `creation_construction_engine` | MEDIUM | `marine_engine` | ⚠️ CÓ — shot kể về cỗ máy, không về dáng tàu |
+
+Lỗi ở `creation_design` nghi là **nguyên nhân trực tiếp** của artifact scene
+Design (§18.17): model được bảo vẽ một du thuyền sơn hoàn thiện trong khung đáng
+lẽ là nét vẽ kỹ thuật. Lỗi ở `creation_experience_onboard` đúng bằng rủi ro mà
+comment `camera_target` bên Laravel đã cảnh báo — override đó được thêm để chặn
+"model kéo camera ra xa lấy trọn con tàu", nhưng mô tả ngoại thất quay lại bằng
+**cửa khác** vì `creative_identity_for()` không nhìn `camera.target`.
+
+**Sửa: gộp về `identity_visible(scene, world_entities)`** — một predicate, hai
+điều kiện phải thoả CẢ HAI:
+
+1. `identity_visible_at(framing)` — khung đủ rộng đọc được dáng tổng thể
+2. `camera.target` là entity **có thật** trong `world.entities`
+
+Cả Truth lẫn Creative gate bằng đúng predicate đó, tại **một** call site
+(`session_runner.py`). Thêm điều kiện mới sau này (occlusion, silhouette,
+reflection…) chỉ sửa một chỗ.
+
+Kết quả đo lại: chỉ còn `construction_hull` và `experience_exterior` được chèn —
+đúng hai scene mà camera thật sự nhìn vào con tàu. **9 scene THẬT không đổi**
+(`camera.target` của chúng do `IntentPlanner` đặt từ `subjectIds[0]` nên luôn là
+entity hợp lệ — đã kiểm trên RenderPlan production: chỉ 4 scene Creation Arc có
+target không phải entity).
+
+**Chưa làm, có lý do:** thêm trạng thái thứ ba `design` vào `creative_identity`
+(hiện chỉ có `construction`/`final`, và `identity_variant('creation_design')` trả
+`final` vì tiền tố không khớp). Sau khi gộp predicate thì Design **không còn nhận
+nhầm** nữa, nên chưa có bằng chứng cần tăng độ phức tạp của state machine
+(Rule 0). Nếu render kế tiếp vẫn hỏng ở Design thì đó mới là bằng chứng.
+
+**Bất biến kèm theo — mọi nguồn identity đều phải qua CÙNG cổng.**
+
+```
+Truth identity  ─┐
+                 ├─→ identity_visible(scene, world) ─→ composition_note
+Creative identity┘
+```
+
+KHÔNG phải sơ đồ cũ (Truth có cổng riêng, Creative đi thẳng). Mai thêm brand /
+material / historical identity thì tất cả đi qua đúng predicate đó — đây là thứ
+ngăn bug vừa rồi tái diễn dưới tên khác.
+
+#### GIỚI HẠN CÒN LẠI — predicate hỏi "entity thật?", chưa hỏi "ĐÚNG entity nào?"
+
+> Phát hiện ngay sau bản sửa trên, khi soi lại cách phát biểu bất biến. Là bug
+> **đang xảy ra trên dữ liệu production**, không phải rủi ro tương lai.
+
+`identity_visible()` hỏi *"`camera.target` có phải entity thật không"*. Nó
+**không** hỏi *"target có phải đúng entity mà `creative_identity` đang mô tả
+không"* — vì `creative_identity_for()` chỉ key theo `scene.id`, hoàn toàn không
+mang ràng buộc entity nào.
+
+Với **Truth** thì không sao: `entity_identity_facts(target, …)` tra đúng fact của
+chính target đó. Với **Creative** thì hụt.
+
+Bằng chứng — 9 scene thật của bài Sixth Sense nhắm vào **4 con tàu khác nhau**:
+
+| scene | framing | camera.target | Creative nhận được |
+|---|---|---|---|
+| `scene_1` | WIDE | `mylin_iv` | 🔴 identity của `sixth_sense` |
+| `scene_5` | MEDIUM | `mylin_iv` | 🔴 identity của `sixth_sense` |
+| `scene_4`/`8`/`9` | MEDIUM/WIDE/AERIAL | `sixth_sense` | ✅ đúng |
+| `scene_2`/`3`/`6`/`7` | DETAIL | — | ✅ bị framing chặn |
+
+`mylin_iv` là con tàu 1992 hoàn toàn khác, vậy mà nhận mô tả "dark navy metallic
+hull, white superstructure" của Sixth Sense. **Đây chính là bug đã ghi ở §18.17
+(*"scene_1/scene_2 gọi tên Mylin IV nhưng mang identity navy của Sixth Sense"*),
+lúc đó quy sai nguyên nhân cho "RenderPlan thiếu `hero_entity`".** Nguyên nhân
+thật: `creative_identity` không gắn với entity nào.
+
+**Cách sửa bền vững (CHƯA làm):** gắn `creative_identity` vào một `entity_id`
+(`CreationArcPlanner` vốn đã biết `$heroId`, emit ra là miễn phí), rồi
+`creative_identity_for()` nhận thêm `target` và trả rỗng khi `target !=
+entity_id`. Khi đó **cả hai** nguồn cùng tra theo `camera.target` — vẫn MỘT
+predicate, và Creative trở nên entity-aware giống Truth.
+
+**Vì sao chưa làm ngay:** bug chỉ chạm scene THẬT (1 và 5). **6 scene Creation
+Arc không bị** — chúng có `subjects = [hero]`, target là hero hoặc vật thể bịa.
+Nên render 6 scene arc để đo hai bản sửa trên vẫn hợp lệ, không bị nhiễu bởi lỗi
+này. Sửa sau khi có kết quả render (Rule 0: đừng chồng thêm thay đổi lên một bản
+sửa chưa được bằng chứng xác nhận).
+
+### 18.21 Chốt chặn chi phí trong pipeline — dừng TRƯỚC cú gọi tốn tiền, không phải sau (2026-07-30)
+
+> Bằng chứng khởi phát: một `dd()` cắm ngay SAU `extract()` để soi dữ liệu. Cú
+> gọi Haiku vẫn bị tính **$0.0179** rồi toàn bộ kết quả bị vứt. Mỗi lần bấm lại
+> để soi tiếp là mất thêm ngần ấy. Tiền đi trước, dữ liệu không về.
+
+**Nguyên tắc:** `VideoPlanningPipeline::plan()` gọi Claude **1 + 1 + N** lần
+(Extractor, Producer, Director mỗi scene). Điều kiện dừng phải đặt **ngay trước**
+cú gọi kế tiếp, không phải ở cuối luồng — kiểm ở cuối thì tiền đã tiêu xong.
+
+| Guard | Vị trí | Chặn được gì | Đã tốn phí chưa |
+|---|---|---|---|
+| **1** `articleHasNoText` | trước `extract()` | toàn bộ 1+1+N cú gọi | ❌ **chưa tốn đồng nào** |
+| **2** `nothingSurvivedVerification` | sau Gatekeeper, trước Producer | Producer + N Director | ✅ đã tốn 1 (Extractor) |
+| **3** `noSceneCouldBePlanned` | sau Timeline, trước Producer | Producer + N Director | ✅ đã tốn 1 |
+
+Guard 1 là chốt **duy nhất** chặn được khi chưa mất xu nào — nên nó phải đứng
+trước `extract()`, không phải sau.
+
+**`PipelineAborted` ≠ lỗi hệ thống.** Nó mang `stage` (hỏng chặng nào) và
+`spentMoney` (bấm lại có mất tiền không) — hai thứ người vận hành cần để quyết
+định, mà stack trace không trả lời được.
+
+**Hệ quả 1 — service KHÔNG nuốt lỗi thành `null` nữa.** Bản cũ bắt hết
+`\Throwable` rồi `return null`; Controller chỉ hiện một câu chung chung và **lý
+do mất sạch**. Chính vì thế mới phải cắm `dd()` để mò — mà mỗi lần mò là một cú
+gọi bị tính tiền. Giờ `creatVideoById()` **ném ra ngoài** (vẫn log đủ stack
+trace trước khi ném), Controller bắt và in `getMessage()` thẳng lên màn hình.
+
+**Hệ quả 2 — benchmark phân biệt `ABORTED` với `ERROR`.** Với `video:benchmark`,
+"bài này cho 0 entity" là một **kết quả đo hợp lệ**, không phải sự cố. Gộp vào
+`ERROR` sẽ làm bài nghèo dữ liệu trông như hệ thống hỏng. `BenchmarkRunner` giữ
+nguyên số liệu world ở hàng `ABORTED` — lấy được vì `onWorldVerified` chạy trước
+guard.
+
+**Test khoá đúng thứ đáng khoá:** không phải "có ném exception không" mà là
+**Extractor/Producer có bị GỌI không** — đó mới là thứ mất tiền. Xem
+`tests/Video/Pipeline/PipelineAbortedTest.php` (đếm số lần gọi bằng lớp ẩn danh).
+
+#### Giới hạn đã đo của Guard 1 — CHƯA sửa, cần bằng chứng trước (2026-07-31)
+
+Guard 1 tên là `articleHasNoText` nhưng điều kiện thật là `$index->isEmpty()`,
+mà `ArticleNormalizer` đưa **cả tiêu đề** vào index:
+
+```php
+// ArticleNormalizer:33
+if (trim($article->title) !== '') {
+    $index->add(EvidenceSource::Headline, $article->title);
+}
+```
+
+⇒ Guard 1 chỉ bắn khi **CẢ tiêu đề LẪN body đều rỗng**. Bài crawl hỏng kiểu
+"có tiêu đề, mất body" **vẫn đi qua guard và vẫn tốn một cú Extractor**.
+
+**Bằng chứng thực nghiệm (2026-07-31):** chạy `plan()` với
+`RawArticle('article-proof', 'Tieu de', '')` — body rỗng, tiêu đề có chữ. Guard
+1 KHÔNG bắn, pipeline chạm thẳng tới điểm gọi Extractor. Phát hiện tình cờ khi
+viết script chứng minh `VideoPipelineFactory::claude()` không tốn tiền: dự đoán
+"bài rỗng sẽ bị chặn" đã SAI.
+
+**Chưa sửa, và đây là lý do.** Hai cách nhìn đều có lý:
+
+- *Không phải lỗi*: tiêu đề `"100-Metre Feadship Moonrise Sold"` vẫn trích được
+  entity `Moonrise` + claim `length_metres: 100`. Không phải giá trị bằng 0.
+- *Là lỗ hổng*: một headline không đủ dựng World Graph cho video nhiều scene.
+  Trả ~$0.002 để chắc chắn ra plan tồi là đúng loại lãng phí guard sinh ra để
+  chặn.
+
+Cách sửa hợp lý là đổi từ "kiểm rỗng" sang **ngưỡng độ dài** (index dưới N ký tự
+thì dừng). Nhưng **N bằng bao nhiêu thì chưa có bằng chứng** — và đoán một con
+số rồi viết vào code là đúng thứ dự án này đã nhiều lần phải vứt đi (§18.16 v1
+mô tả sai ngành vì đoán). Cần thống kê độ dài index trên 30-50 bài thật, đối
+chiếu với số entity thu được, rồi mới chọn ngưỡng.
+
+Ghi thêm để không hiểu nhầm: tham số thứ hai của `PipelineAborted::articleHasNoText`
+là `mb_strlen($article->html)` — **chỉ đếm body, không đếm tiêu đề**. Lúc guard
+thật sự bắn thì cả hai đều rỗng nên con số đó luôn là 0; nó không nói dối, nhưng
+cũng không cho biết gì.
+
+### 18.22 Creation Arc THAY THẾ scene thật, không chèn thêm (2026-07-30, quyết định người dùng)
+
+> Đảo quyết định 2026-07-24 ghi ở §18.16/§18.17 ("chèn TRƯỚC scene thật, video
+> DÀI THÊM"). Bằng chứng đến từ lần compile thật đầu tiên chạy trọn vẹn.
+
+**Quan sát.** Bài "The Sixth Sense" (category `yacht`) sinh ra **14 shot,
+$2.52** — 6 scene arc + 8 scene thật. Đọc preflight của 8 scene thật:
+
+```
+scene_1..scene_8 : confidence 0.1 – 0.3  "nhiều lớp Spec còn trống"
+scene_3          : prompt 256 ký tự, dưới ngưỡng bão hoà 300
+```
+
+Và nội dung của chúng nói về **Mylin IV**, du thuyền của Ratcliffe, du thuyền
+của Cuban — những con tàu KHÁC, vì bài báo là tin di chuyển tàu chứ không phải
+bài kể về một con tàu. Ghép chúng sau 6 scene kể chuyện đóng tàu không tạo ra
+một câu chuyện; nó tạo ra hai video dán vào nhau.
+
+**Quyết định.** Category có `phase_set` (`yacht`/`superyacht`, sau này
+`cars`/`moto`) ⇒ video **CHỈ GỒM** scene arc. Category khác ⇒ đường thật như cũ,
+Creation Arc không kích hoạt (hành vi đã có sẵn: `phases` rỗng → trả nguyên
+`$renderPlan`).
+
+Phân biệt bằng **hai thứ đã có**, không thêm cờ mới:
+- **category** → quyết định có arc hay không (`creation_arc.categories`)
+- **`scene.id` tiền tố `creation_`** → phân biệt scene arc với scene thật ở mọi
+  tầng sau (compiler đã dùng tiền tố này ở `identity_variant()`)
+
+**Hệ quả tốt bất ngờ: bài toán khó nhất của §18.15 BIẾN MẤT.** Mục đó viết:
+*"Rủi ro lớn nhất là đúng ranh giới Craftsmanship → Experience: pha cuối bịa và
+scene thật đầu tiên phải trông như CÙNG MỘT sản phẩm, nếu không cả 4-phase
+feature coi như thất bại."* Không còn scene thật đứng sau ⇒ không còn ranh giới
+đó ⇒ không còn rủi ro đó. Cơ chế identity (§18.20) vẫn giữ nguyên vì nó còn phải
+lo nhất quán **giữa 6 scene arc với nhau**.
+
+**Giữ lại gì trong RenderPlan sau khi thay:**
+
+| Field | Xử lý | Vì sao |
+|---|---|---|
+| `scenes`/`acts`/`timeline` | **thay hoàn toàn** bằng arc | đây chính là thay đổi |
+| `story.target_seconds` | = tổng thời lượng arc | không cộng dồn nữa |
+| `world` | **giữ** | camera target + `entity_identity_facts()` đọc từ đây |
+| `assets` | giữ, và **bảo đảm có `as_<hero>`** | scene arc tham chiếu nó; thiếu là dangling ref |
+| `continuity`, `producer`, `facts` | giữ | cấp video, không thuộc scene nào |
+
+**Chi phí:** 14 shot × $0.18 = $2.52 → **6 shot = $1.08**. Giảm 57%, và bỏ đúng
+phần có confidence thấp nhất.
+
+**Chưa làm, ghi để không quên:** `cars`/`moto` vẫn chưa có `phase_set` (thiếu tư
+liệu ảnh — §18.16). Bài thuộc hai category đó hiện đi đường thật, KHÔNG bị thay
+thế — đúng, vì chưa có arc nào để thay bằng.
+
+### 18.23 Bỏ Producer/Director khi Creation Arc sắp thay sạch scene (2026-07-31)
+
+**Vấn đề đo được.** §18.22 chốt arc THAY THẾ scene thật. Hệ quả không ai để ý:
+`director_notes` và `objective` của scene thật bị vứt **cùng với scene**. Bài
+"The Sixth Sense": **9/10 cú gọi Claude bị vứt** (1 Producer + 8 Director), tức
+34% chi phí sinh plan trả cho dữ liệu không ai đọc.
+
+**Chốt chặn.** `VideoPlanningPipeline::plan()` nhận thêm `?callable
+$creativeNeededFor`. Trả `false` ⇒ bỏ hẳn Producer + N Director, đi thẳng tới
+`assemble()`.
+
+Hai điều kiện thiết kế, cả hai đều KHÔNG thoả hiệp được:
+
+1. **Là predicate, không phải cờ bool.** Điều kiện chỉ đúng SAU Gatekeeper:
+   category `yacht` khớp nhưng bài không trích được entity Vehicle nào ⇒ arc
+   không kích hoạt ⇒ scene thật sống tiếp ⇒ VẪN cần creative. Quyết trước khi
+   chạy pipeline là sai đúng ở ca đó.
+2. **Predicate chỉ nhận `VerifiedWorldGraph`, KHÔNG nhận `Article`/category.**
+   Pipeline phải mù chủ đề (§1) — nó không được biết LÝ DO người gọi từ chối.
+   Có test khoá riêng điều này.
+
+**Điều kiện thật là "có phase_set", không phải "có tên trong danh sách".**
+`creationArcPhaseSetFor()` trả null khi `phases === []`. Nên thêm `cars`/`moto`
+sau này chỉ cần thêm DỮ LIỆU vào config — việc bỏ Producer/Director tự động có
+hiệu lực, không sửa dòng code nào. Ngược lại, category khai mà quên pha thì arc
+không chạy, scene thật là nội dung cuối, và creative VẪN chạy — đúng, vì lúc đó
+nó có người dùng.
+
+`build()` và `applyCreationArc()` dùng CHUNG một hàm tra cứu. Hai nơi lệch nhau
+sẽ tạo ra ca "bỏ Producer nhưng arc không thay scene" — plan không creative mà
+cũng không arc.
+
+### 18.24 Chi phí LLM: ghi lại, và đối chiếu với hoá đơn thật (2026-07-31)
+
+**Luồng video nay ghi `claude_usage_logs`.** Trước đó chỉ có dòng `Claude OK`
+trong `laravel.log`; muốn biết tốn bao nhiêu phải đọc log bằng tay.
+
+- `action = 'video_renderplan'`, tách khỏi `send_to_claude`/`synthesize` của CMS.
+- **Một hàng cho một lần bấm 🎬**, không phải một hàng mỗi cú gọi API — cùng độ
+  hạt với CMS, nên `ClaudeUsageController` (`COUNT(*) as manual_calls`) không bị
+  lệch nghĩa.
+- Ghi trong `finally`: **lần chạy HỎNG cũng phải được ghi**. Chỉ ghi khi thành
+  công thì thống kê sẽ giấu đúng phần lãng phí đang chống (bằng chứng: 5 lần cắt
+  trần ≈ $0.09 không hệ thống nào ghi lại).
+- Không có admin đăng nhập (CLI `video:benchmark`) ⇒ bỏ qua im lặng + `Log::info`.
+  `claude_usage_logs.admin_id` có khoá ngoại, không ghi được hàng mồ côi.
+
+**Số liệu là số THẬT, không ước lượng.** Dùng lại `CostAccumulatingLlmClient`
+(vốn chỉ cho benchmark) thay vì đếm lần hai — nó cộng
+`LlmResponse->tokensIn/tokensOut/costUsd`, mà ba trường đó lấy thẳng từ `usage.*`
+của response Anthropic.
+
+#### Bảng giá Haiku đã SAI 20% cho tới 2026-07-31
+
+`PRICE_INPUT['haiku']` ghi `0.80`, `PRICE_OUTPUT['haiku']` ghi `4.00`. Giá thật:
+**$1.00 / $5.00**. Lệch đúng 1.25× ⇒ **mọi con số chi phí ghi trước ngày đó thấp
+hơn thực tế 20%; nhân 1.25 để quy đổi.** Luồng video chạy 100% Haiku nên sai toàn
+bộ; luồng CMS chỉ sai ở các cú Haiku, phần Sonnet ($3/$15) vốn đúng.
+
+Phát hiện bằng cách đối chiếu tay với `platform.claude.com/cost`. Đã khoá bằng
+test so với **hằng số viết tay** — đọc lại chính bảng đó thì test luôn xanh kể cả
+khi bảng sai.
+
+#### `usage.input_tokens` KHÔNG phải tổng token đầu vào
+
+Anthropic trả `input_tokens` là **phần chưa cache**. Tổng thật:
+
+```
+input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+```
+
+Ba loại có ba đơn giá: cache ĐỌC 0.1× input, cache GHI 1.25× (TTL 5 phút).
+Project hiện KHÔNG gửi `cache_control` nên hai trường cache luôn 0 — đã bắt sẵn
+để ngày bật cache thì chi phí không tụt âm thầm.
+
+`ClaudeResponse::totalInputTokens()` tên tránh chữ "prompt" CÓ CHỦ ĐÍCH: chỗ gọi
+nằm trong `app/Video/`, nơi Architecture Test cấm chữ đó (§1). Đặt tên sai làm CI
+đỏ ở file khác — đã xảy ra một lần khi viết mục này.
+
+#### CHƯA LÀM — ghi để không quên
+
+**(a) `cache_creation` phải tách 5m/1h.** API usage report tách
+`ephemeral_5m_input_tokens` và `ephemeral_1h_input_tokens`, hai đơn giá khác nhau
+(1.25× và 2×). Code hiện gộp làm một và nhân cứng 1.25× ⇒ nếu ai bật cache TTL 1
+giờ thì thiếu 37%. Chưa ảnh hưởng vì cache đang tắt, nhưng GIẢ ĐỊNH ĐÃ GHI SAI.
+
+**(b) Bảng giá phẳng bỏ qua 3 chiều** mà API thật có: `context_window`
+(`0-200k` vs `200k-1M` — Sonnet 1M context vượt 200k tính giá khác),
+`service_tier` (`standard`/`batch`/`flex`/`priority`), và `speed`. Đúng cho hôm
+nay (Haiku, standard, <200k) nhưng không đúng tổng quát.
+
+**(c) Đối chiếu với hoá đơn thật.** Hai endpoint (auth `Authorization: Bearer`
++ admin OAuth token, KHÁC `x-api-key`):
+
+| Endpoint | Độ mịn nhỏ nhất | Lọc theo API key | Cho gì |
+|---|---|---|---|
+| `GET /v1/organizations/usage_report/messages` | **1 phút** | ✅ `api_key_ids` | số token, tách 5 loại |
+| `GET /v1/organizations/cost_report` | 1 ngày | ❌ | số tiền |
+
+**Không có API nào trả chi phí per-call** — per-call BẮT BUỘC tính tại chỗ. Cách
+làm hai bên khớp là suy đơn giá TỪ hoá đơn thay vì viết tay:
+
+```
+đơn_giá(model, token_type) = cost_report.amount ÷ usage_report.tokens
+chi_phí_mỗi_cú           = token_của_cú × đơn_giá
+⇒ Σ chi_phí_mỗi_cú ≡ hoá đơn, theo định nghĩa
+```
+
+Bug 20% ở trên đã tự lộ nếu có cơ chế này: tỉ lệ `local ÷ thật` = 0.8 đều đặn
+mỗi ngày là chữ ký của SAI GIÁ, không phải nhiễu.
+
+Lưu ý phạm vi: `cost_report` là cấp TỔ CHỨC, không lọc được theo API key. Nếu
+`CLAUDE_API_KEY` còn dùng ở chỗ khác thì tổng org luôn lớn hơn tổng local và
+tiền sẽ không bao giờ khớp — chỉ token đối chiếu được chính xác.
+
+Hoãn vì cần **admin OAuth token** chưa có. `amount` tính bằng CENT, không phải
+đô (`"123.45"` = $1.23) — bẫy sai gấp 100 lần.
+
+### 18.25 Laravel BẮN, Python chạy — bỏ chạy tay (2026-07-31, quyết định người dùng)
+
+**Trước:** bấm 🎬 xong Laravel dừng hẳn. Muốn có prompt phải mở terminal gõ
+`python tools/session_runner.py`. Không ai nhắc, không có báo lỗi — quên là
+session nằm im ở `composing` mãi. Đúng câu hỏi người dùng đã hỏi: *"sao không
+thấy prompt đâu cả"*.
+
+**Phương án BỊ LOẠI — Python chạy vòng lặp poll.** Đề xuất đầu tiên của tôi là
+`--watch`, poll 10 giây/lần. Người dùng bác: *"gọi vòng lặp cả 1000 lần thì sập
+server"*.
+
+Số thật: 10s/lần = 8.640 request/ngày × ~5ms ≈ **43 giây CPU/ngày** — KHÔNG
+phải rủi ro tải, và tôi đã đính chính điều đó. Nhưng quyết định vẫn đúng, chỉ
+khác lý do: poll **trễ 10 giây khi máy đang rảnh**, và **bắt giữ một tiến trình
+sống mãi** — quên bật thì lại im lặng đúng như bệnh cũ.
+
+**Phương án BỊ LOẠI — Python thành HTTP server (FastAPI/Flask).** Không giải
+quyết được gì: vẫn cần một tiến trình sống mãi, lại thêm một tầng server phải
+viết và phải nuôi.
+
+**Đã chọn — bắn rồi quên (fire-and-forget).** Laravel sinh tiến trình nền rồi
+TRẢ VỀ NGAY; request HTTP không bao giờ chờ Python.
+
+| Nút | Laravel làm | rồi bắn | Đặc tính |
+|---|---|---|---|
+| 🎬 Tạo Video | chạy pipeline, lưu `renderplan_json`, `status=composing` | `session_runner.py --session=<code>` | vài giây, **$0**, người dùng ĐANG chờ |
+| 🎬 Render shot đã duyệt | `approved → queued`, `status=rendering` | `render_queued_shots.py --session=<code>` | **6-18 phút**, **$1.08**, người dùng KHÔNG chờ |
+
+Cả hai script **đã tồn tại** từ trước — đây là việc NỐI DÂY, không phải viết mới.
+
+#### Vì sao một việc chạy 18 phút vẫn hợp với "bắn rồi quên"
+
+Nhờ `PATCH /api/video-shots/{id}/result` báo **theo từng shot**, không phải một
+cục cuối cùng:
+
+```
+clip 1 xong → PATCH → DB đã lưu     ┐
+clip 2 xong → PATCH → DB đã lưu     ├─ an toàn
+clip 3 xong → PATCH → DB đã lưu     ┘
+clip 4 → 💥 máy sập
+         ⇒ 3 clip đầu KHÔNG mất
+         ⇒ 3 clip còn lại vẫn `queued`
+         ⇒ BẤM LẠI nút Render = chỉ chạy 3 cái thiếu
+```
+
+Bấm lại an toàn vì `queueApprovedForSession()` chỉ lấy shot `approved`, và Python
+chỉ lấy shot `queued`. Không render trùng, không trả tiền hai lần.
+
+#### Ba cái giá, chấp nhận có ý thức
+
+1. **Buộc Laravel và Python cùng MỘT máy.** Hôm nay đúng vậy (`D:\xampp\...` và
+   `D:\1. Work\...`) nên miễn phí. **Đường lui:** ngày tách máy thì quay lại kiểu
+   poll — API HTTP giữ nguyên không đổi một dòng, chính vì thế mà giữ.
+2. **Tiến trình nền hỏng thì im lặng.** Bù bằng: Python ghi log ra file, và
+   Laravel hiện cảnh báo kèm câu lệnh chạy tay khi sinh tiến trình thất bại.
+   **Sinh tiến trình hỏng KHÔNG được làm hỏng session** — plan đã lưu rồi.
+3. **Clip đang render dở lúc máy sập** có thể đã bị Veo tính tiền mà chưa PATCH
+   về ⇒ mất $0.18 không có sổ. Không thiết kế nào tránh được, kể cả poll.
+
+#### Ràng buộc thi công
+
+- Sinh tiến trình gom vào **một class `PythonRunner`** — `grep` ra đúng một chỗ,
+  cùng lý do `spendingLlmClient()` là nơi duy nhất cấp quyền tiêu tiền.
+- Đường dẫn nằm ở `.env` (`VIDEO_PYTHON_BIN`, `VIDEO_RUNNER_DIR`), KHÔNG hardcode.
+- Class đó đặt ở `app/Services/`, **không phải `app/Video/`** — Architecture Test
+  cấm tên công cụ render trong `app/Video/` (§1). Đây cũng là lý do tầng Video
+  vẫn hoàn toàn mù về việc Python tồn tại: chỉ tầng Service biết.
+- Hai script Python cần thêm `--session=<code>` để xử lý ĐÚNG session vừa tạo,
+  thay vì quét toàn bộ.
+
+### 18.26 Khung cố định — cơ chế khoá identity mạnh hơn chữ (2026-07-31)
+
+**Bằng chứng:** một video **AI sinh ra** dài 23 giây (nguồn: Facebook), dựng lại
+một chiếc Mitsubishi Evo IX trong gara. Người dùng đưa cả 23 frame.
+
+Vì là **AI sinh ra chứ không phải quay thật**, nó là **bằng chứng khả thi**:
+provider LÀM ĐƯỢC việc này. Nếu là video quay thật thì nó chỉ là mục tiêu.
+
+#### Quan sát quyết định
+
+Nền phía sau — kệ lốp, hai màn hình TV, bàn nguội, bình khí — **giống hệt nhau ở
+mọi frame**. Máy quay không nhích một milimet suốt 23 giây. Thứ thay đổi là
+chiếc xe, ngay trong khung:
+
+```
+00s  xe đỏ nát, cản buộc dây rút, đứng MỘT MÌNH
+04s  thợ bê cản rời khỏi xe
+07s  trơ khung trên bốn đội kê, tháo sạch bánh
+09s  phun primer
+12s  MÀU TRỞ LẠI — đỏ sâu + ca-pô carbon + hông rộng
+18s  đèn sáng, hoàn chỉnh, hạ xuống đất
+22s  xe đi khỏi, gara TRỐNG, còn vệt lốp
+```
+
+#### Vì sao điều này quan trọng hơn "một template mới"
+
+§18.15 ghi bằng chứng đau: *"3 clip nhận cùng câu nhận dạng vẫn ra 3 con tàu
+khác nhau — chữ không đủ độ phân giải để khóa silhouette"*. Từ đó dự án chống
+identity drift bằng **chữ** (`visual_identity`) và tính dùng **ảnh neo**.
+
+Video này giải bằng **CẤU TRÚC**: máy đứng yên + nền bất biến ⇒ người xem TỰ THẤY
+đó là cùng một vật. Nền chính là bằng chứng, không cần ai thuyết phục.
+
+Đây là hướng thứ ba, chưa từng cân nhắc:
+
+| Cách khoá identity | Cơ chế | Trạng thái |
+|---|---|---|
+| Câu mô tả (`visual_identity`) | chữ | đã có — §18.15 chứng minh KHÔNG đủ |
+| Ảnh neo (Flux/Kontext → i2v) | ảnh | Reserved, chưa thi công |
+| **Khung cố định + nền bất biến** | **bố cục** | **mới, §18.26** |
+
+#### `restoration` phase_set — cars + moto dùng chung (quyết định user)
+
+Bảy pha, **tất cả cùng `WIDE` + `STATIC`**: `arrival` → `teardown` →
+`bare_shell` → `bodywork` → `paint` → `reveal` → `drive_out`.
+
+Không phải một prompt lặp bảy lần: `composition_note` và `micro_physics` khác
+nhau hoàn toàn. **Chỉ vị trí máy là bất biến** — và đó chính là thứ tạo ra sức
+mạnh, nên nó là BẤT BIẾN có test canh
+(`test_the_restoration_arc_never_moves_the_camera`).
+
+Bản nháp đầu tiên của mục này để `bodywork` ở `MEDIUM` và **bị chính test đó
+bắt** — đổi framing cũng là đổi vị trí máy.
+
+Pha cuối kết bằng **khung trống**: xe đi khỏi, chỉ còn vệt lốp. Đóng vòng với pha
+1 (xe hỏng đứng một mình) — cùng khung, khác nội dung, không cần một lời nào.
+
+Tháo lắp xe máy khác ô tô, nhưng cấu trúc 7 pha thì chung — khác biệt để trong
+`composition_note`, không tách phase_set.
+
+#### ⚠️ CHƯA CHẠY ĐƯỢC ĐÚNG Ý ĐỒ — đọc trước khi render
+
+23 giây **dài hơn mọi lần sinh đơn lẻ** (Veo tối đa 8s), nên video tham chiếu
+chắc chắn là **nhiều clip nối nhau**, và cách duy nhất giữ nền giống hệt qua các
+clip là **frame cuối clip trước làm ảnh gốc clip sau** — i2v chuỗi.
+
+Python hiện render **100% t2v độc lập** (`render_queued_shots.py` docstring dòng
+18: *"renderer=i2v khai trong render_plan hiện KHÔNG khả thi cho shot 'motion'
+đơn lẻ"*). Nghĩa là **7 clip sẽ ra 7 cái gara khác nhau** — đúng thứ khung cố
+định sinh ra để chống.
+
+Dữ liệu trong config ĐÚNG và dùng được ngay ở mức nội dung. Phần khoá identity
+phải chờ i2v chuỗi. **Đừng render `restoration` rồi kết luận cơ chế này sai** —
+cơ chế chưa được bật.
+
+`set_dressing` (câu tả bối cảnh lặp nguyên văn ở mọi pha) là biện pháp tạm: khi
+chưa có i2v, lặp chữ là thứ duy nhất còn lại để ghì nền lại gần nhau.
+
+#### Còn với `vessel` thì sao — KHÔNG bê nguyên
+
+Đóng tàu THẬT SỰ diễn ra ở nhiều nơi: phòng vẽ, ụ tàu, xưởng hoàn thiện, mặt
+nước. Ép một khung cố định là bịa quy trình — đúng loại sai lầm của v1 (§18.16).
+
+**Áp dụng được một phần, CHƯA LÀM:** ba pha `construction_hull` →
+`construction_engine` → `craftsmanship` có thể dùng chung MỘT vị trí máy ở ụ tàu
+thay vì ba nơi ba kiểu. Ba shot đó vốn đã cùng `STATIC`; chỉ cần cùng bối cảnh
+nữa là có hiệu ứng đối chiếu. Chưa sửa vì cần bằng chứng render, và vì `vessel`
+là phase_set đã có sản phẩm chạy được — không đổi cái đang chạy để chạy theo một
+cơ chế còn chưa bật.
+
+#### Kiểm chứng thật — $0.265, cơ chế ĐỨNG VỮNG (2026-07-31)
+
+`tools/probe_fixed_frame.py`. Chạy pha khó nhất (`teardown`: 3 người, nhiều tay,
+nhiều công cụ) thay vì cả 7 pha — hỏng thì mất $0.24 chứ không phải $1.50.
+
+| Bước | Model | Kết quả |
+|---|---|---|
+| nền | `fal-ai/flux/dev` | ✅ |
+| sửa ảnh | `fal-ai/flux-pro/kontext` | ✅ giữ nền, ⚠️ 2 lần mới giữ được xe |
+| hoạt hoá | `fal-ai/veo3.1/lite/image-to-video` | ✅ endpoint ĐÚNG (trước đó chỉ suy từ quy ước fal) |
+
+**Nền giữ được, lặp lại được 2/2 lần.** Bằng chứng mạnh nhất: **vệt lốp cong trên
+sàn** — chi tiết ngẫu nhiên, KHÔNG hề nhắc trong prompt Kontext, vẫn nằm đúng chỗ
+ở mọi ảnh và mọi frame video. Kontext **chép** nền chứ không vẽ lại. t2v không
+bao giờ làm được: 7 lần sinh là 7 vệt lốp khác nhau.
+
+**Veo giữ khung + giữ xe + THỰC HIỆN THAY ĐỔI CẤU TRÚC.** Cản crôm biến mất khỏi
+đầu xe giữa frame đầu và frame cuối. Negative `camera movement, zoom, pan` có tác
+dụng — máy không nhích.
+
+#### BÀI HỌC VIẾT PROMPT — phần dùng lại được nhiều nhất
+
+**1. Nói cái PHẢI GIỮ, đừng nói cái được đổi.**
+
+```
+❌ "Change only the car and add people"
+     → Kontext vẽ lại chiếc xe (Datsun → Mustang: khác lưới tản nhiệt, khác đèn)
+✅ "Keep the SAME CAR: same body shape, same headlights, same grille,
+     same proportions, parked in the same spot"
+```
+
+"Change the car" là giấy phép vẽ lại. Model làm ĐÚNG lời, không sai.
+
+**2. Giao đúng việc cho đúng công cụ.**
+
+```
+Kontext  →  dựng TRẠNG THÁI ĐẦU của clip  (ai đứng đâu, tay đặt vào đâu)
+Veo i2v  →  tạo THAY ĐỔI                   (cản rời ra, khe hở mở rộng)
+```
+
+Sai lầm đã mắc: bắt Kontext sinh ra trạng thái "cản đã tháo". Nó hỏng 2/2 lần, và
+tôi rút ra kết luận SAI là *"Kontext kém khoản tháo rời"* → *"teardown/bare_shell
+rủi ro cao"*. Cả hai đều sai: tháo rời một bộ phận là **CHUYỂN ĐỘNG**, việc của
+i2v. Người dùng bác lại (*"người khác làm được sao bạn không làm được"*) và chính
+điều đó dẫn tới chẩn đoán đúng. Nếu nhận kết luận đầu thì `restoration` đã bị
+gạch bỏ oan.
+
+**3. Frame–Text Coherence (Core Invariant #5, ADR v1.2) — tả ĐÚNG cái đang có
+trong khung.**
+
+```
+❌ "The DETACHED front bumper moves away from the body"
+     → nhưng trong ảnh cản VẪN GẮN trên xe. Veo hoà giải mâu thuẫn bằng cách
+       xoá cản crôm khỏi xe VÀ bịa ra một cản nhựa đỏ khác đặt xuống sàn.
+       Người dùng bắt được: "đang tháo cản thì phải lấy từ xe ra chứ, đây đưa
+       ngoài vào".
+✅ "The mechanics unbolt the car's CHROME front bumper and lift it down onto
+     the floor. It is the SAME chrome bumper throughout."
+```
+
+Mô tả một trạng thái không tồn tại trong ảnh = mời model bịa thêm vật thể.
+
+**4. Tả NGOẠI HÌNH của bộ phận, không chỉ tên nó.**
+
+Không tả thì model tự chọn, và nó chọn khác giữa lúc tháo ra và lúc đặt xuống.
+`"the chrome front bumper"` chứ không phải `"the front bumper"`. Đây là bản sao
+của bài học identity ở cấp bộ phận: chữ nghèo → hình trôi.
+
+**5. Kontext BỎ QUA `aspect_ratio`.** Nền 576×1024 (0.562) → ảnh sửa 752×1392
+(0.540), bất kể truyền `aspect_ratio: '9:16'`. Khung dịch nhẹ, lộ thêm trần. Chưa
+tìm được cách ép kích thước — **giả thuyết CHƯA KIỂM**: chính việc sinh ở độ phân
+giải khác là nguyên nhân xe bị xoay góc trong ảnh v2.
+
+#### Trạng thái từng mắt xích
+
+```
+① Flux t2i   → nền cố định                        ✅
+② Kontext    → giữ nền                            ✅ 2/2
+③ Kontext    → giữ chiếc xe                       ⚠️ chỉ khi nói "SAME CAR"; góc vẫn xoay
+④ Veo i2v    → giữ khung + giữ xe trong clip      ✅
+⑤ Veo i2v    → thực hiện thay đổi cấu trúc        ✅
+⑥ Veo i2v    → hoạt hoá nhiều người + công cụ     ✅
+⑦ liên tục MỘT vật thể qua thay đổi               ❌ tháo crôm, đặt xuống nhựa đỏ
+```
+
+⑦ là khiếm khuyết DUY NHẤT còn lại, và nó sửa bằng chữ (bài học 3+4) — chưa chạy
+lại để xác nhận (người dùng dừng ở đây).
+
+#### CHƯA TRẢ LỜI — cần bằng chứng, đừng đoán
+
+| Câu hỏi | Cách kiểm | Giá |
+|---|---|---|
+| Prompt sửa theo bài học 3+4 có khắc phục ⑦ không | chạy lại bước video | $0.18 |
+| Nối clip N → N+1 (frame cuối làm ảnh gốc) có mượt không | 1 clip nữa | $0.18 |
+| Bước nhảy lớn (primer → sơn đỏ) có cần Kontext không | 1 Kontext + 1 clip | ~$0.21 |
+| 7 clip có giữ được CÙNG MỘT xe không | chạy đủ 7 pha | ~$1.30 |
+
+Chưa có câu nào được trả lời ⇒ **chưa được kết luận `restoration` chạy tốt end-to-
+end**. Mới chứng minh được từng mắt xích riêng lẻ.
+
+### 18.27 Tư liệu đóng du thuyền THẬT — kho ý tưởng cho prompt & ảnh (2026-07-31)
+
+**Nguồn:** **249 frame** trích từ phim tư liệu kênh **Yachtory** (Lürssen và các
+xưởng Ý/Đức). Người dùng cung cấp.
+
+⚠️ **BẢN KIỂM KÊ DƯỚI ĐÂY CÓ THỂ CHƯA ĐẦY ĐỦ.** Bản đầu của mục này ghi "~90
+frame" — tôi ƯỚC LƯỢNG rồi viết ra như đã đếm, đó là bịa. Người dùng đính chính:
+249. Tôi không xác minh được mình đã nhận và đọc đủ 249 hay chỉ một phần, nên
+danh sách beat và thủ pháp bên dưới phải coi là **SÀN, không phải trần** — có thể
+còn beat chưa được ghi. Ai bổ sung sau thì thêm vào, đừng cho là đã đủ.
+
+⚠️ **QUAY THẬT, KHÔNG PHẢI AI SINH RA.** Khác hẳn video Evo IX ở §18.26. Nghĩa
+là nó là **MỤC TIÊU**, không phải bằng chứng khả thi — chưa chứng minh provider
+làm được. Đừng đọc mục này như §18.26. Chín ảnh tư liệu tĩnh của §18.16 cũng
+cùng loại nguồn này.
+
+#### ⚠️ SỬA §18.26: khung cố định LÀM ĐƯỢC cho tàu — tôi đã kết luận sai
+
+§18.26 ghi: *"Đóng tàu THẬT SỰ diễn ra ở nhiều nơi... Ép một khung cố định là
+bịa quy trình"*. **Sai.**
+
+Tư liệu có nhiều frame rõ ràng là **webcam timelapse cố định trong nhà xưởng**:
+cùng một góc cao nhìn xuống sàn xưởng, chụp qua nhiều tháng —
+
+```
+① sàn xưởng gần trống, vài khối thép rời rạc
+② các khối thân bắt đầu ghép, giàn giáo dựng lên
+③ thượng tầng nhiều tầng đã chồng lên, tàu gần thành hình
+```
+
+Cùng cột, cùng cửa trời, cùng vạch sơn trên sàn. **Xưởng đóng tàu thật DÙNG
+đúng cơ chế khung cố định** — vì nó là cách duy nhất cho người xem thấy "cùng
+một chỗ, khác thời điểm".
+
+Cái sai của tôi: lẫn giữa *"toàn bộ quy trình ở một chỗ"* (đúng là không) với
+*"giai đoạn thi công thân ở một chỗ"* (đúng là có). Thi công thân **đứng yên
+hàng tháng trong một nhà xưởng** — đó chính là chỗ khung cố định phát huy.
+
+Hệ quả: `vessel` NÊN có một cụm 3 pha dùng chung một vị trí máy trong nhà xưởng,
+đúng như đã ghi ở §18.26 mục "áp dụng được một phần" — nhưng lý do mạnh hơn tôi
+tưởng, vì có tư liệu thật chứ không phải suy đoán.
+
+#### Kho BEAT — các giai đoạn nhìn thấy trong tư liệu
+
+Nhiều hơn hẳn 6 pha `vessel` hiện có. Đánh dấu ⭐ = chưa có trong config.
+
+| # | Beat | Nhìn thấy gì |
+|---|---|---|
+| 1 | Thiết kế — bàn vẽ | hai người cúi trên bản vẽ kỹ thuật trải rộng |
+| 2 | ⭐ Phác thảo tay | bàn tay cầm bút chì vẽ dáng tàu lên giấy trắng; nhiều tờ chồng nhau |
+| 3 | ⭐ Cắt thép | mũi khoan/dao phay ăn vào phôi, phoi kim loại bắn |
+| 4 | Hàn | hồ quang xanh trắng chói trong tối gần đen, khói cuộn |
+| 5 | ⭐ Xưởng mộc — bào tay | bào gỗ, phoi xoăn vàng cuộn; cận cảnh dụng cụ nằm im |
+| 6 | ⭐ Xưởng mộc — lắp tủ | thợ ráp thùng tủ veneer sẫm trên bàn máy |
+| 7 | ⭐ Nội thất — vật liệu | tay vuốt tấm thảm/vải lên mặt gỗ; kính/đá bóng |
+| 8 | Thân trong nhà xưởng | thân sẫm khổng lồ, giàn giáo hai bên, đối xứng tuyệt đối |
+| 9 | ⭐ Timelapse cố định | cùng góc cao, sàn xưởng → khối → tàu thành hình |
+| 10 | Hạ động cơ | máy trắng lớn treo, boong hở bên dưới |
+| 11 | ⭐ Lắp chân vịt | chân vịt đồng 5 cánh, người đứng cạnh làm thước tỉ lệ |
+| 12 | ⭐ Sơn/đánh bóng | thân đen soi gương phản chiếu nguyên giàn giáo |
+| 13 | ⭐ Kéo ra khỏi xưởng | tàu trượt trên ray, cửa xưởng mở toang |
+| 14 | ⭐ Ngập nước ụ khô | nước tràn vào ụ, tàu bắt đầu nổi |
+| 15 | ⭐ Vận chuyển bằng sà lan | tàu nằm trên sà lan đỏ, 3-4 tàu kéo, đi dọc sông |
+| 16 | ⭐ Lễ đặt tên | HÀNG TRĂM thợ đồng phục xanh + mũ trắng vỗ tay |
+| 17 | Hạ thuỷ ban đêm | tàu rời xưởng, đèn vàng, mặt nước phản chiếu |
+| 18 | Chạy thử | tàu chạy trên biển, sóng mũi, trời xám |
+| 19 | Thành phẩm | hoàng hôn, tàu neo tĩnh, núi phía sau |
+
+#### THỦ PHÁP LẶP LẠI — thứ đáng đưa vào prompt nhất
+
+**① Tương phản tỉ lệ — dùng ở gần như mọi beat.** Một người **nhỏ xíu** đặt cạnh
+vật khổng lồ: thợ đứng dưới chân vịt, người đi giữa hai giàn giáo dưới mũi tàu,
+công nhân trên boong so với khối thượng tầng.
+
+Đây là thứ làm người xem **cảm** được kích thước. Không có người trong khung thì
+con tàu chỉ là một vật, không có thang đo. `composition_note` nên LUÔN cài một
+người làm thước.
+
+**② Đối xứng tuyệt đối — dành riêng cho mũi tàu trong xưởng.** Mũi nằm chính
+giữa, hai hàng giàn giáo chạy song song hai bên, điểm tụ ở giữa khung. Bố cục
+này chỉ xuất hiện ở nhà xưởng và nó rất mạnh. Dùng `composition: SYMMETRY`.
+
+**③ Nhìn thẳng từ trên xuống (top-down).** Tàu thành một **hình đồ hoạ** trên nền
+nước sẫm — thấy rõ sân đỗ trực thăng chữ H, hồ bơi, boong gỗ. Chỉ đọc được ở góc
+này. Dùng cho beat vận chuyển và chạy thử.
+
+**④ Mặt sơn soi gương.** Thân đen bóng phản chiếu **nguyên giàn giáo và trần
+xưởng** — bằng chứng thị giác của "đã sơn xong", mạnh hơn mọi câu tả màu.
+
+**⑤ Chi tiết là "món trang sức".** Cận cảnh chân vịt đồng, mũi khoan, bào gỗ nằm
+im cạnh phoi xoăn. Những shot này KHÔNG có tàu trong khung mà vẫn kể chuyện đóng
+tàu.
+
+**⑥ Đám đông đồng phục = nghi lễ.** Hàng trăm người mặc **cùng một bộ xanh navy,
+cùng mũ trắng**, đứng thành hàng vỗ tay. Đồng phục biến đám đông thành một khối
+— rất khác với 3 thợ rời rạc lúc thi công.
+
+#### VÒNG CUNG ÁNH SÁNG — đọc được từ tư liệu
+
+```
+thiết kế / mộc     ấm, dịu, ánh ngày trong nhà       NEUTRAL·SOFT
+hàn                xanh trắng CHÓI trong gần đen      COOL·HARSH
+nhà xưởng          đèn công nghiệp trên cao, lạnh     COOL·NEUTRAL
+sơn xong           phản chiếu, tương phản cao         NEUTRAL·HARSH
+hạ thuỷ đêm        vàng cam nhân tạo                  GOLDEN·SOFT
+chạy thử           ánh ngày tự nhiên, trời xám        COOL·NEUTRAL
+thành phẩm         hoàng hôn                          GOLDEN·SOFT
+```
+
+Không phải trang trí: vòng cung **lạnh → vàng** chính là cảm giác thời gian trôi
+và "việc đã xong". Config hiện có vòng cung này nhưng thô hơn (chỉ COOL→GOLDEN).
+
+#### NGỮ PHÁP MÁY QUAY — 7 kiểu phân biệt được
+
+| Kiểu | Dùng cho | Enum tương ứng |
+|---|---|---|
+| Timelapse cố định | thi công trong xưởng | `STATIC` + WIDE |
+| Đối xứng chính diện mũi | tàu trong xưởng | `STATIC` + `SYMMETRY` |
+| Ngước từ dưới lên | tỉ lệ khổng lồ | `STATIC` + WIDE |
+| Top-down | vận chuyển, chạy thử | `AERIAL` |
+| Bay theo | sà lan trên sông | `TRACK` + `AERIAL` |
+| Cận cực gần | dụng cụ, chân vịt, tay | `CLOSE`/`DETAIL` |
+| Tĩnh rộng | đám đông lễ đặt tên | `STATIC` + WIDE |
+
+Sáu pha `vessel` hiện chỉ dùng 3 trong 7 kiểu. Thiếu nhất: **top-down** và **ngước
+từ dưới lên** — hai kiểu cho cảm giác quy mô mạnh nhất.
+
+#### DÙNG KHO NÀY THẾ NÀO — chưa làm, đừng nhảy vào viết config
+
+1. **Sửa §18.26 phần `vessel`** — cụm 3 pha thi công dùng chung một vị trí máy
+   trong nhà xưởng, nay có tư liệu thật chống lưng.
+2. **Cài người làm thước tỉ lệ** vào mọi `composition_note` có tàu trong khung.
+3. **Thêm `SYMMETRY` và `AERIAL`** — hai thứ config chưa dùng bao giờ, mà tư liệu
+   cho thấy chúng mang lại cảm giác quy mô.
+4. **Cân nhắc beat mới**: lắp chân vịt (⭐11), sơn soi gương (⭐12), lễ đặt tên
+   (⭐16). Cả ba đều là hình ảnh mạnh mà arc hiện KHÔNG có.
+5. **KHÔNG mở rộng `vessel` quá 6-7 pha** nếu chưa có bằng chứng render: mỗi pha
+   là $0.18, và §18.22 đã cho thấy cắt bớt scene yếu còn tốt hơn thêm scene.
+
+Thứ tự đúng vẫn là: sửa cái đang chạy trước, thêm beat mới sau khi có render thật
+chứng minh beat cũ đã ổn.
+
+#### LƯỢT XEM THỨ HAI — bổ sung 9 beat + 5 thủ pháp còn thiếu (2026-07-31)
+
+Bản kiểm kê đầu chỉ dựa trên một phần tư liệu. Xem lại đầy đủ thì thiếu khá
+nhiều, và có một điều **quan trọng hơn mọi beat**:
+
+#### ⚠️ ĐÍNH CHÍNH: tư liệu là NHIỀU CON TÀU KHÁC NHAU, không phải một
+
+Trong tập frame có ít nhất **5 con tàu riêng biệt**: một explorer xám Lürssen,
+một thân đen bóng kiểu Feadship, một megayacht trắng nhiều tầng, một **catamaran**
+(SEAWOLF X), và một thân **trimaran xanh**. Bản kiểm kê đầu ngầm giả định "một
+lượt đóng tàu từ đầu tới cuối" — **sai**.
+
+Hệ quả không nhỏ: bản thân phim tư liệu **KHÔNG giữ identity xuyên suốt**. Nó
+dựng arc bằng cách ghép nhiều con tàu, và người xem không nhận ra vì mỗi beat chỉ
+xuất hiện vài giây, ở bối cảnh khác nhau.
+
+Đây là một lời giải thứ TƯ cho bài toán identity, khác cả ba đã ghi ở §18.26:
+
+```
+① chữ (visual_identity)        — §18.15 chứng minh KHÔNG đủ
+② ảnh neo (Flux/Kontext)       — Reserved
+③ khung cố định + nền bất biến — §18.26, đã kiểm chứng
+④ CẮT NHANH + ĐỔI BỐI CẢNH     — người xem không có thời gian đối chiếu
+```
+
+④ chính là thứ arc `vessel` hiện tại đang vô tình làm (6 scene, 5 bối cảnh). Nó
+KHÔNG phải lỗi — nó là một chiến lược hợp lệ, chỉ là chưa ai gọi tên. Ngược lại
+với `restoration` (khung cố định, mời người xem đối chiếu).
+
+**Chọn chiến lược nào là quyết định biên tập, không phải kỹ thuật.** Ghi rõ ở đây
+để đừng ai "sửa" `vessel` thành khung cố định chỉ vì `restoration` làm vậy.
+
+#### 9 BEAT còn thiếu
+
+| # | Beat | Nhìn thấy gì |
+|---|---|---|
+| 20 | **Ụ khô TRONG NHÀ ngập nước** | tàu nổi trong nhà xưởng có nước, **một tàu kéo đi VÀO TRONG hall** cùng nó |
+| 21 | **Cửa xưởng / mái mở** | cửa trượt khổng lồ hé ra; một frame là **mái nhà xưởng mở lộ trời xanh** ngay trên mũi tàu |
+| 22 | **Xe rơ-moóc tự hành (SPMT)** | dàn bánh trắng đỏ nhiều trục dưới thân tàu; cận cảnh hàng lốp |
+| 23 | **Cẩu NHẤC tàu bằng dây cáp** | catamaran treo lơ lửng giữa hai cần cẩu, hạ xuống sà lan |
+| 24 | **Mũi quả lê (bulbous bow)** | góc thấp sát nước, khối cầu dưới mũi |
+| 25 | **Số IMO in trên thân** | `IMO 1012957` stencil trên vỏ trắng — chi tiết "hồ sơ", rất tư liệu |
+| 26 | **Chữ tên tàu** | chữ crôm `BLUE — GEORGE TOWN` cận cảnh, ngược sáng |
+| 27 | **Nội thất HOÀN THIỆN** | cầu thang gỗ + inox trong khoang đã xong |
+| 28 | **Lau chùi lần cuối** | thuyền viên đánh bóng tay vịn inox bên mạn |
+
+Cộng thêm hai beat phụ đáng chú ý: **khối thân dựng ĐỨNG ngoài trời lúc hoàng
+hôn** (một mảnh vỏ cong khổng lồ đứng thẳng, ngược nắng), và **nhà xưởng TRỐNG
+với móc cẩu treo** (tối, ánh vàng qua ô cửa kính, một cái móc duy nhất) — nốt lặng
+mở đầu rất mạnh.
+
+#### 5 THỦ PHÁP còn thiếu
+
+**⑦ Người đứng trước MẶT PHẢN CHIẾU.** Thợ mặc áo đỏ/cam đứng trước thân tàu đen
+bóng, **bóng họ hiện trên vỏ**. Vừa cho tỉ lệ, vừa chứng minh mặt sơn — hai việc
+trong một khung. Mạnh hơn hẳn thủ pháp ② (chỉ có người làm thước).
+
+**⑧ Khoảng mở dẫn ra ngoài.** Cửa xưởng hé, mái trượt ra, khe hở giữa hai vách ụ
+— luôn có một **vệt sáng/trời** ở cuối khung tối. Đây là ngữ pháp "sắp ra ngoài",
+dùng ngay trước beat hạ thuỷ.
+
+**⑨ Top-down BAN ĐÊM.** Boong vàng rực nổi trên nền đen tuyệt đối. Khác hẳn
+top-down ban ngày (③) — ban ngày cho thấy **hình dáng**, ban đêm cho thấy **con
+tàu như một vật thể phát sáng**. Hai shot khác nhau, đừng gộp.
+
+**⑩ Giờ xanh (blue hour).** Trời xanh thẫm + nhà xưởng vàng. Nằm giữa "ban ngày
+lạnh" và "đêm vàng" trong vòng cung ánh sáng — mắt xích tôi bỏ sót.
+
+**⑪ Chi tiết "hồ sơ".** Số IMO, chữ tên tàu, nhãn mác. Chúng nói *"đây là một con
+tàu CÓ THẬT, có giấy tờ"* — thứ mà cảnh đẹp không nói được. Rất hợp cho beat gần
+cuối.
+
+#### VÒNG CUNG ÁNH SÁNG — bản sửa
+
+```
+thiết kế / mộc        ấm, dịu                        NEUTRAL·SOFT
+hàn                   xanh trắng CHÓI trong đen      COOL·HARSH
+nhà xưởng             đèn cao, lạnh                  COOL·NEUTRAL
+sơn xong              phản chiếu, tương phản cao     NEUTRAL·HARSH
+GIỜ XANH  ⭐ MỚI      trời xanh thẫm + đèn vàng      COOL·SOFT
+hạ thuỷ đêm           vàng cam                       GOLDEN·SOFT
+chạy thử              ngày tự nhiên, biển động       COOL·NEUTRAL
+thành phẩm            hoàng hôn                      GOLDEN·SOFT
+```
+
+#### VIỆC CẦN LÀM — cập nhật
+
+Ngoài 5 mục đã ghi ở lượt trước, thêm:
+
+6. **Đặt tên cho chiến lược ④** trong config — `vessel` đang dùng "cắt nhanh, đổi
+   bối cảnh" mà không ai biết. Nên ghi thành một khoá rõ ràng ở phase_set để
+   người sau hiểu vì sao hai arc thiết kế ngược nhau.
+7. **Beat 21 (cửa/mái mở)** đáng thêm nhất trong 9 beat mới: nó là *chuyển tiếp*
+   giữa "trong xưởng" và "ra ngoài" mà arc hiện tại đang nhảy cóc.
+8. **Beat 25-26 (số IMO, tên tàu)** — rẻ và mạnh, nhưng ⚠️ va thẳng vào §18.17
+   (đã chốt: KHÔNG để tên riêng vào prompt dương, vì Veo sơn tên lên thân tàu
+   sai chữ). Muốn dùng thì phải giải quyết mâu thuẫn đó trước, đừng thêm bừa.
+
+### 18.28 Tư liệu GIỚI THIỆU du thuyền hoàn thiện — thể loại thứ hai (2026-07-31)
+
+**Nguồn:** frame từ video giới thiệu một du thuyền đã bàn giao (Bilgin 263 ft, cờ
+Thổ Nhĩ Kỳ, Istanbul). Người dùng cung cấp. **Quay thật, không phải AI.**
+
+Khác HẲN §18.27 về thể loại — và khác biệt đó quan trọng hơn nội dung.
+
+#### Hai thể loại, hai ngữ pháp ngược nhau
+
+| | §18.27 Đóng tàu | §18.28 Giới thiệu |
+|---|---|---|
+| Chủ thể | quá trình | thành phẩm |
+| **Con người** | **LUÔN có** — làm thước tỉ lệ | **KHÔNG MỘT AI** trong toàn bộ frame |
+| Ánh sáng | lạnh → vàng (vòng cung thời gian) | **ấm suốt** — không có vòng cung |
+| Bối cảnh | 5-6 nơi khác nhau | tàu + biển + bến, hết |
+| Cảm giác | lao động, quy mô, thời gian | sở hữu, tĩnh lặng, sang trọng |
+| Nhịp | có tiến triển | không tiến triển, chỉ **liệt kê** |
+
+**Việc vắng bóng người là CÓ CHỦ ĐÍCH.** Thể loại giới thiệu cố tình xoá người
+để người xem tự đặt mình vào đó. Ngược hẳn thủ pháp ① của §18.27 (luôn cài một
+người làm thước). Dùng nhầm là hỏng cả hai: có người trong shot giới thiệu thì
+thành ảnh môi giới; không người trong shot đóng tàu thì mất cảm giác quy mô.
+
+#### ⚠️ KHOẢNG TRỐNG LỚN: phần lớn bài báo nói về THÀNH PHẨM, không phải quá trình
+
+Arc `vessel` hiện có 6 pha, trong đó **4 pha là quá trình đóng** và chỉ **2 pha là
+thành phẩm** (`experience_exterior`, `experience_onboard`).
+
+Nhưng bài báo thật thì ngược lại. Bài Matilde 7 — bài đang chạy — là **thông cáo
+bàn giao**: nó nói về kích thước, vật liệu, số mét vuông boong, tốc độ, độ ồn
+cabin. **Không một câu nào về quá trình đóng.** Bài "The Sixth Sense" cũng vậy.
+
+Nghĩa là Creation Arc đang **bịa ra 4 pha mà bài báo không hề nhắc**, rồi nén toàn
+bộ nội dung CÓ THẬT vào 2 pha cuối. §18.16 cho phép ngoại lệ đó có chủ đích —
+nhưng tư liệu này cho thấy có một lựa chọn khác chưa ai cân nhắc:
+
+```
+`vessel`     (đang có)  → kể chuyện ĐÓNG:      4 pha bịa + 2 pha thật
+`showcase`   (ĐỀ XUẤT)  → kể chuyện THÀNH PHẨM: bám sát dữ liệu bài báo
+```
+
+**Chưa quyết định gì.** Ghi ra vì đây là câu hỏi thiết kế thật, không phải chi
+tiết: bài giàu thông số như Matilde 7 (33,5m, thép-nhôm, mũi thẳng, 150m² boong,
+4.300 hải lý, 39,2 dB) có thể hợp `showcase` hơn hẳn — mỗi thông số là một shot.
+
+#### BEAT của thể loại giới thiệu
+
+| # | Beat | Nhìn thấy gì |
+|---|---|---|
+| 1 | Chân dung ngang mạn | tàu chạy, chụp ngang, **kèm số đo overlay "263 FT"** |
+| 2 | Top-down trên biển sâu | thân trắng thon trên nước xanh thẫm, vệt sóng hai bên |
+| 3 | Chạy ba-phần-tư | góc chéo từ trên, thấy cả mạn lẫn boong |
+| 4 | Salon chính | **đối xứng tuyệt đối**, hành lang giữa, đèn hắt trần, tranh hai bên |
+| 5 | Cabin chủ | giường trung tâm, đầu giường xanh navy + chỉ vàng, ghế nằm bên cửa sổ |
+| 6 | Boong sau nhìn tới | **đối xứng**, hồ bơi tiền cảnh, bạt che, cờ giữa khung |
+| 7 | Hoàng hôn tại bến | hồ bơi sáng xanh, nội thất hắt vàng, đèn thành phố sau lưng |
+| 8 | Chi tiết boong lúc chạng vạng | đèn ấm dưới mái che, nhìn từ trên chéo xuống |
+
+#### THỦ PHÁP mới — 3 cái chưa có trong §18.27
+
+**⑫ Số đo chồng lên hình.** Chữ `263 FT` với hai đầu mũi tên chạy dọc thân tàu.
+
+Đây là **lớp DỰNG, không phải lớp render** — Veo không vẽ được chữ đúng (§18.17
+đã chốt: tên tàu bị sơn sai lên thân). Nếu muốn có, phải làm ở khâu ghép video
+bên Python, chồng text lên clip đã render. Ghi vào đây để đừng ai đưa số đo vào
+prompt rồi thất vọng.
+
+Nhưng ý tưởng thì rất hợp dự án: Truth Layer **đã trích được** `length_metres`,
+`range_nautical_miles`, `top_speed_knots`… Những con số đó hiện **không đi đâu
+cả**. Chồng chúng lên video là cách dùng dữ liệu đã verify mà không cần model vẽ.
+
+**⑬ Đối xứng NỘI THẤT.** Khác đối xứng mũi tàu (§18.27 thủ pháp ②): đây là nhìn
+dọc một không gian kín — salon, boong sau — với trục giữa rõ rệt và hai bên cân
+nhau. Rất hợp `composition: SYMMETRY`, và nội thất là chỗ **duy nhất** identity
+không kiểm chứng được nên thả camera tự do được (§18.16 đã ghi).
+
+**⑭ Ánh sáng HẮT RA từ trong.** Lúc chạng vạng, nội thất sáng vàng **hắt ra
+ngoài** qua cửa kính, hồ bơi sáng teal từ dưới nước. Con tàu trở thành **nguồn
+sáng**, không phải vật được chiếu sáng. Đây là shot mạnh nhất của cả thể loại và
+arc hiện tại **không có gì tương đương**.
+
+#### VIỆC CẦN LÀM
+
+9. **Quyết định có làm `showcase` phase_set không.** Đây là câu hỏi cho người
+   dùng, không phải việc kỹ thuật: phần lớn bài báo yacht là thông cáo bàn giao,
+   mà arc hiện tại lại kể chuyện đóng tàu. Cả hai đều hợp lệ — nhưng nên biết
+   mình đang chọn cái nào và vì sao.
+10. **Lớp chồng số đo (⑫)** — hạ tầng đã có (Truth trích được số), thiếu khâu
+    dựng. Rẻ, không cần model vẽ chữ, và dùng đúng dữ liệu đã verify.
+11. **Thêm shot "ánh sáng hắt ra" (⑭)** vào `experience_exterior` hoặc thành pha
+    riêng — arc hiện tại kết ở boong ban ngày, thiếu nốt trầm cuối.
+
+---
+
+### 18.29 FilmOS là KNOWLEDGE OS, không phải Architecture (2026-08-03, quyết định người dùng)
+
+Mục này chốt lại một ngày làm việc gồm **13 lượt render ảnh thật** và một cuộc
+thiết kế dài về việc chuyển tri thức thị giác từ `config/video.php` (sửa tay)
+sang cơ sở dữ liệu (truy vấn được). Ghi lại **trước** khi viết code, theo luật
+đầu tài liệu.
+
+Bối cảnh quan trọng: dự án này **đã từng xây FilmOS** — 16 tầng code trên nhánh
+`feature/video-AI` — và **xoá nó ngày 2026-07-17**. `Rule 0` ra đời từ lần đó.
+Không ai ghi lại lý do bỏ, nên hôm nay phải bàn lại từ đầu. Mục này tồn tại để
+lần sau không phải bàn lại lần nữa.
+
+#### A. Bằng chứng: 13 lượt render, cái gì sửa được ảnh
+
+| Lỗi quan sát được | Sửa bằng | Đã đưa vào |
+|---|---|---|
+| Ảnh trông "như hoạt hình" | **BỎ** `cinematic, golden-hour, glossy` | ⚠️ xem §D |
+| Bả + sơn lót + gỉ trong cùng khung (lệch giai đoạn cả năm) | vòng đời vật liệu một chiều | Materials `ages_into` |
+| "engineers in dark jackets" | PPE thật: mũ trắng + áo phản quang | Human Library |
+| Người to hơn tàu, mất bao quát | **đổi góc máy** (LOW → ELEVATED) | `angle_impossible` |
+| Bumper "đã tháo" trong khi khung hình đang lắp | Frame–Text Coherence | Core Invariant #5, đã có |
+| Ảnh 16:9 trong khi pipeline 9:16 | tham số aspect | đã có |
+| 7 clip `restoration` ra **7 gara khác nhau** | *(chưa có)* | **Sequence Grammar — thiếu thật** |
+
+**Bài học prompt rút ra (5):**
+
+1. **Liệt kê cái VẮNG MẶT trong prompt dương** mạnh hơn `negative_prompt`.
+   `"window openings cut but EMPTY, no glass"` thắng `"no windows"`.
+2. **Số đo thắng tính từ** khi cần tỉ lệ. `"a 2 m worker at the foot of a 9 m
+   hull"` thắng `"a huge hull"`.
+3. **Đổi góc máy thắng đổi câu chữ.** Ba lượt sửa từ ngữ không giải quyết được
+   "người quá to"; một lần đổi từ góc thấp sang góc cao thì xong.
+4. **Từ vựng vật chất thắng từ vựng điện ảnh.** `bare steel, mill-scale, weld
+   seams, flat overhead light` cho ảnh thật hơn `cinematic, moody, golden hour`.
+5. **Thép trần thắng sơn lót trắng** — không mơ hồ về giai đoạn. Sơn lót trắng
+   dễ bị model đọc thành "đã sơn xong".
+
+Bài học 4 là dữ liệu đắt nhất trong ngày và nó **đi ngược trực giác**: thêm từ
+vựng điện ảnh làm ảnh **xấu đi**; thêm từ vựng vật chất làm ảnh **tốt lên**.
+
+#### B. Bốn tầng tri thức (sửa cách phân lớp cũ)
+
+Cách nói cũ *"Truth lo phần chữ, Ontology lo phần hình"* **SAI**, vì
+`human_for_scale` / `symmetry_reveal` không phải hình — chúng là **quy tắc sắp
+xếp**. Phân theo bản chất tri thức, không theo đầu ra:
+
+```
+Identity         cái này LÀ gì            33.5 m · dark navy · thép-nhôm
+Visual Language  NHÌN thế nào             human_for_scale · symmetry · mirror
+Editorial        KỂ thế nào               chọn stage, chọn device, nhịp
+Prompt           VIẾT thế nào             cú pháp, thứ tự lớp
+```
+
+Chỉ **một** tầng là mới:
+
+| Tầng | Hiện trạng |
+|---|---|
+| Identity | ✅ Truth Layer — Extractor + Gatekeeper + VerifiedWorldGraph |
+| **Visual Language** | ❌ **KHÔNG CÓ** — đây là thứ phải xây |
+| Editorial | ✅ `EditorialInterpreter` + `ClaudeDirector` |
+| Prompt | ✅ `MotionComposer` (Python) |
+
+Đây là câu trả lời cho Rule 0: không phải kiến trúc mới 4 tầng, mà là **lấp một
+lỗ hổng ở giữa** — đúng lỗ mà hôm nay đã phải lấp bằng tay 7 lần.
+
+#### C. Truth chỉ lấy KÍCH THƯỚC + MÀU (quyết định người dùng)
+
+Bài báo là **nguồn ý tưởng**, không phải kịch bản. Nội dung video viết mới hoàn
+toàn. Truth Layer vẫn nằm trên đường video, nhưng **thu hẹp phạm vi**:
+
+```
+LẤY:     kích thước, màu, vật liệu, hình dáng — thứ ảnh hưởng đến HÌNH
+BỎ:      owner, builder, brand, seller, shipyard, designer… (8 loại
+         semantic_claims hiện tại) — không ảnh hưởng đến hình, và §18.17
+         đã chốt tên riêng không được đưa vào prompt
+```
+
+Hệ quả đo được: prompt Extractor đang ~4.400 ký tự và chiếm **66% chi phí LLM**
+(§18.24). Cắt xuống phần đo được + màu thì rẻ hơn rõ rệt **và chính xác hơn** —
+ít thứ để bịa.
+
+Và nó chặn đúng lỗi `74-metre` viết cứng trong config: `length_metres: 33.5` từ
+Truth ghi đè.
+
+#### D. `category_contexts.art_style` đang lưu công thức ĐÃ BỊ BÁC BỎ
+
+Giá trị đang lưu cho Superyacht:
+
+```
+"cinematic, golden-hour, glossy"
+```
+
+Đây **chính là** công thức sinh ra những ảnh bị gọi là "như hoạt hình". Phải sửa
+**trước** khi nối `video_framework_id` vào pipeline, nếu không sẽ tự động hoá
+đúng cái lỗi vừa mất $0.42 để phát hiện.
+
+#### E. Lưu trữ: B+ normalized (quyết định người dùng)
+
+Không lưu blob JSON. Chuẩn hoá thành thực thể để truy vấn được.
+
+```
+CHUẨN HOÁ (nhiều stage dùng chung — trả được tiền thuê ngay):
+    material_library · object_library · human_library · machine_library
+    environment_library · motion_library · device_library
+    composition_library · camera_behavior_library · visual_language_library
+    + bảng pivot stage ↔ thư viện
+
+GIỮ TRÊN stage (thuộc tính riêng, không dùng chung):
+    purpose · visual_goal · geometry · lighting · atmosphere
+    invariants · impossible_combinations · qa_reject_if · shot_variants
+```
+
+**Chưa tách** `StageConstraints` / `StageEvidence` / `StageQA` thành bảng riêng:
+chúng là thuộc tính của **một** stage, không giải quyết trùng lặp nào đang tồn
+tại. Tách sau, khi có truy vấn thật cần. (Rule 0.)
+
+`ages_into` trong Materials là trường quan trọng nhất của cả lược đồ: nó mã hoá
+**mũi tên thời gian một lần**, và máy tự suy ra `bare_steel` + `faired_paint`
+không thể cùng khung — thay vì phải viết `impossible_combinations` cho từng cặp
+ở từng stage.
+
+#### F. FilmOS = 12 thư viện DỮ LIỆU, không phải 12 tầng CODE
+
+Đây là chốt quan trọng nhất của mục này, và là chỗ khác lần 2026-07-17.
+
+§1 đã có sẵn luật: *domain knowledge tồn tại chỉ như DATA, không bao giờ như
+nhánh code*. FilmOS v1 chết vì nó là 16 nhóm class. Kiến thức trong đó không
+sai — cách chứa nó sai.
+
+| Hạng mục FilmOS | Vào đâu | Code mới |
+|---|---|---|
+| Lifecycle 30 stage | bảng DB | **0** |
+| Materials · Objects · Humans · Machines · Environments | bảng DB | **0** |
+| Motion taxonomy (`close_gap`, `descend`, `rotate`…) | bảng DB | **0** |
+| Device Library | bảng DB | **0** |
+| Composition Library | bảng DB | **0** |
+| Cinematography **ngữ nghĩa** (`very wide`, `monumental`, `layered`) | bảng DB | **0** |
+| Camera Behavior (`observe`, `wait`, `reveal`, `inspect`…) | bảng DB | **0** |
+| Visual Language (`craftsmanship` → framing/scale/light) | bảng ánh xạ | **0** |
+| **Sequence Grammar** | `TimelinePlanner` — **đã có** | ~1 rule engine |
+| **Visual Rhythm** | `TimelinePlanner` — **đã có** | ~1 rule engine |
+| QA repetition score | `RenderPlanQualityReport` — **đã có** | vài luật |
+
+**Không có tầng kiến trúc nào mới.** Mọi thứ hoặc là hàng trong bảng, hoặc là
+luật thêm vào lớp đã tồn tại. Đây là bằng chứng cụ thể phân biệt lần này với
+lần trước, không phải lời hứa.
+
+#### G. Cinematography phải lưu ở mức NGỮ NGHĨA, không phải vật lý
+
+```
+KHÔNG lưu:   Arri Alexa · 24mm · f/2.8 · sensor S35 · rolling shutter · DOF 1.2m
+LƯU:         field_of_view   very wide | wide | medium | tight | macro
+             perspective     top_down | high | eye_level | low | ground | inside
+             subject_scale   tiny | medium | hero | monumental
+             depth           flat | layered | deep | compressed
+```
+
+Lý do kỹ thuật, đo được: `tools/render_queued_shots.py` gửi cho Veo đúng **6
+tham số** — `prompt`, `negative_prompt`, `duration`, `aspect_ratio`,
+`resolution`, `generate_audio`. **Không tham số nào là camera.** Viết "24mm"
+không cho tiêu cự 24mm; nó chỉ dịch phân phối về phía ảnh có caption chứa
+"24mm". Một ontology cinematography vật lý 20 field cuối cùng cô lại thành vài
+từ, và những từ đó **cạnh tranh chỗ** với `bare steel`, `weld seams` — thứ đã
+chứng minh có tác dụng (§A bài học 4).
+
+Camera Behavior thì ngược lại — nó mô tả **cái gì xảy ra trong khung**, thứ i2v
+thực thi được:
+
+```
+observe   camera cố định, chủ thể chuyển động
+wait      camera cố định, chủ thể ĐI VÀO khung
+reveal    tiền cảnh dạt ra, chủ thể lộ dần
+inspect   camera rà chậm qua chi tiết
+```
+
+`wait` chính là câu đã cho kết quả tốt nhất trong 7 lượt probe hôm nay.
+
+#### H. Contract của Director — ĐỀ XUẤT, chưa chốt
+
+Đề xuất ban đầu của người dùng cho Director xuất thẳng `Camera`, `Composition`,
+`Lighting`. Việc đó **mâu thuẫn §18.7** (Camera là Objective, `IntentPlanner` sở
+hữu) và §18.6 (đã bác "LLM cinematographer").
+
+Nhưng không cần vi phạm, vì **Visual Language Library đã là bảng ánh xạ**. Đề
+xuất thu nhỏ Contract:
+
+```
+Director xuất (Subjective — cần phán đoán):
+    goal        show_craftsmanship | show_scale | show_precision | show_isolation
+    device      reflection | absence_bookend | human_for_scale…
+    emphasis    hands | bow | weld_seam
+
+Rule Engine tra bảng (Objective — tất định):
+    camera_behavior · field_of_view · composition · lighting · motion_speed
+```
+
+Ba lợi ích: giữ §18.7 nguyên vẹn; **nhất quán hơn** (cùng `goal` → cùng cách xử
+lý ở mọi video, mọi domain); rẻ hơn (Director trả ít token).
+
+Và nó đúng mục tiêu "đa dạng nhưng nhất quán": **đa dạng** đến từ Director chọn
+`goal` khác nhau; **nhất quán** đến từ bảng ánh xạ cố định. Nếu Director tự chọn
+camera thì đa dạng tăng nhưng nhất quán mất — đúng lỗi 7-clip-7-gara ở §A.
+
+⚠️ Đây là **đề xuất**, chưa được người dùng chốt. Không viết code theo mục này
+cho đến khi có xác nhận.
+
+#### I. Cái gì HOÃN — và điều kiện mở lại
+
+Hoãn không phải bỏ. Ghi điều kiện để lần sau không bàn lại từ đầu:
+
+| Hoãn | Mở lại khi |
+|---|---|
+| Style Library (BBC / NatGeo / Apple…) | có ≥1 video hoàn chỉnh và người dùng muốn đổi phong cách |
+| Film Language KB (nguyên lý trừu tượng) | Sequence Grammar + Visual Rhythm đã chạy mà video vẫn "rời" |
+| Tách 6 bảng con của Stage | có truy vấn thật cần JOIN chúng riêng |
+| Cinematography **vật lý** (lens/DOF/sensor) | phép đo §J cho thấy nó thắng |
+| Shot Knowledge Graph | ≥50 video có `prompt_metrics` thật để xếp hạng |
+
+#### J. PHÉP ĐO chốt lớp cinematography — $0.05
+
+Trước khi viết 20 field cinematography cho 30 stage:
+
+```
+Ảnh A:  stage B5 + thư viện vật chất                       (materials, humans, machines)
+Ảnh B:  stage B5 + thư viện vật chất + lớp cinematography   (+ FOV, depth, eye-path, scale)
+        cùng seed, cùng model
+```
+
+- B rõ ràng hơn A → xây lớp cinematography, **có bằng chứng**
+- B bằng hoặc tệ hơn A → tiết kiệm vài tuần và biết vì sao
+
+Bảy lượt lặp hôm nay cho thấy phép đo **luôn thắng** phép suy luận, kể cả khi
+suy luận nghe rất hợp lý.
+
+#### K. Thứ tự thi công
+
+```
+1  §18.29 — mục này                                              $0   ✔
+2  5 thư viện primitive (materials, objects, humans, machines,
+   motions) + Device + Composition                               $0
+3  Sequence Grammar + Visual Rhythm (rule engine trong
+   TimelinePlanner) + 5 trục diversity                           $0
+4  Migration + seed                                              $0
+5  1 stage B5 tham chiếu thư viện                                $0
+6  ► PHÉP ĐO §J: ảnh A vs B                                      $0.05
+7  29 stage còn lại — có/không lớp cinematography tuỳ bước 6     $0
+8  ► Render 1 video 6 scene HOÀN CHỈNH                          ~$1.10
+9  Xem video. Cái gì hỏng ở đó mới là thư viện tiếp theo cần xây.
+```
+
+Bước 8 là chỗ duy nhất trả lời được câu "đã production-grade chưa". Mọi thứ
+trước đó là giả thuyết.
+
+#### L. Rủi ro phải giữ
+
+`config/video.php` **đang chạy thật** — 2 phase_set, bấm 🎬 ra 6 scene. Hệ
+ontology chạy **song song**, và chỉ chuyển `vessel` sang khi nó sinh prompt tốt
+hơn hoặc bằng bản config hiện tại — **đo bằng render thật, không đo bằng cảm
+giác**.
+
+#### M. Ghi để lần sau không lặp
+
+Bộ nhớ dự án có **12 bản "Freeze"** cho FilmOS v1. Mười hai lần đóng băng kiến
+trúc. **Không lần nào có video hoàn chỉnh ở giữa.**
+
+Mục 18.29 này là bản thứ 13. Khác biệt duy nhất được phép có: bước 8.

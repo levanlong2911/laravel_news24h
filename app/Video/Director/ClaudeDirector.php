@@ -17,9 +17,14 @@ final class ClaudeDirector implements DirectorInterface
 
     public function __construct(
         private readonly LlmClient $llm,
-        private readonly string $model = 'sonnet',
-    ) {
-    }
+        // Haiku (2026-07-29, user chốt): cả pipeline video chạy Haiku để tiết
+        // kiệm. Director là cú gọi ĐƯỢC GỌI NHIỀU NHẤT (1 lần/scene — bài 9
+        // scene là 9 cú), nhưng mỗi cú rất nhỏ (~400 token vào, ~50 ra), nên
+        // tiết kiệm tuyệt đối không lớn. Việc Director làm cũng nhẹ: CHỌN index
+        // trong danh sách candidate + viết 1 câu dàn cảnh, không sinh cấu trúc
+        // phức tạp — hợp với Haiku hơn Extractor.
+        private readonly string $model = 'haiku',
+    ) {}
 
     public function select(array $candidates, VerifiedWorldGraph $world, ?ProducerOutput $producer, int $sceneOrdinal = 1, int $totalScenes = 1, array $priorScenes = []): ActionSelection
     {
@@ -36,28 +41,30 @@ final class ClaudeDirector implements DirectorInterface
     }
 
     /**
-     * @param list<array{ordinal: int, hero: string, emotion: string, composition_note: string}> $priorScenes
+     * @param  list<array{ordinal: int, hero: string, emotion: string, composition_note: string}>  $priorScenes
      */
     private function renderContext(array $candidates, VerifiedWorldGraph $world, ?ProducerOutput $producer, int $sceneOrdinal, int $totalScenes, array $priorScenes = []): string
     {
         $lines = ['HERO CANDIDATES:'];
         foreach ($candidates['hero_candidates'] as $id) {
             $entity = $world->entity($id);
-            $lines[] = sprintf('- %s (%s)', $id, $entity?->type->value ?? 'unknown');
+            $lines[] = sprintf('- id=%s, name="%s" (%s)', $id, $this->displayName($id, $world), $entity?->type->value ?? 'unknown');
         }
 
         $lines[] = '';
         $lines[] = 'ACTION CANDIDATES (chọn bằng index):';
         foreach ($candidates['action_candidates'] as $i => $action) {
-            $modifiers = $action->modifiers === [] ? '' : ' (' . implode(', ', $action->modifiers) . ')';
-            $lines[] = sprintf('[%d] %s: %s -> %s%s', $i, $action->type->value, $action->actor, $action->target, $modifiers);
+            $modifiers = $action->modifiers === [] ? '' : ' ('.implode(', ', $action->modifiers).')';
+            $actorName = $this->displayName($action->actor, $world);
+            $targetName = $action->target === '' ? '' : $this->displayName($action->target, $world);
+            $lines[] = sprintf('[%d] %s: %s -> %s%s', $i, $action->type->value, $actorName, $targetName, $modifiers);
         }
 
         if ($producer !== null) {
             $lines[] = '';
             $lines[] = 'STORY CONTEXT:';
-            $lines[] = 'Core conflict: ' . $producer->coreConflict;
-            $lines[] = 'Visual promise: ' . $producer->visualPromise;
+            $lines[] = 'Core conflict: '.$producer->coreConflict;
+            $lines[] = 'Visual promise: '.$producer->visualPromise;
 
             // Vị trí trong mạch cảm xúc — thuần số học tỉ lệ (Objective), KHÔNG
             // phải Director tự chọn cảm xúc nào — chỉ cho Director BIẾT đang ở
@@ -84,6 +91,20 @@ final class ClaudeDirector implements DirectorInterface
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Bug thật 2026-07-26 (bài Nixie): renderContext() trước đây chỉ đưa ID
+     * thô (vd 'yacht_nixie') cho Claude — Claude echo lại nguyên văn ID đó
+     * trong composition_note ("Yacht_nixie fills the frame...") vì đó là CÁI
+     * TÊN DUY NHẤT nó được thấy. Giờ đưa cả id= (để Claude trả về đúng trong
+     * JSON "hero") lẫn name= (để Claude dùng khi VIẾT VĂN xuôi).
+     */
+    private function displayName(string $id, VerifiedWorldGraph $world): string
+    {
+        $entity = $world->entity($id);
+
+        return $entity?->identity?->name ?? str_replace('_', ' ', $id);
     }
 
     private function parse(string $text, array $candidates): ActionSelection
@@ -118,7 +139,7 @@ final class ClaudeDirector implements DirectorInterface
         Return ONLY raw JSON, no markdown fences, no commentary:
 
         {
-          "hero": "entity id from HERO CANDIDATES",
+          "hero": "the id= value from HERO CANDIDATES (never the name= value)",
           "primary_index": 0,
           "secondary_indices": [1, 2],
           "emotion": "one or two words describing what the audience should feel",
@@ -126,15 +147,17 @@ final class ClaudeDirector implements DirectorInterface
           "composition_note": "one sentence describing blocking/framing for this shot"
         }
 
-        Only use indices that exist in ACTION CANDIDATES. Only use an entity id that exists
-        in HERO CANDIDATES for "hero". Ground your choice in the story context given, not on
-        outside knowledge.
+        Only use indices that exist in ACTION CANDIDATES. Only use an id= value that exists
+        in HERO CANDIDATES for "hero" — not the name= value. Ground your choice in the story
+        context given, not on outside knowledge.
 
         composition_note — this is where you act as a director, not a database:
 
         Write ONE sentence describing how to BLOCK this shot: what sits in the foreground,
         what recedes into the background, what the eye should land on first. This is framing
-        and emphasis, not new content.
+        and emphasis, not new content. When this sentence refers to an entity, use its name=
+        value (e.g. "Nixie") — never its id= slug (e.g. "yacht_nixie"), which reads like a
+        database key, not prose a viewer would read.
 
         You may ONLY refer to the hero you picked, the action you picked (primary/secondary),
         and entities already listed in HERO CANDIDATES. Do NOT introduce any person, object,
@@ -145,8 +168,9 @@ final class ClaudeDirector implements DirectorInterface
 
         Bad (invents a crowd never given to you): "the vehicle in foreground, a cheering crowd
         blurred behind it"
-        Good (uses only the hero already chosen): "the vehicle dominates the frame, its surface
-        catching the light, everything else receding into soft focus"
+        Bad (echoes the id= slug instead of the name=): "yacht_nixie dominates the frame..."
+        Good (uses only the hero already chosen, by its name=): "the vehicle dominates the
+        frame, its surface catching the light, everything else receding into soft focus"
 
         If PREVIOUS SCENES is given, you are the same director who shot those scenes moments
         ago — keep them in mind the way a real director holds the whole film in their head

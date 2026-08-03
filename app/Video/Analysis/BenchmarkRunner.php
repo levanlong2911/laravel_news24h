@@ -6,9 +6,11 @@ use App\Video\Article\RawArticle;
 use App\Video\Editorial\EditorialInterpreter;
 use App\Video\Extraction\SemanticClaimPrecisionAnalyzer;
 use App\Video\Llm\CostAccumulatingLlmClient;
+use App\Video\Pipeline\PipelineAborted;
 use App\Video\Pipeline\VideoPlanningPipeline;
 use App\Video\RenderPlan\RenderPlanMeta;
 use App\Video\World\EntityType;
+use App\Video\World\VerifiedWorldGraph;
 
 /**
  * Đo 1 bài báo qua VideoPlanningPipeline, trả về 1 "hàng" cho `video:benchmark`.
@@ -22,12 +24,11 @@ final class BenchmarkRunner
 {
     public function __construct(
         private readonly VideoPlanningPipeline $pipeline,
-        private readonly EditorialInterpreter $editorial = new EditorialInterpreter(),
-        private readonly ConfidenceAnalyzer $confidence = new ConfidenceAnalyzer(),
+        private readonly EditorialInterpreter $editorial = new EditorialInterpreter,
+        private readonly ConfidenceAnalyzer $confidence = new ConfidenceAnalyzer,
         private readonly ?CostAccumulatingLlmClient $costTracker = null,
-        private readonly SemanticClaimPrecisionAnalyzer $semanticClaims = new SemanticClaimPrecisionAnalyzer(),
-    ) {
-    }
+        private readonly SemanticClaimPrecisionAnalyzer $semanticClaims = new SemanticClaimPrecisionAnalyzer,
+    ) {}
 
     public function runOne(RawArticle $article, RenderPlanMeta $meta, string $domain = ''): BenchmarkResult
     {
@@ -48,37 +49,55 @@ final class BenchmarkRunner
                     $semanticReport = $this->semanticClaims->analyze($extraction->candidates, $index);
                 },
             );
+        } catch (PipelineAborted $e) {
+            // ABORTED ≠ ERROR. Pipeline chủ động dừng vì thiếu dữ liệu (bài rỗng,
+            // không sự thật nào qua Gatekeeper) — với benchmark thì đó là một
+            // KẾT QUẢ ĐO hợp lệ, không phải sự cố hệ thống. Gộp vào ERROR sẽ làm
+            // "bài nghèo dữ liệu" trông như "hệ thống hỏng".
+            //
+            // Vẫn ghi được số liệu world vì `onWorldVerified` chạy TRƯỚC guard —
+            // giữ lại thay vì vứt, đó chính là thứ benchmark cần đo.
+            return $this->result($article, $domain, status: 'ABORTED', error: $e->describe(), extra: $this->worldMetrics($world));
         } catch (\Throwable $e) {
             return $this->result($article, $domain, status: 'ERROR', error: $e->getMessage());
         }
 
-        $entityCount    = $world !== null ? count($world->entities()) : 0;
-        $landscapeCount = $world !== null
-            ? count(array_filter($world->entities(), fn ($e) => $e->type === EntityType::Landscape))
-            : 0;
-        $reason = $world !== null ? $this->editorial->environmentDiagnosisFor($world) : 'NONE';
-
         $report = $this->confidence->analyze($plan);
 
-        return $this->result($article, $domain, status: 'SUCCESS', error: '', extra: [
-            'entity_count'    => $entityCount,
-            'landscape_count' => $landscapeCount,
-            'environment_reason'     => $reason,
+        return $this->result($article, $domain, status: 'SUCCESS', error: '', extra: $this->worldMetrics($world) + [
             'environment_attributes' => array_keys($plan['world_environment'] ?? []),
-            'prohibition_count'      => count($plan['continuity']['prohibitions'] ?? []),
-            'coverage_score'  => $report->coverageScore,
+            'prohibition_count' => count($plan['continuity']['prohibitions'] ?? []),
+            'coverage_score' => $report->coverageScore,
             'coverage_layers' => $report->coverageLayers,
-            'missing_layers'  => $report->missingLayers,
+            'missing_layers' => $report->missingLayers,
             'implemented_coverage_score' => $report->implementedCoverageScore,
-            'render_plan'     => $plan,
-            'semantic_claims_total'     => $semanticReport?->total ?? 0,
-            'semantic_claims_verified'  => $semanticReport?->verified ?? 0,
+            'render_plan' => $plan,
+            'semantic_claims_total' => $semanticReport?->total ?? 0,
+            'semantic_claims_verified' => $semanticReport?->verified ?? 0,
             'semantic_claims_precision' => $semanticReport?->precision() ?? 0.0,
         ]);
     }
 
     /**
-     * @param array<string, mixed> $extra
+     * Ba số đo rút từ VerifiedWorldGraph — dùng chung cho CẢ đường thành công
+     * lẫn đường ABORTED, vì `onWorldVerified` chạy trước mọi guard nên số liệu
+     * vẫn có kể cả khi pipeline dừng giữa chừng.
+     *
+     * @return array<string, mixed>
+     */
+    private function worldMetrics(?VerifiedWorldGraph $world): array
+    {
+        return [
+            'entity_count' => $world !== null ? count($world->entities()) : 0,
+            'landscape_count' => $world !== null
+                ? count(array_filter($world->entities(), fn ($e) => $e->type === EntityType::Landscape))
+                : 0,
+            'environment_reason' => $world !== null ? $this->editorial->environmentDiagnosisFor($world) : 'NONE',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $extra
      */
     private function result(RawArticle $article, string $domain, string $status, string $error, array $extra = []): BenchmarkResult
     {

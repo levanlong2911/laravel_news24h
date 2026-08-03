@@ -25,16 +25,31 @@ final class ClaudeExtractor implements Extractor
     public const INSTRUCTION_VERSION = 'extract-v3';
 
     /**
-     * @param string $model Nhãn model để ghi vào provenance. Việc chọn model
-     *                      THẬT nằm ở LlmClient — Extractor không được quyết,
-     *                      vì nó không biết client nào phục vụ model nào.
+     * @param  string  $model  Khoá model ('haiku'|'sonnet') — Extractor TỰ QUYẾT
+     *                         và LlmClient chuyển tiếp nguyên văn xuống
+     *                         ClaudeWriterService.
+     *
+     *                         ĐỔI 2026-07-29: trước đó docblock ở đây ghi
+     *                         "Extractor không được quyết, việc chọn model THẬT
+     *                         nằm ở LlmClient" — câu đó ĐÚNG vào thời điểm ấy vì
+     *                         ClaudeWriterAdapter giữ model riêng và phớt lờ
+     *                         $request->model. Nay adapter đã tôn trọng
+     *                         $request->model nên trách nhiệm chuyển về đây, và
+     *                         docblock phải đổi theo. Bằng chứng của bug cũ:
+     *                         ClaudeProducer khai 'haiku' từ 2026-07-23 mà suốt
+     *                         6 ngày vẫn chạy Sonnet.
      */
     public function __construct(
         private readonly LlmClient $llm,
-        private readonly string $model = 'sonnet',
-        private readonly CandidateGraphParser $parser = new CandidateGraphParser(),
-    ) {
-    }
+        // Haiku (2026-07-29, user chốt): cả pipeline video chạy Haiku để tiết
+        // kiệm. RỦI RO ĐÃ BIẾT, chưa đo: Extractor KHÔNG "tóm tắt" — nó phải
+        // trả evidence_quote NGUYÊN VĂN để Gatekeeper đi tìm lại trong bài,
+        // không thấy là loại thẳng. Đó là việc chính xác từng chữ, không phải
+        // nén ý. Nếu recall tụt so với baseline Sonnet (World Graph bài
+        // "The Sixth Sense": 7 entity) thì đây là chỗ đầu tiên phải xem lại.
+        private readonly string $model = 'haiku',
+        private readonly CandidateGraphParser $parser = new CandidateGraphParser,
+    ) {}
 
     public function extract(RawArticle $article, EvidenceIndex $index): ExtractionResult
     {

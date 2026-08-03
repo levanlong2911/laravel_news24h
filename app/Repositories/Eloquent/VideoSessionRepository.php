@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Eloquent;
 
+use App\Enums\VideoSessionStatus;
 use App\Models\VideoSession;
 use App\Repositories\Interfaces\VideoSessionRepositoryInterface;
 
@@ -25,7 +26,7 @@ class VideoSessionRepository extends BaseRepository implements VideoSessionRepos
     // GET /api/video-sessions/composing — runner poll de compose prompt
     public function findComposingWithProject(): iterable
     {
-        return VideoSession::where('status', 'composing')
+        return VideoSession::where('status', VideoSessionStatus::COMPOSING->value)
             ->with('project:id,name,subject_id')
             ->get(['id', 'project_id', 'code', 'renderplan_json']);
     }

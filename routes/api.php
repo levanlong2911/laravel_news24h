@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\ApiAdvertisementController;
 use App\Http\Controllers\Api\PostApiController;
 use App\Http\Controllers\Api\RedditController;
+use App\Http\Controllers\VideoSessionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -37,8 +38,8 @@ Route::prefix('ads')->group(function () {
 // Video production API — Python Composer/Runner (token X-Video-Token riêng,
 // bỏ DomainContext vì middleware đó đòi api_key của Domain cho mọi /api/*)
 Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])->group(function () {
-    Route::post('/render-plans',              [\App\Http\Controllers\VideoSessionController::class, 'apiStore']);
-    Route::get('/video-sessions/composing',   [\App\Http\Controllers\VideoSessionController::class, 'apiComposing']);
-    Route::get('/video-shots/queued',         [\App\Http\Controllers\VideoSessionController::class, 'apiQueued']);
-    Route::patch('/video-shots/{shotId}/result', [\App\Http\Controllers\VideoSessionController::class, 'apiResult']);
+    Route::post('/render-plans',              [VideoSessionController::class, 'apiStore']);
+    Route::get('/video-sessions/composing',   [VideoSessionController::class, 'apiComposing']);
+    Route::get('/video-shots/queued',         [VideoSessionController::class, 'apiQueued']);
+    Route::patch('/video-shots/{shotId}/result', [VideoSessionController::class, 'apiResult']);
 });

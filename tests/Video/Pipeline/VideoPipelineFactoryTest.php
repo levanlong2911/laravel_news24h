@@ -14,7 +14,8 @@ class VideoPipelineFactoryTest extends TestCase
 {
     private function stubClient(): LlmClient
     {
-        return new class implements LlmClient {
+        return new class implements LlmClient
+        {
             public function complete(LlmRequest $request): LlmResponse
             {
                 return new LlmResponse('{}', 'sonnet');
@@ -24,7 +25,7 @@ class VideoPipelineFactoryTest extends TestCase
 
     public function test_claude_builds_a_pipeline(): void
     {
-        $pipeline = VideoPipelineFactory::claude($this->stubClient());
+        $pipeline = (new VideoPipelineFactory)->claude($this->stubClient());
 
         $this->assertInstanceOf(VideoPlanningPipeline::class, $pipeline);
     }
@@ -33,7 +34,7 @@ class VideoPipelineFactoryTest extends TestCase
     {
         $policy = new EditorialPolicy(['builder' => 'Feadship'], 'domes', true, 'reason');
 
-        $pipeline = VideoPipelineFactory::claude($this->stubClient(), [$policy]);
+        $pipeline = (new VideoPipelineFactory)->claude($this->stubClient(), [$policy]);
 
         $this->assertInstanceOf(VideoPlanningPipeline::class, $pipeline);
     }

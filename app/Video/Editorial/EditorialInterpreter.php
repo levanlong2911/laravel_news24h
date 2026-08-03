@@ -169,6 +169,13 @@ final class EditorialInterpreter
         // 2 — action tự thân. Generic đa domain: nhạc sĩ biểu diễn, VĐV thi đấu,
         // diễn giả phát biểu — không riêng "ca sĩ hát".
         'perform' => ActionType::Perform,
+        // ALIAS DATA (2026-07-29), không phải mở rộng thuật toán: `performance`
+        // là danh từ hoá bất quy tắc (-ance), tokenVariants() chỉ lo hình thái
+        // ĐỀU ĐẶN (-s/-d/-ed/-ing). Event thật `surprise_performance` cần nó.
+        // Nguyên nhân gốc nằm ở thượng nguồn: Extractor sinh cả
+        // `performed_song` lẫn `surprise_performance` cho CÙNG một semantic —
+        // sửa đúng là chuẩn hoá ở Extractor, đây chỉ là lớp tương thích.
+        'performance' => ActionType::Perform,
         // Triumph/Confront — thêm 2026-07-22, bằng chứng thật qua video:benchmark
         // (10 bài Claude thật): "race_victory"×5, "award_won"×2, "protest_clash",
         // "break_in" không khớp keyword nào trước đó — xem ActionType.php.
@@ -440,33 +447,135 @@ final class EditorialInterpreter
         return $originalTarget;
     }
 
-    /**
-     * @param array<string, string> $keywords
-     */
-    private function keywordMatch(string $text, array $keywords): ?string
-    {
-        $lower = strtolower($text);
+    // ---- Khớp từ khoá: 3 tầng, KHÔNG dùng str_contains() (2026-07-29) ----
+    //
+    // BUG THẬT đã xảy ra trong production: `str_contains()` khớp MỌI vị trí
+    // trong chuỗi, nên event thật `transfer_to_outfitting` của bài Nixie khớp
+    // keyword `'fit'` -> ActionType::Align -> prompt "Nixie aligns  into
+    // position". Bài báo nói con tàu ĐƯỢC CHUYỂN VÀO xưởng hoàn thiện, không
+    // nói cái gì được căn thẳng. Cùng loại lỗi với `'face'` khớp trong
+    // `'surface'` bên Python (đã sửa cùng ngày).
+    //
+    // Ba false positive khác cùng cơ chế: `refit_completed`->align,
+    // `island_survey`->position ('land' trong 'island'), `wondered_about`->
+    // triumph ('won' trong 'wondered').
+    //
+    // Vì sao KHÔNG dùng exact-token thuần: đã đo trên dữ liệu thật, nó làm MẤT
+    // 6 mapping đang đúng — `anchored`/`moored` (đang có trong DB),
+    // `docked_at`, `performed_song`, `surprise_performance`, `break_in`. World
+    // Graph dùng động từ ĐÃ CHIA (mô tả việc đã xảy ra), không dùng nguyên mẫu.
+    //
+    // Ba tầng, thứ tự cố định:
+    //   1. Khớp CẢ CHUỖI  — cho keyword nhiều token (`break_in`)
+    //   2. Khớp TOKEN     — tách theo `_`, so nguyên văn (`won` trong `award_won`)
+    //   3. Khớp DẠNG BIẾN THỂ của token — hình thái ĐỀU ĐẶN, xem MORPHOLOGY_SUFFIXES
 
-        foreach ($keywords as $keyword => $enumValue) {
-            if (str_contains($lower, $keyword)) {
-                return $enumValue;
+    /**
+     * Hậu tố hình thái ĐỀU ĐẶN được cắt để tìm dạng gốc.
+     *
+     * Đây LÀ một danh sách hữu hạn, không phải phép chuẩn hoá tổng quát — nói
+     * thẳng để người sau không tưởng nó tự xử lý mọi biến thể. Nguyên tắc phân
+     * chia: hình thái đều đặn thì thuật toán lo; BẤT QUY TẮC thì thêm vào bảng
+     * keyword dưới dạng alias data (vd 'performance' => Perform), KHÔNG nhồi
+     * thêm hậu tố vào đây.
+     *
+     * `'d'` đứng riêng ngoài `'ed'` là cần thiết: `secured` cắt `ed` ra `secur`
+     * (không khớp keyword `secure`), cắt `d` mới ra `secure`.
+     */
+    private const MORPHOLOGY_SUFFIXES = ['s', 'd', 'ed', 'ing'];
+
+    /**
+     * Các dạng ứng viên của MỘT token, để tra thẳng vào bảng keyword.
+     *
+     * Sinh ứng viên thay vì "chuẩn hoá về một dạng gốc" — vì dạng gốc không
+     * xác định được duy nhất (`secured` -> `secur` hay `secure`?). Sinh cả hai
+     * rồi tra bảng thì không cần chọn.
+     *
+     * Có xử lý phụ âm đôi: `fitted` -> cắt `ed` -> `fitt` -> `fit`. Nhờ vậy
+     * `outfitting` -> `outfitt` -> `outfit` — vẫn KHÁC `fit`, không khớp sai.
+     *
+     * @return list<string>
+     */
+    private function tokenVariants(string $token): array
+    {
+        $variants = [$token];
+
+        foreach (self::MORPHOLOGY_SUFFIXES as $suffix) {
+            if (! str_ends_with($token, $suffix) || strlen($token) <= strlen($suffix) + 1) {
+                continue;
+            }
+
+            $stem = substr($token, 0, -strlen($suffix));
+            $variants[] = $stem;
+
+            // Phụ âm đôi: 'fitt' -> 'fit', 'stopp' -> 'stop'.
+            $len = strlen($stem);
+            if ($len >= 3 && $stem[$len - 1] === $stem[$len - 2]) {
+                $variants[] = substr($stem, 0, -1);
+            }
+        }
+
+        return $variants;
+    }
+
+    /**
+     * Tra bảng keyword theo 3 tầng. Trả về giá trị đầu tiên khớp.
+     *
+     * CHÚ Ý — thứ tự bảng là LOAD-BEARING khi nhiều keyword cùng khớp (vd
+     * `weather: "clear storm"` khớp cả `storm` lẫn `clear`): keyword khai
+     * TRƯỚC thắng. Có test khoá hành vi này, đừng sắp lại bảng theo alphabet.
+     *
+     * @param  array<string, mixed>  $keywords
+     */
+    private function lookupKeyword(string $text, array $keywords): mixed
+    {
+        $normalized = strtolower(trim($text));
+
+        // TẦNG 1 — cả chuỗi, cho keyword nhiều token ('break_in').
+        if (isset($keywords[$normalized])) {
+            return $keywords[$normalized];
+        }
+
+        // Tách theo cả `_` (relation/event type) lẫn khoảng trắng (giá trị
+        // attribute tự do như "Hudson River", "golden hour").
+        $tokens = preg_split('/[\s_]+/', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        // TẦNG 2 + 3 — quét theo THỨ TỰ BẢNG (không theo thứ tự token) để
+        // "keyword khai trước thắng" đúng như tài liệu.
+        foreach ($keywords as $keyword => $value) {
+            foreach ($tokens as $token) {
+                // Tầng 2: token nguyên văn. Keyword nhiều token không bao giờ
+                // khớp ở đây (token không chứa `_`), nên đã xử lý ở tầng 1.
+                if ($token === $keyword) {
+                    return $value;
+                }
+
+                // Tầng 3: dạng biến thể hình thái đều đặn.
+                if (in_array($keyword, $this->tokenVariants($token), true)) {
+                    return $value;
+                }
             }
         }
 
         return null;
     }
 
+    /**
+     * @param  array<string, string>  $keywords
+     */
+    private function keywordMatch(string $text, array $keywords): ?string
+    {
+        $matched = $this->lookupKeyword($text, $keywords);
+
+        return is_string($matched) ? $matched : null;
+    }
+
     /** Dùng cho cả Relation.type lẫn Event.type — cùng cơ chế khớp từ khoá. */
     private function actionTypeFor(string $typeString): ?ActionType
     {
-        $type = strtolower($typeString);
-        foreach (self::ACTION_KEYWORDS as $keyword => $actionType) {
-            if (str_contains($type, $keyword)) {
-                return $actionType;
-            }
-        }
+        $matched = $this->lookupKeyword($typeString, self::ACTION_KEYWORDS);
 
-        return null;
+        return $matched instanceof ActionType ? $matched : null;
     }
 
     /**

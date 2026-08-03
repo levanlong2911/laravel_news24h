@@ -43,15 +43,14 @@ class VideoPlanningPipelineDirectorMemoryTest extends TestCase
 
     private function spyDirector(): DirectorInterface
     {
-        return new class($this) implements DirectorInterface {
-            public function __construct(private readonly VideoPlanningPipelineDirectorMemoryTest $test)
-            {
-            }
+        return new class($this) implements DirectorInterface
+        {
+            public function __construct(private readonly VideoPlanningPipelineDirectorMemoryTest $test) {}
 
             public function select(array $candidates, VerifiedWorldGraph $world, ?ProducerOutput $producer, int $sceneOrdinal = 1, int $totalScenes = 1, array $priorScenes = []): ActionSelection
             {
                 $this->test->recordCall([
-                    'ordinal'     => $sceneOrdinal,
+                    'ordinal' => $sceneOrdinal,
                     'totalScenes' => $totalScenes,
                     'priorScenes' => $priorScenes,
                 ]);
@@ -142,9 +141,9 @@ class VideoPlanningPipelineDirectorMemoryTest extends TestCase
         $this->assertGreaterThanOrEqual(2, count($this->calls));
         $this->assertCount(1, $this->calls[1]['priorScenes']);
         $this->assertSame([
-            'ordinal'          => $this->calls[0]['ordinal'],
-            'hero'             => '',
-            'emotion'          => "emotion_{$this->calls[0]['ordinal']}",
+            'ordinal' => $this->calls[0]['ordinal'],
+            'hero' => '',
+            'emotion' => "emotion_{$this->calls[0]['ordinal']}",
             'composition_note' => "note_{$this->calls[0]['ordinal']}",
         ], $this->calls[1]['priorScenes'][0]);
     }

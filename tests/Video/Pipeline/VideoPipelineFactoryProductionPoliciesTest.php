@@ -18,7 +18,7 @@ class VideoPipelineFactoryProductionPoliciesTest extends TestCase
             ['match' => ['builder' => 'Feadship'], 'prohibit_attribute' => 'domes', 'prohibit_value' => true, 'reason' => 'integrated satellite receivers instead of exposed radomes (2025 refit)'],
         ]]);
 
-        $policies = VideoPipelineFactory::productionPolicies();
+        $policies = (new VideoPipelineFactory)->productionPolicies();
 
         $this->assertCount(1, $policies);
         $this->assertInstanceOf(EditorialPolicy::class, $policies[0]);
@@ -31,14 +31,14 @@ class VideoPipelineFactoryProductionPoliciesTest extends TestCase
     {
         config(['video.editorial_policies' => []]);
 
-        $this->assertSame([], VideoPipelineFactory::productionPolicies());
+        $this->assertSame([], (new VideoPipelineFactory)->productionPolicies());
     }
 
     public function test_the_real_shipped_config_has_the_feadship_domes_policy(): void
     {
         // Đúng ADR §12: prohibition thật đầu tiên, không phải fixture giả.
         // KHÔNG override config ở đây — đọc đúng config/video.php thật đang ship.
-        $policies = VideoPipelineFactory::productionPolicies();
+        $policies = (new VideoPipelineFactory)->productionPolicies();
 
         $this->assertNotEmpty($policies, 'config/video.php phải có ít nhất policy Feadship/domes thật');
         $feadship = current(array_filter($policies, fn ($p) => ($p->match['builder'] ?? null) === 'Feadship'));

@@ -22,10 +22,19 @@ use App\Video\RenderPlan\RenderPlanAssembler;
  * EditorialInterpreter($policies) vào cả hai, policy thật sẽ chỉ có hiệu lực
  * ở candidatesFor() còn continuity.prohibitions vẫn rỗng — bug âm thầm, không
  * lỗi rõ ràng. Factory này đảm bảo đúng 1 lần, test được.
+ *
+ * Method là INSTANCE, không static (2026-07-30): người gọi tiêm class này qua
+ * constructor (xem VideoRenderPlanService) nên phải gọi được bằng `->`. Class
+ * KHÔNG có state và KHÔNG có constructor ⇒ Laravel tự resolve, không cần
+ * binding nào trong ServiceProvider.
+ *
+ * Vẫn `final`: đây là collaborator, KHÔNG phải seam để thay thế. Muốn dựng
+ * pipeline khác thì `new VideoPlanningPipeline(...)` trực tiếp (VideoBenchmark
+ * đang làm vậy cho nhánh --extractor=fake), đừng mock factory này.
  */
 final class VideoPipelineFactory
 {
-    public static function claude(LlmClient $llm, array $policies = []): VideoPlanningPipeline
+    public function claude(LlmClient $llm, array $policies = []): VideoPlanningPipeline
     {
         $editorial = new EditorialInterpreter($policies);
 
@@ -44,7 +53,7 @@ final class VideoPipelineFactory
      *
      * @return list<EditorialPolicy>
      */
-    public static function productionPolicies(): array
+    public function productionPolicies(): array
     {
         return array_map(
             fn (array $p) => new EditorialPolicy(

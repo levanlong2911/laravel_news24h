@@ -94,12 +94,15 @@ class BenchmarkRunnerTest extends TestCase
         $this->assertSame([], $result->environmentAttributes);
     }
 
-    public function test_row_reports_error_status_without_throwing(): void
+    public function test_empty_world_is_reported_as_aborted_rather_than_error(): void
     {
-        // Claim khong khop bang chung nao trong bai -> Gatekeeper loai het ->
-        // world rong -> KHONG loi, nhung mo phong truong hop pipeline nem
-        // exception bang RawArticle rong ep vao meta thieu — dung article
-        // hop le nhung candidate hoan toan sai de kiem tra nhanh khong crash.
+        // DOI 2026-07-30: truoc day mong doi 'SUCCESS'. Gio VideoPlanningPipeline
+        // co GUARD dung ngay khi world rong — de KHONG goi Producer + N Director
+        // (moi cu deu mat tien) cho mot the gioi khong co gi.
+        //
+        // Nhung ABORTED ≠ ERROR: voi benchmark, "bai nay cho 0 entity" la mot KET
+        // QUA DO hop le, khong phai su co he thong. Gop chung vao ERROR se lam
+        // bai ngheo du lieu trong nhu he thong hong.
         $candidates = new CandidateWorldGraph([]);
         $runner = new BenchmarkRunner($this->pipeline(
             $candidates,
@@ -109,9 +112,33 @@ class BenchmarkRunnerTest extends TestCase
 
         $result = $runner->runOne($this->article(), $this->meta());
 
-        $this->assertSame('SUCCESS', $result->status);
+        $this->assertSame('ABORTED', $result->status);
+        $this->assertStringContainsString('gatekeeper', $result->error, 'phai noi ro dung o chang nao');
+
+        // So lieu world VAN duoc giu — onWorldVerified chay TRUOC guard.
         $this->assertSame(0, $result->entityCount);
         $this->assertSame('NO_LANDSCAPE_ENTITY', $result->environmentReason);
+    }
+
+    public function test_a_real_crash_is_still_reported_as_error(): void
+    {
+        // Phai phan biet duoc su co that voi dung-som-co-chu-dich.
+        $runner = new BenchmarkRunner(new VideoPlanningPipeline(
+            new class implements \App\Video\Extraction\Extractor
+            {
+                public function extract(RawArticle $article, \App\Video\Evidence\EvidenceIndex $index): \App\Video\Extraction\ExtractionResult
+                {
+                    throw new \RuntimeException('mat mang');
+                }
+            },
+            new FakeProducer(new ProducerOutput('a', 'b', 'c', [])),
+            new FakeDirector(new ActionSelection('', 0, [], 'calm', 'immediate')),
+        ));
+
+        $result = $runner->runOne($this->article(), $this->meta());
+
+        $this->assertSame('ERROR', $result->status);
+        $this->assertSame('mat mang', $result->error);
     }
 
     public function test_confidence_report_is_embedded_in_row(): void

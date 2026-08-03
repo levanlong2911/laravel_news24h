@@ -30,15 +30,6 @@ use Illuminate\Http\Request;
 //     return view('welcome');
 // });
 
-Route::fallback(function () {
-    $path = public_path('astro/index.html');
-    if (File::exists($path)) {
-        return Response::file($path);
-    } else {
-        abort(404);
-    }
-});
-
 Route::group(['prefix' => '/'], function () {
     // Login
     Route::match(['get', 'post'], '/login', [AuthController::class, 'login'])
@@ -153,7 +144,7 @@ Route::group(
     Route::group(['prefix' => 'video-session'], function () {
         Route::get('/',                    [VideoSessionController::class, 'index'])->name('video-session.index');
         // Route::match(['get','post'],'/add',         [VideoSessionController::class, 'add'])    ->name('video-session.add');
-        Route::match(['get','post'],'/creat-prompt/{id}',[VideoSessionController::class, 'creatPrompt'])       ->name('video-session.creatPrompt');
+        Route::match(['get','post'],'/creat-video/{id}',[VideoSessionController::class, 'creatVideo'])       ->name('video-session.creatVideo');
         Route::get('/{id}',                [VideoSessionController::class, 'show'])->name('video-session.show');
         Route::post('/{id}/approve-selected', [VideoSessionController::class, 'approveSelected'])->name('video-session.approve-selected');
         Route::post('/{id}/queue',         [VideoSessionController::class, 'queueApproved'])->name('video-session.queue');
