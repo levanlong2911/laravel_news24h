@@ -1041,9 +1041,6 @@ TERMINOLOGY (use naturally): {terminology}
 TONE: {tone_notes}
 HOOK STYLE: {hook_style}
 
-CONTENT TYPES REFERENCE:
-{content_types_block}
-
 ══════════════════════════════════════════
 ABSOLUTE RULES — no exceptions
 ══════════════════════════════════════════

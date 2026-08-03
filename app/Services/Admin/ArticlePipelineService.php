@@ -84,7 +84,14 @@ class ArticlePipelineService
         $this->promptGuard->validateHook($hookResult->bestHook);
 
         // ── 6. Sonnet — retry với fix prompt thay vì lặp lại cùng prompt (tiết kiệm token)
-        $sonnetPrompt = $payload->sonnetPrompt($facts, $hookResult->bestHook, $keyword, $structureTemplate);
+        $sonnetPrompt = $payload->sonnetPrompt(
+            $facts,
+            $hookResult->bestHook,
+            $keyword,
+            $structureTemplate,
+            $typeModel?->type_name,
+            $typeModel?->tone_profile ?? [],
+        );
         $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system);
         $guardResult  = $this->postGuard->check($sonnetResp->text, $facts);
         $retryCount   = 0;
