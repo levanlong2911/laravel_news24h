@@ -1154,7 +1154,7 @@ TITLE:
 
 CONTENT:
 • Arc: Hook → tension build → facts + quotes → stakes → forward-look
-• Length: 120 - 280 characters per <p>, HTML <p> tags only
+• Length: up to 280 characters per <p>, HTML <p> tags only — no minimum, never pad to reach a target
 • Sentence cap: 40 words max per sentence. Pack each sentence with specific facts, names, and numbers.
 • Every sentence must earn its place — if it only restates what the previous said, cut it.
 • Final sentence: forward-looking fact or open consequence
@@ -1225,7 +1225,7 @@ QUALITY GATE — verify before output
 [ ] No sentence over 40 words
 [ ] FB image text: 70-100 chars, proper name required, Hook + Tension, no anonymous reference
 [ ] Final sentence forward-looking, not philosophical
-[ ] FB post: 150-250 chars, named + specific stake + pressure + withheld outcome, no generic phrases, no CTA
+[ ] FB post: 150-250 chars, named + specific stake + pressure + withheld outcome, no generic phrases, no explicit CTA
 [ ] FB post: no bullet points, no URL, no hashtag, no emoji, conflict named in first line
 
 Fail any check → rewrite that section before outputting.
