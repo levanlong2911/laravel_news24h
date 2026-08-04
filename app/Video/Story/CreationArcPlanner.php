@@ -109,6 +109,21 @@ final class CreationArcPlanner
                 'camera' => $tpl['camera'] + ['target' => $tpl['camera_target'] ?? $heroId],
                 'aesthetic' => $tpl['aesthetic'],
                 'asset_refs' => ['as_'.$heroId],
+                // world = NGỮ CẢNH THẾ GIỚI của pha, dạng khoá ngữ nghĩa thuần
+                // (vd environment=open_shipyard). KHÔNG có chữ tiếng Anh nào:
+                // Laravel sở hữu SỰ THẬT ("cảnh này diễn ra ở loại nơi nào"),
+                // Python sở hữu CÁCH NÓI ("at an open waterside shipyard beneath
+                // the open sky, tall yellow mobile cranes...").
+                //
+                // Trước đây nơi chốn nằm lẫn trong `composition_note` — cùng một
+                // sự thật bị viết lại ở 3 pha + `anchor_setting` bên Python, nên
+                // sửa nghiệp vụ (du thuyền đóng trong nhà hay ngoài trời) phải
+                // sờ vào 4 chỗ và rất dễ lệch nhau. Giờ đổi ĐÚNG MỘT khoá.
+                //
+                // Pha nào không diễn ra ở một cơ sở sản xuất (bàn vẽ, trên boong,
+                // ngoài biển) thì KHÔNG khai `world` — không bịa nơi chốn. Key
+                // được thêm SAU, ngay dưới đây, để scene không mang `world: null`
+                // (schema đòi object khi có mặt).
                 'director_notes' => [
                     // hero ghi đè (2026-07-26): cùng lý do với camera_target —
                     // hero sinh ra câu "All attention is drawn to {hero}" đứng
@@ -124,6 +139,10 @@ final class CreationArcPlanner
                     ),
                 ],
             ];
+
+            if (isset($tpl['world'])) {
+                $scenes[count($scenes) - 1]['world'] = $tpl['world'];
+            }
 
             // objective = SCENE INTENT tự viết cho từng pha, KHÔNG phải
             // `producer.visual_promise` copy xuống (§18.18).

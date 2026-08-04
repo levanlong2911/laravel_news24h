@@ -233,7 +233,13 @@ return [
                         'objective' => 'Show the vessel taking physical form for the first time — a multi-deck section lowered onto the bare metal hull.',
                         'camera' => ['framing' => 'WIDE', 'movement' => 'STATIC', 'speed' => 'SLOW'],
                         'aesthetic' => ['emotion' => 'MAJESTIC', 'composition' => 'RULE_OF_THIRDS', 'light_intensity' => 'NEUTRAL', 'light_grade' => 'COOL'],
-                        'composition_note' => "At an open waterside shipyard under a clear sky, four tall yellow mobile cranes stand with their booms raised, together suspending a large multi-deck superstructure section in the air directly above the bare metal hull of {hero_name}; the section's underside structural ribbing is fully exposed, and a lone worker in a hard hat stands at the hull's edge, tiny against its scale.",
+                        // NƠI CHỐN nằm ở `world`, KHÔNG viết vào đây. Cần cẩu cũng
+                        // đi theo `world`: cẩu di động là thiết bị của bãi ngoài
+                        // trời — đổi sang nhà xưởng có mái thì nó phải thành cầu
+                        // trục chạy ray. Nó BIẾN THIÊN THEO môi trường nên thuộc
+                        // môi trường, không thuộc dàn cảnh.
+                        'world' => ['environment' => 'open_shipyard'],
+                        'composition_note' => "A large multi-deck superstructure section hangs suspended directly above the bare metal hull of {hero_name}; its underside structural ribbing is fully exposed, while a lone worker in a hard hat stands at the hull's edge, tiny against its scale.",
                         'micro_physics' => [
                             'The suspended section descends steadily and the gap between it and the hull below closes continuously, shrinking from several metres to almost nothing.',
                             'The lifting cables stay taut and vertical throughout, the load swaying only slightly as it comes down.',
@@ -258,7 +264,11 @@ return [
                         'hero' => 'marine_engine',
                         'camera' => ['framing' => 'MEDIUM', 'movement' => 'STATIC', 'speed' => 'SLOW'],
                         'aesthetic' => ['emotion' => 'DRAMATIC', 'composition' => 'CENTERED', 'light_intensity' => 'NEUTRAL', 'light_grade' => 'COOL'],
-                        'composition_note' => "A massive white marine diesel engine hangs from a heavy crane's rectangular lifting frame, chains taut at all four corners, suspended above the open deck plating of {hero_name}; a shipyard supervisor in a hard hat walks across the deck below, dwarfed by the engine's bulk, under an overcast sky.",
+                        // Khung nâng của cẩu GIỮ LẠI: nó là đạo cụ chính của shot,
+                        // còn tồn tại dù đổi sang cầu trục — không biến thiên theo
+                        // môi trường nên không thuộc `world`.
+                        'world' => ['environment' => 'open_shipyard'],
+                        'composition_note' => "A massive white marine diesel engine hangs from a heavy crane's rectangular lifting frame, chains taut at all four corners, suspended above the open deck plating of {hero_name}; a supervisor in a hard hat walks across the deck below, dwarfed by the engine's bulk.",
                         'micro_physics' => [
                             'The engine descends steadily toward the open engine-room hatch and the clearance beneath it shrinks continuously until the hatch opening is nearly filled.',
                             'The four lifting chains remain taut and evenly loaded, the engine holding level as it comes down.',
@@ -301,7 +311,8 @@ return [
                          */
                         'camera' => ['framing' => 'CLOSE', 'movement' => 'STATIC', 'speed' => 'MEDIUM'],
                         'aesthetic' => ['emotion' => 'DRAMATIC', 'composition' => 'RULE_OF_THIRDS', 'light_intensity' => 'HARSH', 'light_grade' => 'COOL'],
-                        'composition_note' => 'Inside a bright finishing hall, a worker in protective gear and a face shield stands on the platform of an orange scissor lift raised against the towering white-painted hull of {hero_name}, working an angle grinder along a seam on the hull side.',
+                        'world' => ['environment' => 'finishing_hall'],
+                        'composition_note' => 'A worker in protective gear and a face shield stands on the platform of an orange scissor lift raised against the towering white-painted hull of {hero_name}, working an angle grinder along a seam on the hull side.',
                         'micro_physics' => [
                             'The grinder advances along the seam and a smooth faired strip remains behind it, the finished stretch extending continuously while the rough section ahead grows shorter.',
                             'A tight fan of orange sparks streams from the contact point and travels with the grinder, always originating exactly where the disc meets the hull.',
