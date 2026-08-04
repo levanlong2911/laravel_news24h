@@ -91,6 +91,14 @@ final class RenderPlanAssembler
             ],
         ];
 
+        // category: slug CMS, optional — bỏ hẳn key khi bài chưa gán category
+        // (không emit chuỗi rỗng). Compiler Python nạp hồ sơ tri thức ngành theo
+        // slug này; không có slug/không có hồ sơ thì nó không bơm gì. Xem
+        // RenderPlanMeta::$category.
+        if ($meta->category !== '') {
+            $plan['category'] = $meta->category;
+        }
+
         // world_environment: CẤP VIDEO, chỉ có khi Truth có ĐÚNG 1 Landscape
         // entity (Sprint 2, 2026-07-22). KHÔNG copy xuống scene.world — đó là
         // field RIÊNG, RESERVED cho per-scene projection thật sau này (cần

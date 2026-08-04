@@ -132,6 +132,11 @@ class VideoRenderPlanService
             $article->title,
             'en',
             now()->toIso8601String(),
+            // Slug category THẬT của bài (dữ liệu động trong CMS), KHÔNG lấy từ
+            // config('video.creation_arc.categories') — bảng đó chỉ khai 4/27
+            // category và phục vụ việc kích hoạt Creation Arc, không phải việc
+            // chọn hồ sơ tri thức ngành bên Python.
+            (string) ($article->category?->slug ?? ''),
         );
 
         // CHOT CHI PHI (§18.23): bai thuoc category co Creation Arc thi

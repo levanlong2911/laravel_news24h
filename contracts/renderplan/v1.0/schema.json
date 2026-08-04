@@ -14,6 +14,12 @@
     "article_id": { "$ref": "#/$defs/uuid" },
     "generated_at": { "type": "string", "format": "date-time" },
 
+    "category": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Slug category CMS cua bai. OPTIONAL, additive (v1.0 §14): compiler Python nap ho so tri thuc nganh theo slug nay — xuong dong tau, nha may o to, xuong dua co goc may/vai tho/do bao ho khac nhau. Khong co slug hoac khong co ho so tuong ung thi Python KHONG bom gi (khong suy dien)."
+    },
+
     "story": {
       "type": "object",
       "additionalProperties": false,
