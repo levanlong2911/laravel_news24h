@@ -286,7 +286,13 @@
         "primary":           { "$ref": "#/$defs/action" },
         "secondary":         { "type": "array", "items": { "$ref": "#/$defs/action" } },
         "micro_physics":     { "type": "array", "items": { "type": "string" } },
-        "composition_note":  { "type": "string" }
+        "composition_note":  { "type": "string" },
+        "crowd": {
+          "description": "So nguoi trong khung, theo VAI. Quyet dinh cua DAO DIEN — dong de thay dai cong truong, hay mot nguoi de thay quy mo co may. Nam trong director_notes vi day la BLOCKING (cung nhom hero/camera/micro_physics), KHONG phai tri thuc nganh: ho so category chi noi workers LA AI (roles + PPE), khong noi BAO NHIEU. Hai planner cung quyet so nguoi thi prompt tu mau thuan — bang chung 2026-08-03: prose ghi 'a lone worker' trong khi ho so ep 'Exactly 6 people'. OPTIONAL: vang thi compiler khong ep so, canh de model tu quyet.",
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 },
+          "propertyNames": { "pattern": "^[a-z0-9]+([ _][a-z0-9]+)*$" }
+        }
       }
     },
 

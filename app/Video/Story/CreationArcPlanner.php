@@ -137,6 +137,15 @@ final class CreationArcPlanner
                         fn (string $s) => str_replace('{hero_name}', $heroName, $s),
                         $tpl['micro_physics'] ?? [],
                     ),
+                    // crowd = SỐ NGƯỜI TRONG KHUNG, quyết định của đạo diễn (đông
+                    // để thấy đại công trường, hay một người để thấy quy mô cỗ
+                    // máy). Nằm trong director_notes vì nó là BLOCKING, cùng nhóm
+                    // với hero/camera/micro_physics — không phải tri thức ngành.
+                    //
+                    // Nó cũng là thứ DUY NHẤT chặn được model tự thêm người vào
+                    // khung: prose tả "một quản đốc" không ngăn Veo rắc thêm vài
+                    // công nhân cho "sinh động", và thế là mất luôn ý đồ cô đơn.
+                    'crowd' => $tpl['crowd'] ?? [],
                 ],
             ];
 
