@@ -81,8 +81,18 @@ return [
      * v1 → v2: viết lại theo 9 ẢNH TƯ LIỆU THẬT của một lượt đóng du thuyền.
      * v1 mô tả SAI ngành ở 2/3 pha — nặng nhất là gộp nhầm "hàn trên sườn thép
      * trần" (đầu quy trình) với "mài vỏ đã sơn" (cuối quy trình), hai giai đoạn
-     * cách nhau cả năm. Đừng viết lại các câu dưới đây bằng cách ĐOÁN; sửa
-     * chúng phải dựa trên tư liệu thật của đúng ngành đó.
+     * cách nhau cả năm.
+     *
+     * TƯ LIỆU LÀ THÔNG TIN, KHÔNG PHẢI LUẬT. Nó giúp hiểu ngành đang diễn ra thế
+     * nào; nó KHÔNG khoá được các câu dưới đây. Thứ có quyền phủ quyết là ẢNH/
+     * CLIP RENDER THẬT: prompt đúng tư liệu mà model vẫn vẽ sai thì prompt phải
+     * đổi, không phải chờ tìm được tấm ảnh tư liệu khác. Cùng lý do, các mục
+     * §18.x trong ARCHITECTURE.md là ghi chép thứ đã đo được, không phải điều
+     * cấm — đọc để khỏi lặp lại sai lầm cũ, rồi vẫn cứ thử khi có lý do.
+     *
+     * Bằng chứng cho chính luật này (2026-08-04): identity `construction` viết
+     * bám tư liệu mà Flux vẫn cho ra du thuyền hoàn thiện; sửa được là nhờ nhìn
+     * ảnh render, không nhờ tra lại tư liệu.
      *
      * MỌI câu mô tả chuyển động phải theo Observable/Measurable Behavior
      * (§18.12): trả lời được "điều gì ĐO ĐƯỢC đã đổi khác giữa frame đầu và
@@ -164,8 +174,40 @@ return [
                  * (`entity_identity_facts`), không viết tay ở đây.
                  */
                 'identity' => [
+                    /**
+                     * Bằng chứng render 2026-08-04 (anchor Flux dev, $0.025): bản
+                     * cũ ghi "…three decks, a raked plumb bow, window openings cut
+                     * but not yet glazed" và Flux cho ra một chiếc du thuyền ĐÃ
+                     * HOÀN THIỆN — vỏ sơn bóng, kính đã lắp, thượng tầng dựng
+                     * xong, có cả radome.
+                     *
+                     * Nguyên nhân: "three decks" mô tả HÌNH DẠNG THÀNH PHẨM. Nó là
+                     * khái niệm mạnh, kéo model về con tàu xong rồi mấy chữ "chưa
+                     * lắp kính" bị nuốt. Nêu cái ĐANG CÓ mà quên phủ định cái CHƯA
+                     * CÓ thì model tự điền nốt phần còn thiếu.
+                     *
+                     * SỬA QUAN TRỌNG NHẤT là TỪ MỞ ĐẦU, không phải các câu phủ
+                     * định. Bản cũ mở bằng "luxury motor yacht" — trong dữ liệu
+                     * huấn luyện gần như MỌI ảnh gắn nhãn đó đều là tàu đã bàn
+                     * giao, nên model chốt khái niệm "du thuyền hoàn thiện" ngay
+                     * từ token đầu; "bare grey steel", "no paint" phía sau chỉ còn
+                     * là modifier, và model hoà giải hai nhóm token bằng cách vẽ
+                     * đúng thứ ta nhận được: du thuyền xong đậu trong xưởng.
+                     *
+                     * Giờ mở bằng "steel hull under construction" — khái niệm gốc
+                     * là VẬT ĐANG ĐÓNG. "Future luxury motor yacht" đẩy xuống sau
+                     * để giữ thông tin nó sẽ thành gì mà không dẫn dắt hình ảnh.
+                     *
+                     * Rồi mới liệt kê thứ CHƯA TỒN TẠI, đặt trong prompt DƯƠNG
+                     * (negative không đủ cho trục trạng thái). Bỏ "three decks" vì
+                     * giai đoạn này chưa có tầng nào — chính nó tả hình dạng THÀNH
+                     * PHẨM.
+                     *
+                     * KHÔNG nêu số mét ở đây (xem ghi chú dài phía trên): chiều dài
+                     * là Truth của từng bài, compiler nối từ entity_identity_facts.
+                     */
                     'construction' => [
-                        'visual_identity' => 'the same luxury motor yacht, hull still bare grey steel with visible weld seams, no paint and no name markings, three decks, a raked plumb bow, window openings cut but not yet glazed',
+                        'visual_identity' => 'the same large steel superyacht hull under construction, a future luxury motor yacht, raw mill-scale steel plate in patchy grey and red-brown primer, rough matte surface with rust streaks, visible horizontal weld seams and white chalk survey marks, a raked plumb bow, no superstructure on it yet — the top is an open flat deck edge with nothing above it, no windows fitted, only rectangular cut-outs in the plating, no railings, no mast, no radar, no name',
                     ],
                     'final' => [
                         'visual_identity' => 'the same luxury motor yacht with a dark navy metallic hull, white superstructure, three decks, a raked plumb bow, long horizontal tinted glass bands along each deck, and a slender radar mast behind the wheelhouse',
@@ -238,7 +280,7 @@ return [
                         // trời — đổi sang nhà xưởng có mái thì nó phải thành cầu
                         // trục chạy ray. Nó BIẾN THIÊN THEO môi trường nên thuộc
                         // môi trường, không thuộc dàn cảnh.
-                        'world' => ['environment' => 'open_shipyard'],
+                        'setting' => ['environment' => 'covered_shipbuilding_hall'],
                         // SỐ NGƯỜI = ý đồ đạo diễn, đặt NGAY CẠNH prose để một
                         // người viết cả hai và thấy nhau khi sửa. Khớp đúng prose
                         // bên dưới: 1 thợ ở mép vỏ + 2 thợ trên boong.
@@ -271,7 +313,7 @@ return [
                         // Khung nâng của cẩu GIỮ LẠI: nó là đạo cụ chính của shot,
                         // còn tồn tại dù đổi sang cầu trục — không biến thiên theo
                         // môi trường nên không thuộc `world`.
-                        'world' => ['environment' => 'open_shipyard'],
+                        'setting' => ['environment' => 'covered_shipbuilding_hall'],
                         // MỘT người là CHỦ Ý: quản đốc làm thước tỉ lệ, 'dwarfed by
                         // the engine's bulk' — sự cô đơn chính là thứ cho thấy cỗ
                         // máy khổng lồ. Khai số ở đây còn để CHẶN model tự rắc thêm
@@ -320,7 +362,7 @@ return [
                          */
                         'camera' => ['framing' => 'CLOSE', 'movement' => 'STATIC', 'speed' => 'MEDIUM'],
                         'aesthetic' => ['emotion' => 'DRAMATIC', 'composition' => 'RULE_OF_THIRDS', 'light_intensity' => 'HARSH', 'light_grade' => 'COOL'],
-                        'world' => ['environment' => 'finishing_hall'],
+                        'setting' => ['environment' => 'finishing_hall'],
                         'crowd' => ['worker' => 1],
                         'composition_note' => 'A worker in protective gear and a face shield stands on the platform of an orange scissor lift raised against the towering white-painted hull of {hero_name}, working an angle grinder along a seam on the hull side.',
                         'micro_physics' => [

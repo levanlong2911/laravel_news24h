@@ -109,8 +109,12 @@ final class CreationArcPlanner
                 'camera' => $tpl['camera'] + ['target' => $tpl['camera_target'] ?? $heroId],
                 'aesthetic' => $tpl['aesthetic'],
                 'asset_refs' => ['as_'.$heroId],
-                // world = NGỮ CẢNH THẾ GIỚI của pha, dạng khoá ngữ nghĩa thuần
-                // (vd environment=open_shipyard). KHÔNG có chữ tiếng Anh nào:
+                // setting = BỐI CẢNH của pha, dạng khoá ngữ nghĩa thuần
+                // (vd environment=covered_shipbuilding_hall). KHÔNG có chữ tiếng Anh nào.
+                // TÊN `setting` chứ không phải `world`: `scene.world` ĐÃ CÓ trong
+                // contract với nghĩa khác hẳn — World FACTS từ Truth (§13). Đặt
+                // trùng tên thì một cái nuốt cái kia trong JSON và trộn hai loại
+                // tri thức (Truth vs Editorial) vào một chỗ.
                 // Laravel sở hữu SỰ THẬT ("cảnh này diễn ra ở loại nơi nào"),
                 // Python sở hữu CÁCH NÓI ("at an open waterside shipyard beneath
                 // the open sky, tall yellow mobile cranes...").
@@ -121,8 +125,8 @@ final class CreationArcPlanner
                 // sờ vào 4 chỗ và rất dễ lệch nhau. Giờ đổi ĐÚNG MỘT khoá.
                 //
                 // Pha nào không diễn ra ở một cơ sở sản xuất (bàn vẽ, trên boong,
-                // ngoài biển) thì KHÔNG khai `world` — không bịa nơi chốn. Key
-                // được thêm SAU, ngay dưới đây, để scene không mang `world: null`
+                // ngoài biển) thì KHÔNG khai `setting` — không bịa nơi chốn. Key
+                // được thêm SAU, ngay dưới đây, để scene không mang `setting: null`
                 // (schema đòi object khi có mặt).
                 'director_notes' => [
                     // hero ghi đè (2026-07-26): cùng lý do với camera_target —
@@ -145,12 +149,21 @@ final class CreationArcPlanner
                     // Nó cũng là thứ DUY NHẤT chặn được model tự thêm người vào
                     // khung: prose tả "một quản đốc" không ngăn Veo rắc thêm vài
                     // công nhân cho "sinh động", và thế là mất luôn ý đồ cô đơn.
-                    'crowd' => $tpl['crowd'] ?? [],
+                    //
+                    // Key được thêm SAU (như `world`) chứ không đặt ở đây với mặc
+                    // định `[]`: mảng rỗng PHP encode thành JSON `[]` còn schema
+                    // đòi object, nên pha không khai crowd sẽ PHÁ CONTRACT. Cùng
+                    // họ với bug `attributes` mà repairAfterDatabaseRoundTrip()
+                    // phải vá. Vắng crowd = không ép số, đúng nghĩa hơn `{}` rỗng.
                 ],
             ];
 
-            if (isset($tpl['world'])) {
-                $scenes[count($scenes) - 1]['world'] = $tpl['world'];
+            if (isset($tpl['setting'])) {
+                $scenes[count($scenes) - 1]['setting'] = $tpl['setting'];
+            }
+
+            if (! empty($tpl['crowd'])) {
+                $scenes[count($scenes) - 1]['director_notes']['crowd'] = $tpl['crowd'];
             }
 
             // objective = SCENE INTENT tự viết cho từng pha, KHÔNG phải

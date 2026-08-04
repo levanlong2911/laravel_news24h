@@ -426,24 +426,24 @@ class CreationArcPlannerTest extends TestCase
         $this->assertSame($fromPlan, $fromMerge);
     }
 
-    public function test_world_is_passed_through_as_semantic_key(): void
+    public function test_setting_is_passed_through_as_semantic_key(): void
     {
         // Laravel chỉ gửi KHOÁ; cách nói bằng tiếng Anh là việc của compiler Python.
         $phases = $this->phases();
-        $phases['construction']['world'] = ['environment' => 'open_shipyard'];
+        $phases['construction']['setting'] = ['environment' => 'open_shipyard'];
 
         $scene = (new CreationArcPlanner($phases))->plan(self::HERO_ID, self::HERO_NAME)['scenes'][1];
 
-        $this->assertSame(['environment' => 'open_shipyard'], $scene['world']);
+        $this->assertSame(['environment' => 'open_shipyard'], $scene['setting']);
     }
 
-    public function test_scene_without_world_omits_the_key_entirely(): void
+    public function test_scene_without_setting_omits_the_key_entirely(): void
     {
         // Pha không diễn ra ở một cơ sở sản xuất (bàn vẽ, trên boong, ngoài biển)
-        // thì KHÔNG có nơi chốn để khai. Emit `world: null` sẽ fail schema (đòi
+        // thì KHÔNG có nơi chốn để khai. Emit `setting: null` sẽ fail schema (đòi
         // object khi có mặt) và tệ hơn là mời compiler đi đoán.
         foreach ((new CreationArcPlanner($this->phases()))->plan(self::HERO_ID, self::HERO_NAME)['scenes'] as $scene) {
-            $this->assertArrayNotHasKey('world', $scene);
+            $this->assertArrayNotHasKey('setting', $scene);
         }
     }
 

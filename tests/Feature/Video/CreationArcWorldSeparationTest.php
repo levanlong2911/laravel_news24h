@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Video;
 
+use App\Video\Story\CreationArcPlanner;
+use Opis\JsonSchema\Errors\ErrorFormatter;
+use Opis\JsonSchema\Validator;
 use Tests\TestCase;
 
 /**
@@ -30,13 +33,13 @@ class CreationArcWorldSeparationTest extends TestCase
      */
     private const PLACE_WORDS = ['shipyard', 'hall', 'sky', 'outdoor', 'indoor', 'dry dock', 'quay', 'workshop'];
 
-    public function test_phase_prose_never_states_the_place_when_world_is_declared(): void
+    public function test_phase_prose_never_states_the_place_when_setting_is_declared(): void
     {
         $checked = 0;
 
         foreach (config('video.creation_arc.phase_sets', []) as $setKey => $set) {
             foreach ($set['phases'] ?? [] as $phaseKey => $phase) {
-                if (! isset($phase['world'])) {
+                if (! isset($phase['setting'])) {
                     continue;
                 }
                 $checked++;
@@ -44,8 +47,8 @@ class CreationArcWorldSeparationTest extends TestCase
 
                 foreach (self::PLACE_WORDS as $word) {
                     $this->assertStringNotContainsString($word, $note, sprintf(
-                        "%s.%s: composition_note nhắc nơi chốn ('%s') trong khi pha này đã khai world. ".
-                        'Nơi chốn chỉ được sống ở world — nếu không, đổi nghiệp vụ phải sửa hai chỗ và chúng sẽ lệch nhau.',
+                        "%s.%s: composition_note nhắc nơi chốn ('%s') trong khi pha này đã khai setting. ".
+                        'Nơi chốn chỉ được sống ở setting — nếu không, đổi nghiệp vụ phải sửa hai chỗ và chúng sẽ lệch nhau.',
                         $setKey, $phaseKey, $word,
                     ));
                 }
@@ -55,18 +58,64 @@ class CreationArcWorldSeparationTest extends TestCase
         $this->assertGreaterThan(0, $checked, 'Không pha nào khai world — test này đang không bảo vệ gì cả.');
     }
 
-    public function test_world_carries_semantic_keys_only_never_english(): void
+    /**
+     * MẮT NỐI CUỐI: plan ĐÃ MERGE Creation Arc phải qua được schema v1.0.
+     *
+     * `RenderPlanSchemaTest` chỉ validate golden fixture — fixture đó KHÔNG có
+     * scene do Creation Arc sinh, nên `scene.world` và `director_notes.crowd`
+     * (hai field vừa thêm) chưa từng bị schema soi. Và production KHÔNG validate
+     * (schema chỉ được đọc trong test), nên một field phá contract sẽ đi thẳng
+     * sang Python mà không ai chặn.
+     *
+     * Test này chạy ĐÚNG đường thật: config/video.php -> CreationArcPlanner ->
+     * mergeInto -> schema.
+     */
+    public function test_creation_arc_plan_satisfies_the_frozen_contract(): void
+    {
+        $fixture = __DIR__ . '/../../../contracts/renderplan/v1.0/fixtures/moonrise.json';
+        $schemaPath = __DIR__ . '/../../../contracts/renderplan/v1.0/schema.json';
+        $this->assertFileExists($fixture, 'Thiếu golden fixture — không có plan hợp lệ để merge arc vào.');
+
+        $plan = json_decode(file_get_contents($fixture), true, 512, JSON_THROW_ON_ERROR);
+        $heroId = $plan['world']['entities'][0]['id'];
+
+        $set = config('video.creation_arc.phase_sets.vessel');
+        $merged = (new CreationArcPlanner($set['phases'], $set['identity'] ?? []))
+            ->mergeInto($plan, $heroId, 'Test Vessel');
+
+        // Có ít nhất một scene mang `world` và một scene mang `crowd` — nếu không,
+        // test này đang xanh mà chẳng bảo vệ gì.
+        $withWorld = array_filter($merged['scenes'], fn ($s) => isset($s['setting']));
+        $withCrowd = array_filter($merged['scenes'], fn ($s) => ! empty($s['director_notes']['crowd']));
+        $this->assertNotEmpty($withWorld, 'Không scene nào có setting — test không bảo vệ gì.');
+        $this->assertNotEmpty($withCrowd, 'Không scene nào có crowd — test không bảo vệ gì.');
+
+        $result = (new Validator())->validate(
+            json_decode(json_encode($merged), false, 512, JSON_THROW_ON_ERROR),
+            json_decode(file_get_contents($schemaPath), false, 512, JSON_THROW_ON_ERROR),
+        );
+
+        if ($result->hasError()) {
+            $this->fail("Plan có Creation Arc KHÔNG qua schema v1.0:\n".json_encode(
+                (new ErrorFormatter())->format($result->error()),
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
+            ));
+        }
+        $this->addToAssertionCount(1);
+    }
+
+    public function test_setting_carries_semantic_keys_only_never_english(): void
     {
         // Laravel là Semantic Authority: nó nói "loại nơi nào", không nói "tả ra
         // sao". Giá trị phải là khoá snake_case khớp enum trong
         // contracts/renderplan/v1.0/schema.json, không phải một câu.
         foreach (config('video.creation_arc.phase_sets', []) as $setKey => $set) {
             foreach ($set['phases'] ?? [] as $phaseKey => $phase) {
-                foreach ($phase['world'] ?? [] as $axis => $value) {
+                foreach ($phase['setting'] ?? [] as $axis => $value) {
                     $this->assertMatchesRegularExpression(
                         '/^[a-z0-9]+(_[a-z0-9]+)*$/',
                         (string) $value,
-                        "{$setKey}.{$phaseKey}.world.{$axis} = '{$value}' — phải là khoá ngữ nghĩa snake_case, không phải văn xuôi.",
+                        "{$setKey}.{$phaseKey}.setting.{$axis} = '{$value}' — phải là khoá ngữ nghĩa snake_case, không phải văn xuôi.",
                     );
                 }
             }

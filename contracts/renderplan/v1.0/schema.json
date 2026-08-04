@@ -217,10 +217,10 @@
 
         "subjects": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/slug" } },
 
-        "world": {
+        "setting": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Ngu canh THE GIOI cua scene, KHOA NGU NGHIA thuan — khong mot chu tieng Anh nao. Laravel so huu SU THAT (canh nay dien ra o loai noi nao), Python so huu CACH NOI. OPTIONAL: scene khong dien ra o mot co so san xuat (ban ve, tren boong, ngoai bien) thi BO HAN key — khong bia noi chon. Enum khai o day de typo bi bat ngay tai Laravel, khong doi toi Python moi lo; Python gap khoa la thi NEM, khong fallback.",
+          "description": "BOI CANH scene — noi chon, KHOA NGU NGHIA thuan — khong mot chu tieng Anh nao. Laravel so huu SU THAT (canh nay dien ra o loai noi nao), Python so huu CACH NOI. OPTIONAL: scene khong dien ra o mot co so san xuat (ban ve, tren boong, ngoai bien) thi BO HAN key — khong bia noi chon. KHAC `scene.world`: `world` la World FACTS tu Truth (§13, RESERVED, vang khi khong co bang chung); `setting` la lua chon EDITORIAL (Creation Arc boi co chu dich). Dat chung ten se lam mot cai nuot cai kia trong JSON va tron hai loai tri thuc. Enum khai o day de typo bi bat ngay tai Laravel; Python gap khoa la thi NEM, khong fallback.",
           "properties": {
             "environment": {
               "enum": ["open_shipyard", "covered_shipbuilding_hall", "finishing_hall", "paint_booth", "dry_dock", "open_water"]
