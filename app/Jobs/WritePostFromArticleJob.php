@@ -7,6 +7,7 @@ use App\Models\Article;
 use App\Models\Domain;
 use App\Models\Post;
 use App\Services\Admin\ClaudeWriterService;
+use App\Services\Admin\RequestContext;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -53,11 +54,15 @@ class WritePostFromArticleJob implements ShouldQueue
                 throw new \RuntimeException('Content quá ngắn để xử lý (<100 ký tự)');
             }
 
+            // Duong admin cung phai vao so cai, neu khong doi soat se luon lech
+            // ma khong quy duoc ve dau — chinh la lo hong da phat hien hom nay.
+            $ledgerContext = new RequestContext(articleId: $article->id);
+
             // ── STEP 1: Claude Haiku — extract & structure key facts ──────────
             $haikuResp = $claude->generate(
                 $this->haikuPrompt($kwName, $rawText),
                 'haiku',
-                phase: 'FACT_EXTRACTION',
+                context: $ledgerContext->withPhase('FACT_EXTRACTION'),
             );
 
             if (empty(trim($haikuResp->text))) {
@@ -70,7 +75,7 @@ class WritePostFromArticleJob implements ShouldQueue
             $sonnetResp = $claude->generate(
                 $this->sonnetPrompt($kwName, $article->title, $facts),
                 'sonnet',
-                phase: 'WRITE',
+                context: $ledgerContext->withPhase('WRITE'),
             );
 
             $parsed = $this->parseJson($sonnetResp->text);

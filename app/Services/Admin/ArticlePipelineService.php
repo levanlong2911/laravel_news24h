@@ -30,8 +30,15 @@ class ArticlePipelineService
      * @throws \RuntimeException  khi content quá ngắn, Haiku rỗng, PromptGuard fail,
      *                            hoặc JSON vẫn invalid sau retry
      */
-    public function run(string $rawHtml, string $keyword, string $categoryId): PipelineResult
-    {
+    public function run(
+        string $rawHtml,
+        string $keyword,
+        string $categoryId,
+        ?RequestContext $context = null,
+    ): PipelineResult {
+        // Không có context thì vẫn chạy, chỉ là dòng sổ cái thiếu article_id —
+        // sai sót nhìn thấy được trong bảng, không phải tiền mất im lặng.
+        $context ??= new RequestContext();
         // ── 1. Clean + limit ──────────────────────────────────────────────────
         $originalLen = max(strlen($rawHtml), 1);
         $cleanedText = $this->cleaner->limit($this->cleaner->clean($rawHtml));
@@ -52,7 +59,7 @@ class ArticlePipelineService
         $haikuResp = $this->claude->generate(
             $payload->haikuCombinedPrompt($cleanedText, $keyword, $hookStyle),
             'haiku',
-            phase: 'FACT_EXTRACTION',
+            context: $context->withPhase('FACT_EXTRACTION'),
         );
 
         if (empty(trim($haikuResp->text))) {
@@ -77,7 +84,7 @@ class ArticlePipelineService
         }
 
         // ── 4. HookEngine → detect content type + best hook ───────────────────
-        $hookResult        = $this->hookEngine->resolve($facts, $keyword, $hookStyle, $contentTypes, $preloadedCandidates);
+        $hookResult        = $this->hookEngine->resolve($facts, $keyword, $hookStyle, $contentTypes, $preloadedCandidates, $context);
         $typeModel         = $contentTypes->firstWhere('type_code', $hookResult->detectedType);
         $structureTemplate = $typeModel?->structure_template ?? config('prompt.default_structure', '');
 
@@ -93,7 +100,7 @@ class ArticlePipelineService
             $typeModel?->type_name,
             $typeModel?->tone_profile ?? [],
         );
-        $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system, phase: 'WRITE');
+        $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system, context: $context->withPhase('WRITE'));
         $guardResult  = $this->postGuard->check($sonnetResp->text, $facts);
         $retryCount   = 0;
         $retryReason  = null;
@@ -108,7 +115,7 @@ class ArticlePipelineService
                 . "Fix rule: every \" inside a string value must be escaped as \\\".\n"
                 . "Return ONLY the corrected JSON — no markdown, no explanation.\n\n"
                 . $sonnetResp->text;
-            $retryResp   = $this->claude->generate($fixPrompt, 'sonnet', phase: 'WRITE_RETRY');
+            $retryResp   = $this->claude->generate($fixPrompt, 'sonnet', context: $context->withPhase('WRITE_RETRY'));
             $guardResult = $this->postGuard->check($retryResp->text, $facts);
         }
 

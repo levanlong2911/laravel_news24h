@@ -88,35 +88,23 @@ class ClaudeWriterService
         ) / 1_000_000;
     }
 
-    /** Ngữ cảnh nghiệp vụ hiện hành — xem withContext(). */
-    private ?string $articleId     = null;
-    private ?string $pipelineRunId = null;
-
     public function __construct(
         private readonly RequestLedgerRecorder $ledger = new RequestLedgerRecorder(),
     ) {}
 
     /**
-     * Gắn ngữ cảnh nghiệp vụ cho mọi lượt generate() sau đó.
+     * $context đi THEO LỜI GỌI, không phải trạng thái của service.
      *
-     * Gọi MỘT LẦN mỗi bài viết, không phải mỗi lượt gọi. Quên gọi thì dòng sổ
-     * cái vẫn được ghi với article_id rỗng — sai sót nhìn thấy được trong bảng,
-     * thay vì tiền mất im lặng. Đó là mức tốt nhất đạt được khi Laravel 10 chưa
-     * có facade Context (11+ mới có).
+     * ClaudeWriterService không được bind singleton: ArticlePipelineService và
+     * HookEngine mỗi bên giữ một instance riêng. Đặt context lên service thì set
+     * ở pipeline xong lượt gọi của HookEngine vẫn rỗng — đúng lượt từng bị bỏ
+     * quên cả token lẫn tiền.
      */
-    public function withContext(?string $articleId, ?string $pipelineRunId = null): static
-    {
-        $this->articleId     = $articleId;
-        $this->pipelineRunId = $pipelineRunId;
-
-        return $this;
-    }
-
     public function generate(
         string  $prompt,
         string  $modelType = 'haiku',
         string  $system = '',
-        ?string $phase = null,
+        ?RequestContext $context = null,
     ): ClaudeResponse {
         $model     = self::MODELS[$modelType]     ?? self::MODELS['haiku'];
         $maxTokens = self::MAX_TOKENS[$modelType] ?? 2048;
@@ -125,8 +113,8 @@ class ClaudeWriterService
         $callUuid   = (string) Str::uuid();
         $promptHash = hash('sha256', $system . "\n" . $prompt);
 
-        $parentRequestId = null;
-        $retryReason     = null;
+        $previousRequestId = null;
+        $retryReason       = null;
 
         $requestBody = [
             'model'      => $model,
@@ -221,17 +209,15 @@ class ClaudeWriterService
                 model:           $model,
                 modelType:       $modelType,
                 pricingVersion:  self::PRICING_VERSION,
-                billed:          RequestLedgerRecorder::billedFrom($httpStatus),
+                billed:          Billing::fromHttpStatus($httpStatus),
                 startedAt:       $startedAt,
                 finishedAt:      $finishedAt,
                 latencyMs:       $latencyMs,
                 httpStatus:      $httpStatus,
-                requestId:       $requestId,
-                parentRequestId: $parentRequestId,
-                articleId:       $this->articleId,
-                pipelineRunId:   $this->pipelineRunId,
-                phase:           $phase,
-                usage:           $attemptUsage,
+                requestId:          $requestId,
+                previousRequestId:  $previousRequestId,
+                context:            $context,
+                usage:              $attemptUsage,
                 usageJson:       is_array($usageJson) ? $usageJson : null,
                 promptHash:      $promptHash,
                 responseHash:    $attemptText === null ? null : hash('sha256', $attemptText),
@@ -240,7 +226,7 @@ class ClaudeWriterService
             );
 
             // Lượt sau sẽ tham chiếu ngược về lượt này.
-            $parentRequestId = $requestId;
+            $previousRequestId = $requestId;
             $retryReason     = $curlError ? 'network' : ($httpStatus === null ? 'timeout' : 'http_' . $httpStatus);
 
             if ($curlError ?? false) {

@@ -17,6 +17,13 @@ use Illuminate\Support\Facades\Log;
  * Mọi lỗi ghi sổ đều bị nuốt và chỉ log lại. Mất một dòng ledger là mất khả
  * năng đối soát; ném exception ở đây là mất cả bài viết. Đổi lấy cái nào thì
  * rõ rồi.
+ *
+ * ── Vì sao tự json_encode ───────────────────────────────────────────────────
+ *
+ * Bảng này chưa có Eloquent model nên không có tầng $casts để nhờ. DB::table()
+ * là tầng persistence ở đây, và nó không encode mảng giúp. Ngày nào bảng cần
+ * đọc nhiều và sinh model thì chuyển sang cast 'array' — không encode hai lần,
+ * vì hiện chỉ encode đúng một lần.
  */
 final class RequestLedgerRecorder
 {
@@ -31,16 +38,14 @@ final class RequestLedgerRecorder
         string  $model,
         string  $modelType,
         string  $pricingVersion,
-        string  $billed,
+        Billing $billed,
         \DateTimeInterface $startedAt,
         ?\DateTimeInterface $finishedAt = null,
         ?int    $latencyMs = null,
         ?int    $httpStatus = null,
         ?string $requestId = null,
-        ?string $parentRequestId = null,
-        ?string $articleId = null,
-        ?string $pipelineRunId = null,
-        ?string $phase = null,
+        ?string $previousRequestId = null,
+        ?RequestContext $context = null,
         ?TokenUsage $usage = null,
         ?array  $usageJson = null,
         ?string $promptHash = null,
@@ -53,11 +58,11 @@ final class RequestLedgerRecorder
             DB::table(self::TABLE)->insert([
                 'call_uuid'             => $callUuid,
                 'attempt'               => $attempt,
-                'parent_request_id'     => $parentRequestId,
+                'previous_request_id'   => $previousRequestId,
 
-                'article_id'            => $articleId,
-                'pipeline_run_id'       => $pipelineRunId,
-                'phase'                 => $phase,
+                'article_id'            => $context?->articleId,
+                'pipeline_run_id'       => $context?->pipelineRunId,
+                'phase'                 => $context?->phase,
 
                 'vendor'                => $vendor,
                 'model'                 => $model,
@@ -80,7 +85,7 @@ final class RequestLedgerRecorder
                 'latency_ms'            => $latencyMs,
 
                 'http_status'           => $httpStatus,
-                'billed'                => $billed,
+                'billed'                => $billed->value,
                 'retry_reason'          => $retryReason,
                 'error'                 => $error === null ? null : mb_substr($error, 0, 2000),
 
@@ -94,25 +99,5 @@ final class RequestLedgerRecorder
                 'error'     => $e->getMessage(),
             ]);
         }
-    }
-
-    /**
-     * Request này có bị tính tiền không.
-     *
-     * Tách khỏi http_status vì đối soát cần đúng chiều này, không cần biết mã lỗi:
-     *   200                 → đã sinh token, chắc chắn bị tính
-     *   400 / 429           → bị chặn trước khi vào inference, không tính
-     *   5xx / 529           → lỗi phía server, gần như chắc chắn không tính
-     *   timeout / mất kết nối → KHÔNG BIẾT. Model có thể đã sinh xong và bị tính,
-     *                          mà mình không bao giờ nhận được response để biết.
-     */
-    public static function billedFrom(?int $httpStatus): string
-    {
-        return match (true) {
-            $httpStatus === 200            => 'yes',
-            $httpStatus === null           => 'unknown',
-            $httpStatus >= 400             => 'no',
-            default                        => 'unknown',
-        };
     }
 }

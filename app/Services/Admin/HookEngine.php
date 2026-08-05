@@ -62,6 +62,7 @@ class HookEngine
         string     $hookStyle,
         Collection $contentTypes,
         array      $preloadedCandidates = [],
+        ?RequestContext $context = null,
     ): HookResult {
         $detectedType = $this->detectType($rawFacts, $contentTypes);
 
@@ -75,7 +76,7 @@ class HookEngine
         if (!empty($preloadedCandidates)) {
             $candidates = $preloadedCandidates;
         } else {
-            [$candidates, $hookUsage] = $this->generateCandidates($typeModel, $hookStyle, $keyword, $rawFacts);
+            [$candidates, $hookUsage] = $this->generateCandidates($typeModel, $hookStyle, $keyword, $rawFacts, $context);
         }
 
         if (empty($candidates)) {
@@ -187,6 +188,7 @@ class HookEngine
         string                $hookStyle,
         string                $keyword,
         string                $rawFacts,
+        ?RequestContext       $context = null,
     ): array {
         $typeName    = $type?->type_name    ?? 'General';
         $toneProfile = implode(', ', $type?->tone_profile ?? ['neutral']);
@@ -216,7 +218,7 @@ Example: ["Hook A", "Hook B", "Hook C", "Hook D", "Hook E"]
 PROMPT;
 
         $candidates = [];
-        $resp       = $this->claude->generate($prompt, 'haiku', phase: 'HOOK');
+        $resp       = $this->claude->generate($prompt, 'haiku', context: ($context ?? new RequestContext())->withPhase('HOOK'));
         $usage      = $resp->usage;   // trả ngược lên để pipeline cộng vào giá thành
         $raw        = $resp->text;
 
