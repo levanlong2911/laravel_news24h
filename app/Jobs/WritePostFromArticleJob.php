@@ -7,6 +7,7 @@ use App\Models\Article;
 use App\Models\Domain;
 use App\Models\Post;
 use App\Services\Admin\ClaudeWriterService;
+use App\Services\Admin\Phase;
 use App\Services\Admin\RequestContext;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -62,7 +63,7 @@ class WritePostFromArticleJob implements ShouldQueue
             $haikuResp = $claude->generate(
                 $this->haikuPrompt($kwName, $rawText),
                 'haiku',
-                context: $ledgerContext->withPhase('FACT_EXTRACTION'),
+                context: $ledgerContext->withPhase(Phase::FactExtraction),
             );
 
             if (empty(trim($haikuResp->text))) {
@@ -75,7 +76,7 @@ class WritePostFromArticleJob implements ShouldQueue
             $sonnetResp = $claude->generate(
                 $this->sonnetPrompt($kwName, $article->title, $facts),
                 'sonnet',
-                context: $ledgerContext->withPhase('WRITE'),
+                context: $ledgerContext->withPhase(Phase::Write),
             );
 
             $parsed = $this->parseJson($sonnetResp->text);

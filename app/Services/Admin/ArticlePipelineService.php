@@ -59,7 +59,7 @@ class ArticlePipelineService
         $haikuResp = $this->claude->generate(
             $payload->haikuCombinedPrompt($cleanedText, $keyword, $hookStyle),
             'haiku',
-            context: $context->withPhase('FACT_EXTRACTION'),
+            context: $context->withPhase(Phase::FactExtraction),
         );
 
         if (empty(trim($haikuResp->text))) {
@@ -100,7 +100,7 @@ class ArticlePipelineService
             $typeModel?->type_name,
             $typeModel?->tone_profile ?? [],
         );
-        $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system, context: $context->withPhase('WRITE'));
+        $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system, context: $context->withPhase(Phase::Write));
         $guardResult  = $this->postGuard->check($sonnetResp->text, $facts);
         $retryCount   = 0;
         $retryReason  = null;
@@ -115,7 +115,7 @@ class ArticlePipelineService
                 . "Fix rule: every \" inside a string value must be escaped as \\\".\n"
                 . "Return ONLY the corrected JSON — no markdown, no explanation.\n\n"
                 . $sonnetResp->text;
-            $retryResp   = $this->claude->generate($fixPrompt, 'sonnet', context: $context->withPhase('WRITE_RETRY'));
+            $retryResp   = $this->claude->generate($fixPrompt, 'sonnet', context: $context->withPhase(Phase::WriteRetry));
             $guardResult = $this->postGuard->check($retryResp->text, $facts);
         }
 

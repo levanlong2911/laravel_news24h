@@ -26,11 +26,11 @@ final class RequestContext
     public function __construct(
         public readonly ?string $articleId     = null,
         public readonly ?string $pipelineRunId = null,
-        public readonly ?string $phase         = null,
+        public readonly ?Phase  $phase         = null,
     ) {}
 
     /** Bản sao cho một phase khác — dùng khi cùng bài nhưng khác bước. */
-    public function withPhase(?string $phase): self
+    public function withPhase(?Phase $phase): self
     {
         return new self(
             articleId:     $this->articleId,

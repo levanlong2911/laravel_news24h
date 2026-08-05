@@ -62,7 +62,7 @@ final class RequestLedgerRecorder
 
                 'article_id'            => $context?->articleId,
                 'pipeline_run_id'       => $context?->pipelineRunId,
-                'phase'                 => $context?->phase,
+                'phase'                 => $context?->phase?->value,
 
                 'vendor'                => $vendor,
                 'model'                 => $model,
