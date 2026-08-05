@@ -17,14 +17,26 @@ class ClaudeWriterService
         'sonnet' => 8000,
     ];
 
-    // Pricing per 1M tokens (USD) — update when Anthropic changes rates
+    /**
+     * Giá USD trên 1 triệu token. Đối chiếu lần cuối: 2026-08-05.
+     *
+     * Haiku trước đây ghi 0.80 / 4.00 trong khi bảng giá thật là 1.00 / 5.00,
+     * nên mọi con số chi phí Haiku trong dashboard thấp hơn thực tế 20%. Dòng
+     * chú thích cũ chỉ nói "update when Anthropic changes rates" và không ai
+     * cập nhật — giá là dữ liệu bên ngoài, nó trôi mà không báo.
+     *
+     * Khi sửa hai bảng này, ghi lại ngày đối chiếu ở trên. Con số cũ không thể
+     * truy ngược: claude_usage_logs chỉ lưu total_tokens và total_cost_usd,
+     * không lưu model lẫn tách vào/ra, nên bản ghi lịch sử vĩnh viễn thiếu 20%
+     * ở phần Haiku.
+     */
     public const PRICE_INPUT = [
-        'haiku'  => 0.80,
+        'haiku'  => 1.00,
         'sonnet' => 3.00,
     ];
 
     public const PRICE_OUTPUT = [
-        'haiku'  => 4.00,
+        'haiku'  => 5.00,
         'sonnet' => 15.00,
     ];
 
