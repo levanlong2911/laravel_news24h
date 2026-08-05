@@ -50,10 +50,14 @@ class ArticlePipelineService
         $cleanerReductionRatio = round(1 - strlen($cleanedText) / $originalLen, 3);
 
         // ── 2. Build PromptPayload từ category DB ─────────────────────────────
-        $payload      = $this->promptBuilder->build($categoryId);
-        $context      = $categoryId ? CategoryContext::forCategory($categoryId) : null;
-        $contentTypes = $context?->framework?->contentTypes ?? collect();
-        $hookStyle    = $context?->hook_style ?? 'compelling and engaging opener';
+        // KHÔNG đặt tên biến này là $context: tham số $context ở trên là
+        // RequestContext của sổ cái, và gán đè nó ở đây đã làm chết cả pipeline —
+        // mọi lượt gọi Claude bên dưới truyền context: rồi gọi withPhase() lên
+        // một Eloquent model. PHP không cảnh báo gì khi gán đè tham số.
+        $payload         = $this->promptBuilder->build($categoryId);
+        $categoryContext = $categoryId ? CategoryContext::forCategory($categoryId) : null;
+        $contentTypes    = $categoryContext?->framework?->contentTypes ?? collect();
+        $hookStyle       = $categoryContext?->hook_style ?? 'compelling and engaging opener';
 
         // ── 3. Haiku extract facts + hooks (1 call thay vì 2) ────────────────
         $haikuResp = $this->claude->generate(
@@ -147,7 +151,7 @@ class ArticlePipelineService
 
         Log::debug('[Pipeline] Done', [
             'keyword'            => $keyword,
-            'context_id'         => $context?->id,
+            'context_id'         => $categoryContext?->id,
             'hook_type'          => $hookResult->detectedType,
             'hook_score'         => $hookResult->bestScore,
             'guard_confidence'   => $guardResult->confidence,
@@ -160,7 +164,7 @@ class ArticlePipelineService
         return new PipelineResult(
             parsed:                $guardResult->parsed,
             hookResult:            $hookResult,
-            context:               $context,
+            context:               $categoryContext,
             guardResult:           $guardResult,
             retryCount:            $retryCount,
             retryReason:           $retryReason,
