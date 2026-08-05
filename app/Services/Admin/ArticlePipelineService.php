@@ -51,7 +51,8 @@ class ArticlePipelineService
         // ── 3. Haiku extract facts + hooks (1 call thay vì 2) ────────────────
         $haikuResp = $this->claude->generate(
             $payload->haikuCombinedPrompt($cleanedText, $keyword, $hookStyle),
-            'haiku'
+            'haiku',
+            phase: 'FACT_EXTRACTION',
         );
 
         if (empty(trim($haikuResp->text))) {
@@ -92,7 +93,7 @@ class ArticlePipelineService
             $typeModel?->type_name,
             $typeModel?->tone_profile ?? [],
         );
-        $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system);
+        $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system, phase: 'WRITE');
         $guardResult  = $this->postGuard->check($sonnetResp->text, $facts);
         $retryCount   = 0;
         $retryReason  = null;
@@ -107,7 +108,7 @@ class ArticlePipelineService
                 . "Fix rule: every \" inside a string value must be escaped as \\\".\n"
                 . "Return ONLY the corrected JSON — no markdown, no explanation.\n\n"
                 . $sonnetResp->text;
-            $retryResp   = $this->claude->generate($fixPrompt, 'sonnet');
+            $retryResp   = $this->claude->generate($fixPrompt, 'sonnet', phase: 'WRITE_RETRY');
             $guardResult = $this->postGuard->check($retryResp->text, $facts);
         }
 

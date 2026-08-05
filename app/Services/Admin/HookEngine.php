@@ -216,7 +216,7 @@ Example: ["Hook A", "Hook B", "Hook C", "Hook D", "Hook E"]
 PROMPT;
 
         $candidates = [];
-        $resp       = $this->claude->generate($prompt, 'haiku');
+        $resp       = $this->claude->generate($prompt, 'haiku', phase: 'HOOK');
         $usage      = $resp->usage;   // trả ngược lên để pipeline cộng vào giá thành
         $raw        = $resp->text;
 

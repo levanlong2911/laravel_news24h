@@ -56,7 +56,8 @@ class WritePostFromArticleJob implements ShouldQueue
             // ── STEP 1: Claude Haiku — extract & structure key facts ──────────
             $haikuResp = $claude->generate(
                 $this->haikuPrompt($kwName, $rawText),
-                'haiku'
+                'haiku',
+                phase: 'FACT_EXTRACTION',
             );
 
             if (empty(trim($haikuResp->text))) {
@@ -68,7 +69,8 @@ class WritePostFromArticleJob implements ShouldQueue
             // ── STEP 2: Claude Sonnet — write viral article → JSON ────────────
             $sonnetResp = $claude->generate(
                 $this->sonnetPrompt($kwName, $article->title, $facts),
-                'sonnet'
+                'sonnet',
+                phase: 'WRITE',
             );
 
             $parsed = $this->parseJson($sonnetResp->text);

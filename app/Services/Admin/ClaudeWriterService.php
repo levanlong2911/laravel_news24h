@@ -4,9 +4,21 @@ namespace App\Services\Admin;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ClaudeWriterService
 {
+    /**
+     * Phiên bản bảng giá đang áp dụng, ghi vào mỗi dòng sổ cái.
+     *
+     * Có tiền tố nhà cung cấp để sổ cái tự mô tả — ngày có thêm openai/google/fal
+     * thì chuỗi '2026-08-05' trần không cho biết nó là giá của ai.
+     *
+     * Đổi giá → đổi chuỗi này. Sổ cái giữ token thô nên mọi dòng cũ vẫn tính lại
+     * được theo đúng bảng giá thời điểm đó, kể cả khi phát hiện bảng giá cũ ghi sai.
+     */
+    public const PRICING_VERSION = 'anthropic-v2026-08-05';
+
     private const MODELS = [
         'haiku'  => 'claude-haiku-4-5-20251001',
         'sonnet' => 'claude-sonnet-4-6',
@@ -76,10 +88,45 @@ class ClaudeWriterService
         ) / 1_000_000;
     }
 
-    public function generate(string $prompt, string $modelType = 'haiku', string $system = ''): ClaudeResponse
+    /** Ngữ cảnh nghiệp vụ hiện hành — xem withContext(). */
+    private ?string $articleId     = null;
+    private ?string $pipelineRunId = null;
+
+    public function __construct(
+        private readonly RequestLedgerRecorder $ledger = new RequestLedgerRecorder(),
+    ) {}
+
+    /**
+     * Gắn ngữ cảnh nghiệp vụ cho mọi lượt generate() sau đó.
+     *
+     * Gọi MỘT LẦN mỗi bài viết, không phải mỗi lượt gọi. Quên gọi thì dòng sổ
+     * cái vẫn được ghi với article_id rỗng — sai sót nhìn thấy được trong bảng,
+     * thay vì tiền mất im lặng. Đó là mức tốt nhất đạt được khi Laravel 10 chưa
+     * có facade Context (11+ mới có).
+     */
+    public function withContext(?string $articleId, ?string $pipelineRunId = null): static
     {
+        $this->articleId     = $articleId;
+        $this->pipelineRunId = $pipelineRunId;
+
+        return $this;
+    }
+
+    public function generate(
+        string  $prompt,
+        string  $modelType = 'haiku',
+        string  $system = '',
+        ?string $phase = null,
+    ): ClaudeResponse {
         $model     = self::MODELS[$modelType]     ?? self::MODELS['haiku'];
         $maxTokens = self::MAX_TOKENS[$modelType] ?? 2048;
+
+        // Một lượt gọi logic — tối đa MAX_RETRIES dòng sổ cái cùng call_uuid này.
+        $callUuid   = (string) Str::uuid();
+        $promptHash = hash('sha256', $system . "\n" . $prompt);
+
+        $parentRequestId = null;
+        $retryReason     = null;
 
         $requestBody = [
             'model'      => $model,
@@ -130,28 +177,81 @@ class ClaudeWriterService
                 },
             ]);
 
+            $startedAt  = new \DateTimeImmutable();
+            $startedMs  = microtime(true);
+
             $body       = curl_exec($ch);
             $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $curlError  = curl_error($ch);
 
+            $latencyMs  = (int) round((microtime(true) - $startedMs) * 1000);
+            $finishedAt = new \DateTimeImmutable();
+
             $this->releaseConcurrent();    // giải phóng slot ngay sau HTTP call
+
+            // curl trả 0 khi chưa kết nối được — không phải mã HTTP. Chuẩn hoá về
+            // null để billedFrom() phân loại thành 'unknown' thay vì 'no'.
+            $httpStatus = $httpStatus > 0 ? (int) $httpStatus : null;
+
+            $json      = is_string($body) ? json_decode($body, true) : null;
+            $usageJson = is_array($json) ? ($json['usage'] ?? null) : null;
+
+            $attemptUsage   = null;
+            $attemptText    = null;
+            $attemptError   = $curlError ?: null;
+
+            if ($httpStatus === 200 && is_array($json)) {
+                $attemptText  = $json['content'][0]['text'] ?? '';
+                $attemptUsage = TokenUsage::fromResponse(
+                    $usageJson ?? [],
+                    model:     $model,
+                    modelType: $modelType,
+                    requestId: $requestId,
+                );
+            } elseif ($attemptError === null) {
+                $attemptError = is_array($json) ? ($json['error']['message'] ?? $body) : $body;
+            }
+
+            // ── GHI SỔ: đúng MỘT chỗ, trước mọi nhánh return/continue ──────────
+            // Đặt ở đây có chủ ý. Ghi trong từng nhánh thì thêm một nhánh mới là
+            // quên một nhánh — và khoản tiền đó biến mất không dấu vết.
+            $this->ledger->record(
+                callUuid:        $callUuid,
+                attempt:         $attempt,
+                model:           $model,
+                modelType:       $modelType,
+                pricingVersion:  self::PRICING_VERSION,
+                billed:          RequestLedgerRecorder::billedFrom($httpStatus),
+                startedAt:       $startedAt,
+                finishedAt:      $finishedAt,
+                latencyMs:       $latencyMs,
+                httpStatus:      $httpStatus,
+                requestId:       $requestId,
+                parentRequestId: $parentRequestId,
+                articleId:       $this->articleId,
+                pipelineRunId:   $this->pipelineRunId,
+                phase:           $phase,
+                usage:           $attemptUsage,
+                usageJson:       is_array($usageJson) ? $usageJson : null,
+                promptHash:      $promptHash,
+                responseHash:    $attemptText === null ? null : hash('sha256', $attemptText),
+                retryReason:     $retryReason,
+                error:           $attemptError,
+            );
+
+            // Lượt sau sẽ tham chiếu ngược về lượt này.
+            $parentRequestId = $requestId;
+            $retryReason     = $curlError ? 'network' : ($httpStatus === null ? 'timeout' : 'http_' . $httpStatus);
 
             if ($curlError ?? false) {
                 $lastError = "cURL error: {$curlError}";
                 Log::warning("Claude exception (attempt {$attempt}/" . self::MAX_RETRIES . "): {$lastError}");
             } else {
-                $json = json_decode($body, true);
-
                 if ($httpStatus === 200) {
+                    // Đã parse ở trên để ghi sổ — dùng lại, không parse hai lần.
                     $stopReason = $json['stop_reason'] ?? '';
-                    $text       = $json['content'][0]['text'] ?? '';
-
-                    $usage = TokenUsage::fromResponse(
-                        $json['usage'] ?? [],
-                        model:     $model,
-                        modelType: $modelType,
-                        requestId: $requestId,
-                    );
+                    $text       = $attemptText ?? '';
+                    $usage      = $attemptUsage ?? TokenUsage::none($model, $modelType);
 
                     if ($stopReason === 'max_tokens') {
                         Log::warning('Claude output truncated at max_tokens — returning partial', [
