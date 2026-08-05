@@ -40,17 +40,40 @@ class ClaudeWriterService
         'sonnet' => 15.00,
     ];
 
+    /**
+     * Hệ số nhân trên giá INPUT cho token cache.
+     *
+     * Ghi cache 5 phút 1,25× · ghi cache 1 giờ 2× · đọc cache 0,1×. Pipeline
+     * chưa gửi cache_control ở đâu nên hai khoản này luôn 0; để sẵn hằng số để
+     * ngày bật caching không phải đi tìm lại công thức.
+     */
+    private const CACHE_WRITE_5M_MULTIPLIER = 1.25;
+    private const CACHE_READ_MULTIPLIER     = 0.10;
+
     private const MAX_RETRIES    = 5;
     private const BASE_DELAY_S   = 3;   // normal errors: 3s, 6s, 12s...
     private const DELAY_529_S    = 30;  // 529 Overloaded: 30s, 60s, 90s...
     private const RPM_LIMIT      = 40;  // max requests/phút gửi tới Anthropic
     private const MAX_CONCURRENT = 8;   // max đồng thời (parallel workers)
 
-    public static function costUsd(int $inputTokens, int $outputTokens, string $modelType): float
+    /**
+     * Chi phí USD của một request, tính đủ bốn khoản token.
+     *
+     * Thay cho costUsd(int, int, string) cũ — bản cũ chỉ nhận input/output nên
+     * không thể tính token cache, và buộc chỗ gọi phải tự nhớ modelType. Giờ
+     * TokenUsage mang sẵn cả hai, không truyền nhầm được.
+     */
+    public static function costOf(TokenUsage $usage): float
     {
-        $priceIn  = self::PRICE_INPUT[$modelType]  ?? self::PRICE_INPUT['sonnet'];
-        $priceOut = self::PRICE_OUTPUT[$modelType] ?? self::PRICE_OUTPUT['sonnet'];
-        return ($inputTokens * $priceIn + $outputTokens * $priceOut) / 1_000_000;
+        $priceIn  = self::PRICE_INPUT[$usage->modelType]  ?? self::PRICE_INPUT['sonnet'];
+        $priceOut = self::PRICE_OUTPUT[$usage->modelType] ?? self::PRICE_OUTPUT['sonnet'];
+
+        return (
+            $usage->inputTokens         * $priceIn
+          + $usage->cacheCreationTokens * $priceIn  * self::CACHE_WRITE_5M_MULTIPLIER
+          + $usage->cacheReadTokens     * $priceIn  * self::CACHE_READ_MULTIPLIER
+          + $usage->outputTokens        * $priceOut
+        ) / 1_000_000;
     }
 
     public function generate(string $prompt, string $modelType = 'haiku', string $system = ''): ClaudeResponse
@@ -81,6 +104,11 @@ class ClaudeWriterService
             $this->waitForRpmSlot();       // block nếu đạt RPM_LIMIT
             $this->acquireConcurrent();    // block nếu đạt MAX_CONCURRENT
 
+            // Anthropic trả header `request-id` trên mọi response. Không bắt ở đây
+            // thì mất luôn — dùng để đối chất khi cost_report lệch, và khi mở
+            // ticket support. CURLOPT_RETURNTRANSFER chỉ giữ body, không giữ header.
+            $requestId = null;
+
             $ch = curl_init('https://api.anthropic.com/v1/messages');
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
@@ -91,7 +119,15 @@ class ClaudeWriterService
                     'anthropic-version: ' . config('services.claude.version', '2023-06-01'),
                     'content-type: application/json',
                 ],
-                CURLOPT_POSTFIELDS => $encodedBody,
+                CURLOPT_POSTFIELDS     => $encodedBody,
+                CURLOPT_HEADERFUNCTION => function ($ch, string $header) use (&$requestId): int {
+                    if (stripos($header, 'request-id:') === 0) {
+                        $requestId = trim(substr($header, strlen('request-id:')));
+                    }
+
+                    // Bắt buộc trả về số byte đã đọc, nếu không cURL coi là lỗi ghi.
+                    return strlen($header);
+                },
             ]);
 
             $body       = curl_exec($ch);
@@ -107,33 +143,43 @@ class ClaudeWriterService
                 $json = json_decode($body, true);
 
                 if ($httpStatus === 200) {
-                    $stopReason   = $json['stop_reason'] ?? '';
-                    $text         = $json['content'][0]['text'] ?? '';
-                    $inputTokens  = $json['usage']['input_tokens']  ?? 0;
-                    $outputTokens = $json['usage']['output_tokens'] ?? 0;
+                    $stopReason = $json['stop_reason'] ?? '';
+                    $text       = $json['content'][0]['text'] ?? '';
+
+                    $usage = TokenUsage::fromResponse(
+                        $json['usage'] ?? [],
+                        model:     $model,
+                        modelType: $modelType,
+                        requestId: $requestId,
+                    );
 
                     if ($stopReason === 'max_tokens') {
                         Log::warning('Claude output truncated at max_tokens — returning partial', [
                             'model'  => $model,
-                            'tokens' => $outputTokens,
+                            'tokens' => $usage->outputTokens,
                         ]);
                     } else {
                         Log::debug('Claude OK', [
                             'model'         => $model,
                             'attempt'       => $attempt,
                             'stop_reason'   => $stopReason,
-                            'input_tokens'  => $inputTokens,
-                            'output_tokens' => $outputTokens,
+                            'input_tokens'  => $usage->inputTokens,
+                            'output_tokens' => $usage->outputTokens,
+                            'cache_write'   => $usage->cacheCreationTokens,
+                            'cache_read'    => $usage->cacheReadTokens,
+                            'request_id'    => $usage->requestId,
+                            'cost_usd'      => $usage->costUsd(),
                             'chars'         => strlen($text),
                         ]);
                     }
 
-                    return new ClaudeResponse($text, $inputTokens, $outputTokens);
+                    return new ClaudeResponse($text, $usage);
                 }
 
                 if ($httpStatus === 400) {
-                    Log::error('Claude 400 Bad Request', ['body' => $body]);
-                    return new ClaudeResponse('', 0, 0);
+                    // 400 không bị tính tiền — usage rỗng là đúng, không phải mất dữ liệu.
+                    Log::error('Claude 400 Bad Request', ['body' => $body, 'request_id' => $requestId]);
+                    return new ClaudeResponse('', TokenUsage::none($model, $modelType));
                 }
 
                 $lastError = "HTTP {$httpStatus}: " . ($json['error']['message'] ?? $body);
@@ -151,12 +197,19 @@ class ClaudeWriterService
             }
         }
 
+        // CẢNH BÁO KẾ TOÁN: usage rỗng ở đây KHÔNG có nghĩa là không tốn tiền.
+        //
+        // Nếu một lượt thất bại vì timeout (CURLOPT_TIMEOUT = 60) trong khi
+        // Anthropic đã sinh xong token, họ vẫn tính tiền còn phía mình không hề
+        // nhận được response để đọc usage. Đây là phần chi phí VÔ HÌNH với ledger,
+        // và là lý do phải đối soát với cost_report thay vì tin vào tổng tự cộng.
         Log::error('Claude failed after ' . self::MAX_RETRIES . ' attempts', [
             'model'      => $model,
             'last_error' => $lastError,
+            'request_id' => $requestId ?? null,
         ]);
 
-        return new ClaudeResponse('', 0, 0);
+        return new ClaudeResponse('', TokenUsage::none($model, $modelType));
     }
 
     // RPM throttle: cho phép song song nhưng giới hạn tổng request/phút

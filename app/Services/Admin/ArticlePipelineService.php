@@ -118,8 +118,24 @@ class ArticlePipelineService
         // ── 7. Tính token usage + cost ────────────────────────────────────────
         $sonnetInputTokens  = $sonnetResp->inputTokens  + ($retryResp?->inputTokens  ?? 0);
         $sonnetOutputTokens = $sonnetResp->outputTokens + ($retryResp?->outputTokens ?? 0);
-        $totalCostUsd       = ClaudeWriterService::costUsd($haikuResp->inputTokens, $haikuResp->outputTokens, 'haiku')
-                            + ClaudeWriterService::costUsd($sonnetInputTokens, $sonnetOutputTokens, 'sonnet');
+
+        // MỌI lượt gọi Claude của bài này, liệt kê tường minh — thiếu một dòng ở
+        // đây là giá thành thiếu bấy nhiêu, và không có gì báo.
+        //
+        // hookResult->usage từng bị bỏ quên hoàn toàn: HookEngine gọi Haiku thật
+        // nhưng HookResult không mang token về, nên khoản đó chưa bao giờ được
+        // tính vào giá bài viết.
+        $usages = array_filter([
+            $haikuResp->usage,      // phase 1 + 2
+            $hookResult->usage,     // sinh hook — null nếu dùng candidates preloaded
+            $sonnetResp->usage,     // phase 3
+            $retryResp?->usage,     // lượt sửa JSON, chỉ có khi parse hỏng
+        ]);
+
+        $totalCostUsd = array_sum(array_map(
+            static fn (TokenUsage $usage): float => ClaudeWriterService::costOf($usage),
+            $usages,
+        ));
 
         Log::debug('[Pipeline] Done', [
             'keyword'            => $keyword,
