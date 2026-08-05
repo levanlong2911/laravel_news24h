@@ -525,7 +525,11 @@ class PromptSystemSeeder extends Seeder
                 'content_types'     => [
                     [
                         'type_code'          => 'breakthrough',
-                        'type_name'          => 'Scientific Breakthrough',
+                        // KHÔNG đổi lại thành "Scientific Breakthrough": DOMAIN LAWS của
+                        // knowledge_discovery cấm "breakthrough", mà type_name được
+                        // sonnetPrompt() bơm vào phase3 thành dòng "CONTENT TYPE:".
+                        // Xem 2026_07_30_000008_fix_forbidden_word_collisions.
+                        'type_name'          => 'Scientific Discovery',
                         'trigger_keywords'   => ['discovered', 'breakthrough', 'new study', 'researchers', 'scientists', 'found', 'reveals', 'first time', 'published', 'journal'],
                         'tone_profile'       => ['precise', 'excited-but-grounded', 'contextual'],
                         'structure_template' => "① HOOK — The discovery in plain language; why it matters\n② THE SCIENCE — What they did and what they found\n③ THE SIGNIFICANCE — What this changes or enables\n④ LIMITATIONS — What it doesn't yet prove; next steps\n⑤ EXPERT VOICES — Independent researchers' assessment",
@@ -727,7 +731,10 @@ class PromptSystemSeeder extends Seeder
                 'domain'      => 'Superyacht',
                 'audience'    => 'HNWI, superyacht owners, charter market, nautical lifestyle enthusiasts',
                 'terminology' => ['LOA', 'beam', 'draft', 'GT', 'charter rate', 'refit', 'explorer yacht', 'displacement', 'naval architect', 'flag state', 'crew'],
-                'tone_notes'  => 'World of extraordinary discretion and excess. Technical naval specifications matter. Lifestyle and destination narrative elevates every story.',
+                // Không dùng "extraordinary" (từ cấm của phase3, mà tone_notes được
+                // bơm thẳng vào đó) và cũng không thay bằng tính từ cùng nhóm —
+                // danh sách cấm đang loại dần nhóm đó. Viết bằng danh từ.
+                'tone_notes'  => 'World of discretion, craftsmanship, and quiet excess. Technical naval specifications matter. Lifestyle and destination narrative elevates every story.',
                 'hook_style'  => 'Lead with the scale — the LOA, the price, the number of guests — then immediately paint the lifestyle',
             ],
 
@@ -762,7 +769,9 @@ class PromptSystemSeeder extends Seeder
                 'audience'    => 'Harley owners, cruiser riders, motorcycle culture enthusiasts',
                 'terminology' => ['V-Twin', 'Milwaukee-Eight', 'Revolution Max', 'Softail', 'Touring', 'Sportster', 'Dyna', 'cc', 'chrome', 'custom build', 'H.O.G.', 'bars'],
                 'tone_notes'  => 'Brotherhood energy. Respect for the iron and the road. Technical specs matter but community and culture matter more.',
-                'hook_style'  => 'Lead with the rider or the machine — either the thunder of the engine or the quiet dignity of the journey',
+                // "the long road" chứ không phải "the journey": từ sau là từ cấm của
+                // phase3, mà hook_style được bơm thẳng vào đó.
+                'hook_style'  => 'Lead with the rider or the machine — either the thunder of the engine or the quiet dignity of the long road',
             ],
 
             // ── Knowledge & Discovery ──────────────────────────────────────────
@@ -1189,7 +1198,7 @@ FB_POST_CONTENT:
 • 150-250 chars. Plain text only. No bullet points, emoji, URL, hashtags. Same language as article.
 • Formula: [Named person/team] + [Specific stake] + [Pressure/tension] + [Withheld outcome]
   Step 1 — Identify exactly who is affected and what they stand to lose or gain.
-  Step 2 — Introduce pressure: deadline, injuries, rival move, contract risk, or expectations.
+  Step 2 — Introduce pressure: deadline, injuries, roster competition, contract risk, rival move, or expectations.
   Step 3 — Soft CTA: end with a sentence that makes the reader feel they need the outcome.
   No explicit instructions ("Find out", "Read more", "Click", "Discover"). Choose one technique:
     Deadline        → "The window closes Thursday."

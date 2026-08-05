@@ -22,6 +22,16 @@ class PromptBuilderService
      *
      * structure_template hợp lệ ở phase3 dù inject() không giải nó — nó là
      * deferred, PromptPayload::sonnetPrompt() mới thay giá trị thật vào.
+     *
+     * content_types_block cố ý CHỈ còn ở phase2. 2026_07_30_000007 đã gỡ nó khỏi
+     * phase3 của cả 8 framework: khối đó liệt kê đủ 6 content type kèm trigger và
+     * structure, nhưng tới phase3 thì HookEngine đã chốt xong type rồi — Claude
+     * nhận ~3.700 ký tự mô tả năm type không dùng đến. Tín hiệu duy nhất còn cần
+     * (tên type và tone) do PromptPayload::sonnetPrompt() cấp qua hai dòng
+     * CONTENT TYPE / TYPE TONE.
+     *
+     * Giữ nó trong danh sách này thì admin gõ lại {content_types_block} vào form
+     * phase3 là guard vẫn duyệt, và 3.700 ký tự lặng lẽ quay về.
      */
     public const PLACEHOLDERS = [
         'system_prompt'   => [],
@@ -29,7 +39,7 @@ class PromptBuilderService
         'phase2_diagnose' => ['content_types_block'],
         'phase3_generate' => [
             'domain', 'audience', 'terminology',
-            'content_types_block', 'tone_notes', 'hook_style',
+            'tone_notes', 'hook_style',
             'structure_template',
         ],
     ];
@@ -135,13 +145,14 @@ JSON;
             'content_types_block' => $contentTypesBlock,
         ]);
 
+        // content_types_block cố ý vắng mặt — xem PLACEHOLDERS. Biến vẫn cần cho
+        // phase2 ở trên và cho fingerprint của PromptPayload bên dưới.
         $phase3 = $this->inject($framework->phase3_generate, [
-            'domain'              => $context->domain,
-            'audience'            => $context->audience,
-            'terminology'         => implode(', ', $context->terminology ?? []),
-            'content_types_block' => $contentTypesBlock,
-            'tone_notes'          => $context->tone_notes,
-            'hook_style'          => $context->hook_style,
+            'domain'      => $context->domain,
+            'audience'    => $context->audience,
+            'terminology' => implode(', ', $context->terminology ?? []),
+            'tone_notes'  => $context->tone_notes,
+            'hook_style'  => $context->hook_style,
         ], self::DEFERRED_PHASE3);
 
         Log::debug("[PromptBuilder] Built payload", [
