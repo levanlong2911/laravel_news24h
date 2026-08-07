@@ -175,6 +175,37 @@ return [
                  */
                 'identity' => [
                     /**
+                     * PERMANENT — con tàu LÀ GÌ, bất kể đang dựng tới đâu.
+                     *
+                     * Tách khỏi `construction` vì hai người tiêu thụ cần hai thứ
+                     * khác nhau, và một trường không gánh nổi cả hai:
+                     *
+                     *   ẢNH NEO   cần identity + TRẠNG THÁI. Nó là MỘT ảnh, không
+                     *             có mắt nào mang trạng thái hộ — nên `construction`
+                     *             phải kể luôn "chưa có thượng tầng, chưa lắp kính".
+                     *   CHUỖI     chỉ cần identity. Trạng thái do từng mắt mang
+                     *             (`existing` + `adds`), và nhét thêm vào đây thì
+                     *             prompt tự mâu thuẫn: identity nói "mép boong đã
+                     *             mở" trong khi mắt `keel` nói "No deck."
+                     *
+                     * Đo được 2026-08-07 trên prompt production của
+                     * `chain_superyacht_keel`: dùng `construction` cho chuỗi tạo ra
+                     * đúng mâu thuẫn đó trong một đoạn văn.
+                     *
+                     * KHÔNG có câu phủ định nào ở đây. Chuỗi dựng dần lo trạng thái
+                     * bằng CƠ CHẾ — nóc hở vì boong chưa tới lượt, không phải vì có
+                     * ai cấm boong (8 lượt Flux + 3 lượt Kontext chứng minh cấm
+                     * không có tác dụng).
+                     *
+                     * Câu này ĐÃ RENDER THẬT: 3 ảnh 2026-08-06, $0.045,
+                     * gpt-image-2 + /edit. Khoá bằng sha256 trong
+                     * `tests/test_construction_chain.py` bên repo Python.
+                     */
+                    'permanent' => [
+                        'visual_identity' => 'This is the construction of a 90-metre steel superyacht — a slender superyacht about six times longer than it is wide, with a knife-like vertical plumb bow and a wide flat stern.',
+                    ],
+
+                    /**
                      * Bằng chứng render 2026-08-04 (anchor Flux dev, $0.025): bản
                      * cũ ghi "…three decks, a raked plumb bow, window openings cut
                      * but not yet glazed" và Flux cho ra một chiếc du thuyền ĐÃ
