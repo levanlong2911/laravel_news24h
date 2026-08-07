@@ -78,9 +78,41 @@ final class ParserDiagnostics
     /** LLM bọc JSON trong ```json dù đã bảo đừng — vô hại, nhưng đáng theo dõi. */
     public bool $wrappedInCodeFence = false;
 
+    /**
+     * Vài ví dụ CỤ THỂ về chỗ đã mất — `reason` + `path`, không hơn.
+     *
+     * Con số nói CÓ CHUYỆN GÌ ("8 claim thiếu attribute"); `path` nói NHÌN VÀO
+     * ĐÂU ("entities[3].claims[2]"). Lúc 11 giờ đêm ngồi truy lỗi thì chênh lệch
+     * đó là tất cả.
+     *
+     * KHÔNG chép nội dung claim vào đây. `raw` trong artifact đã là bằng chứng
+     * gốc và đầy đủ; diagnostics chỉ là CHỈ MỤC trỏ vào nó. Chép lại là nhân đôi
+     * dữ liệu, rồi hai bản sẽ lệch nhau — đúng lỗi ta đã gặp cả ngày hôm nay.
+     *
+     * Trần 5 mẫu: lỗi lặp 100 lần thì counter vẫn là 100, còn ở đây 5 mẫu là đủ
+     * để nhìn ra khuôn dạng. Giữ cả 100 chỉ làm cột JSON phình mà không thêm
+     * thông tin nào.
+     *
+     * @var list<array{reason: string, path: string}>
+     */
+    public array $samples = [];
+
+    private const MAX_SAMPLES = 5;
+
     public function markSectionMalformed(string $section): void
     {
         $this->sectionsMalformed[] = $section;
+        $this->sample('malformed_section', $section);
+    }
+
+    /** Ghi một ví dụ, im lặng bỏ qua khi đã đủ trần. */
+    public function sample(string $reason, string $path): void
+    {
+        if (count($this->samples) >= self::MAX_SAMPLES) {
+            return;
+        }
+
+        $this->samples[] = ['reason' => $reason, 'path' => $path];
     }
 
     /** Không mất gì và không có gì bất thường. */
@@ -118,6 +150,7 @@ final class ParserDiagnostics
             'events_dropped_invalid_shape' => $this->eventsDroppedInvalidShape,
             'sections_malformed' => $this->sectionsMalformed,
             'wrapped_in_code_fence' => $this->wrappedInCodeFence,
+            'samples' => $this->samples,
         ];
     }
 }

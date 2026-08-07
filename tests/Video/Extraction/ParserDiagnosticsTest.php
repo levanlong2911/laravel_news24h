@@ -3,6 +3,7 @@
 namespace Tests\Video\Extraction;
 
 use App\Video\Extraction\CandidateGraphParser;
+use App\Video\Extraction\CandidateWorldGraph;
 use App\Video\Extraction\MalformedExtraction;
 use App\Video\Extraction\ParserDiagnostics;
 use PHPUnit\Framework\TestCase;
@@ -20,9 +21,19 @@ use PHPUnit\Framework\TestCase;
  */
 final class ParserDiagnosticsTest extends TestCase
 {
-    private function parse(string $json, ?ParserDiagnostics &$d = null): mixed
+    /**
+     * Trả CẶP đã kiểm kiểu. `parse()` khai `?ParserDiagnostics` nên phân tích
+     * tĩnh phải coi nó có thể null; khẳng định MỘT LẦN ở đây vừa dẹp cảnh báo
+     * cho cả file, vừa chính là chỗ khoá hợp đồng "parse luôn điền diagnostics".
+     *
+     * @return array{0: CandidateWorldGraph, 1: ParserDiagnostics}
+     */
+    private function parse(string $json): array
     {
-        return (new CandidateGraphParser)->parse($json, $d);
+        $graph = (new CandidateGraphParser)->parse($json, $d);
+        $this->assertInstanceOf(ParserDiagnostics::class, $d, 'parse() phải luôn điền diagnostics');
+
+        return [$graph, $d];
     }
 
     public function test_existing_callers_may_still_omit_the_diagnostics_argument(): void
@@ -39,11 +50,10 @@ final class ParserDiagnosticsTest extends TestCase
 
     public function test_a_clean_extraction_reports_clean(): void
     {
-        $graph = $this->parse(
+        [$graph, $d] = $this->parse(
             '{"entities":[{"id":"x","type":"vehicle","claims":[{"attribute":"hull_color","value":"grey","evidence_quote":"grey hull"}]}],'
             .'"relations":[{"id":"r1","from":"x","to":"y","type":"docked_at","evidence_quote":"docked at the pier"}],'
-            .'"events":[{"id":"e1","type":"launched","entity_id":"x","evidence_quote":"was launched"}]}',
-            $d,
+            .'"events":[{"id":"e1","type":"launched","entity_id":"x","evidence_quote":"was launched"}]}'
         );
 
         $this->assertTrue($d->isClean());
@@ -54,6 +64,7 @@ final class ParserDiagnosticsTest extends TestCase
         $this->assertSame(0, $d->claimsMissingQuote);
         $this->assertSame(1, $d->relationsAccepted);
         $this->assertSame(1, $d->eventsAccepted);
+        $this->assertSame([], $d->samples);
         $this->assertCount(1, $graph->entities);
     }
 
@@ -62,9 +73,8 @@ final class ParserDiagnosticsTest extends TestCase
         // GIẢ THUYẾT HÀNG ĐẦU cho bài ISA: model trả claim LỒNG NHAU thay vì
         // phẳng. Trước Sprint 0, ca này cho ra "0 claim" y hệt ca "model không
         // tìm thấy gì" — hai bệnh, một triệu chứng.
-        $graph = $this->parse(
-            '{"entities":[{"id":"yacht","type":"vehicle","claims":[{"hull":{"color":"white"}},{"exterior":{"pool":"glass"}}]}]}',
-            $d,
+        [$graph, $d] = $this->parse(
+            '{"entities":[{"id":"yacht","type":"vehicle","claims":[{"hull":{"color":"white"}},{"exterior":{"pool":"glass"}}]}]}'
         );
 
         $this->assertCount(1, $graph->entities);
@@ -81,9 +91,8 @@ final class ParserDiagnosticsTest extends TestCase
         // KHÔNG bỏ — Gatekeeper mới là nơi loại, với lý do NoEvidence. Con số
         // này BÁO TRƯỚC điều đó, nên khi Gatekeeper loại nhiều ta biết ngay
         // nguyên nhân là LLM quên quote, không phải verifier khắt khe.
-        $graph = $this->parse(
-            '{"entities":[{"id":"x","type":"vehicle","claims":[{"attribute":"pool","value":"swimming pool"}]}]}',
-            $d,
+        [$graph, $d] = $this->parse(
+            '{"entities":[{"id":"x","type":"vehicle","claims":[{"attribute":"pool","value":"swimming pool"}]}]}'
         );
 
         $this->assertCount(1, $graph->entities[0]->claims, 'vẫn đi tiếp tới Gatekeeper');
@@ -94,9 +103,8 @@ final class ParserDiagnosticsTest extends TestCase
 
     public function test_an_entity_without_id_or_type_is_counted(): void
     {
-        $graph = $this->parse(
-            '{"entities":[{"id":"ok","type":"vehicle"},{"type":"vehicle"},{"id":"no_type"}]}',
-            $d,
+        [$graph, $d] = $this->parse(
+            '{"entities":[{"id":"ok","type":"vehicle"},{"type":"vehicle"},{"id":"no_type"}]}'
         );
 
         $this->assertCount(1, $graph->entities);
@@ -109,25 +117,65 @@ final class ParserDiagnosticsTest extends TestCase
     {
         // Nguy hiểm hơn từng item hỏng: mất NGUYÊN khối một lần. Bản cũ trả []
         // và không để lại dấu vết nào.
-        $this->parse('{"entities":"none","relations":"none","events":"none"}', $d);
+        [, $d] = $this->parse('{"entities":"none","relations":"none","events":"none"}');
 
         $this->assertSame(['entities', 'relations', 'events'], $d->sectionsMalformed);
         $this->assertFalse($d->isClean());
     }
 
-    public function test_claims_of_the_wrong_type_are_recorded_per_entity(): void
+    public function test_claims_of_the_wrong_type_are_recorded_by_structural_path(): void
     {
-        $this->parse('{"entities":[{"id":"yacht","type":"vehicle","claims":"unknown"}]}', $d);
+        // Đường dẫn theo CẤU TRÚC, không theo id entity: nó phải đếm được trong
+        // chính `raw` để mở ra đúng chỗ, mà `raw` thì không tra được theo id.
+        [, $d] = $this->parse('{"entities":[{"id":"yacht","type":"vehicle","claims":"unknown"}]}');
 
-        $this->assertContains('claims[yacht]', $d->sectionsMalformed);
+        $this->assertContains('entities[0].claims', $d->sectionsMalformed);
+    }
+
+    public function test_a_sample_says_where_to_look_not_what_was_lost(): void
+    {
+        [, $d] = $this->parse(
+            '{"entities":[{"id":"a","type":"vehicle","claims":[{"attribute":"ok","evidence_quote":"q"}]},'
+            .'{"id":"b","type":"vehicle","claims":[{"attribute":"ok","evidence_quote":"q"},{"hull":{"color":"white"}}]}]}'
+        );
+
+        $this->assertSame(
+            [['reason' => 'claim_missing_attribute', 'path' => 'entities[1].claims[1]']],
+            $d->samples,
+        );
+    }
+
+    public function test_samples_never_copy_the_claim_itself(): void
+    {
+        // `raw` trong artifact là bằng chứng gốc. Chép nội dung vào đây là nhân
+        // đôi dữ liệu, rồi hai bản sẽ lệch nhau.
+        [, $d] = $this->parse(
+            '{"entities":[{"id":"x","type":"vehicle","claims":[{"secret_marker":"do-not-copy-me"}]}]}'
+        );
+
+        $this->assertStringNotContainsString('do-not-copy-me', (string) json_encode($d->samples));
+        $this->assertSame(['reason', 'path'], array_keys($d->samples[0]));
+    }
+
+    public function test_samples_stop_at_five_but_counters_do_not(): void
+    {
+        $broken = implode(',', array_fill(0, 30, '{"no_attribute":1}'));
+        [, $d] = $this->parse('{"entities":[{"id":"x","type":"vehicle","claims":['.$broken.']}]}');
+
+        $this->assertSame(30, $d->claimsDroppedInvalidShape, 'đếm đủ 30');
+        $this->assertCount(5, $d->samples, 'nhưng chỉ giữ 5 ví dụ');
+    }
+
+    public function test_a_malformed_section_also_leaves_a_sample(): void
+    {
+        [, $d] = $this->parse('{"entities":"none"}');
+
+        $this->assertSame([['reason' => 'malformed_section', 'path' => 'entities']], $d->samples);
     }
 
     public function test_a_code_fence_is_flagged_but_still_parsed(): void
     {
-        $graph = $this->parse(
-            "```json\n{\"entities\":[{\"id\":\"x\",\"type\":\"vehicle\"}]}\n```",
-            $d,
-        );
+        [$graph, $d] = $this->parse("```json\n{\"entities\":[{\"id\":\"x\",\"type\":\"vehicle\"}]}\n```");
 
         $this->assertCount(1, $graph->entities, 'vẫn parse được như trước');
         $this->assertTrue($d->wrappedInCodeFence);
@@ -140,7 +188,7 @@ final class ParserDiagnosticsTest extends TestCase
         $d = null;
 
         try {
-            $this->parse('I could not find any entities, sorry!', $d);
+            (new CandidateGraphParser)->parse('I could not find any entities, sorry!', $d);
             $this->fail('phải ném MalformedExtraction');
         } catch (MalformedExtraction) {
             $this->assertInstanceOf(ParserDiagnostics::class, $d);
@@ -149,11 +197,12 @@ final class ParserDiagnosticsTest extends TestCase
 
     public function test_diagnostics_serialise_to_one_json_column(): void
     {
-        $this->parse('{"entities":[{"id":"x","type":"vehicle","claims":[{"foo":1}]}]}', $d);
+        [, $d] = $this->parse('{"entities":[{"id":"x","type":"vehicle","claims":[{"foo":1}]}]}');
         $out = $d->toArray();
 
         $this->assertSame(1, $out['claims_seen']);
         $this->assertSame(1, $out['claims_dropped_invalid_shape']);
         $this->assertArrayHasKey('sections_malformed', $out);
+        $this->assertArrayHasKey('samples', $out);
     }
 }

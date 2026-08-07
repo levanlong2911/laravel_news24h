@@ -85,11 +85,15 @@ final class CandidateGraphParser
 
         $entities = [];
 
-        foreach ($raw as $item) {
+        foreach ($raw as $i => $item) {
             $d->entitiesSeen++;
 
             if (! is_array($item) || ! isset($item['id'], $item['type'])) {
                 $d->entitiesDroppedInvalidShape++;
+                $d->sample(
+                    is_array($item) ? 'entity_missing_id_or_type' : 'entity_not_an_object',
+                    "entities[{$i}]",
+                );
 
                 continue; // không định danh được thì không có gì để gác
             }
@@ -97,13 +101,16 @@ final class CandidateGraphParser
             $entities[] = new CandidateEntity(
                 (string) $item['id'],
                 (string) $item['type'],
-                $this->claims($item['claims'] ?? [], (string) $item['id'], $d),
+                $this->claims($item['claims'] ?? [], (string) $item['id'], $d, "entities[{$i}].claims"),
                 isset($item['name']) ? (string) $item['name'] : null,
                 (string) ($item['name_quote'] ?? ''),
                 (float) ($item['confidence'] ?? 0.0),
                 // B1 (2026-07-22): parse song song claims thường — CHƯA nơi
                 // nào tiêu thụ ngoài đo precision (xem SemanticClaimPrecisionAnalyzer).
-                $this->claims($item['semantic_claims'] ?? [], (string) $item['id'], $d),
+                $this->claims(
+                    $item['semantic_claims'] ?? [], (string) $item['id'], $d,
+                    "entities[{$i}].semantic_claims",
+                ),
             );
             $d->entitiesAccepted++;
         }
@@ -114,17 +121,17 @@ final class CandidateGraphParser
     /**
      * @return list<CandidateClaim>
      */
-    private function claims(mixed $raw, string $entityId, ParserDiagnostics $d): array
+    private function claims(mixed $raw, string $entityId, ParserDiagnostics $d, string $path): array
     {
         if (! is_array($raw)) {
-            $d->markSectionMalformed("claims[{$entityId}]");
+            $d->markSectionMalformed($path);
 
             return [];
         }
 
         $claims = [];
 
-        foreach ($raw as $item) {
+        foreach ($raw as $i => $item) {
             $d->claimsSeen++;
 
             // ĐÂY LÀ CHỖ NGHI NHẤT của bài ISA: nếu model trả claim LỒNG NHAU
@@ -132,6 +139,10 @@ final class CandidateGraphParser
             // bộ claim rơi vào nhánh này — trước đây rơi trong im lặng.
             if (! is_array($item) || ! isset($item['attribute'])) {
                 $d->claimsDroppedInvalidShape++;
+                $d->sample(
+                    is_array($item) ? 'claim_missing_attribute' : 'claim_not_an_object',
+                    "{$path}[{$i}]",
+                );
 
                 continue;
             }
@@ -177,6 +188,7 @@ final class CandidateGraphParser
 
             if (! is_array($item) || ! isset($item['from'], $item['to'], $item['type'])) {
                 $d->relationsDroppedInvalidShape++;
+                $d->sample('relation_missing_from_to_or_type', "relations[{$i}]");
 
                 continue;
             }
@@ -213,6 +225,7 @@ final class CandidateGraphParser
 
             if (! is_array($item) || ! isset($item['type'], $item['entity_id'])) {
                 $d->eventsDroppedInvalidShape++;
+                $d->sample('event_missing_type_or_entity_id', "events[{$i}]");
 
                 continue;
             }
