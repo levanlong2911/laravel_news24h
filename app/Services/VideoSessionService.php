@@ -123,6 +123,10 @@ class VideoSessionService
 
                 return $this->sessionRepository->create([
                     'project_id' => $project->id,
+                    // Ghi THANG khoa, khong de suy nguoc tu tien to `code`. Ma
+                    // session mang 8 ky tu dau uuid — du de doan nhung van la
+                    // doan, va 8 ky tu hex thi dung duoc.
+                    'article_id' => $article->id,
                     'code' => 'art_'.substr($article->id, 0, 8).'_'.now()->format('ymd_His'),
                     'status' => VideoSessionStatus::COMPOSING->value,
                     'renderplan_json' => $renderPlan,
