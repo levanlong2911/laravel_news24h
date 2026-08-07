@@ -22,7 +22,27 @@ final class ClaudeExtractor implements Extractor
      * Version hoá có chủ ý. Sáu tháng sau, khi truy một hallucination, biết được
      * lúc đó dùng instruction nào là khác biệt giữa "sửa được" và "đoán mò".
      */
-    public const INSTRUCTION_VERSION = 'extract-v3';
+    /**
+     * v4 (2026-08-06) — THÍ NGHIỆM KỶ LUẬT BẰNG CHỨNG, không phải vá recall.
+     *
+     * Đo được trên bài "ISA Amarcord 82" dưới v3, artifact
+     * `video_extraction_artifacts` của session art_a27033cd_260807_044301:
+     *
+     *     Haiku đề xuất       29 claim, tìm ĐỦ hồ bơi · helipad · đường cong boong
+     *     parser bỏ            0
+     *     Gatekeeper cho qua   80.6%
+     *     3/7 lượt loại        VALUE_NOT_SUPPORTED
+     *
+     * Ba con số đầu loại sạch ba giả thuyết đã theo đuổi cả ngày (recall kém,
+     * parser nuốt, cổng quá khắt). Bệnh thật nằm ở con số thứ tư: model TÌM
+     * ĐƯỢC rồi DIỄN ĐẠT LẠI — "glass bottom and edge" thay vì "glass",
+     * "present" thay vì "helipad". Cổng loại đúng; thứ cần sửa là cách trao.
+     *
+     * Nên v4 KHÔNG bảo model tìm nhiều hơn. Nó chỉ dạy cách trao thứ đã tìm
+     * được. Và cố ý KHÔNG kèm ontology — thêm cả hai cùng lúc thì số liệu
+     * không nói được cái nào có tác dụng.
+     */
+    public const INSTRUCTION_VERSION = 'extract-v4';
 
     /**
      * @param  string  $model  Khoá model ('haiku'|'sonnet') — Extractor TỰ QUYẾT
@@ -187,6 +207,41 @@ final class ClaudeExtractor implements Extractor
 
         If a fact could go either way, ask: "would a camera see this, or only a document see
         this?" A hull's grey paint — camera. Who built the hull — document, not camera.
+
+        CLAIM VALUE DISCIPLINE — worked examples. Every example below is a REAL claim that
+        was proposed and then discarded by the verifier. Finding the fact is not the hard
+        part; you are already good at that. Handing it over in a form that survives is.
+
+        The rule under all three: the quote must prove THAT attribute with THAT value. Not
+        be near it. Not imply it. Prove it.
+
+          ARTICLE  "The aft edge of the pool is glass, as is the bottom."
+          GOOD     { "attribute": "pool_bottom_material", "value": "glass",
+                     "evidence_quote": "The aft edge of the pool is glass, as is the bottom" }
+          BAD      { "value": "glass bottom and edge", … same quote … }
+          WHY      "glass bottom and edge" is your summary of the sentence, not words the
+                   sentence contains. Take the word the article uses; leave the summarising
+                   to a later stage that is allowed to do it.
+
+          ARTICLE  "in further proximity to a helipad"
+          GOOD     { "attribute": "helipad", "value": "helipad",
+                     "evidence_quote": "in further proximity to a helipad" }
+          BAD      { "attribute": "helipad", "value": "present", … same quote … }
+          WHY      "present" appears nowhere in the article. A yes/no answer can never be
+                   verified against text, so it is always discarded. State the thing, not
+                   whether the thing exists.
+
+          ARTICLE  "Encompassing designs from 262 to 295 feet (80 to 90 meters)"
+          BAD      { "attribute": "length_meters", "value": 25,
+                     "evidence_quote": "Encompassing designs from 262 to 295 feet" }
+          WHY      Two faults at once. The number is not in the quote, and the quote is
+                   about a RANGE for a whole collection, not the length of one vessel. A
+                   quote can be copied perfectly and still fail to support the claim
+                   attached to it — check that it says the thing, not merely that it is
+                   nearby.
+
+        When no quote proves the value, the claim is worth nothing to you: it is discarded
+        either way, and proposing it only spends output. Omitting it costs you nothing.
 
         ALLOWED semantic_claims attribute names — this is a CLOSED LIST, not examples:
         "owner", "builder", "brand", "manufacturer", "breeder", "seller", "shipyard",
