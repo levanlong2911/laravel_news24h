@@ -72,8 +72,8 @@ class CreationArcWorldSeparationTest extends TestCase
      */
     public function test_creation_arc_plan_satisfies_the_frozen_contract(): void
     {
-        $fixture = __DIR__ . '/../../../contracts/renderplan/v1.0/fixtures/moonrise.json';
-        $schemaPath = __DIR__ . '/../../../contracts/renderplan/v1.0/schema.json';
+        $fixture = __DIR__.'/../../../contracts/renderplan/v1.0/fixtures/moonrise.json';
+        $schemaPath = __DIR__.'/../../../contracts/renderplan/v1.0/schema.json';
         $this->assertFileExists($fixture, 'Thiếu golden fixture — không có plan hợp lệ để merge arc vào.');
 
         $plan = json_decode(file_get_contents($fixture), true, 512, JSON_THROW_ON_ERROR);
@@ -87,17 +87,19 @@ class CreationArcWorldSeparationTest extends TestCase
         // test này đang xanh mà chẳng bảo vệ gì.
         $withWorld = array_filter($merged['scenes'], fn ($s) => isset($s['setting']));
         $withCrowd = array_filter($merged['scenes'], fn ($s) => ! empty($s['director_notes']['crowd']));
+        $withState = array_filter($merged['scenes'], fn ($s) => isset($s['requires_state']));
         $this->assertNotEmpty($withWorld, 'Không scene nào có setting — test không bảo vệ gì.');
         $this->assertNotEmpty($withCrowd, 'Không scene nào có crowd — test không bảo vệ gì.');
+        $this->assertNotEmpty($withState, 'Không scene nào có requires_state — test không bảo vệ gì.');
 
-        $result = (new Validator())->validate(
+        $result = (new Validator)->validate(
             json_decode(json_encode($merged), false, 512, JSON_THROW_ON_ERROR),
             json_decode(file_get_contents($schemaPath), false, 512, JSON_THROW_ON_ERROR),
         );
 
         if ($result->hasError()) {
             $this->fail("Plan có Creation Arc KHÔNG qua schema v1.0:\n".json_encode(
-                (new ErrorFormatter())->format($result->error()),
+                (new ErrorFormatter)->format($result->error()),
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
             ));
         }
@@ -119,6 +121,83 @@ class CreationArcWorldSeparationTest extends TestCase
                     );
                 }
             }
+        }
+    }
+
+    /**
+     * `requires_state` là TOÀN BỘ HOẶC KHÔNG GÌ trong mỗi phase set.
+     *
+     * Không ép mọi set phải khai: `restoration` (phục chế xe) chưa có chuỗi nào
+     * chứng minh được trạng thái nào, nên bắt nó khai là đặt một đòi hỏi vĩnh
+     * viễn không thoả — mọi clip thành UNSATISFIABLE và ta giết một arc đang
+     * chạy được. Set không khai thì đi đường cũ (một ảnh neo), y như hôm nay.
+     *
+     * Chỗ nguy hiểm là NỬA VỜI: set khai 4/6 pha thì 4 clip được canh, 2 clip
+     * lặng lẽ lấy nhầm ảnh — và không có gì phân biệt "cố ý bỏ" với "quên".
+     * Test này chỉ cấm đúng trạng thái nửa vời đó.
+     *
+     * Khai rồi thì phải khai bằng KHOÁ NẰM TRONG TỪ VỰNG: resolver bên Python so
+     * khớp CHÍNH XÁC, nên 'shell_complete' thay vì 'hull_shell' là mất clip vì
+     * một lỗi đánh máy. Từ vựng là dữ liệu bên Python
+     * (construction_chains/*.json, trường `states`) — đây là ranh giới hai repo
+     * nên thiếu file thì bỏ qua phần đối chiếu chứ không FAIL: người chỉ làm CMS
+     * không có repo Python trên máy.
+     */
+    public function test_requires_state_is_declared_for_a_whole_phase_set_or_not_at_all(): void
+    {
+        // Đường dẫn suy ra từ `runner.runner_dir` — đã có sẵn và đã trỏ đúng repo
+        // Python. Thêm một knob config thứ hai cho cùng một thư mục là mời hai
+        // giá trị lệch nhau.
+        // `runner_dir` trỏ vào thư mục CHỨA SCRIPT (`.../AI VIDEO/tools`), nên
+        // `media_runtime/` nằm ở thư mục cha. Thử cả hai cấp thay vì cứng một
+        // cấu trúc — repo Python nằm ở đâu là chuyện của từng máy.
+        $runnerDir = rtrim((string) config('video.runner.runner_dir', ''), '\\/');
+        $states = null;
+        if ($runnerDir !== '') {
+            $glob = '/media_runtime/design/data/construction_chains/*.json';
+            $files = array_merge(glob($runnerDir.$glob) ?: [], glob(dirname($runnerDir).$glob) ?: []);
+            foreach ($files as $file) {
+                $vocab = json_decode(file_get_contents($file), true, 512, JSON_THROW_ON_ERROR)['states'] ?? [];
+                $states = array_values(array_unique(array_merge($states ?? [], $vocab)));
+            }
+        }
+
+        $sets = config('video.creation_arc.phase_sets', []);
+        $this->assertNotEmpty($sets, 'video.creation_arc.phase_sets rỗng — test không bảo vệ gì.');
+
+        $checkedAgainstVocabulary = false;
+
+        foreach ($sets as $setKey => $set) {
+            $phases = $set['phases'] ?? [];
+            $declared = array_keys(array_filter($phases, fn ($p) => isset($p['requires_state'])));
+            $missing = array_values(array_diff(array_keys($phases), $declared));
+
+            if ($declared === []) {
+                continue;   // set chưa dùng hợp đồng trạng thái — hợp lệ, đi đường cũ
+            }
+
+            $this->assertSame([], $missing, sprintf(
+                'Set `%s` khai requires_state NỬA VỜI: %d/%d pha có, thiếu [%s]. '.
+                'Pha thiếu sẽ lặng lẽ lấy nhầm ảnh nguồn trong khi các pha khác được canh — '.
+                'khai hết, hoặc bỏ hết.',
+                $setKey, count($declared), count($phases), implode(', ', $missing),
+            ));
+
+            foreach ($phases as $phaseKey => $phase) {
+                $state = (string) $phase['requires_state'];
+                $this->assertMatchesRegularExpression('/^[a-z0-9]+(_[a-z0-9]+)*$/', $state,
+                    "{$setKey}.{$phaseKey}.requires_state = '{$state}' — phải là khoá snake_case.");
+
+                if ($states !== null) {
+                    $this->assertContains($state, $states,
+                        "{$setKey}.{$phaseKey}.requires_state = '{$state}' không có trong từ vựng đóng: ".implode(', ', $states));
+                    $checkedAgainstVocabulary = true;
+                }
+            }
+        }
+
+        if (! $checkedAgainstVocabulary) {
+            $this->markTestIncomplete('Không đọc được construction_chains/*.json (VIDEO_RUNNER_DIR?) — phần đối chiếu từ vựng đã bị bỏ qua.');
         }
     }
 }

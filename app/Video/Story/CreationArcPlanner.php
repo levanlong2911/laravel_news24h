@@ -162,6 +162,27 @@ final class CreationArcPlanner
                 $scenes[count($scenes) - 1]['setting'] = $tpl['setting'];
             }
 
+            // requires_state = TRẠNG THÁI con tàu mà cảnh này đòi thấy trong ẢNH
+            // NGUỒN của shot chuyển động. Thêm vào contract v1.0 ngày 2026-08-07,
+            // additive theo §14, và cần thật chứ không tiện tay:
+            //
+            // Không có nó thì Python phải giữ bảng `phase => trạng thái` của
+            // riêng nó — tức bản sao thứ hai của một sự thật đã khai ở
+            // config/video.php. Hai bản sao ấy sẽ lệch đúng vào ngày ai đó thêm
+            // một pha, và lệch im lặng: video vẫn ra, chỉ là sai ảnh nguồn.
+            //
+            // Đây là ngữ nghĩa CÂU CHUYỆN nên nó thuộc Laravel: "cảnh này cần
+            // con tàu ở giai đoạn nào" là quyết định kể chuyện, không phải quyết
+            // định kỹ thuật. Python chỉ so khớp chuỗi, không diễn giải.
+            //
+            // KHÔNG mặc định khi pha im lặng. Vắng `requires_state` nghĩa là
+            // "cảnh này không ràng buộc trạng thái", khác hẳn "cần trạng thái
+            // nào đó mà ta đoán hộ" — đoán hộ thì quay lại đúng lỗi mà cả thiết
+            // kế này dựng lên để chặn.
+            if (isset($tpl['requires_state'])) {
+                $scenes[count($scenes) - 1]['requires_state'] = $tpl['requires_state'];
+            }
+
             if (! empty($tpl['crowd'])) {
                 $scenes[count($scenes) - 1]['director_notes']['crowd'] = $tpl['crowd'];
             }

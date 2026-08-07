@@ -262,6 +262,31 @@ return [
                     'design' => [
                         'purpose' => 'ESTABLISH',
                         'render_strategy' => 'IMAGE',
+
+                        /**
+                         * `requires_state` — ẢNH NGUỒN của shot chuyển động phải
+                         * CHỨNG MINH trạng thái nào. Từ vựng đóng, khai ở
+                         * `construction_chains/superyacht.json` → `states`.
+                         *
+                         * Nó KHÔNG phân loại chủ đề cảnh; nó nêu điều kiện cần.
+                         * `craftsmanship` là thợ mài mối hàn TRÊN VỎ, nên cần
+                         * `hull_shell` — không phải `interior_fitout` dù chữ
+                         * "craftsmanship" nghe như chuyện nội thất, và cũng không
+                         * phải `complete_hull` vì shell đã đủ chứng minh điều kiện.
+                         * Chọn state NHỎ NHẤT mà đủ, không chọn state nghe đầy đủ hơn.
+                         *
+                         * Không tìm được artifact khớp → resolver trả
+                         * UNSATISFIABLE và shot KHÔNG được render. Tuyệt đối không
+                         * lặng lẽ lấy ảnh neo hay ảnh gần nhất: hôm nay production
+                         * đang dùng MỘT ảnh neo cho cả sáu clip, tức năm clip khởi
+                         * từ ảnh sai mà không ai biết.
+                         *
+                         * MỘT state, không phải danh sách. `experience_onboard`
+                         * thật ra cần cả ngoại thất lẫn nội thất, nhưng hợp đồng
+                         * nhiều-state là thiết kế khác — mở rộng có chủ đích khi
+                         * gặp ca thật, không lén nhét vào đây.
+                         */
+                        'requires_state' => 'technical_drawing',
                         /*
                      * objective = SCENE INTENT (§18.18) — "scene này đang làm gì
                      * cho video", KHÁC CẤP với `producer.visual_promise` ("video
@@ -301,6 +326,7 @@ return [
                      * cao nhất, nên đây là chỗ ít cần neo nhất.
                      */
                     'construction_hull' => [
+                        'requires_state' => 'hull_shell',   // xem ghi chu o phase 'design'
                         'purpose' => 'PROCESS',
                         'render_strategy' => 'VIDEO',
                         'objective' => 'Show the vessel taking physical form for the first time — a multi-deck section lowered onto the bare metal hull.',
@@ -332,6 +358,7 @@ return [
                      * Construction (không thành pha riêng) nhưng tách làm scene 2.
                      */
                     'construction_engine' => [
+                        'requires_state' => 'machinery_installation',   // xem ghi chu o phase 'design'
                         'purpose' => 'PROCESS',
                         'render_strategy' => 'VIDEO',
                         'objective' => 'Show the scale of what goes inside — the propulsion machinery lowered into a hull that is still an open shell.',
@@ -370,6 +397,7 @@ return [
                      * đoạn này lại.
                      */
                     'craftsmanship' => [
+                        'requires_state' => 'hull_shell',   // xem ghi chu o phase 'design'
                         'purpose' => 'DETAIL',
                         'render_strategy' => 'VIDEO',
                         'objective' => 'Show the hand work that separates a hull from a finished surface — precision at a scale the eye can check.',
@@ -428,6 +456,7 @@ return [
                      * ảnh neo, vì ảnh neo sinh ra từ chính câu này.
                      */
                     'experience_exterior' => [
+                        'requires_state' => 'finished_vessel',   // xem ghi chu o phase 'design'
                         'purpose' => 'REVEAL',
                         'render_strategy' => 'IMAGE',
                         // Pha DUY NHẤT trong arc mà scene intent gần với video promise
@@ -488,6 +517,7 @@ return [
                      * ra (không có tư liệu nào cho nội thất kín).
                      */
                     'experience_onboard' => [
+                        'requires_state' => 'finished_vessel',   // xem ghi chu o phase 'design'
                         'purpose' => 'RESOLUTION',
                         'render_strategy' => 'VIDEO',
                         'objective' => 'Land the payoff — put the viewer aboard the space that all the earlier construction was building toward.',

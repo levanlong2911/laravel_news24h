@@ -53,7 +53,11 @@
       "additionalProperties": false,
       "properties": {
         "construction": { "$ref": "#/$defs/identity_state" },
-        "final":        { "$ref": "#/$defs/identity_state" }
+        "final":        { "$ref": "#/$defs/identity_state" },
+        "permanent":    {
+          "$ref": "#/$defs/identity_state",
+          "description": "Nhan dang KHONG BAO GIO doi trong suot vong doi vat the — hinh hoc than vo, ty le, dang mui/duoi. Tach khoi `construction` ngay 2026-08-07 vi mot ly do do duoc: prompt cua chuoi dung xay dan (moi buoc CHI THEM mot lop) ma lai mang cau mo ta trang thai thi cong thi no TU MAU THUAN — vua bao 'giu nguyen moi thu' vua ta mot giai doan khac. `construction` van giu cau trang thai (dung cho anh neo, sinh tu so khong); `permanent` chi giu thu bat bien (dung cho moi mat xich sau do). Cung $ref nen cung hinh dang; khac nhau o AI DOC, khong o cau truc."
+        }
       }
     },
 
@@ -264,6 +268,12 @@
         "objective": {
           "description": "Tai scene nay, nguoi xem can nhan duoc dieu gi. MOT ngu nghia duy nhat, NHIEU NGUON CUNG CAP (§18.18) — (a) producer.visual_promise copy nguyen van, dung khi scene mo ta CUNG trang thai voi thanh pham (da so scene that); (b) planner sinh ra scene tu viet, BAT BUOC khi scene mo ta trang thai KHAC (Creation Arc: ban ve, khoi thep tran — va moi arc sau nay). Nguon doi thi ngu nghia field KHONG doi. Ten field la 'objective' vi §14 FROZEN chi cho additive — dung doc ten nay la 'ban copy cua visual_promise'. TUYET DOI KHONG phai Compiler tu sinh tu purpose enum. OPTIONAL, vang khi khong co nguon nao. Xem ARCHITECTURE.md §17/§18/§18.18.",
           "type": "string"
+        },
+
+        "requires_state": {
+          "description": "TRANG THAI vat the ma canh nay doi thay trong ANH NGUON cua shot chuyen dong. Additive vao v1.0 ngay 2026-08-07 theo §14. Can that: khong co no thi Python phai giu ban sao thu hai cua bang `phase => trang thai` da khai o config/video.php, va hai ban sao se lech IM LANG (video van ra, chi la sai anh nguon). Day la ngu nghia CAU CHUYEN nen thuoc Laravel; Python chi so khop CHUOI CHINH XAC, khong dien giai, khong tim gan dung. Tu vung dong, khai tai media_runtime/design/data/construction_chains/*.json truong `states` — dat ten dong nghia moi ('shell_complete' thay vi 'hull_shell') la khong khop. OPTIONAL: vang nghia la canh KHONG rang buoc trang thai, KHONG phai 'doan ho mot cai'.",
+          "type": "string",
+          "minLength": 1
         },
 
         "director_notes": { "$ref": "#/$defs/director_notes" }

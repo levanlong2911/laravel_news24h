@@ -447,4 +447,31 @@ class CreationArcPlannerTest extends TestCase
         }
     }
 
+    public function test_requires_state_reaches_the_scene_verbatim(): void
+    {
+        // Chuỗi này là KHOÁ, không phải câu chữ: Python so khớp CHÍNH XÁC. Viết
+        // hoa lệch một chữ hay đổi sang đồng nghĩa thì resolver trả UNSATISFIABLE
+        // — nên test khoá đúng nguyên văn, không khoá "có chứa".
+        $phases = $this->phases();
+        $phases['construction']['requires_state'] = 'hull_shell';
+
+        $scene = (new CreationArcPlanner($phases))->plan(self::HERO_ID, self::HERO_NAME)['scenes'][1];
+
+        $this->assertSame('hull_shell', $scene['requires_state']);
+    }
+
+    public function test_scene_without_requires_state_omits_the_key_entirely(): void
+    {
+        // Vắng = "cảnh này không ràng buộc trạng thái". Nếu ở đây điền một mặc
+        // định thì ta vừa dạy hệ thống đoán hộ ảnh nguồn — đúng cái lỗi mà
+        // resolver sinh ra để chặn, chỉ là dời lên sớm hơn một tầng.
+        foreach ((new CreationArcPlanner($this->phases()))->plan(self::HERO_ID, self::HERO_NAME)['scenes'] as $scene) {
+            $this->assertArrayNotHasKey('requires_state', $scene);
+        }
+    }
+
+    // Test "mọi pha production đều khai requires_state" nằm ở
+    // tests/Feature/Video/CreationArcWorldSeparationTest.php, không phải ở đây:
+    // nó phải đọc CONFIG THẬT, mà config/video.php gọi storage_path() nên cần
+    // container. Suite Video cố ý chạy không có container (~1s, không DB).
 }
