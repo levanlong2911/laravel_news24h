@@ -62,8 +62,13 @@ final class ClaudeExtractor implements Extractor
 
         $response = $this->llm->complete($request);
 
+        // `$diagnostics` do parser điền qua tham chiếu — nó đếm những gì bị bỏ
+        // giữa `raw` và `candidates`. Không có nó thì "bài báo nghèo thông tin"
+        // và "parser nuốt hết" trông y hệt nhau.
+        $candidates = $this->parser->parse($response->text, $diagnostics);
+
         return new ExtractionResult(
-            $this->parser->parse($response->text),
+            $candidates,
             $response->model,
             self::INSTRUCTION_VERSION,
             $response->tokensIn,
@@ -71,6 +76,7 @@ final class ClaudeExtractor implements Extractor
             $response->latencyMs,
             $response->costUsd,
             $response->raw !== '' ? $response->raw : $response->text,
+            $diagnostics,
         );
     }
 

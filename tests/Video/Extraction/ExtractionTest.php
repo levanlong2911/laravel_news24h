@@ -6,6 +6,7 @@ use App\Video\Article\RawArticle;
 use App\Video\Evidence\EvidenceIndex;
 use App\Video\Evidence\EvidenceSource;
 use App\Video\Extraction\CandidateGraphParser;
+use App\Video\Extraction\CandidateWorldGraph;
 use App\Video\Extraction\ClaudeExtractor;
 use App\Video\Extraction\ExtractionResult;
 use App\Video\Extraction\MalformedExtraction;
@@ -46,33 +47,34 @@ class ExtractionTest extends TestCase
     JSON;
 
     private EvidenceIndex $index;
+
     private RawArticle $article;
+
     private string $tmpDir;
 
     protected function setUp(): void
     {
-        $this->index = (new EvidenceIndex())
+        $this->index = (new EvidenceIndex)
             ->add(EvidenceSource::Headline, 'Moonrise sold for €325M')
             ->add(EvidenceSource::Body, 'The grey hull measures 101 metres. She was built in the shipyard.');
 
         $this->article = new RawArticle('moonrise-test', 'Moonrise sold for €325M', '<p>x</p>');
-        $this->tmpDir = sys_get_temp_dir() . '/video-extraction-' . uniqid();
+        $this->tmpDir = sys_get_temp_dir().'/video-extraction-'.uniqid();
     }
 
     protected function tearDown(): void
     {
         if (is_dir($this->tmpDir)) {
-            array_map('unlink', glob($this->tmpDir . '/*.json') ?: []);
+            array_map('unlink', glob($this->tmpDir.'/*.json') ?: []);
             rmdir($this->tmpDir);
         }
     }
 
     private function llmReturning(string $text): LlmClient
     {
-        return new class($text) implements LlmClient {
-            public function __construct(private readonly string $text)
-            {
-            }
+        return new class($text) implements LlmClient
+        {
+            public function __construct(private readonly string $text) {}
 
             public function complete(LlmRequest $request): LlmResponse
             {
@@ -83,7 +85,8 @@ class ExtractionTest extends TestCase
 
     private function allowAll(): ApprovalGate
     {
-        return new class() implements ApprovalGate {
+        return new class implements ApprovalGate
+        {
             public function allows(LlmRequest $request, float $estimatedCostUsd): bool
             {
                 return true;
@@ -96,14 +99,14 @@ class ExtractionTest extends TestCase
     public function test_parser_unwraps_markdown_fences(): void
     {
         // LLM rất hay bọc JSON trong ```json dù được bảo đừng.
-        $graph = (new CandidateGraphParser())->parse("```json\n" . self::RESPONSE . "\n```");
+        $graph = (new CandidateGraphParser)->parse("```json\n".self::RESPONSE."\n```");
 
         $this->assertCount(1, $graph->entities);
     }
 
     public function test_parser_never_invents_a_missing_quote(): void
     {
-        $graph = (new CandidateGraphParser())->parse('{"entities":[{"id":"x","type":"vehicle","claims":[{"attribute":"hull_color","value":"grey"}]}]}');
+        $graph = (new CandidateGraphParser)->parse('{"entities":[{"id":"x","type":"vehicle","claims":[{"attribute":"hull_color","value":"grey"}]}]}');
 
         // Để rỗng, KHÔNG bịa. Gatekeeper sẽ loại với lý do NoEvidence.
         $this->assertSame('', $graph->entities[0]->claims[0]->evidenceQuote);
@@ -112,7 +115,7 @@ class ExtractionTest extends TestCase
     public function test_parser_does_not_filter_by_ontology_or_confidence(): void
     {
         // Lọc ở parser sẽ khiến GatekeeperReport nói dối về tỷ lệ sống sót.
-        $graph = (new CandidateGraphParser())->parse('{"entities":[{"id":"x","type":"superyacht","confidence":0.01,"claims":[]}]}');
+        $graph = (new CandidateGraphParser)->parse('{"entities":[{"id":"x","type":"superyacht","confidence":0.01,"claims":[]}]}');
 
         $this->assertSame('superyacht', $graph->entities[0]->type);
     }
@@ -121,7 +124,45 @@ class ExtractionTest extends TestCase
     {
         $this->expectException(MalformedExtraction::class);
 
-        (new CandidateGraphParser())->parse('I could not find any entities, sorry!');
+        (new CandidateGraphParser)->parse('I could not find any entities, sorry!');
+    }
+
+    // ---- Dấu vết parser đi kèm kết quả (Sprint 0, 2026-08-06) ----
+
+    public function test_a_real_extraction_carries_what_the_parser_dropped(): void
+    {
+        $client = new GatedLlmClient($this->llmReturning(self::RESPONSE), $this->allowAll());
+
+        $result = (new ClaudeExtractor($client))->extract($this->article, $this->index);
+
+        $this->assertNotNull($result->diagnostics, 'lượt chạy thật PHẢI mang diagnostics');
+        $this->assertGreaterThan(0, $result->diagnostics->entitiesSeen);
+    }
+
+    public function test_a_dropped_claim_is_visible_on_the_result_not_only_inside_the_parser(): void
+    {
+        // Chuỗi này có một claim LỒNG NHAU — đúng hình dạng nghi ngờ của bài
+        // ISA. Trước Sprint 0 nó biến mất giữa `raw` và `candidates` mà không
+        // ai ở tầng trên nhìn thấy.
+        $client = new GatedLlmClient(
+            $this->llmReturning('{"entities":[{"id":"x","type":"vehicle","claims":[{"hull":{"color":"white"}}]}]}'),
+            $this->allowAll(),
+        );
+
+        $result = (new ClaudeExtractor($client))->extract($this->article, $this->index);
+
+        $this->assertSame(1, $result->diagnostics->claimsSeen);
+        $this->assertSame(1, $result->diagnostics->claimsDroppedInvalidShape);
+        $this->assertSame('entities[0].claims[0]', $result->diagnostics->samples[0]['path']);
+    }
+
+    public function test_null_diagnostics_means_never_measured_not_measured_clean(): void
+    {
+        // Phân biệt này là lý do trường được để nullable. Gộp hai trạng thái sẽ
+        // khiến một bản PHÁT LẠI trông như một lượt chạy hoàn hảo.
+        $replayed = new ExtractionResult(new CandidateWorldGraph, 'haiku', 'extract-v3');
+
+        $this->assertNull($replayed->diagnostics);
     }
 
     // ---- Cổng duyệt ----
@@ -137,7 +178,7 @@ class ExtractionTest extends TestCase
 
     public function test_approval_error_states_the_estimated_cost(): void
     {
-        $client = new GatedLlmClient($this->llmReturning(self::RESPONSE), new DenyByDefaultGate());
+        $client = new GatedLlmClient($this->llmReturning(self::RESPONSE), new DenyByDefaultGate);
 
         try {
             (new ClaudeExtractor($client))->extract($this->article, $this->index);
@@ -179,7 +220,7 @@ class ExtractionTest extends TestCase
     public function test_recorded_replays_without_network_or_cost(): void
     {
         $recorded = new RecordedExtractor($this->tmpDir);
-        $client   = new GatedLlmClient($this->llmReturning(self::RESPONSE), $this->allowAll());
+        $client = new GatedLlmClient($this->llmReturning(self::RESPONSE), $this->allowAll());
 
         $live = (new ClaudeExtractor($client))->extract($this->article, $this->index);
         $recorded->record($this->article, $live);
@@ -206,7 +247,7 @@ class ExtractionTest extends TestCase
         $client = new GatedLlmClient($this->llmReturning(self::RESPONSE), $this->allowAll());
         $result = (new ClaudeExtractor($client))->extract($this->article, $this->index);
 
-        $report = (new EvidenceGatekeeper())->verify($result->candidates, $this->index);
+        $report = (new EvidenceGatekeeper)->verify($result->candidates, $this->index);
         $entity = $report->graph->entity('moonrise');
 
         // Bài nói "grey hull" và "101 metres" → sống.

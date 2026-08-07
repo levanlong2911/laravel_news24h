@@ -26,8 +26,20 @@ final class ExtractionResult
         public readonly int $latencyMs = 0,
         public readonly float $costUsd = 0.0,
         public readonly string $raw = '',
-    ) {
-    }
+        /**
+         * Parser đã bỏ mất gì trên đường từ `raw` sang `candidates`.
+         *
+         * NULLABLE CÓ CHỦ Ý, và `null` KHÁC "có nhưng sạch":
+         *   null            → chưa ai đo (RecordedExtractor, FakeExtractor)
+         *   isClean() true  → đã đo, và không mất gì
+         * Gộp hai cái đó thành một sẽ khiến "bản phát lại" trông như "lượt chạy
+         * hoàn hảo" — đúng kiểu ngộ nhận mà cả lớp diagnostics sinh ra để dẹp.
+         *
+         * Đặt CUỐI constructor để ba chỗ đang dựng ExtractionResult không phải
+         * sửa: `FakeExtractor` và `RecordedExtractor` bỏ qua, CI vẫn $0.
+         */
+        public readonly ?ParserDiagnostics $diagnostics = null,
+    ) {}
 
     public function candidateCount(): int
     {
