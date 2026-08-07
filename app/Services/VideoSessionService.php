@@ -207,6 +207,63 @@ class VideoSessionService
         return [$queued, $this->pythonRunner->spawn(self::RENDER_SCRIPT, $session->code)];
     }
 
+    /**
+     * THỬ RENDER — chạy đúng đường render thật nhưng KHÔNG gọi vendor, KHÔNG đổi
+     * dữ liệu. Trả nguyên văn thứ script in ra.
+     *
+     * Vì sao cần: bấm Render là tiêu tiền và mất 6-18 phút, còn lỗi hay gặp nhất
+     * lại tầm thường — shot chưa duyệt, thiếu ảnh neo, thiếu ảnh chứng minh trạng
+     * thái. Trước bản này cách duy nhất để biết là bấm rồi ngồi đọc log.
+     *
+     * DANH SÁCH SHOT ĐI QUA FILE, KHÔNG QUA API. Đây là điểm chính của thiết kế:
+     * lượt thử KHÔNG CÓ KÊNH nào để đổi dữ liệu, chứ không phải có kênh rồi hứa
+     * không dùng. Nó cũng nhìn được shot ở MỌI trạng thái — `/video-shots/queued`
+     * chỉ trả `queued`, mà thứ cần soi TRƯỚC khi duyệt lại đang là `draft`.
+     *
+     * @return array{0: bool, 1: string} [chạy được?, output]
+     */
+    public function previewRender(string $sessionId): array
+    {
+        $session = $this->sessionRepository->findWithProjectAndShots($sessionId);
+        $shots = $this->shotRepository->findAllOfSessionWithSession($sessionId);
+
+        $payload = [];
+        foreach ($shots as $shot) {
+            $payload[] = [
+                'id' => $shot->id,
+                'shot_code' => $shot->shot_code,
+                'kind' => $shot->kind,
+                'shot_type' => $shot->shot_type,
+                'status' => $shot->status,
+                'compiled_prompt' => $shot->compiled_prompt,
+                'negative_prompt' => $shot->negative_prompt,
+                'spec_json' => $shot->spec_json,
+                'render_plan' => $shot->render_plan,
+                'artifact_path' => $shot->artifact_path,
+                'session' => ['code' => $session->code],
+            ];
+        }
+
+        // Ghi vào thư mục log của runner — nơi ĐÃ có sẵn và đã được tạo/kiểm
+        // quyền. Thêm một thư mục tạm thứ hai chỉ để chứa một file sống 1 giây
+        // là abstraction không trả được tiền thuê.
+        $dir = (string) config('video.runner.log_dir');
+        if (! is_dir($dir) && ! @mkdir($dir, 0775, true) && ! is_dir($dir)) {
+            return [false, "Khong tao duoc thu muc: {$dir}"];
+        }
+
+        $file = $dir.DIRECTORY_SEPARATOR.sprintf('preflight_%s_%s.json', $session->code, now()->format('His'));
+        if (@file_put_contents($file, json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) === false) {
+            return [false, "Khong ghi duoc file: {$file}"];
+        }
+
+        try {
+            return $this->pythonRunner->runAndWait(self::RENDER_SCRIPT, ['--preflight-file='.$file]);
+        } finally {
+            @unlink($file);
+        }
+    }
+
     // POST /api/render-plans — Python đẩy session + shots (spec là INPUT, prompt là OUTPUT)
     public function storeFromPython(array $data): array
     {

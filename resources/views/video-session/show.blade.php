@@ -12,7 +12,31 @@
         onsubmit="return confirm('Render {{ $session->shots->where('status','approved')->count() }} shot đã duyệt (${{ number_format($session->shots->where('status','approved')->sum('cost_estimate'), 2) }})?')">
     @csrf <button class="btn btn-danger btn-sm" {{ $session->shots->where('status','approved')->count() ? '' : 'disabled' }}>🎬 Render các shot đã duyệt</button>
   </form>
+
+  {{--
+    Nut THU nam ngay canh nut TIEU TIEN, va KHONG bi disable theo so shot da
+    duyet: no ton tai de tra loi cau hoi "bam Render bay gio thi chuyen gi xay
+    ra", ma cau hoi do dang nhat khi CHUA duyet gi. Khong confirm, khong mau do
+    — no khong doi gi ca.
+  --}}
+  <form method="post" action="{{ route('video-session.preflight', $session->id) }}" style="display:inline">
+    @csrf <button class="btn btn-outline-secondary btn-sm">🔍 Thử render (không tốn tiền)</button>
+  </form>
 </div></div>
+
+@if(session('preflight'))
+<div class="card card-default"><div class="card-body">
+  <b>🔍 Thử render</b>
+  <div class="text-muted mb-2"><small>Chạy đúng đường render thật, nhưng không gọi vendor và không đổi dữ liệu.</small></div>
+  <pre class="bg-dark text-light p-2 mb-0" style="max-height:32rem;overflow:auto;font-size:.8rem">{{ session('preflight') }}</pre>
+</div></div>
+@endif
+
+@if(session('error'))
+<div class="card card-default"><div class="card-body">
+  <div class="alert alert-danger mb-0"><b>Thử render không chạy được</b><br><small>{{ session('error') }}</small></div>
+</div></div>
+@endif
 
 {{--
   Chat luong RenderPlan — CHI CANH BAO, khong chan. Dat NGAY DUOI card tom tat

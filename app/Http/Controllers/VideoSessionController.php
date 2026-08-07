@@ -108,6 +108,19 @@ class VideoSessionController extends Controller
     }
 
     /**
+     * 🔍 Thu render — chay dung duong render that, KHONG goi vendor, KHONG doi du lieu.
+     *
+     * Output do thang len man hinh chu khong vao log: nut nay ton tai de NGUOI DOC
+     * KET QUA. Bao "da chay xong, moi mo file log" la lam hong chinh muc dich.
+     */
+    public function previewRender(string $id)
+    {
+        [$ok, $output] = $this->videoSessionService->previewRender($id);
+
+        return back()->with($ok ? 'preflight' : 'error', $output);
+    }
+
+    /**
      * Nut "Tao Video" trong cot Actions cua tung bai viet.
      *
      * HIEN LY DO THAT len man hinh, khong dung mot cau chung chung (doi

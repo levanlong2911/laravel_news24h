@@ -90,6 +90,56 @@ class PythonRunner
         return sprintf('python tools/%s --session=%s', $script, $sessionCode);
     }
 
+    /**
+     * Chạy VÀ CHỜ, trả nguyên văn stdout+stderr. Chỉ dùng cho lượt KHÔNG tiêu tiền.
+     *
+     * Vì sao không dùng `spawn()`: nó cố ý không chờ, vì render thật mất 6-18
+     * phút. Lượt thử thì ngược lại — nó tồn tại để NGƯỜI ĐỌC KẾT QUẢ, mà kết quả
+     * bắn vào file log rồi bảo người dùng đi mở log là làm hỏng chính mục đích
+     * của nút. Chạy thử không gọi vendor nên xong trong ~1 giây.
+     *
+     * `$args` thay cho `--session=` cứng: lượt thử truyền `--preflight-file`, một
+     * đường dẫn — không phải mã session.
+     *
+     * @param  list<string>  $args
+     * @return array{0: bool, 1: string} [chạy được?, output]
+     */
+    public function runAndWait(string $script, array $args, int $timeoutSeconds = 120): array
+    {
+        $dir = (string) config('video.runner.runner_dir', '');
+
+        if ($dir === '') {
+            return [false, 'VIDEO_RUNNER_DIR chua cau hinh — khong chay duoc.'];
+        }
+
+        $scriptPath = rtrim($dir, '/\\').DIRECTORY_SEPARATOR.$script;
+
+        if (! is_file($scriptPath)) {
+            return [false, "Khong tim thay script: {$scriptPath}"];
+        }
+
+        $command = array_merge(
+            [(string) config('video.runner.python_bin', 'python'), $scriptPath],
+            $args,
+        );
+
+        try {
+            $process = new \Symfony\Component\Process\Process($command, $dir, null, null, $timeoutSeconds);
+            $process->run();
+        } catch (\Throwable $e) {
+            Log::error('PythonRunner: chay dong bo that bai', [
+                'script' => $script, 'exception' => $e,
+            ]);
+
+            return [false, 'Chay that bai: '.$e->getMessage()];
+        }
+
+        // KHÔNG dựa vào exit code để quyết "có kết quả hay không": script thử in
+        // ra chẩn đoán hữu ích rồi vẫn có thể thoát khác 0. Output mới là thứ
+        // người dùng cần, kể cả khi nó là một traceback.
+        return [true, trim($process->getOutput()."\n".$process->getErrorOutput())];
+    }
+
     /** Thư mục log không tạo được thì KHÔNG bắn — chạy mù còn tệ hơn không chạy. */
     private function logFileFor(string $script, string $sessionCode): ?string
     {

@@ -12,5 +12,8 @@ interface VideoShotRepositoryInterface extends RepositoryInterface
 
     public function findQueuedWithSession(): iterable;
 
+    /** MỌI shot của session, không lọc trạng thái — CHỈ cho lượt thử render. */
+    public function findAllOfSessionWithSession(string $sessionId): iterable;
+
     public function updateOrCreateShot(array $match, array $attributes): VideoShot;
 }
