@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\VideoSessionStatus;
 use App\Enums\VideoShotStatus;
+use App\Models\VideoRender;
 use App\Models\VideoSession;
 use App\Models\VideoShot;
 use App\Repositories\Interfaces\ArticleRepositoryInterface;
@@ -325,9 +326,27 @@ class VideoSessionService
         return $this->shotRepository->findQueuedWithSession();
     }
 
-    // PATCH /api/video-shots/{id}/result — runner báo kết quả
-    public function reportShotResult(string $shotId, bool $success, ?string $artifactPath, float $cost): VideoShot
-    {
+    /**
+     * PATCH /api/video-shots/{id}/result — runner bao ket qua.
+     *
+     * Ghi HAI thu, va chung khac ban chat:
+     *
+     *   video_shots     TRANG THAI HIEN TAI  — ghi de duoc, `artifact_path` la
+     *                   con tro toi ban moi nhat
+     *   video_renders   SU KIEN DA XAY RA    — chi INSERT, khong bao gio UPDATE
+     *
+     * `$render` vang thi hanh xu Y NHU TRUOC (chi doi trang thai shot). Runner cu
+     * van chay duoc, va mot lan trien khai lech phien ban khong lam hong gi.
+     *
+     * @param  array<string, mixed>|null  $render
+     */
+    public function reportShotResult(
+        string $shotId,
+        bool $success,
+        ?string $artifactPath,
+        float $cost,
+        ?array $render = null,
+    ): VideoShot {
         $shot = $this->shotRepository->show($shotId);
         $this->shotRepository->update($shotId, [
             'status' => ($success ? VideoShotStatus::RENDERED : VideoShotStatus::FAILED)->value,
@@ -337,6 +356,73 @@ class VideoSessionService
             $shot->session->increment('cost_actual', $cost);
         }
 
+        if ($render !== null) {
+            $this->recordRender($shot, $success, $artifactPath, $cost, $render);
+        }
+
         return $shot->refresh();
+    }
+
+    /**
+     * Mot dong `video_renders` — INSERT, khong bao gio UPDATE.
+     *
+     * `attempt_no` tinh o day chu khong nhan tu Python: Laravel so huu bang nay,
+     * va de Python dem thi hai tien trinh chay song song se cho cung mot so.
+     *
+     * `source_render_id` khop bang `source_prompt_sha256`, KHONG bang "ban render
+     * moi nhat cua shot nguon". Hai phep do cho ket qua khac nhau ngay khi mot mat
+     * duoc render lai roi hong: file tren dia van la cua luot cu, con "moi nhat"
+     * da tro sang luot moi. Python doc sha tu chinh ho so canh tam anh no THAT SU
+     * gui di, nen day la su that chu khong phai suy dien.
+     *
+     * @param  array<string, mixed>  $render
+     */
+    private function recordRender(
+        VideoShot $shot,
+        bool $success,
+        ?string $artifactPath,
+        float $cost,
+        array $render,
+    ): void {
+        $sourceSha = $render['source_prompt_sha256'] ?? null;
+        $sourceId = null;
+
+        if ($sourceSha !== null) {
+            $sourceId = VideoRender::query()
+                ->where('prompt_sha256', $sourceSha)
+                ->whereHas('shot', fn ($q) => $q->where('session_id', $shot->session_id))
+                ->value('id');
+        }
+
+        VideoRender::create([
+            'shot_id' => $shot->id,
+            // max()+1 chu khong phai count()+1: mot dong bi xoa se lam count() cap
+            // lai so cu va dam vao unique(shot_id, attempt_no).
+            'attempt_no' => ((int) VideoRender::where('shot_id', $shot->id)->max('attempt_no')) + 1,
+            'render_kind' => $render['render_kind'] ?? 'image',
+            'provider' => $render['provider'] ?? '',
+            'model' => $render['model'] ?? '',
+            'sent_prompt' => $render['sent_prompt'] ?? '',
+            'prompt_sha256' => $render['prompt_sha256'] ?? '',
+            'request_sha256' => $render['request_sha256'] ?? null,
+            'negative_prompt' => $render['negative_prompt'] ?? null,
+            'source_render_id' => $sourceId,
+            'source_kind' => $render['source_kind'] ?? null,
+            'requires_state' => $render['requires_state'] ?? null,
+            'proves_state' => $render['proves_state'] ?? null,
+            'artifact_path' => $artifactPath,
+            'artifact_dir' => $render['artifact_dir'] ?? null,
+            'width' => $render['width'] ?? null,
+            'height' => $render['height'] ?? null,
+            'duration_ms' => $render['duration_ms'] ?? null,
+            'bytes' => $render['bytes'] ?? null,
+            'cost_usd' => $cost,
+            'provider_ms' => $render['provider_ms'] ?? null,
+            'status' => $success ? 'succeeded' : 'failed',
+            'error_message' => $render['error_message'] ?? null,
+            'proof_method' => $render['proof_method'] ?? null,
+            // KHONG bao gio true o day: duong nay khong soi pixel bao gio.
+            'proof_verified' => false,
+        ]);
     }
 }

@@ -230,11 +230,16 @@ class VideoSessionController extends Controller
         if (! $this->checkToken($r)) {
             return response()->json(['error' => 'unauthorized'], 401);
         }
+        // `render` la HO SO LUOT NAY (prompt da gui, model, anh nguon, tien that)
+        // -> mot dong `video_renders` bat bien. Vang thi hanh xu y nhu truoc, nen
+        // runner cu van chay duoc va trien khai lech phien ban khong hong gi.
+        $render = $r->input('render');
         $shot = $this->videoSessionService->reportShotResult(
             $shotId,
             (bool) $r->input('success'),
             $r->input('artifact_path'),
-            (float) $r->input('cost', 0)
+            (float) $r->input('cost', 0),
+            is_array($render) ? $render : null,
         );
 
         return response()->json(['status' => $shot->status]);
