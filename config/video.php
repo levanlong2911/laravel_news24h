@@ -329,7 +329,25 @@ return [
                         'requires_state' => 'hull_shell',   // xem ghi chu o phase 'design'
                         'purpose' => 'PROCESS',
                         'render_strategy' => 'VIDEO',
-                        'objective' => 'Show the vessel taking physical form for the first time — a multi-deck section lowered onto the bare metal hull.',
+                        /**
+                         * VIẾT LẠI 2026-08-07. Bản cũ: "a multi-deck section
+                         * lowered onto the bare metal hull", với prose tả khối
+                         * thượng tầng đang hạ xuống và thợ đứng TRÊN BOONG.
+                         *
+                         * Ảnh nguồn của cảnh này là `hull_shell` — vỏ thép thô hở
+                         * nóc. Không có boong để đứng, không có khối nào treo trên
+                         * cao, không có thượng tầng. Câu chữ đang tả một giai đoạn
+                         * muộn hơn hẳn ảnh mà nó sẽ được hoạt hoá từ đó.
+                         *
+                         * Và nó hỏng theo kiểu rất khó đọc: bằng chứng Veo ($0.36
+                         * ở engine v1/v2) nói prior của ẢNH thắng câu chữ — clip
+                         * sẽ không ra thứ prompt tả, cũng không báo lỗi. Chỉ là
+                         * một đoạn video sai.
+                         *
+                         * Bản mới chỉ tả chuyển động của thứ ĐÃ CÓ trong khung:
+                         * cầu trục chạy ray, thợ đứng giữa các sườn, hồ quang hàn.
+                         */
+                        'objective' => 'Show the vessel taking physical form — the bare steel hull being welded up from the inside.',
                         'camera' => ['framing' => 'WIDE', 'movement' => 'STATIC', 'speed' => 'SLOW'],
                         'aesthetic' => ['emotion' => 'MAJESTIC', 'composition' => 'RULE_OF_THIRDS', 'light_intensity' => 'NEUTRAL', 'light_grade' => 'COOL'],
                         // NƠI CHỐN nằm ở `world`, KHÔNG viết vào đây. Cần cẩu cũng
@@ -340,13 +358,18 @@ return [
                         'setting' => ['environment' => 'covered_shipbuilding_hall'],
                         // SỐ NGƯỜI = ý đồ đạo diễn, đặt NGAY CẠNH prose để một
                         // người viết cả hai và thấy nhau khi sửa. Khớp đúng prose
-                        // bên dưới: 1 thợ ở mép vỏ + 2 thợ trên boong.
+                        // bên dưới: 2 thợ trong lòng vỏ + 1 thợ trên sàn xưởng.
                         'crowd' => ['worker' => 3],
-                        'composition_note' => "A large multi-deck superstructure section hangs suspended directly above the bare metal hull of {hero_name}; its underside structural ribbing is fully exposed, while a lone worker in a hard hat stands at the hull's edge, tiny against its scale.",
+                        'composition_note' => 'Two welders in hard hats stand inside the open steel hull of {hero_name}, between its upright transverse frames, tiny against its length; the overhead gantry crane runs on its rails above them with its hook hanging empty.',
                         'micro_physics' => [
-                            'The suspended section descends steadily and the gap between it and the hull below closes continuously, shrinking from several metres to almost nothing.',
-                            'The lifting cables stay taut and vertical throughout, the load swaying only slightly as it comes down.',
-                            'Two workers on the hull deck below step back from the landing area as the section closes in above them.',
+                            // Ở cỡ này thợ chỉ cao vài chục pixel, nên tả chuyển
+                            // động CẢ NGƯỜI — bài học đã trả tiền ở clip engine:
+                            // cờ-lê lực và thước lá không đọc được ở cỡ chủ thể
+                            // đó, và bắt Veo hoạt hoá thứ không nhìn thấy là mời
+                            // nó bịa ra một vật thứ hai.
+                            'The nearer welder straightens up, steps across two frame bays toward the bow, and lowers himself again at the next joint.',
+                            'His welding arc flares and dies in short bursts, and the raw steel around him brightens and dims with it.',
+                            'Thin welding smoke rises out of the open hull and drifts slowly up toward the roof trusses.',
                         ],
                     ],
 
@@ -397,7 +420,27 @@ return [
                      * đoạn này lại.
                      */
                     'craftsmanship' => [
-                        'requires_state' => 'hull_shell',   // xem ghi chu o phase 'design'
+                        /**
+                         * SỬA 2026-08-07: `hull_shell` -> `complete_hull`.
+                         *
+                         * Tôi gán `hull_shell` theo TÊN PHA ("craftsmanship nghe
+                         * như hoàn thiện bề mặt"), không theo prose. Resolver báo
+                         * SẴN SÀNG vì hai chuỗi enum bằng nhau, và $0.18 suýt
+                         * được tiêu để hoạt hoá một tấm ảnh thép thô bằng câu chữ
+                         * tả vỏ đã sơn trắng.
+                         *
+                         * Prose ở dưới ĐÚNG về nghiệp vụ — ghi chú ngay trên đầu
+                         * pha này đã chốt: fairing/mài diễn ra trên vỏ ĐÃ SƠN,
+                         * cách giai đoạn khung thép trần cả năm, và không được gộp
+                         * hai giai đoạn lại. Nên sửa `requires_state`, KHÔNG sửa
+                         * prose.
+                         *
+                         * Hệ quả: chuỗi hiện mới dựng tới `hull_shell` nên cảnh
+                         * này UNSATISFIABLE. Đó là câu trả lời ĐÚNG — chưa có ảnh
+                         * nào chứng minh được vỏ đã sơn, và render bằng ảnh gần
+                         * đúng chính là thứ cả thiết kế này dựng lên để chặn.
+                         */
+                        'requires_state' => 'complete_hull',
                         'purpose' => 'DETAIL',
                         'render_strategy' => 'VIDEO',
                         'objective' => 'Show the hand work that separates a hull from a finished surface — precision at a scale the eye can check.',
