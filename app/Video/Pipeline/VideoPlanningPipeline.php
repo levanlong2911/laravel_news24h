@@ -87,7 +87,15 @@ final class VideoPlanningPipeline
         $world = $report->graph;
 
         if ($onWorldVerified !== null) {
-            $onWorldVerified($world);
+            // HAI tham số từ 2026-08-06. `$report` mang `rejections` — thứ duy
+            // nhất trả lời được "cổng đã loại cái gì, vì lý do gì", và nó chết
+            // cùng scope này nếu không đưa ra ngoài.
+            //
+            // Callback cũ khai một tham số (`BenchmarkRunner`: `function
+            // ($verified)`) vẫn chạy nguyên: PHP bỏ qua tham số thừa với hàm do
+            // người dùng định nghĩa. Ghi ra đây vì đó là hợp đồng, không phải
+            // một tiểu tiết ngôn ngữ để ai đó tình cờ dựa vào.
+            $onWorldVerified($world, $report);
         }
 
         // GUARD 2 — đứng NGAY TRƯỚC Producer + N Director (1 + N cú gọi nữa).

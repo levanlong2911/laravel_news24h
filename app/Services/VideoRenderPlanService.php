@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Admin;
 use App\Models\Article;
+use App\Services\Video\ExtractionArtifactRecorder;
 use App\Video\Article\RawArticle;
 use App\Video\Llm\ClaudeWriterAdapter;
 use App\Video\Llm\CostAccumulatingLlmClient;
@@ -92,6 +93,10 @@ class VideoRenderPlanService
     public function __construct(
         private ClaudeWriterAdapter $claudeWriterAdapter,
         private VideoPipelineFactory $videoPipelineFactory,
+        // Ghi bang chung cua Truth Layer. O DAY chu khong o trong pipeline:
+        // `app/Video/` khong duoc biet Eloquent ton tai. Pipeline chi goi mot
+        // callable; closure duoc dinh nghia o tang nay.
+        private ExtractionArtifactRecorder $artifactRecorder = new ExtractionArtifactRecorder,
     ) {}
 
     /**
@@ -151,10 +156,49 @@ class VideoRenderPlanService
         // that song tiep — luc do van phai co Producer/Director.
         $phaseSet = $this->creationArcPhaseSetFor($article);
 
+        // GHEP hai moc cua pipeline. Chung ban o HAI thoi diem khac nhau —
+        // `onExtracted` ngay sau khi tra tien cho Claude, `onWorldVerified` sau
+        // Gatekeeper — nen ban ghi phai giu `$extraction` lai cho toi luc co
+        // `$report`. Bien cuc bo cua MOT luot chay; recorder khong giu state,
+        // neu khong hai request song song se tron bang chung cua nhau.
+        $extraction = null;
+
         try {
             $renderPlan = $pipeline->plan(
                 $rawArticle,
                 $meta,
+                onWorldVerified: function ($world, $report) use (&$extraction, $article): void {
+                    if ($extraction === null) {
+                        return;
+                    }
+
+                    // GHI O DAY, khong doi pipeline xong: Story/Scene/Producer/
+                    // Director deu co the nem sau dong nay, va khi do bang chung
+                    // ve viec Truth Layer da lam gi van phai con.
+                    //
+                    // TRY/CATCH O CHO GOI, khong o trong recorder: bao dam "dung
+                    // cu do khong bao gio lam sap thu no do" phai dung voi MOI
+                    // ban cai dat, khong chi voi ban hien tai. Cung luat voi
+                    // `PythonRunner` — spawn hong khong bao gio chi mang.
+                    //
+                    // Nhung KHONG nuot im lang: hong ma khong ai biet thi mot
+                    // ngay artifact bien mat va ta lai tuong Extractor khong
+                    // chay — tao ra dung lo hong quan sat ma no sinh ra de bit.
+                    try {
+                        $this->artifactRecorder->record($article, $extraction, $report);
+                    } catch (\Throwable $e) {
+                        Log::error('video_extraction_artifact_write_failed', [
+                            'article_id' => $article->id,
+                            'model' => $extraction->model,
+                            'instruction_version' => $extraction->instructionVersion,
+                            'exception' => $e::class,
+                            'message' => $e->getMessage(),
+                        ]);
+                    }
+                },
+                onExtracted: function ($result) use (&$extraction): void {
+                    $extraction = $result;
+                },
                 creativeNeededFor: $phaseSet === null
                     ? null
                     : fn (VerifiedWorldGraph $world) => ! $this->hasVehicle($world),
