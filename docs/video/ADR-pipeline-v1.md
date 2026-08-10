@@ -218,3 +218,51 @@ lặng lẽ (đúng dự đoán "Animate vs Create"). Chỉ khi crowd/text cắt
 (4→2, xoá sparks/smoke vì block chưa hàn, sửa camera_target khỏi "weld seam" chưa tồn
 tại) → prompt và render nhất quán 100%. Xem `project_sprint2_result.md`,
 `project_motion_prompt_formula.md` (memory).
+
+## AMENDMENT v1.3 — Visible Destination Invariant (2026-08-10)
+
+**Luật.** Đích đến của một chuyển động phải là **mốc nhìn thấy được từ góc máy của ảnh
+nguồn**. Không dùng quan hệ không gian thuần ngữ nghĩa, bị che khuất, hoặc không quan sát
+được làm điểm đến chính.
+
+```
+ảnh nguồn → góc máy CỦA NÓ → mốc NHÌN THẤY ĐƯỢC → điểm đến → QA
+```
+
+không phải:
+
+```
+quan hệ ngữ nghĩa → "áp tấm vào mạn" → model tự đoán chỗ
+```
+
+### Bằng chứng — hai lần, hai model, hai bài toán khác nhau
+
+| Ngày | Model | Đích đến | Kết quả |
+|---|---|---|---|
+| 08-09 | Veo i2v `keel` | "giữa hai sườn ngang" — mốc ngửa mặt lên, nhìn từ trên xuống thấy rõ | ✅ thanh thép hạ đúng chỗ |
+| 08-09 | Veo i2v `shell` v1 | "áp vào mạn" — mặt gần thẳng đứng, ở góc 40° thu thành viền mỏng | ❌ tấm vỏ treo lơ lửng giữa lòng tàu |
+| 08-10 | gpt-image-2/edit | "đặt khối B phía sau khối A" — quan hệ model phải TỰ SUY | ❌ 0/3 |
+| 08-10 | gpt-image-2/edit | "giáp mặt ghép của khối đang có" · "trên đầu xa của hàng bệ" | ✅ 2/2 |
+
+`shell` v1 hỏng **không phải vì câu chữ** mà vì góc máy: đích không nhìn thấy được thì dù
+model làm đúng, khung hình cũng không kể được — nó chọn treo lơ lửng vì đó là chỗ duy nhất
+tấm vỏ còn đọc ra hình.
+
+### Ba tầng ràng buộc, độ tin cậy giảm dần
+
+```
+1. PIXEL                     ảnh nguồn chứa nguyên state trước     ← chặt nhất
+2. HÌNH HỌC NHÌN THẤY ĐƯỢC   đích quan sát được từ góc máy
+3. NGỮ NGHĨA                 "cẩu", "hàn", "công nhân"             ← lỏng nhất
+```
+
+Đây cũng là lý do chuỗi sửa ảnh `state_N → state_N+1` (đo 2026-08-10: giữ **72.0% ·
+78.6% · 73.3%** pixel) thắng thư viện asset sinh độc lập **trong cùng một chuỗi** — nó
+ràng buộc ở tầng 1, không phải tầng 3. Hai ảnh sinh độc lập thì không chia sẻ máy quay,
+và câu chữ `Camera:` không kéo chúng lại được (đo cùng ngày, thất bại).
+
+### Hệ quả cho MotionSpec — RESERVED, chưa thi công
+
+Điểm đến nên khai được `landmark` + `observable`; planner khai `observable: false` hoặc
+mốc bị che thì QA cảnh báo **trước khi render**, thay vì để Veo đốt $0.18 rồi mới biết.
+Chỉ build khi đã đủ ca lặp lại thật — Rule 0.
