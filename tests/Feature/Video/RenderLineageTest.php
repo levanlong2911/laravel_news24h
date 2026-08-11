@@ -117,6 +117,40 @@ class RenderLineageTest extends TestCase
         $this->assertSame('/r/shell_v2.jpg', $shell->fresh()->artifact_path);
     }
 
+    public function test_retrying_the_same_attempt_does_not_duplicate_cost_or_ledger(): void
+    {
+        $shot = $this->shot('idempotent_motion', 'motion');
+        $event = $this->event('P_motion', null, ['render_kind' => 'video']);
+
+        $this->service->reportShotResult(
+            $shot->id, true, '/r/motion.mp4', 0.18, $event, 'attempt-one',
+        );
+        $this->service->reportShotResult(
+            $shot->id, true, '/r/motion.mp4', 0.18, $event, 'attempt-one',
+        );
+
+        $this->assertSame(1, VideoRender::where('shot_id', $shot->id)->count());
+        $this->assertEqualsWithDelta(0.18, (float) $this->session->fresh()->cost_actual, 0.0001);
+    }
+
+    public function test_same_request_with_a_new_attempt_key_is_a_real_rerender(): void
+    {
+        $shot = $this->shot('intentional_rerender');
+        $event = $this->event('same prompt', null);
+
+        $this->service->reportShotResult(
+            $shot->id, true, '/r/v1.jpg', 0.015, $event, 'attempt-one',
+        );
+        $this->service->reportShotResult(
+            $shot->id, true, '/r/v2.jpg', 0.015, $event, 'attempt-two',
+        );
+
+        $renders = VideoRender::where('shot_id', $shot->id)->orderBy('attempt_no')->get();
+        $this->assertSame(['attempt-one', 'attempt-two'], $renders->pluck('idempotency_key')->all());
+        $this->assertSame([1, 2], $renders->pluck('attempt_no')->all());
+        $this->assertEqualsWithDelta(0.03, (float) $this->session->fresh()->cost_actual, 0.0001);
+    }
+
     public function test_a_new_clip_points_at_the_new_image_while_the_old_clip_keeps_the_old_one(): void
     {
         // Day la phep thu ma `video_shots.artifact_path` KHONG the bieu dien: mot

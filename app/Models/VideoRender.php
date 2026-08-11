@@ -22,7 +22,7 @@ class VideoRender extends Model
     use HasUuids;
 
     protected $fillable = [
-        'shot_id', 'attempt_no', 'render_kind', 'provider', 'model',
+        'shot_id', 'attempt_no', 'idempotency_key', 'render_kind', 'provider', 'model',
         'sent_prompt', 'prompt_sha256', 'request_sha256', 'negative_prompt',
         'source_render_id', 'source_kind', 'requires_state', 'proves_state',
         'artifact_path', 'artifact_dir', 'width', 'height', 'duration_ms', 'bytes',

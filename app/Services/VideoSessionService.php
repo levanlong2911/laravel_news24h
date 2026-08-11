@@ -350,21 +350,36 @@ class VideoSessionService
         ?string $artifactPath,
         float $cost,
         ?array $render = null,
+        ?string $idempotencyKey = null,
     ): VideoShot {
-        $shot = $this->shotRepository->show($shotId);
-        $this->shotRepository->update($shotId, [
-            'status' => ($success ? VideoShotStatus::RENDERED : VideoShotStatus::FAILED)->value,
-            'artifact_path' => $artifactPath,
-        ]);
-        if ($success) {
-            $shot->session->increment('cost_actual', $cost);
-        }
+        return DB::transaction(function () use (
+            $shotId, $success, $artifactPath, $cost, $render, $idempotencyKey,
+        ): VideoShot {
+            $shot = VideoShot::query()->whereKey($shotId)->lockForUpdate()->firstOrFail();
 
-        if ($render !== null) {
-            $this->recordRender($shot, $success, $artifactPath, $cost, $render);
-        }
+            if ($idempotencyKey !== null && VideoRender::query()
+                ->where('shot_id', $shotId)
+                ->where('idempotency_key', $idempotencyKey)
+                ->exists()) {
+                return $shot;
+            }
 
-        return $shot->refresh();
+            $shot->update([
+                'status' => ($success ? VideoShotStatus::RENDERED : VideoShotStatus::FAILED)->value,
+                'artifact_path' => $artifactPath,
+            ]);
+            if ($success) {
+                $shot->session()->increment('cost_actual', $cost);
+            }
+
+            if ($render !== null) {
+                $this->recordRender(
+                    $shot, $success, $artifactPath, $cost, $render, $idempotencyKey,
+                );
+            }
+
+            return $shot->refresh();
+        });
     }
 
     /**
@@ -387,6 +402,7 @@ class VideoSessionService
         ?string $artifactPath,
         float $cost,
         array $render,
+        ?string $idempotencyKey,
     ): void {
         $sourceSha = $render['source_prompt_sha256'] ?? null;
         $sourceId = null;
@@ -400,6 +416,7 @@ class VideoSessionService
 
         VideoRender::create([
             'shot_id' => $shot->id,
+            'idempotency_key' => $idempotencyKey,
             // max()+1 chu khong phai count()+1: mot dong bi xoa se lam count() cap
             // lai so cu va dam vao unique(shot_id, attempt_no).
             'attempt_no' => ((int) VideoRender::where('shot_id', $shot->id)->max('attempt_no')) + 1,
