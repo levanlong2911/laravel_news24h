@@ -20,6 +20,9 @@ return [
      */
     'llm_cost_ceiling_usd' => (float) env('VIDEO_LLM_COST_CEILING_USD', 0.05),
 
+    // Shared secret used only by the Python composer/renderer API.
+    'api_token' => env('VIDEO_API_TOKEN'),
+
     /**
      * Bắn tiến trình Python ở nền sau khi bấm nút (§18.25).
      *

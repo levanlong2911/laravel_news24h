@@ -166,12 +166,14 @@ class VideoSessionController extends Controller
             ));
     }
 
-    // ---------- API cho Python (token: X-Video-Token = env VIDEO_API_TOKEN) ----------
+    // ---------- API cho Python (X-Video-Token khop video.api_token da nap) ----------
     private function checkToken(Request $r): bool
     {
-        $t = env('VIDEO_API_TOKEN');
+        $t = config('video.api_token');
 
-        return $t && hash_equals($t, (string) $r->header('X-Video-Token'));
+        return is_string($t)
+            && $t !== ''
+            && hash_equals($t, (string) $r->header('X-Video-Token'));
     }
 
     // POST /api/render-plans — Python đẩy session + shots (spec là INPUT, prompt là OUTPUT)

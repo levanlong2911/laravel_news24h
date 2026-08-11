@@ -18,7 +18,22 @@ use RecursiveIteratorIterator;
  */
 class ArchitectureTest extends TestCase
 {
-    private const VIDEO_DIR = __DIR__ . '/../../../app/Video';
+    private const VIDEO_DIR = __DIR__.'/../../../app/Video';
+
+    public function test_runtime_code_never_reads_environment_directly(): void
+    {
+        $why = 'Runtime code phai doc config(), khong doc env() truc tiep. '
+            .'env() chi duoc phep trong config/ de php artisan config:cache van hoat dong.';
+
+        foreach (['app', 'routes'] as $dir) {
+            $this->assertNoneOf(
+                ['(?<![\w>$])env\s*\('],
+                $why,
+                __DIR__.'/../../../'.$dir,
+                stripStrings: true,
+            );
+        }
+    }
 
     /**
      * §1 — "Laravel không biết Prompt Language tồn tại."
@@ -89,7 +104,7 @@ class ArchitectureTest extends TestCase
     public function test_contract_keeps_identity_separate_from_attributes(): void
     {
         $plan = json_decode(
-            file_get_contents(__DIR__ . '/../../../contracts/renderplan/v1.0/fixtures/moonrise.json'),
+            file_get_contents(__DIR__.'/../../../contracts/renderplan/v1.0/fixtures/moonrise.json'),
             true, 512, JSON_THROW_ON_ERROR,
         );
 
@@ -101,7 +116,7 @@ class ArchitectureTest extends TestCase
                     $key,
                     $entity['attributes'],
                     "Entity '{$entity['id']}': '{$key}' vừa nằm ở identity.semantic vừa ở attributes. "
-                    . 'attributes chảy xuống ProviderIR — danh tính sẽ rò sang provider. Xem ARCHITECTURE.md §4.',
+                    .'attributes chảy xuống ProviderIR — danh tính sẽ rò sang provider. Xem ARCHITECTURE.md §4.',
                 );
             }
         }
@@ -133,8 +148,8 @@ class ArchitectureTest extends TestCase
             '\bnow\s*\(',
             '\btime\s*\(',
         ], 'Gatekeeper phải deterministic 100%: cùng input luôn cho cùng output. '
-            . 'Không gọi AI, không I/O, không ngẫu nhiên, không thời gian. Xem ARCHITECTURE.md §11.',
-            __DIR__ . '/../../../app/Video/Gatekeeper',
+            .'Không gọi AI, không I/O, không ngẫu nhiên, không thời gian. Xem ARCHITECTURE.md §11.',
+            __DIR__.'/../../../app/Video/Gatekeeper',
             stripStrings: true);
     }
 
@@ -185,26 +200,26 @@ class ArchitectureTest extends TestCase
         ];
 
         $why = 'Planning Layer KHÔNG được chạm Truth provenance. Planner chỉ đọc '
-            . 'VerifiedWorldGraph. Chạm Evidence/quote/offset/EvidenceIndex là xuyên thủng '
-            . 'ranh giới Truth ⊥ Planning. Xem ARCHITECTURE.md §1.';
+            .'VerifiedWorldGraph. Chạm Evidence/quote/offset/EvidenceIndex là xuyên thủng '
+            .'ranh giới Truth ⊥ Planning. Xem ARCHITECTURE.md §1.';
 
         // Mọi thư mục thuộc Planning Layer. Thêm phase mới (Intent, Asset...) thì
         // thêm vào đây — ranh giới áp cho toàn tầng, không riêng Story.
         foreach (['Story', 'Scene', 'Intent', 'Timeline', 'Editorial'] as $dir) {
-            $this->assertNoneOf($banned, $why, __DIR__ . '/../../../app/Video/' . $dir);
+            $this->assertNoneOf($banned, $why, __DIR__.'/../../../app/Video/'.$dir);
         }
     }
 
     // ------------------------------------------------------------------
 
     /**
-     * @param list<string> $bannedPatterns
+     * @param  list<string>  $bannedPatterns
      */
     private function assertNoneOf(array $bannedPatterns, string $why, ?string $dir = null, bool $stripStrings = false): void
     {
         $violations = [];
 
-        $root = realpath(__DIR__ . '/../../../');
+        $root = realpath(__DIR__.'/../../../');
 
         foreach ($this->videoSourceFiles($dir) as $file) {
             $code = $this->stripComments(file_get_contents($file), $stripStrings);
@@ -212,14 +227,14 @@ class ArchitectureTest extends TestCase
 
             foreach (explode("\n", $code) as $lineNo => $line) {
                 foreach ($bannedPatterns as $pattern) {
-                    if (preg_match('/' . $pattern . '/i', $line)) {
+                    if (preg_match('/'.$pattern.'/i', $line)) {
                         $violations[] = sprintf('%s:%d — khớp /%s/: %s', $relative, $lineNo + 1, $pattern, trim($line));
                     }
                 }
             }
         }
 
-        $this->assertSame([], $violations, $why . "\n\nVi phạm:\n" . implode("\n", $violations));
+        $this->assertSame([], $violations, $why."\n\nVi phạm:\n".implode("\n", $violations));
     }
 
     /**
@@ -266,10 +281,12 @@ class ArchitectureTest extends TestCase
 
                 if (in_array($id, $blanked, true)) {
                     $out .= str_repeat("\n", substr_count($text, "\n"));
+
                     continue;
                 }
 
                 $out .= $text;
+
                 continue;
             }
 
