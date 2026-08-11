@@ -29,7 +29,10 @@
             </a>
          </li>
          <li class="nav-item ml-3 user-logout">
-            <a href="{{ route('logout') }}" title="{{ __('sidebar.logout') }}" class="btn text-light">{{ __('sidebar.logout') }}</a>
+            <form method="POST" action="{{ route('logout') }}">
+               @csrf
+               <button type="submit" title="{{ __('sidebar.logout') }}" class="btn text-light">{{ __('sidebar.logout') }}</button>
+            </form>
          </li>
      </ul>
  </nav>

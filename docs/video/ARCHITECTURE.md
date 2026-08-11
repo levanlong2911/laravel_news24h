@@ -2005,8 +2005,9 @@ nơi sinh ra scene, không phải nơi lắp plan.)
 
 ### 18.19 `RenderPlanQualityReport` — thông tin cho cổng duyệt đã có, KHÔNG phải tầng mới (2026-07-30)
 
-Cổng chặn tiêu tiền **đã tồn tại** (`draft → composing → approved | needs_revision
-→ queued → rendered`, không đường render nào bỏ qua duyệt). Cái thiếu là người
+Cổng chặn tiêu tiền **đã tồn tại** trên shot (`draft → approved | needs_revision | rejected`,
+rồi `approved → queued → rendered | failed`; session đi riêng theo
+`draft → composing → reviewing → rendering → done | failed`). Không đường render nào bỏ qua duyệt. Cái thiếu là người
 duyệt bấm approve mà không biết plan nghèo dữ liệu tới mức nào. Class này chỉ
 tính con số — không chặn, không đổi trạng thái. Deterministic, không LLM, đọc
 RenderPlan (mảng) nên dùng được cả với `renderplan_json` đọc lại từ DB.

@@ -3,6 +3,7 @@
         <div class="modal-content">
             <form action="{{ $url }}" method="post">
                 @csrf
+                @method('DELETE')
                 <input type="hidden" name="ids[]" value="{{ $id }}">
                 <div class="modal-body">
                     <p style="text-align: center; padding-top: 20px;">{{ __('modal.content_delete_model') }}</p>

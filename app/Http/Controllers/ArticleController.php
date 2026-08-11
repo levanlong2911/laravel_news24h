@@ -10,6 +10,7 @@ use App\Models\Post;
 use App\Services\Admin\ArticlePipelineService;
 use App\Services\Admin\PostService;
 use App\Services\Admin\SerpApiService;
+use App\Services\ImageProxyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -78,7 +79,7 @@ class ArticleController extends Controller
         return response()->json(['images' => $images, 'query' => $article->title]);
     }
 
-    public function imageProxy(Request $request)
+    public function imageProxy(Request $request, ImageProxyService $proxy)
     {
         $url = $request->get('url');
         if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
@@ -86,13 +87,10 @@ class ArticleController extends Controller
         }
 
         try {
-            $client   = new \GuzzleHttp\Client(['timeout' => 10, 'verify' => false]);
-            $response = $client->get($url, ['headers' => ['User-Agent' => 'Mozilla/5.0']]);
-            $mime     = $response->getHeaderLine('Content-Type') ?: 'image/jpeg';
-            $mime     = explode(';', $mime)[0];
+            $image = $proxy->fetch($url);
 
-            return response($response->getBody()->getContents(), 200)
-                ->header('Content-Type', $mime)
+            return response($image['body'], 200)
+                ->header('Content-Type', $image['mime'])
                 ->header('Access-Control-Allow-Origin', '*')
                 ->header('Cache-Control', 'public, max-age=3600');
         } catch (\Throwable $e) {

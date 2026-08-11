@@ -36,11 +36,13 @@
                         <span>{{ __('My profile') }}</span>
                     </a>
                     <div class="dropdown-divider"></div>
-                    <a href="#" class="dropdown-item" onclick="event.preventDefault();
-                    document.getElementById('logout-form').submit();">
-                        <i class="ni ni-user-run"></i>
-                        <span>{{ __('Logout') }}</span>
-                    </a>
+                    <form method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button type="submit" class="dropdown-item">
+                            <i class="ni ni-user-run"></i>
+                            <span>{{ __('Logout') }}</span>
+                        </button>
+                    </form>
                 </div>
             </li>
         </ul>

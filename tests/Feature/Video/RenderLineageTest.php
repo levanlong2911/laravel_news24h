@@ -212,4 +212,33 @@ class RenderLineageTest extends TestCase
         $this->assertSame('rendered', $shot->fresh()->status);
         $this->assertSame(0, VideoRender::where('shot_id', $shot->id)->count());
     }
+
+    public function test_session_finishes_only_after_the_last_queued_shot(): void
+    {
+        $this->session->update(['status' => 'rendering']);
+        $first = $this->shot('terminal_first');
+        $second = $this->shot('terminal_second');
+        $first->update(['status' => 'queued']);
+        $second->update(['status' => 'queued']);
+
+        $this->service->reportShotResult($first->id, true, '/r/first.jpg', 0.015);
+        $this->assertSame('rendering', $this->session->fresh()->status);
+
+        $this->service->reportShotResult($second->id, true, '/r/second.jpg', 0.015);
+        $this->assertSame('done', $this->session->fresh()->status);
+    }
+
+    public function test_session_fails_immediately_even_when_later_shots_remain_queued(): void
+    {
+        $this->session->update(['status' => 'rendering']);
+        $first = $this->shot('terminal_success');
+        $second = $this->shot('terminal_failure');
+        $first->update(['status' => 'queued']);
+        $second->update(['status' => 'queued']);
+
+        $this->service->reportShotResult($first->id, false, null, 0);
+
+        $this->assertSame('failed', $this->session->fresh()->status);
+        $this->assertSame('queued', $second->fresh()->status);
+    }
 }

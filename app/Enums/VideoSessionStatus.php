@@ -16,6 +16,9 @@ use App\Traits\EnumTrait;
  *   COMPOSING  — vua tao tu bai viet, cho Python bien dich prompt
  *   REVIEWING  — Python da day shot len, cho nguoi duyet
  *   RENDERING  — da co shot duoc queue de render
+ *
+ * Terminal states: DONE when the queue drains cleanly, FAILED as soon as any
+ * shot fails (later shots may remain queued when a dependency chain stops).
  */
 enum VideoSessionStatus: string
 {
@@ -25,4 +28,6 @@ enum VideoSessionStatus: string
     case COMPOSING = 'composing';
     case REVIEWING = 'reviewing';
     case RENDERING = 'rendering';
+    case DONE = 'done';
+    case FAILED = 'failed';
 }

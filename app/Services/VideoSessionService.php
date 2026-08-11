@@ -18,7 +18,8 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Vong doi session/shot + persistence. Approval gate (ADR v1.1):
- * draft → approved/needs_revision/rejected → queued → rendered.
+ * shot: draft → approved/needs_revision/rejected → queued → rendered/failed.
+ * session: draft → composing → reviewing → rendering → done/failed.
  * Khong co duong render nao bo qua duyet.
  *
  * Class nay KHONG chay pipeline AI — viec do o VideoRenderPlanService (tach
@@ -355,6 +356,8 @@ class VideoSessionService
         return DB::transaction(function () use (
             $shotId, $success, $artifactPath, $cost, $render, $idempotencyKey,
         ): VideoShot {
+            $sessionId = VideoShot::query()->whereKey($shotId)->valueOrFail('session_id');
+            $session = VideoSession::query()->whereKey($sessionId)->lockForUpdate()->firstOrFail();
             $shot = VideoShot::query()->whereKey($shotId)->lockForUpdate()->firstOrFail();
 
             if ($idempotencyKey !== null && VideoRender::query()
@@ -378,8 +381,31 @@ class VideoSessionService
                 );
             }
 
+            $this->syncSessionRenderStatus($session);
+
             return $shot->refresh();
         });
+    }
+
+    private function syncSessionRenderStatus(VideoSession $session): void
+    {
+        $statuses = $session->shots()->pluck('status');
+
+        if ($statuses->contains(VideoShotStatus::FAILED->value)) {
+            $session->update(['status' => VideoSessionStatus::FAILED->value]);
+
+            return;
+        }
+
+        if ($statuses->contains(VideoShotStatus::QUEUED->value)) {
+            $session->update(['status' => VideoSessionStatus::RENDERING->value]);
+
+            return;
+        }
+
+        if ($statuses->contains(VideoShotStatus::RENDERED->value)) {
+            $session->update(['status' => VideoSessionStatus::DONE->value]);
+        }
     }
 
     /**

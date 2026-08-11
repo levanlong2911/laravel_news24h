@@ -6,6 +6,7 @@
             <div class="modal-body">
                 <form action="{{$url}}" method="post">
                     @csrf
+                    @method('DELETE')
                     @foreach($ids as $id)
                         <input type="hidden" name="ids[]" value="{{$id}}">
                         @if ($memo[$id] ?? '')

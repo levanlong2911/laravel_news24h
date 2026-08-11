@@ -91,7 +91,7 @@ The HTTP API stays exactly as it was (`routes/api.php`, all guarded by the `X-Vi
 - `GET /api/video-sessions/composing` · `GET /api/video-shots/queued` — still work; used by the standalone/manual runs
 - `PATCH /api/video-shots/{shotId}/result` — runner reports artifact + cost, **once per shot**. That per-shot reporting is what makes a long render crash-safe: finished clips are already saved, and re-clicking Render only picks up what is still `queued`.
 
-Session lifecycle (`VideoSessionService`, no render skips review): `draft → composing → approved | needs_revision → queued → rendered | failed`. The 🎬 button calls `createFromArticleId()`, which runs the real pipeline and stores `renderplan_json` on `VideoSession`.
+Session lifecycle: `draft → composing → reviewing → rendering → done | failed`. Shot lifecycle (the approval gate) is separate: `draft → approved | needs_revision | rejected`, then `approved → queued → rendered | failed`. The 🎬 button calls `createFromArticleId()`, which runs the real pipeline and stores `renderplan_json` on `VideoSession`.
 
 ## CMS side conventions
 

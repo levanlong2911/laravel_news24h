@@ -36,7 +36,7 @@ Route::group(['prefix' => '/'], function () {
         ->middleware('throttle:login')
         ->name('login');
     // Logout
-    Route::get('/logout', [AuthController::class, 'logout'])
+    Route::post('/logout', [AuthController::class, 'logout'])
         ->middleware('auth')
         ->name('logout');
 });
@@ -56,7 +56,7 @@ Route::group(
         Route::get('/claude-usage', [ClaudeUsageController::class, 'index'])->name('admin.claude-usage');
         Route::match(['get', 'post'], '/add', [AdminController::class, 'add'])->name('admin.add');
         Route::match(['get', 'post'], '/update/{id}', [AdminController::class, 'update'])->name('admin.update');
-        Route::match(['get', 'post'], '/delete/{id}', [AdminController::class, 'delete'])->name('admin.delete');
+        Route::delete('/delete/{id}', [AdminController::class, 'delete'])->name('admin.delete');
         Route::match(['get', 'post'], '/detail/{id}', [AdminController::class, 'detail'])->name('admin.detail');
     });
     // category
@@ -64,7 +64,7 @@ Route::group(
         Route::get("/", [CategoryController::class, "index"])->name("admin.category.index");
         Route::match(["get", "post"], "/add", [CategoryController::class, "add"])->name("admin.category.add");
         Route::match(["get", "post"], "/update/{id}", [CategoryController::class, "update"])->name("admin.category.update");
-        Route::match(["get", "post"], "/delete", [CategoryController::class, "delete"])->name("admin.category.delete");
+        Route::delete("/delete", [CategoryController::class, "delete"])->name("admin.category.delete");
         Route::match(["get", "post"], "/detail/{id}", [CategoryController::class, "detail"])->name("admin.category.detail");
     });
     // tag
@@ -72,7 +72,7 @@ Route::group(
         Route::get("/", [TagController::class, "index"])->name("tag.index");
         Route::match(["get", "post"], "/add", [TagController::class, "add"])->name("tag.add");
         Route::match(["get", "post"], "/update/{id}", [TagController::class, "update"])->name("tag.update");
-        Route::match(["get", "post"], "/delete", [TagController::class, "delete"])->name("tag.delete");
+        Route::delete("/delete", [TagController::class, "delete"])->name("tag.delete");
         Route::match(["get", "post"], "/detail/{id}", [TagController::class, "detail"])->name("tag.detail");
     });
     // news web
@@ -80,7 +80,7 @@ Route::group(
         Route::get("/", [NewsWebController::class, "index"])->name("news-web.index");
         Route::match(["get", "post"], "/add", [NewsWebController::class, "add"])->name("news-web.add");
         Route::match(["get", "post"], "/update/{id}", [NewsWebController::class, "update"])->name("news-web.update");
-        Route::match(["get", "post"], "/delete", [NewsWebController::class, "delete"])->name("news-web.delete");
+        Route::delete("/delete", [NewsWebController::class, "delete"])->name("news-web.delete");
         Route::match(["get", "post"], "/detail/{id}", [NewsWebController::class, "detail"])->name("news-web.detail");
     });
     // post
@@ -89,7 +89,7 @@ Route::group(
         Route::match(["get", "post"], "/add", [PostController::class, "add"])->name("post.add");
         Route::match(["get", "post"], "/addpost", [PostController::class, "addPost"])->name("post.addpost");
         Route::match(["get", "post"], "/update/{id}", [PostController::class, "update"])->name("post.update");
-        Route::match(["get", "post"], "/delete", [PostController::class, "delete"])->name("post.delete");
+        Route::delete("/delete", [PostController::class, "delete"])->name("post.delete");
         Route::match(["get", "post"], "/post/{slug}", [PostController::class, "detail"])->name("post.detail");
         // Route::match(["get", "post"], "/detail/{slug}", [PostController::class, "detail"])->name("post.detail");
     });
@@ -99,7 +99,7 @@ Route::group(
         Route::get("/", [InforDomainsController::class, "index"])->name("domain.index");
         Route::match(["get", "post"], "/add", [InforDomainsController::class, "add"])->name("domain.add");
         Route::match(["get", "post"], "/update/{id}", [InforDomainsController::class, "update"])->name("domain.update");
-        Route::match(["get", "post"], "/delete", [InforDomainsController::class, "delete"])->name("domain.delete");
+        Route::delete("/delete", [InforDomainsController::class, "delete"])->name("domain.delete");
         Route::match(["get", "post"], "/detail/{id}", [InforDomainsController::class, "detail"])->name("domain.detail");
     });
 
@@ -108,7 +108,7 @@ Route::group(
         Route::get("/", [AdvertisementController::class, "index"])->name("ads.index");
         Route::match(["get", "post"], "/add", [AdvertisementController::class, "add"])->name("ads.add");
         Route::match(["get", "post"], "/update/{id}", [AdvertisementController::class, "update"])->name("ads.update");
-        Route::match(["get", "post"], "/delete", [AdvertisementController::class, "delete"])->name("ads.delete");
+        Route::delete("/delete", [AdvertisementController::class, "delete"])->name("ads.delete");
         Route::match(["get", "post"], "/detail/{id}", [AdvertisementController::class, "detail"])->name("ads.detail");
     });
 
@@ -117,7 +117,7 @@ Route::group(
         Route::get("/", [FontController::class, "index"])->name("font.index");
         Route::match(["get", "post"], "/add", [FontController::class, "add"])->name("font.add");
         Route::match(["get", "post"], "/update/{id}", [FontController::class, "update"])->name("font.update");
-        Route::match(["get", "post"], "/delete", [FontController::class, "delete"])->name("font.delete");
+        Route::delete("/delete", [FontController::class, "delete"])->name("font.delete");
         Route::match(["get", "post"], "/detail/{id}", [FontController::class, "detail"])->name("font.detail");
     });
 
@@ -126,7 +126,7 @@ Route::group(
         Route::get("/", [DomainController::class, "index"])->name("website.index");
         Route::match(["get", "post"], "/add", [DomainController::class, "add"])->name("website.add");
         Route::match(["get", "post"], "/update/{id}", [DomainController::class, "update"])->name("website.update");
-        Route::match(["get", "post"], "/delete", [DomainController::class, "delete"])->name("website.delete");
+        Route::delete("/delete", [DomainController::class, "delete"])->name("website.delete");
         Route::match(["get", "post"], "/detail/{id}", [DomainController::class, "detail"])->name("website.detail");
         Route::post('{domain}/api-key', [DomainController::class,'generateApiKey']);
     });
@@ -137,7 +137,7 @@ Route::group(
         Route::match(['get','post'],'/add',         [PromptFrameworkController::class, 'add'])    ->name('prompt-framework.add');
         Route::match(['get','post'],'/detail/{id}', [PromptFrameworkController::class, 'detail']) ->name('prompt-framework.detail');
         Route::match(['get','post'],'/edit/{id}',   [PromptFrameworkController::class, 'update']) ->name('prompt-framework.update');
-        Route::post('/delete',                      [PromptFrameworkController::class, 'delete']) ->name('prompt-framework.delete');
+        Route::delete('/delete',                    [PromptFrameworkController::class, 'delete']) ->name('prompt-framework.delete');
     });
 
     // video sessions — approval gate: duyệt prompt trên màn hình rồi mới render (ADR v1.1)
