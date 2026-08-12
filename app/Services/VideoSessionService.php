@@ -357,7 +357,7 @@ class VideoSessionService
     }
 
     // Duyệt / cần sửa / từ chối MỘT shot
-    public function updateShotStatus(string $shotId, string $action, ?string $note): void
+    public function updateShotStatus(string $shotId, string $action, ?string $note): bool
     {
         $attributes = match ($action) {
             'approve' => ['status' => VideoShotStatus::APPROVED->value, 'approved_at' => now(), 'review_note' => null],
@@ -365,9 +365,8 @@ class VideoSessionService
             'reject' => ['status' => VideoShotStatus::REJECTED->value, 'review_note' => $note ?? ''],
             default => null,
         };
-        if ($attributes !== null) {
-            $this->shotRepository->update($shotId, $attributes);
-        }
+
+        return $attributes !== null && $this->shotRepository->updateReviewStatus($shotId, $attributes);
     }
 
     // Approve Selected (checkbox)
@@ -477,6 +476,15 @@ class VideoSessionService
         // O day boc transaction la DUNG (khac creatVideoById): toan bo la
         // ghi DB, khong co cu goi mang nao ben trong, chay vai mili giay.
         return DB::transaction(function () use ($data) {
+            $existing = VideoSession::query()->where('code', $data['code'])->lockForUpdate()->first();
+
+            if ($existing && $existing->status !== VideoSessionStatus::COMPOSING->value) {
+                return [
+                    'session_id' => $existing->id, 'shots' => 0,
+                    'skipped' => true, 'status' => $existing->status,
+                ];
+            }
+
             $project = $this->projectRepository->firstOrCreateByName($data['project'], $data['subject_id'] ?? null);
             $session = $this->sessionRepository->updateOrCreateByCode($data['code'], [
                 'project_id' => $project->id,

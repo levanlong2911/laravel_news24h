@@ -19,7 +19,15 @@ class VideoShotRepository extends BaseRepository implements VideoShotRepositoryI
     {
         return VideoShot::where('session_id', $sessionId)
             ->whereIn('id', $shotIds)
+            ->whereIn('status', VideoShotStatus::reviewableValues())
             ->update(['status' => VideoShotStatus::APPROVED->value, 'approved_at' => now(), 'review_note' => null]);
+    }
+
+    public function updateReviewStatus(string $shotId, array $attributes): bool
+    {
+        return VideoShot::whereKey($shotId)
+            ->whereIn('status', VideoShotStatus::reviewableValues())
+            ->update($attributes) === 1;
     }
 
     // 🎬 Render — CHỈ shot approved mới vào queue
@@ -130,8 +138,30 @@ class VideoShotRepository extends BaseRepository implements VideoShotRepositoryI
             ->get();
     }
 
+    /**
+     * Cột VẬN HÀNH — quyết định của người/máy đã render, KHÔNG phải nội dung
+     * do Composer sinh ra. Compose lại (Python POST /api/render-plans lần
+     * hai cho cùng session) chỉ được cập nhật NỘI DUNG (`$attributes` còn
+     * lại: beat, shot_type, spec_json, compiled_prompt, negative_prompt,
+     * render_plan, preview_path, cost_estimate) — ghi đè các cột dưới đây là
+     * xoá quyết định duyệt, tách rời artifact khỏi lịch sử render, hoặc phá
+     * một lease đang giữ giữa lúc render.
+     */
+    private const OPERATIONAL_COLUMNS = [
+        'status', 'review_note', 'approved_at', 'artifact_path',
+        'worker_id', 'claim_token', 'claimed_at', 'lease_expires_at',
+    ];
+
     public function updateOrCreateShot(array $match, array $attributes): VideoShot
     {
-        return VideoShot::updateOrCreate($match, $attributes);
+        $shot = VideoShot::where($match)->first();
+
+        if ($shot) {
+            $shot->update(array_diff_key($attributes, array_flip(self::OPERATIONAL_COLUMNS)));
+
+            return $shot;
+        }
+
+        return VideoShot::create($match + $attributes);
     }
 }

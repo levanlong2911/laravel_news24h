@@ -71,7 +71,11 @@ class VideoSessionController extends Controller
     // Duyệt / cần sửa / từ chối MỘT shot
     public function shotAction(Request $request, string $shotId)
     {
-        $this->videoSessionService->updateShotStatus($shotId, $request->input('action'), $request->input('note', ''));
+        $ok = $this->videoSessionService->updateShotStatus($shotId, $request->input('action'), $request->input('note', ''));
+
+        if (! $ok) {
+            return back()->with('warning', 'Shot khong con o trang thai co the duyet/sua/tu choi.');
+        }
 
         return back();
     }
@@ -228,7 +232,16 @@ class VideoSessionController extends Controller
             'shots.*.preview_path' => 'nullable|string',
         ]);
 
-        return response()->json($this->videoSessionService->storeFromPython($data));
+        $result = $this->videoSessionService->storeFromPython($data);
+
+        if (! empty($result['skipped'])) {
+            return response()->json([
+                'error' => 'session_not_composing',
+                'status' => $result['status'],
+            ], 409);
+        }
+
+        return response()->json($result);
     }
 
     // GET /api/video-sessions/composing — runner poll de compose prompt

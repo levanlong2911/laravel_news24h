@@ -36,4 +36,24 @@ enum VideoShotStatus: string
     case RENDERING = 'rendering';
     case RENDERED = 'rendered';
     case FAILED = 'failed';
+
+    /**
+     * Con o TRUOC hang doi render — Duyet/Sua/Tu choi con hop nghia. Sau khi
+     * QUEUED, quyet dinh duyet lai la vo nghia (da vao hang doi/render roi)
+     * va nguy hiem (dua mot shot da RENDERED (ton tien that) quay lai
+     * APPROVED se cho phep render lai lan hai). Dung chung cho
+     * VideoShotRepository::approveByIds()/updateReviewStatus() — mot noi
+     * duy nhat dinh nghia "con duyet duoc", khong de tung noi ghi tu do.
+     *
+     * @return list<string>
+     */
+    public static function reviewableValues(): array
+    {
+        return [
+            self::DRAFT->value,
+            self::APPROVED->value,
+            self::NEEDS_REVISION->value,
+            self::REJECTED->value,
+        ];
+    }
 }

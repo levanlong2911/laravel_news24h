@@ -9,6 +9,8 @@ interface VideoShotRepositoryInterface extends RepositoryInterface
 {
     public function approveByIds(string $sessionId, array $shotIds): int;
 
+    public function updateReviewStatus(string $shotId, array $attributes): bool;
+
     public function queueApprovedForSession(string $sessionId): int;
 
     public function findQueuedWithSession(): iterable;
