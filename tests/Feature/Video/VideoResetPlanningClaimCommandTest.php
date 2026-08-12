@@ -3,6 +3,7 @@
 namespace Tests\Feature\Video;
 
 use App\Services\VideoSessionService;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\TestCase;
 
@@ -14,12 +15,6 @@ use Tests\TestCase;
  */
 class VideoResetPlanningClaimCommandTest extends TestCase
 {
-    protected function tearDown(): void
-    {
-        Mockery::close();
-        parent::tearDown();
-    }
-
     public function test_fails_fast_without_session_option(): void
     {
         $mock = Mockery::mock(VideoSessionService::class);
@@ -93,5 +88,83 @@ class VideoResetPlanningClaimCommandTest extends TestCase
         // la phep thu --force co that su bo qua buoc hoi hay khong.
         $this->artisan('video:reset-planning-claim', ['--session' => 'art_abc', '--force' => true])
             ->assertExitCode(0);
+    }
+
+    public function test_logs_a_warning_with_session_code_when_reset_fails(): void
+    {
+        Log::spy();
+        $mock = Mockery::mock(VideoSessionService::class);
+        $mock->shouldReceive('resetPlanningClaim')->once()->andReturn(false);
+        $this->app->instance(VideoSessionService::class, $mock);
+
+        $this->artisan('video:reset-planning-claim', ['--session' => 'art_xyz', '--force' => true]);
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(fn (string $message, array $context) => $message === 'video:reset-planning-claim: khong reset duoc'
+                && $context['code'] === 'art_xyz')
+            ->once();
+    }
+
+    public function test_logs_info_with_session_code_when_reset_succeeds(): void
+    {
+        Log::spy();
+        $mock = Mockery::mock(VideoSessionService::class);
+        $mock->shouldReceive('resetPlanningClaim')->once()->andReturn(true);
+        $this->app->instance(VideoSessionService::class, $mock);
+
+        $this->artisan('video:reset-planning-claim', ['--session' => 'art_abc', '--force' => true]);
+
+        Log::shouldHaveReceived('info')
+            ->withArgs(fn (string $message, array $context) => $message === 'video:reset-planning-claim: da reset claim'
+                && $context['code'] === 'art_abc')
+            ->once();
+    }
+
+    public function test_logs_a_start_event_before_attempting_the_reset(): void
+    {
+        Log::spy();
+        $mock = Mockery::mock(VideoSessionService::class);
+        $mock->shouldReceive('resetPlanningClaim')->once()->andReturn(true);
+        $this->app->instance(VideoSessionService::class, $mock);
+
+        $this->artisan('video:reset-planning-claim', ['--session' => 'art_abc', '--force' => true]);
+
+        Log::shouldHaveReceived('info')
+            ->withArgs(fn (string $message, array $context) => $message === 'video:reset-planning-claim: bat dau'
+                && $context['code'] === 'art_abc')
+            ->once();
+    }
+
+    public function test_does_not_log_a_start_event_when_confirmation_is_denied(): void
+    {
+        Log::spy();
+        $mock = Mockery::mock(VideoSessionService::class);
+        $mock->shouldNotReceive('resetPlanningClaim');
+        $this->app->instance(VideoSessionService::class, $mock);
+
+        $this->artisan('video:reset-planning-claim', ['--session' => 'art_abc'])
+            ->expectsConfirmation(
+                'Ban da tu xac nhan (process list, log) tien trinh video:build-plan cu cho session art_abc DA CHET THAT chua?',
+                'no',
+            )
+            ->assertExitCode(1);
+
+        Log::shouldNotHaveReceived('info');
+    }
+
+    public function test_logs_the_exception_when_reset_planning_claim_throws(): void
+    {
+        Log::spy();
+        $mock = Mockery::mock(VideoSessionService::class);
+        $mock->shouldReceive('resetPlanningClaim')->once()->andThrow(new \RuntimeException('boom'));
+        $this->app->instance(VideoSessionService::class, $mock);
+
+        $this->artisan('video:reset-planning-claim', ['--session' => 'art_abc', '--force' => true])
+            ->assertExitCode(1);
+
+        Log::shouldHaveReceived('error')
+            ->withArgs(fn (string $message, array $context) => $message === 'video:reset-planning-claim: loi ngoai du kien'
+                && $context['code'] === 'art_abc' && $context['exception'] instanceof \RuntimeException)
+            ->once();
     }
 }

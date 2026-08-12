@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\VideoSessionService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 /**
  * §18.30 — chạy pipeline Claude (25-90s, tốn tiền thật) cho MỘT session đang
@@ -36,8 +37,31 @@ class VideoBuildPlan extends Command
             return self::FAILURE;
         }
 
-        return $this->videoSessionService->runVideoPlanningPipeline($code)
-            ? self::SUCCESS
-            : self::FAILURE;
+        Log::info('video:build-plan: bat dau', ['code' => $code]);
+        $startedAt = microtime(true);
+
+        try {
+            $ok = $this->videoSessionService->runVideoPlanningPipeline($code);
+        } catch (\Throwable $e) {
+            Log::error('video:build-plan: loi ngoai du kien', [
+                'code' => $code,
+                'duration_ms' => $this->elapsedMs($startedAt),
+                'exception' => $e,
+            ]);
+
+            return self::FAILURE;
+        }
+
+        Log::info($ok ? 'video:build-plan: hoan tat' : 'video:build-plan: that bai', [
+            'code' => $code,
+            'duration_ms' => $this->elapsedMs($startedAt),
+        ]);
+
+        return $ok ? self::SUCCESS : self::FAILURE;
+    }
+
+    private function elapsedMs(float $startedAt): int
+    {
+        return (int) round((microtime(true) - $startedAt) * 1000);
     }
 }

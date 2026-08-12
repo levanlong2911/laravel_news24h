@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\VideoSessionService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 /**
  * §18.30 — mở lại claim `planning` một cách CÓ CHỦ Ý. Claim không tự hết hạn
@@ -49,14 +50,42 @@ class VideoResetPlanningClaim extends Command
             return self::FAILURE;
         }
 
-        if (! $this->videoSessionService->resetPlanningClaim($code)) {
+        Log::info('video:reset-planning-claim: bat dau', ['code' => $code]);
+        $startedAt = microtime(true);
+
+        try {
+            $reset = $this->videoSessionService->resetPlanningClaim($code);
+        } catch (\Throwable $e) {
+            Log::error('video:reset-planning-claim: loi ngoai du kien', [
+                'code' => $code,
+                'duration_ms' => $this->elapsedMs($startedAt),
+                'exception' => $e,
+            ]);
+
+            return self::FAILURE;
+        }
+
+        if (! $reset) {
+            Log::warning('video:reset-planning-claim: khong reset duoc', [
+                'code' => $code,
+                'duration_ms' => $this->elapsedMs($startedAt),
+            ]);
             $this->error("Khong reset duoc claim cho session {$code} — kiem tra ma session dung va session dang o trang thai 'planning'.");
 
             return self::FAILURE;
         }
 
+        Log::info('video:reset-planning-claim: da reset claim', [
+            'code' => $code,
+            'duration_ms' => $this->elapsedMs($startedAt),
+        ]);
         $this->info("Da xoa claim cho session {$code}. Chay lai: php artisan video:build-plan --session={$code}");
 
         return self::SUCCESS;
+    }
+
+    private function elapsedMs(float $startedAt): int
+    {
+        return (int) round((microtime(true) - $startedAt) * 1000);
     }
 }

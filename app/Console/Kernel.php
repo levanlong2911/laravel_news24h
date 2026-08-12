@@ -13,7 +13,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('news:dispatch')
             ->everySixHours()
             ->withoutOverlapping()
-            ->onFailure(fn() => \Log::error('Scheduler: news:dispatch failed'));
+            ->onFailure(fn () => \Log::error('Scheduler: news:dispatch failed'));
 
         // Tự xóa raw_articles hết hạn (expires_at < now, TTL 24h)
         $schedule->command('model:prune', ['--model' => \App\Models\RawArticle::class])
@@ -22,11 +22,23 @@ class Kernel extends ConsoleKernel
         // Tự xóa articles hết hạn (TTL 48h) — mỗi ngày lúc 3:00 AM
         $schedule->command('model:prune', ['--model' => \App\Models\Article::class])
             ->dailyAt('03:00');
+
+        // Shot claim/lease mặc định 600s (VideoSessionController::apiClaim) —
+        // 5 phút bắt kịp trong vòng một nửa chu kỳ lease, không quá dồn dập.
+        $schedule->command('video:reclaim-expired-leases')
+            ->everyFiveMinutes()
+            ->withoutOverlapping()
+            ->onFailure(fn () => \Log::error('Scheduler: video:reclaim-expired-leases failed'));
+
+        $schedule->command('video:prune-runner-logs')
+            ->dailyAt('03:30')
+            ->withoutOverlapping()
+            ->onFailure(fn () => \Log::error('Scheduler: video:prune-runner-logs failed'));
     }
 
     protected function commands(): void
     {
-        $this->load(__DIR__ . '/Commands');
+        $this->load(__DIR__.'/Commands');
 
         require base_path('routes/console.php');
     }

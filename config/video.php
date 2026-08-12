@@ -48,6 +48,10 @@ return [
          * stdout, nên không chuyển hướng ra file là mất sạch dấu vết khi hỏng.
          */
         'log_dir' => env('VIDEO_RUNNER_LOG_DIR', storage_path('logs/video-runner')),
+
+        // Mỗi lần bắn tiến trình tạo MỘT file mới, không bao giờ tự xoá —
+        // video:prune-runner-logs dọn theo hạn này (xem lệnh đó).
+        'log_retention_days' => env('VIDEO_RUNNER_LOG_RETENTION_DAYS', 21),
     ],
 
     /**
