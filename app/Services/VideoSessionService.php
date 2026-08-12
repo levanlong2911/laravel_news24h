@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\VideoSessionStatus;
 use App\Enums\VideoShotStatus;
+use App\Models\Admin;
 use App\Models\VideoFinal;
 use App\Models\VideoFinalRender;
 use App\Models\VideoRender;
@@ -15,6 +16,7 @@ use App\Repositories\Interfaces\VideoSessionRepositoryInterface;
 use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use App\Video\Pipeline\PipelineAborted;
 use App\Video\RenderPlan\RenderPlanAssembler;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -40,16 +42,6 @@ class VideoSessionService
     /** Script ghép final — chỉ FFmpeg cục bộ, không gọi vendor, $0 (§18.25). */
     public const FINAL_COMPOSE_SCRIPT = 'compose_final.py';
 
-    /**
-     * Lần `creatVideoById()` gần nhất có bắn được tiến trình nền không.
-     *
-     * Cùng khuôn với `VideoRenderPlanService::$lastRun` và cùng lý do: hàm đã
-     * phải trả về `VideoSession` (Controller cần để redirect), nên thông tin
-     * phụ này không nhét vào giá trị trả về được mà không đổi chữ ký. Service
-     * resolve theo từng request nên không có chuyện hai lần bấm lẫn nhau.
-     */
-    private bool $composeSpawned = false;
-
     public function __construct(
         private ArticleRepositoryInterface $articleRepository,
         private VideoProjectRepositoryInterface $projectRepository,
@@ -59,19 +51,16 @@ class VideoSessionService
         private PythonRunner $pythonRunner,
     ) {}
 
-    /**
-     * `false` = Controller PHẢI hiện đường lui chạy tay, nếu không người dùng
-     * sẽ ngồi chờ một tiến trình không bao giờ chạy.
-     */
-    public function composeWasSpawned(): bool
-    {
-        return $this->composeSpawned;
-    }
-
     /** Câu lệnh chạy tay tương đương, để hiện lên màn hình khi bắn hỏng. */
     public function manualCommandFor(string $script, string $sessionCode): string
     {
         return $this->pythonRunner->manualCommand($script, $sessionCode);
+    }
+
+    /** @param  list<string>  $args */
+    public function manualArtisanCommandFor(string $command, array $args): string
+    {
+        return $this->pythonRunner->manualArtisanCommand($command, $args);
     }
 
     public function listAll(): iterable
@@ -85,83 +74,286 @@ class VideoSessionService
     }
 
     /**
-     * Nut "Tao Video" tren 1 bai viet: chay that Truth->Story->Scene->Intent->
-     * Editorial->Producer->Director->RenderPlan (VideoPlanningPipeline, §18) roi
-     * luu ket qua vao renderplan_json.
+     * Nut "Tao Video" tren 1 bai viet — §18.30: chi tao SESSION RONG
+     * (`status=planning`) va ban pipeline Claude o NEN qua
+     * `video:build-plan`, KHONG con chay dong bo trong request nay. Ham nay
+     * CHI lam viec nhanh (khoa + kiem tra + insert, vai mili giay) —
+     * `VideoRenderPlanService::build()` (25-90s, ton tien that) chay trong
+     * tien trinh tach roi, xem `runVideoPlanningPipeline()`.
      *
-     * NEM ra ngoai khi that bai, KHONG nuot thanh null (doi 2026-07-30).
+     * Khoa hang `Article` bang `lockForUpdate()` de chong bam hai lan: hai
+     * request dong thoi deu co the thay "chua co session nao dang chay" TRUOC
+     * khi ben nao insert xong neu khong khoa — dung nguyen nhan, dung thuoc
+     * voi race condition da vua sua o Final Composition (2026-08-12).
      *
-     * Ban cu bat het `\Throwable` roi `return null`, Controller chi biet "that
-     * bai" va hien mot cau chung chung — LY DO bi mat sach. Hau qua thuc te:
-     * phai cam `dd()` vao giua pipeline de mo xem hong o dau, ma moi lan bam lai
-     * de mo la them mot cu goi Claude bi tinh tien. Nem ra ngoai thi Controller
-     * doc duoc `getMessage()` va hien thang len man hinh.
+     * `$adminId` BAT BUOC (khong con nullable) — kiem admin TON TAI truoc khi
+     * tao session, khong doi den luc `video:build-plan` chay moi phat hien.
+     * Provenance chi phi (ClaudeUsageLog.admin_id) phai co ngay tu dau, khong
+     * duoc phep la "co the co, co the khong".
      *
-     * Van LOG day du o day (co stack trace) truoc khi nem — nem lai khong thay
-     * the log, vi Controller chi hien mot dong cho nguoi dung.
-     *
-     * @throws \App\Video\Pipeline\PipelineAborted Dung som CO CHU DICH (thieu du
-     *                                             lieu). Doc `->stage` de biet hong chang nao, `->spentMoney` de biet
-     *                                             da ton phi chua.
-     * @throws \Throwable Moi loi khac (article khong ton tai, ApprovalRequired,
-     *                    LlmUnavailable, loi DB...).
+     * @return array{0: ?VideoSession, 1: bool, 2: string} [$session, $spawned, $reason]
+     *                                                     reason: admin_not_found|already_in_progress|spawn_failed|ok
      */
-    public function creatVideoById(string $id): VideoSession
+    public function startVideoPlanning(string $articleId, string $adminId): array
     {
-        try {
-            $article = $this->articleRepository->show($id);
+        if (! Admin::find($adminId)) {
+            return [null, false, 'admin_not_found'];
+        }
 
-            // build() goi Claude 11+ lan (Extractor + Producer + N x Director).
-            // Bang chung log that: ~25 giay cho bai it scene, de len 60-90 giay
-            // cho bai nhieu scene. CO Y de NGOAI transaction — giu mot
-            // transaction mo suot ngan ay thoi gian se khoa hang video_projects
-            // va giu connection; vai nguoi bam nut Tao Video cung luc la can
-            // connection pool hoac dinh lock wait timeout.
-            //
+        $article = $this->articleRepository->show($articleId);
+
+        [$session, $reason] = DB::transaction(function () use ($article, $adminId) {
+            $article->newQuery()->whereKey($article->getKey())->lockForUpdate()->firstOrFail();
+
+            $inFlight = VideoSession::query()
+                ->where('article_id', $article->id)
+                ->whereIn('status', VideoSessionStatus::nonTerminalValues())
+                ->latest()
+                ->first();
+
+            if ($inFlight) {
+                return [$inFlight, 'already_in_progress'];
+            }
+
+            $project = $this->projectRepository->findOrCreateByArticle($article->title, $article->id);
+
+            $session = $this->sessionRepository->create([
+                'project_id' => $project->id,
+                // Ghi THANG khoa, khong de suy nguoc tu tien to `code`. Ma
+                // session mang 8 ky tu dau uuid — du de doan nhung van la
+                // doan, va 8 ky tu hex thi dung duoc.
+                'article_id' => $article->id,
+                'requested_by_admin_id' => $adminId,
+                // Hau to random 4 ky tu: hai lan tao session cho CUNG mot bai
+                // trong CUNG mot giay (that bai roi thu lai ngay) tung dam
+                // vao unique(code) khi chi co ymd_His. Khong doi tien to
+                // 8-hex — SessionArticleLinkTest chi neo dau chuoi.
+                'code' => 'art_'.substr($article->id, 0, 8).'_'.now()->format('ymd_His').'_'.Str::random(4),
+                'status' => VideoSessionStatus::PLANNING->value,
+            ]);
+
+            return [$session, 'created'];
+        });
+
+        if ($reason !== 'created') {
+            return [$session, false, $reason];
+        }
+
+        $spawned = $this->pythonRunner->spawnArtisan(
+            'video:build-plan',
+            ['--session='.$session->code],
+            $session->code,
+        );
+
+        return [$session, $spawned, $spawned ? 'ok' : 'spawn_failed'];
+    }
+
+    /**
+     * Chay THAT pipeline Claude cho MOT session dang `planning` — goi tu lenh
+     * `video:build-plan`, luon o tien trinh TACH RIENG (§18.30), khong con o
+     * request HTTP. Doc admin tu CHINH session (`requested_by_admin_id`),
+     * KHONG nhan qua tham so dong lenh — script van chay tay duoc, ai cung go
+     * duoc mot id tuy y neu cho phep truyen thang.
+     *
+     * CLAIM ATOMIC truoc khi goi Claude: `status=planning` mot minh khong du
+     * — hai tien trinh `video:build-plan --session=` chay CUNG LUC (chay tay
+     * lap, hoac bug ban trung) deu co the doc thay `planning` va cung goi
+     * Claude, ton tien gap doi. Khoa hang session bang `lockForUpdate()`,
+     * kiem tra + ghi `planning_claimed_at`/`planning_claim_token` trong CUNG
+     * mot transaction ngan.
+     *
+     * CLAIM KHONG TU HET HAN. Ban dau tung dung han 10 phut, nhung mot cu goi
+     * Claude DON LE gap 529 Overloaded co the mat toi ~10 phut rieng no (5 lan
+     * thu x 60s timeout + backoff 30/60/90/120s — xem
+     * ClaudeWriterService::MAX_RETRIES/DELAY_529_S), ma pipeline goi 11+ lan —
+     * han tu dong la khong an toan (worker cu con song, worker moi tuong da
+     * chet, ca hai cung goi Claude). Mo lai claim CHI qua
+     * `video:reset-planning-claim`, thao tac CO CHU DICH cua nguoi van hanh
+     * sau khi tu xac nhan tien trinh cu da chet that.
+     *
+     * TOKEN xac minh quyen so huu LUC GHI KET QUA (thanh cong hay that bai):
+     * UPDATE co dieu kien `WHERE code=? AND planning_claim_token=?`. Neu
+     * token khong con khop (session bi reset thu cong roi worker KHAC claim
+     * lai trong luc worker nay van dang cham) thi bo ket qua, KHONG ghi de —
+     * khong chi dua vao viec da "thang" luc claim, vi worker thua o vong claim
+     * van co the hoan tat (dung, hoac hong) SAU worker thang.
+     *
+     * KHONG doi `status` sang `composing` luc claim (pha nghia state da chot
+     * — Python poll `GET /video-sessions/composing` se vo vi thieu
+     * renderplan_json).
+     *
+     * @return bool `true` = da luu renderplan_json thanh cong (co the van
+     *              khong ban duoc Python — xem log canh bao rieng), `false` =
+     *              pipeline that bai HOAN TOAN hoac ket qua bi bo vi mat quyen
+     *              so huu claim.
+     */
+    public function runVideoPlanningPipeline(string $sessionCode): bool
+    {
+        $claimToken = (string) Str::uuid();
+
+        $claim = DB::transaction(function () use ($sessionCode, $claimToken) {
+            $session = VideoSession::query()->where('code', $sessionCode)->lockForUpdate()->first();
+
+            if (! $session) {
+                return ['session' => null, 'claimed' => false];
+            }
+
+            if ($session->status !== VideoSessionStatus::PLANNING->value || $session->planning_claimed_at !== null) {
+                return ['session' => $session, 'claimed' => false];
+            }
+
+            $session->update(['planning_claimed_at' => now(), 'planning_claim_token' => $claimToken]);
+
+            return ['session' => $session, 'claimed' => true];
+        });
+
+        $session = $claim['session'];
+
+        if (! $session) {
+            Log::error('video:build-plan: khong tim thay session', ['code' => $sessionCode]);
+
+            return false;
+        }
+
+        if (! $claim['claimed']) {
+            // Hai kha nang, ca hai deu KHONG phai loi cua LAN GOI NAY: (a) da
+            // xu ly xong roi (vd chay lai tay tren session da xong), hoac (b)
+            // mot tien trinh khac dang giu claim (chua reset thu cong) — dung
+            // lai, KHONG giam len.
+            Log::info('video:build-plan: session khong con planning hoac da co claim, bo qua', [
+                'code' => $sessionCode, 'status' => $session->status,
+                'claimed_at' => $session->planning_claimed_at,
+            ]);
+
+            return true;
+        }
+
+        // Admin::find(null) tu nhien tra null (WHERE id = NULL khong khop
+        // gi) — mot duong DUY NHAT xu ly ca "chua tung co admin" lan "admin
+        // da bi xoa", khong can nhanh rieng cho truong hop dau.
+        $admin = Admin::find($session->requested_by_admin_id);
+
+        if (! $admin) {
+            $this->finishClaimedPlanning($sessionCode, $claimToken, [
+                'status' => VideoSessionStatus::FAILED->value,
+                'error_message' => 'Admin da kich hoat khong con ton tai — dung truoc khi goi Claude.',
+            ]);
+            Log::error('video:build-plan: admin khong ton tai, tu choi goi Claude', [
+                'code' => $sessionCode, 'admin_id' => $session->requested_by_admin_id,
+            ]);
+
+            return false;
+        }
+
+        // Guard 'web' mac dinh (config/auth.php: provider 'users' -> model
+        // Admin::class) — DUNG guard ma auth()->user() o recordUsage() doc.
+        Auth::loginUsingId($admin->id);
+
+        try {
             // Cac GUARD trong VideoPlanningPipeline::plan() dung TRUOC tung cu
             // goi ton tien — bai rong thi dung khi CHUA ton dong nao.
+            $article = $this->articleRepository->show($session->article_id);
             $renderPlan = $this->renderPlanService->build($article);
 
-            // Transaction CHI bao phan ghi DB — vai mili giay. DB::transaction()
-            // tu rollback khi co exception nen khong can beginTransaction/
-            // rollBack thu cong.
-            $session = DB::transaction(function () use ($article, $renderPlan) {
-                $project = $this->projectRepository->findOrCreateByArticle($article->title, $article->id);
+            $wroteResult = $this->finishClaimedPlanning($sessionCode, $claimToken, [
+                'renderplan_json' => $renderPlan,
+                'status' => VideoSessionStatus::COMPOSING->value,
+            ]);
 
-                return $this->sessionRepository->create([
-                    'project_id' => $project->id,
-                    // Ghi THANG khoa, khong de suy nguoc tu tien to `code`. Ma
-                    // session mang 8 ky tu dau uuid — du de doan nhung van la
-                    // doan, va 8 ky tu hex thi dung duoc.
-                    'article_id' => $article->id,
-                    'code' => 'art_'.substr($article->id, 0, 8).'_'.now()->format('ymd_His'),
-                    'status' => VideoSessionStatus::COMPOSING->value,
-                    'renderplan_json' => $renderPlan,
+            if (! $wroteResult) {
+                // Claim da bi reset + chiem lai boi tien trinh khac trong luc
+                // build() dang chay — bo ket qua nay, KHONG spawn Python cho
+                // mot session ma quyen so huu khong con la cua minh.
+                Log::warning('video:build-plan: mat quyen so huu claim luc ghi ket qua, bo renderplan da tinh', [
+                    'code' => $sessionCode,
                 ]);
-            });
 
-            // BAN tien trinh Python o nen (§18.25) — SAU transaction, vi script
-            // se goi nguoc lai API doc session nay; ban trong transaction thi
-            // no co the doc truoc khi commit xong va khong thay gi.
-            //
-            // KHONG chan neu ban hong: RenderPlan da luu, session da ton tai.
-            // Controller doc `spawned` de hien duong lui chay tay.
-            $this->composeSpawned = $this->pythonRunner->spawn(self::COMPOSE_SCRIPT, $session->code);
+                return false;
+            }
 
-            return $session;
+            // BAN tien trinh Python o nen (§18.25), SAU khi da luu — script se
+            // goi nguoc lai API doc session nay.
+            $spawned = $this->pythonRunner->spawn(self::COMPOSE_SCRIPT, $sessionCode);
+
+            if (! $spawned) {
+                Log::warning('video:build-plan: khong ban duoc session_runner.py, can chay tay', [
+                    'code' => $sessionCode,
+                    'manual' => $this->manualCommandFor(self::COMPOSE_SCRIPT, $sessionCode),
+                ]);
+            }
+
+            return true;
         } catch (\Throwable $e) {
             // 'exception' => $e chu KHONG phai $e->getMessage(): Laravel ghi ca
             // class, file:line va stack trace. Chi log message thi khong biet
             // hong o Extractor, Producer, Director hay applyCreationArc.
-            Log::error('VideoSessionService::creatVideoById failed', [
-                'article_id' => $id,
+            Log::error('video:build-plan: pipeline that bai', [
+                'code' => $sessionCode,
+                'article_id' => $session->article_id,
                 'stage' => $e instanceof PipelineAborted ? $e->stage : null,
                 'spent_money' => $e instanceof PipelineAborted ? $e->spentMoney : true,
                 'exception' => $e,
             ]);
 
-            throw $e;
+            $wroteFailure = $this->finishClaimedPlanning($sessionCode, $claimToken, [
+                'status' => VideoSessionStatus::FAILED->value,
+                'error_message' => $e->getMessage(),
+            ]);
+
+            if (! $wroteFailure) {
+                // Cung mat quyen so huu nhu nhanh thanh cong o tren — chi khac
+                // o cho pipeline THAT BAI thay vi thanh cong. Van dang KHONG
+                // ghi de (an toan), nhung thieu dong log nay thi khong ai biet
+                // ca hai lan ghi (thanh cong lan truoc, that bai lan nay) deu
+                // bi bo vi claim da doi chu.
+                Log::warning('video:build-plan: mat quyen so huu claim luc ghi loi, bo trang thai failed da tinh', [
+                    'code' => $sessionCode,
+                ]);
+            }
+
+            return false;
         }
+    }
+
+    /**
+     * Ghi ket qua CO DIEU KIEN dung token — chi worker con giu claim moi ghi
+     * duoc. Xoa ca hai cot claim trong CUNG luot ghi (khong phai lan rieng):
+     * ket qua da chot thi claim khong con y nghia gi nua.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function finishClaimedPlanning(string $sessionCode, string $claimToken, array $attributes): bool
+    {
+        $updated = VideoSession::query()
+            ->where('code', $sessionCode)
+            ->where('planning_claim_token', $claimToken)
+            ->update($attributes + ['planning_claimed_at' => null, 'planning_claim_token' => null]);
+
+        return $updated > 0;
+    }
+
+    /**
+     * Mo lai claim THU CONG — thao tac an toan CO CHU DICH cua nguoi van
+     * hanh, sau khi tu xac nhan (process list, log timestamp) tien trinh
+     * `video:build-plan` cu da chet that. Chi reset khi con `planning` — mot
+     * session da `composing`/`failed` thi claim da tu dong bi xoa luc ghi ket
+     * qua (`finishClaimedPlanning()`), khong con gi de reset.
+     */
+    public function resetPlanningClaim(string $sessionCode): bool
+    {
+        // whereNotNull TUONG MINH — dat null vao cot da null se khong doi gia
+        // tri gi, nen ve mat hanh vi hai dieu kien nay hien la thua (MySQL/PDO
+        // mac dinh khong dem dong "khop WHERE nhung khong doi gia tri" vao
+        // affected-rows). Van giu vi ba ly do: KHONG phu thuoc cau hinh PDO
+        // (PDO::MYSQL_ATTR_FOUND_ROWS co the bat o noi khac); noi ro invariant
+        // "chi reset session DANG THAT SU giu claim"; va tranh chay mot UPDATE
+        // khong can thiet.
+        return VideoSession::query()
+            ->where('code', $sessionCode)
+            ->where('status', VideoSessionStatus::PLANNING->value)
+            ->whereNotNull('planning_claimed_at')
+            ->whereNotNull('planning_claim_token')
+            ->update(['planning_claimed_at' => null, 'planning_claim_token' => null]) > 0;
     }
 
     // Duyệt / cần sửa / từ chối MỘT shot
@@ -543,7 +735,7 @@ class VideoSessionService
 
     /**
      * @return array{0: ?VideoFinal, 1: bool, 2: string} [$final, $spawned, $reason]
-     *         reason: already_composing|not_ready|spawn_failed|ok
+     *                                                   reason: already_composing|not_ready|spawn_failed|ok
      */
     public function startFinalComposition(string $sessionId): array
     {

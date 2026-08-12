@@ -91,6 +91,61 @@ class PythonRunner
     }
 
     /**
+     * Bắn một lệnh Artisan CỤC BỘ ở nền — §18.30. Cùng lớp, cùng cơ chế
+     * `start "" /B` / `nohup &` với `spawn()`, chỉ đổi đối tượng bắn từ script
+     * Python (chạy từ `runner_dir`) sang lệnh Artisan (chạy từ `base_path()`
+     * của chính repo Laravel này). KHÔNG tách thành class riêng: giữ đúng bất
+     * biến "grep PythonRunner ra đúng MỌI chỗ sinh tiến trình" — tên class
+     * không đổi dù không còn thuần Python, đổi tên sẽ chỉ ích lợi mỹ quan mà
+     * phải sửa lại mọi nơi đang tiêm nó.
+     *
+     * @param  list<string>  $args  Từng phần tử là MỘT flag hoàn chỉnh
+     *                              (`--session=xxx`), tự escape trọn vẹn.
+     * @return bool `true` = ĐÃ BẮN ĐI, không phải "đã chạy xong, thành công".
+     */
+    public function spawnArtisan(string $command, array $args, string $logKey): bool
+    {
+        // Ten lenh Artisan mang dau `:` (video:build-plan) — ky tu cam trong
+        // ten file Windows, phai lam sach truoc khi dung lam ten log.
+        $logFile = $this->logFileFor(str_replace(':', '_', $command), $logKey);
+
+        if ($logFile === null) {
+            return false;
+        }
+
+        try {
+            $this->startDetachedArtisan(
+                (string) config('video.runner.php_bin', 'php'),
+                $command,
+                $args,
+                $logFile,
+            );
+        } catch (\Throwable $e) {
+            Log::error('PythonRunner: sinh tien trinh artisan that bai', [
+                'command' => $command,
+                'args' => $args,
+                'exception' => $e,
+            ]);
+
+            return false;
+        }
+
+        Log::info('PythonRunner: da ban artisan nen', [
+            'command' => $command,
+            'args' => $args,
+            'log' => $logFile,
+        ]);
+
+        return true;
+    }
+
+    /** Câu lệnh chạy tay tương đương cho lệnh Artisan — hiện khi `spawnArtisan()` trả false. */
+    public function manualArtisanCommand(string $command, array $args): string
+    {
+        return trim(sprintf('php artisan %s %s', $command, implode(' ', $args)));
+    }
+
+    /**
      * Chạy VÀ CHỜ, trả nguyên văn stdout+stderr. Chỉ dùng cho lượt KHÔNG tiêu tiền.
      *
      * Vì sao không dùng `spawn()`: nó cố ý không chờ, vì render thật mất 6-18
@@ -187,6 +242,58 @@ class PythonRunner
         }
 
         exec($command);
+    }
+
+    /** @param  list<string>  $args */
+    private function startDetachedArtisan(string $phpBin, string $command, array $args, string $logFile): void
+    {
+        $shellCommand = $this->buildArtisanCommand($phpBin, $command, $args, $logFile);
+
+        if ($this->isWindows()) {
+            pclose(popen($shellCommand, 'r'));
+
+            return;
+        }
+
+        exec($shellCommand);
+    }
+
+    /**
+     * Dựng chuỗi lệnh cho `spawnArtisan()` — TÁCH khỏi việc chạy để test
+     * được, cùng lý do với `buildCommand()` bên dưới. Chạy từ `base_path()`
+     * của chính repo Laravel này, KHÔNG phải `runner_dir` (đó là thư mục repo
+     * Python — lệnh Artisan không liên quan tới nó).
+     *
+     * @param  list<string>  $args  Mỗi phần tử escape TRỌN VẸN như một token —
+     *                              khác `buildCommand()` chỉ escape phần giá
+     *                              trị rồi nối `--session=` làm tiền tố trần.
+     *                              Cả hai cách đều ra một token shell hợp lệ;
+     *                              cách này đơn giản hơn khi có NHIỀU flag.
+     */
+    private function buildArtisanCommand(string $phpBin, string $command, array $args, string $logFile): string
+    {
+        $workingDir = base_path();
+        $argsString = implode(' ', array_map('escapeshellarg', $args));
+
+        if (! $this->isWindows()) {
+            return sprintf(
+                'cd %s && nohup %s artisan %s %s > %s 2>&1 &',
+                escapeshellarg($workingDir),
+                escapeshellarg($phpBin),
+                escapeshellarg($command),
+                $argsString,
+                escapeshellarg($logFile),
+            );
+        }
+
+        return sprintf(
+            'cmd /c cd /d %s && start "" /B %s artisan %s %s > %s 2>&1',
+            escapeshellarg($this->toWindowsPath($workingDir)),
+            escapeshellarg($this->toWindowsPath($phpBin)),
+            escapeshellarg($command),
+            $argsString,
+            escapeshellarg($this->toWindowsPath($logFile)),
+        );
     }
 
     /**

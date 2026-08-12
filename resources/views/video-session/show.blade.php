@@ -2,6 +2,25 @@
 @section('title', __('tag.tag_detail'))
 @section('content')
 <div class="container-fluid">
+
+{{--
+  §18.30: planning/failed la hai trang thai session CHUA CO shot nao (renderplan_json
+  con null luc failed som) — hien rieng, khong de lot xuong bang shot rong ben duoi.
+--}}
+@if($session->status === 'planning')
+<div class="card card-default"><div class="card-body">
+  <span class="text-warning">⏳ Đang lên kế hoạch</span> — pipeline Claude đang chạy nền
+  (thường 25-90 giây). F5 trang này để xem tiến độ.
+</div></div>
+@elseif($session->status === 'failed' && $session->renderplan_json === null)
+<div class="card card-default"><div class="card-body">
+  <span class="text-danger">✘ Lên kế hoạch thất bại</span>
+  @if($session->error_message)
+    <div class="text-muted mt-1"><small>{{ $session->error_message }}</small></div>
+  @endif
+</div></div>
+@endif
+
 <div class="card card-default"><div class="card-body">
   <b>{{ $session->project->name }}</b> — {{ $session->shots->count() }} shot ·
   Ước tính: <b>${{ number_format($session->cost_estimate_total, 2) }}</b> ·

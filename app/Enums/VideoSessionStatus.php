@@ -13,21 +13,44 @@ use App\Traits\EnumTrait;
  *
  * Luong that (xem VideoSessionService):
  *   DRAFT      — mac dinh cua cot, chua dung toi trong code
- *   COMPOSING  — vua tao tu bai viet, cho Python bien dich prompt
+ *   PLANNING   — session da tao (co code, co article_id), pipeline Claude
+ *                dang chay NEN (video:build-plan --session=, §18.30);
+ *                renderplan_json con null
+ *   COMPOSING  — renderplan_json da co, cho Python bien dich prompt
  *   REVIEWING  — Python da day shot len, cho nguoi duyet
  *   RENDERING  — da co shot duoc queue de render
  *
  * Terminal states: DONE when the queue drains cleanly, FAILED as soon as any
- * shot fails (later shots may remain queued when a dependency chain stops).
+ * shot fails (later shots may remain queued when a dependency chain stops) —
+ * hoac khi pipeline Claude o PLANNING tu than that bai.
  */
 enum VideoSessionStatus: string
 {
     use EnumTrait;
 
     case DRAFT = 'draft';
+    case PLANNING = 'planning';
     case COMPOSING = 'composing';
     case REVIEWING = 'reviewing';
     case RENDERING = 'rendering';
     case DONE = 'done';
     case FAILED = 'failed';
+
+    /**
+     * "Bài này đang có một lượt sản xuất chưa xong" — dùng ở HAI chỗ phải
+     * đồng ý với nhau: chặn bấm hai lần (VideoSessionService::startVideoPlanning())
+     * và disable nút trên danh sách bài viết (ArticleController::index()).
+     * Tách hằng ở đây để không lệch danh sách giữa hai nơi.
+     *
+     * @return list<string>
+     */
+    public static function nonTerminalValues(): array
+    {
+        return [
+            self::PLANNING->value,
+            self::COMPOSING->value,
+            self::REVIEWING->value,
+            self::RENDERING->value,
+        ];
+    }
 }

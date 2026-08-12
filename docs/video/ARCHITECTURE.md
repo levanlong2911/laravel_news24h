@@ -2461,6 +2461,92 @@ chỉ lấy shot `queued`. Không render trùng, không trả tiền hai lần.
 - Hai script Python cần thêm `--session=<code>` để xử lý ĐÚNG session vừa tạo,
   thay vì quét toàn bộ.
 
+### 18.30 Nối dài "bắn rồi quên" lên một bước sớm hơn — pipeline Claude cũng chạy nền (2026-08-12)
+
+§18.25 đã bắn-rồi-quên hai script Python (compose $0, render $1.08), nhưng bước
+**trước** cả hai — bấm 🎬 Tạo Video chạy pipeline Claude (Extractor + Producer +
+N×Director, thực tế 25-90 giây, TỐN TIỀN THẬT) — vẫn nằm nguyên trong request
+HTTP. Hai hệ quả cụ thể, không phải lo xa:
+
+1. Request giữ một PHP-FPM worker tới 90 giây; vài người bấm cùng lúc là cạn pool.
+2. **Không có gì chặn bấm hai lần.** Nút "Tạo Video" không tự disable như nút
+   "Gửi Claude" bên cạnh nó — sốt ruột bấm lại giữa lúc đang chờ là chạy nguyên
+   một lượt pipeline thứ hai, tốn tiền gấp đôi cho cùng một bài.
+
+**Vì sao KHÔNG dùng Laravel Queue** (`Job::dispatch()`), dù đó là cách "chuẩn"
+hơn: kiểm tra thực tế trên máy này thấy `QUEUE_CONNECTION=sync` — nghĩa là
+dispatch chạy đồng bộ ngay tại chỗ, không giải quyết được gì. Đổi sang driver
+`database` cũng vô ích nếu không có ai giữ một tiến trình `queue:work` sống
+liên tục để rút hàng đợi — và bằng chứng ngay trong DB: bảng `jobs` có 21 dòng
+`ProcessKeywordJob` từ 2026-04-10, `attempts=0`, chưa từng được xử lý. Không có
+worker nào đang chạy nền trên máy này. Dispatch một Job mới vào đúng hàng đợi
+đó chỉ tạo thêm một xác chết thứ 22.
+
+**Đã chọn — nối dài đúng cơ chế `PythonRunner` đã chứng minh hoạt động**, đổi
+đối tượng bắn từ script Python sang lệnh Artisan cục bộ:
+
+| Nút | Laravel làm (nhanh, trong request) | rồi bắn | Đặc tính |
+|---|---|---|---|
+| 🎬 Tạo Video | tạo `VideoSession` rỗng, `status=planning` | `php artisan video:build-plan --session=<code>` | 25-90s, **tốn tiền**, người dùng KHÔNG chờ |
+| (tiến trình trên, sau khi xong) | lưu `renderplan_json`, `status=composing` | `session_runner.py --session=<code>` | vài giây, $0 — y hệt §18.25 |
+
+State machine thêm một nấc: `planning → composing → reviewing → rendering →
+done | failed`. `planning` = session đã tồn tại (có `code`, có `article_id`)
+nhưng `renderplan_json` còn `null` — Claude đang chạy nền.
+
+**Chống bấm hai lần**: tạo session mới phải khoá hàng `Article` bằng
+`lockForUpdate()` trong `DB::transaction()`, kiểm tra đã có session
+KHÔNG-terminal (`planning|composing|reviewing|rendering`) cho bài này chưa —
+có thì trả về session đó, không tạo thêm, không bắn thêm tiến trình. Cùng kỹ
+thuật đã dùng cho race condition ở Final Composition (2026-08-12), cùng lý do:
+SELECT-rồi-INSERT không khoá là an toàn giả — hai request đồng thời đều thấy
+"chưa có" trước khi bên nào commit xong.
+
+**Định danh admin không đi qua CLI.** Lệnh Artisan chạy trong tiến trình tách
+rời, không thừa hưởng session đăng nhập của request HTTP — mà
+`VideoRenderPlanService::recordUsage()` cần admin hiện tại để ghi
+`ClaudeUsageLog.admin_id`. Cám dỗ là truyền `--admin=<id>` thẳng vào command,
+nhưng script này **vẫn phải chạy tay được** (đúng quy ước "bắn không được thì
+hiện lệnh chạy tay") — nghĩa là bất kỳ ai gõ lệnh cũng gõ được `--admin=` tuỳ
+ý, mạo danh người khác trong sổ chi phí. Thay vào đó: `requested_by_admin_id`
+ghi lên `video_sessions` NGAY LÚC TẠO (trong request HTTP, nơi `auth()->id()`
+đáng tin), lệnh Artisan chỉ nhận `--session=`, tự đọc admin từ đúng session đó
+rồi `Auth::loginUsingId()`. Admin không còn tồn tại (đã bị xoá) → dừng ngay,
+KHÔNG gọi Claude, đánh dấu session `failed` — thà mất một lượt còn hơn ghi chi
+phí mồ côi.
+
+**Giá phải trả** — cùng ba cái giá của §18.25 (chung máy, tiến trình hỏng thì
+im lặng trừ log, clip/lượt gọi dở dang lúc sập máy không sổ sách được), cộng
+thêm một cái mới: **lỗi pipeline không còn `back()->with('error', ...)` được**
+— tiến trình nền không có response HTTP nào để trả lời. Bù bằng cột
+`video_sessions.error_message`, người dùng đọc lại khi F5 vào trang session.
+
+**Vá thêm ba lỗ hổng qua ba vòng review độc lập (2026-08-12)** — bản đầu của
+§18.30 chỉ chống được "hai HTTP request cùng TẠO session"; ba chỗ hở còn lại
+lộ ra khi review đọc kỹ `runVideoPlanningPipeline()`:
+
+1. **`status=planning` một mình không chặn được hai TIẾN TRÌNH cùng gọi
+   Claude** cho cùng một session (chạy tay `video:build-plan` hai lần, hoặc
+   spawn kép) — cả hai đều đọc thấy `planning`, cả hai đều gọi `build()`. Vá
+   bằng cột `planning_claimed_at` (KHÔNG đổi `status` — đổi sang `composing`
+   trước khi có `renderplan_json` sẽ phá nghĩa state, Python poll
+   `GET /video-sessions/composing` sẽ vỡ).
+2. **`requested_by_admin_id` từng cho phép `null`, và code coi đó là hợp lệ**
+   — bỏ qua re-auth rồi vẫn gọi Claude, làm mất provenance chi phí một cách
+   im lặng (không lỗi, không log bất thường). `startVideoPlanning()` giờ nhận
+   `string $adminId` bắt buộc và từ chối tạo session nếu admin không tồn tại
+   — sớm hơn nhiều so với chỉ chặn ở lúc `video:build-plan` chạy.
+3. **Bản đầu của vá #1 dùng lease hết hạn sau 10 phút — KHÔNG AN TOÀN.** Một
+   cú gọi Claude đơn lẻ gặp 529 Overloaded có thể mất tới ~10 phút RIÊNG NÓ
+   (`ClaudeWriterService::MAX_RETRIES=5` × `CURLOPT_TIMEOUT=60s` + backoff
+   30/60/90/120s), mà pipeline gọi Claude 11+ lần — worker cũ có thể vẫn sống
+   khi lease "hết hạn", worker mới claim lại, cả hai cùng tốn tiền. Đã bỏ hoàn
+   toàn cơ chế tự hết hạn. Thay vào đó:
+   - `planning_claimed_at` khác `null` là chặn TUYỆT ĐỐI, không có mốc thời gian nào tự mở lại.
+   - `planning_claim_token` (uuid) xác minh quyền sở hữu **lúc ghi kết quả**: `UPDATE ... WHERE code=? AND planning_claim_token=?`. Worker thua ở vòng claim nhưng vẫn hoàn tất (đúng hoặc lỗi) SAU worker thắng sẽ bị 0 dòng ảnh hưởng — kết quả của nó bị bỏ, không ghi đè.
+   - Mở khoá chỉ qua `video:reset-planning-claim --session=<code>` — thao tác CÓ CHỦ Ý của người vận hành, sau khi tự xác nhận (process list, log timestamp) tiến trình cũ đã chết thật.
+   - Không xây heartbeat thật (đòi hỏi tái cấu trúc `VideoRenderPlanService::build()` để ping DB giữa lúc đang chặn trong một cú gọi Claude) — quá xâm lấn cho một lệnh nền vốn nên nhẹ; đánh đổi là một lần crash thật cần thao tác tay để hồi phục, thay vì tự động.
+
 ### 18.26 Khung cố định — cơ chế khoá identity mạnh hơn chữ (2026-07-31)
 
 **Bằng chứng:** một video **AI sinh ra** dài 23 giây (nguồn: Facebook), dựng lại

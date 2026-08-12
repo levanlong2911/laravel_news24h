@@ -2,60 +2,75 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\VideoSessionStatus;
 use App\Jobs\ProcessKeywordJob;
 use App\Models\Article;
 use App\Models\Domain;
 use App\Models\Keyword;
 use App\Models\Post;
+use App\Models\VideoSession;
 use App\Services\Admin\ArticlePipelineService;
 use App\Services\Admin\PostService;
 use App\Services\Admin\SerpApiService;
 use App\Services\ImageProxyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;
 use Mews\Purifier\Facades\Purifier;
 
 class ArticleController extends Controller
 {
     public function index(Request $request)
     {
-        $status    = $request->get('status', 'all');
+        $status = $request->get('status', 'all');
         $keywordId = $request->get('keyword_id');
 
-        $user    = auth()->user();
+        $user = auth()->user();
         $isAdmin = $user->role && $user->role->name === 'admin';
 
         $articles = Article::with(['keyword', 'crawler'])
-            ->when($status !== 'all', fn($q) => $q->where('status', $status))
-            ->when($keywordId,        fn($q) => $q->where('keyword_id', $keywordId))
-            ->when(!$isAdmin,         fn($q) => $q->where('crawled_by', $user->id))
+            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
+            ->when($keywordId, fn ($q) => $q->where('keyword_id', $keywordId))
+            ->when(! $isAdmin, fn ($q) => $q->where('crawled_by', $user->id))
             ->orderByDesc('created_at')
             ->paginate(20);
 
         $keywords = Keyword::where('is_active', true)->orderBy('sort_order')->get();
+
+        // Bai da co mot luot san xuat video CHUA XONG thi disable nut "Tao
+        // Video" — tinh MOT LAN o day, khong tinh trong Blade (cung quy uoc
+        // voi VideoSessionController::show()). Tinh trung voi guard that su
+        // chan viec tao trung o VideoSessionService::startVideoPlanning(),
+        // qua VideoSessionStatus::nonTerminalValues() dung chung.
+        $articleIdsInVideoProgress = VideoSession::query()
+            ->whereIn('article_id', $articles->pluck('id'))
+            ->whereIn('status', VideoSessionStatus::nonTerminalValues())
+            ->pluck('article_id')
+            ->all();
+
         return view('admin.articles.index', [
-            'route'     => 'article',
-            'action'    => 'article-index',
-            'menu'      => 'menu-open',
-            'active'    => 'active',
-            'articles'  => $articles,
-            'keywords'  => $keywords,
-            'status'    => $status,
+            'route' => 'article',
+            'action' => 'article-index',
+            'menu' => 'menu-open',
+            'active' => 'active',
+            'articles' => $articles,
+            'keywords' => $keywords,
+            'status' => $status,
             'keywordId' => $keywordId,
+            'articleIdsInVideoProgress' => $articleIdsInVideoProgress,
         ]);
     }
 
     public function show(Article $article)
     {
         return view('admin.articles.show', [
-            'route'   => 'article',
-            'action'  => 'article-show',
-            'menu'    => 'menu-open',
-            'active'  => 'active',
+            'route' => 'article',
+            'action' => 'article-show',
+            'menu' => 'menu-open',
+            'active' => 'active',
             'article' => $article,
         ]);
     }
@@ -63,12 +78,14 @@ class ArticleController extends Controller
     public function publish(Article $article)
     {
         $article->update(['status' => 'published', 'published_at' => now()]);
+
         return back()->with('success', "Published: {$article->title}");
     }
 
     public function unpublish(Article $article)
     {
         $article->update(['status' => 'pending', 'published_at' => null]);
+
         return back()->with('success', 'Unpublished');
     }
 
@@ -76,13 +93,14 @@ class ArticleController extends Controller
     {
         abort_unless(auth()->user()->isAdmin(), 403);
         $images = $serpApi->searchImages($article->title, 12);
+
         return response()->json(['images' => $images, 'query' => $article->title]);
     }
 
     public function imageProxy(Request $request, ImageProxyService $proxy)
     {
         $url = $request->get('url');
-        if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
+        if (empty($url) || ! filter_var($url, FILTER_VALIDATE_URL)) {
             abort(400, 'Invalid URL');
         }
 
@@ -102,6 +120,7 @@ class ArticleController extends Controller
     {
         $request->validate(['thumbnail' => 'required|url|max:2048']);
         $article->update(['thumbnail' => $request->thumbnail]);
+
         return response()->json(['success' => true, 'thumbnail' => $request->thumbnail]);
     }
 
@@ -109,13 +128,13 @@ class ArticleController extends Controller
     {
         $request->merge([
             'source_url' => trim($request->source_url),
-            'title'      => trim($request->title),
+            'title' => trim($request->title),
         ]);
 
         $request->validate([
             'source_url' => 'required|url|max:2000',
-            'title'      => 'required|string|max:500',
-            'content'    => 'required|string',
+            'title' => 'required|string|max:500',
+            'content' => 'required|string',
             'keyword_id' => 'nullable|exists:keywords,id',
         ]);
 
@@ -126,7 +145,7 @@ class ArticleController extends Controller
 
         // Cho phép nhiều member lưu cùng URL; hash khác nhau để tránh duplicate key
         if (Article::where('source_url_hash', $urlHash)->exists()) {
-            $urlHash = md5($url . '_' . time());
+            $urlHash = md5($url.'_'.time());
         }
 
         // Lấy category_id nhẹ hơn
@@ -146,28 +165,29 @@ class ArticleController extends Controller
 
         DB::transaction(function () use ($request, $urlHash, $slugBase, $domain, $categoryId, $content) {
             Article::retryCreate([
-                'keyword_id'      => $request->keyword_id,
-                'category_id'     => $categoryId,
-                'source_url'      => $request->source_url,
+                'keyword_id' => $request->keyword_id,
+                'category_id' => $categoryId,
+                'source_url' => $request->source_url,
                 'source_url_hash' => $urlHash,
-                'source_title'    => $request->title,
-                'source_name'     => $domain,
-                'thumbnail'       => $request->thumbnail ?: null,
-                'title'           => $request->title,
-                'content'         => $content,
-                'viral_score'     => 0,
-                'status'          => 'pending',
-                'expires_at'      => now()->addHours(48),
-                'crawled_by'      => auth()->id(),
+                'source_title' => $request->title,
+                'source_name' => $domain,
+                'thumbnail' => $request->thumbnail ?: null,
+                'title' => $request->title,
+                'content' => $content,
+                'viral_score' => 0,
+                'status' => 'pending',
+                'expires_at' => now()->addHours(48),
+                'crawled_by' => auth()->id(),
             ], $slugBase);
         });
 
-        return back()->with('success', 'Đã lưu: ' . Str::limit($request->title, 80));
+        return back()->with('success', 'Đã lưu: '.Str::limit($request->title, 80));
     }
 
     public function destroy(Article $article)
     {
         $article->delete();
+
         return redirect()->route('article.index')->with('success', 'Deleted');
     }
 
@@ -181,7 +201,7 @@ class ArticleController extends Controller
         $count = Article::whereIn('id', $ids)->delete();
 
         return redirect()->route('article.index', array_filter([
-            'status'     => $request->status,
+            'status' => $request->status,
             'keyword_id' => $request->keyword_id,
         ]))->with('success', "Da xoa {$count} bai.");
     }
@@ -191,13 +211,13 @@ class ArticleController extends Controller
         $admin = auth()->user();
 
         $count = Article::query()
-            ->when($request->status && $request->status !== 'all', fn($q) => $q->where('status', $request->status))
-            ->when($request->keyword_id, fn($q) => $q->where('keyword_id', $request->keyword_id))
-            ->when(!$admin->isAdmin(), fn($q) => $q->where('crawled_by', $admin->id))
+            ->when($request->status && $request->status !== 'all', fn ($q) => $q->where('status', $request->status))
+            ->when($request->keyword_id, fn ($q) => $q->where('keyword_id', $request->keyword_id))
+            ->when(! $admin->isAdmin(), fn ($q) => $q->where('crawled_by', $admin->id))
             ->delete();
 
         return redirect()->route('article.index', array_filter([
-            'status'     => $request->status,
+            'status' => $request->status,
             'keyword_id' => $request->keyword_id,
         ]))->with('success', "Deleted {$count} articles.");
     }
@@ -205,7 +225,7 @@ class ArticleController extends Controller
     public function publishAll(Request $request)
     {
         $count = Article::where('status', 'pending')
-            ->when($request->keyword_id, fn($q) => $q->where('keyword_id', $request->keyword_id))
+            ->when($request->keyword_id, fn ($q) => $q->where('keyword_id', $request->keyword_id))
             ->update(['status' => 'published', 'published_at' => now()]);
 
         return back()->with('success', "Published {$count} articles");
@@ -217,22 +237,25 @@ class ArticleController extends Controller
         foreach ($keywords as $keyword) {
             ProcessKeywordJob::dispatch($keyword)->onQueue('articles');
         }
+
         return back()->with('success', "Dispatched {$keywords->count()} keywords to queue");
     }
 
     public function generateOne(Request $request)
     {
         $keyword = Keyword::find($request->get('keyword_id'));
-        if (!$keyword) {
+        if (! $keyword) {
             return back()->with('error', 'Keyword not found');
         }
         ProcessKeywordJob::dispatch($keyword)->onQueue('articles');
+
         return back()->with('success', "Dispatched: {$keyword->name}");
     }
 
     public function clearCache()
     {
         Cache::flush();
+
         return back()->with('success', 'Cache cleared');
     }
 
@@ -252,15 +275,16 @@ class ArticleController extends Controller
 
         $admin = auth()->user();
 
-        $key = 'article-send-claude:' . $admin->id;
+        $key = 'article-send-claude:'.$admin->id;
         if (RateLimiter::tooManyAttempts($key, 5)) {
             $seconds = RateLimiter::availableIn($key);
+
             return back()->with('error', "Qua nhieu request. Doi {$seconds}s.");
         }
         RateLimiter::hit($key, 60);
 
         $domain = $this->resolveDomain($admin);
-        if (!$domain) {
+        if (! $domain) {
             return back()->with('error', $admin->domain_id
                 ? 'Không tìm thấy domain.'
                 : 'Tài khoản chưa được gán domain. Liên hệ admin.'
@@ -268,8 +292,8 @@ class ArticleController extends Controller
         }
 
         $articles = Article::with('keyword')->whereIn('id', $ids)->get();
-        $done     = 0;
-        $errors   = [];
+        $done = 0;
+        $errors = [];
 
         foreach ($articles as $article) {
             if ($article->status === 'processing') {
@@ -277,20 +301,22 @@ class ArticleController extends Controller
                 $stuckMinutes = $article->updated_at?->diffInMinutes(now()) ?? 999;
                 if ($stuckMinutes < 10) {
                     $errors[] = "'{$article->title}' dang xu ly.";
+
                     continue;
                 }
                 $article->update(['status' => 'pending']);
             }
 
-            $categoryId  = $article->keyword->category_id ?? $article->category_id ?? '';
-            $keyword     = $article->keyword->name ?? $article->source_title ?? $article->title ?? '';
+            $categoryId = $article->keyword->category_id ?? $article->category_id ?? '';
+            $keyword = $article->keyword->name ?? $article->source_title ?? $article->title ?? '';
             $sourceTitle = trim($article->source_title ?? $article->title ?? '');
-            $rawHtml     = ($sourceTitle ? "TITLE: {$sourceTitle}\n\n" : '') . ($article->content ?? '');
-            $rawLen      = strlen(trim($rawHtml));
+            $rawHtml = ($sourceTitle ? "TITLE: {$sourceTitle}\n\n" : '').($article->content ?? '');
+            $rawLen = strlen(trim($rawHtml));
 
             if ($rawLen < 1000) {
                 $article->update(['status' => 'failed']);
                 $errors[] = "'{$article->title}': nội dung quá ngắn ({$rawLen} ký tự, cần ≥ 1000). Crawl lại bài này trước.";
+
                 continue;
             }
 
@@ -298,28 +324,28 @@ class ArticleController extends Controller
 
             try {
                 $result = $pipeline->run(
-                    rawHtml:    $rawHtml,
-                    keyword:    $keyword,
+                    rawHtml: $rawHtml,
+                    keyword: $keyword,
                     categoryId: $categoryId,
                 );
 
-                $parsed     = $result->parsed;
+                $parsed = $result->parsed;
                 $finalTitle = $result->title() ?: $article->title;
                 $authorSlug = Str::slug($admin->name ?? '');
-                $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article') . ($authorSlug ? '-' . $authorSlug : ''));
-                $thumbnail  = $article->thumbnail;
-                $content    = $this->injectHeroImage($parsed['content'] ?? '', $thumbnail);
+                $slug = Post::uniqueSlug(Str::slug($finalTitle ?: 'article').($authorSlug ? '-'.$authorSlug : ''));
+                $thumbnail = $article->thumbnail;
+                $content = $this->injectHeroImage($parsed['content'] ?? '', $thumbnail);
 
                 $post = $postService->createFromData([
-                    'title'            => $finalTitle,
-                    'content'          => $content,
-                    'slug'             => $slug,
-                    'thumbnail'        => $thumbnail,
-                    'category_id'      => $categoryId ?: null,
-                    'author_id'        => $admin->id,
+                    'title' => $finalTitle,
+                    'content' => $content,
+                    'slug' => $slug,
+                    'thumbnail' => $thumbnail,
+                    'category_id' => $categoryId ?: null,
+                    'author_id' => $admin->id,
                     'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
-                    'fb_image_text'    => $parsed['fb_image_text']   ?? null,
-                    'fb_post_content'  => $parsed['fb_post_content'] ?? null,
+                    'fb_image_text' => $parsed['fb_image_text'] ?? null,
+                    'fb_post_content' => $parsed['fb_post_content'] ?? null,
                 ], $domain->id);
 
                 $article->update(['status' => 'published', 'published_at' => now(), 'post_id' => $post->id]);
@@ -333,7 +359,7 @@ class ArticleController extends Controller
                 $done++;
 
                 Log::info("[sendToClaude] OK: {$finalTitle}", [
-                    'hook_type'  => $result->hookResult->detectedType,
+                    'hook_type' => $result->hookResult->detectedType,
                     'hook_score' => $result->hookResult->bestScore,
                     'context_id' => $result->context?->id,
                 ]);
@@ -345,9 +371,9 @@ class ArticleController extends Controller
             }
         }
 
-        $msg = "Hoan thanh {$done}/" . count($articles) . " bai.";
+        $msg = "Hoan thanh {$done}/".count($articles).' bai.';
         if ($errors) {
-            return back()->with('error', $msg . ' Loi: ' . implode('; ', $errors));
+            return back()->with('error', $msg.' Loi: '.implode('; ', $errors));
         }
 
         return back()->with('success', $msg);
@@ -357,7 +383,7 @@ class ArticleController extends Controller
     {
         set_time_limit(600);
 
-        $ids   = array_filter((array) $request->get('selected_ids', []));
+        $ids = array_filter((array) $request->get('selected_ids', []));
         $count = count($ids);
 
         if ($count < 2) {
@@ -369,9 +395,9 @@ class ArticleController extends Controller
 
         $admin = auth()->user();
 
-        $key = 'article-synthesize:' . $admin->id;
+        $key = 'article-synthesize:'.$admin->id;
         if (RateLimiter::tooManyAttempts($key, 5)) {
-            return back()->with('error', 'Quá nhiều request. Đợi ' . RateLimiter::availableIn($key) . 's.');
+            return back()->with('error', 'Quá nhiều request. Đợi '.RateLimiter::availableIn($key).'s.');
         }
         RateLimiter::hit($key, 60);
 
@@ -381,11 +407,12 @@ class ArticleController extends Controller
         $categoryIds = $articles->pluck('keyword.category_id')->unique()->filter();
         if ($categoryIds->count() > 1) {
             $kwNames = $articles->pluck('keyword.name')->unique()->implode(', ');
+
             return back()->with('error', "Bài viết thuộc nhiều category ({$kwNames}). Chỉ chọn bài cùng keyword.");
         }
 
         $domain = $this->resolveDomain($admin);
-        if (!$domain) {
+        if (! $domain) {
             return back()->with('error', $admin->domain_id
                 ? 'Không tìm thấy domain.'
                 : 'Tài khoản chưa được gán domain. Liên hệ admin.'
@@ -398,40 +425,41 @@ class ArticleController extends Controller
         // Concat content, mỗi source có label riêng
         $concatContent = $articles->map(function ($a) {
             $t = trim($a->source_title ?? $a->title ?? '');
-            return ($t ? "TITLE: {$t}\n" : '') . "[SOURCE — {$a->source_name}]\n{$a->content}";
+
+            return ($t ? "TITLE: {$t}\n" : '')."[SOURCE — {$a->source_name}]\n{$a->content}";
         })->implode("\n\n---\n\n");
 
         try {
-            $articles->each(fn($a) => $a->update(['status' => 'processing']));
+            $articles->each(fn ($a) => $a->update(['status' => 'processing']));
 
-            $result     = $pipeline->run(
-                rawHtml:    $concatContent,
-                keyword:    $primary->keyword->name ?? '',
+            $result = $pipeline->run(
+                rawHtml: $concatContent,
+                keyword: $primary->keyword->name ?? '',
                 categoryId: $primary->keyword->category_id ?? '',
             );
-            $parsed     = $result->parsed;
+            $parsed = $result->parsed;
             $finalTitle = $result->title() ?: $primary->title;
             $authorSlug = Str::slug($admin->name ?? '');
-            $slug       = Post::uniqueSlug(Str::slug($finalTitle ?: 'article') . ($authorSlug ? '-' . $authorSlug : ''));
+            $slug = Post::uniqueSlug(Str::slug($finalTitle ?: 'article').($authorSlug ? '-'.$authorSlug : ''));
 
             $post = $postService->createFromData([
-                'title'            => $finalTitle,
-                'content'          => $parsed['content'] ?? '',
-                'slug'             => $slug,
-                'thumbnail'        => $request->filled('thumbnail') ? $request->input('thumbnail') : null,
-                'category_id'      => $primary->keyword->category_id ?? null,
-                'author_id'        => $admin->id,
+                'title' => $finalTitle,
+                'content' => $parsed['content'] ?? '',
+                'slug' => $slug,
+                'thumbnail' => $request->filled('thumbnail') ? $request->input('thumbnail') : null,
+                'category_id' => $primary->keyword->category_id ?? null,
+                'author_id' => $admin->id,
                 'meta_description' => Str::limit(strip_tags($parsed['content'] ?? ''), 155),
-                'fb_image_text'    => $parsed['fb_image_text']   ?? null,
-                'fb_post_content'  => $parsed['fb_post_content'] ?? null,
+                'fb_image_text' => $parsed['fb_image_text'] ?? null,
+                'fb_post_content' => $parsed['fb_post_content'] ?? null,
             ], $domain->id);
 
             $sourceUrls = $articles->pluck('source_url')->filter()->values()->toArray();
-            $articles->each(fn($a) => $a->update([
-                'status'       => 'published',
+            $articles->each(fn ($a) => $a->update([
+                'status' => 'published',
                 'published_at' => now(),
-                'source_urls'  => $sourceUrls,
-                'post_id'      => $post->id,
+                'source_urls' => $sourceUrls,
+                'post_id' => $post->id,
             ]));
 
             $admin->incrementClaudeUsage(
@@ -442,18 +470,19 @@ class ArticleController extends Controller
                 $result->totalCostUsd,
             );
 
-            Log::info('[synthesize] OK: ' . $finalTitle, [
-                'count'      => count($ids),
-                'hook_type'  => $result->hookResult->detectedType,
+            Log::info('[synthesize] OK: '.$finalTitle, [
+                'count' => count($ids),
+                'hook_type' => $result->hookResult->detectedType,
                 'hook_score' => $result->hookResult->bestScore,
             ]);
 
             return back()->with('success', "Đã tổng hợp {$count} bài → \"{$finalTitle}\"");
 
         } catch (\Throwable $e) {
-            $articles->each(fn($a) => $a->update(['status' => 'failed']));
-            Log::error('[synthesize] Failed: ' . $e->getMessage());
-            return back()->with('error', 'Lỗi tổng hợp: ' . $e->getMessage());
+            $articles->each(fn ($a) => $a->update(['status' => 'failed']));
+            Log::error('[synthesize] Failed: '.$e->getMessage());
+
+            return back()->with('error', 'Lỗi tổng hợp: '.$e->getMessage());
         }
     }
 
@@ -461,7 +490,10 @@ class ArticleController extends Controller
 
     private function resolveDomain($admin): ?Domain
     {
-        if (!$admin->domain_id) return null;
+        if (! $admin->domain_id) {
+            return null;
+        }
+
         return Domain::find($admin->domain_id);
     }
 
@@ -471,27 +503,29 @@ class ArticleController extends Controller
         $text = str_replace(["\r\n", "\r"], "\n", $text);
 
         // Nếu text KHÔNG có xuống dòng → tách theo dấu câu
-        if (!str_contains($text, "\n")) {
+        if (! str_contains($text, "\n")) {
             $sentences = preg_split('/(?<=[.?!])\s+/', $text);
         } else {
             $sentences = preg_split('/\n+/', $text);
         }
 
         return collect($sentences)
-            ->map(fn($p) => trim($p))
-            ->filter(fn($p) => strlen($p) > 20) // bỏ đoạn quá ngắn
-            ->map(fn($p) => "<p>{$p}</p>")
+            ->map(fn ($p) => trim($p))
+            ->filter(fn ($p) => strlen($p) > 20) // bỏ đoạn quá ngắn
+            ->map(fn ($p) => "<p>{$p}</p>")
             ->implode("\n");
     }
 
     private function injectHeroImage(string $content, ?string $imageUrl): string
     {
-        if (empty($imageUrl) || empty($content)) return $content;
+        if (empty($imageUrl) || empty($content)) {
+            return $content;
+        }
 
         $img = '<figure class="article-hero-image" style="margin:16px 0">'
-             . '<img src="' . e($imageUrl) . '" alt="" style="width:100%;border-radius:8px">'
-             . '</figure>';
+             .'<img src="'.e($imageUrl).'" alt="" style="width:100%;border-radius:8px">'
+             .'</figure>';
 
-        return preg_replace('/<\/p>/i', '</p>' . $img, $content, 1) ?? $content;
+        return preg_replace('/<\/p>/i', '</p>'.$img, $content, 1) ?? $content;
     }
 }

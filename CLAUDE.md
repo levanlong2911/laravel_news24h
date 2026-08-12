@@ -14,7 +14,7 @@ The `production-grade` branch is the live branch for video work. `docs/video/ARC
 ## Commands
 
 ```bash
-php vendor/bin/phpunit --testsuite=Video            # video pipeline suite (267 tests, ~6s, no DB needed)
+php vendor/bin/phpunit --testsuite=Video            # video pipeline suite (382 tests, ~2s, no DB needed)
 php vendor/bin/phpunit --testsuite=Unit             # / --testsuite=Feature
 php vendor/bin/phpunit tests/Video/Story/StoryPlannerTest.php          # single file
 php vendor/bin/phpunit --filter test_producer_never_changes_acts_or_scenes   # single test
@@ -27,6 +27,9 @@ php artisan queue:work                               # only ProcessKeywordJob is
 php artisan news:dispatch [--keyword=UUID]           # dispatch crawling for active keywords
 php artisan video:benchmark --sample=mixed10 --extractor=fake    # $0 harness check
 php artisan video:benchmark --sample=mixed10 --extractor=claude  # REAL, costs money — needs approval
+
+php artisan video:build-plan --session=<code>        # manual fallback if the 🎬 Tạo Video spawn failed — same pipeline, real money
+php artisan video:reset-planning-claim --session=<code>  # only after confirming the old video:build-plan process is truly dead
 ```
 
 `--extractor=fake` is free and deterministic; `claude` spends real money. Never run a paid command (or any render) without showing the plan and getting explicit approval first.
@@ -76,14 +79,21 @@ Two rules govern whether new code may exist at all:
 
 ## Laravel ↔ Python integration
 
-**Laravel triggers, Python works** (§18.25 — changed 2026-07-31; it used to be Python polling on a manual run). Both trigger points spawn a detached process and return immediately — the HTTP request never waits on Python:
+**Laravel triggers, work runs in the background** (§18.25, extended by §18.30 on 2026-08-12). All three trigger points spawn a detached process and return immediately — the HTTP request never waits:
 
-| Click | Laravel does | then spawns |
-|---|---|---|
-| 🎬 Tạo Video | runs the pipeline, stores `renderplan_json`, `status=composing` | `tools/session_runner.py --session=<code>` — compiles prompts, seconds, $0 |
-| 🎬 Render các shot đã duyệt | `approved → queued`, `status=rendering` | `tools/render_queued_shots.py --session=<code>` — calls Veo, 6-18 min, real money |
+| Click | Laravel does (fast, in-request) | then spawns | runs in |
+|---|---|---|---|
+| 🎬 Tạo Video | creates an empty `VideoSession`, `status=planning` | `php artisan video:build-plan --session=<code>` — runs the Claude pipeline (11+ calls, 25-90s, real money), then saves `renderplan_json` and moves to `composing` | this same Laravel repo |
+| (the command above, on success) | — | `tools/session_runner.py --session=<code>` — compiles prompts, seconds, $0 | the Python repo |
+| 🎬 Render các shot đã duyệt | `approved → queued`, `status=rendering` | `tools/render_queued_shots.py --session=<code>` — calls Veo, 6-18 min, real money | the Python repo |
 
-Spawning is confined to one class (`PythonRunner`) so `grep` finds every trigger in one place. **A failed spawn is never fatal**: the session stays usable and the UI shows the manual fallback command — the scripts still run standalone.
+`video:build-plan` deliberately does **not** go through Laravel's queue (`Job::dispatch()`): `QUEUE_CONNECTION=sync` on this machine and no `queue:work` process is running (verified via the `jobs` table — 21 `ProcessKeywordJob` rows sitting since 2026-04-10 with `attempts=0`), so a dispatched job would either run synchronously or rot forever. `PythonRunner::spawnArtisan()` reuses the exact same detached-process mechanism as the Python triggers, just pointed at `php artisan` instead of `python`.
+
+Spawning is confined to one class (`PythonRunner`) so `grep` finds every trigger in one place — its name stayed Python-specific even after gaining `spawnArtisan()`, on purpose, to avoid a repo-wide rename for a class only one file injects. **A failed spawn is never fatal**: the session stays usable and the UI shows the manual fallback command — the scripts still run standalone.
+
+The admin who clicked is recorded on `video_sessions.requested_by_admin_id` **at creation time** (inside the HTTP request, where `auth()->id()` is trustworthy) — never passed as a CLI flag, since anyone can run the command by hand with an arbitrary `--admin=`. The background command re-authenticates via `Auth::loginUsingId()` reading only that stored id, so `VideoRenderPlanService::recordUsage()` still attributes cost correctly. If the stored admin no longer exists, the command fails closed (`status=failed`) **before** calling Claude.
+
+`runVideoPlanningPipeline()` claims the session (`planning_claimed_at` + a `planning_claim_token`) before calling Claude, so two concurrent runs of the same `--session=` can't both spend money. The claim **never auto-expires** — a single Claude call can legitimately take up to ~10 minutes under retries (`ClaudeWriterService::MAX_RETRIES=5` × 60s timeout + backoff), so a time-based lease isn't safe. A stuck claim only clears via `php artisan video:reset-planning-claim --session=<code>`, and the claim token is re-checked (`UPDATE ... WHERE planning_claim_token=?`) at the moment the result is saved, so a worker that lost ownership mid-run can't overwrite whoever claimed it after.
 
 The HTTP API stays exactly as it was (`routes/api.php`, all guarded by the `X-Video-Token` header matching `VIDEO_API_TOKEN`) — it is how Python reports *back*, and it is also the migration path if Python ever moves to another machine (then go back to polling):
 
@@ -91,7 +101,7 @@ The HTTP API stays exactly as it was (`routes/api.php`, all guarded by the `X-Vi
 - `GET /api/video-sessions/composing` · `GET /api/video-shots/queued` — still work; used by the standalone/manual runs
 - `PATCH /api/video-shots/{shotId}/result` — runner reports artifact + cost, **once per shot**. That per-shot reporting is what makes a long render crash-safe: finished clips are already saved, and re-clicking Render only picks up what is still `queued`.
 
-Session lifecycle: `draft → composing → reviewing → rendering → done | failed`. Shot lifecycle (the approval gate) is separate: `draft → approved | needs_revision | rejected`, then `approved → queued → rendered | failed`. The 🎬 button calls `createFromArticleId()`, which runs the real pipeline and stores `renderplan_json` on `VideoSession`.
+Session lifecycle: `draft → planning → composing → reviewing → rendering → done | failed`. Shot lifecycle (the approval gate) is separate: `draft → approved | needs_revision | rejected`, then `approved → queued → rendered | failed`. The 🎬 button calls `VideoSessionService::startVideoPlanning()` (idempotent — locks the `Article` row, refuses to create a second session while a non-terminal one exists for that article); the actual pipeline run and `renderplan_json` save happen in `runVideoPlanningPipeline()`, called from the spawned `video:build-plan` command, not from the controller.
 
 ## CMS side conventions
 

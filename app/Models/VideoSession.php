@@ -9,9 +9,13 @@ class VideoSession extends Model
 {
     use HasUuids;
 
-    protected $fillable = ['project_id', 'article_id', 'code', 'renderplan_json', 'status', 'cost_estimate_total', 'cost_actual'];
+    protected $fillable = [
+        'project_id', 'article_id', 'requested_by_admin_id', 'code', 'renderplan_json',
+        'status', 'planning_claimed_at', 'planning_claim_token', 'error_message',
+        'cost_estimate_total', 'cost_actual',
+    ];
 
-    protected $casts = ['renderplan_json' => 'array'];
+    protected $casts = ['renderplan_json' => 'array', 'planning_claimed_at' => 'datetime'];
 
     public function project()
     {

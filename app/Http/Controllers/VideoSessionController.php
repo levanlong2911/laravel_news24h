@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Enums\VideoShotStatus;
 use App\Services\VideoSessionService;
 use App\Video\Analysis\RenderPlanQualityReport;
-use App\Video\Pipeline\PipelineAborted;
 use Illuminate\Http\Request;
 
 /**
@@ -153,46 +152,42 @@ class VideoSessionController extends Controller
     /**
      * Nut "Tao Video" trong cot Actions cua tung bai viet.
      *
-     * HIEN LY DO THAT len man hinh, khong dung mot cau chung chung (doi
-     * 2026-07-30). Truoc day service nuot moi loi thanh `null` va o day hien
-     * `__('messages.add_error')` — nguoi dung khong biet hong o dau, nen cach
-     * duy nhat de mo la cam `dd()` vao giua pipeline, ma moi lan bam lai de mo
-     * la them mot cu goi Claude bi tinh tien.
-     *
-     * `PipelineAborted` tach rieng vi no KHONG phai su co: pipeline chu dong
-     * dung vi thieu du lieu, va message cua no da viet cho nguoi doc. Quan
-     * trong nhat la no noi ro DA TON PHI CHUA — nguoi dung biet bam lai co mat
-     * tien khong.
+     * §18.30: chi tao session + ban pipeline Claude o NEN roi tra ve NGAY —
+     * khong con try/catch quanh pipeline o day, vi pipeline khong con chay
+     * trong request nay nua. Loi pipeline (PipelineAborted, LLM tu choi...)
+     * gio nam trong `video_sessions.error_message`, doc lai luc F5 trang show.
      */
     public function creatVideo(Request $request, string $id)
     {
-        try {
-            $session = $this->videoSessionService->creatVideoById($id);
-        } catch (PipelineAborted $e) {
-            return back()->with('error', $e->getMessage());
-        } catch (\Throwable $e) {
-            // Loi that (mat mang, Claude tu choi, DB hong...). Stack trace da
-            // vao log o service; o day chi dua ra dong nguoi doc hieu duoc, kem
-            // ten class de tra log nhanh.
-            return back()->with('error', sprintf(
-                'Tao video that bai (%s): %s',
-                class_basename($e),
-                $e->getMessage(),
-            ));
+        // Route nam sau middleware 'auth' nen auth()->id() gan nhu khong bao
+        // gio null — nhung startVideoPlanning() khong con nhan nullable, nen
+        // chan tai day thay vi de TypeError roi thanh trang loi 500 kho hieu.
+        $adminId = auth()->id();
+
+        if ($adminId === null) {
+            return back()->with('error', 'Khong xac dinh duoc admin dang dang nhap — dang nhap lai roi thu.');
         }
 
-        // Bắn được thì Python đang chạy nền, vài giây nữa F5 là có prompt.
-        // Bắn KHÔNG được thì phải nói rõ câu lệnh chạy tay — nếu chỉ hiện
-        // "đang xử lý", người dùng sẽ F5 mãi mà không bao giờ có gì (§18.25).
-        if ($this->videoSessionService->composeWasSpawned()) {
+        [$session, $spawned, $reason] = $this->videoSessionService->startVideoPlanning($id, (string) $adminId);
+
+        if ($reason === 'admin_not_found') {
+            return back()->with('error', 'Admin dang dang nhap khong con hop le — dang nhap lai roi thu.');
+        }
+
+        if ($reason === 'already_in_progress') {
             return redirect()->route('video-session.show', $session->id)
-                ->with('status', 'Session da tao - Composer dang sinh prompt o nen, F5 sau vai giay.');
+                ->with('warning', 'Bai nay da co mot session dang xu ly (chua xong) — khong tao them.');
+        }
+
+        if ($spawned) {
+            return redirect()->route('video-session.show', $session->id)
+                ->with('status', 'Dang chay pipeline Claude o nen (25-90 giay). F5 trang nay de xem tien do.');
         }
 
         return redirect()->route('video-session.show', $session->id)
             ->with('warning', sprintf(
                 'Session da tao nhung KHONG ban duoc tien trinh nen. Chay tay: %s',
-                $this->videoSessionService->manualCommandFor(VideoSessionService::COMPOSE_SCRIPT, $session->code),
+                $this->videoSessionService->manualArtisanCommandFor('video:build-plan', ['--session='.$session->code]),
             ));
     }
 
