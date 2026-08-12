@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\VideoShotStatus;
 use App\Services\VideoSessionService;
 use App\Video\Analysis\RenderPlanQualityReport;
 use App\Video\Pipeline\PipelineAborted;
@@ -226,6 +227,65 @@ class VideoSessionController extends Controller
         return $this->videoSessionService->listQueuedShots();
     }
 
+    // POST /api/video-shots/claim — atomic claim theo session, mot token cho ca batch.
+    public function apiClaim(Request $r)
+    {
+        if (! $this->checkToken($r)) {
+            return response()->json(['error' => 'unauthorized'], 401);
+        }
+
+        $data = $r->validate([
+            'session_code' => 'required|string|max:64',
+            'worker_id' => 'required|string|max:100',
+            'limit' => 'sometimes|integer|min:1|max:100',
+            'lease_seconds' => 'sometimes|integer|min:60|max:3600',
+        ]);
+
+        return response()->json($this->videoSessionService->claimQueuedShots(
+            $data['session_code'],
+            $data['worker_id'],
+            (int) ($data['limit'] ?? 10),
+            (int) ($data['lease_seconds'] ?? 600),
+        ));
+    }
+
+    // PATCH /api/video-shots/{id}/heartbeat — chi owner con lease moi gia han duoc.
+    public function apiHeartbeat(Request $r, string $shotId)
+    {
+        if (! $this->checkToken($r)) {
+            return response()->json(['error' => 'unauthorized'], 401);
+        }
+
+        $data = $r->validate([
+            'worker_id' => 'required|string|max:100',
+            'claim_token' => 'required|uuid',
+            'lease_seconds' => 'sometimes|integer|min:60|max:3600',
+        ]);
+
+        $renewed = $this->videoSessionService->heartbeatShotClaim(
+            $shotId,
+            $data['worker_id'],
+            $data['claim_token'],
+            (int) ($data['lease_seconds'] ?? 600),
+        );
+
+        return $renewed
+            ? response()->json(['status' => VideoShotStatus::RENDERING->value])
+            : response()->json(['error' => 'claim_not_owned_or_expired'], 409);
+    }
+
+    // POST /api/video-shots/reclaim-expired — van hanh/scheduler goi dinh ky.
+    public function apiReclaimExpired(Request $r)
+    {
+        if (! $this->checkToken($r)) {
+            return response()->json(['error' => 'unauthorized'], 401);
+        }
+
+        return response()->json([
+            'requeued' => $this->videoSessionService->reclaimExpiredShotLeases(),
+        ]);
+    }
+
     // PATCH /api/video-shots/{id}/result — runner báo kết quả
     public function apiResult(Request $r, string $shotId)
     {
@@ -238,7 +298,15 @@ class VideoSessionController extends Controller
             'cost' => 'nullable|numeric|min:0',
             'idempotency_key' => 'nullable|string|max:64',
             'render' => 'nullable|array',
+            'worker_id' => 'sometimes|string|max:100',
+            'claim_token' => 'sometimes|uuid',
         ]);
+        if (array_key_exists('worker_id', $data) !== array_key_exists('claim_token', $data)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'claim_token' => ['worker_id and claim_token must be provided together.'],
+                'worker_id' => ['worker_id and claim_token must be provided together.'],
+            ]);
+        }
         // `render` la HO SO LUOT NAY (prompt da gui, model, anh nguon, tien that)
         // -> mot dong `video_renders` bat bien. Vang thi hanh xu y nhu truoc, nen
         // runner cu van chay duoc va trien khai lech phien ban khong hong gi.
@@ -250,7 +318,13 @@ class VideoSessionController extends Controller
             (float) ($data['cost'] ?? 0),
             is_array($render) ? $render : null,
             $data['idempotency_key'] ?? null,
+            $data['worker_id'] ?? null,
+            $data['claim_token'] ?? null,
         );
+
+        if ($shot === null) {
+            return response()->json(['error' => 'claim_not_owned_or_expired'], 409);
+        }
 
         return response()->json(['status' => $shot->status]);
     }

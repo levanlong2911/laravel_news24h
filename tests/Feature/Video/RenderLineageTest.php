@@ -241,4 +241,25 @@ class RenderLineageTest extends TestCase
         $this->assertSame('failed', $this->session->fresh()->status);
         $this->assertSame('queued', $second->fresh()->status);
     }
+
+    public function test_session_stays_rendering_while_any_shot_still_awaits_action(): void
+    {
+        $this->session->update(['status' => 'rendering']);
+        $rendered = $this->shot('mixed_rendered');
+        $draft = $this->shot('mixed_draft');
+        $approved = $this->shot('mixed_approved');
+        $needsRevision = $this->shot('mixed_needs_revision');
+        $claimed = $this->shot('mixed_claimed');
+        $rendering = $this->shot('mixed_rendering');
+        $rendered->update(['status' => 'queued']);
+        $approved->update(['status' => 'approved']);
+        $needsRevision->update(['status' => 'needs_revision']);
+        $claimed->update(['status' => 'claimed']);
+        $rendering->update(['status' => 'rendering']);
+
+        $this->service->reportShotResult($rendered->id, true, '/r/rendered.jpg', 0.015);
+
+        $this->assertSame('rendering', $this->session->fresh()->status);
+        $this->assertSame('draft', $draft->fresh()->status);
+    }
 }

@@ -12,9 +12,16 @@ class VideoShot extends Model
     // Shot là business object; prompt chỉ là compiled artifact (ADR v1.1)
     protected $fillable = ['session_id', 'beat', 'shot_code', 'shot_type', 'kind', 'spec_json',
         'compiled_prompt', 'negative_prompt', 'render_plan', 'status', 'review_note',
-        'preview_path', 'artifact_path', 'cost_estimate', 'approved_at'];
+        'preview_path', 'artifact_path', 'cost_estimate', 'approved_at', 'worker_id',
+        'claim_token', 'claimed_at', 'lease_expires_at'];
 
-    protected $casts = ['spec_json' => 'array', 'render_plan' => 'array', 'approved_at' => 'datetime'];
+    protected $casts = [
+        'spec_json' => 'array',
+        'render_plan' => 'array',
+        'approved_at' => 'datetime',
+        'claimed_at' => 'datetime',
+        'lease_expires_at' => 'datetime',
+    ];
 
     public function session()
     {

@@ -15,6 +15,7 @@ use App\Video\Pipeline\PipelineAborted;
 use App\Video\RenderPlan\RenderPlanAssembler;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Vong doi session/shot + persistence. Approval gate (ADR v1.1):
@@ -332,6 +333,49 @@ class VideoSessionService
     }
 
     /**
+     * @return array{claim_token: string, shots: iterable<int, VideoShot>}
+     */
+    public function claimQueuedShots(
+        string $sessionCode,
+        string $workerId,
+        int $limit,
+        int $leaseSeconds,
+    ): array {
+        $session = VideoSession::query()->where('code', $sessionCode)->firstOrFail();
+        $claimToken = (string) Str::uuid();
+
+        return [
+            'claim_token' => $claimToken,
+            'shots' => $this->shotRepository->claimForSession(
+                $session->id,
+                $workerId,
+                $claimToken,
+                $limit,
+                now()->addSeconds($leaseSeconds),
+            ),
+        ];
+    }
+
+    public function heartbeatShotClaim(
+        string $shotId,
+        string $workerId,
+        string $claimToken,
+        int $leaseSeconds,
+    ): bool {
+        return $this->shotRepository->heartbeatClaim(
+            $shotId,
+            $workerId,
+            $claimToken,
+            now()->addSeconds($leaseSeconds),
+        );
+    }
+
+    public function reclaimExpiredShotLeases(): int
+    {
+        return $this->shotRepository->reclaimExpiredLeases();
+    }
+
+    /**
      * PATCH /api/video-shots/{id}/result — runner bao ket qua.
      *
      * Ghi HAI thu, va chung khac ban chat:
@@ -352,10 +396,13 @@ class VideoSessionService
         float $cost,
         ?array $render = null,
         ?string $idempotencyKey = null,
-    ): VideoShot {
+        ?string $workerId = null,
+        ?string $claimToken = null,
+    ): ?VideoShot {
         return DB::transaction(function () use (
             $shotId, $success, $artifactPath, $cost, $render, $idempotencyKey,
-        ): VideoShot {
+            $workerId, $claimToken,
+        ): ?VideoShot {
             $sessionId = VideoShot::query()->whereKey($shotId)->valueOrFail('session_id');
             $session = VideoSession::query()->whereKey($sessionId)->lockForUpdate()->firstOrFail();
             $shot = VideoShot::query()->whereKey($shotId)->lockForUpdate()->firstOrFail();
@@ -367,17 +414,35 @@ class VideoSessionService
                 return $shot;
             }
 
+            $checksOwnership = $workerId !== null && $claimToken !== null;
+            if ($checksOwnership && (
+                $shot->worker_id !== $workerId
+                || $shot->claim_token !== $claimToken
+                || ! in_array($shot->status, [
+                    VideoShotStatus::CLAIMED->value,
+                    VideoShotStatus::RENDERING->value,
+                ], true)
+                || $shot->lease_expires_at === null
+                || ! $shot->lease_expires_at->isFuture()
+            )) {
+                return null;
+            }
+
             $shot->update([
                 'status' => ($success ? VideoShotStatus::RENDERED : VideoShotStatus::FAILED)->value,
                 'artifact_path' => $artifactPath,
+                'worker_id' => null,
+                'claim_token' => null,
+                'claimed_at' => null,
+                'lease_expires_at' => null,
             ]);
             if ($success) {
                 $shot->session()->increment('cost_actual', $cost);
             }
 
-            if ($render !== null) {
+            if ($render !== null || $idempotencyKey !== null) {
                 $this->recordRender(
-                    $shot, $success, $artifactPath, $cost, $render, $idempotencyKey,
+                    $shot, $success, $artifactPath, $cost, $render ?? [], $idempotencyKey,
                 );
             }
 
@@ -397,7 +462,16 @@ class VideoSessionService
             return;
         }
 
-        if ($statuses->contains(VideoShotStatus::QUEUED->value)) {
+        $awaitingAction = [
+            VideoShotStatus::DRAFT->value,
+            VideoShotStatus::APPROVED->value,
+            VideoShotStatus::NEEDS_REVISION->value,
+            VideoShotStatus::QUEUED->value,
+            VideoShotStatus::CLAIMED->value,
+            VideoShotStatus::RENDERING->value,
+        ];
+
+        if ($statuses->intersect($awaitingAction)->isNotEmpty()) {
             $session->update(['status' => VideoSessionStatus::RENDERING->value]);
 
             return;
