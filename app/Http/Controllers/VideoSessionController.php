@@ -64,6 +64,8 @@ class VideoSessionController extends Controller
             'active' => 'active',
             'session' => $session,
             'quality' => is_array($plan) && $plan !== [] ? $this->qualityReport->analyze($plan) : null,
+            'finalReadiness' => $this->videoSessionService->finalCompositionReadiness($session),
+            'latestFinal' => $session->finals()->latest()->first(),
         ]);
     }
 
@@ -105,6 +107,33 @@ class VideoSessionController extends Controller
             '%d shot vao hang doi nhung KHONG ban duoc tien trinh nen. Chay tay: %s',
             $queued,
             $this->videoSessionService->manualCommandFor(VideoSessionService::RENDER_SCRIPT, $id),
+        ));
+    }
+
+    // 🎬 Ghép video hoàn chỉnh — chỉ khi mọi cảnh trong timeline đã render xong
+    public function composeFinal(string $id)
+    {
+        [$final, $spawned, $reason] = $this->videoSessionService->startFinalComposition($id);
+
+        if ($reason === 'not_ready') {
+            return back()->with('warning', 'Chua du canh da render — khong the ghep final.');
+        }
+
+        if ($reason === 'already_composing') {
+            return back()->with('warning', sprintf(
+                'Da co ban ghep (id=%s) dang chay o nen — khong bat them tien trinh. F5 de xem tien do.',
+                $final->id,
+            ));
+        }
+
+        if ($spawned) {
+            return back()->with('status', 'Dang ghep video hoan chinh o nen. F5 sau it phut de xem ket qua.');
+        }
+
+        return back()->with('warning', sprintf(
+            'Da tao ban ghep (id=%s) nhung KHONG ban duoc tien trinh nen. Chay tay: %s',
+            $final->id,
+            $this->videoSessionService->manualCommandFor(VideoSessionService::FINAL_COMPOSE_SCRIPT, $final->session->code),
         ));
     }
 
@@ -327,5 +356,44 @@ class VideoSessionController extends Controller
         }
 
         return response()->json(['status' => $shot->status]);
+    }
+
+    // GET /api/video-finals/composing — Python kéo kế hoạch ghép final
+    public function apiFinalsComposing(Request $r)
+    {
+        if (! $this->checkToken($r)) {
+            return response()->json(['error' => 'unauthorized'], 401);
+        }
+
+        $data = $r->validate([
+            'session_code' => 'required|string|max:64',
+        ]);
+
+        return response()->json($this->videoSessionService->buildFinalCompositionPlan($data['session_code']));
+    }
+
+    // PATCH /api/video-finals/{id}/result — Python báo kết quả FFmpeg
+    public function apiFinalResult(Request $r, string $finalId)
+    {
+        if (! $this->checkToken($r)) {
+            return response()->json(['error' => 'unauthorized'], 401);
+        }
+
+        $data = $r->validate([
+            'success' => 'required|boolean',
+            'video_path' => 'required_if:success,true|string|max:255',
+            'duration_ms' => 'required_if:success,true|integer|min:0',
+            'error' => 'nullable|string',
+        ]);
+
+        $final = $this->videoSessionService->recordFinalCompositionResult(
+            $finalId,
+            $r->boolean('success'),
+            $data['video_path'] ?? null,
+            $data['duration_ms'] ?? null,
+            $data['error'] ?? null,
+        );
+
+        return response()->json(['status' => $final->status]);
     }
 }

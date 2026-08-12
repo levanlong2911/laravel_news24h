@@ -150,6 +150,7 @@ Route::group(
         Route::post('/{id}/queue',         [VideoSessionController::class, 'queueApproved'])->name('video-session.queue');
         // 🔍 Thử render — không gọi vendor, không đổi dữ liệu
         Route::post('/{id}/preflight',     [VideoSessionController::class, 'previewRender'])->name('video-session.preflight');
+        Route::post('/{id}/compose-final', [VideoSessionController::class, 'composeFinal'])->name('video-session.compose-final');
     });
     Route::post('/video-shot/{shotId}/action', [VideoSessionController::class, 'shotAction'])->name('video-shot.action');
 

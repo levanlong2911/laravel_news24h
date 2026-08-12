@@ -22,7 +22,37 @@
   <form method="post" action="{{ route('video-session.preflight', $session->id) }}" style="display:inline">
     @csrf <button class="btn btn-outline-secondary btn-sm">🔍 Thử render (không tốn tiền)</button>
   </form>
+
+  {{--
+    Chỉ bật khi MỌI cảnh trong renderplan_json['timeline'] đã có shot motion
+    rendered — $finalReadiness tính một lần trong Controller (finalCompositionReadiness()),
+    cùng nguồn dữ liệu buildFinalCompositionPlan() dùng lúc Python kéo kế hoạch,
+    nên nút bật/tắt đúng với cái Python thực sự sẽ thấy.
+  --}}
+  <form method="post" action="{{ route('video-session.compose-final', $session->id) }}" style="display:inline">
+    @csrf <button class="btn btn-primary btn-sm" {{ $finalReadiness['ready'] ? '' : 'disabled' }}
+      title="{{ $finalReadiness['ready'] ? '' : 'Còn thiếu render cho: '.implode(', ', $finalReadiness['missing']) }}">
+      🎬 Ghép video hoàn chỉnh
+    </button>
+  </form>
 </div></div>
+
+@if($latestFinal)
+<div class="card card-default"><div class="card-body">
+  <b>Bản ghép gần nhất</b> —
+  @if($latestFinal->status === 'ready')
+    <span class="text-success">✔ ready</span> ·
+    <a href="{{ asset($latestFinal->video_path) }}" target="_blank">{{ $latestFinal->video_path }}</a> ·
+    {{ $latestFinal->duration_seconds }}s · ${{ number_format($latestFinal->cost_total, 3) }}
+  @elseif($latestFinal->status === 'composing')
+    <span class="text-warning">⏳ composing</span> — F5 để xem tiến độ.
+  @elseif($latestFinal->status === 'failed')
+    <span class="text-danger">✘ failed</span> — {{ $latestFinal->error_message }}
+  @else
+    {{ $latestFinal->status }}
+  @endif
+</div></div>
+@endif
 
 @if(session('preflight'))
 <div class="card card-default"><div class="card-body">

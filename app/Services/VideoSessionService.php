@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Enums\VideoSessionStatus;
 use App\Enums\VideoShotStatus;
+use App\Models\VideoFinal;
+use App\Models\VideoFinalRender;
 use App\Models\VideoRender;
 use App\Models\VideoSession;
 use App\Models\VideoShot;
@@ -34,6 +36,9 @@ class VideoSessionService
 
     /** Script render — chạy 6-18 phút, TỐN TIỀN THẬT (§18.25). */
     public const RENDER_SCRIPT = 'render_queued_shots.py';
+
+    /** Script ghép final — chỉ FFmpeg cục bộ, không gọi vendor, $0 (§18.25). */
+    public const FINAL_COMPOSE_SCRIPT = 'compose_final.py';
 
     /**
      * Lần `creatVideoById()` gần nhất có bắn được tiến trình nền không.
@@ -483,8 +488,222 @@ class VideoSessionService
     }
 
     /**
-     * Mot dong `video_renders` — INSERT, khong bao gio UPDATE.
-     *
+     * @return array{ready: bool, missing: array<int, string>}
+     */
+    public function finalCompositionReadiness(VideoSession $session): array
+    {
+        $timeline = data_get($session->renderplan_json, 'timeline', []);
+
+        if ($timeline === [] || ! is_array($timeline)) {
+            return ['ready' => false, 'missing' => ['(khong co timeline trong renderplan)']];
+        }
+
+        $missing = $this->resolveTimelineClips($session, $timeline)['missing'];
+
+        return ['ready' => $missing === [], 'missing' => $missing];
+    }
+
+    /**
+     * @param  array<int, mixed>  $timeline
+     * @return array{clips: array<int, array>, missing: array<int, string>}
+     */
+    private function resolveTimelineClips(VideoSession $session, array $timeline): array
+    {
+        $motionByBeat = VideoShot::query()
+            ->where('session_id', $session->id)
+            ->where('kind', 'motion')
+            ->with('latestRender')
+            ->get()
+            ->keyBy('beat');
+
+        $clips = [];
+        $missing = [];
+
+        foreach (array_values($timeline) as $index => $entry) {
+            $sceneId = $entry['scene_id'] ?? null;
+            $shot = $sceneId !== null ? $motionByBeat->get($sceneId) : null;
+            $render = ($shot && $shot->status === VideoShotStatus::RENDERED->value) ? $shot->latestRender : null;
+
+            if (! $render || ! $render->artifact_path || ! $render->duration_ms) {
+                $missing[] = $sceneId ?? "(scene #{$index} thieu scene_id)";
+
+                continue;
+            }
+
+            $clips[] = [
+                'render_id' => $render->id,
+                'path' => $render->artifact_path,
+                'duration_ms' => $render->duration_ms,
+                'sequence_no' => $index,
+            ];
+        }
+
+        return ['clips' => $clips, 'missing' => $missing];
+    }
+
+    /**
+     * @return array{0: ?VideoFinal, 1: bool, 2: string} [$final, $spawned, $reason]
+     *         reason: already_composing|not_ready|spawn_failed|ok
+     */
+    public function startFinalComposition(string $sessionId): array
+    {
+        // "Da co composing chua -> khong thi tao moi" phai la MOT don vi khong
+        // the chia cat: hai request cung luc deu co the thay "chua co" truoc
+        // khi ben nao insert xong, sinh hai final + hai tien trinh FFmpeg cung
+        // ghi mot file. Khoa hang video_sessions (cung ky thuat reportShotResult()
+        // da dung) de tuan tu hoa — request thu hai phai CHO request dau commit
+        // xong moi duoc doc, luc do da thay dung ban composing vua tao.
+        [$final, $reason] = DB::transaction(function () use ($sessionId) {
+            $session = VideoSession::query()->whereKey($sessionId)->lockForUpdate()->firstOrFail();
+
+            $inFlight = VideoFinal::query()
+                ->where('session_id', $sessionId)
+                ->where('status', 'composing')
+                ->latest()
+                ->first();
+
+            if ($inFlight) {
+                return [$inFlight, 'already_composing'];
+            }
+
+            if (! $this->finalCompositionReadiness($session)['ready']) {
+                return [null, 'not_ready'];
+            }
+
+            return [
+                VideoFinal::create(['session_id' => $sessionId, 'status' => 'composing']),
+                'created',
+            ];
+        });
+
+        if ($reason !== 'created') {
+            return [$final, false, $reason];
+        }
+
+        // spawn() ra NGOAI transaction: sinh tien trinh la I/O co the cham, giu
+        // khoa DB trong luc do chan moi request khac vao cung session.
+        $sessionCode = VideoSession::query()->whereKey($sessionId)->value('code');
+        $spawned = $this->pythonRunner->spawn(self::FINAL_COMPOSE_SCRIPT, $sessionCode);
+
+        return [$final, $spawned, $spawned ? 'ok' : 'spawn_failed'];
+    }
+
+    /**
+     * @return array{status: string, final_id?: string, output_path?: string, clips?: array, error?: string}
+     */
+    public function buildFinalCompositionPlan(string $sessionCode): array
+    {
+        $session = VideoSession::query()->where('code', $sessionCode)->firstOrFail();
+
+        $final = VideoFinal::query()
+            ->where('session_id', $session->id)
+            ->where('status', 'composing')
+            ->latest()
+            ->first();
+
+        if (! $final) {
+            return ['status' => 'error', 'error' => 'khong co final dang composing cho session nay'];
+        }
+
+        // Chốt một lần — retry (mất mạng, restart) trả lại đúng plan đã dùng,
+        // không tính lại từ video_shots (có thể đã đổi sau khi chốt).
+        if (is_array($final->plan_json)) {
+            return $final->plan_json;
+        }
+
+        $timeline = data_get($session->renderplan_json, 'timeline', []);
+
+        if ($timeline === [] || ! is_array($timeline)) {
+            return ['status' => 'error', 'final_id' => $final->id, 'error' => 'renderplan khong co timeline'];
+        }
+
+        ['clips' => $clips, 'missing' => $missing] = $this->resolveTimelineClips($session, $timeline);
+
+        if ($missing !== []) {
+            return [
+                'status' => 'error',
+                'final_id' => $final->id,
+                'error' => 'thieu render cho cac canh: '.implode(', ', $missing),
+            ];
+        }
+
+        $plan = [
+            'status' => 'ok',
+            'final_id' => $final->id,
+            'output_path' => "/renders/finals/{$session->code}/{$final->id}.mp4",
+            'clips' => $clips,
+        ];
+
+        $final->update(['plan_json' => $plan]);
+
+        return $plan;
+    }
+
+    /**
+     * Đọc `render_id` từ `plan_json` đã chốt lúc GET, không truy vấn lại
+     * video_shots — tránh lệch nếu một shot bị render lại giữa lúc FFmpeg chạy.
+     */
+    public function recordFinalCompositionResult(
+        string $finalId,
+        bool $success,
+        ?string $videoPath,
+        ?int $durationMs,
+        ?string $errorMessage,
+    ): ?VideoFinal {
+        return DB::transaction(function () use ($finalId, $success, $videoPath, $durationMs, $errorMessage): ?VideoFinal {
+            $final = VideoFinal::query()->whereKey($finalId)->lockForUpdate()->firstOrFail();
+
+            if ($final->status !== 'composing') {
+                return $final;
+            }
+
+            if (! $success) {
+                $final->update(['status' => 'failed', 'error_message' => $errorMessage]);
+
+                return $final->refresh();
+            }
+
+            $clips = data_get($final->plan_json, 'clips', []);
+
+            // success=true nhung khong co plan_json (Python bao qua PATCH truc
+            // tiep, bo qua GET /composing) thi KHONG duoc danh dau ready — ready
+            // ma khong co cut nao la mot final "xong" nhung khong xem duoc gi.
+            if ($clips === []) {
+                $final->update([
+                    'status' => 'failed',
+                    'error_message' => 'khong co plan_json hop le luc ghi ket qua (thieu buoc GET /video-finals/composing)',
+                ]);
+
+                return $final->refresh();
+            }
+            $renderIds = array_column($clips, 'render_id');
+
+            $costTotal = VideoRender::query()->whereIn('id', $renderIds)->sum('cost_usd');
+
+            $startMs = 0;
+            foreach ($clips as $clip) {
+                VideoFinalRender::create([
+                    'final_id' => $final->id,
+                    'render_id' => $clip['render_id'],
+                    'sequence_no' => $clip['sequence_no'],
+                    'start_ms' => $startMs,
+                    'duration_ms' => $clip['duration_ms'],
+                ]);
+                $startMs += (int) $clip['duration_ms'];
+            }
+
+            $final->update([
+                'status' => 'ready',
+                'video_path' => $videoPath,
+                'duration_seconds' => $durationMs !== null ? intdiv($durationMs, 1000) : null,
+                'cost_total' => $costTotal,
+            ]);
+
+            return $final->refresh();
+        });
+    }
+
+    /**
      * `attempt_no` tinh o day chu khong nhan tu Python: Laravel so huu bang nay,
      * va de Python dem thi hai tien trinh chay song song se cho cung mot so.
      *

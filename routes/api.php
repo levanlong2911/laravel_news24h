@@ -43,4 +43,6 @@ Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])->group(fun
     Route::post('/video-shots/reclaim-expired', [VideoSessionController::class, 'apiReclaimExpired']);
     Route::patch('/video-shots/{shotId}/heartbeat', [VideoSessionController::class, 'apiHeartbeat']);
     Route::patch('/video-shots/{shotId}/result', [VideoSessionController::class, 'apiResult']);
+    Route::get('/video-finals/composing', [VideoSessionController::class, 'apiFinalsComposing']);
+    Route::patch('/video-finals/{finalId}/result', [VideoSessionController::class, 'apiFinalResult']);
 });

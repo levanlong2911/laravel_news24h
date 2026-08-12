@@ -18,13 +18,14 @@ class VideoFinal extends Model
 
     protected $fillable = [
         'session_id', 'video_path', 'thumbnail_path', 'duration_seconds',
-        'cost_total', 'status', 'error_message', 'published_at',
+        'cost_total', 'plan_json', 'status', 'error_message', 'published_at',
         'youtube_video_id', 'facebook_post_id', 'tiktok_video_id', 'instagram_video_id',
     ];
 
     protected $casts = [
         'duration_seconds' => 'integer',
         'cost_total' => 'float',
+        'plan_json' => 'array',
         'published_at' => 'datetime',
     ];
 
