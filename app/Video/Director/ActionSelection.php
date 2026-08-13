@@ -3,6 +3,8 @@
 namespace App\Video\Director;
 
 use App\Video\Editorial\ActionCandidate;
+use App\Video\Editorial\FeatureCandidate;
+use InvalidArgumentException;
 
 /**
  * Output cua Director — CHI la lua chon (index/entity id), khong phai object
@@ -13,10 +15,12 @@ final class ActionSelection
 {
     /**
      * @param list<int> $secondaryCandidateIndices
+     * @param list<int> $featureCandidateIndices
      */
     public function __construct(
         public readonly string $heroEntity,
-        public readonly int $primaryCandidateIndex,
+        /** null = cảnh không có hành động nào, chỉ có feature. */
+        public readonly ?int $primaryCandidateIndex,
         public readonly array $secondaryCandidateIndices,
         public readonly string $emotion,
         public readonly string $reveal,
@@ -31,7 +35,14 @@ final class ActionSelection
         public readonly string $compositionNote = '',
         /** Cảnh này nói điều gì mà các cảnh trước chưa nói. */
         public readonly string $newInformation = '',
+        /** Thuộc tính Director đã chọn để nhấn mạnh — CHỈ khi capability bật. */
+        public readonly array $featureCandidateIndices = [],
     ) {
+        if ($primaryCandidateIndex === null && $featureCandidateIndices === []) {
+            throw new InvalidArgumentException(
+                'ActionSelection phải có ít nhất một hành động hoặc một feature — không có gì để kể thì không phải một lựa chọn',
+            );
+        }
     }
 
     /**
@@ -46,10 +57,14 @@ final class ActionSelection
      * attribute) nhung KHONG co hero_candidates hop le (hero_candidates loc
      * anchor-only) — Director khong co gi de chon, KHONG duoc bia hero gia.
      *
+     * `primary` VẮNG HẲN khi không có hành động nào — schema $defs/action đòi
+     * `type`+`actor`, nên emit object rỗng là phá contract.
+     *
      * @param list<ActionCandidate> $candidates cung danh sach da dua Director chon
-     * @return array{primary: array, secondary: list<array>}
+     * @param list<FeatureCandidate> $featureCandidates cung danh sach feature da dua Director chon
+     * @return array<string, mixed>
      */
-    public function resolve(array $candidates): array
+    public function resolve(array $candidates, array $featureCandidates = []): array
     {
         $doc = [];
 
@@ -57,11 +72,21 @@ final class ActionSelection
             $doc['hero'] = $this->heroEntity;
         }
 
-        $doc['primary'] = $candidates[$this->primaryCandidateIndex]->toArray();
+        if ($this->primaryCandidateIndex !== null) {
+            $doc['primary'] = $candidates[$this->primaryCandidateIndex]->toArray();
+        }
+
         $doc['secondary'] = array_map(
             fn (int $i) => $candidates[$i]->toArray(),
             $this->secondaryCandidateIndices,
         );
+
+        if ($this->featureCandidateIndices !== []) {
+            $doc['features'] = array_map(
+                fn (int $i) => $featureCandidates[$i]->toArray(),
+                $this->featureCandidateIndices,
+            );
+        }
 
         return $doc;
     }

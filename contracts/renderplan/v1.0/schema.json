@@ -297,6 +297,24 @@
         "secondary":         { "type": "array", "items": { "$ref": "#/$defs/action" } },
         "micro_physics":     { "type": "array", "items": { "type": "string" } },
         "composition_note":  { "type": "string" },
+        "features": {
+          "description": "Thuoc tinh DA VERIFY ma Director chon de nhan manh (them 2026-08-13, additive). Ton tai vi `composition_note` la van xuoi — doc no khong biet cau nay chung minh duoc hay Director bia. Field nay giu provenance co cau truc: entity nao, thuoc tinh nao, gia tri nao. CHI chua feature DA DUOC CHON, khong phai toan bo danh sach da dua Director. OPTIONAL.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["entity", "attribute", "values"],
+            "properties": {
+              "entity": { "$ref": "#/$defs/slug" },
+              "attribute": { "$ref": "#/$defs/slug" },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": ["string", "number", "boolean"] }
+              }
+            }
+          }
+        },
         "new_information": {
           "description": "Canh nay noi dieu gi ma cac canh truoc chua noi (them 2026-08-13, additive). Director sinh ra, roi duoc dua NGUOC vao PREVIOUS SCENES cua cac canh sau — day la co che chong lap giua cac canh. Luu vao RenderPlan de QA truy nguoc duoc canh nao lap canh nao; giu lam working memory thi mat dau ngay sau pipeline. OPTIONAL: canh khong qua Director (Creation Arc) khong co field nay.",
           "type": "string"

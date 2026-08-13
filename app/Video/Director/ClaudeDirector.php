@@ -24,6 +24,7 @@ final class ClaudeDirector implements DirectorInterface
         // trong danh sách candidate + viết 1 câu dàn cảnh, không sinh cấu trúc
         // phức tạp — hợp với Haiku hơn Extractor.
         private readonly string $model = 'haiku',
+        private readonly bool $featuresEnabled = false,
     ) {}
 
     public function select(array $candidates, VerifiedWorldGraph $world, ?ProducerOutput $producer, int $sceneOrdinal = 1, int $totalScenes = 1, array $priorScenes = []): ActionSelection
@@ -58,6 +59,20 @@ final class ClaudeDirector implements DirectorInterface
             $actorName = $this->displayName($action->actor, $world);
             $targetName = $action->target === '' ? '' : $this->displayName($action->target, $world);
             $lines[] = sprintf('[%d] %s: %s -> %s%s', $i, $action->type->value, $actorName, $targetName, $modifiers);
+        }
+
+        if ($this->featuresEnabled && ($candidates['feature_candidates'] ?? []) !== []) {
+            $lines[] = '';
+            $lines[] = 'FEATURE CANDIDATES (verified attributes of this scene\'s subjects — chọn bằng index):';
+            foreach ($candidates['feature_candidates'] as $i => $feature) {
+                $lines[] = sprintf(
+                    '[%d] %s: %s = %s',
+                    $i,
+                    $this->displayName($feature->entityId, $world),
+                    $feature->attribute,
+                    implode(', ', array_map(fn ($v) => is_bool($v) ? ($v ? 'true' : 'false') : (string) $v, $feature->values)),
+                );
+            }
         }
 
         if ($producer !== null) {
@@ -123,15 +138,67 @@ final class ClaudeDirector implements DirectorInterface
             $data = [];
         }
 
+        // Capability tắt: giữ NGUYÊN hành vi cũ (primary mặc định 0, bỏ qua
+        // feature_indices kể cả khi Claude tự trả về).
+        $featureIndices = $this->featuresEnabled
+            ? $this->validIndices($data['feature_indices'] ?? null, $candidates['feature_candidates'] ?? [])
+            : [];
+
+        $primaryIndex = $this->featuresEnabled
+            ? $this->primaryIndex($data['primary_index'] ?? null, $candidates['action_candidates'] ?? [], $featureIndices)
+            : (int) ($data['primary_index'] ?? 0);
+
         return new ActionSelection(
             (string) ($data['hero'] ?? ($candidates['hero_candidates'][0] ?? '')),
-            (int) ($data['primary_index'] ?? 0),
+            $primaryIndex,
             is_array($data['secondary_indices'] ?? null) ? array_map('intval', $data['secondary_indices']) : [],
             (string) ($data['emotion'] ?? ''),
             (string) ($data['reveal'] ?? ''),
             (string) ($data['composition_note'] ?? ''),
             (string) ($data['new_information'] ?? ''),
+            $featureIndices,
         );
+    }
+
+    /**
+     * Index Claude trả về chỉ được dùng nếu THẬT SỰ tồn tại trong danh sách đã
+     * đưa nó — index bịa mà đi tiếp thì `resolve()` chạm vào null.
+     *
+     * @return list<int>
+     */
+    private function validIndices(mixed $raw, array $candidates): array
+    {
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $valid = [];
+        foreach ($raw as $index) {
+            if (is_int($index) && isset($candidates[$index]) && ! in_array($index, $valid, true)) {
+                $valid[] = $index;
+            }
+        }
+
+        return $valid;
+    }
+
+    /**
+     * null khi không có hành động nào hợp lệ VÀ đã có feature để kể — cảnh chỉ
+     * có thuộc tính là hợp lệ. Không có cả hai thì rơi về 0 như cũ.
+     *
+     * @param  list<int>  $featureIndices
+     */
+    private function primaryIndex(mixed $raw, array $actionCandidates, array $featureIndices): ?int
+    {
+        if (is_int($raw) && isset($actionCandidates[$raw])) {
+            return $raw;
+        }
+
+        if ($featureIndices !== [] && $actionCandidates === []) {
+            return null;
+        }
+
+        return 0;
     }
 
     private function instruction(): string

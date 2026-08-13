@@ -7,6 +7,7 @@ use App\Video\Director\FakeDirector;
 use App\Video\Editorial\ActionCandidate;
 use App\Video\Editorial\ActionType;
 use App\Video\Editorial\EditorialInterpreter;
+use App\Video\Editorial\FeatureCandidate;
 use App\Video\Evidence\Evidence;
 use App\Video\Evidence\EvidenceSource;
 use App\Video\Evidence\ProvenanceLevel;
@@ -65,6 +66,53 @@ class ActionSelectionTest extends TestCase
         $this->assertSame([[
             'type' => 'signal', 'actor' => 'signalman', 'target' => 'goliathcrane', 'modifiers' => [],
         ]], $resolved['secondary']);
+    }
+
+    // ---- Feature: cảnh chỉ có thuộc tính, không hành động ----
+
+    public function test_resolve_emits_selected_features_with_their_provenance(): void
+    {
+        $features = [
+            new FeatureCandidate('yacht', 'pool_feature', ['infinity pool']),
+            new FeatureCandidate('yacht', 'amenity', ['spa', 'helipad']),
+        ];
+
+        $selection = new ActionSelection('yacht', 0, [], 'awe', 'immediate', '', '', [1]);
+
+        $resolved = $selection->resolve([new ActionCandidate(ActionType::Lift, 'yacht')], $features);
+
+        // Chỉ feature ĐÃ CHỌN, không phải cả danh sách đã đưa Director.
+        $this->assertSame([[
+            'entity' => 'yacht', 'attribute' => 'amenity', 'values' => ['spa', 'helipad'],
+        ]], $resolved['features']);
+    }
+
+    public function test_resolve_omits_the_features_key_when_none_were_selected(): void
+    {
+        $selection = new ActionSelection('yacht', 0, [], 'awe', 'immediate');
+
+        $resolved = $selection->resolve([new ActionCandidate(ActionType::Lift, 'yacht')]);
+
+        $this->assertArrayNotHasKey('features', $resolved);
+    }
+
+    public function test_resolve_omits_primary_when_there_is_no_action(): void
+    {
+        // schema $defs/action đòi type+actor — emit object rỗng là phá contract.
+        $selection = new ActionSelection('yacht', null, [], 'awe', 'immediate', '', '', [0]);
+
+        $resolved = $selection->resolve([], [new FeatureCandidate('yacht', 'pool_feature', ['infinity pool'])]);
+
+        $this->assertArrayNotHasKey('primary', $resolved);
+        $this->assertSame([], $resolved['secondary']);
+        $this->assertCount(1, $resolved['features']);
+    }
+
+    public function test_a_selection_with_neither_action_nor_feature_is_rejected(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new ActionSelection('yacht', null, [], 'awe', 'immediate');
     }
 
     public function test_full_chain_from_world_to_director_notes_shape(): void

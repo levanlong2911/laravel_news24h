@@ -217,6 +217,41 @@ class RenderPlanSchemaTest extends TestCase
         $this->assertPlanValid($plan, 'director_notes.new_information là field additive hợp lệ');
     }
 
+    public function test_director_notes_accepts_selected_features(): void
+    {
+        $plan = $this->fixture();
+        $plan->scenes[0]->director_notes ??= new \stdClass;
+        $plan->scenes[0]->director_notes->features = [
+            (object) ['entity' => 'moonrise', 'attribute' => 'pool_feature', 'values' => ['infinity pool']],
+            (object) ['entity' => 'moonrise', 'attribute' => 'deck_count', 'values' => [6, true]],
+        ];
+
+        $this->assertPlanValid($plan, 'director_notes.features là field additive hợp lệ');
+    }
+
+    /** @dataProvider malformedFeatures */
+    public function test_a_malformed_feature_is_rejected(array $feature, string $why): void
+    {
+        $plan = $this->fixture();
+        $plan->scenes[0]->director_notes ??= new \stdClass;
+        $plan->scenes[0]->director_notes->features = [(object) $feature];
+
+        $this->assertPlanRejected($plan, $why);
+    }
+
+    public static function malformedFeatures(): array
+    {
+        return [
+            'thiếu entity' => [['attribute' => 'pool_feature', 'values' => ['x']], 'feature không có entity'],
+            'thiếu attribute' => [['entity' => 'moonrise', 'values' => ['x']], 'feature không có attribute'],
+            'thiếu values' => [['entity' => 'moonrise', 'attribute' => 'pool_feature'], 'feature không có values'],
+            'values rỗng' => [['entity' => 'moonrise', 'attribute' => 'pool_feature', 'values' => []], 'values rỗng thì không chứng minh gì'],
+            'values có null' => [['entity' => 'moonrise', 'attribute' => 'pool_feature', 'values' => [null]], 'null không mô tả thứ có mặt trong khung'],
+            'entity không phải slug' => [['entity' => 'Moon Rise', 'attribute' => 'pool_feature', 'values' => ['x']], 'entity phải là slug'],
+            'field lạ' => [['entity' => 'moonrise', 'attribute' => 'pool_feature', 'values' => ['x'], 'evidence' => 'quote'], 'Evidence KHÔNG BAO GIỜ được qua ranh giới (§1)'],
+        ];
+    }
+
     public function test_director_notes_still_rejects_an_unknown_field(): void
     {
         // Chứng minh test trên không xanh vì `director_notes` bị nới lỏng.
