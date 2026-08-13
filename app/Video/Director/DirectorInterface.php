@@ -20,7 +20,7 @@ interface DirectorInterface
      *        `producer.emotional_curve`, KHÔNG phải để tự sắp thứ tự (đó vẫn
      *        là việc của StoryPlanner/ScenePlanner, deterministic).
      * @param int $totalScenes Tổng số scene trong video.
-     * @param list<array{ordinal: int, hero: string, emotion: string, composition_note: string}> $priorScenes
+     * @param list<array{ordinal: int, hero: string, emotion: string, composition_note: string, new_information: string}> $priorScenes
      *        "Trí nhớ" của Director xuyên phim (2026-07-23) — Director thật
      *        giữ trong đầu toàn bộ phim khi quay 1 cảnh, không quyết độc lập
      *        từng cảnh. Chỉ 1-3 cảnh GẦN NHẤT (VideoPlanningPipeline tự giới

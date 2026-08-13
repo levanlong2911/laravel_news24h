@@ -145,6 +145,8 @@ class VideoPlanningPipelineDirectorMemoryTest extends TestCase
             'hero' => '',
             'emotion' => "emotion_{$this->calls[0]['ordinal']}",
             'composition_note' => "note_{$this->calls[0]['ordinal']}",
+            // Director phải thấy scene trước đã nói gì thì mới tránh nói lại.
+            'new_information' => '',
         ], $this->calls[1]['priorScenes'][0]);
     }
 

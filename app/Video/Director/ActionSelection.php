@@ -29,6 +29,8 @@ final class ActionSelection
          * $emotion/$reveal) — VideoPlanningPipeline gắn thẳng vào director_notes.
          */
         public readonly string $compositionNote = '',
+        /** Cảnh này nói điều gì mà các cảnh trước chưa nói. */
+        public readonly string $newInformation = '',
     ) {
     }
 

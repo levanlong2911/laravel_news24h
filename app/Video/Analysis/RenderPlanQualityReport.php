@@ -163,7 +163,66 @@ final class RenderPlanQualityReport
             ];
         }
 
+        // ---- 6. Hai scene nói cùng một điều ----
+        //
+        // Director chỉ được đưa 3 scene gần nhất nên không tự biết scene 5 có
+        // trùng scene 1 không. Đây là nơi duy nhất nhìn thấy cả video.
+        $duplicates = $this->duplicateNewInformation($scenes);
+
+        if ($duplicates !== []) {
+            $warnings[] = [
+                'code' => 'DUPLICATE_NEW_INFORMATION',
+                'message' => sprintf(
+                    '%d scene lặp lại điều một scene trước đã nói',
+                    count($duplicates),
+                ),
+                'detail' => ['duplicates' => $duplicates],
+            ];
+        }
+
         return ['warnings' => $warnings, 'metrics' => $metrics];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $scenes
+     * @return list<array{scene_id: string, duplicate_of: string}>
+     */
+    private function duplicateNewInformation(array $scenes): array
+    {
+        $seen = [];
+        $duplicates = [];
+
+        foreach ($scenes as $scene) {
+            $value = $scene['director_notes']['new_information'] ?? null;
+            if (! is_string($value)) {
+                continue;
+            }
+
+            $normalized = $this->normalizeForComparison($value);
+            if ($normalized === '') {
+                continue;
+            }
+
+            $sceneId = (string) ($scene['id'] ?? '');
+
+            if (isset($seen[$normalized])) {
+                $duplicates[] = ['scene_id' => $sceneId, 'duplicate_of' => $seen[$normalized]];
+
+                continue;
+            }
+
+            $seen[$normalized] = $sceneId;
+        }
+
+        return $duplicates;
+    }
+
+    private function normalizeForComparison(string $text): string
+    {
+        $text = mb_strtolower(trim($text));
+        $text = preg_replace('/\p{P}+/u', ' ', $text) ?? $text;
+
+        return trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
     }
 
     /**

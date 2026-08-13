@@ -161,6 +161,7 @@ final class VideoPlanningPipeline
                 'reveal_strategy' => $selection->reveal,
                 'micro_physics' => $this->editorial->microPhysicsFor($chosen),
                 'composition_note' => $selection->compositionNote,
+                'new_information' => $selection->newInformation,
             ]);
 
             $directorLog[] = [
@@ -168,6 +169,7 @@ final class VideoPlanningPipeline
                 'hero' => $selection->heroEntity,
                 'emotion' => $selection->emotion,
                 'composition_note' => $selection->compositionNote,
+                'new_information' => $selection->newInformation,
             ];
         }
 

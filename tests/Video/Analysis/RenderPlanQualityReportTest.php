@@ -70,6 +70,109 @@ class RenderPlanQualityReportTest extends TestCase
         $this->assertSame($report->analyze($this->healthyPlan()), $report->analyze($this->healthyPlan()));
     }
 
+    // ---- Hai scene nói cùng một điều ----
+    //
+    // Director chỉ được đưa 3 scene gần nhất nên không tự biết scene 5 có
+    // trùng scene 1 không — chỉ báo cáo này nhìn thấy cả video.
+
+    /** @return array<string, mixed> */
+    private function planWithNewInformation(string ...$values): array
+    {
+        $plan = $this->healthyPlan();
+        $scenes = [];
+
+        foreach ($values as $i => $value) {
+            $scene = $plan['scenes'][0];
+            $scene['id'] = 'scene_'.($i + 1);
+            $scene['director_notes'] = ['new_information' => $value];
+            $scenes[] = $scene;
+        }
+
+        $plan['scenes'] = $scenes;
+
+        return $plan;
+    }
+
+    public function test_scenes_saying_different_things_produce_no_warning(): void
+    {
+        $codes = $this->codes($this->planWithNewInformation(
+            'the vessel leaves the shed',
+            'the interior opens onto the pool deck',
+        ));
+
+        $this->assertNotContains('DUPLICATE_NEW_INFORMATION', $codes);
+    }
+
+    public function test_two_scenes_saying_the_same_thing_are_reported(): void
+    {
+        $plan = $this->planWithNewInformation(
+            'the vessel leaves the shed',
+            'the interior opens onto the pool deck',
+            'the vessel leaves the shed',
+        );
+
+        $report = (new RenderPlanQualityReport)->analyze($plan);
+        $warning = $this->warningWithCode($report, 'DUPLICATE_NEW_INFORMATION');
+
+        $this->assertNotNull($warning);
+        $this->assertSame(
+            [['scene_id' => 'scene_3', 'duplicate_of' => 'scene_1']],
+            $warning['detail']['duplicates'],
+        );
+    }
+
+    public function test_duplicates_are_detected_beyond_the_three_scene_director_memory(): void
+    {
+        // scene_5 lặp scene_1 — Director chỉ thấy scene 2,3,4 nên không thể tự biết.
+        $plan = $this->planWithNewInformation('a', 'b', 'c', 'd', 'a');
+
+        $report = (new RenderPlanQualityReport)->analyze($plan);
+        $warning = $this->warningWithCode($report, 'DUPLICATE_NEW_INFORMATION');
+
+        $this->assertSame(
+            [['scene_id' => 'scene_5', 'duplicate_of' => 'scene_1']],
+            $warning['detail']['duplicates'],
+        );
+    }
+
+    public function test_only_wording_differences_still_count_as_duplicate(): void
+    {
+        $codes = $this->codes($this->planWithNewInformation(
+            'The vessel leaves the shed.',
+            'the vessel leaves the shed',
+        ));
+
+        $this->assertContains('DUPLICATE_NEW_INFORMATION', $codes);
+    }
+
+    public function test_scenes_without_new_information_are_not_reported_as_duplicates(): void
+    {
+        // Creation Arc không qua Director nên không scene nào có field này —
+        // báo mọi scene trùng nhau ở đó là báo động giả.
+        $codes = $this->codes($this->healthyPlan());
+
+        $this->assertNotContains('DUPLICATE_NEW_INFORMATION', $codes);
+    }
+
+    public function test_empty_new_information_is_ignored(): void
+    {
+        $codes = $this->codes($this->planWithNewInformation('', '   ', ''));
+
+        $this->assertNotContains('DUPLICATE_NEW_INFORMATION', $codes);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function warningWithCode(array $report, string $code): ?array
+    {
+        foreach ($report['warnings'] as $warning) {
+            if ($warning['code'] === $code) {
+                return $warning;
+            }
+        }
+
+        return null;
+    }
+
     // ---- 1. Hero determinability ----
 
     public function test_hero_not_determinable_when_no_entity_name_appears_in_title(): void
