@@ -485,11 +485,59 @@ class VideoSessionService
                 ];
             }
 
+            $incomingKeys = collect($data['shots'])->map(fn (array $s) => $s['shot_code'].'|'.$s['kind'])->all();
+            $wouldOrphan = collect();
+
+            if ($existing) {
+                // lockForUpdate() TREN TOAN BO shot cua session — khoa session o
+                // tren KHONG lam gi voi video_shots. Khong khoa o day thi
+                // claimForSession() (UPDATE...LIMIT rieng, khong dung transaction
+                // nay) co the claim mot shot dang queued NGAY GIUA luc ham nay dang
+                // doc, roi bulk supersede ben duoi ghi de len ket qua claim do —
+                // dung ca invariant "khong supersede claimed/rendering/rendered" ma
+                // check ben duoi tuong da chan. Khoa o day serialize hai duong:
+                // claimForSession() phai doi transaction nay commit xong moi UPDATE
+                // duoc hang shot, va luc do shot co the da la superseded (khong con
+                // queued) nen no tu nhien khong khop nua.
+                $currentShots = VideoShot::query()
+                    ->where('session_id', $existing->id)
+                    ->lockForUpdate()
+                    ->get(['id', 'shot_code', 'kind', 'status']);
+
+                $wouldOrphan = $currentShots
+                    ->reject(fn (VideoShot $shot) => in_array($shot->shot_code.'|'.$shot->kind, $incomingKeys, true))
+                    ->reject(fn (VideoShot $shot) => $shot->status === VideoShotStatus::SUPERSEDED->value);
+
+                $protected = $wouldOrphan->whereIn('status', [
+                    VideoShotStatus::CLAIMED->value,
+                    VideoShotStatus::RENDERING->value,
+                    VideoShotStatus::RENDERED->value,
+                    VideoShotStatus::FAILED->value,
+                ]);
+
+                // Payload moi bo mot shot dang claimed/rendering/rendered — KHONG
+                // duoc am tham danh dau superseded (mat dau vet tien that/lease
+                // dang giu). Tu choi CA GOI NAY, khong tao/sua gi ca; nguoi van
+                // hanh phai tu quyet dinh (cho render xong, huy render, hoac
+                // reset session tay) roi compose lai.
+                if ($protected->isNotEmpty()) {
+                    return [
+                        'session_id' => $existing->id, 'shots' => 0,
+                        'skipped' => true, 'status' => $existing->status,
+                        'error' => 'plan_revision_conflict',
+                        'protected_shot_ids' => $protected->pluck('id')->values()->all(),
+                    ];
+                }
+            }
+
+            $newRevision = ($existing->plan_revision ?? 0) + 1;
+
             $project = $this->projectRepository->firstOrCreateByName($data['project'], $data['subject_id'] ?? null);
             $session = $this->sessionRepository->updateOrCreateByCode($data['code'], [
                 'project_id' => $project->id,
                 'renderplan_json' => $data['renderplan'] ?? null,
                 'status' => VideoSessionStatus::REVIEWING->value,
+                'plan_revision' => $newRevision,
             ]);
 
             $total = 0;
@@ -503,10 +551,33 @@ class VideoSessionService
                         'negative_prompt' => $s['negative_prompt'] ?? null, 'render_plan' => $s['render_plan'] ?? null,
                         'preview_path' => $s['preview_path'] ?? null,
                         'cost_estimate' => $s['render_plan']['cost_estimate'] ?? 0, 'status' => VideoShotStatus::DRAFT->value,
+                        'plan_revision' => $newRevision,
                     ]
                 );
             }
             $this->sessionRepository->update($session->id, ['cost_estimate_total' => $total]);
+
+            if ($wouldOrphan->isNotEmpty()) {
+                // whereIn(safeSupersedableValues) THAY VI != superseded — phong thu
+                // chieu sau: ke ca neu logic tu choi o tren co lo hong nao do, cau
+                // UPDATE nay van tu no khong bao gio dong duoc claimed/rendering/
+                // rendered. Vi $currentShots da khoa (lockForUpdate) va khong ai
+                // khac dung duoc vao giua chung, so dong doi phai khop CHINH XAC
+                // $wouldOrphan->count() — lech la dau hieu logic sai o tren, dung
+                // ghi mot phan roi coi nhu xong.
+                $superseded = VideoShot::query()
+                    ->where('session_id', $session->id)
+                    ->where('plan_revision', '<', $newRevision)
+                    ->whereIn('status', VideoShotStatus::safeSupersedableValues())
+                    ->update(['status' => VideoShotStatus::SUPERSEDED->value]);
+
+                if ($superseded !== $wouldOrphan->count()) {
+                    throw new \RuntimeException(sprintf(
+                        'storeFromPython: so shot superseded (%d) khong khop so du kien (%d) cho session %s',
+                        $superseded, $wouldOrphan->count(), $data['code'],
+                    ));
+                }
+            }
 
             return ['session_id' => $session->id, 'shots' => count($data['shots'])];
         });

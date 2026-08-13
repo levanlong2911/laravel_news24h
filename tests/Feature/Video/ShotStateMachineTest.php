@@ -2,12 +2,15 @@
 
 namespace Tests\Feature\Video;
 
+use App\Enums\VideoSessionStatus;
 use App\Enums\VideoShotStatus;
 use App\Models\VideoProject;
 use App\Models\VideoSession;
 use App\Models\VideoShot;
+use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use App\Services\VideoSessionService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -176,6 +179,179 @@ class ShotStateMachineTest extends TestCase
         $s2 = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's2')->first();
         $this->assertNotNull($s2);
         $this->assertSame(VideoShotStatus::DRAFT->value, $s2->status);
+    }
+
+    // ---- plan_revision + superseded: bo shot khoi payload moi khong duoc de mo mo ----
+
+    public function test_first_compose_sets_plan_revision_to_one(): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1'));
+
+        $this->assertSame(1, $this->session->fresh()->plan_revision);
+    }
+
+    public function test_recompose_increments_plan_revision_on_session_and_touched_shots(): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1'));
+        $this->forceBackToComposing();
+
+        $this->service->storeFromPython($this->composePayload('s1'));
+
+        $this->assertSame(2, $this->session->fresh()->plan_revision);
+        $shot = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $this->assertSame(2, $shot->plan_revision);
+    }
+
+    public function test_recompose_marks_a_dropped_shot_as_superseded(): void
+    {
+        $payload = $this->composePayload('s1');
+        $payload['shots'][] = ['shot_code' => 's2', 'kind' => 'motion', 'beat' => 'b1', 'shot_type' => 'establish', 'spec' => [], 'compiled_prompt' => 'p2', 'render_plan' => ['cost_estimate' => 0.1]];
+        $this->service->storeFromPython($payload);
+        $this->forceBackToComposing();
+
+        // s2 bien mat khoi payload lan nay
+        $this->service->storeFromPython($this->composePayload('s1'));
+
+        $s1 = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $s2 = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's2')->first();
+        $this->assertSame(VideoShotStatus::DRAFT->value, $s1->status);
+        $this->assertSame(VideoShotStatus::SUPERSEDED->value, $s2->status);
+    }
+
+    public function test_recompose_handles_a_dropped_a_changed_and_an_added_shot_in_one_call(): void
+    {
+        $payload = $this->composePayload('s1');
+        $payload['shots'][] = ['shot_code' => 's2', 'kind' => 'motion', 'beat' => 'b1', 'shot_type' => 'establish', 'spec' => [], 'compiled_prompt' => 'p2 v1', 'render_plan' => ['cost_estimate' => 0.1]];
+        $this->service->storeFromPython($payload);
+        $this->forceBackToComposing();
+
+        // s1 bi bo, s2 doi noi dung, s3 la shot moi
+        $this->service->storeFromPython([
+            'project' => $this->session->project->name,
+            'code' => $this->session->code,
+            'renderplan' => ['scenes' => []],
+            'shots' => [
+                ['shot_code' => 's2', 'kind' => 'motion', 'beat' => 'b1', 'shot_type' => 'establish', 'spec' => [], 'compiled_prompt' => 'p2 v2', 'render_plan' => ['cost_estimate' => 0.2]],
+                ['shot_code' => 's3', 'kind' => 'motion', 'beat' => 'b1', 'shot_type' => 'establish', 'spec' => [], 'compiled_prompt' => 'p3', 'render_plan' => ['cost_estimate' => 0.3]],
+            ],
+        ]);
+
+        $s1 = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $s2 = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's2')->first();
+        $s3 = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's3')->first();
+
+        $this->assertSame(VideoShotStatus::SUPERSEDED->value, $s1->status);
+        $this->assertSame('p2 v2', $s2->compiled_prompt);
+        $this->assertNotSame(VideoShotStatus::SUPERSEDED->value, $s2->status);
+        $this->assertNotNull($s3);
+        $this->assertSame(VideoShotStatus::DRAFT->value, $s3->status);
+    }
+
+    /** @dataProvider protectedStatuses */
+    public function test_recompose_refuses_entirely_when_a_dropped_shot_is_in_a_protected_status(string $status): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1'));
+        $shot = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $shot->update(['status' => $status]);
+        $this->forceBackToComposing();
+
+        // Payload moi bo s1, chi con s2 — s1 dang o trang thai bao ve.
+        $result = $this->service->storeFromPython([
+            'project' => $this->session->project->name,
+            'code' => $this->session->code,
+            'renderplan' => ['scenes' => []],
+            'shots' => [['shot_code' => 's2', 'kind' => 'motion', 'beat' => 'b1', 'shot_type' => 'establish', 'spec' => [], 'compiled_prompt' => 'p2', 'render_plan' => ['cost_estimate' => 0.1]]],
+        ]);
+
+        $this->assertTrue($result['skipped']);
+        $this->assertSame('plan_revision_conflict', $result['error']);
+        $this->assertSame([$shot->id], $result['protected_shot_ids']);
+
+        // Khong dung gi ca: khong shot moi, s1 khong bi doi, plan_revision khong tang.
+        $this->assertSame($status, $shot->fresh()->status);
+        $this->assertNull(VideoShot::where('session_id', $this->session->id)->where('shot_code', 's2')->first());
+        $this->assertSame(1, $this->session->fresh()->plan_revision);
+        $this->assertSame(VideoSessionStatus::COMPOSING->value, $this->session->fresh()->status);
+    }
+
+    public static function protectedStatuses(): array
+    {
+        return [
+            'claimed' => [VideoShotStatus::CLAIMED->value],
+            'rendering' => [VideoShotStatus::RENDERING->value],
+            'rendered' => [VideoShotStatus::RENDERED->value],
+            'failed' => [VideoShotStatus::FAILED->value],
+        ];
+    }
+
+    public function test_a_superseded_shot_is_resurrected_when_it_reappears_in_a_later_compose(): void
+    {
+        $payload = $this->composePayload('s1');
+        $payload['shots'][] = ['shot_code' => 's2', 'kind' => 'motion', 'beat' => 'b1', 'shot_type' => 'establish', 'spec' => [], 'compiled_prompt' => 'p2', 'render_plan' => ['cost_estimate' => 0.1]];
+        $this->service->storeFromPython($payload);
+        $this->forceBackToComposing();
+        $this->service->storeFromPython($this->composePayload('s1')); // s2 bi bo -> superseded
+        $s2 = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's2')->first();
+        $this->assertSame(VideoShotStatus::SUPERSEDED->value, $s2->status);
+        $this->forceBackToComposing();
+
+        $payloadAgain = $this->composePayload('s1');
+        $payloadAgain['shots'][] = ['shot_code' => 's2', 'kind' => 'motion', 'beat' => 'b1', 'shot_type' => 'establish', 'spec' => [], 'compiled_prompt' => 'p2 v2', 'render_plan' => ['cost_estimate' => 0.15]];
+        $this->service->storeFromPython($payloadAgain);
+
+        $fresh = $s2->fresh();
+        $this->assertSame(VideoShotStatus::DRAFT->value, $fresh->status);
+        $this->assertSame('p2 v2', $fresh->compiled_prompt);
+    }
+
+    public function test_recompose_locks_the_sessions_shots_for_update(): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1'));
+        $this->forceBackToComposing();
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries) {
+            $queries[] = $query->sql;
+        });
+
+        $this->service->storeFromPython($this->composePayload('s1'));
+
+        DB::listen(fn () => null);
+
+        $lockQueries = array_filter(
+            $queries,
+            fn (string $sql) => str_contains($sql, 'video_shots') && str_contains($sql, 'for update'),
+        );
+
+        $this->assertNotEmpty(
+            $lockQueries,
+            "storeFromPython() phai phat mot truy van SELECT ... FOR UPDATE tren video_shots.\n".
+            'SQL da chay: '.implode("\n", $queries),
+        );
+    }
+
+    public function test_a_shot_dropped_into_superseded_can_no_longer_be_claimed(): void
+    {
+        $payload = $this->composePayload('s1');
+        $payload['shots'][] = ['shot_code' => 's2', 'kind' => 'motion', 'beat' => 'b1', 'shot_type' => 'establish', 'spec' => [], 'compiled_prompt' => 'p2', 'render_plan' => ['cost_estimate' => 0.1]];
+        $this->service->storeFromPython($payload);
+        $this->service->approveSelectedShots(
+            $this->session->id,
+            VideoShot::where('session_id', $this->session->id)->pluck('id')->all(),
+        );
+        $this->service->queueApproved($this->session->id);
+        $this->forceBackToComposing();
+
+        // s2 bi bo khoi payload lan nay -> superseded, du no dang QUEUED
+        $this->service->storeFromPython($this->composePayload('s1'));
+        $s2 = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's2')->first();
+        $this->assertSame(VideoShotStatus::SUPERSEDED->value, $s2->status);
+
+        $claimed = app(VideoShotRepositoryInterface::class)->claimForSession(
+            $this->session->id, 'worker-a', 'token-a', 10, now()->addMinutes(10),
+        );
+
+        $this->assertFalse($claimed->contains('id', $s2->id));
     }
 
     // ---- approveByIds()/updateShotStatus(): tu choi duyet/sua/tu choi shot da qua hang doi ----

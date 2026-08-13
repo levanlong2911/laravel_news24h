@@ -11,6 +11,13 @@ use App\Traits\EnumTrait;
  *         -> NEEDS_REVISION                            (het lease -> ve QUEUED)
  *         -> REJECTED
  *
+ * SUPERSEDED (them 2026-08-13): shot thuoc mot ban compose CU, bi thay the
+ * boi mot lan Python compose lai (storeFromPython() tang plan_revision) va
+ * khong con xuat hien trong payload moi. Chi ap dung cho shot dang o trang
+ * thai AN TOAN de bo qua (draft/approved/needs_revision/rejected/queued) —
+ * claimed/rendering/rendered/failed khong bao gio bi supersede am tham, xem
+ * VideoSessionService::storeFromPython().
+ *
  * KHONG co duong nao tu DRAFT thang len QUEUED: chi shot APPROVED moi vao
  * hang doi (VideoShotRepository::queueApprovedForSession). Do la ca ly do
  * approval gate ton tai — khong co duong render nao bo qua duyet.
@@ -36,6 +43,7 @@ enum VideoShotStatus: string
     case RENDERING = 'rendering';
     case RENDERED = 'rendered';
     case FAILED = 'failed';
+    case SUPERSEDED = 'superseded';
 
     /**
      * Con o TRUOC hang doi render — Duyet/Sua/Tu choi con hop nghia. Sau khi
@@ -54,6 +62,18 @@ enum VideoShotStatus: string
             self::APPROVED->value,
             self::NEEDS_REVISION->value,
             self::REJECTED->value,
+        ];
+    }
+
+    /** @return list<string> */
+    public static function safeSupersedableValues(): array
+    {
+        return [
+            self::DRAFT->value,
+            self::APPROVED->value,
+            self::NEEDS_REVISION->value,
+            self::REJECTED->value,
+            self::QUEUED->value,
         ];
     }
 }

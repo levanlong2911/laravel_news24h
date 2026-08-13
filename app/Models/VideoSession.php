@@ -12,7 +12,7 @@ class VideoSession extends Model
     protected $fillable = [
         'project_id', 'article_id', 'requested_by_admin_id', 'code', 'renderplan_json',
         'status', 'planning_claimed_at', 'planning_claim_token', 'error_message',
-        'cost_estimate_total', 'cost_actual',
+        'cost_estimate_total', 'cost_actual', 'plan_revision',
     ];
 
     protected $casts = ['renderplan_json' => 'array', 'planning_claimed_at' => 'datetime'];

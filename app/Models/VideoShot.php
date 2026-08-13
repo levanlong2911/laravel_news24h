@@ -13,7 +13,7 @@ class VideoShot extends Model
     protected $fillable = ['session_id', 'beat', 'shot_code', 'shot_type', 'kind', 'spec_json',
         'compiled_prompt', 'negative_prompt', 'render_plan', 'status', 'review_note',
         'preview_path', 'artifact_path', 'cost_estimate', 'approved_at', 'worker_id',
-        'claim_token', 'claimed_at', 'lease_expires_at'];
+        'claim_token', 'claimed_at', 'lease_expires_at', 'plan_revision'];
 
     protected $casts = [
         'spec_json' => 'array',

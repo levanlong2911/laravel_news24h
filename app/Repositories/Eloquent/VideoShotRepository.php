@@ -157,7 +157,15 @@ class VideoShotRepository extends BaseRepository implements VideoShotRepositoryI
         $shot = VideoShot::where($match)->first();
 
         if ($shot) {
-            $shot->update(array_diff_key($attributes, array_flip(self::OPERATIONAL_COLUMNS)));
+            // superseded la trang thai AN TOAN de bo qua (khong claimed/rendering/
+            // rendered — xem VideoShotStatus::SUPERSEDED) — shot quay lai payload
+            // moi thi cho status di qua, khong thi no ket "superseded" vinh vien
+            // du da duoc dua tro lai ke hoach hien hanh.
+            $protectedColumns = $shot->status === VideoShotStatus::SUPERSEDED->value
+                ? array_diff(self::OPERATIONAL_COLUMNS, ['status'])
+                : self::OPERATIONAL_COLUMNS;
+
+            $shot->update(array_diff_key($attributes, array_flip($protectedColumns)));
 
             return $shot;
         }

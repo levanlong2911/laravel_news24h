@@ -235,10 +235,11 @@ class VideoSessionController extends Controller
         $result = $this->videoSessionService->storeFromPython($data);
 
         if (! empty($result['skipped'])) {
-            return response()->json([
-                'error' => 'session_not_composing',
+            return response()->json(array_filter([
+                'error' => $result['error'] ?? 'session_not_composing',
                 'status' => $result['status'],
-            ], 409);
+                'protected_shot_ids' => $result['protected_shot_ids'] ?? null,
+            ], fn ($v) => $v !== null), 409);
         }
 
         return response()->json($result);

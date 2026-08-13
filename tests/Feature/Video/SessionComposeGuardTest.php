@@ -138,6 +138,27 @@ class SessionComposeGuardTest extends TestCase
         $this->assertSame(VideoSessionStatus::DONE->value, $session->fresh()->status);
     }
 
+    public function test_api_returns_409_with_plan_revision_conflict_when_a_rendered_shot_would_be_orphaned(): void
+    {
+        config(['video.api_token' => 'compose-guard-test-token']);
+        $session = $this->makeSession(VideoSessionStatus::COMPOSING->value);
+        $shot = VideoShot::create([
+            'session_id' => $session->id, 'beat' => 'b1', 'shot_code' => 's1', 'kind' => 'motion',
+            'shot_type' => 'establish', 'spec_json' => [], 'compiled_prompt' => 'prompt cu',
+            'status' => VideoShotStatus::RENDERED->value,
+        ]);
+
+        $response = $this->postJson('/api/render-plans', $this->payload($session, 's2'), [
+            'X-Video-Token' => 'compose-guard-test-token',
+        ]);
+
+        $response->assertStatus(409)->assertJson([
+            'error' => 'plan_revision_conflict',
+            'status' => VideoSessionStatus::COMPOSING->value,
+            'protected_shot_ids' => [$shot->id],
+        ]);
+    }
+
     /** Gắn regression vào ĐÚNG vị trí — cùng lý do với các test khoá FOR UPDATE khác trong suite Video. */
     public function test_compose_guard_actually_issues_a_row_lock_on_the_session(): void
     {
