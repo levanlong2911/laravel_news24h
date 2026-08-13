@@ -486,6 +486,7 @@ class VideoSessionService
             }
 
             $incomingKeys = collect($data['shots'])->map(fn (array $s) => $s['shot_code'].'|'.$s['kind'])->all();
+            $incomingByKey = collect($data['shots'])->keyBy(fn (array $s) => $s['shot_code'].'|'.$s['kind']);
             $wouldOrphan = collect();
 
             if ($existing) {
@@ -502,7 +503,10 @@ class VideoSessionService
                 $currentShots = VideoShot::query()
                     ->where('session_id', $existing->id)
                     ->lockForUpdate()
-                    ->get(['id', 'shot_code', 'kind', 'status']);
+                    ->get([
+                        'id', 'shot_code', 'kind', 'status',
+                        'beat', 'compiled_prompt', 'negative_prompt', 'spec_json', 'render_plan',
+                    ]);
 
                 $wouldOrphan = $currentShots
                     ->reject(fn (VideoShot $shot) => in_array($shot->shot_code.'|'.$shot->kind, $incomingKeys, true))
@@ -515,17 +519,47 @@ class VideoSessionService
                     VideoShotStatus::FAILED->value,
                 ]);
 
-                // Payload moi bo mot shot dang claimed/rendering/rendered — KHONG
-                // duoc am tham danh dau superseded (mat dau vet tien that/lease
-                // dang giu). Tu choi CA GOI NAY, khong tao/sua gi ca; nguoi van
-                // hanh phai tu quyet dinh (cho render xong, huy render, hoac
-                // reset session tay) roi compose lai.
-                if ($protected->isNotEmpty()) {
+                // Shot con o payload moi nhung dang claimed/rendering/rendered — con
+                // Python co the DA render/dang render dung noi dung CU. KHONG tinh
+                // failed vao day: recompose sau mot lan fail thuong CHINH LA de sua
+                // prompt hong, chan no o day can tro dung viec sua loi.
+                $changedFields = [];
+                $protectedChanged = $currentShots
+                    ->filter(fn (VideoShot $shot) => in_array($shot->shot_code.'|'.$shot->kind, $incomingKeys, true))
+                    ->filter(fn (VideoShot $shot) => in_array($shot->status, [
+                        VideoShotStatus::CLAIMED->value,
+                        VideoShotStatus::RENDERING->value,
+                        VideoShotStatus::RENDERED->value,
+                    ], true))
+                    ->filter(function (VideoShot $shot) use ($incomingByKey, &$changedFields) {
+                        $diff = $this->changedContentFields(
+                            $shot,
+                            $incomingByKey->get($shot->shot_code.'|'.$shot->kind),
+                        );
+
+                        if ($diff === []) {
+                            return false;
+                        }
+
+                        $changedFields[$shot->id] = $diff;
+
+                        return true;
+                    });
+
+                // Payload moi bo mot shot dang claimed/rendering/rendered/failed —
+                // KHONG duoc am tham danh dau superseded (mat dau vet tien that/lease
+                // dang giu), hoac doi noi dung mot shot dang claimed/rendering/rendered
+                // (Python co the da/dang render dung ban CU). Tu choi CA GOI NAY,
+                // khong tao/sua gi ca; nguoi van hanh phai tu quyet dinh (cho render
+                // xong, huy render, hoac reset session tay) roi compose lai.
+                if ($protected->isNotEmpty() || $protectedChanged->isNotEmpty()) {
                     return [
                         'session_id' => $existing->id, 'shots' => 0,
                         'skipped' => true, 'status' => $existing->status,
                         'error' => 'plan_revision_conflict',
                         'protected_shot_ids' => $protected->pluck('id')->values()->all(),
+                        'protected_changed_shot_ids' => $protectedChanged->pluck('id')->values()->all(),
+                        'changed_fields' => $changedFields,
                     ];
                 }
             }
@@ -581,6 +615,64 @@ class VideoSessionService
 
             return ['session_id' => $session->id, 'shots' => count($data['shots'])];
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $incoming
+     * @return list<string>
+     */
+    private function changedContentFields(VideoShot $shot, array $incoming): array
+    {
+        $candidates = [
+            'compiled_prompt' => [$shot->compiled_prompt, $incoming['compiled_prompt'] ?? ''],
+            'negative_prompt' => [$shot->negative_prompt, $incoming['negative_prompt'] ?? null],
+            'beat' => [$shot->beat, $incoming['beat']],
+            'spec_json' => [$shot->spec_json, $incoming['spec'] ?? []],
+            'render_plan' => [$shot->render_plan, $incoming['render_plan'] ?? null],
+        ];
+
+        $changed = [];
+        foreach ($candidates as $field => [$current, $new]) {
+            $stripCostEstimate = $field === 'render_plan';
+            $equal = is_array($current) || is_array($new)
+                ? $this->normalizeForCompare($current, $stripCostEstimate) === $this->normalizeForCompare($new, $stripCostEstimate)
+                : $current === $new;
+
+            if (! $equal) {
+                $changed[] = $field;
+            }
+        }
+
+        return $changed;
+    }
+
+    /**
+     * `render_plan.cost_estimate` la UOC TINH, khong mo ta artifact that — bo
+     * qua khi so sanh, CHI cho `render_plan` (`$stripCostEstimate`) — `spec_json`
+     * la input that, mot key trung ten tinh co (neu co) van phai duoc so. Sort
+     * key de qui de Python doi thu tu key trong dict (JSON object khong dam
+     * bao thu tu) khong bi bao la "doi noi dung".
+     */
+    private function normalizeForCompare(mixed $value, bool $stripCostEstimate): string|false
+    {
+        if (is_array($value)) {
+            if ($stripCostEstimate) {
+                unset($value['cost_estimate']);
+            }
+            $this->recursiveKsort($value);
+        }
+
+        return json_encode($value);
+    }
+
+    private function recursiveKsort(array &$value): void
+    {
+        ksort($value);
+        foreach ($value as &$v) {
+            if (is_array($v)) {
+                $this->recursiveKsort($v);
+            }
+        }
     }
 
     // GET /api/video-sessions/composing — runner poll de compose prompt

@@ -20,7 +20,7 @@ class VideoSessionRepository extends BaseRepository implements VideoSessionRepos
 
     public function findWithProjectAndShots(string $id): VideoSession
     {
-        return VideoSession::with(['project', 'shots'])->findOrFail($id);
+        return VideoSession::with(['project', 'shots.latestRender'])->findOrFail($id);
     }
 
     // GET /api/video-sessions/composing — runner poll de compose prompt

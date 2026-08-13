@@ -101,7 +101,7 @@ class ShotStateMachineTest extends TestCase
         $this->assertSame('prompt v2', $fresh->compiled_prompt, 'noi dung van phai duoc cap nhat');
     }
 
-    public function test_recompose_preserves_a_rendered_shots_status_and_artifact(): void
+    public function test_recompose_refuses_to_change_a_rendered_shots_content(): void
     {
         $this->service->storeFromPython($this->composePayload('s1'));
         $shot = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
@@ -111,11 +111,127 @@ class ShotStateMachineTest extends TestCase
         ]);
         $this->forceBackToComposing();
 
-        $this->service->storeFromPython($this->composePayload('s1', ['compiled_prompt' => 'prompt v2']));
+        $result = $this->service->storeFromPython($this->composePayload('s1', ['compiled_prompt' => 'prompt v2']));
+
+        $this->assertTrue($result['skipped']);
+        $this->assertSame('plan_revision_conflict', $result['error']);
+        $this->assertSame([$shot->id], $result['protected_changed_shot_ids']);
+        $this->assertSame(['compiled_prompt'], $result['changed_fields'][$shot->id]);
 
         $fresh = $shot->fresh();
         $this->assertSame(VideoShotStatus::RENDERED->value, $fresh->status);
         $this->assertSame('/renders/shots/s1/x.mp4', $fresh->artifact_path);
+        $this->assertSame('prompt v1', $fresh->compiled_prompt);
+    }
+
+    public function test_recompose_allows_an_identical_payload_for_a_rendered_shot(): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1', [
+            'spec' => ['camera' => 'wide', 'duration_s' => 5],
+        ]));
+        $shot = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $this->service->reportShotResult($shot->id, true, '/renders/shots/s1/x.mp4', 0.18, [
+            'render_kind' => 'video', 'provider' => 'fal', 'model' => 'veo',
+            'sent_prompt' => 'prompt v1', 'prompt_sha256' => hash('sha256', 'prompt v1'),
+        ]);
+        $this->forceBackToComposing();
+
+        $result = $this->service->storeFromPython($this->composePayload('s1', [
+            'spec' => ['duration_s' => 5, 'camera' => 'wide'],
+        ]));
+
+        $this->assertArrayNotHasKey('skipped', $result);
+        $this->assertSame(VideoShotStatus::RENDERED->value, $shot->fresh()->status);
+    }
+
+    public function test_recompose_ignores_a_changed_cost_estimate_for_a_rendered_shot(): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1'));
+        $shot = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $this->service->reportShotResult($shot->id, true, '/renders/shots/s1/x.mp4', 0.18, [
+            'render_kind' => 'video', 'provider' => 'fal', 'model' => 'veo',
+            'sent_prompt' => 'prompt v1', 'prompt_sha256' => hash('sha256', 'prompt v1'),
+        ]);
+        $this->forceBackToComposing();
+
+        $result = $this->service->storeFromPython($this->composePayload('s1', [
+            'render_plan' => ['cost_estimate' => 0.99],
+        ]));
+
+        $this->assertArrayNotHasKey('skipped', $result);
+    }
+
+    public function test_recompose_treats_a_cost_estimate_key_inside_spec_json_as_real_content(): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1', [
+            'spec' => ['cost_estimate' => 'not-actually-a-cost', 'camera' => 'wide'],
+        ]));
+        $shot = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $this->service->reportShotResult($shot->id, true, '/renders/shots/s1/x.mp4', 0.18, [
+            'render_kind' => 'video', 'provider' => 'fal', 'model' => 'veo',
+            'sent_prompt' => 'prompt v1', 'prompt_sha256' => hash('sha256', 'prompt v1'),
+        ]);
+        $this->forceBackToComposing();
+
+        $result = $this->service->storeFromPython($this->composePayload('s1', [
+            'spec' => ['cost_estimate' => 'changed', 'camera' => 'wide'],
+        ]));
+
+        $this->assertTrue($result['skipped']);
+        $this->assertSame(['spec_json'], $result['changed_fields'][$shot->id]);
+    }
+
+    public function test_recompose_does_not_block_content_changes_on_a_failed_shot(): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1'));
+        $shot = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $shot->update(['status' => VideoShotStatus::FAILED->value]);
+        $this->forceBackToComposing();
+
+        $result = $this->service->storeFromPython($this->composePayload('s1', ['compiled_prompt' => 'prompt v2']));
+
+        $this->assertArrayNotHasKey('skipped', $result);
+        $fresh = $shot->fresh();
+        $this->assertSame('prompt v2', $fresh->compiled_prompt);
+    }
+
+    /** @dataProvider contentProtectedStatuses */
+    public function test_recompose_refuses_content_change_for_each_protected_status(string $status): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1'));
+        $shot = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $shot->update(['status' => $status]);
+        $this->forceBackToComposing();
+
+        $result = $this->service->storeFromPython($this->composePayload('s1', ['negative_prompt' => 'blurry']));
+
+        $this->assertTrue($result['skipped']);
+        $this->assertSame('plan_revision_conflict', $result['error']);
+        $this->assertSame([$shot->id], $result['protected_changed_shot_ids']);
+        $this->assertSame($status, $shot->fresh()->status);
+        $this->assertNull($shot->fresh()->negative_prompt);
+    }
+
+    public static function contentProtectedStatuses(): array
+    {
+        return [
+            'claimed' => [VideoShotStatus::CLAIMED->value],
+            'rendering' => [VideoShotStatus::RENDERING->value],
+            'rendered' => [VideoShotStatus::RENDERED->value],
+        ];
+    }
+
+    public function test_recompose_refuses_a_beat_change_on_a_claimed_shot(): void
+    {
+        $this->service->storeFromPython($this->composePayload('s1'));
+        $shot = VideoShot::where('session_id', $this->session->id)->where('shot_code', 's1')->first();
+        $shot->update(['status' => VideoShotStatus::CLAIMED->value]);
+        $this->forceBackToComposing();
+
+        $result = $this->service->storeFromPython($this->composePayload('s1', ['beat' => 'b2']));
+
+        $this->assertTrue($result['skipped']);
+        $this->assertSame(['beat'], $result['changed_fields'][$shot->id]);
     }
 
     public function test_recompose_preserves_review_note_and_ownership_lease_fields(): void

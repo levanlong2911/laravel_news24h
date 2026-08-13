@@ -144,9 +144,13 @@
   <td>{{ $shot->kind }}</td>
   <td>@if($shot->preview_path)<img src="{{ asset($shot->preview_path) }}" style="max-width:120px">@endif
       @if($shot->artifact_path)<div><a href="{{ asset($shot->artifact_path) }}" target="_blank">artifact</a></div>@endif</td>
-  <td style="max-width:420px"><details><summary>{{ \Illuminate\Support\Str::limit($shot->compiled_prompt, 90) }}</summary>
-      <small>{{ $shot->compiled_prompt }}</small>
-      @if($shot->negative_prompt)<hr><small><b>Negative:</b> {{ $shot->negative_prompt }}</small>@endif
+  @php($latestRender = $shot->latestRender)
+  @php($shownPrompt = $latestRender ? $latestRender->sent_prompt : $shot->compiled_prompt)
+  @php($shownNegative = $latestRender ? $latestRender->negative_prompt : $shot->negative_prompt)
+  <td style="max-width:420px"><details><summary>{{ \Illuminate\Support\Str::limit($shownPrompt, 90) }}</summary>
+      <small>{{ $shownPrompt }}</small>
+      @if($latestRender)<hr><small class="text-muted">Prompt của lần render gần nhất — kế hoạch hiện hành có thể đã đổi.</small>@endif
+      @if($shownNegative)<hr><small><b>Negative:</b> {{ $shownNegative }}</small>@endif
       @if($shot->review_note)<hr><small class="text-danger"><b>Note:</b> {{ $shot->review_note }}</small>@endif</details></td>
   <td>{{ $shot->render_plan['provider'] ?? '?' }} / ${{ number_format($shot->cost_estimate, 2) }}</td>
   <td><span class="badge badge-secondary">{{ $shot->status }}</span></td>

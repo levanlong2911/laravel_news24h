@@ -333,4 +333,79 @@ class FinalCompositionTest extends TestCase
         $this->assertStringContainsString('Ghép video hoàn chỉnh', $html);
         $this->assertStringNotContainsString('disabled', $html);
     }
+
+    private function promptFragment(VideoShot $shot): string
+    {
+        $fragment = <<<'BLADE'
+            @php($latestRender = $shot->latestRender)
+            @php($shownPrompt = $latestRender ? $latestRender->sent_prompt : $shot->compiled_prompt)
+            @php($shownNegative = $latestRender ? $latestRender->negative_prompt : $shot->negative_prompt)
+            <span data-role="prompt">{{ $shownPrompt }}</span>
+            <span data-role="negative">{{ $shownNegative }}</span>
+            BLADE;
+
+        return \Illuminate\Support\Facades\Blade::render($fragment, compact('shot'));
+    }
+
+    public function test_shot_prompt_fragment_shows_the_actual_rendered_prompt_when_available(): void
+    {
+        $shot = $this->motionShot('scene_a');
+        $this->service->reportShotResult($shot->id, true, '/renders/shots/a/x.mp4', 0.18, [
+            'render_kind' => 'video', 'provider' => 'fal', 'model' => 'veo',
+            'sent_prompt' => 'prompt that actually rendered', 'prompt_sha256' => hash('sha256', 'x'),
+        ]);
+        $shot->update(['compiled_prompt' => 'a newer plan prompt']);
+        $freshShot = VideoShot::with('latestRender')->find($shot->id);
+
+        $html = $this->promptFragment($freshShot);
+
+        $this->assertStringContainsString('prompt that actually rendered', $html);
+        $this->assertStringNotContainsString('a newer plan prompt', $html);
+    }
+
+    public function test_shot_prompt_fragment_falls_back_to_compiled_prompt_when_never_rendered(): void
+    {
+        $shot = $this->motionShot('scene_a');
+        $freshShot = VideoShot::with('latestRender')->find($shot->id);
+
+        $html = $this->promptFragment($freshShot);
+
+        $this->assertStringContainsString($shot->compiled_prompt, $html);
+    }
+
+    public function test_shot_negative_prompt_fragment_pairs_with_the_same_render_as_the_positive_prompt(): void
+    {
+        $shot = $this->motionShot('scene_a');
+        $shot->update(['negative_prompt' => 'blurry (ke hoach cu)']);
+        $this->service->reportShotResult($shot->id, true, '/renders/shots/a/x.mp4', 0.18, [
+            'render_kind' => 'video', 'provider' => 'fal', 'model' => 'veo',
+            'sent_prompt' => 'prompt v1', 'prompt_sha256' => hash('sha256', 'x'),
+            'negative_prompt' => 'blurry (da render voi cai nay)',
+        ]);
+        $shot->update(['negative_prompt' => 'watermark (ke hoach moi, shot da fail nen duoc sua)']);
+        $freshShot = VideoShot::with('latestRender')->find($shot->id);
+
+        $html = $this->promptFragment($freshShot);
+
+        $this->assertStringContainsString('blurry (da render voi cai nay)', $html);
+        $this->assertStringNotContainsString('watermark (ke hoach moi', $html);
+    }
+
+    public function test_shot_negative_prompt_fragment_stays_null_when_the_render_had_none(): void
+    {
+        $shot = $this->motionShot('scene_a');
+        $this->service->reportShotResult($shot->id, true, '/renders/shots/a/x.mp4', 0.18, [
+            'render_kind' => 'video', 'provider' => 'fal', 'model' => 'veo',
+            'sent_prompt' => 'prompt v1', 'prompt_sha256' => hash('sha256', 'x'),
+        ]);
+        $shot->update(['negative_prompt' => 'watermark (ke hoach moi)']);
+        $freshShot = VideoShot::with('latestRender')->find($shot->id);
+
+        $this->assertNull($freshShot->latestRender->negative_prompt);
+
+        $html = $this->promptFragment($freshShot);
+
+        $this->assertStringNotContainsString('watermark', $html);
+        $this->assertStringContainsString('<span data-role="negative"></span>', $html);
+    }
 }

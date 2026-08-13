@@ -239,6 +239,8 @@ class VideoSessionController extends Controller
                 'error' => $result['error'] ?? 'session_not_composing',
                 'status' => $result['status'],
                 'protected_shot_ids' => $result['protected_shot_ids'] ?? null,
+                'protected_changed_shot_ids' => $result['protected_changed_shot_ids'] ?? null,
+                'changed_fields' => $result['changed_fields'] ?? null,
             ], fn ($v) => $v !== null), 409);
         }
 
