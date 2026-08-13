@@ -205,6 +205,28 @@ class RenderPlanSchemaTest extends TestCase
         $this->assertPlanRejected($plan, 'trường lạ mang prompt language lọt vào scene');
     }
 
+    public function test_director_notes_accepts_new_information(): void
+    {
+        // `director_notes` là additionalProperties:false, nên xoá field khỏi
+        // schema sẽ làm MỌI plan có Director trượt validation. Trước test này
+        // không có gì bắt được điều đó.
+        $plan = $this->fixture();
+        $plan->scenes[0]->director_notes ??= new \stdClass;
+        $plan->scenes[0]->director_notes->new_information = 'the vessel is shown at full scale for the first time';
+
+        $this->assertPlanValid($plan, 'director_notes.new_information là field additive hợp lệ');
+    }
+
+    public function test_director_notes_still_rejects_an_unknown_field(): void
+    {
+        // Chứng minh test trên không xanh vì `director_notes` bị nới lỏng.
+        $plan = $this->fixture();
+        $plan->scenes[0]->director_notes ??= new \stdClass;
+        $plan->scenes[0]->director_notes->new_infomation = 'sai chính tả';
+
+        $this->assertPlanRejected($plan, 'field lạ trong director_notes (vd gõ sai tên)');
+    }
+
     public function test_rejects_legacy_content_type(): void
     {
         $plan = $this->fixture();
