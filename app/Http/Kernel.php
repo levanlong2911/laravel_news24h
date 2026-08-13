@@ -66,6 +66,7 @@ class Kernel extends HttpKernel
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
         'domain.api' => \App\Http\Middleware\DomainContext::class,
-        'admin'      => \App\Http\Middleware\EnsureIsAdmin::class,
+        'admin' => \App\Http\Middleware\EnsureIsAdmin::class,
+        'video.correlation' => \App\Http\Middleware\AttachVideoCorrelationId::class,
     ];
 }
