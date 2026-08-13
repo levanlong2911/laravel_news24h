@@ -3,6 +3,7 @@
 namespace Tests\Video\Director;
 
 use App\Video\Director\ClaudeDirector;
+use App\Video\Director\DirectorSelectionFailed;
 use App\Video\Editorial\ActionCandidate;
 use App\Video\Editorial\ActionType;
 use App\Video\Editorial\FeatureCandidate;
@@ -41,6 +42,28 @@ class ClaudeDirectorTest extends TestCase
                 $this->lastRequest = $request;
 
                 return new LlmResponse($this->text, 'haiku', 10, 5, 100, 0.0001);
+            }
+        };
+    }
+
+    /** Trả text khác nhau theo từng lượt — để soi đường hỏi lại. */
+    private function llmSequence(array $texts): LlmClient
+    {
+        return new class($texts) implements LlmClient
+        {
+            public ?LlmRequest $lastRequest = null;
+
+            public int $calls = 0;
+
+            public function __construct(private readonly array $texts) {}
+
+            public function complete(LlmRequest $request): LlmResponse
+            {
+                $this->lastRequest = $request;
+                $text = $this->texts[$this->calls] ?? '{}';
+                $this->calls++;
+
+                return new LlmResponse($text, 'haiku', 10, 5, 100, 0.0001);
             }
         };
     }
@@ -237,7 +260,7 @@ class ClaudeDirectorTest extends TestCase
 
     public function test_the_prompt_lists_features_when_the_capability_is_on(): void
     {
-        $llm = $this->llm('{}');
+        $llm = $this->llm(json_encode(['hero' => 'yacht', 'primary_index' => 0]));
         $this->selectWithFeatures($llm, enabled: true);
 
         $this->assertStringContainsString('FEATURE CANDIDATES', $llm->lastRequest->input);
@@ -294,11 +317,199 @@ class ClaudeDirectorTest extends TestCase
         $this->assertSame([0], $selection->featureCandidateIndices);
     }
 
-    public function test_a_bad_primary_index_still_falls_back_to_zero_when_actions_exist(): void
+    public function test_v2_still_falls_back_to_zero_on_a_bad_primary_index(): void
     {
+        // Prompt của v2 đã đóng băng nên không sửa được cách nó trả lời — hành
+        // vi cũ giữ nguyên.
         $llm = $this->llm(json_encode(['hero' => 'yacht', 'primary_index' => 99]));
 
+        $this->assertSame(0, $this->selectWithFeatures($llm, enabled: false)->primaryCandidateIndex);
+    }
+
+    public function test_v3_asks_again_instead_of_falling_back_to_zero(): void
+    {
+        $llm = $this->llmSequence([
+            json_encode(['hero' => 'yacht', 'primary_index' => 99]),
+            json_encode(['hero' => 'yacht', 'primary_index' => 0]),
+        ]);
+
         $this->assertSame(0, $this->selectWithFeatures($llm, enabled: true)->primaryCandidateIndex);
+        $this->assertSame(2, $llm->calls);
+    }
+
+    public function test_the_retry_names_a_hero_that_does_not_exist(): void
+    {
+        $llm = $this->llmSequence([
+            json_encode(['hero' => 'not_a_real_id', 'primary_index' => 0]),
+            json_encode(['hero' => 'yacht', 'primary_index' => 0]),
+        ]);
+
+        $this->selectWithFeatures($llm, enabled: true);
+
+        $this->assertStringContainsString('YOUR PREVIOUS RESPONSE WAS REJECTED', $llm->lastRequest->input);
+        $this->assertStringContainsString('hero was not one of the HERO CANDIDATES', $llm->lastRequest->input);
+    }
+
+    public function test_the_retry_names_a_primary_index_that_does_not_exist(): void
+    {
+        $llm = $this->llmSequence([
+            json_encode(['hero' => 'yacht', 'primary_index' => 99]),
+            json_encode(['hero' => 'yacht', 'primary_index' => 0]),
+        ]);
+
+        $this->selectWithFeatures($llm, enabled: true);
+
+        $this->assertStringContainsString('primary_index was not one of the ACTION CANDIDATES', $llm->lastRequest->input);
+    }
+
+    public function test_the_retry_names_a_scene_where_nothing_was_selected(): void
+    {
+        $llm = $this->llmSequence([
+            json_encode(['hero' => 'yacht', 'primary_index' => 0]),
+            json_encode(['hero' => 'yacht', 'primary_index' => null, 'feature_indices' => [0]]),
+        ]);
+
+        $this->selectWithFeatures($llm, enabled: true, withActions: false);
+
+        $this->assertStringContainsString('selected neither an action nor a feature', $llm->lastRequest->input);
+    }
+
+    public function test_v3_asks_again_instead_of_trimming_a_too_long_secondary_list(): void
+    {
+        // Cắt bớt index Claude đã chọn là âm thầm ghi đè quyết định editorial.
+        $llm = $this->llmSequence([
+            json_encode(['hero' => 'yacht', 'primary_index' => 0, 'secondary_indices' => [1, 2, 3]]),
+            json_encode(['hero' => 'yacht', 'primary_index' => 0, 'secondary_indices' => [1, 2]]),
+        ]);
+
+        $selection = (new ClaudeDirector($llm, 'haiku', true))->select(
+            [
+                'hero_candidates' => ['yacht'],
+                'action_candidates' => [
+                    new ActionCandidate(ActionType::Lift, 'yacht'),
+                    new ActionCandidate(ActionType::Lower, 'yacht'),
+                    new ActionCandidate(ActionType::Guide, 'yacht'),
+                    new ActionCandidate(ActionType::Secure, 'yacht'),
+                ],
+                'feature_candidates' => [],
+            ],
+            $this->world(),
+            null,
+        );
+
+        $this->assertSame([1, 2], $selection->secondaryCandidateIndices);
+        $this->assertStringContainsString('secondary_indices held more than two', $llm->lastRequest->input);
+    }
+
+    public function test_a_hero_outside_the_supplied_list_is_never_accepted(): void
+    {
+        $llm = $this->llm(json_encode(['hero' => 'not_a_real_id', 'primary_index' => 0]));
+
+        $this->expectException(DirectorSelectionFailed::class);
+
+        $this->selectWithFeatures($llm, enabled: true);
+    }
+
+    public function test_a_feature_only_scene_never_reaches_for_an_action_index(): void
+    {
+        // Bug thật: model trả primary_index 0 cho scene không có action nào,
+        // resolve() chạm $candidates[0] trên mảng rỗng và giết cả lượt chạy.
+        $llm = $this->llm(json_encode([
+            'hero' => 'yacht',
+            'primary_index' => 0,
+            'feature_indices' => [0],
+        ]));
+
+        $selection = $this->selectWithFeatures($llm, enabled: true, withActions: false);
+
+        $this->assertNull($selection->primaryCandidateIndex);
+        $this->assertSame([], $selection->resolve([], $this->candidates(withFeatures: true)['feature_candidates'])['secondary']);
+    }
+
+    public function test_a_feature_only_scene_with_no_feature_chosen_never_picks_one_itself(): void
+    {
+        // Thứ tự candidate là kết quả một phép sort kỹ thuật — tự chọn index 0
+        // là biến nó thành quyết định nội dung.
+        $llm = $this->llm(json_encode(['hero' => 'yacht', 'primary_index' => 0]));
+
+        $this->expectException(DirectorSelectionFailed::class);
+
+        $this->selectWithFeatures($llm, enabled: true, withActions: false);
+    }
+
+    public function test_a_secondary_index_outside_the_supplied_list_is_dropped(): void
+    {
+        $llm = $this->llm(json_encode([
+            'hero' => 'yacht',
+            'primary_index' => 0,
+            'secondary_indices' => [99, -1, 'x', 0],
+        ]));
+
+        // 0 bị loại vì trùng primary; phần còn lại không tồn tại.
+        $this->assertSame([], $this->selectWithFeatures($llm, enabled: true)->secondaryCandidateIndices);
+    }
+
+    // ---- Nhãn instruction: hai prompt khác contract thì không dùng chung nhãn ----
+
+    public function test_the_frozen_v2_instruction_is_unchanged_to_the_byte(): void
+    {
+        // Prompt đã trả tiền và đã validate. Tách nowdoc rồi nối lại rất dễ
+        // thêm/bớt một newline mà nhìn mắt thường không thấy.
+        $llm = $this->llm(json_encode(['hero' => 'yacht', 'primary_index' => 0]));
+        $this->selectWithFeatures($llm, enabled: false);
+
+        $this->assertSame('director-v2', $llm->lastRequest->instructionVersion);
+        $this->assertSame(
+            'ba109dcacd2c00a03dbb3e52ba6c731c3fc8937c6b8a53451c91b02a3da53fa5',
+            hash('sha256', $llm->lastRequest->instruction),
+        );
+    }
+
+    public function test_the_v2_instruction_never_mentions_features(): void
+    {
+        $llm = $this->llm(json_encode(['hero' => 'yacht', 'primary_index' => 0]));
+        $this->selectWithFeatures($llm, enabled: false);
+
+        $this->assertStringNotContainsString('feature', $llm->lastRequest->instruction);
+        $this->assertStringNotContainsString('FEATURE', $llm->lastRequest->instruction);
+    }
+
+    public function test_v3_carries_its_own_label_and_asks_for_what_the_parser_reads(): void
+    {
+        $llm = $this->llm(json_encode(['hero' => 'yacht', 'primary_index' => 0]));
+        $this->selectWithFeatures($llm, enabled: true);
+
+        $this->assertSame('director-v3', $llm->lastRequest->instructionVersion);
+        $this->assertStringContainsString('"feature_indices": [],', $llm->lastRequest->instruction);
+        $this->assertStringContainsString('FEATURE RULES', $llm->lastRequest->instruction);
+        $this->assertStringContainsString('action indices, and feature', $llm->lastRequest->instruction);
+    }
+
+    public function test_the_v3_json_template_never_contradicts_its_own_rules(): void
+    {
+        // Cảnh không có action mà mẫu vẫn in `0` thì chính prompt dạy model làm
+        // sai điều nó vừa cấm.
+        $withActions = $this->llm(json_encode(['hero' => 'yacht', 'primary_index' => 0]));
+        $this->selectWithFeatures($withActions, enabled: true);
+
+        $withNone = $this->llm(json_encode(['hero' => 'yacht', 'primary_index' => null, 'feature_indices' => [0]]));
+        $this->selectWithFeatures($withNone, enabled: true, withActions: false);
+
+        $this->assertStringContainsString('"primary_index": 0,', $withActions->lastRequest->instruction);
+        $this->assertStringContainsString('"primary_index": null,', $withNone->lastRequest->instruction);
+        $this->assertStringNotContainsString('"primary_index": 0,', $withNone->lastRequest->instruction);
+
+        // Mẫu JSON mới là một nửa. SELECTION RULES cũng phải đổi theo, nếu không
+        // model vẫn đọc được hai lệnh trái nhau trong cùng một prompt.
+        $this->assertStringContainsString(
+            'primary_index must be one existing ACTION CANDIDATES index.',
+            $withActions->lastRequest->instruction,
+        );
+        $this->assertStringNotContainsString(
+            'primary_index must be one existing ACTION CANDIDATES index.',
+            $withNone->lastRequest->instruction,
+        );
+        $this->assertStringContainsString('primary_index must be null', $withNone->lastRequest->instruction);
     }
 
     public function test_the_instruction_only_promises_what_the_prompt_supplies(): void

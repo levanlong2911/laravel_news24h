@@ -5,6 +5,7 @@ namespace App\Video\Pipeline;
 use App\Video\Article\ArticleNormalizer;
 use App\Video\Article\RawArticle;
 use App\Video\Director\DirectorInterface;
+use App\Video\Director\DirectorSelectionFailed;
 use App\Video\Editorial\EditorialInterpreter;
 use App\Video\Extraction\Extractor;
 use App\Video\Gatekeeper\EvidenceGatekeeper;
@@ -40,6 +41,8 @@ final class VideoPlanningPipeline
         private readonly TimelinePlanner $timelinePlanner = new TimelinePlanner,
         private readonly EditorialInterpreter $editorial = new EditorialInterpreter,
         private readonly RenderPlanAssembler $assembler = new RenderPlanAssembler,
+        /** @var null|\Closure(string, array<string, scalar|null>): void */
+        private readonly ?\Closure $onWarning = null,
     ) {}
 
     /**
@@ -148,18 +151,39 @@ final class VideoPlanningPipeline
             $scene = $t->intent->scene;
 
             $candidates = $this->editorial->candidatesFor($scene, $world);
-            if ($candidates['action_candidates'] === []) {
-                continue; // không có hành động vật lý hợp lệ nào — bỏ qua, không ép Director chọn
+            // Scene chỉ có thuộc tính vẫn đáng kể: đo trên 5 session yacht thật,
+            // 3/5 có hero 9-17 thuộc tính hình ảnh mà 0-1 event/relation. Bỏ
+            // chúng là vứt đúng dữ liệu đắt nhất đã trích xuất được.
+            if ($candidates['action_candidates'] === [] && $candidates['feature_candidates'] === []) {
+                continue; // không có gì để kể — không ép Director chọn
             }
 
-            $selection = $this->director->select($candidates, $world, $producerOutput, $scene->ordinal, $totalScenes, array_slice($directorLog, -3));
-            $resolved = $selection->resolve($candidates['action_candidates']);
-            $chosen = $candidates['action_candidates'][$selection->primaryCandidateIndex];
+            try {
+                $selection = $this->director->select($candidates, $world, $producerOutput, $scene->ordinal, $totalScenes, array_slice($directorLog, -3));
+            } catch (DirectorSelectionFailed $e) {
+                // Một scene hỏng không được giết cả lượt chạy đã trả tiền.
+                $this->warn('DIRECTOR_SELECTION_FAILED', [
+                    'scene_id' => $scene->id,
+                    'scene_ordinal' => $scene->ordinal,
+                    'reason' => $e->reason,
+                    'attempts' => $e->attempts,
+                ]);
+
+                continue;
+            }
+
+            $resolved = $selection->resolve($candidates['action_candidates'], $candidates['feature_candidates']);
+
+            $chosen = $selection->primaryCandidateIndex !== null
+                ? ($candidates['action_candidates'][$selection->primaryCandidateIndex] ?? null)
+                : null;
 
             $directorNotesByScene[$scene->id] = array_merge($resolved, [
                 'audience_emotion' => $selection->emotion,
                 'reveal_strategy' => $selection->reveal,
-                'micro_physics' => $this->editorial->microPhysicsFor($chosen),
+                // micro_physics là hệ quả VẬT LÝ của hành động đã chọn — không
+                // có hành động thì không có hệ quả nào để suy ra.
+                'micro_physics' => $chosen !== null ? $this->editorial->microPhysicsFor($chosen) : [],
                 'composition_note' => $selection->compositionNote,
                 'new_information' => $selection->newInformation,
             ]);
@@ -175,5 +199,15 @@ final class VideoPlanningPipeline
 
         // ---- Emit (§14: RenderPlan bất biến từ đây) ----
         return $this->assembler->assemble($world, $story, $timed, $meta, $producerOutput, $directorNotesByScene);
+    }
+
+    /**
+     * @param  array<string, scalar|null>  $context
+     */
+    private function warn(string $code, array $context): void
+    {
+        if ($this->onWarning !== null) {
+            ($this->onWarning)($code, $context);
+        }
     }
 }

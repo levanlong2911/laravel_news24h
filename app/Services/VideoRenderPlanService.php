@@ -130,7 +130,16 @@ class VideoRenderPlanService
 
         $productionPolicies = $this->videoPipelineFactory->productionPolicies();
 
-        $pipeline = $this->videoPipelineFactory->claude($accumulator, $productionPolicies);
+        $pipeline = $this->videoPipelineFactory->claude(
+            $accumulator,
+            $productionPolicies,
+            function (string $code, array $context) use ($article, $videoSessionId): void {
+                Log::warning('video_pipeline_'.strtolower($code), $context + [
+                    'article_id' => $article->id,
+                    'video_session_id' => $videoSessionId,
+                ]);
+            },
+        );
 
         $rawArticle = new RawArticle($article->id, $article->title, (string) $article->content);
 

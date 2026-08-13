@@ -34,16 +34,20 @@ use App\Video\RenderPlan\RenderPlanAssembler;
  */
 final class VideoPipelineFactory
 {
-    public function claude(LlmClient $llm, array $policies = []): VideoPlanningPipeline
+    public function claude(LlmClient $llm, array $policies = [], ?\Closure $onWarning = null): VideoPlanningPipeline
     {
         $editorial = new EditorialInterpreter($policies);
 
         return new VideoPlanningPipeline(
             new ClaudeExtractor($llm),
             new ClaudeProducer($llm),
-            new ClaudeDirector($llm),
+            // Feature bật ở ĐÂY, không phải mặc định của ClaudeDirector: chỗ
+            // duy nhất dựng pipeline production, nên đọc một dòng là biết
+            // capability đang bật hay tắt.
+            new ClaudeDirector($llm, featuresEnabled: true),
             editorial: $editorial,
             assembler: new RenderPlanAssembler($editorial),
+            onWarning: $onWarning,
         );
     }
 
