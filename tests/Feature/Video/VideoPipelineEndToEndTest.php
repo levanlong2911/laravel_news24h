@@ -164,7 +164,10 @@ class VideoPipelineEndToEndTest extends TestCase
         $this->assertSame(VideoShotStatus::RENDERED->value, $shot->status);
         $this->assertNull($shot->worker_id);
         $session->refresh();
-        $this->assertSame(VideoSessionStatus::DONE->value, $session->status);
+        // Moi shot render xong KHONG duoc tu dong bao session "done" — final
+        // video chua he ton tai o buoc nay (2026-08-13, xem docblock
+        // VideoSessionStatus::RENDERING).
+        $this->assertSame(VideoSessionStatus::RENDERING->value, $session->status);
         $this->assertEqualsWithDelta(0.75, (float) $session->cost_actual, 0.0001);
 
         // ---- 7. admin bấm Ghép video: service thật, chỉ tạo được khi mọi cảnh đã render ----
@@ -175,6 +178,7 @@ class VideoPipelineEndToEndTest extends TestCase
         $this->assertContains($finalReason, ['ok', 'spawn_failed']);
         $this->assertNotNull($final);
         $this->assertSame('composing', $final->status);
+        $this->assertSame(VideoSessionStatus::COMPOSING_FINAL->value, $session->fresh()->status);
 
         // ---- 8. compose_final.py kéo kế hoạch ghép qua API thật ----
         $composingPlan = $this->withHeaders($this->apiHeaders)
@@ -201,5 +205,8 @@ class VideoPipelineEndToEndTest extends TestCase
         $this->assertSame(4, $final->duration_seconds);
         $this->assertEqualsWithDelta(0.75, (float) $final->cost_total, 0.0001);
         $this->assertSame(1, $final->cuts()->count());
+
+        // session chi duoc bao "done" TU DAY — sau khi final that su ready.
+        $this->assertSame(VideoSessionStatus::DONE->value, $session->fresh()->status);
     }
 }

@@ -12,17 +12,29 @@ use App\Traits\EnumTrait;
  * 'draft') — doi gia tri o day la lam hong du lieu cu.
  *
  * Luong that (xem VideoSessionService):
- *   DRAFT      — mac dinh cua cot, chua dung toi trong code
- *   PLANNING   — session da tao (co code, co article_id), pipeline Claude
- *                dang chay NEN (video:build-plan --session=, §18.30);
- *                renderplan_json con null
- *   COMPOSING  — renderplan_json da co, cho Python bien dich prompt
- *   REVIEWING  — Python da day shot len, cho nguoi duyet
- *   RENDERING  — da co shot duoc queue de render
+ *   DRAFT           — mac dinh cua cot, chua dung toi trong code
+ *   PLANNING        — session da tao (co code, co article_id), pipeline Claude
+ *                     dang chay NEN (video:build-plan --session=, §18.30);
+ *                     renderplan_json con null
+ *   COMPOSING       — renderplan_json da co, cho Python bien dich prompt
+ *   REVIEWING       — Python da day shot len, cho nguoi duyet
+ *   RENDERING       — da co shot duoc queue de render. O LAI day ke ca khi
+ *                     MOI shot da render xong — "san sang ghep final" la
+ *                     mot phep tinh doc (finalCompositionReadiness()), khong
+ *                     phai mot trang thai rieng, nen KHONG tu chuyen sang
+ *                     DONE chi vi hang doi shot da rong (xem
+ *                     VideoSessionService::syncSessionRenderStatus() —
+ *                     2026-08-13, truoc do day la mot bug: session bao "done"
+ *                     du chua he co final video nao).
+ *   COMPOSING_FINAL — startFinalComposition() da tao VideoFinal va ban
+ *                     compose_final.py; DONE/FAILED chi den tu ket qua CUA
+ *                     LUOT GHEP NAY (recordFinalCompositionResult()), khong
+ *                     con lien quan gi den trang thai tung shot rieng le.
  *
- * Terminal states: DONE when the queue drains cleanly, FAILED as soon as any
- * shot fails (later shots may remain queued when a dependency chain stops) —
- * hoac khi pipeline Claude o PLANNING tu than that bai.
+ * Terminal states: DONE chi khi final video ghep THANH CONG
+ * (recordFinalCompositionResult() success=true). FAILED khi mot shot that
+ * bai giua chung render, khi final that bai (vendor loi, hoac callback thieu
+ * plan_json da chot), hoac khi pipeline Claude o PLANNING tu than that bai.
  */
 enum VideoSessionStatus: string
 {
@@ -33,6 +45,7 @@ enum VideoSessionStatus: string
     case COMPOSING = 'composing';
     case REVIEWING = 'reviewing';
     case RENDERING = 'rendering';
+    case COMPOSING_FINAL = 'composing_final';
     case DONE = 'done';
     case FAILED = 'failed';
 
@@ -51,6 +64,7 @@ enum VideoSessionStatus: string
             self::COMPOSING->value,
             self::REVIEWING->value,
             self::RENDERING->value,
+            self::COMPOSING_FINAL->value,
         ];
     }
 }

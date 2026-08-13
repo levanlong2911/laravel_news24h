@@ -213,8 +213,11 @@ class RenderLineageTest extends TestCase
         $this->assertSame(0, VideoRender::where('shot_id', $shot->id)->count());
     }
 
-    public function test_session_finishes_only_after_the_last_queued_shot(): void
+    public function test_session_stays_in_rendering_after_the_last_queued_shot_until_final_composition(): void
     {
+        // done() chi den tu recordFinalCompositionResult() thanh cong — het
+        // shot khong con lam gi ca thi session o nguyen rendering (2026-08-13,
+        // xem docblock VideoSessionStatus::RENDERING).
         $this->session->update(['status' => 'rendering']);
         $first = $this->shot('terminal_first');
         $second = $this->shot('terminal_second');
@@ -225,7 +228,7 @@ class RenderLineageTest extends TestCase
         $this->assertSame('rendering', $this->session->fresh()->status);
 
         $this->service->reportShotResult($second->id, true, '/r/second.jpg', 0.015);
-        $this->assertSame('done', $this->session->fresh()->status);
+        $this->assertSame('rendering', $this->session->fresh()->status);
     }
 
     public function test_session_fails_immediately_even_when_later_shots_remain_queued(): void

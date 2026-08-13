@@ -678,12 +678,6 @@ class VideoSessionService
 
         if ($statuses->intersect($awaitingAction)->isNotEmpty()) {
             $session->update(['status' => VideoSessionStatus::RENDERING->value]);
-
-            return;
-        }
-
-        if ($statuses->contains(VideoShotStatus::RENDERED->value)) {
-            $session->update(['status' => VideoSessionStatus::DONE->value]);
         }
     }
 
@@ -770,10 +764,10 @@ class VideoSessionService
                 return [null, 'not_ready'];
             }
 
-            return [
-                VideoFinal::create(['session_id' => $sessionId, 'status' => 'composing']),
-                'created',
-            ];
+            $final = VideoFinal::create(['session_id' => $sessionId, 'status' => 'composing']);
+            $session->update(['status' => VideoSessionStatus::COMPOSING_FINAL->value]);
+
+            return [$final, 'created'];
         });
 
         if ($reason !== 'created') {
@@ -859,6 +853,7 @@ class VideoSessionService
 
             if (! $success) {
                 $final->update(['status' => 'failed', 'error_message' => $errorMessage]);
+                $this->markSessionFinalFailed($final, $errorMessage);
 
                 return $final->refresh();
             }
@@ -869,10 +864,9 @@ class VideoSessionService
             // tiep, bo qua GET /composing) thi KHONG duoc danh dau ready — ready
             // ma khong co cut nao la mot final "xong" nhung khong xem duoc gi.
             if ($clips === []) {
-                $final->update([
-                    'status' => 'failed',
-                    'error_message' => 'khong co plan_json hop le luc ghi ket qua (thieu buoc GET /video-finals/composing)',
-                ]);
+                $errorMessage = 'khong co plan_json hop le luc ghi ket qua (thieu buoc GET /video-finals/composing)';
+                $final->update(['status' => 'failed', 'error_message' => $errorMessage]);
+                $this->markSessionFinalFailed($final, $errorMessage);
 
                 return $final->refresh();
             }
@@ -899,8 +893,18 @@ class VideoSessionService
                 'cost_total' => $costTotal,
             ]);
 
+            VideoSession::whereKey($final->session_id)->update(['status' => VideoSessionStatus::DONE->value]);
+
             return $final->refresh();
         });
+    }
+
+    private function markSessionFinalFailed(VideoFinal $final, ?string $errorMessage): void
+    {
+        VideoSession::whereKey($final->session_id)->update([
+            'status' => VideoSessionStatus::FAILED->value,
+            'error_message' => $errorMessage,
+        ]);
     }
 
     /**

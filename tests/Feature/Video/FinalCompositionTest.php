@@ -178,6 +178,16 @@ class FinalCompositionTest extends TestCase
         $this->assertFalse($spawnedSecond);
     }
 
+    public function test_start_composition_moves_session_to_composing_final(): void
+    {
+        $this->renderBothScenes();
+        $this->session->update(['status' => 'rendering']);
+
+        $this->service->startFinalComposition($this->session->id);
+
+        $this->assertSame('composing_final', $this->session->fresh()->status);
+    }
+
     public function test_start_composition_refuses_when_not_ready(): void
     {
         [$final, $spawned, $reason] = $this->service->startFinalComposition($this->session->id);
@@ -220,18 +230,15 @@ class FinalCompositionTest extends TestCase
         );
     }
 
-    public function test_recording_success_writes_ordered_final_renders_and_leaves_session_status_alone(): void
+    public function test_recording_success_writes_ordered_final_renders_and_marks_session_done(): void
     {
         $this->renderBothScenes();
         [$final] = $this->service->startFinalComposition($this->session->id);
         $this->service->buildFinalCompositionPlan($this->session->code);
 
-        // Dat mot trang thai KHAC 'ready'/'done' NGAY TRUOC khi ghi ket qua —
-        // syncSessionRenderStatus() (chay ben trong renderBothScenes()) da tu
-        // dua session ve 'done' roi, nen kiem tra "khong doi" o day chi that su
-        // co rang neu gia tri truoc do khac voi bat ky gia tri nao ham co the
-        // vo tinh gan vao.
-        $this->session->update(['status' => 'rendering']);
+        // Dat mot trang thai KHAC 'done' truoc khi ghi ket qua — chung minh
+        // chinh loi goi nay dua session sang done, khong phai no da san la vay.
+        $this->session->update(['status' => 'composing_final']);
 
         $result = $this->service->recordFinalCompositionResult(
             $final->id, true, '/renders/finals/x/x.mp4', 13000, null,
@@ -249,13 +256,13 @@ class FinalCompositionTest extends TestCase
         $this->assertSame(6000, $cuts[1]->start_ms);
         $this->assertSame(7000, $cuts[1]->duration_ms);
 
-        // video_sessions.status khong bi dong nay dung cham toi — vong doi rieng.
-        $this->assertSame('rendering', $this->session->fresh()->status);
+        $this->assertSame('done', $this->session->fresh()->status);
     }
 
     public function test_recording_failure_sets_failed_status_and_writes_no_cuts(): void
     {
         $final = VideoFinal::create(['session_id' => $this->session->id, 'status' => 'composing']);
+        $this->session->update(['status' => 'composing_final']);
 
         $result = $this->service->recordFinalCompositionResult(
             $final->id, false, null, null, 'ffmpeg loi: thieu file clip',
@@ -264,6 +271,10 @@ class FinalCompositionTest extends TestCase
         $this->assertSame('failed', $result->status);
         $this->assertSame('ffmpeg loi: thieu file clip', $result->error_message);
         $this->assertSame(0, VideoFinalRender::where('final_id', $final->id)->count());
+
+        $freshSession = $this->session->fresh();
+        $this->assertSame('failed', $freshSession->status);
+        $this->assertSame('ffmpeg loi: thieu file clip', $freshSession->error_message);
     }
 
     public function test_recording_success_without_plan_json_fails_instead_of_faking_ready(): void
@@ -271,6 +282,7 @@ class FinalCompositionTest extends TestCase
         // #4: mo phong Python bao ket qua ma CHUA TUNG GET /video-finals/composing
         // (plan_json van null) — khong duoc danh dau ready voi 0 cut.
         $final = VideoFinal::create(['session_id' => $this->session->id, 'status' => 'composing']);
+        $this->session->update(['status' => 'composing_final']);
 
         $result = $this->service->recordFinalCompositionResult(
             $final->id, true, '/renders/finals/x/x.mp4', 13000, null,
@@ -279,6 +291,10 @@ class FinalCompositionTest extends TestCase
         $this->assertSame('failed', $result->status);
         $this->assertStringContainsString('plan_json', $result->error_message);
         $this->assertSame(0, VideoFinalRender::where('final_id', $final->id)->count());
+
+        $freshSession = $this->session->fresh();
+        $this->assertSame('failed', $freshSession->status);
+        $this->assertStringContainsString('plan_json', $freshSession->error_message);
     }
 
     public function test_recording_result_twice_does_not_duplicate_cuts(): void
