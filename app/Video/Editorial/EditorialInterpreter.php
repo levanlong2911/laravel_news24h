@@ -6,6 +6,7 @@ use App\Video\Scene\ScenePurpose;
 use App\Video\Scene\SemanticScene;
 use App\Video\World\Entity;
 use App\Video\World\EntityType;
+use App\Video\World\VerifiedAttribute;
 use App\Video\World\VerifiedWorldGraph;
 
 /**
@@ -139,6 +140,18 @@ final class EditorialInterpreter
     // Dùng chung cho CẢ Relation.type (2 entity) lẫn Event.type (1 entity) — cùng
     // cơ chế khớp từ khoá, khác nhau ở target rỗng/không rỗng. Tên đổi từ
     // RELATION_KEYWORDS -> ACTION_KEYWORDS 2026-07-22 khi thêm Event làm nguồn thứ 2.
+    // Trần cho feature candidate — chặn prompt phình khi Extractor trả một
+    // entity có rất nhiều thuộc tính, hoặc một thuộc tính có rất nhiều giá trị.
+    private const MAX_FEATURE_CANDIDATES = 20;
+
+    private const MAX_FEATURE_VALUES_PER_CANDIDATE = 20;
+
+    private const MAX_FEATURE_VALUE_LENGTH = 300;
+
+    private const MAX_FEATURE_ATTRIBUTE_LENGTH = 64;
+
+    private const FEATURE_ATTRIBUTE_PATTERN = '/\A[a-z][a-z0-9_]*\z/';
+
     private const ACTION_KEYWORDS = [
         'lift'    => ActionType::Lift,
         'lower'   => ActionType::Lower,
@@ -191,7 +204,7 @@ final class EditorialInterpreter
      * (đó là Subjective, việc của Director). §12 Rule #2: generic, không biết
      * "yacht"/"stern block" — chỉ khớp EntityType/Relation.type/Attribute.
      *
-     * @return array{hero_candidates: list<string>, action_candidates: list<ActionCandidate>}
+     * @return array{hero_candidates: list<string>, action_candidates: list<ActionCandidate>, feature_candidates: list<FeatureCandidate>}
      */
     public function candidatesFor(SemanticScene $scene, VerifiedWorldGraph $world): array
     {
@@ -246,7 +259,103 @@ final class EditorialInterpreter
             );
         }
 
-        return ['hero_candidates' => $heroCandidates, 'action_candidates' => $actionCandidates];
+        return [
+            'hero_candidates' => $heroCandidates,
+            'action_candidates' => $actionCandidates,
+            // CHỈ scene Detail — đó là đường đứt đã đo được (StoryPlanner:241
+            // xếp hạng theo số thuộc tính, ScenePlanner:94 sinh hẳn scene
+            // Detail cho entity đủ giàu, rồi Editorial không sinh gì cho nó).
+            // Cấp cho mọi scene sẽ đưa lại cùng bộ thuộc tính nhiều lần và tái
+            // tạo đúng cảnh lặp đang muốn sửa.
+            'feature_candidates' => $scene->purpose === ScenePurpose::Detail
+                ? $this->featureCandidatesFor($scene, $world)
+                : [],
+        ];
+    }
+
+    /**
+     * Thuộc tính đã verify của CHÍNH subject trong scene — không lấy của entity
+     * khác, để scene về con tàu không thấy thuộc tính của khách sạn.
+     *
+     * @return list<FeatureCandidate>
+     */
+    private function featureCandidatesFor(SemanticScene $scene, VerifiedWorldGraph $world): array
+    {
+        // Sắp xếp để cùng một world luôn cho cùng thứ tự candidate — index mà
+        // Director trả về mới ổn định giữa hai lần chạy.
+        $subjectIds = array_values(array_unique($scene->subjectIds));
+        sort($subjectIds);
+
+        $candidates = [];
+
+        foreach ($subjectIds as $id) {
+            $entity = $world->entity($id);
+            if ($entity === null) {
+                continue;
+            }
+
+            $attributes = $entity->attributes;
+            ksort($attributes);
+
+            foreach ($attributes as $name => $verified) {
+                if (! $this->isUsableAttributeName($name)) {
+                    continue;
+                }
+
+                $values = $this->featureValues($verified);
+                if ($values === []) {
+                    continue;
+                }
+
+                $candidates[] = new FeatureCandidate($id, $name, $values);
+            }
+        }
+
+        return array_slice($candidates, 0, self::MAX_FEATURE_CANDIDATES);
+    }
+
+    private function isUsableAttributeName(mixed $name): bool
+    {
+        return is_string($name)
+            && mb_strlen($name) <= self::MAX_FEATURE_ATTRIBUTE_LENGTH
+            && preg_match(self::FEATURE_ATTRIBUTE_PATTERN, $name) === 1;
+    }
+
+    /**
+     * Chỉ scalar biểu diễn được. Array/object KHÔNG ép chuỗi — `(string)` trên
+     * mảng ra "Array", tức bịa một giá trị không có bằng chứng nào.
+     *
+     * @param  list<VerifiedAttribute>  $verified
+     * @return list<string|int|float|bool>
+     */
+    private function featureValues(array $verified): array
+    {
+        $values = [];
+
+        foreach ($verified as $attribute) {
+            $value = $attribute->value;
+
+            if (! is_string($value) && ! is_int($value) && ! is_float($value) && ! is_bool($value)) {
+                continue;
+            }
+
+            if (is_float($value) && ! is_finite($value)) {
+                continue;
+            }
+
+            if (is_string($value)) {
+                $value = trim($value);
+                if ($value === '' || mb_strlen($value) > self::MAX_FEATURE_VALUE_LENGTH) {
+                    continue;
+                }
+            }
+
+            if (! in_array($value, $values, true)) {
+                $values[] = $value;
+            }
+        }
+
+        return array_slice($values, 0, self::MAX_FEATURE_VALUES_PER_CANDIDATE);
     }
 
     /**
