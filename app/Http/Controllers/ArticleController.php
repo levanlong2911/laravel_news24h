@@ -355,6 +355,7 @@ class ArticleController extends Controller
                     'send_to_claude',
                     $result->haikuInputTokens + $result->haikuOutputTokens + $result->sonnetInputTokens + $result->sonnetOutputTokens,
                     $result->totalCostUsd,
+                    $article->id,
                 );
                 $done++;
 
@@ -468,6 +469,7 @@ class ArticleController extends Controller
                 'synthesize',
                 $result->haikuInputTokens + $result->haikuOutputTokens + $result->sonnetInputTokens + $result->sonnetOutputTokens,
                 $result->totalCostUsd,
+                $primary->id,
             );
 
             Log::info('[synthesize] OK: '.$finalTitle, [

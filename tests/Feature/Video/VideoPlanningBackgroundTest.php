@@ -35,12 +35,6 @@ class VideoPlanningBackgroundTest extends TestCase
 
     private VideoSessionService $service;
 
-    protected function tearDown(): void
-    {
-        Mockery::close();
-        parent::tearDown();
-    }
-
     private function article(): Article
     {
         $keywordId = DB::table('keywords')->value('id');
@@ -279,6 +273,23 @@ class VideoPlanningBackgroundTest extends TestCase
         $this->assertSame(VideoSessionStatus::COMPOSING->value, $fresh->status);
         $this->assertSame($renderPlan, $fresh->renderplan_json);
         $this->assertNull($fresh->error_message);
+    }
+
+    public function test_pipeline_passes_the_session_id_to_build_for_usage_attribution(): void
+    {
+        $this->bindFakeRenderPlanService();
+        $article = $this->article();
+        $admin = $this->admin();
+        [$session] = $this->service->startVideoPlanning($article->id, $admin->id);
+
+        $this->bindFakeRenderPlanService(function ($mock) use ($article, $session) {
+            $mock->shouldReceive('build')
+                ->once()
+                ->with(Mockery::on(fn ($a) => $a->id === $article->id), $session->id)
+                ->andReturn(['scenes' => []]);
+        });
+
+        $this->service->runVideoPlanningPipeline($session->code);
     }
 
     public function test_pipeline_failure_marks_session_failed_with_the_real_message(): void

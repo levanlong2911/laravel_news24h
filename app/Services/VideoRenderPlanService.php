@@ -20,7 +20,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Article -> RenderPlan. KHONG luu gi, KHONG biet VideoSession ton tai.
+ * Article -> RenderPlan. KHONG luu gi, KHONG doc/ghi VideoSession. `build()`
+ * nhan `$videoSessionId` (2026-08-13) nhung CHI dung lam nhan ghi so — mot
+ * chuoi di qua toi `recordUsage()`, khong bao gio query/load VideoSession —
+ * giu dung tinh than "khong biet VideoSession ton tai" ban dau.
  *
  * Tach ra khoi VideoSessionService (2026-07-29) vi class do dang ganh HAI
  * trach nhiem: vong doi session (list/approve/queue/report — 8 method ngan) va
@@ -109,7 +112,7 @@ class VideoRenderPlanService
      *
      * @return array<string, mixed> RenderPlan san sang json_encode
      */
-    public function build(Article $article): array
+    public function build(Article $article, ?string $videoSessionId = null): array
     {
         // Boc them CostAccumulatingLlmClient de cong don token/chi phi THAT qua
         // ca 1+1+N cu goi (§18.24). Con so KHONG phai uoc luong: no cong
@@ -209,7 +212,7 @@ class VideoRenderPlanService
             // tran van tinh phi. Chi ghi khi thanh cong thi so lieu se GIAU
             // dung phan lang phi ma minh dang chong (bang chung: 5 lan cat tran
             // = ~$0.09 khong het thong ke nao ghi lai).
-            $this->recordUsage($article);
+            $this->recordUsage($article, $videoSessionId);
         }
 
         return $this->applyCreationArc($renderPlan, $article);
@@ -231,7 +234,7 @@ class VideoRenderPlanService
      * hang mo coi. Benchmark da co duong do rieng (BenchmarkResult) nen khong
      * mat du lieu.
      */
-    private function recordUsage(Article $article): void
+    private function recordUsage(Article $article, ?string $videoSessionId = null): void
     {
         $totals = $this->lastRun?->totals();
 
@@ -257,6 +260,8 @@ class VideoRenderPlanService
             self::USAGE_ACTION,
             $totals['tokens_in'] + $totals['tokens_out'],
             $totals['cost_usd'],
+            $article->id,
+            $videoSessionId,
         );
     }
 

@@ -16,18 +16,19 @@ class Admin extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
     use HasUuid;
 
-    protected $table = "admins";
+    protected $table = 'admins';
 
-    protected $keyType = "string";
+    protected $keyType = 'string';
 
     public $incrementing = false;
 
     protected $fillable = ['name', 'email', 'password', 'role_id', 'domain_id', 'email_verified_at', 'remember_token'];
+
     /** The attributes that should be hidden for arrays.
      *
      * @var array
      */
-    protected $hidden = ["password", "remember_token"];
+    protected $hidden = ['password', 'remember_token'];
 
     /**
      * The attributes that should be visible for serialization.
@@ -42,15 +43,13 @@ class Admin extends Authenticatable
      * @var array
      */
     protected $casts = [
-        "email_verified_at" => "datetime",
+        'email_verified_at' => 'datetime',
     ];
-
 
     // public function role()
     // {
     //     return $this->belongsTo(Role::class);
     // }
-
 
     public $timestamps = true;
 
@@ -97,20 +96,29 @@ class Admin extends Authenticatable
             ->get(['date', 'count']);
     }
 
-    public function incrementClaudeUsage(string $title = '', string $sourceUrl = '', string $action = 'send_to_claude', int $totalTokens = 0, float $totalCostUsd = 0.0): void
-    {
-        DB::transaction(function () use ($title, $sourceUrl, $action, $totalTokens, $totalCostUsd) {
+    public function incrementClaudeUsage(
+        string $title = '',
+        string $sourceUrl = '',
+        string $action = 'send_to_claude',
+        int $totalTokens = 0,
+        float $totalCostUsd = 0.0,
+        ?string $articleId = null,
+        ?string $videoSessionId = null,
+    ): void {
+        DB::transaction(function () use ($title, $sourceUrl, $action, $totalTokens, $totalCostUsd, $articleId, $videoSessionId) {
             DB::statement(
                 'INSERT INTO claude_usages (admin_id, date, count, created_at, updated_at) VALUES (?, ?, 1, NOW(), NOW()) ON DUPLICATE KEY UPDATE count = count + 1, updated_at = NOW()',
                 [$this->id, now()->toDateString()]
             );
 
             ClaudeUsageLog::create([
-                'admin_id'       => $this->id,
-                'title'          => $title ?: null,
-                'source_url'     => $sourceUrl ?: null,
-                'action'         => $action,
-                'total_tokens'   => $totalTokens,
+                'admin_id' => $this->id,
+                'article_id' => $articleId,
+                'video_session_id' => $videoSessionId,
+                'title' => $title ?: null,
+                'source_url' => $sourceUrl ?: null,
+                'action' => $action,
+                'total_tokens' => $totalTokens,
                 'total_cost_usd' => $totalCostUsd,
             ]);
         });
@@ -125,6 +133,4 @@ class Admin extends Authenticatable
     {
         return $this->role && $this->role->name === 'member';
     }
-
-
 }

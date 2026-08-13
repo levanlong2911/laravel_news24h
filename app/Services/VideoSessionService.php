@@ -253,7 +253,7 @@ class VideoSessionService
             // Cac GUARD trong VideoPlanningPipeline::plan() dung TRUOC tung cu
             // goi ton tien — bai rong thi dung khi CHUA ton dong nao.
             $article = $this->articleRepository->show($session->article_id);
-            $renderPlan = $this->renderPlanService->build($article);
+            $renderPlan = $this->renderPlanService->build($article, $session->id);
 
             $wroteResult = $this->finishClaimedPlanning($sessionCode, $claimToken, [
                 'renderplan_json' => $renderPlan,
