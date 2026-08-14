@@ -10,7 +10,13 @@ final class ConceptValidator
 {
     private const MAX_THESIS = 200;
 
-    private const MAX_DECISION = 200;
+    /**
+     * 260 chứ không phải 200: decision phải chứa CẢ lựa chọn lẫn cách chuyển hoá
+     * khỏi nguồn. Đo trên lượt Sonnet đã trả tiền — 12 decision dài 156→229, nên
+     * 200 cắt ngang vùng tự nhiên và retry chỉ dồn chi tiết sang chỗ chưa bị
+     * mắng (identity/feature về 0 violation, decision từ 2 lên 4).
+     */
+    private const MAX_DECISION = 260;
 
     private const MAX_FEATURE_DESCRIPTION = 100;
 

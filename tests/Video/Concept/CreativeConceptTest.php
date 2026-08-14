@@ -340,6 +340,37 @@ class CreativeConceptTest extends TestCase
         $this->assertSame([], (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()));
     }
 
+    // ---- Biên độ dài ----
+
+    /**
+     * 260 đo từ lượt Sonnet đã trả tiền: 12 decision dài 156→229 ký tự, nên trần
+     * 200 cũ cắt ngang vùng tự nhiên và retry chỉ dồn chi tiết sang chỗ khác.
+     *
+     * @dataProvider decisionLengths
+     */
+    public function test_a_decision_is_measured_against_the_260_character_boundary(int $length, bool $accepted): void
+    {
+        $concept = $this->concept([], [
+            new DesignDecision('size', Provenance::Invented, str_repeat('a', $length)),
+            new DesignDecision('materials', Provenance::Invented, 'Steel.'),
+        ]);
+
+        $violations = (new ConceptValidator)->violations($concept, $this->profile(), $this->brief());
+
+        $accepted
+            ? $this->assertSame([], $violations)
+            : $this->assertContains('decisions[0].decision exceeds 260 characters', $violations);
+    }
+
+    public static function decisionLengths(): array
+    {
+        return [
+            'boundary accepted' => [260, true],
+            'one over rejected' => [261, false],
+            'observed longest' => [229, true],
+        ];
+    }
+
     // ---- Nội dung rỗng dựng thẳng từ DTO, không qua parser ----
 
     public function test_empty_creative_text_is_rejected_even_when_the_parser_was_bypassed(): void
