@@ -19,12 +19,15 @@ final class CreativeProfileResolver
             throw new InvalidArgumentException("Creative profile {$profileKey} is not configured.");
         }
 
+        // Constructor tự từ chối cấu hình vô nghiệm — nổ ở đây, trước khi có cú
+        // gọi model nào.
         return new CategoryCreativeProfile(
             $profileKey,
             (string) ($profile['mission'] ?? ''),
             $profile['article_patterns'] ?? [],
             $profile['inspection_aspects'] ?? [],
             $profile['excluded_context_types'] ?? [],
+            $profile['identity_slots'] ?? [],
         );
     }
 }

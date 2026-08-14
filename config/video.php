@@ -118,6 +118,25 @@ return [
                     'construction_new_build_and_refit',
                     'operational_characteristics',
                 ],
+
+                /**
+                 * Khe danh tính của NGÀNH này. Code không hiểu nghĩa từng khe —
+                 * nó chỉ kiểm đủ khe, đúng kiểu, trong ngưỡng. Profile khác
+                 * (automotive…) khai bộ khe riêng mà không cần nhánh code.
+                 */
+                'identity_slots' => [
+                    'length_to_beam_ratio' => ['type' => 'number', 'min' => 2.0, 'max' => 12.0],
+                    'visible_deck_tiers' => ['type' => 'integer', 'min' => 1, 'max' => 10],
+                    'bow_profile' => ['type' => 'text', 'max_length' => 120],
+                    'stern_architecture' => ['type' => 'text', 'max_length' => 120],
+                    'superstructure_massing' => ['type' => 'text', 'max_length' => 120],
+                    'glazing_language' => ['type' => 'text', 'max_length' => 120],
+                    'hull_material' => ['type' => 'text', 'max_length' => 60],
+                    'superstructure_material' => ['type' => 'text', 'max_length' => 60],
+                    'hull_colour' => ['type' => 'text', 'max_length' => 60],
+                    'superstructure_colour' => ['type' => 'text', 'max_length' => 60],
+                ],
+
                 'excluded_context_types' => [
                     'owner',
                     'celebrity',
