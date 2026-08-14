@@ -76,6 +76,63 @@ return [
     ],
 
     /**
+     * Hồ sơ phân tích cảm hứng sáng tạo. Engine trong app/Video/Inspiration
+     * không biết domain nào tồn tại; toàn bộ vocabulary theo category nằm ở
+     * đây và được tiêm qua CategoryCreativeProfile.
+     *
+     * 12 aspect là hướng dẫn quan sát MỀM, không phải checklist bắt buộc điền.
+     * Analyst chỉ xuất dữ liệu bài thật sự có; Laravel tự tính phần còn thiếu
+     * để tầng thiết kế sau được quyền sáng tạo.
+     */
+    'creative_profiles' => [
+        'categories' => [
+            'yacht' => 'luxury_vessel',
+            'superyacht' => 'luxury_vessel',
+        ],
+
+        'profiles' => [
+            'luxury_vessel' => [
+                'mission' => 'Prepare a concise source-inspiration brief containing information from this article that could help a separate creative designer invent a completely new superyacht.',
+                'article_patterns' => [
+                    'design_profile',
+                    'new_build_launch_or_delivery',
+                    'construction_progress',
+                    'refit_or_conversion',
+                    'sale_charter_or_market',
+                    'owner_or_celebrity_news',
+                    'performance_or_sea_trial',
+                    'incident_or_legal',
+                    'mixed',
+                ],
+                'inspection_aspects' => [
+                    'size_and_dimensions',
+                    'form_and_proportions',
+                    'spatial_layout',
+                    'deck_organization',
+                    'materials_and_finishes',
+                    'amenities',
+                    'windows_and_glazing',
+                    'wellness_and_relaxation',
+                    'transformable_spaces',
+                    'capacity',
+                    'construction_new_build_and_refit',
+                    'operational_characteristics',
+                ],
+                'excluded_context_types' => [
+                    'owner',
+                    'celebrity',
+                    'sale_price',
+                    'builder',
+                    'designer',
+                    'brand',
+                    'product_name',
+                    'legal_controversy',
+                ],
+            ],
+        ],
+    ],
+
+    /**
      * Creation Arc v2 (§18.16 ARCHITECTURE.md — ĐỌC TRƯỚC KHI SỬA FILE NÀY).
      *
      * Scene BỊA CÓ CHỦ ĐÍCH (thiết kế → thi công → hoàn thiện → thành phẩm)
