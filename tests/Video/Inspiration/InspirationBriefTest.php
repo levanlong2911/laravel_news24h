@@ -236,6 +236,54 @@ class InspirationBriefTest extends TestCase
         $this->assertSame([], (new InspirationBriefValidator)->violations($brief, $this->index($article), $this->profile()));
     }
 
+    /**
+     * Phân lớp đã chốt: source_quotes phục vụ truy nguồn nên được chứa tên;
+     * summary là chất liệu sáng tạo gửi sang tầng thiết kế nên không.
+     */
+    public function test_a_quote_may_name_an_excluded_identity_but_the_summary_may_not(): void
+    {
+        $article = new RawArticle('a1', 'Support', '<p>Moving equipment to Wingman allows Launchpad '
+            .'to dedicate more internal volume to guest spaces.</p>');
+
+        $named = new InspirationBrief(
+            ['design_profile'],
+            'A design profile.',
+            [new SourceInsight(
+                'amenities',
+                'Wingman carries the equipment so Launchpad keeps more internal volume.',
+                ['Moving equipment to Wingman allows Launchpad'],
+            )],
+            [new ExcludedContext('product_name', 'Launchpad'), new ExcludedContext('product_name', 'Wingman')],
+        );
+
+        $this->assertSame(
+            ['source_insights[0] contains excluded identity context'],
+            (new InspirationBriefValidator)->violations($named, $this->index($article), $this->profile()),
+        );
+    }
+
+    public function test_the_same_relationship_passes_when_the_summary_drops_the_names(): void
+    {
+        $article = new RawArticle('a1', 'Support', '<p>Moving equipment to Wingman allows Launchpad '
+            .'to dedicate more internal volume to guest spaces.</p>');
+
+        $unnamed = new InspirationBrief(
+            ['design_profile'],
+            'A design profile.',
+            [new SourceInsight(
+                'amenities',
+                'A dedicated support vessel carries equipment and logistics, freeing internal volume for guest spaces.',
+                ['Moving equipment to Wingman allows Launchpad'],
+            )],
+            [new ExcludedContext('product_name', 'Launchpad'), new ExcludedContext('product_name', 'Wingman')],
+        );
+
+        $this->assertSame(
+            [],
+            (new InspirationBriefValidator)->violations($unnamed, $this->index($article), $this->profile()),
+        );
+    }
+
     public function test_to_array_keeps_sources_and_adds_computed_coverage(): void
     {
         $brief = new InspirationBrief(

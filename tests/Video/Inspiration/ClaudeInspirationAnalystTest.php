@@ -202,9 +202,41 @@ class ClaudeInspirationAnalystTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            'Never combine multiple names into one value',
+            'Never combine multiple names or values into one object',
             $requests[0]->instruction,
         );
+
+        // Lượt thật đã bịa `type: person` / `organization` vì instruction cũ nêu
+        // ba từ đó ngay cạnh chỗ nói về type. Giờ chỉ liệt kê allowlist thật.
+        $this->assertStringContainsString('exactly one of: owner, product_name', $requests[0]->instruction);
+        $this->assertStringNotContainsString('per distinct person, organization', $requests[0]->instruction);
+    }
+
+    public function test_the_instruction_separates_quote_provenance_from_creative_material(): void
+    {
+        $requests = new ArrayObject;
+        $response = $this->validResponse();
+        $llm = new class($requests, $response) implements LlmClient
+        {
+            public function __construct(public ArrayObject $requests, private string $response) {}
+
+            public function complete(LlmRequest $request): LlmResponse
+            {
+                $this->requests[] = $request;
+
+                return new LlmResponse($this->response, 'haiku');
+            }
+        };
+
+        (new ClaudeInspirationAnalyst($llm))->analyze(
+            new RawArticle('a1', 'Launchpad profile', '<p>Launchpad is 118 metres long and has a steel hull.</p>'),
+            $this->profile(),
+        );
+
+        $instruction = $requests[0]->instruction;
+
+        $this->assertStringContainsString('A source_quote may contain excluded names', $instruction);
+        $this->assertStringContainsString('and article_focus must not', $instruction);
     }
 
     public function test_it_fails_after_two_invalid_responses(): void

@@ -116,9 +116,16 @@ final class ClaudeInspirationAnalyst
         context of these types out of source_insights: {$excluded}. Put prominent instances
         in excluded_context instead.
 
-        Emit one excluded_context object per distinct person, organization or product.
-        Never combine multiple names into one value. Several objects may share the same
-        type. Each value must appear in the article exactly as you write it.
+        Emit one excluded_context object for each distinct excluded value. The type must be
+        exactly one of: {$excluded}. Never combine multiple names or values into one object.
+        Multiple objects may use the same type. Each value must appear in the article exactly
+        as you write it.
+
+        A source_quote may contain excluded names — it exists to prove provenance. A summary
+        and article_focus must not: they are the creative material, and a name there becomes
+        an identity anchor for the design stage. State the relationship without naming it:
+        "a dedicated support vessel carries equipment and logistics, freeing internal volume
+        for guest spaces".
 
         Every source insight must contain a concise summary and one or more exact supporting
         quotes copied from the article. Never paraphrase a source_quote.
