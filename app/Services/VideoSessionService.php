@@ -74,23 +74,6 @@ class VideoSessionService
     }
 
     /**
-     * Nut "Tao Video" tren 1 bai viet — §18.30: chi tao SESSION RONG
-     * (`status=planning`) va ban pipeline Claude o NEN qua
-     * `video:build-plan`, KHONG con chay dong bo trong request nay. Ham nay
-     * CHI lam viec nhanh (khoa + kiem tra + insert, vai mili giay) —
-     * `VideoRenderPlanService::build()` (25-90s, ton tien that) chay trong
-     * tien trinh tach roi, xem `runVideoPlanningPipeline()`.
-     *
-     * Khoa hang `Article` bang `lockForUpdate()` de chong bam hai lan: hai
-     * request dong thoi deu co the thay "chua co session nao dang chay" TRUOC
-     * khi ben nao insert xong neu khong khoa — dung nguyen nhan, dung thuoc
-     * voi race condition da vua sua o Final Composition (2026-08-12).
-     *
-     * `$adminId` BAT BUOC (khong con nullable) — kiem admin TON TAI truoc khi
-     * tao session, khong doi den luc `video:build-plan` chay moi phat hien.
-     * Provenance chi phi (ClaudeUsageLog.admin_id) phai co ngay tu dau, khong
-     * duoc phep la "co the co, co the khong".
-     *
      * @return array{0: ?VideoSession, 1: bool, 2: string} [$session, $spawned, $reason]
      *                                                     reason: admin_not_found|already_in_progress|spawn_failed|ok
      */
@@ -103,6 +86,8 @@ class VideoSessionService
         $article = $this->articleRepository->show($articleId);
 
         [$session, $reason] = DB::transaction(function () use ($article, $adminId) {
+            // Khoá hàng Article: hai request đồng thời đều có thể thấy "chưa có
+            // session nào đang chạy" TRƯỚC khi bên nào insert xong.
             $article->newQuery()->whereKey($article->getKey())->lockForUpdate()->firstOrFail();
 
             $inFlight = VideoSession::query()
@@ -119,15 +104,8 @@ class VideoSessionService
 
             $session = $this->sessionRepository->create([
                 'project_id' => $project->id,
-                // Ghi THANG khoa, khong de suy nguoc tu tien to `code`. Ma
-                // session mang 8 ky tu dau uuid — du de doan nhung van la
-                // doan, va 8 ky tu hex thi dung duoc.
                 'article_id' => $article->id,
                 'requested_by_admin_id' => $adminId,
-                // Hau to random 4 ky tu: hai lan tao session cho CUNG mot bai
-                // trong CUNG mot giay (that bai roi thu lai ngay) tung dam
-                // vao unique(code) khi chi co ymd_His. Khong doi tien to
-                // 8-hex — SessionArticleLinkTest chi neo dau chuoi.
                 'code' => 'art_'.substr($article->id, 0, 8).'_'.now()->format('ymd_His').'_'.Str::random(4),
                 'status' => VideoSessionStatus::PLANNING->value,
             ]);
@@ -149,38 +127,11 @@ class VideoSessionService
     }
 
     /**
-     * Chay THAT pipeline Claude cho MOT session dang `planning` — goi tu lenh
-     * `video:build-plan`, luon o tien trinh TACH RIENG (§18.30), khong con o
-     * request HTTP. Doc admin tu CHINH session (`requested_by_admin_id`),
-     * KHONG nhan qua tham so dong lenh — script van chay tay duoc, ai cung go
-     * duoc mot id tuy y neu cho phep truyen thang.
-     *
-     * CLAIM ATOMIC truoc khi goi Claude: `status=planning` mot minh khong du
-     * — hai tien trinh `video:build-plan --session=` chay CUNG LUC (chay tay
-     * lap, hoac bug ban trung) deu co the doc thay `planning` va cung goi
-     * Claude, ton tien gap doi. Khoa hang session bang `lockForUpdate()`,
-     * kiem tra + ghi `planning_claimed_at`/`planning_claim_token` trong CUNG
-     * mot transaction ngan.
-     *
-     * CLAIM KHONG TU HET HAN. Ban dau tung dung han 10 phut, nhung mot cu goi
-     * Claude DON LE gap 529 Overloaded co the mat toi ~10 phut rieng no (5 lan
-     * thu x 60s timeout + backoff 30/60/90/120s — xem
-     * ClaudeWriterService::MAX_RETRIES/DELAY_529_S), ma pipeline goi 11+ lan —
-     * han tu dong la khong an toan (worker cu con song, worker moi tuong da
-     * chet, ca hai cung goi Claude). Mo lai claim CHI qua
-     * `video:reset-planning-claim`, thao tac CO CHU DICH cua nguoi van hanh
-     * sau khi tu xac nhan tien trinh cu da chet that.
-     *
-     * TOKEN xac minh quyen so huu LUC GHI KET QUA (thanh cong hay that bai):
-     * UPDATE co dieu kien `WHERE code=? AND planning_claim_token=?`. Neu
-     * token khong con khop (session bi reset thu cong roi worker KHAC claim
-     * lai trong luc worker nay van dang cham) thi bo ket qua, KHONG ghi de —
-     * khong chi dua vao viec da "thang" luc claim, vi worker thua o vong claim
-     * van co the hoan tat (dung, hoac hong) SAU worker thang.
-     *
-     * KHONG doi `status` sang `composing` luc claim (pha nghia state da chot
-     * — Python poll `GET /video-sessions/composing` se vo vi thieu
-     * renderplan_json).
+     * CLAIM KHÔNG TỰ HẾT HẠN. Một cú Claude đơn lẻ gặp 529 Overloaded có thể mất
+     * tới ~10 phút riêng nó (MAX_RETRIES × timeout + backoff), mà pipeline gọi
+     * 11+ lần — hạn theo thời gian sẽ để worker cũ còn sống trong khi worker mới
+     * tưởng nó đã chết, rồi cả hai cùng gọi Claude. Mở lại claim CHỈ qua
+     * `video:reset-planning-claim`.
      *
      * @return bool `true` = da luu renderplan_json thanh cong (co the van
      *              khong ban duoc Python — xem log canh bao rieng), `false` =
@@ -202,6 +153,9 @@ class VideoSessionService
                 return ['session' => $session, 'claimed' => false];
             }
 
+            // KHÔNG đổi status sang `composing` ở đây: Python poll
+            // `GET /video-sessions/composing` và sẽ nhận một session chưa có
+            // renderplan_json.
             $session->update(['planning_claimed_at' => now(), 'planning_claim_token' => $claimToken]);
 
             return ['session' => $session, 'claimed' => true];
@@ -319,6 +273,9 @@ class VideoSessionService
      * Ghi ket qua CO DIEU KIEN dung token — chi worker con giu claim moi ghi
      * duoc. Xoa ca hai cot claim trong CUNG luot ghi (khong phai lan rieng):
      * ket qua da chot thi claim khong con y nghia gi nua.
+     *
+     * Kiểm lúc claim chỉ chứng minh quyền tại thời điểm bắt đầu — session có thể
+     * bị reset rồi worker khác chiếm lại trong lúc Claude đang chạy.
      *
      * @param  array<string, mixed>  $attributes
      */
