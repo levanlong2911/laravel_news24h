@@ -93,6 +93,10 @@ return [
         'profiles' => [
             'luxury_vessel' => [
                 'mission' => 'Prepare a concise source-inspiration brief containing information from this article that could help a separate creative designer invent a completely new superyacht.',
+
+                // Mission cua Inspiration bao model SOAN BRIEF; Concept Designer
+                // phai duoc bao THIET KE, va bao ro cai gi nhin thay tu ngoai.
+                'concept_mission' => 'Design a superyacht that has never existed. Its proportions and silhouette must be readable from outside the vessel.',
                 'article_patterns' => [
                     'design_profile',
                     'new_build_launch_or_delivery',

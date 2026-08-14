@@ -28,6 +28,7 @@ final class CreativeProfileResolver
             $profile['inspection_aspects'] ?? [],
             $profile['excluded_context_types'] ?? [],
             $profile['identity_slots'] ?? [],
+            (string) ($profile['concept_mission'] ?? ''),
         );
     }
 }

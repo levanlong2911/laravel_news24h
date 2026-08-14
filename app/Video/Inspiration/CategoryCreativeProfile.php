@@ -23,6 +23,7 @@ final class CategoryCreativeProfile
         public readonly array $inspectionAspects,
         public readonly array $excludedContextTypes,
         public readonly array $identitySlots = [],
+        public readonly string $conceptMission = '',
     ) {
         foreach ([$key, $mission] as $value) {
             if (trim($value) === '') {
@@ -58,6 +59,12 @@ final class CategoryCreativeProfile
     {
         if ($this->identitySlots === []) {
             throw new InvalidArgumentException("Creative profile {$this->key} declares no identity slots.");
+        }
+
+        // `mission` viết cho Inspiration — dùng lại nó ở đây sẽ bảo model soạn
+        // brief thay vì thiết kế.
+        if (trim($this->conceptMission) === '') {
+            throw new InvalidArgumentException("Creative profile {$this->key} declares no concept mission.");
         }
     }
 

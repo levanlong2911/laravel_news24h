@@ -32,6 +32,7 @@ class CreativeConceptTest extends TestCase
                 'tiers' => ['type' => 'integer', 'min' => 1, 'max' => 10],
                 'bow' => ['type' => 'text', 'max_length' => 30],
             ],
+            'Design something that has never existed.',
         );
     }
 
@@ -118,6 +119,18 @@ class CreativeConceptTest extends TestCase
         // Không có khe nào thì `design_identity: {}` hợp lệ — concept rỗng danh
         // tính vẫn đi tiếp tới ảnh neo.
         $profile = new CategoryCreativeProfile('p', 'm', ['x'], ['size', 'materials'], ['owner']);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        (new ConceptValidator)->violations($this->concept(), $profile, $this->brief());
+    }
+
+    public function test_a_profile_without_a_concept_mission_cannot_validate_a_concept(): void
+    {
+        // `mission` của Inspiration bảo model soạn brief — dùng lại nó sẽ mâu
+        // thuẫn với phần còn lại của instruction.
+        $profile = new CategoryCreativeProfile('p', 'm', ['x'], ['size', 'materials'], ['owner'],
+            ['bow' => ['type' => 'text', 'max_length' => 30]]);
 
         $this->expectException(InvalidArgumentException::class);
 

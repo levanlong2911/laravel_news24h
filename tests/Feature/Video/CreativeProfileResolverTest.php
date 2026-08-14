@@ -28,6 +28,27 @@ class CreativeProfileResolverTest extends TestCase
         }
     }
 
+    public function test_the_shipped_profile_is_ready_for_a_concept_run(): void
+    {
+        $profile = (new CreativeProfileResolver)->resolve('yacht');
+
+        $profile->assertConceptReady();
+
+        // Invariant là "khác mission của Inspiration", không phải "vắng một từ
+        // cụ thể" — khoá câu chữ thì mission hợp lệ sau này vẫn đỏ oan.
+        $this->assertNotSame('', trim($profile->conceptMission));
+        $this->assertNotSame($profile->mission, $profile->conceptMission);
+    }
+
+    public function test_a_profile_missing_its_concept_mission_is_caught_before_any_model_call(): void
+    {
+        config(['video.creative_profiles.profiles.luxury_vessel.concept_mission' => '   ']);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        (new CreativeProfileResolver)->resolve('yacht')->assertConceptReady();
+    }
+
     public function test_an_unsatisfiable_slot_refuses_to_resolve_before_any_model_call(): void
     {
         config(['video.creative_profiles.profiles.luxury_vessel.identity_slots' => [
