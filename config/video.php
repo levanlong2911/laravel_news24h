@@ -84,6 +84,10 @@ return [
      * Analyst chỉ xuất dữ liệu bài thật sự có; Laravel tự tính phần còn thiếu
      * để tầng thiết kế sau được quyền sáng tạo.
      */
+    'creative_concept' => [
+        'mode' => env('VIDEO_CREATIVE_CONCEPT_MODE', 'disabled'),
+    ],
+
     'creative_profiles' => [
         'categories' => [
             'yacht' => 'luxury_vessel',

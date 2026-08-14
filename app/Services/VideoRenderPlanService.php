@@ -4,8 +4,13 @@ namespace App\Services;
 
 use App\Models\Admin;
 use App\Models\Article;
+use App\Services\Video\CreativeProfileResolver;
 use App\Services\Video\ExtractionArtifactRecorder;
 use App\Video\Article\RawArticle;
+use App\Video\Concept\ClaudeConceptDesigner;
+use App\Video\Concept\InvalidCreativeConcept;
+use App\Video\Inspiration\ClaudeInspirationAnalyst;
+use App\Video\Inspiration\InvalidInspirationBrief;
 use App\Video\Llm\ClaudeWriterAdapter;
 use App\Video\Llm\CostAccumulatingLlmClient;
 use App\Video\Llm\CostCeilingGate;
@@ -100,6 +105,7 @@ class VideoRenderPlanService
         // `app/Video/` khong duoc biet Eloquent ton tai. Pipeline chi goi mot
         // callable; closure duoc dinh nghia o tang nay.
         private ExtractionArtifactRecorder $artifactRecorder = new ExtractionArtifactRecorder,
+        private CreativeProfileResolver $creativeProfileResolver = new CreativeProfileResolver,
     ) {}
 
     /**
@@ -114,6 +120,10 @@ class VideoRenderPlanService
      */
     public function build(Article $article, ?string $videoSessionId = null): array
     {
+        // Doc mode TRUOC khi dung pipeline: cau hinh go sai khong duoc phat
+        // hien sau khi Extractor da tra tien.
+        $conceptMode = $this->creativeConceptMode();
+
         // Boc them CostAccumulatingLlmClient de cong don token/chi phi THAT qua
         // ca 1+1+N cu goi (§18.24). Con so KHONG phai uoc luong: no cong
         // `LlmResponse->tokensIn/tokensOut/costUsd`, ma ba truong do lay thang
@@ -142,6 +152,7 @@ class VideoRenderPlanService
         );
 
         $rawArticle = new RawArticle($article->id, $article->title, (string) $article->content);
+        $category = (string) ($article->category?->slug ?? '');
 
         $meta = new RenderPlanMeta(
             Str::uuid()->toString(),
@@ -153,7 +164,7 @@ class VideoRenderPlanService
             // config('video.creation_arc.categories') — bảng đó chỉ khai 4/27
             // category và phục vụ việc kích hoạt Creation Arc, không phải việc
             // chọn hồ sơ tri thức ngành bên Python.
-            (string) ($article->category?->slug ?? ''),
+            $category,
         );
 
         // CHOT CHI PHI (§18.23): bai thuoc category co Creation Arc thi
@@ -215,6 +226,9 @@ class VideoRenderPlanService
                     ? null
                     : fn (VerifiedWorldGraph $world) => ! $this->hasVehicle($world),
             );
+
+            $renderPlan = $this->applyCreationArc($renderPlan, $article);
+            $renderPlan = $this->withCreativeConcept($renderPlan, $conceptMode, $rawArticle, $category, $accumulator, $article, $videoSessionId);
         } finally {
             // `finally` CHU DICH, khong phai cho dep: lan chay HONG cung phai
             // duoc ghi. Tien da tra roi — mot bai truot Gatekeeper hay bi cat
@@ -224,7 +238,7 @@ class VideoRenderPlanService
             $this->recordUsage($article, $videoSessionId);
         }
 
-        return $this->applyCreationArc($renderPlan, $article);
+        return $renderPlan;
     }
 
     /**
@@ -441,5 +455,72 @@ class VideoRenderPlanService
         }
 
         return $hero;
+    }
+
+    private function creativeConceptMode(): string
+    {
+        $mode = (string) config('video.creative_concept.mode', 'disabled');
+        if (! in_array($mode, ['disabled', 'observe', 'enabled'], true)) {
+            throw new \InvalidArgumentException("video.creative_concept.mode is not one of disabled|observe|enabled: {$mode}");
+        }
+
+        return $mode;
+    }
+
+    /**
+     * @param  array<string, mixed>  $renderPlan
+     * @return array<string, mixed>
+     */
+    private function withCreativeConcept(
+        array $renderPlan,
+        string $mode,
+        RawArticle $rawArticle,
+        string $category,
+        LlmClient $llm,
+        Article $article,
+        ?string $videoSessionId,
+    ): array {
+        if ($mode === 'disabled' || $category === '') {
+            return $renderPlan;
+        }
+
+        $profile = $this->creativeProfileResolver->resolve($category);
+        if ($profile === null) {
+            return $renderPlan;
+        }
+
+        try {
+            $brief = (new ClaudeInspirationAnalyst($llm))->analyze($rawArticle, $profile);
+            $concept = (new ClaudeConceptDesigner($llm))->design($brief, $profile);
+        } catch (InvalidCreativeConcept|InvalidInspirationBrief $e) {
+            if ($mode !== 'observe') {
+                throw $e;
+            }
+
+            Log::warning('video_creative_concept_failed', [
+                'article_id' => $article->id,
+                'video_session_id' => $videoSessionId,
+                'category' => $category,
+                'exception' => $e::class,
+                'violations' => $e->violations,
+            ]);
+
+            return $renderPlan;
+        }
+
+        if ($mode === 'observe') {
+            Log::info('video_creative_concept_observed', [
+                'article_id' => $article->id,
+                'video_session_id' => $videoSessionId,
+                'category' => $category,
+                'concept' => $concept->toArray(),
+            ]);
+
+            return $renderPlan;
+        }
+
+        $renderPlan['creative_concept'] = $concept->toArray();
+
+        return $renderPlan;
     }
 }
