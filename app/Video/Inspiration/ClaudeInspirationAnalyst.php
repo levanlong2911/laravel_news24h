@@ -30,6 +30,7 @@ final class ClaudeInspirationAnalyst
         $articleBlock = $this->renderArticle($index);
         $correction = '';
         $lastViolations = [];
+        $merged = null;
 
         for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
             $response = $this->llm->complete(new LlmRequest(
@@ -40,15 +41,18 @@ final class ClaudeInspirationAnalyst
             ));
 
             try {
-                $brief = $this->parser->parse($response->text);
-                $lastViolations = $this->validator->violations($brief, $index, $profile);
+                $parsed = $this->parser->parse($response->text);
+                $merged = $merged === null ? $parsed : $merged->mergedWith($parsed);
+
+                // Kiểm trên bản HỢP NHẤT, không trên response vừa nhận: một
+                // excluded_context mới có thể biến insight cũ thành vi phạm.
+                $lastViolations = $this->validator->violations($merged, $index, $profile);
             } catch (InvalidInspirationBrief $exception) {
                 $lastViolations = $exception->violations;
-                $brief = null;
             }
 
-            if ($brief !== null && $lastViolations === []) {
-                return $brief;
+            if ($merged !== null && $lastViolations === []) {
+                return $merged;
             }
 
             $correction = $this->correction($lastViolations);
@@ -126,6 +130,11 @@ final class ClaudeInspirationAnalyst
         an identity anchor for the design stage. State the relationship without naming it:
         "a dedicated support vessel carries equipment and logistics, freeing internal volume
         for guest spaces".
+
+        This applies to EVERY proper noun, not only the ones listed above: any brand,
+        company, organisation, engine maker, shipyard, person or product name that appears in
+        an article_focus or a summary must be removed from it and declared in
+        excluded_context under the closest allowed type.
 
         Every source insight must contain a concise summary and one or more exact supporting
         quotes copied from the article. Never paraphrase a source_quote.

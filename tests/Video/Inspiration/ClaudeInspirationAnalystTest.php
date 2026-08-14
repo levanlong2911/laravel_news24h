@@ -239,6 +239,57 @@ class ClaudeInspirationAnalystTest extends TestCase
         $this->assertStringContainsString('and article_focus must not', $instruction);
     }
 
+    public function test_a_retry_that_drops_a_good_aspect_does_not_lose_it(): void
+    {
+        // attempt 1: `size` tốt, `materials` để lọt tên chủ sở hữu vào summary.
+        // attempt 2: sửa `materials` nhưng quên trả lại `size` — đúng thứ đã xảy
+        // ra thật trên bài Launchpad.
+        $first = <<<'JSON'
+        {
+          "article_patterns":["design_profile","owner_news"],
+          "article_focus":"A technical profile.",
+          "source_insights":[
+            {"aspect":"size","summary":"The vessel is 118 metres long.","source_quotes":["118 metres long"]},
+            {"aspect":"materials","summary":"Jane Doe chose a steel hull.","source_quotes":["steel hull"]}
+          ],
+          "excluded_context":[{"type":"owner","value":"Jane Doe"}]
+        }
+        JSON;
+
+        $second = <<<'JSON'
+        {
+          "article_patterns":["design_profile"],
+          "article_focus":"A technical profile.",
+          "source_insights":[
+            {"aspect":"materials","summary":"The hull is steel.","source_quotes":["steel hull"]}
+          ],
+          "excluded_context":[{"type":"owner","value":"Jane Doe"}]
+        }
+        JSON;
+
+        $responses = [$first, $second];
+        $llm = new class($responses) implements LlmClient
+        {
+            public function __construct(private array $responses) {}
+
+            public function complete(LlmRequest $request): LlmResponse
+            {
+                return new LlmResponse(array_shift($this->responses), 'haiku');
+            }
+        };
+
+        $brief = (new ClaudeInspirationAnalyst($llm))->analyze(
+            new RawArticle('a1', 'Profile', '<p>Jane Doe ordered a vessel 118 metres long with a steel hull.</p>'),
+            $this->profile(),
+        );
+
+        $aspects = array_map(fn ($insight) => $insight->aspect, $brief->sourceInsights);
+
+        $this->assertSame(['size', 'materials'], $aspects, 'size phải sống sót qua lượt hỏi lại');
+        $this->assertSame('The hull is steel.', $brief->sourceInsights[1]->summary);
+        $this->assertSame(['design_profile', 'owner_news'], $brief->articlePatterns);
+    }
+
     public function test_it_fails_after_two_invalid_responses(): void
     {
         $llm = new class implements LlmClient
