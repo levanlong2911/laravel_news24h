@@ -12,7 +12,7 @@ use JsonException;
  */
 final class CreativeConceptParser
 {
-    private const ROOT_KEYS = ['design_thesis', 'design_identity', 'signature_features', 'decisions'];
+    private const ROOT_KEYS = ['design_thesis', 'design_identity', 'form_relationships', 'signature_features', 'decisions'];
 
     public function parse(string $text): CreativeConcept
     {
@@ -42,6 +42,8 @@ final class CreativeConceptParser
             $identity = [];
         }
 
+        $relationships = $this->relationships($data['form_relationships'] ?? null, $violations);
+
         $features = $this->features($data['signature_features'] ?? null, $violations);
         $decisions = $this->decisions($data['decisions'] ?? null, $violations);
 
@@ -49,7 +51,26 @@ final class CreativeConceptParser
             throw new InvalidCreativeConcept(array_values(array_unique($violations)));
         }
 
-        return new CreativeConcept($thesis, $identity, $features, $decisions);
+        return new CreativeConcept($thesis, $identity, $features, $decisions, $relationships);
+    }
+
+    /** @param list<string> $violations */
+    private function relationships(mixed $raw, array &$violations): FormRelationships
+    {
+        $keys = ['governing_line', 'massing_rhythm', 'feature_integration'];
+        if (! is_array($raw) || array_is_list($raw)) {
+            $violations[] = 'form_relationships must be an object';
+
+            return new FormRelationships('', '', '');
+        }
+
+        $this->rejectUnknownKeys($raw, $keys, 'form_relationships', $violations);
+
+        return new FormRelationships(
+            $this->nonEmptyString($raw['governing_line'] ?? null, 'form_relationships.governing_line', $violations),
+            $this->nonEmptyString($raw['massing_rhythm'] ?? null, 'form_relationships.massing_rhythm', $violations),
+            $this->nonEmptyString($raw['feature_integration'] ?? null, 'form_relationships.feature_integration', $violations),
+        );
     }
 
     /**

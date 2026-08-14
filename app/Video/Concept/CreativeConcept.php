@@ -16,6 +16,7 @@ final class CreativeConcept
         public readonly array $designIdentity,
         public readonly array $signatureFeatures,
         public readonly array $decisions,
+        public readonly FormRelationships $formRelationships,
     ) {}
 
     /**
@@ -37,6 +38,7 @@ final class CreativeConcept
             $this->designIdentity,
             $this->signatureFeatures,
             $decisions,
+            $this->formRelationships,
         );
     }
 
@@ -46,6 +48,7 @@ final class CreativeConcept
         return [
             'design_thesis' => $this->designThesis,
             'design_identity' => $this->designIdentity,
+            'form_relationships' => $this->formRelationships->toArray(),
             'signature_features' => array_map(fn (SignatureFeature $f) => $f->toArray(), $this->signatureFeatures),
             'decisions' => array_map(fn (DesignDecision $d) => $d->toArray(), $this->decisions),
         ];

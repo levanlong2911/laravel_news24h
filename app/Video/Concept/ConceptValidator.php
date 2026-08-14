@@ -8,7 +8,7 @@ use App\Video\Inspiration\SourceInsight;
 
 final class ConceptValidator
 {
-    private const MAX_THESIS = 200;
+    public const MAX_THESIS = 200;
 
     /**
      * 260 chứ không phải 200: decision phải chứa CẢ lựa chọn lẫn cách chuyển hoá
@@ -16,11 +16,13 @@ final class ConceptValidator
      * 200 cắt ngang vùng tự nhiên và retry chỉ dồn chi tiết sang chỗ chưa bị
      * mắng (identity/feature về 0 violation, decision từ 2 lên 4).
      */
-    private const MAX_DECISION = 260;
+    public const MAX_DECISION = 260;
 
-    private const MAX_FEATURE_DESCRIPTION = 100;
+    public const MAX_FEATURE_DESCRIPTION = 100;
 
-    private const MAX_FEATURES = 3;
+    public const MAX_FEATURES = 3;
+
+    public const MAX_FORM_RELATIONSHIP = 220;
 
     /**
      * Sonnet KHÔNG nhận `excluded_context` — đưa nó vào prompt là tái lộ đúng
@@ -46,11 +48,24 @@ final class ConceptValidator
         }
 
         $this->checkIdentity($concept, $profile, $violations);
+        $this->checkFormRelationships($concept, $violations);
         $this->checkFeatures($concept, $violations);
         $this->checkDecisions($concept, $profile, $brief, $violations);
         $this->checkExcludedIdentity($concept, $brief, $violations);
 
         return array_values(array_unique($violations));
+    }
+
+    /** @param list<string> $violations */
+    private function checkFormRelationships(CreativeConcept $concept, array &$violations): void
+    {
+        foreach ($concept->formRelationships->toArray() as $name => $value) {
+            if (trim($value) === '') {
+                $violations[] = "form_relationships.{$name} must not be empty";
+            } elseif (mb_strlen($value) > self::MAX_FORM_RELATIONSHIP) {
+                $violations[] = "form_relationships.{$name} exceeds ".self::MAX_FORM_RELATIONSHIP.' characters';
+            }
+        }
     }
 
     /** @param list<string> $violations */
@@ -209,6 +224,10 @@ final class ConceptValidator
             if (is_string($value)) {
                 $fields["design_identity.{$slot}"] = $value;
             }
+        }
+
+        foreach ($concept->formRelationships->toArray() as $name => $value) {
+            $fields["form_relationships.{$name}"] = $value;
         }
 
         foreach ($concept->signatureFeatures as $index => $feature) {

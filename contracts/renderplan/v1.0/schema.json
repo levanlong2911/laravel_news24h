@@ -61,6 +61,70 @@
       }
     },
 
+    "creative_concept": {
+      "description": "Semantic design chosen by the creative concept stage. It contains no provider, camera, lighting, or prompt language; Python compiles it into an image prompt.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["design_thesis", "design_identity", "form_relationships", "signature_features", "decisions"],
+      "properties": {
+        "design_thesis": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "design_identity": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "anyOf": [
+              { "type": "string", "minLength": 1 },
+              { "type": "integer" },
+              { "type": "number" }
+            ]
+          }
+        },
+        "form_relationships": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["governing_line", "massing_rhythm", "feature_integration"],
+          "properties": {
+            "governing_line": { "type": "string", "minLength": 1, "maxLength": 220 },
+            "massing_rhythm": { "type": "string", "minLength": 1, "maxLength": 220 },
+            "feature_integration": { "type": "string", "minLength": 1, "maxLength": 220 }
+          }
+        },
+        "signature_features": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["description", "visible_from"],
+            "properties": {
+              "description": { "type": "string", "minLength": 1, "maxLength": 100 },
+              "visible_from": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "enum": ["front_three_quarter", "side", "rear_three_quarter"] }
+              }
+            }
+          }
+        },
+        "decisions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["aspect", "provenance", "decision"],
+            "properties": {
+              "aspect": { "$ref": "#/$defs/slug" },
+              "provenance": { "enum": ["inspired", "invented"] },
+              "decision": { "type": "string", "minLength": 1, "maxLength": 260 }
+            }
+          }
+        }
+      }
+    },
+
     "facts":    { "type": "array", "items": { "$ref": "#/$defs/fact" } },
     "acts":     { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/act" } },
     "scenes":   { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scene" } },

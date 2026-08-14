@@ -6,6 +6,7 @@ use App\Video\Concept\ConceptValidator;
 use App\Video\Concept\CreativeConcept;
 use App\Video\Concept\CreativeConceptParser;
 use App\Video\Concept\DesignDecision;
+use App\Video\Concept\FormRelationships;
 use App\Video\Concept\InvalidCreativeConcept;
 use App\Video\Concept\Provenance;
 use App\Video\Concept\SignatureFeature;
@@ -53,6 +54,11 @@ class CreativeConceptTest extends TestCase
                 new DesignDecision('size', Provenance::Invented, 'Longer than the source.'),
                 new DesignDecision('materials', Provenance::Invented, 'Steel and oak.'),
             ],
+            new FormRelationships(
+                'One line connects the object from front to rear.',
+                'Volumes taper progressively rather than stacking independently.',
+                'Signature features grow from the main structure.',
+            ),
         );
     }
 
@@ -163,6 +169,7 @@ class CreativeConceptTest extends TestCase
         ```json
         {"design_thesis":"A quiet vessel.",
          "design_identity":{"ratio":6.0,"tiers":4,"bow":"near-vertical"},
+         "form_relationships":{"governing_line":"one line","massing_rhythm":"progressive taper","feature_integration":"features grow from the structure"},
          "signature_features":[{"description":"a terraced stern","visible_from":["side","rear_three_quarter"]}],
          "decisions":[{"aspect":"size","provenance":"invented","decision":"Longer."}]}
         ```
@@ -318,6 +325,7 @@ class CreativeConceptTest extends TestCase
                 new DesignDecision('size', Provenance::Invented, 'As long as Jane Doe wanted.'),
                 new DesignDecision('materials', Provenance::Invented, 'Steel.'),
             ],
+            new FormRelationships('A line Jane Doe drew.', 'b', 'c'),
         );
 
         $violations = (new ConceptValidator)->violations($concept, $this->profile(), $brief);
@@ -326,6 +334,7 @@ class CreativeConceptTest extends TestCase
         $this->assertContains('design_identity.bow contains excluded identity context', $violations);
         $this->assertContains('signature_features[0].description contains excluded identity context', $violations);
         $this->assertContains('decisions[0].decision contains excluded identity context', $violations);
+        $this->assertContains('form_relationships.governing_line contains excluded identity context', $violations);
     }
 
     /**
@@ -383,6 +392,7 @@ class CreativeConceptTest extends TestCase
                 new DesignDecision('size', Provenance::Invented, ''),
                 new DesignDecision('materials', Provenance::Invented, 'Steel.'),
             ],
+            new FormRelationships('', 'b', 'c'),
         );
 
         $violations = (new ConceptValidator)->violations($concept, $this->profile(), $this->brief());

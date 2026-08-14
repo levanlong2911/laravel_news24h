@@ -16,20 +16,21 @@ use PHPUnit\Framework\TestCase;
  */
 class RenderPlanSchemaTest extends TestCase
 {
-    private const CONTRACT_DIR = __DIR__ . '/../../../contracts/renderplan/v1.0';
+    private const CONTRACT_DIR = __DIR__.'/../../../contracts/renderplan/v1.0';
 
     private Validator $validator;
+
     private object $schema;
 
     protected function setUp(): void
     {
-        $this->validator = new Validator();
-        $this->schema = json_decode(file_get_contents(self::CONTRACT_DIR . '/schema.json'), false, 512, JSON_THROW_ON_ERROR);
+        $this->validator = new Validator;
+        $this->schema = json_decode(file_get_contents(self::CONTRACT_DIR.'/schema.json'), false, 512, JSON_THROW_ON_ERROR);
     }
 
     private function fixture(): object
     {
-        return json_decode(file_get_contents(self::CONTRACT_DIR . '/fixtures/moonrise.json'), false, 512, JSON_THROW_ON_ERROR);
+        return json_decode(file_get_contents(self::CONTRACT_DIR.'/fixtures/moonrise.json'), false, 512, JSON_THROW_ON_ERROR);
     }
 
     private function assertPlanValid(object $plan, string $message = ''): void
@@ -37,8 +38,8 @@ class RenderPlanSchemaTest extends TestCase
         $result = $this->validator->validate($plan, $this->schema);
 
         if ($result->hasError()) {
-            $errors = (new ErrorFormatter())->format($result->error());
-            $this->fail($message . "\n" . json_encode($errors, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $errors = (new ErrorFormatter)->format($result->error());
+            $this->fail($message."\n".json_encode($errors, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         }
 
         $this->addToAssertionCount(1);
@@ -65,7 +66,7 @@ class RenderPlanSchemaTest extends TestCase
      */
     public function test_pipeline_generated_fixture_is_valid(): void
     {
-        $path = self::CONTRACT_DIR . '/fixtures/moonrise_generated.json';
+        $path = self::CONTRACT_DIR.'/fixtures/moonrise_generated.json';
 
         $this->assertFileExists($path, 'Chạy scripts sinh RenderPlan để tạo fixture pipeline');
         $this->assertPlanValid(
@@ -110,13 +111,13 @@ class RenderPlanSchemaTest extends TestCase
     {
         $plan = $this->fixture();
 
-        $entityIds   = array_column($plan->world->entities, 'id');
+        $entityIds = array_column($plan->world->entities, 'id');
         $relationIds = array_column($plan->world->relations, 'id');
-        $eventIds    = array_column($plan->world->events, 'id');
-        $factIds     = array_column($plan->facts, 'id');
-        $actIds      = array_column($plan->acts, 'id');
-        $sceneIds    = array_column($plan->scenes, 'id');
-        $assetIds    = array_column($plan->assets, 'id');
+        $eventIds = array_column($plan->world->events, 'id');
+        $factIds = array_column($plan->facts, 'id');
+        $actIds = array_column($plan->acts, 'id');
+        $sceneIds = array_column($plan->scenes, 'id');
+        $assetIds = array_column($plan->assets, 'id');
 
         foreach ($plan->world->relations as $r) {
             $this->assertContains($r->from, $entityIds, "relation {$r->id}.from trỏ tới entity không tồn tại");
@@ -134,8 +135,8 @@ class RenderPlanSchemaTest extends TestCase
         // Act = node|edge của World Graph. Xem ARCHITECTURE.md §3.
         foreach ($plan->acts as $a) {
             match ($a->source) {
-                'ENTITY'   => $this->assertContains($a->entity_ref, $entityIds, "act {$a->id} trỏ tới entity không tồn tại"),
-                'EVENT'    => $this->assertContains($a->event_ref, $eventIds, "act {$a->id} trỏ tới event không tồn tại"),
+                'ENTITY' => $this->assertContains($a->entity_ref, $entityIds, "act {$a->id} trỏ tới entity không tồn tại"),
+                'EVENT' => $this->assertContains($a->event_ref, $eventIds, "act {$a->id} trỏ tới event không tồn tại"),
                 'RELATION' => $this->assertContains($a->relation_ref, $relationIds, "act {$a->id} trỏ tới relation không tồn tại"),
             };
         }
@@ -260,6 +261,31 @@ class RenderPlanSchemaTest extends TestCase
         $plan->scenes[0]->director_notes->new_infomation = 'sai chính tả';
 
         $this->assertPlanRejected($plan, 'field lạ trong director_notes (vd gõ sai tên)');
+    }
+
+    public function test_a_semantic_creative_concept_is_part_of_the_closed_contract(): void
+    {
+        $plan = $this->fixture();
+        $plan->creative_concept = (object) [
+            'design_thesis' => 'One governing line connects the whole vessel.',
+            'design_identity' => (object) ['ratio' => 5.8, 'tiers' => 4],
+            'form_relationships' => (object) [
+                'governing_line' => 'A line runs from bow to stern.',
+                'massing_rhythm' => 'Volumes taper progressively.',
+                'feature_integration' => 'Features grow from the main structure.',
+            ],
+            'signature_features' => [(object) [
+                'description' => 'A recessed observation lounge.',
+                'visible_from' => ['front_three_quarter', 'side'],
+            ]],
+            'decisions' => [(object) [
+                'aspect' => 'form_and_proportions',
+                'provenance' => 'invented',
+                'decision' => 'Use a low, continuous silhouette.',
+            ]],
+        ];
+
+        $this->assertPlanValid($plan);
     }
 
     public function test_rejects_legacy_content_type(): void
