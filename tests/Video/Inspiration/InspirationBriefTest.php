@@ -191,6 +191,51 @@ class InspirationBriefTest extends TestCase
         $this->assertStringContainsString('not present in the article', implode(' ', $violations));
     }
 
+    /**
+     * Lượt Haiku thật ghép ba nhà thiết kế thành một giá trị; không đoạn nào
+     * trong bài chứa nguyên chuỗi đó nên cả brief bị từ chối. Hai test dưới
+     * khoá cả hai chiều — hệ thống xử lý ra sao khi model tuân và khi không.
+     */
+    public function test_identities_combined_into_one_value_are_rejected(): void
+    {
+        $article = new RawArticle(
+            'a1',
+            'Launch',
+            '<p>Naval architecture by De Voogt.</p><p>Exterior lines by Espen Oino.</p><p>Interiors by Zuretti.</p>',
+        );
+        $brief = new InspirationBrief(
+            ['design_profile'],
+            'A design profile.',
+            [],
+            [new ExcludedContext('owner', 'De Voogt, Espen Oino, Zuretti')],
+        );
+
+        $violations = (new InspirationBriefValidator)->violations($brief, $this->index($article), $this->profile());
+
+        $this->assertSame(['excluded context value for owner is not present in the article'], $violations);
+    }
+
+    public function test_the_same_identities_split_into_one_object_each_are_accepted(): void
+    {
+        $article = new RawArticle(
+            'a1',
+            'Launch',
+            '<p>Naval architecture by De Voogt.</p><p>Exterior lines by Espen Oino.</p><p>Interiors by Zuretti.</p>',
+        );
+        $brief = new InspirationBrief(
+            ['design_profile'],
+            'A design profile.',
+            [],
+            [
+                new ExcludedContext('owner', 'De Voogt'),
+                new ExcludedContext('owner', 'Espen Oino'),
+                new ExcludedContext('owner', 'Zuretti'),
+            ],
+        );
+
+        $this->assertSame([], (new InspirationBriefValidator)->violations($brief, $this->index($article), $this->profile()));
+    }
+
     public function test_to_array_keeps_sources_and_adds_computed_coverage(): void
     {
         $brief = new InspirationBrief(

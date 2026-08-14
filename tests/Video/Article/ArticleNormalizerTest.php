@@ -87,6 +87,56 @@ class ArticleNormalizerTest extends TestCase
         $this->assertTrue($index->has('The grey hull.'));
     }
 
+    /**
+     * Đoạn thật từ bài Launchpad. Model trích đúng nghĩa nhưng bỏ `**`, và
+     * trước bản này quote đó bị loại oan.
+     */
+    public function test_balanced_emphasis_markers_are_stripped(): void
+    {
+        $index = $this->normalizer->normalize($this->article(
+            '<p>* Bể bơi có **đáy nâng hạ**, cho phép biến đổi công năng mặt sàn.</p>'
+            .'<p>Sàn __teak__ và mũi *thẳng đứng*.</p>',
+        ));
+
+        $this->assertTrue($index->has('Bể bơi có đáy nâng hạ, cho phép biến đổi công năng mặt sàn.'));
+        $this->assertTrue($index->has('Sàn teak và mũi thẳng đứng.'));
+    }
+
+    public function test_stripping_emphasis_never_touches_bullets_maths_or_identifiers(): void
+    {
+        $index = $this->normalizer->normalize($this->article(
+            '<p>* Một gạch đầu dòng thật.</p><p>Phép nhân 2*3*4 và biến snake_case_name.</p>'
+            .'<p>Dấu sao rời a * b.</p>',
+        ));
+
+        $this->assertTrue($index->has('* Một gạch đầu dòng thật.'));
+        $this->assertTrue($index->has('Phép nhân 2*3*4 và biến snake_case_name.'));
+        $this->assertTrue($index->has('Dấu sao rời a * b.'));
+    }
+
+    /**
+     * Marker kép NẰM GIỮA chữ/số không phải nhấn mạnh. Bản đầu chỉ chặn marker
+     * đứng cạnh marker nên nuốt mất cả hai chuỗi này.
+     */
+    public function test_double_markers_inside_a_word_or_number_are_not_emphasis(): void
+    {
+        $index = $this->normalizer->normalize($this->article(
+            '<p>Định danh foo__bar__baz và biểu thức 2**3**4 giữ nguyên.</p>',
+        ));
+
+        $this->assertTrue($index->has('foo__bar__baz'));
+        $this->assertTrue($index->has('2**3**4'));
+    }
+
+    public function test_emphasis_boundary_recognises_vietnamese_letters(): void
+    {
+        // \w của PHP không nhận `ể` (không bật PCRE_UCP) — nên phải dùng \pL\pN,
+        // nếu không marker kẹp giữa chữ tiếng Việt sẽ bị bóc nhầm.
+        $index = $this->normalizer->normalize($this->article('<p>Chuỗi Bể*nghiêng*tàu giữ nguyên.</p>'));
+
+        $this->assertTrue($index->has('Bể*nghiêng*tàu'));
+    }
+
     public function test_table_text_is_not_duplicated_into_body(): void
     {
         $index = $this->normalizer->normalize($this->article(

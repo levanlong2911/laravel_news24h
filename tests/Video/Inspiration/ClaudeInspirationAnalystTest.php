@@ -178,6 +178,35 @@ class ClaudeInspirationAnalystTest extends TestCase
         $this->assertSame(8192, $requests[0]->maxTokens);
     }
 
+    public function test_the_instruction_forbids_combining_identities_into_one_value(): void
+    {
+        // Lượt Haiku thật đã ghép ba nhà thiết kế thành một chuỗi, và không đoạn
+        // nào trong bài chứa nguyên chuỗi đó nên cả brief bị từ chối.
+        $requests = new ArrayObject;
+        $response = $this->validResponse();
+        $llm = new class($requests, $response) implements LlmClient
+        {
+            public function __construct(public ArrayObject $requests, private string $response) {}
+
+            public function complete(LlmRequest $request): LlmResponse
+            {
+                $this->requests[] = $request;
+
+                return new LlmResponse($this->response, 'haiku');
+            }
+        };
+
+        (new ClaudeInspirationAnalyst($llm))->analyze(
+            new RawArticle('a1', 'Launchpad profile', '<p>Launchpad is 118 metres long and has a steel hull.</p>'),
+            $this->profile(),
+        );
+
+        $this->assertStringContainsString(
+            'Never combine multiple names into one value',
+            $requests[0]->instruction,
+        );
+    }
+
     public function test_it_fails_after_two_invalid_responses(): void
     {
         $llm = new class implements LlmClient

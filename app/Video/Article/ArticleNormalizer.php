@@ -152,7 +152,26 @@ final class ArticleNormalizer
 
     private function textOf(DOMNode $node): string
     {
-        return trim(preg_replace('/\s+/u', ' ', $node->textContent) ?? '');
+        return $this->stripEmphasis(trim(preg_replace('/\s+/u', ' ', $node->textContent) ?? ''));
+    }
+
+    /**
+     * Chỉ cặp nhấn mạnh CÂN BẰNG, và marker phải nằm ngoài chữ/số — nếu không
+     * `foo__bar__baz` và `2**3**4` bị nuốt mất marker. Dùng `\pL\pN` chứ không
+     * `\w`: PHP không bật PCRE_UCP nên `\w` không nhận chữ tiếng Việt.
+     */
+    private function stripEmphasis(string $text): string
+    {
+        foreach ([
+            '/(?<![\pL\pN*])\*\*(?!\s)(.+?)(?<!\s)\*\*(?![\pL\pN*])/us',
+            '/(?<![\pL\pN_])__(?!\s)(.+?)(?<!\s)__(?![\pL\pN_])/us',
+            '/(?<![\pL\pN*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\pL\pN*])/u',
+            '/(?<![\pL\pN_])_(?!\s)([^_\n]+?)(?<!\s)_(?![\pL\pN_])/u',
+        ] as $pattern) {
+            $text = preg_replace($pattern, '$1', $text) ?? $text;
+        }
+
+        return $text;
     }
 
     private function detach(DOMNode $node): void
