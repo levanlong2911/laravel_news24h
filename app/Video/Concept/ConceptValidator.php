@@ -27,9 +27,15 @@ final class ConceptValidator
         CategoryCreativeProfile $profile,
         InspirationBrief $brief,
     ): array {
+        // Constructor của các DTO đều public — validator không được dựa ngầm
+        // vào việc concept đã đi qua parser.
+        $profile->assertConceptReady();
+
         $violations = [];
 
-        if (mb_strlen($concept->designThesis) > self::MAX_THESIS) {
+        if (trim($concept->designThesis) === '') {
+            $violations[] = 'design_thesis must not be empty';
+        } elseif (mb_strlen($concept->designThesis) > self::MAX_THESIS) {
             $violations[] = 'design_thesis exceeds '.self::MAX_THESIS.' characters';
         }
 
@@ -120,7 +126,9 @@ final class ConceptValidator
         }
 
         foreach ($concept->signatureFeatures as $index => $feature) {
-            if (mb_strlen($feature->description) > self::MAX_FEATURE_DESCRIPTION) {
+            if (trim($feature->description) === '') {
+                $violations[] = "signature_features[{$index}].description must not be empty";
+            } elseif (mb_strlen($feature->description) > self::MAX_FEATURE_DESCRIPTION) {
                 $violations[] = "signature_features[{$index}].description exceeds ".self::MAX_FEATURE_DESCRIPTION.' characters';
             }
 
@@ -145,7 +153,9 @@ final class ConceptValidator
         ), true);
 
         foreach ($concept->decisions as $index => $decision) {
-            if (mb_strlen($decision->decision) > self::MAX_DECISION) {
+            if (trim($decision->decision) === '') {
+                $violations[] = "decisions[{$index}].decision must not be empty";
+            } elseif (mb_strlen($decision->decision) > self::MAX_DECISION) {
                 $violations[] = "decisions[{$index}].decision exceeds ".self::MAX_DECISION.' characters';
             }
 

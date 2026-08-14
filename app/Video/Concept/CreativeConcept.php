@@ -18,29 +18,25 @@ final class CreativeConcept
         public readonly array $decisions,
     ) {}
 
-    /** Thứ tự canonical do Laravel áp sau khi parse — không bắt model xếp đúng rồi hỏi lại. */
+    /**
+     * Thứ tự canonical do Laravel áp sau khi parse — không bắt model xếp đúng
+     * rồi hỏi lại. Sắp xếp ổn định và KHÔNG gộp: hai decision cùng aspect phải
+     * sống sót qua đây, nếu không thứ tự gọi API sẽ quyết định concept sai có
+     * hợp lệ hay không.
+     */
     public function canonicalised(CategoryCreativeProfile $profile): self
     {
-        $byAspect = [];
+        $rank = array_flip($profile->inspectionAspects);
+        $position = fn (DesignDecision $decision) => $rank[$decision->aspect] ?? PHP_INT_MAX;
 
-        foreach ($this->decisions as $decision) {
-            $byAspect[$decision->aspect] ??= $decision;
-        }
-
-        $ordered = [];
-
-        foreach ($profile->inspectionAspects as $aspect) {
-            if (isset($byAspect[$aspect])) {
-                $ordered[] = $byAspect[$aspect];
-                unset($byAspect[$aspect]);
-            }
-        }
+        $decisions = $this->decisions;
+        usort($decisions, fn (DesignDecision $a, DesignDecision $b) => $position($a) <=> $position($b));
 
         return new self(
             $this->designThesis,
             $this->designIdentity,
             $this->signatureFeatures,
-            [...$ordered, ...array_values($byAspect)],
+            $decisions,
         );
     }
 

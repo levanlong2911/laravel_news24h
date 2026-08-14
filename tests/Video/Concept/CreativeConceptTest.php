@@ -85,6 +85,45 @@ class CreativeConceptTest extends TestCase
         new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'], ['Bow Profile' => ['type' => 'text', 'max_length' => 10]]);
     }
 
+    /** @dataProvider nonFiniteBounds */
+    public function test_a_non_finite_bound_is_refused(float $min, float $max): void
+    {
+        // NAN lọt qua thì `min > max` luôn false — cấu hình vô nghiệm mà im lặng.
+        $this->expectException(InvalidArgumentException::class);
+
+        new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'], ['t' => ['type' => 'number', 'min' => $min, 'max' => $max]]);
+    }
+
+    public static function nonFiniteBounds(): array
+    {
+        return [[NAN, 10.0], [1.0, INF], [-INF, 10.0]];
+    }
+
+    public function test_a_mistyped_spec_key_is_refused_instead_of_ignored(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'], ['t' => ['type' => 'integer', 'min' => 1, 'max' => 10, 'maximum' => 20]]);
+    }
+
+    public function test_a_text_slot_carrying_numeric_bounds_is_refused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'], ['t' => ['type' => 'text', 'max_length' => 10, 'min' => 1]]);
+    }
+
+    public function test_a_profile_with_no_identity_slot_cannot_validate_a_concept(): void
+    {
+        // Không có khe nào thì `design_identity: {}` hợp lệ — concept rỗng danh
+        // tính vẫn đi tiếp tới ảnh neo.
+        $profile = new CategoryCreativeProfile('p', 'm', ['x'], ['size', 'materials'], ['owner']);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        (new ConceptValidator)->violations($this->concept(), $profile, $this->brief());
+    }
+
     // ---- Parser ----
 
     public function test_the_parser_rejects_a_concept_id_the_model_must_not_invent(): void
@@ -288,6 +327,27 @@ class CreativeConceptTest extends TestCase
         $this->assertSame([], (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()));
     }
 
+    // ---- Nội dung rỗng dựng thẳng từ DTO, không qua parser ----
+
+    public function test_empty_creative_text_is_rejected_even_when_the_parser_was_bypassed(): void
+    {
+        $concept = new CreativeConcept(
+            '',
+            ['ratio' => 6.0, 'tiers' => 4, 'bow' => 'near-vertical'],
+            [new SignatureFeature('', [Viewpoint::Side])],
+            [
+                new DesignDecision('size', Provenance::Invented, ''),
+                new DesignDecision('materials', Provenance::Invented, 'Steel.'),
+            ],
+        );
+
+        $violations = (new ConceptValidator)->violations($concept, $this->profile(), $this->brief());
+
+        $this->assertContains('design_thesis must not be empty', $violations);
+        $this->assertContains('signature_features[0].description must not be empty', $violations);
+        $this->assertContains('decisions[0].decision must not be empty', $violations);
+    }
+
     // ---- Canonical order ----
 
     public function test_laravel_orders_decisions_by_profile_rather_than_asking_again(): void
@@ -303,5 +363,49 @@ class CreativeConceptTest extends TestCase
             fn (DesignDecision $d) => $d->aspect,
             $ordered->decisions,
         ));
+    }
+
+    public function test_canonicalising_keeps_duplicates_so_the_guard_still_fires(): void
+    {
+        // Nếu canonicalise gộp trùng, thứ tự gọi API sẽ quyết định concept sai
+        // có hợp lệ hay không.
+        $concept = $this->concept([], [
+            new DesignDecision('size', Provenance::Invented, 'One.'),
+            new DesignDecision('size', Provenance::Invented, 'Two.'),
+            new DesignDecision('materials', Provenance::Invented, 'Steel.'),
+        ]);
+
+        $ordered = $concept->canonicalised($this->profile());
+
+        $this->assertSame(['One.', 'Two.', 'Steel.'], array_map(
+            fn (DesignDecision $d) => $d->decision,
+            $ordered->decisions,
+        ));
+
+        $this->assertContains(
+            'decisions holds more than one entry for aspect size',
+            (new ConceptValidator)->violations($ordered, $this->profile(), $this->brief()),
+        );
+    }
+
+    public function test_an_aspect_outside_the_profile_sorts_last_without_being_dropped(): void
+    {
+        $concept = $this->concept([], [
+            new DesignDecision('rigging', Provenance::Invented, 'Unknown aspect.'),
+            new DesignDecision('materials', Provenance::Invented, 'Steel.'),
+            new DesignDecision('size', Provenance::Invented, 'Longer.'),
+        ]);
+
+        $ordered = $concept->canonicalised($this->profile());
+
+        $this->assertSame(['size', 'materials', 'rigging'], array_map(
+            fn (DesignDecision $d) => $d->aspect,
+            $ordered->decisions,
+        ));
+
+        $this->assertContains(
+            'decisions[2] aspect rigging is not an inspection aspect',
+            (new ConceptValidator)->violations($ordered, $this->profile(), $this->brief()),
+        );
     }
 }

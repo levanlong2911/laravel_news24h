@@ -49,6 +49,18 @@ final class CategoryCreativeProfile
         $this->assertIdentitySlotsAreSatisfiable($identitySlots);
     }
 
+    /**
+     * Một profile không khai khe nào thì `design_identity: {}` trở thành hợp lệ
+     * và concept không đủ danh tính để dựng ảnh neo. Tách riêng khỏi constructor
+     * vì profile còn dùng cho Inspiration, nơi identity slot không liên quan.
+     */
+    public function assertConceptReady(): void
+    {
+        if ($this->identitySlots === []) {
+            throw new InvalidArgumentException("Creative profile {$this->key} declares no identity slots.");
+        }
+    }
+
     /** @param array<string, array<string, mixed>> $slots */
     private function assertIdentitySlotsAreSatisfiable(array $slots): void
     {
@@ -61,8 +73,16 @@ final class CategoryCreativeProfile
                 throw new InvalidArgumentException("Creative profile identity slot {$name} must declare type text|integer|number.");
             }
 
+            // Tập key đóng: `maximum` gõ nhầm thay cho `max` phải nổ lúc deploy,
+            // không được bỏ qua im lặng.
+            $expected = $spec['type'] === 'text' ? ['type', 'max_length'] : ['type', 'min', 'max'];
+
+            if (array_diff(array_keys($spec), $expected) !== [] || array_diff($expected, array_keys($spec)) !== []) {
+                throw new InvalidArgumentException("Creative profile identity slot {$name} must declare exactly: ".implode(', ', $expected).'.');
+            }
+
             if ($spec['type'] === 'text') {
-                if (! isset($spec['max_length']) || ! is_int($spec['max_length']) || $spec['max_length'] < 1) {
+                if (! is_int($spec['max_length']) || $spec['max_length'] < 1) {
                     throw new InvalidArgumentException("Creative profile identity slot {$name} must declare max_length > 0.");
                 }
 
@@ -70,8 +90,13 @@ final class CategoryCreativeProfile
             }
 
             foreach (['min', 'max'] as $bound) {
-                if (! isset($spec[$bound]) || ! is_int($spec[$bound]) && ! is_float($spec[$bound])) {
+                if (! is_int($spec[$bound]) && ! is_float($spec[$bound])) {
                     throw new InvalidArgumentException("Creative profile identity slot {$name} must declare a numeric {$bound}.");
+                }
+
+                // NAN lọt qua thì phép so min > max bên dưới luôn false.
+                if (is_float($spec[$bound]) && ! is_finite($spec[$bound])) {
+                    throw new InvalidArgumentException("Creative profile identity slot {$name} must declare a finite {$bound}.");
                 }
             }
 
