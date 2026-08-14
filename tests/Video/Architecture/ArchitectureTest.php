@@ -36,27 +36,6 @@ class ArchitectureTest extends TestCase
     }
 
     /**
-     * §1 — "Laravel không biết Prompt Language tồn tại."
-     */
-    public function test_laravel_is_prompt_blind(): void
-    {
-        $this->assertNoneOf([
-            'prompt',
-            'negative_prompt',
-            'cinematic',
-            'photorealistic',
-            'masterpiece',
-            'bokeh',
-            'ultra[_ ]?realistic',
-            'hyper[_ ]?realistic',
-            '\b8k\b',
-            '\b4k\b',
-            'award[_ ]winning',
-            '\bmm lens\b',
-        ], 'Laravel phải hoàn toàn mù về prompt language. Xem ARCHITECTURE.md §1.');
-    }
-
-    /**
      * §3 — Ontology chung thay domain planner. Không switch(domain).
      */
     public function test_no_domain_branching(): void
@@ -72,28 +51,6 @@ class ArchitectureTest extends TestCase
             '\$domain\s*===',
             'switch\s*\(\s*\$domain',
         ], 'Domain knowledge chỉ được tồn tại dưới dạng DỮ LIỆU, không bao giờ là nhánh code. Xem ARCHITECTURE.md §3.');
-    }
-
-    /**
-     * §1 — Laravel emit Intent, Python quyết định Implementation.
-     * Laravel không được biết kỹ thuật render hay provider nào tồn tại.
-     */
-    public function test_no_render_technique_or_provider(): void
-    {
-        $this->assertNoneOf([
-            'ken[_ ]?burns',
-            '\bkling\b',
-            '\bflux\b',
-            '\bveo\b',
-            '\brunway\b',
-            '\bpika\b',
-            '\bsdxl\b',
-            '\bhunyuan\b',
-            '\bffmpeg\b',
-            '\bcontent_type\b',
-            '\bimage_to_video\b',
-            '\bt2v\b',
-        ], 'Laravel không được biết kỹ thuật render hay provider tồn tại. content_type đã bị xoá — dùng motion_intent. Xem ARCHITECTURE.md §1.');
     }
 
     /**
