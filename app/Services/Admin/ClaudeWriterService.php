@@ -105,6 +105,27 @@ class ClaudeWriterService
         ) / 1_000_000;
     }
 
+    /** @return array<string, mixed> */
+    private function requestBody(string $prompt, string $model, int $maxTokens, string $system, ?float $temperature): array
+    {
+        $body = [
+            'model' => $model,
+            'max_tokens' => $maxTokens,
+            'messages' => [['role' => 'user', 'content' => $prompt]],
+        ];
+
+        // `!== null` chu khong phai truthy: 0.0 la mot temperature hop le.
+        if ($temperature !== null) {
+            $body['temperature'] = $temperature;
+        }
+
+        if ($system !== '') {
+            $body['system'] = $system;
+        }
+
+        return $body;
+    }
+
     /**
      * @param  int|null  $maxTokens  Trần output cho RIÊNG cú gọi này. null → dùng bảng
      *                               MAX_TOKENS theo model (hành vi cũ, không đổi cho caller phía CMS).
@@ -120,19 +141,12 @@ class ClaudeWriterService
      * ra), và KHÔNG chạm cổng duyệt chi vì `GatedLlmClient` ước lượng theo
      * INPUT token, không theo trần output.
      */
-    public function generate(string $prompt, string $modelType = 'haiku', string $system = '', ?int $maxTokens = null): ClaudeResponse
+    public function generate(string $prompt, string $modelType = 'haiku', string $system = '', ?int $maxTokens = null, ?float $temperature = null): ClaudeResponse
     {
         $model = self::MODELS[$modelType] ?? self::MODELS['haiku'];
         $maxTokens ??= self::MAX_TOKENS[$modelType] ?? 2048;
 
-        $requestBody = [
-            'model' => $model,
-            'max_tokens' => $maxTokens,
-            'messages' => [['role' => 'user', 'content' => $prompt]],
-        ];
-        if ($system !== '') {
-            $requestBody['system'] = $system;
-        }
+        $requestBody = $this->requestBody($prompt, $model, $maxTokens, $system, $temperature);
         $encodedBody = json_encode($requestBody, JSON_UNESCAPED_UNICODE);
         if ($encodedBody === false) {
             // Fallback: strip invalid UTF-8 rồi encode lại

@@ -42,6 +42,79 @@ class ClaudeWriterAdapterTest extends TestCase
         return $writer;
     }
 
+    /** @param list<?float> $captured */
+    private function temperatureSpy(array &$captured): ClaudeWriterService
+    {
+        $writer = $this->createMock(ClaudeWriterService::class);
+        $writer->method('generate')
+            ->willReturnCallback(function (string $prompt, string $modelType, string $system, ?int $maxTokens = null, ?float $temperature = null) use (&$captured) {
+                $captured[] = $temperature;
+
+                return new ClaudeResponse('ket qua', 100, 50, 'end_turn');
+            });
+
+        return $writer;
+    }
+
+    public function test_an_unset_temperature_reaches_the_service_as_null(): void
+    {
+        $captured = [];
+        $adapter = new ClaudeWriterAdapter($this->temperatureSpy($captured));
+
+        $adapter->complete(new LlmRequest('instruction', 'input', 'v1', 'haiku'));
+
+        $this->assertSame([null], $captured);
+    }
+
+    public function test_zero_is_a_real_temperature_not_an_absent_one(): void
+    {
+        $captured = [];
+        $adapter = new ClaudeWriterAdapter($this->temperatureSpy($captured));
+
+        $adapter->complete(new LlmRequest('instruction', 'input', 'v1', 'haiku', temperature: 0.0));
+
+        $this->assertSame([0.0], $captured);
+    }
+
+    public function test_a_creative_temperature_is_not_dropped_at_the_boundary(): void
+    {
+        $captured = [];
+        $adapter = new ClaudeWriterAdapter($this->temperatureSpy($captured));
+
+        $adapter->complete(new LlmRequest('instruction', 'input', 'v1', 'sonnet', temperature: 0.7));
+
+        $this->assertSame([0.7], $captured);
+    }
+
+    /** @dataProvider acceptedTemperatures */
+    public function test_a_temperature_inside_the_provider_range_is_accepted(?float $temperature): void
+    {
+        $captured = [];
+        $adapter = new ClaudeWriterAdapter($this->temperatureSpy($captured));
+
+        $adapter->complete(new LlmRequest('instruction', 'input', 'v1', 'haiku', temperature: $temperature));
+
+        $this->assertSame([$temperature], $captured);
+    }
+
+    public static function acceptedTemperatures(): array
+    {
+        return [[null], [0.0], [0.7], [1.0]];
+    }
+
+    /** @dataProvider rejectedTemperatures */
+    public function test_a_temperature_outside_the_provider_range_is_refused_before_transport(float $temperature): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new LlmRequest('instruction', 'input', 'v1', 'haiku', temperature: $temperature);
+    }
+
+    public static function rejectedTemperatures(): array
+    {
+        return [[-0.1], [1.1], [NAN], [INF]];
+    }
+
     public function test_forwards_the_model_requested_by_the_caller(): void
     {
         $captured = [];
