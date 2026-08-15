@@ -59,7 +59,7 @@ class ClaudeConceptDesignerTest extends TestCase
         );
 
         $this->assertSame('sonnet', $requests[0]->model);
-        $this->assertSame('concept-v3', $requests[0]->instructionVersion);
+        $this->assertSame('concept-v4', $requests[0]->instructionVersion);
         $this->assertStringContainsString('form_relationships', $requests[0]->instruction);
         $this->assertSame('Volumes taper progressively.', $result->concept->formRelationships->massingRhythm);
     }
@@ -179,12 +179,46 @@ class ClaudeConceptDesignerTest extends TestCase
 
         $instruction = $requests[0]->instruction;
 
-        $this->assertSame('concept-v3', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertSame('concept-v4', ClaudeConceptDesigner::INSTRUCTION_VERSION);
         $this->assertStringContainsString('compact technical specification language', $instruction);
         $this->assertStringContainsString('Bad:', $instruction);
         $this->assertStringContainsString('Good:', $instruction);
         $this->assertStringContainsString('at most 24 words', $instruction);
         $this->assertStringNotContainsString('characters', $instruction);
+    }
+
+    /**
+     * Ba mau thuan do duoc tren luot concept-v3 da tra tien: 4 tang canh "Three
+     * stepped volumes"; feature_integration goi ten "infinity pool" va "wellness
+     * balcony" khong he co trong signature_features; mot feature khai nhin thay
+     * "on both sides simultaneously" tu goc ba-phan-tu.
+     *
+     * Test nay khoa viec instruction CO HOI, khong khoa viec model CO TUAN.
+     *
+     * @dataProvider semanticRules
+     */
+    public function test_the_instruction_asks_for_the_three_coherence_rules(string $needle): void
+    {
+        $requests = [];
+        (new ClaudeConceptDesigner($this->llmReturning([], $requests)))->design(
+            new InspirationBrief(['design_profile'], 'A source.', [], []),
+            $this->profile(),
+        );
+
+        $this->assertStringContainsString($needle, $requests[0]->instruction);
+    }
+
+    public static function semanticRules(): array
+    {
+        return [
+            'part count preserved' => ['preserve that exact'],
+            'grouping must be stated' => ['state the grouping explicitly'],
+            'no competing count' => ['unexplained competing count'],
+            'principle only' => ['never name an individual feature here'],
+            'materially readable' => ['materially readable from that'],
+            'self-occlusion allowed' => ['self-occlusion is allowed'],
+            'no mutually occluded claim' => ['must not require mutually'],
+        ];
     }
 
     public function test_an_identity_word_budget_follows_the_slot_it_belongs_to(): void

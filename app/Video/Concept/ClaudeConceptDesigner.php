@@ -9,7 +9,7 @@ use App\Video\Llm\LlmRequest;
 
 final class ClaudeConceptDesigner
 {
-    public const INSTRUCTION_VERSION = 'concept-v3';
+    public const INSTRUCTION_VERSION = 'concept-v4';
 
     private const MAX_ATTEMPTS = 2;
 
@@ -110,16 +110,29 @@ final class ClaudeConceptDesigner
         "design_identity": an object with exactly these keys:
         {$slotLines}
 
+        For every identity slot that counts repeated parts, preserve that exact
+        count throughout the concept. If form_relationships groups those parts into
+        fewer larger masses, state the grouping explicitly without changing the
+        underlying part count. Do not introduce an unexplained competing count.
+
         "form_relationships": an object with exactly three fields, each at most
         30 words:
         - governing_line: the dominant line or geometry connecting the whole object
         - massing_rhythm: how major volumes transition, taper, overlap, or repeat
-        - feature_integration: how signature features grow from the main form instead
-          of looking attached afterward
+        - feature_integration: the PRINCIPLE by which signature features grow from
+          the main form instead of looking attached afterward. State the principle
+          only — never name an individual feature here.
 
         "signature_features": 1 to {$maxFeatures} objects. Each has
         "description" (one visible feature, at most 15 words) and "visible_from"
         (one or more of: front_three_quarter, side, rear_three_quarter).
+
+        List a viewpoint only when the feature is materially readable from that
+        view without changing the camera or distorting the object. Natural
+        self-occlusion is allowed. The description must not require mutually
+        occluded portions, such as both sides of a three-dimensional object, to be
+        visible simultaneously. Symmetry belongs in design_identity, not in a
+        visibility claim.
 
         "decisions": exactly one object for every aspect below. Each object has
         "aspect", "provenance" (inspired|invented), and "decision" (at most 35 words).
