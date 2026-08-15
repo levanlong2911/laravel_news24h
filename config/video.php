@@ -134,6 +134,11 @@ return [
                  */
                 'identity_slots' => [
                     'length_to_beam_ratio' => ['type' => 'number', 'min' => 2.0, 'max' => 12.0],
+                    'hull_vertical_proportions' => [
+                        'type' => 'text',
+                        'max_length' => 120,
+                        'guidance' => 'Describe draft, freeboard, exposed hull depth, and the hull-to-superstructure height relationship.',
+                    ],
                     'visible_deck_tiers' => ['type' => 'integer', 'min' => 1, 'max' => 10],
                     'bow_profile' => ['type' => 'text', 'max_length' => 120],
                     'stern_architecture' => ['type' => 'text', 'max_length' => 120],

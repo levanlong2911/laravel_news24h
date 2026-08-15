@@ -8,6 +8,8 @@ final class CategoryCreativeProfile
 {
     private const SLOT_TYPES = ['text', 'integer', 'number'];
 
+    private const MAX_SLOT_GUIDANCE_LENGTH = 200;
+
     /**
      * @param  list<string>  $articlePatterns
      * @param  list<string>  $inspectionAspects
@@ -83,9 +85,21 @@ final class CategoryCreativeProfile
             // Tập key đóng: `maximum` gõ nhầm thay cho `max` phải nổ lúc deploy,
             // không được bỏ qua im lặng.
             $expected = $spec['type'] === 'text' ? ['type', 'max_length'] : ['type', 'min', 'max'];
+            $allowed = [...$expected, 'guidance'];
 
-            if (array_diff(array_keys($spec), $expected) !== [] || array_diff($expected, array_keys($spec)) !== []) {
-                throw new InvalidArgumentException("Creative profile identity slot {$name} must declare exactly: ".implode(', ', $expected).'.');
+            if (array_diff(array_keys($spec), $allowed) !== [] || array_diff($expected, array_keys($spec)) !== []) {
+                throw new InvalidArgumentException(
+                    "Creative profile identity slot {$name} must declare ".implode(', ', $expected).' and may declare guidance.',
+                );
+            }
+
+            if (array_key_exists('guidance', $spec)
+                && (! is_string($spec['guidance'])
+                    || trim($spec['guidance']) === ''
+                    || mb_strlen($spec['guidance']) > self::MAX_SLOT_GUIDANCE_LENGTH)) {
+                throw new InvalidArgumentException(
+                    "Creative profile identity slot {$name} guidance must be a non-empty string of at most ".self::MAX_SLOT_GUIDANCE_LENGTH.' characters.',
+                );
             }
 
             if ($spec['type'] === 'text') {

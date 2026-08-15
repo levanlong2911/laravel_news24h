@@ -131,6 +131,21 @@ class CreativeConceptTest extends TestCase
         new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'], ['t' => ['type' => 'text', 'max_length' => 10, 'min' => 1]]);
     }
 
+    /** @dataProvider invalidSlotGuidance */
+    public function test_invalid_slot_guidance_is_refused(mixed $guidance): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'], [
+            'bow' => ['type' => 'text', 'max_length' => 30, 'guidance' => $guidance],
+        ]);
+    }
+
+    public static function invalidSlotGuidance(): array
+    {
+        return [[null], [''], ['   '], [str_repeat('a', 201)]];
+    }
+
     public function test_a_profile_with_no_identity_slot_cannot_validate_a_concept(): void
     {
         // Không có khe nào thì `design_identity: {}` hợp lệ — concept rỗng danh

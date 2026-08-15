@@ -21,7 +21,15 @@ class CreativeProfileResolverTest extends TestCase
     {
         $slots = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots ?? [];
 
-        $this->assertCount(10, $slots);
+        $this->assertCount(11, $slots);
+        $this->assertSame(
+            [
+                'type' => 'text',
+                'max_length' => 120,
+                'guidance' => 'Describe draft, freeboard, exposed hull depth, and the hull-to-superstructure height relationship.',
+            ],
+            $slots['hull_vertical_proportions'],
+        );
 
         foreach ($slots as $name => $spec) {
             $this->assertContains($spec['type'], ['text', 'integer', 'number'], "slot {$name}");

@@ -59,7 +59,7 @@ class ClaudeConceptDesignerTest extends TestCase
         );
 
         $this->assertSame('sonnet', $requests[0]->model);
-        $this->assertSame('concept-v4', $requests[0]->instructionVersion);
+        $this->assertSame('concept-v5', $requests[0]->instructionVersion);
         $this->assertStringContainsString('form_relationships', $requests[0]->instruction);
         $this->assertSame('Volumes taper progressively.', $result->concept->formRelationships->massingRhythm);
     }
@@ -179,7 +179,7 @@ class ClaudeConceptDesignerTest extends TestCase
 
         $instruction = $requests[0]->instruction;
 
-        $this->assertSame('concept-v4', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertSame('concept-v5', ClaudeConceptDesigner::INSTRUCTION_VERSION);
         $this->assertStringContainsString('compact technical specification language', $instruction);
         $this->assertStringContainsString('Bad:', $instruction);
         $this->assertStringContainsString('Good:', $instruction);
@@ -227,7 +227,11 @@ class ClaudeConceptDesignerTest extends TestCase
             'vehicle', 'Extract inspiration.', ['design_profile'], ['form'], ['brand'],
             [
                 'silhouette' => ['type' => 'text', 'max_length' => 120],
-                'paint' => ['type' => 'text', 'max_length' => 60],
+                'paint' => [
+                    'type' => 'text',
+                    'max_length' => 60,
+                    'guidance' => 'State hue and finish.',
+                ],
             ],
             'Design a new vehicle whose silhouette is readable from outside.',
         );
@@ -244,6 +248,7 @@ class ClaudeConceptDesignerTest extends TestCase
 
         $this->assertStringContainsString('silhouette: one compact technical phrase, at most 17 words', $requests[0]->instruction);
         $this->assertStringContainsString('paint: one compact technical phrase, at most 8 words', $requests[0]->instruction);
+        $this->assertStringContainsString('Guidance: State hue and finish.', $requests[0]->instruction);
     }
 
     public function test_the_shared_instruction_carries_no_category_vocabulary(): void
