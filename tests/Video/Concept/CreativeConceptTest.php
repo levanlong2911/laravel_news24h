@@ -34,6 +34,9 @@ class CreativeConceptTest extends TestCase
                 'bow' => ['type' => 'text', 'max_length' => 30],
             ],
             'Design something that has never existed.',
+            ['front_three_quarter' => 'Low camera near the waterline off the bow.',
+                'side' => 'Low camera near the waterline, square to the centreline.',
+                'rear_three_quarter' => 'Low camera near the waterline off the quarter.'],
         );
     }
 
@@ -167,6 +170,38 @@ class CreativeConceptTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         $this->fatal($this->concept(), $profile, $this->brief());
+    }
+
+    /** @dataProvider invalidViewpointGuidance */
+    public function test_invalid_viewpoint_guidance_is_refused(mixed $text): void
+    {
+        $profile = new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'],
+            ['bow' => ['type' => 'text', 'max_length' => 30]],
+            'Design something new.',
+            ['front_three_quarter' => $text, 'side' => 'ok', 'rear_three_quarter' => 'ok'],
+        );
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $profile->assertConceptReady();
+    }
+
+    public static function invalidViewpointGuidance(): array
+    {
+        return [[null], [''], ['   '], [str_repeat('a', 401)]];
+    }
+
+    public function test_viewpoint_guidance_at_the_boundary_is_accepted(): void
+    {
+        $profile = new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'],
+            ['bow' => ['type' => 'text', 'max_length' => 30]],
+            'Design something new.',
+            array_fill_keys(Viewpoint::values(), str_repeat('a', 400)),
+        );
+
+        $profile->assertConceptReady();
+
+        $this->assertCount(3, $profile->viewpointGuidance);
     }
 
     // ---- Parser ----

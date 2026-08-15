@@ -134,11 +134,9 @@ return [
                  */
                 'identity_slots' => [
                     'length_to_beam_ratio' => ['type' => 'number', 'min' => 2.0, 'max' => 12.0],
-                    'hull_vertical_proportions' => [
-                        'type' => 'text',
-                        'max_length' => 120,
-                        'guidance' => 'Describe draft, freeboard, exposed hull depth, and the hull-to-superstructure height relationship.',
-                    ],
+                    'design_draft_m' => ['type' => 'number', 'min' => 2.0, 'max' => 6.0],
+                    'minimum_freeboard_m' => ['type' => 'number', 'min' => 1.5, 'max' => 6.0],
+                    'typical_deck_to_deck_height_m' => ['type' => 'number', 'min' => 2.6, 'max' => 3.5],
                     'visible_deck_tiers' => ['type' => 'integer', 'min' => 1, 'max' => 10],
                     'bow_profile' => ['type' => 'text', 'max_length' => 120],
                     'stern_architecture' => ['type' => 'text', 'max_length' => 120],
@@ -148,6 +146,12 @@ return [
                     'superstructure_material' => ['type' => 'text', 'max_length' => 60],
                     'hull_colour' => ['type' => 'text', 'max_length' => 60],
                     'superstructure_colour' => ['type' => 'text', 'max_length' => 60],
+                ],
+
+                'viewpoint_guidance' => [
+                    'front_three_quarter' => 'Low camera near the design waterline, off the bow. Bow face and hull-side features read well; flat deck surfaces are strongly foreshortened and may be unreadable.',
+                    'side' => 'Low camera near the design waterline, square to the centreline. Sheer line, freeboard, tier count and hull-side features read well; deck surfaces are edge-on.',
+                    'rear_three_quarter' => 'Low camera near the design waterline, off the quarter. Transom and aft hull-side features read well; flat deck surfaces are strongly foreshortened.',
                 ],
 
                 'excluded_context_types' => [

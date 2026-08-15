@@ -29,6 +29,7 @@ final class CreativeProfileResolver
             $profile['excluded_context_types'] ?? [],
             $profile['identity_slots'] ?? [],
             (string) ($profile['concept_mission'] ?? ''),
+            $profile['viewpoint_guidance'] ?? [],
         );
     }
 }

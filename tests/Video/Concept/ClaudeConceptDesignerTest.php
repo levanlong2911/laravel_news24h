@@ -19,6 +19,9 @@ class ClaudeConceptDesignerTest extends TestCase
             'vehicle', 'Extract inspiration.', ['design_profile'], ['form', 'materials'], ['brand'],
             ['ratio' => ['type' => 'number', 'min' => 2.0, 'max' => 12.0]],
             'Design a new vehicle whose silhouette is readable from outside.',
+            ['front_three_quarter' => 'Low camera near the waterline off the bow.',
+                'side' => 'Low camera near the waterline, square to the centreline.',
+                'rear_three_quarter' => 'Low camera near the waterline off the quarter.'],
         );
     }
 
@@ -59,7 +62,7 @@ class ClaudeConceptDesignerTest extends TestCase
         );
 
         $this->assertSame('sonnet', $requests[0]->model);
-        $this->assertSame('concept-v5', $requests[0]->instructionVersion);
+        $this->assertSame('concept-v6', $requests[0]->instructionVersion);
         $this->assertStringContainsString('form_relationships', $requests[0]->instruction);
         $this->assertSame('Volumes taper progressively.', $result->concept->formRelationships->massingRhythm);
     }
@@ -179,7 +182,7 @@ class ClaudeConceptDesignerTest extends TestCase
 
         $instruction = $requests[0]->instruction;
 
-        $this->assertSame('concept-v5', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertSame('concept-v6', ClaudeConceptDesigner::INSTRUCTION_VERSION);
         $this->assertStringContainsString('compact technical specification language', $instruction);
         $this->assertStringContainsString('Bad:', $instruction);
         $this->assertStringContainsString('Good:', $instruction);
@@ -234,6 +237,9 @@ class ClaudeConceptDesignerTest extends TestCase
                 ],
             ],
             'Design a new vehicle whose silhouette is readable from outside.',
+            ['front_three_quarter' => 'Low camera near the waterline off the bow.',
+                'side' => 'Low camera near the waterline, square to the centreline.',
+                'rear_three_quarter' => 'Low camera near the waterline off the quarter.'],
         );
 
         $requests = [];
@@ -249,6 +255,19 @@ class ClaudeConceptDesignerTest extends TestCase
         $this->assertStringContainsString('silhouette: one compact technical phrase, at most 17 words', $requests[0]->instruction);
         $this->assertStringContainsString('paint: one compact technical phrase, at most 8 words', $requests[0]->instruction);
         $this->assertStringContainsString('Guidance: State hue and finish.', $requests[0]->instruction);
+    }
+
+    public function test_every_camera_description_reaches_the_model(): void
+    {
+        $requests = [];
+        (new ClaudeConceptDesigner($this->llmReturning([], $requests)))->design(
+            new InspirationBrief(['design_profile'], 'A source.', [], []),
+            $this->profile(),
+        );
+
+        foreach ($this->profile()->viewpointGuidance as $name => $text) {
+            $this->assertStringContainsString("- {$name}: {$text}", $requests[0]->instruction);
+        }
     }
 
     public function test_the_shared_instruction_carries_no_category_vocabulary(): void

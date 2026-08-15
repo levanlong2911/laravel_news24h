@@ -9,7 +9,7 @@ use App\Video\Llm\LlmRequest;
 
 final class ClaudeConceptDesigner
 {
-    public const INSTRUCTION_VERSION = 'concept-v5';
+    public const INSTRUCTION_VERSION = 'concept-v6';
 
     private const MAX_ATTEMPTS = 2;
 
@@ -83,6 +83,12 @@ final class ClaudeConceptDesigner
         $slotLines = implode("\n", $slots);
         $maxFeatures = ConceptValidator::MAX_FEATURES;
 
+        $viewpoints = implode("\n", array_map(
+            fn (string $name, string $text) => "- {$name}: {$text}",
+            array_keys($profile->viewpointGuidance),
+            $profile->viewpointGuidance,
+        ));
+
         return <<<TEXT
         You are a concept designer. The material below comes from an existing product,
         but you are designing a NEW object that has never existed.
@@ -126,7 +132,8 @@ final class ClaudeConceptDesigner
 
         "signature_features": 1 to {$maxFeatures} objects. Each has
         "description" (one visible feature, at most 15 words) and "visible_from"
-        (one or more of: front_three_quarter, side, rear_three_quarter).
+        (one or more of these viewpoints, each rendered from the camera described):
+        {$viewpoints}
 
         List a viewpoint only when the feature is materially readable from that
         view without changing the camera or distorting the object. Natural

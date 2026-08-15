@@ -10,6 +10,8 @@ final class CategoryCreativeProfile
 
     private const MAX_SLOT_GUIDANCE_LENGTH = 200;
 
+    private const MAX_VIEWPOINT_GUIDANCE_LENGTH = 400;
+
     /**
      * @param  list<string>  $articlePatterns
      * @param  list<string>  $inspectionAspects
@@ -26,6 +28,7 @@ final class CategoryCreativeProfile
         public readonly array $excludedContextTypes,
         public readonly array $identitySlots = [],
         public readonly string $conceptMission = '',
+        public readonly array $viewpointGuidance = [],
     ) {
         foreach ([$key, $mission] as $value) {
             if (trim($value) === '') {
@@ -67,6 +70,24 @@ final class CategoryCreativeProfile
         // brief thay vì thiết kế.
         if (trim($this->conceptMission) === '') {
             throw new InvalidArgumentException("Creative profile {$this->key} declares no concept mission.");
+        }
+
+        $expected = \App\Video\Concept\Viewpoint::values();
+        $supplied = array_keys($this->viewpointGuidance);
+
+        if (array_diff($expected, $supplied) !== [] || array_diff($supplied, $expected) !== []) {
+            throw new InvalidArgumentException(
+                "Creative profile {$this->key} viewpoint_guidance must cover exactly: ".implode(', ', $expected).'.',
+            );
+        }
+
+        foreach ($this->viewpointGuidance as $name => $text) {
+            if (! is_string($text) || trim($text) === '' || mb_strlen($text) > self::MAX_VIEWPOINT_GUIDANCE_LENGTH) {
+                throw new InvalidArgumentException(
+                    "Creative profile {$this->key} viewpoint_guidance.{$name} must be a non-empty string of at most "
+                    .self::MAX_VIEWPOINT_GUIDANCE_LENGTH.' characters.',
+                );
+            }
         }
     }
 

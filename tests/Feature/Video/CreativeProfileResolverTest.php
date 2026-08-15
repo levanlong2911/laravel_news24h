@@ -3,6 +3,14 @@
 namespace Tests\Feature\Video;
 
 use App\Services\Video\CreativeProfileResolver;
+use App\Video\Concept\ConceptValidator;
+use App\Video\Concept\CreativeConcept;
+use App\Video\Concept\DesignDecision;
+use App\Video\Concept\FormRelationships;
+use App\Video\Concept\Provenance;
+use App\Video\Concept\SignatureFeature;
+use App\Video\Concept\Viewpoint;
+use App\Video\Inspiration\InspirationBrief;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -21,19 +29,89 @@ class CreativeProfileResolverTest extends TestCase
     {
         $slots = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots ?? [];
 
-        $this->assertCount(11, $slots);
-        $this->assertSame(
-            [
-                'type' => 'text',
-                'max_length' => 120,
-                'guidance' => 'Describe draft, freeboard, exposed hull depth, and the hull-to-superstructure height relationship.',
-            ],
-            $slots['hull_vertical_proportions'],
-        );
+        $this->assertCount(13, $slots);
+        $this->assertArrayNotHasKey('hull_vertical_proportions', $slots);
 
         foreach ($slots as $name => $spec) {
             $this->assertContains($spec['type'], ['text', 'integer', 'number'], "slot {$name}");
         }
+    }
+
+    /** @dataProvider verticalSlots */
+    public function test_the_vertical_geometry_is_numeric_and_bounded(string $slot, float $min, float $max): void
+    {
+        // Chieu cao TUNG tang, khong phai tong: mot cau prose tung khai "1.9m
+        // freeboard, superstructure height equals exposed hull depth" canh 4
+        // tang — 0.475m moi tang. Khai per-deck thi cau do khong noi duoc.
+        $slots = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots ?? [];
+
+        $this->assertSame(['type' => 'number', 'min' => $min, 'max' => $max], $slots[$slot]);
+    }
+
+    public static function verticalSlots(): array
+    {
+        return [
+            ['design_draft_m', 2.0, 6.0],
+            ['minimum_freeboard_m', 1.5, 6.0],
+            ['typical_deck_to_deck_height_m', 2.6, 3.5],
+        ];
+    }
+
+    public function test_a_concept_written_against_the_old_prose_slot_is_refused(): void
+    {
+        $profile = (new CreativeProfileResolver)->resolve('yacht');
+
+        $identity = [];
+        foreach ($profile->identitySlots as $name => $spec) {
+            $identity[$name] = match ($spec['type']) {
+                'integer' => (int) $spec['min'],
+                'number' => (float) $spec['min'],
+                default => 'a plain description',
+            };
+        }
+
+        unset($identity['design_draft_m'], $identity['minimum_freeboard_m'], $identity['typical_deck_to_deck_height_m']);
+        $identity['hull_vertical_proportions'] = 'low freeboard with balanced hull and superstructure height';
+
+        $concept = new CreativeConcept(
+            'One line unifies the whole vessel.',
+            $identity,
+            [new SignatureFeature('a recessed stern pool', [Viewpoint::RearThreeQuarter])],
+            array_map(
+                fn (string $aspect) => new DesignDecision($aspect, Provenance::Invented, 'Decided independently.'),
+                $profile->inspectionAspects,
+            ),
+            new FormRelationships('One line.', 'Volumes taper.', 'Features grow from the form.'),
+        );
+
+        $violations = (new ConceptValidator)->validate(
+            $concept, $profile, new InspirationBrief(['design_profile'], 'A focus.', [], []),
+        )->fatalViolations;
+
+        $this->assertContains('design_identity is missing slot design_draft_m', $violations);
+        $this->assertContains('design_identity is missing slot minimum_freeboard_m', $violations);
+        $this->assertContains('design_identity is missing slot typical_deck_to_deck_height_m', $violations);
+        $this->assertContains('design_identity contains unknown slot hull_vertical_proportions', $violations);
+    }
+
+    public function test_every_viewpoint_tells_the_designer_where_the_camera_stands(): void
+    {
+        $profile = (new CreativeProfileResolver)->resolve('yacht');
+
+        $this->assertSame(Viewpoint::values(), array_keys($profile->viewpointGuidance));
+
+        foreach ($profile->viewpointGuidance as $name => $text) {
+            $this->assertStringContainsString('waterline', $text, $name);
+        }
+    }
+
+    public function test_a_profile_without_viewpoint_guidance_is_caught_before_any_model_call(): void
+    {
+        config(['video.creative_profiles.profiles.luxury_vessel.viewpoint_guidance' => []]);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        (new CreativeProfileResolver)->resolve('yacht')->assertConceptReady();
     }
 
     public function test_the_shipped_profile_is_ready_for_a_concept_run(): void

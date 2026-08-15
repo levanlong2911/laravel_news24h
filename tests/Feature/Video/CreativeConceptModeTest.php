@@ -170,8 +170,8 @@ class CreativeConceptModeTest extends TestCase
         $identity = [];
         foreach ($profile->identitySlots as $name => $spec) {
             $identity[$name] = match ($spec['type']) {
-                'integer' => 4,
-                'number' => 6.0,
+                'integer' => (int) $spec['min'],
+                'number' => (float) $spec['min'],
                 default => 'a plain description',
             };
         }
