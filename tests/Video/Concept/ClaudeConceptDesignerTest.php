@@ -59,7 +59,7 @@ class ClaudeConceptDesignerTest extends TestCase
         );
 
         $this->assertSame('sonnet', $requests[0]->model);
-        $this->assertSame('concept-v2', $requests[0]->instructionVersion);
+        $this->assertSame('concept-v3', $requests[0]->instructionVersion);
         $this->assertStringContainsString('form_relationships', $requests[0]->instruction);
         $this->assertSame('Volumes taper progressively.', $result->concept->formRelationships->massingRhythm);
     }
@@ -167,6 +167,49 @@ class ClaudeConceptDesignerTest extends TestCase
 
         $this->assertStringContainsString('design_identity.ratio', $requests[1]->instruction);
         $this->assertStringNotContainsString('decisions[0]', $requests[1]->instruction);
+    }
+
+    public function test_the_instruction_version_matches_what_the_instruction_now_asks_for(): void
+    {
+        $requests = [];
+        (new ClaudeConceptDesigner($this->llmReturning([], $requests)))->design(
+            new InspirationBrief(['design_profile'], 'A source.', [], []),
+            $this->profile(),
+        );
+
+        $instruction = $requests[0]->instruction;
+
+        $this->assertSame('concept-v3', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertStringContainsString('compact technical specification language', $instruction);
+        $this->assertStringContainsString('Bad:', $instruction);
+        $this->assertStringContainsString('Good:', $instruction);
+        $this->assertStringContainsString('at most 24 words', $instruction);
+        $this->assertStringNotContainsString('characters', $instruction);
+    }
+
+    public function test_an_identity_word_budget_follows_the_slot_it_belongs_to(): void
+    {
+        $profile = new CategoryCreativeProfile(
+            'vehicle', 'Extract inspiration.', ['design_profile'], ['form'], ['brand'],
+            [
+                'silhouette' => ['type' => 'text', 'max_length' => 120],
+                'paint' => ['type' => 'text', 'max_length' => 60],
+            ],
+            'Design a new vehicle whose silhouette is readable from outside.',
+        );
+
+        $requests = [];
+        try {
+            (new ClaudeConceptDesigner($this->llmReturning([], $requests)))->design(
+                new InspirationBrief(['design_profile'], 'A source.', [], []),
+                $profile,
+            );
+        } catch (InvalidCreativeConcept) {
+            // Chi quan tam instruction da dung so tu nao.
+        }
+
+        $this->assertStringContainsString('silhouette: one compact technical phrase, at most 17 words', $requests[0]->instruction);
+        $this->assertStringContainsString('paint: one compact technical phrase, at most 8 words', $requests[0]->instruction);
     }
 
     public function test_the_shared_instruction_carries_no_category_vocabulary(): void

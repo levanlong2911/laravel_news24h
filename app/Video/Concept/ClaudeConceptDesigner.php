@@ -9,7 +9,7 @@ use App\Video\Llm\LlmRequest;
 
 final class ClaudeConceptDesigner
 {
-    public const INSTRUCTION_VERSION = 'concept-v2';
+    public const INSTRUCTION_VERSION = 'concept-v3';
 
     private const MAX_ATTEMPTS = 2;
 
