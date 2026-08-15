@@ -29,7 +29,7 @@ class CreativeProfileResolverTest extends TestCase
     {
         $slots = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots ?? [];
 
-        $this->assertCount(13, $slots);
+        $this->assertCount(14, $slots);
         $this->assertArrayNotHasKey('hull_vertical_proportions', $slots);
 
         foreach ($slots as $name => $spec) {
@@ -52,9 +52,22 @@ class CreativeProfileResolverTest extends TestCase
     {
         return [
             ['design_draft_m', 2.0, 6.0],
-            ['minimum_freeboard_m', 1.5, 6.0],
+            ['visible_freeboard_at_midships_m', 1.5, 6.0],
             ['typical_deck_to_deck_height_m', 2.6, 3.5],
         ];
+    }
+
+    public function test_the_profile_declares_an_editorial_length_floor(): void
+    {
+        // Ba concept truoc ra 74m/72m/72m tu bai nguon 70m. San 75m la quyet
+        // dinh bien tap cua ho so nay, khong phai chan gia tri phi ly.
+        $slots = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots ?? [];
+
+        $this->assertSame(['type' => 'number', 'min' => 75.0, 'max' => 180.0], $slots['design_length_m']);
+        $this->assertSame(
+            ['design_length_m', 'length_to_beam_ratio'],
+            array_slice(array_keys($slots), 0, 2),
+        );
     }
 
     public function test_a_concept_written_against_the_old_prose_slot_is_refused(): void
@@ -70,7 +83,8 @@ class CreativeProfileResolverTest extends TestCase
             };
         }
 
-        unset($identity['design_draft_m'], $identity['minimum_freeboard_m'], $identity['typical_deck_to_deck_height_m']);
+        unset($identity['design_length_m'], $identity['design_draft_m'],
+            $identity['visible_freeboard_at_midships_m'], $identity['typical_deck_to_deck_height_m']);
         $identity['hull_vertical_proportions'] = 'low freeboard with balanced hull and superstructure height';
 
         $concept = new CreativeConcept(
@@ -88,8 +102,9 @@ class CreativeProfileResolverTest extends TestCase
             $concept, $profile, new InspirationBrief(['design_profile'], 'A focus.', [], []),
         )->fatalViolations;
 
+        $this->assertContains('design_identity is missing slot design_length_m', $violations);
         $this->assertContains('design_identity is missing slot design_draft_m', $violations);
-        $this->assertContains('design_identity is missing slot minimum_freeboard_m', $violations);
+        $this->assertContains('design_identity is missing slot visible_freeboard_at_midships_m', $violations);
         $this->assertContains('design_identity is missing slot typical_deck_to_deck_height_m', $violations);
         $this->assertContains('design_identity contains unknown slot hull_vertical_proportions', $violations);
     }

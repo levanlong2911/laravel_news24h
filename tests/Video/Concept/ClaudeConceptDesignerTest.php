@@ -62,7 +62,7 @@ class ClaudeConceptDesignerTest extends TestCase
         );
 
         $this->assertSame('sonnet', $requests[0]->model);
-        $this->assertSame('concept-v6', $requests[0]->instructionVersion);
+        $this->assertSame('concept-v8', $requests[0]->instructionVersion);
         $this->assertStringContainsString('form_relationships', $requests[0]->instruction);
         $this->assertSame('Volumes taper progressively.', $result->concept->formRelationships->massingRhythm);
     }
@@ -182,7 +182,7 @@ class ClaudeConceptDesignerTest extends TestCase
 
         $instruction = $requests[0]->instruction;
 
-        $this->assertSame('concept-v6', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertSame('concept-v8', ClaudeConceptDesigner::INSTRUCTION_VERSION);
         $this->assertStringContainsString('compact technical specification language', $instruction);
         $this->assertStringContainsString('Bad:', $instruction);
         $this->assertStringContainsString('Good:', $instruction);

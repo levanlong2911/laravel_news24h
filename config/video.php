@@ -133,9 +133,12 @@ return [
                  * (automotive…) khai bộ khe riêng mà không cần nhánh code.
                  */
                 'identity_slots' => [
+                    // 75 m la SAN BIEN TAP cua ho so nay, khong phai dinh nghia
+                    // ky thuat cua "superyacht".
+                    'design_length_m' => ['type' => 'number', 'min' => 75.0, 'max' => 180.0],
                     'length_to_beam_ratio' => ['type' => 'number', 'min' => 2.0, 'max' => 12.0],
                     'design_draft_m' => ['type' => 'number', 'min' => 2.0, 'max' => 6.0],
-                    'minimum_freeboard_m' => ['type' => 'number', 'min' => 1.5, 'max' => 6.0],
+                    'visible_freeboard_at_midships_m' => ['type' => 'number', 'min' => 1.5, 'max' => 6.0],
                     'typical_deck_to_deck_height_m' => ['type' => 'number', 'min' => 2.6, 'max' => 3.5],
                     'visible_deck_tiers' => ['type' => 'integer', 'min' => 1, 'max' => 10],
                     'bow_profile' => ['type' => 'text', 'max_length' => 120],
