@@ -22,7 +22,7 @@ final class ClaudeConceptDesigner
         private readonly string $model = 'sonnet',
     ) {}
 
-    public function design(InspirationBrief $brief, CategoryCreativeProfile $profile): CreativeConcept
+    public function design(InspirationBrief $brief, CategoryCreativeProfile $profile): ConceptDesignResult
     {
         $profile->assertConceptReady();
         $instruction = $this->instruction($profile);
@@ -50,10 +50,15 @@ final class ClaudeConceptDesigner
 
             try {
                 $concept = $this->parser->parse($response->text)->canonicalised($profile);
-                $violations = $this->validator->violations($concept, $profile, $brief);
-                if ($violations === []) {
-                    return $concept;
+                $result = $this->validator->validate($concept, $profile, $brief);
+
+                // Retry CHI vi fatal. Rut gon van phong o luot sau thuong doi
+                // cho dai sang truong khac chu khong lam concept dung hon.
+                if (! $result->isFatal()) {
+                    return new ConceptDesignResult($concept, $result->warnings, $attempt);
                 }
+
+                $violations = $result->fatalViolations;
             } catch (InvalidCreativeConcept $exception) {
                 $violations = $exception->violations;
             }
@@ -66,18 +71,16 @@ final class ClaudeConceptDesigner
     {
         $slots = [];
         foreach ($profile->identitySlots as $name => $spec) {
+            // Ngan sach tu suy tu chinh khe: 120 ky tu -> 17 tu, 60 -> 8. Mot
+            // con so chung se tu sinh warning o cac khe ngan.
             $slots[] = $spec['type'] === 'text'
-                ? "- {$name}: text, at most {$spec['max_length']} characters"
+                ? '- '.$name.': one compact technical phrase, at most '.max(3, intdiv((int) $spec['max_length'], 7)).' words'
                 : "- {$name}: {$spec['type']}, between {$spec['min']} and {$spec['max']}";
         }
 
         $aspects = implode("\n", array_map(fn (string $aspect) => "- {$aspect}", $profile->inspectionAspects));
         $slotLines = implode("\n", $slots);
-        $maxThesis = ConceptValidator::MAX_THESIS;
-        $maxRelationship = ConceptValidator::MAX_FORM_RELATIONSHIP;
         $maxFeatures = ConceptValidator::MAX_FEATURES;
-        $maxFeatureDescription = ConceptValidator::MAX_FEATURE_DESCRIPTION;
-        $maxDecision = ConceptValidator::MAX_DECISION;
 
         return <<<TEXT
         You are a concept designer. The material below comes from an existing product,
@@ -88,29 +91,38 @@ final class ClaudeConceptDesigner
         Never name a real company, designer, builder, brand, engine maker, owner, or
         existing product. Do not name the new design.
 
+        Write in compact technical specification language. Do not use poetic,
+        promotional, cinematic, or metaphorical prose. Use one clause whenever one
+        clause is sufficient.
+
+        Bad: "A poetic form that appears to flow endlessly through space, dissolving
+        the boundary between structure and horizon."
+        Good: "One continuous line integrates the primary volumes."
+
+        The word budgets below are guidance, not a counting exercise. Staying near
+        them keeps the specification readable.
+
         Return ONLY one raw JSON object with exactly these fields:
 
-        "design_thesis": one sentence, at most {$maxThesis} characters,
-        stating the organising idea of the whole design.
+        "design_thesis": one sentence, at most 24 words, stating the organising idea
+        of the whole design.
 
         "design_identity": an object with exactly these keys:
         {$slotLines}
 
         "form_relationships": an object with exactly three fields, each at most
-        {$maxRelationship} characters:
+        30 words:
         - governing_line: the dominant line or geometry connecting the whole object
         - massing_rhythm: how major volumes transition, taper, overlap, or repeat
         - feature_integration: how signature features grow from the main form instead
           of looking attached afterward
 
         "signature_features": 1 to {$maxFeatures} objects. Each has
-        "description" (one visible feature, at most {$maxFeatureDescription} characters)
-        and "visible_from" (one or more of: front_three_quarter, side,
-        rear_three_quarter).
+        "description" (one visible feature, at most 15 words) and "visible_from"
+        (one or more of: front_three_quarter, side, rear_three_quarter).
 
         "decisions": exactly one object for every aspect below. Each object has
-        "aspect", "provenance" (inspired|invented), and "decision" (at most
-        {$maxDecision} characters).
+        "aspect", "provenance" (inspired|invented), and "decision" (at most 35 words).
         {$aspects}
 
         An inspired decision must transform the reference rather than reproduce its

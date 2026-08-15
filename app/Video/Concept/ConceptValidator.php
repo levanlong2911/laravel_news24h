@@ -8,21 +8,31 @@ use App\Video\Inspiration\SourceInsight;
 
 final class ConceptValidator
 {
-    public const MAX_THESIS = 200;
+    /**
+     * KHUYEN NGHI bien tap, KHONG phai tran cung. Vuot -> ConceptWarning.
+     * Tran cung duy nhat cho prose la MAX_PROSE_STORAGE_LENGTH.
+     */
+    public const RECOMMENDED_THESIS_LENGTH = 200;
+
+    public const RECOMMENDED_FORM_RELATIONSHIP_LENGTH = 220;
+
+    public const RECOMMENDED_FEATURE_LENGTH = 100;
 
     /**
-     * 260 chứ không phải 200: decision phải chứa CẢ lựa chọn lẫn cách chuyển hoá
-     * khỏi nguồn. Đo trên lượt Sonnet đã trả tiền — 12 decision dài 156→229, nên
-     * 200 cắt ngang vùng tự nhiên và retry chỉ dồn chi tiết sang chỗ chưa bị
-     * mắng (identity/feature về 0 violation, decision từ 2 lên 4).
+     * Do tren hai luot Sonnet da tra tien: concept-v1 dai 156-229 ky tu,
+     * concept-v2 (co form_relationships) dich len 221-311. Con so nay chi la
+     * khuyen nghi — `decisions` KHONG di vao prompt anh, nen dai khong the lam
+     * anh sai.
      */
-    public const MAX_DECISION = 260;
+    public const RECOMMENDED_DECISION_LENGTH = 260;
 
-    public const MAX_FEATURE_DESCRIPTION = 100;
+    /**
+     * Tran CUNG cho moi truong prose. Max quan sat 311; 1000 chi chan payload
+     * bat thuong, khong cham phan bo that.
+     */
+    public const MAX_PROSE_STORAGE_LENGTH = 1000;
 
     public const MAX_FEATURES = 3;
-
-    public const MAX_FORM_RELATIONSHIP = 220;
 
     /**
      * Sonnet KHÔNG nhận `excluded_context` — đưa nó vào prompt là tái lộ đúng
@@ -30,46 +40,65 @@ final class ConceptValidator
      *
      * @return list<string>
      */
-    public function violations(
+    public function validate(
         CreativeConcept $concept,
         CategoryCreativeProfile $profile,
         InspirationBrief $brief,
-    ): array {
+    ): ConceptValidationResult {
         // Constructor của các DTO đều public — validator không được dựa ngầm
         // vào việc concept đã đi qua parser.
         $profile->assertConceptReady();
 
         $violations = [];
+        $warnings = [];
 
-        if (trim($concept->designThesis) === '') {
-            $violations[] = 'design_thesis must not be empty';
-        } elseif (mb_strlen($concept->designThesis) > self::MAX_THESIS) {
-            $violations[] = 'design_thesis exceeds '.self::MAX_THESIS.' characters';
-        }
-
-        $this->checkIdentity($concept, $profile, $violations);
-        $this->checkFormRelationships($concept, $violations);
-        $this->checkFeatures($concept, $violations);
-        $this->checkDecisions($concept, $profile, $brief, $violations);
+        $this->checkProse('design_thesis', $concept->designThesis, self::RECOMMENDED_THESIS_LENGTH, $violations, $warnings);
+        $this->checkIdentity($concept, $profile, $violations, $warnings);
+        $this->checkFormRelationships($concept, $violations, $warnings);
+        $this->checkFeatures($concept, $violations, $warnings);
+        $this->checkDecisions($concept, $profile, $brief, $violations, $warnings);
         $this->checkExcludedIdentity($concept, $brief, $violations);
 
-        return array_values(array_unique($violations));
+        return new ConceptValidationResult(array_values(array_unique($violations)), $warnings);
     }
 
-    /** @param list<string> $violations */
-    private function checkFormRelationships(CreativeConcept $concept, array &$violations): void
+    /**
+     * @param  list<string>  $violations
+     * @param  list<ConceptWarning>  $warnings
+     */
+    private function checkProse(string $field, string $value, int $recommended, array &$violations, array &$warnings): void
     {
-        foreach ($concept->formRelationships->toArray() as $name => $value) {
-            if (trim($value) === '') {
-                $violations[] = "form_relationships.{$name} must not be empty";
-            } elseif (mb_strlen($value) > self::MAX_FORM_RELATIONSHIP) {
-                $violations[] = "form_relationships.{$name} exceeds ".self::MAX_FORM_RELATIONSHIP.' characters';
-            }
+        if (trim($value) === '') {
+            $violations[] = "{$field} must not be empty";
+
+            return;
+        }
+
+        $length = mb_strlen($value);
+
+        if ($length > self::MAX_PROSE_STORAGE_LENGTH) {
+            $violations[] = "{$field} exceeds the ".self::MAX_PROSE_STORAGE_LENGTH.' character storage ceiling';
+
+            return;
+        }
+
+        if ($length > $recommended) {
+            $warnings[] = new ConceptWarning(
+                ConceptWarning::PROSE_EXCEEDS_RECOMMENDED_LENGTH, $field, $length, $recommended,
+            );
         }
     }
 
     /** @param list<string> $violations */
-    private function checkIdentity(CreativeConcept $concept, CategoryCreativeProfile $profile, array &$violations): void
+    private function checkFormRelationships(CreativeConcept $concept, array &$violations, array &$warnings): void
+    {
+        foreach ($concept->formRelationships->toArray() as $name => $value) {
+            $this->checkProse("form_relationships.{$name}", $value, self::RECOMMENDED_FORM_RELATIONSHIP_LENGTH, $violations, $warnings);
+        }
+    }
+
+    /** @param list<string> $violations */
+    private function checkIdentity(CreativeConcept $concept, CategoryCreativeProfile $profile, array &$violations, array &$warnings): void
     {
         $declared = array_keys($profile->identitySlots);
         $supplied = array_keys($concept->designIdentity);
@@ -88,7 +117,7 @@ final class ConceptValidator
                 continue;
             }
 
-            $this->checkSlotValue($slot, $spec, $concept->designIdentity[$slot], $violations);
+            $this->checkSlotValue($slot, $spec, $concept->designIdentity[$slot], $violations, $warnings);
         }
     }
 
@@ -96,19 +125,17 @@ final class ConceptValidator
      * @param  array<string, mixed>  $spec
      * @param  list<string>  $violations
      */
-    private function checkSlotValue(string $slot, array $spec, mixed $value, array &$violations): void
+    private function checkSlotValue(string $slot, array $spec, mixed $value, array &$violations, array &$warnings): void
     {
         switch ($spec['type']) {
             case 'text':
-                if (! is_string($value) || trim($value) === '') {
+                if (! is_string($value)) {
                     $violations[] = "design_identity.{$slot} must be a non-empty string";
 
                     return;
                 }
 
-                if (mb_strlen($value) > $spec['max_length']) {
-                    $violations[] = "design_identity.{$slot} exceeds {$spec['max_length']} characters";
-                }
+                $this->checkProse("design_identity.{$slot}", $value, (int) $spec['max_length'], $violations, $warnings);
 
                 return;
 
@@ -138,7 +165,7 @@ final class ConceptValidator
     }
 
     /** @param list<string> $violations */
-    private function checkFeatures(CreativeConcept $concept, array &$violations): void
+    private function checkFeatures(CreativeConcept $concept, array &$violations, array &$warnings): void
     {
         $count = count($concept->signatureFeatures);
 
@@ -147,11 +174,7 @@ final class ConceptValidator
         }
 
         foreach ($concept->signatureFeatures as $index => $feature) {
-            if (trim($feature->description) === '') {
-                $violations[] = "signature_features[{$index}].description must not be empty";
-            } elseif (mb_strlen($feature->description) > self::MAX_FEATURE_DESCRIPTION) {
-                $violations[] = "signature_features[{$index}].description exceeds ".self::MAX_FEATURE_DESCRIPTION.' characters';
-            }
+            $this->checkProse("signature_features[{$index}].description", $feature->description, self::RECOMMENDED_FEATURE_LENGTH, $violations, $warnings);
 
             if ($feature->visibleFrom === []) {
                 $violations[] = "signature_features[{$index}].visible_from must name at least one viewpoint";
@@ -165,6 +188,7 @@ final class ConceptValidator
         CategoryCreativeProfile $profile,
         InspirationBrief $brief,
         array &$violations,
+        array &$warnings,
     ): void {
         $covered = [];
 
@@ -174,11 +198,7 @@ final class ConceptValidator
         ), true);
 
         foreach ($concept->decisions as $index => $decision) {
-            if (trim($decision->decision) === '') {
-                $violations[] = "decisions[{$index}].decision must not be empty";
-            } elseif (mb_strlen($decision->decision) > self::MAX_DECISION) {
-                $violations[] = "decisions[{$index}].decision exceeds ".self::MAX_DECISION.' characters';
-            }
+            $this->checkProse("decisions[{$index}].decision", $decision->decision, self::RECOMMENDED_DECISION_LENGTH, $violations, $warnings);
 
             if (! in_array($decision->aspect, $profile->inspectionAspects, true)) {
                 $violations[] = "decisions[{$index}] aspect {$decision->aspect} is not an inspection aspect";

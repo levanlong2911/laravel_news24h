@@ -67,13 +67,13 @@
       "additionalProperties": false,
       "required": ["design_thesis", "design_identity", "form_relationships", "signature_features", "decisions"],
       "properties": {
-        "design_thesis": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "design_thesis": { "type": "string", "minLength": 1, "maxLength": 1000 },
         "design_identity": {
           "type": "object",
           "minProperties": 1,
           "additionalProperties": {
             "anyOf": [
-              { "type": "string", "minLength": 1 },
+              { "type": "string", "minLength": 1, "maxLength": 1000 },
               { "type": "integer" },
               { "type": "number" }
             ]
@@ -84,9 +84,9 @@
           "additionalProperties": false,
           "required": ["governing_line", "massing_rhythm", "feature_integration"],
           "properties": {
-            "governing_line": { "type": "string", "minLength": 1, "maxLength": 220 },
-            "massing_rhythm": { "type": "string", "minLength": 1, "maxLength": 220 },
-            "feature_integration": { "type": "string", "minLength": 1, "maxLength": 220 }
+            "governing_line": { "type": "string", "minLength": 1, "maxLength": 1000 },
+            "massing_rhythm": { "type": "string", "minLength": 1, "maxLength": 1000 },
+            "feature_integration": { "type": "string", "minLength": 1, "maxLength": 1000 }
           }
         },
         "signature_features": {
@@ -98,7 +98,7 @@
             "additionalProperties": false,
             "required": ["description", "visible_from"],
             "properties": {
-              "description": { "type": "string", "minLength": 1, "maxLength": 100 },
+              "description": { "type": "string", "minLength": 1, "maxLength": 1000 },
               "visible_from": {
                 "type": "array",
                 "minItems": 1,
@@ -118,7 +118,7 @@
             "properties": {
               "aspect": { "$ref": "#/$defs/slug" },
               "provenance": { "enum": ["inspired", "invented"] },
-              "decision": { "type": "string", "minLength": 1, "maxLength": 260 }
+              "decision": { "type": "string", "minLength": 1, "maxLength": 1000 }
             }
           }
         }

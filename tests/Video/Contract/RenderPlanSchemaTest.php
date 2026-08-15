@@ -288,6 +288,62 @@ class RenderPlanSchemaTest extends TestCase
         $this->assertPlanValid($plan);
     }
 
+    /** @dataProvider proseFields */
+    public function test_prose_is_gated_by_the_storage_ceiling_not_the_recommendation(string $field): void
+    {
+        foreach ([1000 => true, 1001 => false] as $length => $valid) {
+            $plan = $this->fixture();
+            $plan->creative_concept = $this->conceptWith($field, str_repeat('a', $length));
+
+            $valid
+                ? $this->assertPlanValid($plan, "{$field} dai {$length}")
+                : $this->assertPlanRejected($plan, "{$field} dai {$length}");
+        }
+    }
+
+    public static function proseFields(): array
+    {
+        return [
+            ['design_thesis'],
+            ['design_identity'],
+            ['form_relationships'],
+            ['signature_features'],
+            ['decisions'],
+        ];
+    }
+
+    private function conceptWith(string $field, string $value): object
+    {
+        $concept = (object) [
+            'design_thesis' => 'One governing line connects the whole vessel.',
+            'design_identity' => (object) ['ratio' => 5.8, 'bow' => 'a plumb bow'],
+            'form_relationships' => (object) [
+                'governing_line' => 'A line runs from bow to stern.',
+                'massing_rhythm' => 'Volumes taper progressively.',
+                'feature_integration' => 'Features grow from the main structure.',
+            ],
+            'signature_features' => [(object) [
+                'description' => 'A recessed observation lounge.',
+                'visible_from' => ['side'],
+            ]],
+            'decisions' => [(object) [
+                'aspect' => 'form_and_proportions',
+                'provenance' => 'invented',
+                'decision' => 'Use a low, continuous silhouette.',
+            ]],
+        ];
+
+        match ($field) {
+            'design_thesis' => $concept->design_thesis = $value,
+            'design_identity' => $concept->design_identity->bow = $value,
+            'form_relationships' => $concept->form_relationships->governing_line = $value,
+            'signature_features' => $concept->signature_features[0]->description = $value,
+            'decisions' => $concept->decisions[0]->decision = $value,
+        };
+
+        return $concept;
+    }
+
     public function test_rejects_legacy_content_type(): void
     {
         $plan = $this->fixture();

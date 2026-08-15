@@ -491,7 +491,7 @@ class VideoRenderPlanService
 
         try {
             $brief = (new ClaudeInspirationAnalyst($llm))->analyze($rawArticle, $profile);
-            $concept = (new ClaudeConceptDesigner($llm))->design($brief, $profile);
+            $design = (new ClaudeConceptDesigner($llm))->design($brief, $profile);
         } catch (InvalidCreativeConcept|InvalidInspirationBrief $e) {
             if ($mode !== 'observe') {
                 throw $e;
@@ -508,18 +508,30 @@ class VideoRenderPlanService
             return $renderPlan;
         }
 
+        // Warning KHONG mang noi dung field — chi code/path/so do, vi no vao log.
+        if ($design->warnings !== []) {
+            Log::warning('video_creative_concept_warnings', [
+                'article_id' => $article->id,
+                'video_session_id' => $videoSessionId,
+                'category' => $category,
+                'attempts' => $design->attempts,
+                'warnings' => $design->warningsToArray(),
+            ]);
+        }
+
         if ($mode === 'observe') {
             Log::info('video_creative_concept_observed', [
                 'article_id' => $article->id,
                 'video_session_id' => $videoSessionId,
                 'category' => $category,
-                'concept' => $concept->toArray(),
+                'attempts' => $design->attempts,
+                'concept' => $design->concept->toArray(),
             ]);
 
             return $renderPlan;
         }
 
-        $renderPlan['creative_concept'] = $concept->toArray();
+        $renderPlan['creative_concept'] = $design->concept->toArray();
 
         return $renderPlan;
     }

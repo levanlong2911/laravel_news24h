@@ -62,6 +62,17 @@ class CreativeConceptTest extends TestCase
         );
     }
 
+    private function fatal(CreativeConcept $concept, CategoryCreativeProfile $profile, InspirationBrief $brief): array
+    {
+        return (new ConceptValidator)->validate($concept, $profile, $brief)->fatalViolations;
+    }
+
+    /** @return list<array{code: string, field: string, actual: int, recommended: int}> */
+    private function warnings(CreativeConcept $concept, CategoryCreativeProfile $profile, InspirationBrief $brief): array
+    {
+        return (new ConceptValidator)->validate($concept, $profile, $brief)->warningsToArray();
+    }
+
     // ---- Preflight cấu hình: nổ TRƯỚC khi có cú gọi model nào ----
 
     public function test_a_slot_type_outside_the_closed_list_is_refused(): void
@@ -128,7 +139,7 @@ class CreativeConceptTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
 
-        (new ConceptValidator)->violations($this->concept(), $profile, $this->brief());
+        $this->fatal($this->concept(), $profile, $this->brief());
     }
 
     public function test_a_profile_without_a_concept_mission_cannot_validate_a_concept(): void
@@ -140,7 +151,7 @@ class CreativeConceptTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
 
-        (new ConceptValidator)->violations($this->concept(), $profile, $this->brief());
+        $this->fatal($this->concept(), $profile, $this->brief());
     }
 
     // ---- Parser ----
@@ -185,7 +196,7 @@ class CreativeConceptTest extends TestCase
 
     public function test_a_complete_concept_passes(): void
     {
-        $this->assertSame([], (new ConceptValidator)->violations($this->concept(), $this->profile(), $this->brief()));
+        $this->assertSame([], $this->fatal($this->concept(), $this->profile(), $this->brief()));
     }
 
     public function test_a_missing_and_an_unknown_slot_are_both_named(): void
@@ -193,7 +204,7 @@ class CreativeConceptTest extends TestCase
         // Thiếu một thừa một vẫn cùng số lượng — phải so TẬP KHOÁ.
         $concept = $this->concept(['ratio' => 6.0, 'tiers' => 4, 'stern' => 'terraced']);
 
-        $violations = (new ConceptValidator)->violations($concept, $this->profile(), $this->brief());
+        $violations = $this->fatal($concept, $this->profile(), $this->brief());
 
         $this->assertContains('design_identity is missing slot bow', $violations);
         $this->assertContains('design_identity contains unknown slot stern', $violations);
@@ -206,7 +217,7 @@ class CreativeConceptTest extends TestCase
 
         $this->assertContains(
             'design_identity.tiers must be an integer',
-            (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()),
+            $this->fatal($concept, $this->profile(), $this->brief()),
         );
     }
 
@@ -222,7 +233,7 @@ class CreativeConceptTest extends TestCase
 
         $this->assertContains(
             'design_identity.ratio must be a finite number',
-            (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()),
+            $this->fatal($concept, $this->profile(), $this->brief()),
         );
     }
 
@@ -235,7 +246,7 @@ class CreativeConceptTest extends TestCase
     {
         $concept = $this->concept(['ratio' => 6, 'tiers' => 4, 'bow' => 'near-vertical']);
 
-        $this->assertSame([], (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()));
+        $this->assertSame([], $this->fatal($concept, $this->profile(), $this->brief()));
     }
 
     public function test_a_slot_outside_its_own_bounds_is_rejected(): void
@@ -245,7 +256,7 @@ class CreativeConceptTest extends TestCase
 
         $this->assertContains(
             'design_identity.tiers must be between 1 and 10',
-            (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()),
+            $this->fatal($concept, $this->profile(), $this->brief()),
         );
     }
 
@@ -254,8 +265,8 @@ class CreativeConceptTest extends TestCase
         $concept = $this->concept(['ratio' => 6.0, 'tiers' => 4, 'bow' => '   ']);
 
         $this->assertContains(
-            'design_identity.bow must be a non-empty string',
-            (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()),
+            'design_identity.bow must not be empty',
+            $this->fatal($concept, $this->profile(), $this->brief()),
         );
     }
 
@@ -267,7 +278,7 @@ class CreativeConceptTest extends TestCase
 
         $this->assertContains(
             'decisions is missing aspect materials',
-            (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()),
+            $this->fatal($concept, $this->profile(), $this->brief()),
         );
     }
 
@@ -281,7 +292,7 @@ class CreativeConceptTest extends TestCase
 
         $this->assertContains(
             'decisions holds more than one entry for aspect size',
-            (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()),
+            $this->fatal($concept, $this->profile(), $this->brief()),
         );
     }
 
@@ -294,7 +305,7 @@ class CreativeConceptTest extends TestCase
 
         $this->assertContains(
             'decisions[0] claims inspiration for size, which the brief did not cover',
-            (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()),
+            $this->fatal($concept, $this->profile(), $this->brief()),
         );
     }
 
@@ -308,7 +319,7 @@ class CreativeConceptTest extends TestCase
             new DesignDecision('materials', Provenance::Invented, 'Something else entirely.'),
         ]);
 
-        $this->assertSame([], (new ConceptValidator)->violations($concept, $this->profile(), $brief));
+        $this->assertSame([], $this->fatal($concept, $this->profile(), $brief));
     }
 
     // ---- Validator: identity đã khai ----
@@ -328,7 +339,7 @@ class CreativeConceptTest extends TestCase
             new FormRelationships('A line Jane Doe drew.', 'b', 'c'),
         );
 
-        $violations = (new ConceptValidator)->violations($concept, $this->profile(), $brief);
+        $violations = $this->fatal($concept, $this->profile(), $brief);
 
         $this->assertContains('design_thesis contains excluded identity context', $violations);
         $this->assertContains('design_identity.bow contains excluded identity context', $violations);
@@ -346,7 +357,7 @@ class CreativeConceptTest extends TestCase
     {
         $concept = $this->concept(['ratio' => 6.0, 'tiers' => 4, 'bow' => 'a Caterpillar edge']);
 
-        $this->assertSame([], (new ConceptValidator)->violations($concept, $this->profile(), $this->brief()));
+        $this->assertSame([], $this->fatal($concept, $this->profile(), $this->brief()));
     }
 
     // ---- Biên độ dài ----
@@ -357,27 +368,56 @@ class CreativeConceptTest extends TestCase
      *
      * @dataProvider decisionLengths
      */
-    public function test_a_decision_is_measured_against_the_260_character_boundary(int $length, bool $accepted): void
+    public function test_a_verbose_decision_warns_instead_of_killing_the_concept(int $length, bool $warned): void
     {
+        // `decisions` KHONG di vao prompt anh, nen dai khong the lam anh sai.
         $concept = $this->concept([], [
             new DesignDecision('size', Provenance::Invented, str_repeat('a', $length)),
             new DesignDecision('materials', Provenance::Invented, 'Steel.'),
         ]);
 
-        $violations = (new ConceptValidator)->violations($concept, $this->profile(), $this->brief());
+        $this->assertSame([], $this->fatal($concept, $this->profile(), $this->brief()));
 
-        $accepted
-            ? $this->assertSame([], $violations)
-            : $this->assertContains('decisions[0].decision exceeds 260 characters', $violations);
+        $fields = array_column($this->warnings($concept, $this->profile(), $this->brief()), 'field');
+
+        $warned
+            ? $this->assertContains('decisions[0].decision', $fields)
+            : $this->assertNotContains('decisions[0].decision', $fields);
     }
 
     public static function decisionLengths(): array
     {
         return [
-            'boundary accepted' => [260, true],
-            'one over rejected' => [261, false],
-            'observed longest' => [229, true],
+            'at the recommendation' => [260, false],
+            'one over only warns' => [261, true],
+            'longest observed in v2' => [311, true],
         ];
+    }
+
+    public function test_prose_past_the_storage_ceiling_is_fatal(): void
+    {
+        $concept = $this->concept([], [
+            new DesignDecision('size', Provenance::Invented, str_repeat('a', 1001)),
+            new DesignDecision('materials', Provenance::Invented, 'Steel.'),
+        ]);
+
+        $this->assertContains(
+            'decisions[0].decision exceeds the 1000 character storage ceiling',
+            $this->fatal($concept, $this->profile(), $this->brief()),
+        );
+    }
+
+    public function test_a_render_critical_field_past_its_recommendation_only_warns(): void
+    {
+        // v2#2 that bai vi thua 12 ky tu o glazing_language va 4 o mot feature —
+        // 16 ky tu do chiem 0.4% prompt anh cuoi cung.
+        $concept = $this->concept(['ratio' => 6.0, 'tiers' => 4, 'bow' => str_repeat('a', 42)]);
+
+        $this->assertSame([], $this->fatal($concept, $this->profile(), $this->brief()));
+        $this->assertSame(
+            [['code' => 'PROSE_EXCEEDS_RECOMMENDED_LENGTH', 'field' => 'design_identity.bow', 'actual' => 42, 'recommended' => 30]],
+            $this->warnings($concept, $this->profile(), $this->brief()),
+        );
     }
 
     // ---- Nội dung rỗng dựng thẳng từ DTO, không qua parser ----
@@ -395,7 +435,7 @@ class CreativeConceptTest extends TestCase
             new FormRelationships('', 'b', 'c'),
         );
 
-        $violations = (new ConceptValidator)->violations($concept, $this->profile(), $this->brief());
+        $violations = $this->fatal($concept, $this->profile(), $this->brief());
 
         $this->assertContains('design_thesis must not be empty', $violations);
         $this->assertContains('signature_features[0].description must not be empty', $violations);
@@ -438,7 +478,7 @@ class CreativeConceptTest extends TestCase
 
         $this->assertContains(
             'decisions holds more than one entry for aspect size',
-            (new ConceptValidator)->violations($ordered, $this->profile(), $this->brief()),
+            $this->fatal($ordered, $this->profile(), $this->brief()),
         );
     }
 
@@ -459,7 +499,7 @@ class CreativeConceptTest extends TestCase
 
         $this->assertContains(
             'decisions[2] aspect rigging is not an inspection aspect',
-            (new ConceptValidator)->violations($ordered, $this->profile(), $this->brief()),
+            $this->fatal($ordered, $this->profile(), $this->brief()),
         );
     }
 }

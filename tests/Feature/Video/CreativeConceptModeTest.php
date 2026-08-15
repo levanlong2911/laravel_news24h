@@ -13,6 +13,7 @@ use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
 use App\Video\Llm\LlmResponse;
 use App\Video\Pipeline\VideoPipelineFactory;
+use Illuminate\Support\Facades\Log;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -149,10 +150,9 @@ class CreativeConceptModeTest extends TestCase
         $this->assertArrayNotHasKey('creative_concept', $plan);
     }
 
-    public function test_enabled_attaches_a_valid_concept_to_the_render_plan(): void
+    /** @return array{0: LlmClient, 1: Article} */
+    private function validConceptRun(bool $verboseDecision = false): array
     {
-        config(['video.creative_concept.mode' => 'enabled']);
-
         $profile = (new CreativeProfileResolver)->resolve('yacht');
         $quote = 'The hull is steel.';
 
@@ -176,6 +176,19 @@ class CreativeConceptModeTest extends TestCase
             };
         }
 
+        $decisions = array_map(
+            fn (string $aspect) => [
+                'aspect' => $aspect,
+                'provenance' => 'invented',
+                'decision' => 'Decided independently of the reference.',
+            ],
+            $profile->inspectionAspects,
+        );
+
+        if ($verboseDecision) {
+            $decisions[0]['decision'] = str_repeat('a', 300);
+        }
+
         $concept = json_encode([
             'design_thesis' => 'One horizontal datum ties every deck together.',
             'design_identity' => $identity,
@@ -188,14 +201,7 @@ class CreativeConceptModeTest extends TestCase
                 'description' => 'a cantilevered bow fin',
                 'visible_from' => ['front_three_quarter'],
             ]],
-            'decisions' => array_map(
-                fn (string $aspect) => [
-                    'aspect' => $aspect,
-                    'provenance' => 'invented',
-                    'decision' => 'Decided independently of the reference.',
-                ],
-                $profile->inspectionAspects,
-            ),
+            'decisions' => $decisions,
         ]);
 
         $llm = new class($brief, $concept) implements LlmClient
@@ -218,6 +224,15 @@ class CreativeConceptModeTest extends TestCase
         $article->id = 'article-1';
         $article->setRelation('category', new Category(['slug' => 'yacht']));
 
+        return [$llm, $article];
+    }
+
+    public function test_enabled_attaches_a_valid_concept_to_the_render_plan(): void
+    {
+        config(['video.creative_concept.mode' => 'enabled']);
+
+        [$llm, $article] = $this->validConceptRun();
+
         $plan = $this->withCreativeConcept($llm, $article);
 
         $this->assertArrayHasKey('creative_concept', $plan);
@@ -226,9 +241,34 @@ class CreativeConceptModeTest extends TestCase
             $plan['creative_concept']['design_thesis'],
         );
         $this->assertCount(
-            count($profile->inspectionAspects),
+            count((new CreativeProfileResolver)->resolve('yacht')->inspectionAspects),
             $plan['creative_concept']['decisions'],
         );
+    }
+
+    public function test_warnings_reach_the_log_instead_of_disappearing_inside_the_validator(): void
+    {
+        config(['video.creative_concept.mode' => 'enabled']);
+
+        $captured = [];
+        Log::listen(function ($message) use (&$captured) {
+            if ($message->message === 'video_creative_concept_warnings') {
+                $captured[] = $message->context;
+            }
+        });
+
+        [$llm, $article] = $this->validConceptRun(verboseDecision: true);
+
+        $plan = $this->withCreativeConcept($llm, $article);
+
+        $this->assertArrayHasKey('creative_concept', $plan);
+        $this->assertCount(1, $captured, 'a verbose concept must still report its warnings');
+        $this->assertSame(1, $captured[0]['attempts']);
+
+        $warning = $captured[0]['warnings'][0];
+        $this->assertSame('PROSE_EXCEEDS_RECOMMENDED_LENGTH', $warning['code']);
+        $this->assertSame('decisions[0].decision', $warning['field']);
+        $this->assertArrayNotHasKey('value', $warning, 'warnings must not carry field content into the log');
     }
 
     public function test_enabled_lets_a_failed_concept_fail_the_build(): void
