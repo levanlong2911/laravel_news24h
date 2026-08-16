@@ -38,11 +38,6 @@ return [
         'python_bin' => env('VIDEO_PYTHON_BIN', 'python'),
         'runner_dir' => env('VIDEO_RUNNER_DIR', ''),
 
-        // §18.30 — lệnh Artisan chạy nền (video:build-plan) dùng PHP CLI của
-        // CHÍNH máy này, không phải PHP-FPM đang phục vụ request (PHP_BINARY
-        // trỏ sai chỗ trong ngữ cảnh đó). Mặc định dựa vào PATH giống python_bin.
-        'php_bin' => env('VIDEO_PHP_BIN', 'php'),
-
         /**
          * Thư mục log của tiến trình nền. Tiến trình nền KHÔNG có ai nhìn
          * stdout, nên không chuyển hướng ra file là mất sạch dấu vết khi hỏng.
@@ -52,6 +47,11 @@ return [
         // Mỗi lần bắn tiến trình tạo MỘT file mới, không bao giờ tự xoá —
         // video:prune-runner-logs dọn theo hạn này (xem lệnh đó).
         'log_retention_days' => env('VIDEO_RUNNER_LOG_RETENTION_DAYS', 21),
+    ],
+
+    'planning_queue' => [
+        'connection' => env('VIDEO_PLANNING_QUEUE_CONNECTION', 'video'),
+        'name' => env('VIDEO_PLANNING_QUEUE', 'video-planning'),
     ],
 
     /**

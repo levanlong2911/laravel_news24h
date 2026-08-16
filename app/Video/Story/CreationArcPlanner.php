@@ -94,7 +94,7 @@ final class CreationArcPlanner
                 'act_id' => $actId,
                 'purpose' => $tpl['purpose'],
                 'subjects' => [$heroId],
-                'motion_intent' => 'LOW',
+                'motion_intent' => $tpl['motion_intent'] ?? 'LOW',
                 // camera_target ghi đè (2026-07-26): KHÔNG phải scene nào cũng
                 // đang nhìn vào chính con tàu. Shot bản vẽ trên bàn, shot động
                 // cơ treo cần trục, shot đứng TRÊN boong — chủ thể trong khung

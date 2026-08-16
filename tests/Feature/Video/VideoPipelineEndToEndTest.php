@@ -85,7 +85,7 @@ class VideoPipelineEndToEndTest extends TestCase
         $service = app(VideoSessionService::class);
 
         [$session, , $reason] = $service->startVideoPlanning($article->id, $admin->id);
-        $this->assertContains($reason, ['ok', 'spawn_failed']);
+        $this->assertSame('ok', $reason);
         $this->assertSame(VideoSessionStatus::PLANNING->value, $session->status);
 
         // ---- 2. video:build-plan chạy nền: gọi Claude (mock), lưu renderplan_json, chuyển composing ----

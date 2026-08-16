@@ -42,6 +42,17 @@ return [
             'after_commit' => false,
         ],
 
+        // Video planning can legitimately spend many minutes in vendor retries.
+        // retry_after must remain greater than BuildVideoPlanJob::$timeout.
+        'video' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => 'jobs',
+            'queue' => env('VIDEO_PLANNING_QUEUE', 'video-planning'),
+            'retry_after' => 3900,
+            'after_commit' => true,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => 'localhost',

@@ -156,7 +156,7 @@ class VideoSessionController extends Controller
     /**
      * Nut "Tao Video" trong cot Actions cua tung bai viet.
      *
-     * §18.30: chi tao session + ban pipeline Claude o NEN roi tra ve NGAY —
+     * §18.30: chi tao session + dua pipeline Claude vao QUEUE roi tra ve NGAY —
      * khong con try/catch quanh pipeline o day, vi pipeline khong con chay
      * trong request nay nua. Loi pipeline (PipelineAborted, LLM tu choi...)
      * gio nam trong `video_sessions.error_message`, doc lai luc F5 trang show.
@@ -172,7 +172,7 @@ class VideoSessionController extends Controller
             return back()->with('error', 'Khong xac dinh duoc admin dang dang nhap — dang nhap lai roi thu.');
         }
 
-        [$session, $spawned, $reason] = $this->videoSessionService->startVideoPlanning($id, (string) $adminId);
+        [$session, $queued, $reason] = $this->videoSessionService->startVideoPlanning($id, (string) $adminId);
 
         if ($reason === 'admin_not_found') {
             return back()->with('error', 'Admin dang dang nhap khong con hop le — dang nhap lai roi thu.');
@@ -183,14 +183,14 @@ class VideoSessionController extends Controller
                 ->with('warning', 'Bai nay da co mot session dang xu ly (chua xong) — khong tao them.');
         }
 
-        if ($spawned) {
+        if ($queued) {
             return redirect()->route('video-session.show', $session->id)
-                ->with('status', 'Dang chay pipeline Claude o nen (25-90 giay). F5 trang nay de xem tien do.');
+                ->with('status', 'Da dua pipeline Claude vao hang doi. F5 trang nay de xem tien do.');
         }
 
         return redirect()->route('video-session.show', $session->id)
             ->with('warning', sprintf(
-                'Session da tao nhung KHONG ban duoc tien trinh nen. Chay tay: %s',
+                'Session da tao nhung KHONG dua duoc vao queue. Chay tay: %s',
                 $this->videoSessionService->manualArtisanCommandFor('video:build-plan', ['--session='.$session->code]),
             ));
     }

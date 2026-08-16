@@ -159,7 +159,7 @@ class PythonRunnerTest extends TestCase
         $this->assertSame('render_queued_shots.py', \App\Services\VideoSessionService::RENDER_SCRIPT);
     }
 
-    // ---- §18.30: spawnArtisan() — cùng cơ chế bắn, đổi đối tượng ----
+    // Lệnh Artisan chạy tay vẫn được in khi queue không nhận được job.
 
     public function test_manual_artisan_command_is_runnable_as_printed(): void
     {
@@ -175,84 +175,5 @@ class PythonRunnerTest extends TestCase
             'php artisan video:build-plan',
             $this->runner()->manualArtisanCommand('video:build-plan', []),
         );
-    }
-
-    private function buildArtisanCommand(string $bin, string $command, array $args, string $log): string
-    {
-        $method = new \ReflectionMethod(PythonRunner::class, 'buildArtisanCommand');
-        $method->setAccessible(true);
-
-        return $method->invoke($this->runner(), $bin, $command, $args, $log);
-    }
-
-    /** @return array{0: string, 1: bool} lệnh + có phải Windows không */
-    private function sampleArtisanCommand(): array
-    {
-        $isWindows = strncasecmp(PHP_OS_FAMILY, 'Windows', 7) === 0;
-
-        return [
-            $this->buildArtisanCommand(
-                'php',
-                'video:build-plan',
-                ['--session=art_abc_260812'],
-                'D:/logs/art_abc.log',
-            ),
-            $isWindows,
-        ];
-    }
-
-    public function test_artisan_command_targets_the_laravel_repo_not_the_python_runner_dir(): void
-    {
-        [$command, $isWindows] = $this->sampleArtisanCommand();
-
-        // Khác spawn(): lệnh Artisan chạy TỪ CHÍNH repo Laravel này, không
-        // phải runner_dir (đó là thư mục repo Python, không liên quan).
-        $expectedDir = $isWindows
-            ? rtrim(str_replace('/', '\\', base_path()), '\\')
-            : base_path();
-
-        $this->assertStringContainsString($expectedDir, $command);
-        $this->assertStringContainsString('artisan', $command);
-    }
-
-    public function test_artisan_command_passes_the_full_flag_through_untouched(): void
-    {
-        [$command] = $this->sampleArtisanCommand();
-
-        $this->assertStringContainsString('--session=art_abc_260812', $command);
-    }
-
-    public function test_artisan_command_output_is_redirected_so_a_background_run_leaves_a_trace(): void
-    {
-        [$command] = $this->sampleArtisanCommand();
-
-        $this->assertStringContainsString('2>&1', $command);
-        $this->assertStringContainsString('art_abc.log', $command);
-    }
-
-    public function test_artisan_command_colon_in_command_name_is_sanitized_out_of_the_log_filename(): void
-    {
-        // `:` la ky tu cam trong ten file Windows — "video:build-plan" phai
-        // duoc lam sach TRUOC khi lam ten file log, khong thi tao file that
-        // bai va spawnArtisan() se tra false o moi lan goi.
-        $method = new \ReflectionMethod(PythonRunner::class, 'logFileFor');
-        $method->setAccessible(true);
-
-        config(['video.runner.log_dir' => sys_get_temp_dir().'/pythonrunner_test_'.uniqid()]);
-
-        $logFile = $method->invoke($this->runner(), str_replace(':', '_', 'video:build-plan'), 'art_abc');
-
-        $this->assertStringNotContainsString(':', basename($logFile));
-    }
-
-    public function test_windows_artisan_command_has_the_empty_title_argument_after_start(): void
-    {
-        [$command, $isWindows] = $this->sampleArtisanCommand();
-
-        if (! $isWindows) {
-            $this->markTestSkipped('nhánh Windows — máy này là POSIX');
-        }
-
-        $this->assertStringContainsString('start "" /B ', $command);
     }
 }

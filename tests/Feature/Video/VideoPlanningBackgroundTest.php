@@ -3,6 +3,7 @@
 namespace Tests\Feature\Video;
 
 use App\Enums\VideoSessionStatus;
+use App\Jobs\BuildVideoPlanJob;
 use App\Models\Admin;
 use App\Models\Article;
 use App\Models\VideoSession;
@@ -10,11 +11,12 @@ use App\Services\VideoRenderPlanService;
 use App\Services\VideoSessionService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Mockery;
 use Tests\TestCase;
 
 /**
- * §18.30 — pipeline Claude chạy nền qua `video:build-plan --session=`, tách
+ * §18.30 — pipeline Claude chạy nền qua `BuildVideoPlanJob`, tách
  * khỏi request HTTP. Hai method dưới quyền kiểm ở đây:
  *
  *   startVideoPlanning()        chạy TRONG request — nhanh, khoá + tạo session
@@ -34,6 +36,13 @@ class VideoPlanningBackgroundTest extends TestCase
     use DatabaseTransactions;
 
     private VideoSessionService $service;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Queue::fake([BuildVideoPlanJob::class]);
+    }
 
     private function article(): Article
     {
@@ -84,16 +93,48 @@ class VideoPlanningBackgroundTest extends TestCase
 
         [$session, , $reason] = $this->service->startVideoPlanning($article->id, $admin->id);
 
-        // Moi truong test khong cau hinh VIDEO_RUNNER_DIR nen spawnArtisan()
-        // tra false mot cach co chu dich (xem PythonRunner::spawn()) — 'ok' hay
-        // 'spawn_failed' deu la NHANH DA-TAO-SESSION, khac han 'already_in_progress'.
-        $this->assertContains($reason, ['ok', 'spawn_failed']);
+        $this->assertSame('ok', $reason);
         $this->assertNotNull($session);
         $this->assertSame(VideoSessionStatus::PLANNING->value, $session->status);
         $this->assertSame($article->id, $session->article_id);
         $this->assertSame($admin->id, $session->requested_by_admin_id);
         $this->assertNull($session->renderplan_json);
         $this->assertStringStartsWith('art_'.substr($article->id, 0, 8).'_', $session->code);
+        Queue::assertPushed(
+            BuildVideoPlanJob::class,
+            fn (BuildVideoPlanJob $job) => $job->sessionCode === $session->code
+                && $job->connection === 'video'
+                && $job->queue === 'video-planning',
+        );
+    }
+
+    public function test_a_queue_worker_failure_releases_the_claim_and_marks_the_session_failed(): void
+    {
+        $this->bindFakeRenderPlanService();
+        [$session] = $this->service->startVideoPlanning($this->article()->id, $this->admin()->id);
+        $session->update([
+            'planning_claimed_at' => now(),
+            'planning_claim_token' => 'worker-that-bai',
+        ]);
+
+        (new BuildVideoPlanJob($session->code))->failed(new \RuntimeException('worker crashed'));
+
+        $session->refresh();
+        $this->assertSame(VideoSessionStatus::FAILED->value, $session->status);
+        $this->assertSame('Queue worker failed before video planning completed.', $session->error_message);
+        $this->assertNull($session->planning_claimed_at);
+        $this->assertNull($session->planning_claim_token);
+    }
+
+    public function test_a_late_queue_failure_never_overwrites_a_completed_session(): void
+    {
+        $this->bindFakeRenderPlanService();
+        [$session] = $this->service->startVideoPlanning($this->article()->id, $this->admin()->id);
+        $session->update(['status' => VideoSessionStatus::COMPOSING->value]);
+
+        (new BuildVideoPlanJob($session->code))->failed(new \RuntimeException('late failure'));
+
+        $this->assertSame(VideoSessionStatus::COMPOSING->value, $session->fresh()->status);
     }
 
     public function test_start_planning_refuses_when_admin_does_not_exist(): void

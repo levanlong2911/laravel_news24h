@@ -17,7 +17,9 @@ use App\Video\Llm\CostCeilingGate;
 use App\Video\Llm\GatedLlmClient;
 use App\Video\Llm\LlmClient;
 use App\Video\Pipeline\VideoPipelineFactory;
+use App\Video\RenderPlan\CreativeRenderPlanBuilder;
 use App\Video\RenderPlan\RenderPlanMeta;
+use App\Video\Story\ClaudeCreativeArcPlanner;
 use App\Video\Story\CreationArcPlanner;
 use App\Video\World\EntityType;
 use App\Video\World\VerifiedWorldGraph;
@@ -124,32 +126,8 @@ class VideoRenderPlanService
         // hien sau khi Extractor da tra tien.
         $conceptMode = $this->creativeConceptMode();
 
-        // Boc them CostAccumulatingLlmClient de cong don token/chi phi THAT qua
-        // ca 1+1+N cu goi (§18.24). Con so KHONG phai uoc luong: no cong
-        // `LlmResponse->tokensIn/tokensOut/costUsd`, ma ba truong do lay thang
-        // tu `usage.input_tokens` / `usage.output_tokens` cua chinh response
-        // Anthropic (ClaudeWriterService dong 137-139), con costUsd tinh bang
-        // bang gia cua model THAT SU duoc goi.
-        //
-        // Class nay von chi dung cho benchmark — docblock cu ghi "pipeline san
-        // xuat khong biet class nay ton tai". Cau do khong con dung tu
-        // 2026-07-30: production can dung so lieu that de ghi ClaudeUsageLog,
-        // va day la thu da do dung cach roi, khong viec gi dung thu hai.
         $accumulator = new CostAccumulatingLlmClient($this->spendingLlmClient());
         $this->lastRun = $accumulator;
-
-        $productionPolicies = $this->videoPipelineFactory->productionPolicies();
-
-        $pipeline = $this->videoPipelineFactory->claude(
-            $accumulator,
-            $productionPolicies,
-            function (string $code, array $context) use ($article, $videoSessionId): void {
-                Log::warning('video_pipeline_'.strtolower($code), $context + [
-                    'article_id' => $article->id,
-                    'video_session_id' => $videoSessionId,
-                ]);
-            },
-        );
 
         $rawArticle = new RawArticle($article->id, $article->title, (string) $article->content);
         $category = (string) ($article->category?->slug ?? '');
@@ -165,6 +143,33 @@ class VideoRenderPlanService
             // category và phục vụ việc kích hoạt Creation Arc, không phải việc
             // chọn hồ sơ tri thức ngành bên Python.
             $category,
+        );
+
+        if ($conceptMode === 'enabled') {
+            try {
+                return $this->buildCreativePlan(
+                    $rawArticle,
+                    $category,
+                    $accumulator,
+                    $meta,
+                    $article,
+                    $videoSessionId,
+                );
+            } finally {
+                $this->recordUsage($article, $videoSessionId);
+            }
+        }
+
+        $productionPolicies = $this->videoPipelineFactory->productionPolicies();
+        $pipeline = $this->videoPipelineFactory->claude(
+            $accumulator,
+            $productionPolicies,
+            function (string $code, array $context) use ($article, $videoSessionId): void {
+                Log::warning('video_pipeline_'.strtolower($code), $context + [
+                    'article_id' => $article->id,
+                    'video_session_id' => $videoSessionId,
+                ]);
+            },
         );
 
         // CHOT CHI PHI (§18.23): bai thuoc category co Creation Arc thi
@@ -465,6 +470,37 @@ class VideoRenderPlanService
         }
 
         return $mode;
+    }
+
+    /** @return array<string, mixed> */
+    private function buildCreativePlan(
+        RawArticle $rawArticle,
+        string $category,
+        LlmClient $llm,
+        RenderPlanMeta $meta,
+        Article $article,
+        ?string $videoSessionId,
+    ): array {
+        $profile = $this->creativeProfileResolver->resolve($category);
+        if ($profile === null) {
+            throw new \InvalidArgumentException("No creative profile is configured for category: {$category}");
+        }
+
+        $brief = (new ClaudeInspirationAnalyst($llm))->analyze($rawArticle, $profile);
+        $design = (new ClaudeConceptDesigner($llm))->design($brief, $profile);
+        if ($design->warnings !== []) {
+            Log::warning('video_creative_concept_warnings', [
+                'article_id' => $article->id,
+                'video_session_id' => $videoSessionId,
+                'category' => $category,
+                'attempts' => $design->attempts,
+                'warnings' => $design->warningsToArray(),
+            ]);
+        }
+
+        $phases = (new ClaudeCreativeArcPlanner($llm))->plan($design->concept);
+
+        return (new CreativeRenderPlanBuilder)->build($meta, $design->concept, $phases);
     }
 
     /**

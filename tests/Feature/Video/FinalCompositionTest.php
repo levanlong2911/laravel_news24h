@@ -172,7 +172,7 @@ class FinalCompositionTest extends TestCase
         $this->assertSame(1, VideoFinal::where('session_id', $this->session->id)->count());
 
         // #2: lan goi thu hai KHONG duoc di qua nhanh spawn() — reason phai la
-        // 'already_composing', khac han nhanh 'ok'/'spawn_failed' cua lan dau.
+        // 'already_composing', khac han nhanh 'ok'/'queue_failed' cua lan dau.
         $this->assertContains($reasonFirst, ['ok', 'spawn_failed']);
         $this->assertSame('already_composing', $reasonSecond);
         $this->assertFalse($spawnedSecond);

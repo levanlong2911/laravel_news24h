@@ -8,9 +8,8 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * §18.30 — chạy pipeline Claude (25-90s, tốn tiền thật) cho MỘT session đang
- * `planning`. Bắn nền qua `PythonRunner::spawnArtisan()`, KHÔNG qua Laravel
- * Queue — xem lý do trong ARCHITECTURE.md §18.30 (QUEUE_CONNECTION=sync trên
- * máy này, không có queue:work nào đang chạy).
+ * `planning`. Production dispatch `BuildVideoPlanJob` vào queue database;
+ * command này giữ lại làm đường vận hành/debug tương đương.
  *
  * Logic thật nằm ở `VideoSessionService::runVideoPlanningPipeline()` —
  * command này chỉ đọc `--session=` rồi gọi, giữ đúng quy ước "Command mỏng,

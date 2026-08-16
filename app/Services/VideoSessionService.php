@@ -4,7 +4,8 @@ namespace App\Services;
 
 use App\Enums\VideoSessionStatus;
 use App\Enums\VideoShotStatus;
-use App\Models\Admin;
+use App\Jobs\BuildVideoPlanJob;
+use App\Models\Article;
 use App\Models\VideoFinal;
 use App\Models\VideoFinalRender;
 use App\Models\VideoRender;
@@ -14,6 +15,7 @@ use App\Repositories\Interfaces\ArticleRepositoryInterface;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Repositories\Interfaces\VideoSessionRepositoryInterface;
 use App\Repositories\Interfaces\VideoShotRepositoryInterface;
+use App\Services\Admin\AdminService;
 use App\Video\Pipeline\PipelineAborted;
 use App\Video\RenderPlan\RenderPlanAssembler;
 use Illuminate\Support\Facades\Auth;
@@ -43,6 +45,7 @@ class VideoSessionService
     public const FINAL_COMPOSE_SCRIPT = 'compose_final.py';
 
     public function __construct(
+        private AdminService $adminService,
         private ArticleRepositoryInterface $articleRepository,
         private VideoProjectRepositoryInterface $projectRepository,
         private VideoSessionRepositoryInterface $sessionRepository,
@@ -74,56 +77,99 @@ class VideoSessionService
     }
 
     /**
-     * @return array{0: ?VideoSession, 1: bool, 2: string} [$session, $spawned, $reason]
-     *                                                     reason: admin_not_found|already_in_progress|spawn_failed|ok
+     * @return array{0: ?VideoSession, 1: bool, 2: string} [$session, $queued, $reason]
+     *                                                     reason: admin_not_found|already_in_progress|queue_failed|ok
      */
     public function startVideoPlanning(string $articleId, string $adminId): array
     {
-        if (! Admin::find($adminId)) {
+        if (! $this->adminExists($adminId)) {
             return [null, false, 'admin_not_found'];
         }
 
-        $article = $this->articleRepository->show($articleId);
-
-        [$session, $reason] = DB::transaction(function () use ($article, $adminId) {
-            // Khoá hàng Article: hai request đồng thời đều có thể thấy "chưa có
-            // session nào đang chạy" TRƯỚC khi bên nào insert xong.
-            $article->newQuery()->whereKey($article->getKey())->lockForUpdate()->firstOrFail();
-
-            $inFlight = VideoSession::query()
-                ->where('article_id', $article->id)
-                ->whereIn('status', VideoSessionStatus::nonTerminalValues())
-                ->latest()
-                ->first();
-
-            if ($inFlight) {
-                return [$inFlight, 'already_in_progress'];
-            }
-
-            $project = $this->projectRepository->findOrCreateByArticle($article->title, $article->id);
-
-            $session = $this->sessionRepository->create([
-                'project_id' => $project->id,
-                'article_id' => $article->id,
-                'requested_by_admin_id' => $adminId,
-                'code' => 'art_'.substr($article->id, 0, 8).'_'.now()->format('ymd_His').'_'.Str::random(4),
-                'status' => VideoSessionStatus::PLANNING->value,
-            ]);
-
-            return [$session, 'created'];
-        });
-
-        if ($reason !== 'created') {
-            return [$session, false, $reason];
+        [$session, $created] = $this->findOrCreatePlanningSession($articleId, $adminId);
+        if (! $created) {
+            return [$session, false, 'already_in_progress'];
         }
 
-        $spawned = $this->pythonRunner->spawnArtisan(
-            'video:build-plan',
-            ['--session='.$session->code],
-            $session->code,
-        );
+        $queued = $this->dispatchPlanningJob($session);
 
-        return [$session, $spawned, $spawned ? 'ok' : 'spawn_failed'];
+        return [$session, $queued, $queued ? 'ok' : 'queue_failed'];
+    }
+
+    private function adminExists(string $adminId): bool
+    {
+        return $this->adminService->getByIdAcc($adminId) !== null;
+    }
+
+    /** @return array{0: VideoSession, 1: bool} [$session, $created] */
+    private function findOrCreatePlanningSession(string $articleId, string $adminId): array
+    {
+        /** @var Article $article */
+        $article = $this->articleRepository->show($articleId);
+
+        return DB::transaction(
+            fn () => $this->findOrCreateLockedPlanningSession($article, $adminId),
+        );
+    }
+
+    /** @return array{0: VideoSession, 1: bool} [$session, $created] */
+    private function findOrCreateLockedPlanningSession(Article $article, string $adminId): array
+    {
+        $this->lockArticleForPlanning($article);
+        $existingSession = $this->findPlanningSession($article->id);
+
+        if ($existingSession !== null) {
+            return [$existingSession, false];
+        }
+
+        return [$this->createPlanningSession($article, $adminId), true];
+    }
+
+    private function lockArticleForPlanning(Article $article): void
+    {
+        // Hai request đồng thời không được cùng thấy "chưa có session".
+        $article->newQuery()
+            ->whereKey($article->getKey())
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
+    private function findPlanningSession(string $articleId): ?VideoSession
+    {
+        return VideoSession::query()
+            ->where('article_id', $articleId)
+            ->whereIn('status', VideoSessionStatus::nonTerminalValues())
+            ->latest()
+            ->first();
+    }
+
+    private function createPlanningSession(Article $article, string $adminId): VideoSession
+    {
+        $project = $this->projectRepository->findOrCreateByArticle($article->title, $article->id);
+
+        return $this->sessionRepository->create([
+            'project_id' => $project->id,
+            'article_id' => $article->id,
+            'requested_by_admin_id' => $adminId,
+            'code' => 'art_'.substr($article->id, 0, 8).'_'.now()->format('ymd_His').'_'.Str::random(4),
+            'status' => VideoSessionStatus::PLANNING->value,
+        ]);
+    }
+
+    private function dispatchPlanningJob(VideoSession $session): bool
+    {
+        try {
+            BuildVideoPlanJob::dispatch($session->code);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('video:build-plan: khong dua duoc job vao queue', [
+                'code' => $session->code,
+                'exception' => $e,
+            ]);
+
+            return false;
+        }
     }
 
     /**
@@ -140,6 +186,7 @@ class VideoSessionService
      */
     public function runVideoPlanningPipeline(string $sessionCode): bool
     {
+        $this->debugPlanningStep('claim_start', ['session_code' => $sessionCode]);
         $claimToken = (string) Str::uuid();
 
         $claim = DB::transaction(function () use ($sessionCode, $claimToken) {
@@ -163,6 +210,13 @@ class VideoSessionService
 
         $session = $claim['session'];
 
+        $this->debugPlanningStep('claim_result', [
+            'session_code' => $sessionCode,
+            'session_found' => $session !== null,
+            'claimed' => $claim['claimed'],
+            'status' => $session?->status,
+        ]);
+
         if (! $session) {
             Log::error('video:build-plan: khong tim thay session', ['code' => $sessionCode]);
 
@@ -185,7 +239,9 @@ class VideoSessionService
         // Admin::find(null) tu nhien tra null (WHERE id = NULL khong khop
         // gi) — mot duong DUY NHAT xu ly ca "chua tung co admin" lan "admin
         // da bi xoa", khong can nhanh rieng cho truong hop dau.
-        $admin = Admin::find($session->requested_by_admin_id);
+        $admin = $session->requested_by_admin_id === null
+            ? null
+            : $this->adminService->getByIdAcc($session->requested_by_admin_id);
 
         if (! $admin) {
             $this->finishClaimedPlanning($sessionCode, $claimToken, [
@@ -207,7 +263,15 @@ class VideoSessionService
             // Cac GUARD trong VideoPlanningPipeline::plan() dung TRUOC tung cu
             // goi ton tien — bai rong thi dung khi CHUA ton dong nao.
             $article = $this->articleRepository->show($session->article_id);
+            $this->debugPlanningStep('render_plan_build_start', [
+                'session_code' => $sessionCode,
+                'article_id' => $session->article_id,
+            ]);
             $renderPlan = $this->renderPlanService->build($article, $session->id);
+            $this->debugPlanningStep('render_plan_build_finished', [
+                'session_code' => $sessionCode,
+                'scene_count' => count($renderPlan['scenes'] ?? []),
+            ]);
 
             $wroteResult = $this->finishClaimedPlanning($sessionCode, $claimToken, [
                 'renderplan_json' => $renderPlan,
@@ -225,9 +289,18 @@ class VideoSessionService
                 return false;
             }
 
+            $this->debugPlanningStep('render_plan_saved', [
+                'session_code' => $sessionCode,
+                'status' => VideoSessionStatus::COMPOSING->value,
+            ]);
+
             // BAN tien trinh Python o nen (§18.25), SAU khi da luu — script se
             // goi nguoc lai API doc session nay.
             $spawned = $this->pythonRunner->spawn(self::COMPOSE_SCRIPT, $sessionCode);
+            $this->debugPlanningStep('python_compose_dispatched', [
+                'session_code' => $sessionCode,
+                'spawned' => $spawned,
+            ]);
 
             if (! $spawned) {
                 Log::warning('video:build-plan: khong ban duoc session_runner.py, can chay tay', [
@@ -287,6 +360,16 @@ class VideoSessionService
             ->update($attributes + ['planning_claimed_at' => null, 'planning_claim_token' => null]);
 
         return $updated > 0;
+    }
+
+    /** @param array<string, mixed> $context */
+    private function debugPlanningStep(string $step, array $context): void
+    {
+        if (! app()->environment('local') || ! (bool) config('app.debug')) {
+            return;
+        }
+
+        dump(['planning_step' => $step] + $context);
     }
 
     /**
