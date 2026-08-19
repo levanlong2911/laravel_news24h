@@ -1,0 +1,249 @@
+﻿layer,table,table_status,column,type,key,references,note
+project,video_projects,keep,id,char(36),PK,,
+project,video_projects,keep,article_id,char(36),FK,articles.id,"Đổi tên từ subject_id — nó đang chứa article_id thật"
+project,video_projects,keep,name,varchar(255),,,
+project,video_projects,keep,design_id,char(64),,,"MỚI — sha256 khớp brief.json bên Python"
+project,video_projects,keep,design_ref,varchar(255),,,"Đã khai từ 2026-07-19, chưa code nào ghi/đọc"
+project,video_projects,keep,created_at,timestamp,,,
+project,video_projects,keep,updated_at,timestamp,,,
+project,video_identities,NEW,id,char(36),PK,,
+project,video_identities,NEW,project_id,char(36),FK,video_projects.id,
+project,video_identities,NEW,version,int,UK,,"UNIQUE (project_id, version)"
+project,video_identities,NEW,identity_json,json,,,"14 khe: design_length_m, length_to_beam_ratio, visible_deck_tiers, bow_profile..."
+project,video_identities,NEW,identity_hash,char(64),,,
+project,video_identities,NEW,locked_at,datetime,,,"Khoá rồi thì mọi ảnh sau phải theo"
+project,video_identities,NEW,created_at,timestamp,,,
+project,video_design_cells,NEW,id,char(36),PK,,
+project,video_design_cells,NEW,project_id,char(36),FK,video_projects.id,"Khoá theo DỰ ÁN — không theo session/shot"
+project,video_design_cells,NEW,view,varchar(40),UK,,"front_three_quarter | side | rear_three_quarter | interior"
+project,video_design_cells,NEW,state,varchar(40),UK,,"blueprint | construction | finished"
+project,video_design_cells,NEW,representation,varchar(20),UK,,"photo | technical"
+project,video_design_cells,NEW,prompt,text,,,
+project,video_design_cells,NEW,prompt_sha256,char(64),UK,,"UNIQUE (project_id, prompt_sha256) — CHẶN RENDER LẶP"
+project,video_design_cells,NEW,negative_prompt,text,,,
+project,video_design_cells,NEW,provider,varchar(40),,,
+project,video_design_cells,NEW,model,varchar(80),,,
+project,video_design_cells,NEW,artifact_path,varchar(500),,,"Trỏ tới file — KHÔNG lưu bytes trong DB"
+project,video_design_cells,NEW,width,int,,,
+project,video_design_cells,NEW,height,int,,,
+project,video_design_cells,NEW,cost_usd,"decimal(12,6)",,,
+project,video_design_cells,NEW,status,varchar(20),,,"candidate | approved | superseded"
+project,video_design_cells,NEW,proves_state,varchar(60),,,"Nối vào requires_state của shot"
+project,video_design_cells,NEW,source_cell_id,char(36),FK,video_design_cells.id,"Chuỗi dựng dần: mắt này dùng ảnh nào làm nguồn"
+project,video_design_cells,NEW,approved_at,datetime,,,
+project,video_design_cells,NEW,approved_by,char(36),FK,admins.id,
+project,video_design_cells,NEW,created_at,timestamp,,,
+project,video_design_cells,NEW,updated_at,timestamp,,,
+project,video_cost_entries,NEW,id,char(36),PK,,
+project,video_cost_entries,NEW,project_id,char(36),FK,video_projects.id,
+project,video_cost_entries,NEW,session_id,char(36),FK,video_sessions.id,"NULL khi chi phí thuộc cấp dự án"
+project,video_cost_entries,NEW,entity_type,varchar(40),,,"planning_stage | design_cell | render | audio | publish"
+project,video_cost_entries,NEW,entity_id,char(36),,,
+project,video_cost_entries,NEW,provider,varchar(40),,,
+project,video_cost_entries,NEW,model,varchar(80),,,
+project,video_cost_entries,NEW,usage_type,varchar(40),,,"token | image | video | api_call"
+project,video_cost_entries,NEW,input_units,"decimal(18,6)",,,
+project,video_cost_entries,NEW,output_units,"decimal(18,6)",,,
+project,video_cost_entries,NEW,unit,varchar(30),,,
+project,video_cost_entries,NEW,cost_usd,"decimal(12,6)",,,"Hôm nay tiền rải ở 4 chỗ — bảng này gộp lại"
+project,video_cost_entries,NEW,created_at,timestamp,,,
+session,video_sessions,keep,id,char(36),PK,,
+session,video_sessions,keep,project_id,char(36),FK,video_projects.id,
+session,video_sessions,keep,article_id,char(36),FK,articles.id,
+session,video_sessions,keep,requested_by_admin_id,char(36),FK,admins.id,
+session,video_sessions,keep,code,varchar(64),UK,,"Khoá Python dùng cho toàn bộ API"
+session,video_sessions,keep,status,varchar(30),,,"planning → composing → reviewing → rendering → composing_final → done | failed"
+session,video_sessions,keep,renderplan_json,json,,,"Output cuối của Laravel"
+session,video_sessions,keep,plan_revision,int,,,
+session,video_sessions,keep,planning_revision,int,,,
+session,video_sessions,keep,planning_claimed_at,datetime,,,
+session,video_sessions,keep,planning_claim_token,char(36),,,"Fencing — kiểm trong mệnh đề WHERE của UPDATE"
+session,video_sessions,keep,cost_estimate_total,"decimal(12,6)",,,
+session,video_sessions,keep,cost_actual,"decimal(12,6)",,,
+session,video_sessions,keep,error_message,text,,,
+session,video_sessions,keep,created_at,timestamp,,,
+session,video_sessions,keep,updated_at,timestamp,,,
+session,video_planning_stages,keep,id,char(36),PK,,
+session,video_planning_stages,keep,session_id,char(36),FK,video_sessions.id,
+session,video_planning_stages,keep,planning_revision,int,UK,,"UNIQUE (session_id, planning_revision, stage)"
+session,video_planning_stages,keep,stage,varchar(30),UK,,"inspiration | concept | finalize — INSPIRATION đã khai enum, CHƯA NỐI"
+session,video_planning_stages,keep,status,varchar(20),,,"running | succeeded | failed"
+session,video_planning_stages,keep,input_json,json,,,
+session,video_planning_stages,keep,input_hash,char(64),,,
+session,video_planning_stages,keep,raw_response,text,,,"Nguyên văn model trả — hiện chỉ lưu khi thành công"
+session,video_planning_stages,keep,output_json,json,,,
+session,video_planning_stages,keep,output_hash,char(64),,,
+session,video_planning_stages,keep,claim_token,char(36),,,
+session,video_planning_stages,keep,claimed_at,datetime,,,
+session,video_planning_stages,keep,model,varchar(80),,,
+session,video_planning_stages,keep,instruction_version,varchar(50),,,
+session,video_planning_stages,keep,tokens_in,int,,,
+session,video_planning_stages,keep,tokens_out,int,,,
+session,video_planning_stages,keep,cost_usd,"decimal(12,6)",,,
+session,video_planning_stages,keep,error_message,text,,,
+session,video_planning_stages,keep,started_at,datetime,,,
+session,video_planning_stages,keep,finished_at,datetime,,,
+session,video_planning_stages,keep,created_at,timestamp,,,
+session,video_planning_stages,keep,updated_at,timestamp,,,
+session,video_planning_stage_io,NEW,id,char(36),PK,,
+session,video_planning_stage_io,NEW,stage_id,char(36),FK,video_planning_stages.id,
+session,video_planning_stage_io,NEW,attempt_no,int,UK,,"UNIQUE (stage_id, attempt_no, io_type) — giữ được CẢ lượt 1 và lượt 2"
+session,video_planning_stage_io,NEW,io_type,varchar(10),UK,,"request | response"
+session,video_planning_stage_io,NEW,provider,varchar(40),,,
+session,video_planning_stage_io,NEW,model,varchar(80),,,
+session,video_planning_stage_io,NEW,content,longtext,,,"Nguyên văn — analyze() gộp 2 lượt nên raw_response ở bảng cha chỉ giữ lượt cuối"
+session,video_planning_stage_io,NEW,content_sha256,char(64),,,
+session,video_planning_stage_io,NEW,token_count,int,,,
+session,video_planning_stage_io,NEW,created_at,timestamp,,,
+session,video_shots,keep,id,char(36),PK,,
+session,video_shots,keep,session_id,char(36),FK,video_sessions.id,"Shot KHÔNG có article_id — chỉ về được bài qua session"
+session,video_shots,keep,beat,varchar(60),,,"Khớp scene_id trong renderplan"
+session,video_shots,keep,shot_code,varchar(80),UK,,"UNIQUE (session_id, shot_code, kind)"
+session,video_shots,keep,shot_type,varchar(40),,,
+session,video_shots,keep,kind,varchar(20),UK,,"motion | frame | chain"
+session,video_shots,keep,spec_json,json,,,"INPUT — Python gửi"
+session,video_shots,keep,compiled_prompt,text,,,"OUTPUT — Python biên dịch rồi ghi ngược"
+session,video_shots,keep,negative_prompt,text,,,
+session,video_shots,keep,render_plan,json,,,"provider, renderer, chain_index, cost_estimate"
+session,video_shots,keep,plan_revision,int,,,
+session,video_shots,keep,status,varchar(30),,,"draft → approved → queued → claimed → rendering → rendered | failed | superseded"
+session,video_shots,keep,worker_id,varchar(100),,,
+session,video_shots,keep,claim_token,char(36),,,
+session,video_shots,keep,claimed_at,datetime,,,
+session,video_shots,keep,lease_expires_at,datetime,,,
+session,video_shots,keep,review_note,text,,,"Ghi đè mỗi lần — mất lịch sử, xem video_review_decisions"
+session,video_shots,keep,preview_path,varchar(500),,,
+session,video_shots,keep,artifact_path,varchar(500),,,"Con trỏ tới bản mới nhất"
+session,video_shots,keep,cost_estimate,"decimal(12,6)",,,
+session,video_shots,keep,approved_at,datetime,,,
+session,video_shots,keep,created_at,timestamp,,,
+session,video_shots,keep,updated_at,timestamp,,,
+session,video_shot_design_cells,NEW,id,char(36),PK,,
+session,video_shot_design_cells,NEW,shot_id,char(36),FK,video_shots.id,
+session,video_shot_design_cells,NEW,design_cell_id,char(36),FK,video_design_cells.id,"ĐƯỜNG CHO MƯỢN — bắc từ tầng dự án xuống tầng lượt"
+session,video_shot_design_cells,NEW,role,varchar(40),UK,,"identity_anchor | environment_anchor | geometry_reference | continuity_reference | start_frame"
+session,video_shot_design_cells,NEW,priority,smallint,,,
+session,video_shot_design_cells,NEW,created_at,timestamp,,,
+session,video_renders,keep,id,char(36),PK,,
+session,video_renders,keep,shot_id,char(36),FK,video_shots.id,
+session,video_renders,keep,attempt_no,int,UK,,"UNIQUE (shot_id, attempt_no) — max()+1, không phải count()+1"
+session,video_renders,keep,idempotency_key,varchar(64),,,
+session,video_renders,keep,render_kind,varchar(20),,,"image | video"
+session,video_renders,keep,provider,varchar(40),,,
+session,video_renders,keep,model,varchar(80),,,
+session,video_renders,keep,sent_prompt,text,,,"Prompt THẬT đã gửi"
+session,video_renders,keep,prompt_sha256,char(64),,,
+session,video_renders,keep,negative_prompt,text,,,
+session,video_renders,keep,request_sha256,char(64),,,
+session,video_renders,keep,source_render_id,char(36),FK,video_renders.id,"Khớp bằng source_prompt_sha256, không bằng bản mới nhất"
+session,video_renders,keep,source_kind,varchar(40),,,
+session,video_renders,keep,requires_state,varchar(60),,,"Ảnh nguồn phải chứng minh trạng thái nào"
+session,video_renders,keep,proves_state,varchar(60),,,
+session,video_renders,keep,artifact_path,varchar(500),,,
+session,video_renders,keep,artifact_dir,varchar(500),,,
+session,video_renders,keep,width,int,,,
+session,video_renders,keep,height,int,,,
+session,video_renders,keep,duration_ms,int,,,
+session,video_renders,keep,bytes,bigint,,,
+session,video_renders,keep,cost_usd,"decimal(12,6)",,,"Tiền THẬT đã tiêu"
+session,video_renders,keep,provider_ms,int,,,
+session,video_renders,keep,status,varchar(20),,,"succeeded | failed"
+session,video_renders,keep,error_message,text,,,
+session,video_renders,keep,proof_method,varchar(40),,,
+session,video_renders,keep,proof_verified,boolean,,,"Đường này không soi pixel nên luôn false"
+session,video_renders,keep,created_at,timestamp,,,
+session,video_renders,keep,updated_at,timestamp,,,
+session,video_review_decisions,NEW,id,char(36),PK,,
+session,video_review_decisions,NEW,session_id,char(36),FK,video_sessions.id,
+session,video_review_decisions,NEW,entity_type,varchar(40),,,"shot | design_cell | render_plan"
+session,video_review_decisions,NEW,entity_id,char(36),,,"INDEX (entity_type, entity_id)"
+session,video_review_decisions,NEW,decision,varchar(30),,,"approved | rejected | revision_requested"
+session,video_review_decisions,NEW,revision,int,,,
+session,video_review_decisions,NEW,reviewer_id,char(36),FK,admins.id,
+session,video_review_decisions,NEW,reason,text,,,"Vì sao bị từ chối — hôm nay mất ngay khi bấm duyệt"
+session,video_review_decisions,NEW,metadata_json,json,,,
+session,video_review_decisions,NEW,created_at,timestamp,,,"Chỉ INSERT — không bao giờ UPDATE"
+output,video_audio_tracks,NEW,id,char(36),PK,,
+output,video_audio_tracks,NEW,session_id,char(36),FK,video_sessions.id,
+output,video_audio_tracks,NEW,kind,varchar(20),,,"voiceover | music | sfx"
+output,video_audio_tracks,NEW,scene_id,varchar(60),,,"NULL = cả video"
+output,video_audio_tracks,NEW,provider,varchar(40),,,
+output,video_audio_tracks,NEW,model,varchar(80),,,
+output,video_audio_tracks,NEW,voice_id,varchar(80),,,
+output,video_audio_tracks,NEW,script_text,text,,,
+output,video_audio_tracks,NEW,artifact_path,varchar(500),,,
+output,video_audio_tracks,NEW,duration_ms,int,,,
+output,video_audio_tracks,NEW,cost_usd,"decimal(12,6)",,,
+output,video_audio_tracks,NEW,status,varchar(20),,,
+output,video_audio_tracks,NEW,created_at,timestamp,,,
+output,video_subtitles,NEW,id,char(36),PK,,
+output,video_subtitles,NEW,session_id,char(36),FK,video_sessions.id,
+output,video_subtitles,NEW,language,varchar(10),UK,,"UNIQUE (session_id, language, format)"
+output,video_subtitles,NEW,format,varchar(10),UK,,"srt | vtt | ass"
+output,video_subtitles,NEW,artifact_path,varchar(500),,,
+output,video_subtitles,NEW,source,varchar(20),,,"auto | manual"
+output,video_subtitles,NEW,created_at,timestamp,,,
+output,video_finals,keep,id,char(36),PK,,
+output,video_finals,keep,session_id,char(36),FK,video_sessions.id,
+output,video_finals,keep,plan_json,json,,,"Chốt MỘT LẦN — retry trả lại đúng plan đã dùng"
+output,video_finals,keep,video_path,varchar(500),,,
+output,video_finals,keep,thumbnail_path,varchar(500),,,
+output,video_finals,keep,duration_seconds,int,,,
+output,video_finals,keep,cost_total,"decimal(12,6)",,,
+output,video_finals,keep,status,varchar(30),,,"composing | ready | failed"
+output,video_finals,keep,error_message,text,,,
+output,video_finals,keep,created_at,timestamp,,,
+output,video_finals,keep,updated_at,timestamp,,,
+output,video_final_renders,keep,id,char(36),PK,,
+output,video_final_renders,keep,final_id,char(36),FK,video_finals.id,
+output,video_final_renders,keep,render_id,char(36),FK,video_renders.id,
+output,video_final_renders,keep,sequence_no,smallint,UK,,"UNIQUE (final_id, sequence_no)"
+output,video_final_renders,keep,start_ms,int,,,
+output,video_final_renders,keep,duration_ms,int,,,
+output,video_final_renders,keep,created_at,timestamp,,,
+output,video_publications,NEW,id,char(36),PK,,
+output,video_publications,NEW,final_id,char(36),FK,video_finals.id,
+output,video_publications,NEW,platform,varchar(30),UK,,"UNIQUE (final_id, platform) — thêm nền tảng = thêm hàng, không migration"
+output,video_publications,NEW,external_id,varchar(255),,,
+output,video_publications,NEW,external_url,varchar(500),,,
+output,video_publications,NEW,status,varchar(20),,,"pending | uploading | published | failed"
+output,video_publications,NEW,published_at,datetime,,,
+output,video_publications,NEW,error_message,text,,,
+output,video_publications,NEW,created_at,timestamp,,,
+output,video_publications,NEW,updated_at,timestamp,,,
+output,video_publication_metrics,NEW,id,char(36),PK,,
+output,video_publication_metrics,NEW,publication_id,char(36),FK,video_publications.id,
+output,video_publication_metrics,NEW,measured_on,date,UK,,"UNIQUE (publication_id, measured_on)"
+output,video_publication_metrics,NEW,views,bigint,,,
+output,video_publication_metrics,NEW,watch_time_seconds,bigint,,,
+output,video_publication_metrics,NEW,avg_view_duration,int,,,
+output,video_publication_metrics,NEW,retention_rate,"decimal(6,4)",,,
+output,video_publication_metrics,NEW,ctr,"decimal(6,4)",,,
+output,video_publication_metrics,NEW,likes,bigint,,,
+output,video_publication_metrics,NEW,comments,bigint,,,
+output,video_publication_metrics,NEW,shares,bigint,,,
+output,video_publication_metrics,NEW,saves,bigint,,,
+output,video_publication_metrics,NEW,raw_payload,json,,,
+output,video_publication_metrics,NEW,created_at,timestamp,,,
+evidence,video_extraction_artifacts,keep,id,char(36),PK,,
+evidence,video_extraction_artifacts,keep,article_id,char(36),FK,articles.id,
+evidence,video_extraction_artifacts,keep,session_id,char(36),FK,video_sessions.id,
+evidence,video_extraction_artifacts,keep,category,varchar(60),,,
+evidence,video_extraction_artifacts,keep,model,varchar(80),,,
+evidence,video_extraction_artifacts,keep,instruction_version,varchar(50),,,
+evidence,video_extraction_artifacts,keep,profile_version,varchar(50),,,
+evidence,video_extraction_artifacts,keep,tokens_in,int,,,
+evidence,video_extraction_artifacts,keep,tokens_out,int,,,
+evidence,video_extraction_artifacts,keep,latency_ms,int,,,
+evidence,video_extraction_artifacts,keep,cost_usd,"decimal(12,6)",,,
+evidence,video_extraction_artifacts,keep,raw,text,,,
+evidence,video_extraction_artifacts,keep,candidate_graph,json,,,
+evidence,video_extraction_artifacts,keep,gatekeeper_report,json,,,
+evidence,video_extraction_artifacts,keep,diagnostics,json,,,
+evidence,video_extraction_artifacts,keep,created_at,timestamp,,,
+evidence,video_extraction_artifacts,keep,updated_at,timestamp,,,
+drop,video_claude_calls,DROP,,,,,"11 hàng — pipeline fact_extractor/story_planner đã bỏ. 0 model, 0 usage"
+drop,video_jobs,DROP,,,,,"1 hàng — di tích chia video thành part. 0 model, 0 usage"
+drop,video_analytics,DROP,,,,,"0 hàng — khoá vào video_jobs cũng chết. Thay bằng video_publication_metrics"
+drop,video_assets,DROP,,,,,"0 hàng — khoá shot_id, sai phạm vi. Thay bằng video_design_cells"
+drop,video_outputs,DROP,,,,,"0 hàng — trùng vai video_finals"
