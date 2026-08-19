@@ -31,5 +31,10 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="VIDEO_CREATIVE_CONCEPT_MODE" value="disabled"/>
+        <!-- Cờ gỡ lỗi trong .env không được đổi luồng chạy của test: bật nó lên
+             thì dispatchPlanningJob() chạy chặng Claude NGAY trong request thay
+             vì đẩy job, nên Queue::assertPushed() không bao giờ tới lượt. -->
+        <env name="VIDEO_PLANNING_SYNC" value="false"/>
     </php>
 </phpunit>
