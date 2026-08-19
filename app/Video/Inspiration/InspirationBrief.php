@@ -16,37 +16,38 @@ final class InspirationBrief
         public readonly array $excludedContext,
     ) {}
 
-    /**
-     * Lượt hỏi lại sinh lại TOÀN BỘ brief, không vá đúng chỗ — đo được trên bài
-     * Launchpad: sửa hai summary lẫn tên hãng thì mất luôn một aspect hợp lệ và
-     * một article_pattern. Hợp nhất ở đây để lỗi identity không kéo theo dữ liệu
-     * đã đúng.
-     */
-    public function mergedWith(self $newer): self
-    {
-        $insights = [];
-
-        foreach ($this->sourceInsights as $insight) {
-            $insights[$insight->aspect] = $insight;
-        }
-
-        foreach ($newer->sourceInsights as $insight) {
-            $insights[$insight->aspect] = $insight;
-        }
-
-        $excluded = [];
-
-        foreach ([...$this->excludedContext, ...$newer->excludedContext] as $item) {
-            $excluded[$item->type.'|'.self::normalize($item->value)] ??= $item;
-        }
-
-        return new self(
-            array_values(array_unique([...$this->articlePatterns, ...$newer->articlePatterns])),
-            $newer->articleFocus,
-            array_values($insights),
-            array_values($excluded),
-        );
-    }
+    // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.
+    //     /**
+    //      * Lượt hỏi lại sinh lại TOÀN BỘ brief, không vá đúng chỗ — đo được trên bài
+    //      * Launchpad: sửa hai summary lẫn tên hãng thì mất luôn một aspect hợp lệ và
+    //      * một article_pattern. Hợp nhất ở đây để lỗi identity không kéo theo dữ liệu
+    //      * đã đúng.
+    //      */
+    //     public function mergedWith(self $newer): self
+    //     {
+    //         $insights = [];
+    //
+    //         foreach ($this->sourceInsights as $insight) {
+    //             $insights[$insight->aspect] = $insight;
+    //         }
+    //
+    //         foreach ($newer->sourceInsights as $insight) {
+    //             $insights[$insight->aspect] = $insight;
+    //         }
+    //
+    //         $excluded = [];
+    //
+    //         foreach ([...$this->excludedContext, ...$newer->excludedContext] as $item) {
+    //             $excluded[$item->type.'|'.self::normalize($item->value)] ??= $item;
+    //         }
+    //
+    //         return new self(
+    //             array_values(array_unique([...$this->articlePatterns, ...$newer->articlePatterns])),
+    //             $newer->articleFocus,
+    //             array_values($insights),
+    //             array_values($excluded),
+    //         );
+    //     }
 
     /**
      * Nhóm quan sát mà brief NÀY chưa cung cấp insight — KHÔNG phải khẳng định

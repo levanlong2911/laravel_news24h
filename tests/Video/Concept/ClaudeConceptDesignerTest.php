@@ -124,7 +124,7 @@ class ClaudeConceptDesignerTest extends TestCase
         );
     }
 
-    public function test_prose_past_the_storage_ceiling_retries_and_then_fails(): void
+    public function test_prose_past_the_storage_ceiling_is_fatal(): void
     {
         $requests = [];
         $llm = $this->llmReturning([
@@ -144,32 +144,7 @@ class ClaudeConceptDesignerTest extends TestCase
             $this->assertStringContainsString('storage ceiling', implode(' ', $e->violations));
         }
 
-        $this->assertCount(2, $requests);
-        $this->assertStringContainsString('CORRECTION REQUIRED', $requests[1]->instruction);
-    }
-
-    public function test_the_correction_carries_fatal_violations_only(): void
-    {
-        $requests = [];
-        $llm = $this->llmReturning([
-            'design_identity' => ['ratio' => 99.0],
-            'decisions' => [
-                ['aspect' => 'form', 'provenance' => 'invented', 'decision' => str_repeat('a', 300)],
-                ['aspect' => 'materials', 'provenance' => 'invented', 'decision' => 'Use aluminium and glass.'],
-            ],
-        ], $requests);
-
-        try {
-            (new ClaudeConceptDesigner($llm))->design(
-                new InspirationBrief(['design_profile'], 'A source.', [], []),
-                $this->profile(),
-            );
-        } catch (InvalidCreativeConcept) {
-            // Chi quan tam correction da gui gi.
-        }
-
-        $this->assertStringContainsString('design_identity.ratio', $requests[1]->instruction);
-        $this->assertStringNotContainsString('decisions[0]', $requests[1]->instruction);
+        $this->assertCount(1, $requests);
     }
 
     public function test_the_instruction_version_matches_what_the_instruction_now_asks_for(): void

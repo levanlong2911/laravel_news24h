@@ -288,52 +288,56 @@ class InspirationBriefTest extends TestCase
      * Đo được trên bài Launchpad: lượt hỏi lại sinh lại toàn bộ brief, nên sửa
      * hai summary xong thì mất luôn một aspect hợp lệ và một article_pattern.
      */
-    public function test_merging_keeps_a_good_aspect_the_retry_stopped_returning(): void
-    {
-        $first = new InspirationBrief(
-            ['design_profile', 'owner_news'],
-            'First focus.',
-            [
-                new SourceInsight('size', 'It is 118 metres long.', ['118 metres']),
-                new SourceInsight('materials', 'Jane Doe chose a steel hull.', ['steel hull']),
-            ],
-            [new ExcludedContext('owner', 'Jane Doe')],
-        );
+    // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.
+    //     public function test_merging_keeps_a_good_aspect_the_retry_stopped_returning(): void
+    //     {
+    //         $first = new InspirationBrief(
+    //             ['design_profile', 'owner_news'],
+    //             'First focus.',
+    //             [
+    //                 new SourceInsight('size', 'It is 118 metres long.', ['118 metres']),
+    //                 new SourceInsight('materials', 'Jane Doe chose a steel hull.', ['steel hull']),
+    //             ],
+    //             [new ExcludedContext('owner', 'Jane Doe')],
+    //         );
+    //
+    //         // Lượt sau chỉ sửa `materials`, và bỏ quên `size` lẫn một pattern.
+    //         $second = new InspirationBrief(
+    //             ['design_profile'],
+    //             'Second focus.',
+    //             [new SourceInsight('materials', 'The hull is steel.', ['steel hull'])],
+    //             [new ExcludedContext('owner', 'Jane Doe'), new ExcludedContext('product_name', 'Vessel One')],
+    //         );
+    //
+    //         $merged = $first->mergedWith($second);
+    //
+    //         $this->assertSame(['size', 'materials'], array_map(
+    //             fn (SourceInsight $i) => $i->aspect,
+    //             $merged->sourceInsights,
+    //         ));
+    //         $this->assertSame('The hull is steel.', $merged->sourceInsights[1]->summary);
+    //         $this->assertSame(['design_profile', 'owner_news'], $merged->articlePatterns);
+    //         $this->assertSame('Second focus.', $merged->articleFocus);
+    //         $this->assertCount(2, $merged->excludedContext);
+    //     }
 
-        // Lượt sau chỉ sửa `materials`, và bỏ quên `size` lẫn một pattern.
-        $second = new InspirationBrief(
-            ['design_profile'],
-            'Second focus.',
-            [new SourceInsight('materials', 'The hull is steel.', ['steel hull'])],
-            [new ExcludedContext('owner', 'Jane Doe'), new ExcludedContext('product_name', 'Vessel One')],
-        );
 
-        $merged = $first->mergedWith($second);
+    // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.
+    //     public function test_merging_deduplicates_excluded_context_by_type_and_normalised_value(): void
+    //     {
+    //         $first = new InspirationBrief(['design_profile'], 'x', [], [new ExcludedContext('owner', 'Jane Doe')]);
+    //         $second = new InspirationBrief(['design_profile'], 'x', [], [
+    //             new ExcludedContext('owner', '  jane   doe '),
+    //             new ExcludedContext('product_name', 'Jane Doe'),
+    //         ]);
+    //
+    //         $merged = $first->mergedWith($second);
+    //
+    //         $this->assertCount(2, $merged->excludedContext);
+    //         $this->assertSame('Jane Doe', $merged->excludedContext[0]->value);
+    //         $this->assertSame('product_name', $merged->excludedContext[1]->type);
+    //     }
 
-        $this->assertSame(['size', 'materials'], array_map(
-            fn (SourceInsight $i) => $i->aspect,
-            $merged->sourceInsights,
-        ));
-        $this->assertSame('The hull is steel.', $merged->sourceInsights[1]->summary);
-        $this->assertSame(['design_profile', 'owner_news'], $merged->articlePatterns);
-        $this->assertSame('Second focus.', $merged->articleFocus);
-        $this->assertCount(2, $merged->excludedContext);
-    }
-
-    public function test_merging_deduplicates_excluded_context_by_type_and_normalised_value(): void
-    {
-        $first = new InspirationBrief(['design_profile'], 'x', [], [new ExcludedContext('owner', 'Jane Doe')]);
-        $second = new InspirationBrief(['design_profile'], 'x', [], [
-            new ExcludedContext('owner', '  jane   doe '),
-            new ExcludedContext('product_name', 'Jane Doe'),
-        ]);
-
-        $merged = $first->mergedWith($second);
-
-        $this->assertCount(2, $merged->excludedContext);
-        $this->assertSame('Jane Doe', $merged->excludedContext[0]->value);
-        $this->assertSame('product_name', $merged->excludedContext[1]->type);
-    }
 
     /**
      * Bài Synthesis nói về refit ở BA câu mà model vẫn không trích. Trường này

@@ -11,9 +11,10 @@ final class ClaudeConceptDesigner
 {
     public const INSTRUCTION_VERSION = 'concept-v8';
 
-    private const MAX_ATTEMPTS = 2;
+    private const MAX_ATTEMPTS = 1;
 
-    private const MAX_CORRECTION_CHARS = 1200;
+    // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.
+    // private const MAX_CORRECTION_CHARS = 1200;
 
     public function __construct(
         private readonly LlmClient $llm,
@@ -38,7 +39,9 @@ final class ClaudeConceptDesigner
         $violations = [];
 
         for ($attempt = 1; $attempt <= self::MAX_ATTEMPTS; $attempt++) {
-            $correction = $violations === [] ? '' : $this->correction($violations)."\n\n";
+            // [DEAD 2026-08-19] $violations luon rong o luot duy nhat.
+            // $correction = $violations === [] ? '' : $this->correction($violations)."\n\n";
+            $correction = '';
             $response = $this->llm->complete(new LlmRequest(
                 $correction.$instruction,
                 $input,
@@ -153,12 +156,13 @@ final class ClaudeConceptDesigner
     }
 
     /** @param list<string> $violations */
-    private function correction(array $violations): string
-    {
-        $text = 'CORRECTION REQUIRED. The previous response was rejected for: '.implode('; ', $violations);
-
-        return mb_strlen($text) <= self::MAX_CORRECTION_CHARS
-            ? $text
-            : mb_substr($text, 0, self::MAX_CORRECTION_CHARS - 3).'...';
-    }
+    // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.
+    //     private function correction(array $violations): string
+    //     {
+    //         $text = 'CORRECTION REQUIRED. The previous response was rejected for: '.implode('; ', $violations);
+    //
+    //         return mb_strlen($text) <= self::MAX_CORRECTION_CHARS
+    //             ? $text
+    //             : mb_substr($text, 0, self::MAX_CORRECTION_CHARS - 3).'...';
+    //     }
 }

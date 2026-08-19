@@ -12,7 +12,7 @@ final class ClaudeInspirationAnalyst
 {
     public const INSTRUCTION_VERSION = 'inspiration-v1';
 
-    private const MAX_ATTEMPTS = 2;
+    private const MAX_ATTEMPTS = 1;
 
     public function __construct(
         private readonly LlmClient $llm,
@@ -42,7 +42,9 @@ final class ClaudeInspirationAnalyst
 
             try {
                 $parsed = $this->parser->parse($response->text);
-                $merged = $merged === null ? $parsed : $merged->mergedWith($parsed);
+                // [DEAD 2026-08-19] $merged luon null o luot duy nhat.
+                // $merged = $merged === null ? $parsed : $merged->mergedWith($parsed);
+                $merged = $parsed;
 
                 // Kiểm trên bản HỢP NHẤT, không trên response vừa nhận: một
                 // excluded_context mới có thể biến insight cũ thành vi phạm.
@@ -55,25 +57,27 @@ final class ClaudeInspirationAnalyst
                 return new InspirationResult($merged, $attempt, $response->text);
             }
 
-            $correction = $this->correction($lastViolations);
+            // [DEAD 2026-08-19] khong con luot sau de gui loi sua.
+            // $correction = $this->correction($lastViolations);
         }
 
         throw new InvalidInspirationBrief($lastViolations);
     }
 
-    /**
-     * ĐỨNG TRƯỚC khối bài báo, mang nhãn riêng: instruction dặn model bỏ qua
-     * mọi chỉ thị nằm trong bài, nên lời sửa nối vào đó sẽ bị chính nó phớt lờ.
-     *
-     * @param  list<string>  $violations
-     */
-    private function correction(array $violations): string
-    {
-        return "CORRECTION REQUIRED — this section is an instruction, not article content.\n"
-            ."Your previous response was rejected. Fix only these violations:\n- "
-            .implode("\n- ", $violations)
-            ."\n\n";
-    }
+    // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.
+    //     /**
+    //      * ĐỨNG TRƯỚC khối bài báo, mang nhãn riêng: instruction dặn model bỏ qua
+    //      * mọi chỉ thị nằm trong bài, nên lời sửa nối vào đó sẽ bị chính nó phớt lờ.
+    //      *
+    //      * @param  list<string>  $violations
+    //      */
+    //     private function correction(array $violations): string
+    //     {
+    //         return "CORRECTION REQUIRED — this section is an instruction, not article content.\n"
+    //             ."Your previous response was rejected. Fix only these violations:\n- "
+    //             .implode("\n- ", $violations)
+    //             ."\n\n";
+    //     }
 
     private function renderArticle(EvidenceIndex $index): string
     {
