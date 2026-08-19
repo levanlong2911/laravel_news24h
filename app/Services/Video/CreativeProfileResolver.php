@@ -30,6 +30,8 @@ final class CreativeProfileResolver
             $profile['identity_slots'] ?? [],
             (string) ($profile['concept_mission'] ?? ''),
             $profile['viewpoint_guidance'] ?? [],
+            $profile['arc_stages'] ?? [],
+            $profile['arc_required_stages'] ?? [],
         );
     }
 }

@@ -29,6 +29,8 @@ final class CategoryCreativeProfile
         public readonly array $identitySlots = [],
         public readonly string $conceptMission = '',
         public readonly array $viewpointGuidance = [],
+        public readonly array $arcStages = [],
+        public readonly array $arcRequiredStages = [],
     ) {
         foreach ([$key, $mission] as $value) {
             if (trim($value) === '') {
@@ -53,6 +55,33 @@ final class CategoryCreativeProfile
         }
 
         $this->assertIdentitySlotsAreSatisfiable($identitySlots);
+    }
+
+    /**
+     * Tách khỏi constructor cùng lý do với assertConceptReady(): profile này còn
+     * phục vụ Inspiration, nơi trình tự arc không liên quan. Nổ trước khi gọi
+     * model — một stage bắt buộc nằm ngoài trình tự thì mọi output đều vi phạm
+     * và tiền đã tiêu rồi.
+     */
+    public function assertArcReady(): void
+    {
+        foreach (['arc_stages' => $this->arcStages, 'arc_required_stages' => $this->arcRequiredStages] as $name => $values) {
+            if ($values === [] || count($values) !== count(array_unique($values))) {
+                throw new InvalidArgumentException("Creative profile {$this->key} {$name} must be non-empty and unique.");
+            }
+
+            foreach ($values as $value) {
+                if (! is_string($value) || preg_match('/\A[a-z][a-z0-9_]*\z/', $value) !== 1) {
+                    throw new InvalidArgumentException("Creative profile {$this->key} {$name} contains an invalid key.");
+                }
+            }
+        }
+
+        if (array_diff($this->arcRequiredStages, $this->arcStages) !== []) {
+            throw new InvalidArgumentException(
+                "Creative profile {$this->key} arc_required_stages must all appear in arc_stages.",
+            );
+        }
     }
 
     /**

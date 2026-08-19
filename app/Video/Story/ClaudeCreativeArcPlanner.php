@@ -3,20 +3,16 @@
 namespace App\Video\Story;
 
 use App\Video\Concept\CreativeConcept;
+use App\Video\Inspiration\CategoryCreativeProfile;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
 use JsonException;
 
 final class ClaudeCreativeArcPlanner
 {
-    private const INSTRUCTION_VERSION = 'creative-arc-v1';
+    private const INSTRUCTION_VERSION = 'creative-arc-v2';
 
     private const MIN_SCENES = 4;
-
-    private const MAX_SCENES = 10;
-
-    /** @var list<string> */
-    private const STAGES = ['design', 'construction', 'finishing', 'completion', 'operation'];
 
     public function __construct(
         private readonly LlmClient $llm,
@@ -24,19 +20,21 @@ final class ClaudeCreativeArcPlanner
     ) {}
 
     /** @return array<string, array<string, mixed>> */
-    public function plan(CreativeConcept $concept): array
+    public function plan(CreativeConcept $concept, CategoryCreativeProfile $profile): array
     {
+        $profile->assertArcReady();
+
         $response = $this->llm->complete(new LlmRequest(
-            $this->instruction(),
+            $this->instruction($profile),
             json_encode($concept->toArray(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
             self::INSTRUCTION_VERSION,
             $this->model,
-            maxTokens: 3000,
+            maxTokens: 8000,
             temperature: 0.7,
         ));
 
         $scenes = $this->parse($response->text);
-        $violations = $this->violations($scenes);
+        $violations = $this->violations($scenes, $profile);
         if ($violations !== []) {
             throw new InvalidCreativeArc($violations);
         }
@@ -57,19 +55,26 @@ final class ClaudeCreativeArcPlanner
         return $phases;
     }
 
-    private function instruction(): string
+    private function instruction(CategoryCreativeProfile $profile): string
     {
-        return <<<'TEXT'
+        $stages = implode('|', $profile->arcStages);
+        $first = $profile->arcStages[0];
+        $last = $profile->arcStages[array_key_last($profile->arcStages)];
+        $required = implode(', ', $profile->arcRequiredStages);
+        $min = self::MIN_SCENES;
+
+        return <<<TEXT
 You are the creative arc planner. Turn the supplied original product concept into
 a visual sequence whose scene count and progression serve that specific design.
 
-Return JSON only: {"scenes":[...]}. Create 4 to 10 scenes. The sequence must
-begin with design, include construction, reach completion, and end in operation.
+Return JSON only: {"scenes":[...]}. Create at least {$min} scenes — decide the
+number yourself so the count serves this specific design. The sequence must begin
+with {$first}, end with {$last}, and include every one of: {$required}.
 Stages may repeat but may never move backwards. Every scene must reveal new
 information. Do not copy names, brands, owners, builders, or products.
 
 Each scene must contain exactly:
-- stage: design|construction|finishing|completion|operation
+- stage: {$stages}
 - purpose: ESTABLISH|PROCESS|DETAIL|REVEAL|ACTION|RESOLUTION
 - objective: one concise editorial goal
 - motion_intent: NONE|LOW|HIGH
@@ -110,12 +115,12 @@ TEXT;
     /** @param list<array<string, mixed>> $scenes
      * @return list<string>
      */
-    private function violations(array $scenes): array
+    private function violations(array $scenes, CategoryCreativeProfile $profile): array
     {
+        $stages = $profile->arcStages;
         $violations = [];
-        $count = count($scenes);
-        if ($count < self::MIN_SCENES || $count > self::MAX_SCENES) {
-            $violations[] = 'scenes must contain between 4 and 10 items';
+        if (count($scenes) < self::MIN_SCENES) {
+            $violations[] = 'scenes must contain at least '.self::MIN_SCENES.' items';
         }
 
         $lastStage = -1;
@@ -128,8 +133,8 @@ TEXT;
                 continue;
             }
 
-            $this->validateScene($scene, $path, $violations);
-            $stage = array_search($scene['stage'] ?? null, self::STAGES, true);
+            $this->validateScene($scene, $path, $violations, $stages);
+            $stage = array_search($scene['stage'] ?? null, $stages, true);
             if ($stage !== false) {
                 if ($stage < $lastStage) {
                     $violations[] = "{$path}.stage moves backwards";
@@ -139,17 +144,21 @@ TEXT;
             }
         }
 
-        foreach (['design', 'construction', 'completion', 'operation'] as $required) {
+        foreach ($profile->arcRequiredStages as $required) {
             if (! isset($seen[$required])) {
                 $violations[] = "stage {$required} is required";
             }
         }
-        if (($scenes[0]['stage'] ?? null) !== 'design') {
-            $violations[] = 'the first scene must be design';
+
+        $first = $stages[0];
+        $last = $stages[array_key_last($stages)];
+
+        if (($scenes[0]['stage'] ?? null) !== $first) {
+            $violations[] = "the first scene must be {$first}";
         }
         $lastScene = $scenes === [] ? null : $scenes[array_key_last($scenes)];
-        if (($lastScene['stage'] ?? null) !== 'operation') {
-            $violations[] = 'the final scene must be operation';
+        if (($lastScene['stage'] ?? null) !== $last) {
+            $violations[] = "the final scene must be {$last}";
         }
 
         return $violations;
@@ -158,7 +167,7 @@ TEXT;
     /** @param array<string, mixed> $scene
      * @param  list<string>  $violations
      */
-    private function validateScene(array $scene, string $path, array &$violations): void
+    private function validateScene(array $scene, string $path, array &$violations, array $stages): void
     {
         $allowed = ['stage', 'purpose', 'objective', 'motion_intent', 'camera', 'aesthetic', 'composition_note', 'micro_physics'];
         if (array_diff(array_keys($scene), $allowed) !== [] || array_diff($allowed, array_keys($scene)) !== []) {
@@ -167,7 +176,7 @@ TEXT;
             return;
         }
 
-        $this->enum($scene, 'stage', self::STAGES, $path, $violations);
+        $this->enum($scene, 'stage', $stages, $path, $violations);
         $this->enum($scene, 'purpose', ['ESTABLISH', 'PROCESS', 'DETAIL', 'REVEAL', 'ACTION', 'RESOLUTION'], $path, $violations);
         $this->enum($scene, 'motion_intent', ['NONE', 'LOW', 'HIGH'], $path, $violations);
         foreach (['objective', 'composition_note'] as $field) {

@@ -22,7 +22,7 @@ final class ClaudeInspirationAnalyst
         private readonly ArticleNormalizer $normalizer = new ArticleNormalizer,
     ) {}
 
-    public function analyze(RawArticle $article, CategoryCreativeProfile $profile): InspirationBrief
+    public function analyze(RawArticle $article, CategoryCreativeProfile $profile): InspirationResult
     {
         // Cùng văn bản mà validator sẽ đi tìm lại quote — cho model xem HTML thô
         // thì script/style lọt vào cả prompt lẫn kho đối chiếu.
@@ -52,7 +52,7 @@ final class ClaudeInspirationAnalyst
             }
 
             if ($merged !== null && $lastViolations === []) {
-                return $merged;
+                return new InspirationResult($merged, $attempt, $response->text);
             }
 
             $correction = $this->correction($lastViolations);

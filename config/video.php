@@ -52,6 +52,10 @@ return [
     'planning_queue' => [
         'connection' => env('VIDEO_PLANNING_QUEUE_CONNECTION', 'video'),
         'name' => env('VIDEO_PLANNING_QUEUE', 'video-planning'),
+
+        // Chạy chặng NGAY trong request thay vì đẩy vào queue — chỉ để gỡ lỗi.
+        // Haiku + Sonnet có thể vượt max_execution_time=120s.
+        'sync' => (bool) env('VIDEO_PLANNING_SYNC', false),
     ],
 
     /**
@@ -101,6 +105,15 @@ return [
                 // Mission cua Inspiration bao model SOAN BRIEF; Concept Designer
                 // phai duoc bao THIET KE, va bao ro cai gi nhin thay tu ngoai.
                 'concept_mission' => 'Design a superyacht that has never existed. Its proportions and silhouette must be readable from outside the vessel.',
+
+                // Trình tự tiến của arc, theo hạng mục — Sonnet không được lùi
+                // ngược trong danh sách này. Phần tử ĐẦU và CUỐI cũng là ràng
+                // buộc: scene đầu phải là `design`, scene cuối phải là `operation`.
+                // Hạng mục khác (phục chế xe, xây nhà) khai trình tự của riêng nó.
+                'arc_stages' => ['design', 'construction', 'finishing', 'completion', 'operation'],
+
+                // Được phép lặp và được phép bỏ qua `finishing`; bốn cái này thì không.
+                'arc_required_stages' => ['design', 'construction', 'completion', 'operation'],
                 'article_patterns' => [
                     'design_profile',
                     'new_build_launch_or_delivery',
@@ -124,7 +137,6 @@ return [
                     'transformable_spaces',
                     'capacity',
                     'construction_new_build_and_refit',
-                    'operational_characteristics',
                 ],
 
                 /**

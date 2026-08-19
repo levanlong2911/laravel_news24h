@@ -22,7 +22,7 @@ class CreativeProfileResolverTest extends TestCase
 
         $this->assertSame('luxury_vessel', $resolver->resolve('yacht')?->key);
         $this->assertSame('luxury_vessel', $resolver->resolve('superyacht')?->key);
-        $this->assertCount(12, $resolver->resolve('yacht')?->inspectionAspects ?? []);
+        $this->assertCount(11, $resolver->resolve('yacht')?->inspectionAspects ?? []);
     }
 
     public function test_the_shipped_identity_slots_survive_their_own_preflight(): void

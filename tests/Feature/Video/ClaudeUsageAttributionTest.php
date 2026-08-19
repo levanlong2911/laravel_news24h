@@ -52,7 +52,7 @@ class ClaudeUsageAttributionTest extends TestCase
 
     private function videoSession(): VideoSession
     {
-        $project = VideoProject::create(['name' => 'TEST attribution '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST attribution '.uniqid()]);
 
         return VideoSession::create([
             'project_id' => $project->id,

@@ -9,6 +9,7 @@ final class ConceptDesignResult
         public readonly CreativeConcept $concept,
         public readonly array $warnings,
         public readonly int $attempts,
+        public readonly string $rawResponse = '',
     ) {}
 
     /** @return list<array{code: string, field: string, actual: int, recommended: int}> */

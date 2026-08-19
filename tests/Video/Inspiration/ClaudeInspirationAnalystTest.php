@@ -59,7 +59,7 @@ class ClaudeInspirationAnalystTest extends TestCase
         $brief = (new ClaudeInspirationAnalyst($llm))->analyze(
             new RawArticle('a1', 'Launchpad profile', '<p>Launchpad is 118 metres long and has a steel hull.</p>'),
             $this->profile(),
-        );
+        )->brief;
 
         $this->assertCount(2, $brief->sourceInsights);
         $this->assertSame('haiku', $requests[0]->model);
@@ -281,7 +281,7 @@ class ClaudeInspirationAnalystTest extends TestCase
         $brief = (new ClaudeInspirationAnalyst($llm))->analyze(
             new RawArticle('a1', 'Profile', '<p>Jane Doe ordered a vessel 118 metres long with a steel hull.</p>'),
             $this->profile(),
-        );
+        )->brief;
 
         $aspects = array_map(fn ($insight) => $insight->aspect, $brief->sourceInsights);
 

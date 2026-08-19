@@ -7,9 +7,18 @@ use App\Models\Article;
 use App\Services\Video\CreativeProfileResolver;
 use App\Services\Video\ExtractionArtifactRecorder;
 use App\Video\Article\RawArticle;
+use App\Video\Concept\AnchorPrompt;
 use App\Video\Concept\ClaudeConceptDesigner;
+use App\Video\Concept\ConceptDesignResult;
+use App\Video\Concept\CreativeConcept;
+use App\Video\Concept\CreativeConceptParser;
 use App\Video\Concept\InvalidCreativeConcept;
+use App\Video\Concept\Viewpoint;
+use App\Video\Inspiration\CategoryCreativeProfile;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
+use App\Video\Inspiration\InspirationBrief;
+use App\Video\Inspiration\InspirationBriefParser;
+use App\Video\Inspiration\InspirationResult;
 use App\Video\Inspiration\InvalidInspirationBrief;
 use App\Video\Llm\ClaudeWriterAdapter;
 use App\Video\Llm\CostAccumulatingLlmClient;
@@ -62,6 +71,8 @@ class VideoRenderPlanService
      * Hai luong dung chung bang nhung KHONG duoc lan nhau.
      */
     public const USAGE_ACTION = 'video_renderplan';
+
+    public const STAGE_USAGE_ACTION = 'video_concept_stage';
 
     /**
      * Accumulator cua lan `build()` GAN NHAT — de `recordUsage()` doc totals
@@ -262,8 +273,11 @@ class VideoRenderPlanService
      * hang mo coi. Benchmark da co duong do rieng (BenchmarkResult) nen khong
      * mat du lieu.
      */
-    private function recordUsage(Article $article, ?string $videoSessionId = null): void
-    {
+    private function recordUsage(
+        Article $article,
+        ?string $videoSessionId = null,
+        string $action = self::USAGE_ACTION,
+    ): void {
         $totals = $this->lastRun?->totals();
 
         // `call_count === 0` = chua cu goi nao ra toi API (vd GUARD 1 chan khi
@@ -285,7 +299,7 @@ class VideoRenderPlanService
         $admin->incrementClaudeUsage(
             $article->title,
             $article->source_url ?? '',
-            self::USAGE_ACTION,
+            $action,
             $totals['tokens_in'] + $totals['tokens_out'],
             $totals['cost_usd'],
             $article->id,
@@ -342,52 +356,17 @@ class VideoRenderPlanService
      */
     private function spendingLlmClient(): LlmClient
     {
-        // BUOC 1 — CHINH SACH DUYET CHI. Chi tra true/false, khong goi gi ca:
-        // cho phep neu chi phi UOC LUONG cua MOT cu goi <= tran. Chan duoc bai
-        // qua dai hoac loop bat thuong tao mot cu goi cuc dat.
         $approvalGate = new CostCeilingGate(config('video.llm_cost_ceiling_usd'));
 
-        // BUOC 2 — CONG CHAN, boc quanh client da tiem. Moi lan complete():
-        // uoc luong token -> quy ra tien -> hoi $approvalGate. Khong cho thi nem
-        // ApprovalRequired va CHUA HE goi API (chua ton dong nao).
-        //
-        // Mac dinh cua GatedLlmClient la DenyByDefaultGate — TU CHOI TAT CA.
-        // Nen viec truyen $approvalGate vao day CHINH LA hanh dong cap quyen
-        // tieu tien, co y viet tuong minh tai cho dung chu khong bind an trong
-        // ServiceProvider. Client tho ($this->claudeWriterAdapter) thi tiem duoc
-        // vi no KHONG tu tieu tien duoc gi khi chua co cong.
         return new GatedLlmClient($this->claudeWriterAdapter, $approvalGate);
     }
 
     /**
-     * Ngoai le CO CHU DICH voi Truth Layer ("khong bang chung -> khong ton
-     * tai"): chen cac scene BIA (thiet ke -> thi cong -> hoan thien -> thanh
-     * pham) TRUOC scene that, CHI khi category bai viet co mat trong
-     * config('video.creation_arc.categories').
-     *
-     * SO LUONG SCENE do phase_set quyet dinh, KHONG co dinh — dung dem so o
-     * day (comment cu ghi "3 scene" da sai sau khi len v2). Xem
-     * config/video.php va docs/video/ARCHITECTURE.md §18.16.
-     *
-     * LUON ap dung khi category khop, khong xet bai bao co bang chung thi cong
-     * hay khong (quyet dinh nguoi dung 2026-07-24).
-     *
      * @param  array<string, mixed>  $renderPlan
      * @return array<string, mixed>
      */
     private function applyCreationArc(array $renderPlan, Article $article): array
     {
-        // v2 (§18.16): categories la MAP slug => ten phase_set, khong con la
-        // danh sach phang — vi "can truc ha khoi thuong tang" vo nghia voi o to
-        // hay mo to, moi nganh can bo scene rieng. Kien thuc nganh van nam
-        // hoan toan o data (config), code tra cuu tong quat — khong co nhanh
-        // theo domain nao o day (§1 no domain branching).
-        //
-        // v3 (§18.17): phase_set co 2 khoa — `phases` (cac scene) va `identity`
-        // (nhan dang thi giac cap video, 2 trang thai vong doi).
-        //
-        // Tra cuu dung CUNG ham ma build() da dung de quyet dinh co goi
-        // Producer/Director khong — hai noi khong duoc phep lech nhau (§18.23).
         $set = $this->creationArcPhaseSetFor($article);
         if ($set === null) {
             return $renderPlan;
@@ -403,34 +382,6 @@ class VideoRenderPlanService
     }
 
     /**
-     * Chu the chinh de Creation Arc bam vao: entity Vehicle DAU TIEN trong
-     * world.entities.
-     *
-     * DAY LA HEURISTIC MONG MANH — VA DA DUOC KIEM CHUNG LA MONG MANH.
-     *
-     * RenderPlan v1.0 KHONG encode khai niem "hero entity": khong co field nao
-     * noi bai bao dang ke ve con tau nao. Ham nay dang doan.
-     *
-     * Bang chung that (bai "The Sixth Sense", 2026-07-29) — RenderPlan co BON
-     * entity Vehicle: sixth_sense, mylin_iv, james_ratcliffe_yacht,
-     * mark_cuban_yacht. "Vehicle dau tien" ra sixth_sense = DUNG, nhung dung
-     * nho THU TU Extractor tra ve, khong phai do thiet ke.
-     *
-     * Cac nguon thay the DA THU va DA LOAI (dung kiem chung lai):
-     *   - acts[0].entity_ref (StoryPlanner xep theo do trung tam do thi):
-     *     ra `mylin_iv` — SAI. Do trung tam do do GIAU THUOC TINH (mylin_iv co
-     *     5 attribute, sixth_sense chi co 2), khong do "ai la nhan vat chinh".
-     *   - Khop ten trong tieu de: tieu de bai do khong he chua "Sixth Sense".
-     *
-     * Ket luan: khong co tin hieu nao dang tin hon trong du lieu hien co. KHONG
-     * thay heuristic nay bang mot heuristic khac kem hon. Cach sua ben vung la
-     * them field `hero_entity` tu tang Planner vao RenderPlan contract — khi do
-     * cac tang sau khong phai doan nua. Chua lam vi day la thay doi contract da
-     * dong bang (§14), can bang chung tu nhieu bai hon.
-     *
-     * Trong luc do: canh bao khi co nhieu hon MOT vehicle, de nguoi van hanh
-     * kiem tra truoc khi tieu tien render.
-     *
      * @param  array<string, mixed>  $renderPlan
      * @return array<string, mixed>|null
      */
@@ -481,13 +432,11 @@ class VideoRenderPlanService
         Article $article,
         ?string $videoSessionId,
     ): array {
-        $profile = $this->creativeProfileResolver->resolve($category);
-        if ($profile === null) {
-            throw new \InvalidArgumentException("No creative profile is configured for category: {$category}");
-        }
+        $profile = $this->profileOrFail($category);
 
-        $brief = (new ClaudeInspirationAnalyst($llm))->analyze($rawArticle, $profile);
-        $design = (new ClaudeConceptDesigner($llm))->design($brief, $profile);
+        $brief = $this->inspirationStage($rawArticle, $profile, $llm)->brief;
+        $design = $this->conceptStage($brief, $profile, $llm);
+
         if ($design->warnings !== []) {
             Log::warning('video_creative_concept_warnings', [
                 'article_id' => $article->id,
@@ -498,9 +447,136 @@ class VideoRenderPlanService
             ]);
         }
 
-        $phases = (new ClaudeCreativeArcPlanner($llm))->plan($design->concept);
+        return $this->finalizeStage($design->concept, $meta, $llm, $profile);
+    }
 
-        return (new CreativeRenderPlanBuilder)->build($meta, $design->concept, $phases);
+    /**
+     * Chặng Haiku, tách riêng khỏi Sonnet để mỗi chặng có claim và bản lưu của
+     * mình. Sonnet hỏng thì chạy lại KHÔNG phải trả tiền Haiku lần nữa.
+     */
+    public function renderInspirationStage(Article $article, ?string $videoSessionId = null): InspirationResult
+    {
+        $profile = $this->profileOrFail((string) ($article->category?->slug ?? ''));
+
+        $accumulator = new CostAccumulatingLlmClient($this->spendingLlmClient());
+        $this->lastRun = $accumulator;
+
+        $rawArticle = new RawArticle($article->id, $article->title, (string) $article->content);
+
+        try {
+            return $this->inspirationStage($rawArticle, $profile, $accumulator);
+        } finally {
+            $this->recordUsage($article, $videoSessionId, self::STAGE_USAGE_ACTION);
+        }
+    }
+
+    /** Chặng Sonnet. Nhận brief đã có sẵn — không tự gọi Haiku. */
+    public function renderConceptStage(
+        Article $article,
+        InspirationBrief $brief,
+        ?string $videoSessionId = null,
+    ): ConceptDesignResult {
+        $profile = $this->profileOrFail((string) ($article->category?->slug ?? ''));
+
+        $accumulator = new CostAccumulatingLlmClient($this->spendingLlmClient());
+        $this->lastRun = $accumulator;
+
+        try {
+            return $this->conceptStage($brief, $profile, $accumulator);
+        } finally {
+            $this->recordUsage($article, $videoSessionId, self::STAGE_USAGE_ACTION);
+        }
+    }
+
+    /**
+     * Hình dạng đem lưu. PHẢI bỏ `uncovered_aspects`: InspirationBriefParser từ
+     * chối khoá lạ ở gốc, mà khoá đó là giá trị DẪN XUẤT — `uncoveredAspects()`
+     * tính lại được. Đã đo: bỏ nó thì vòng đi-về dựng lại brief GIỐNG HỆT.
+     *
+     * @return array<string, mixed>
+     */
+    public function briefForStorage(InspirationBrief $brief, Article $article): array
+    {
+        $data = $brief->toArray($this->profileOrFail((string) ($article->category?->slug ?? '')));
+        unset($data['uncovered_aspects']);
+
+        return $data;
+    }
+
+    /** @param  array<string, mixed>  $stored */
+    public function briefFromStorage(array $stored): InspirationBrief
+    {
+        return (new InspirationBriefParser)->parse(json_encode($stored, JSON_THROW_ON_ERROR));
+    }
+
+    /** @return array<string, mixed> */
+    public function runFinalizeStage(
+        Article $article,
+        string $conceptRaw,
+        RenderPlanMeta $meta,
+        ?string $videoSessionId = null,
+    ): array {
+        $profile = $this->profileOrFail((string) ($article->category?->slug ?? ''));
+        $concept = (new CreativeConceptParser)->parse($conceptRaw)->canonicalised($profile);
+
+        $accumulator = new CostAccumulatingLlmClient($this->spendingLlmClient());
+        $this->lastRun = $accumulator;
+
+        try {
+            return $this->finalizeStage($concept, $meta, $accumulator, $profile);
+        } finally {
+            $this->recordUsage($article, $videoSessionId, self::STAGE_USAGE_ACTION);
+        }
+    }
+
+    public function anchorPrompt(Article $article, string $conceptRaw, Viewpoint $viewpoint): string
+    {
+        $profile = $this->profileOrFail((string) ($article->category?->slug ?? ''));
+
+        return (new AnchorPrompt)->build(
+            (new CreativeConceptParser)->parse($conceptRaw)->canonicalised($profile),
+            $profile,
+            $viewpoint,
+        );
+    }
+
+    private function profileOrFail(string $category): CategoryCreativeProfile
+    {
+        $profile = $this->creativeProfileResolver->resolve($category);
+
+        if ($profile === null) {
+            throw new \InvalidArgumentException("No creative profile is configured for category: {$category}");
+        }
+
+        return $profile;
+    }
+
+    private function inspirationStage(
+        RawArticle $rawArticle,
+        CategoryCreativeProfile $profile,
+        LlmClient $llm,
+    ): InspirationResult {
+        return (new ClaudeInspirationAnalyst($llm))->analyze($rawArticle, $profile);
+    }
+
+    private function conceptStage(
+        InspirationBrief $brief,
+        CategoryCreativeProfile $profile,
+        LlmClient $llm,
+    ): ConceptDesignResult {
+        return (new ClaudeConceptDesigner($llm))->design($brief, $profile);
+    }
+
+    /** @return array<string, mixed> */
+    private function finalizeStage(
+        CreativeConcept $concept,
+        RenderPlanMeta $meta,
+        LlmClient $llm,
+        CategoryCreativeProfile $profile,
+    ): array {
+        $phases = (new ClaudeCreativeArcPlanner($llm))->plan($concept, $profile);
+
+        return (new CreativeRenderPlanBuilder)->build($meta, $concept, $phases);
     }
 
     /**
@@ -526,7 +602,7 @@ class VideoRenderPlanService
         }
 
         try {
-            $brief = (new ClaudeInspirationAnalyst($llm))->analyze($rawArticle, $profile);
+            $brief = (new ClaudeInspirationAnalyst($llm))->analyze($rawArticle, $profile)->brief;
             $design = (new ClaudeConceptDesigner($llm))->design($brief, $profile);
         } catch (InvalidCreativeConcept|InvalidInspirationBrief $e) {
             if ($mode !== 'observe') {

@@ -55,7 +55,7 @@ final class ClaudeConceptDesigner
                 // Retry CHI vi fatal. Rut gon van phong o luot sau thuong doi
                 // cho dai sang truong khac chu khong lam concept dung hon.
                 if (! $result->isFatal()) {
-                    return new ConceptDesignResult($concept, $result->warnings, $attempt);
+                    return new ConceptDesignResult($concept, $result->warnings, $attempt, $response->text);
                 }
 
                 $violations = $result->fatalViolations;

@@ -4,6 +4,7 @@ namespace Tests\Video\Story;
 
 use App\Video\Concept\CreativeConcept;
 use App\Video\Concept\FormRelationships;
+use App\Video\Inspiration\CategoryCreativeProfile;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
 use App\Video\Llm\LlmResponse;
@@ -21,6 +22,19 @@ class ClaudeCreativeArcPlannerTest extends TestCase
             [],
             [],
             new FormRelationships('one line', 'measured volumes', 'integrated features'),
+        );
+    }
+
+    private function profile(): CategoryCreativeProfile
+    {
+        return new CategoryCreativeProfile(
+            'luxury_vessel',
+            'Prepare a brief.',
+            ['design_profile'],
+            ['form_and_proportions'],
+            ['ownership'],
+            arcStages: ['design', 'construction', 'finishing', 'completion', 'operation'],
+            arcRequiredStages: ['design', 'construction', 'completion', 'operation'],
         );
     }
 
@@ -68,11 +82,11 @@ class ClaudeCreativeArcPlannerTest extends TestCase
             $this->scene('operation', 'RESOLUTION'),
         ];
 
-        $phases = $this->planner($scenes, $requests)->plan($this->concept());
+        $phases = $this->planner($scenes, $requests)->plan($this->concept(), $this->profile());
 
         $this->assertCount(5, $phases);
         $this->assertSame('sonnet', $requests[0]->model);
-        $this->assertSame('creative-arc-v1', $requests[0]->instructionVersion);
+        $this->assertSame('creative-arc-v2', $requests[0]->instructionVersion);
         $this->assertSame('LOW', $phases['01_design']['motion_intent']);
     }
 
@@ -86,7 +100,7 @@ class ClaudeCreativeArcPlannerTest extends TestCase
             $this->scene('completion', 'REVEAL'),
             $this->scene('construction', 'PROCESS'),
             $this->scene('operation', 'RESOLUTION'),
-        ])->plan($this->concept());
+        ])->plan($this->concept(), $this->profile());
     }
 
     public function test_object_key_order_does_not_change_the_contract(): void
@@ -107,13 +121,13 @@ class ClaudeCreativeArcPlannerTest extends TestCase
             ];
         }
 
-        $this->assertCount(4, $this->planner($scenes)->plan($this->concept()));
+        $this->assertCount(4, $this->planner($scenes)->plan($this->concept(), $this->profile()));
     }
 
     public function test_an_empty_scene_list_fails_as_a_structured_error(): void
     {
         $this->expectException(InvalidCreativeArc::class);
 
-        $this->planner([])->plan($this->concept());
+        $this->planner([])->plan($this->concept(), $this->profile());
     }
 }
