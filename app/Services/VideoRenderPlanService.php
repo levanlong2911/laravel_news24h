@@ -495,6 +495,12 @@ class VideoRenderPlanService
      *
      * @return array<string, mixed>
      */
+    /** @return array{call_count:int,tokens_in:int,tokens_out:int,cost_usd:float,latency_ms:int}|null */
+    public function lastUsage(): ?array
+    {
+        return $this->lastRun?->totals();
+    }
+
     public function briefForStorage(InspirationBrief $brief, Article $article): array
     {
         $data = $brief->toArray($this->profileOrFail((string) ($article->category?->slug ?? '')));

@@ -24,6 +24,7 @@
         'Construction Master' => '0 ảnh',
         'Equipment' => '0 ảnh',
     ];
+
 @endphp
 
 <div class="container-fluid vp">
@@ -31,6 +32,94 @@
     <div class="va-title">
         <h2>A. ASSET CREATION WORKFLOW</h2>
         <span>(Tạo Asset Nền tảng: Ảnh neo &amp; Ảnh tham chiếu)</span>
+    </div>
+
+    <div class="va-insp">
+        <div class="va-insp-head">
+            <span class="ico">✨</span>
+            <div class="txt">
+                <b>Inspiration</b> <em>(Ý tưởng nội dung)</em>
+                <p>Phân tích bài viết để rút ra thông tin quan trọng và ý tưởng hình ảnh</p>
+            </div>
+            @if($brief['running'])
+                <button class="vp-btn" disabled>Đang phân tích…</button>
+            @elseif($brief['stuck'])
+                <form method="POST" action="{{ route('video-projects.inspiration-reset', $project->id) }}">
+                    @csrf
+                    <button class="vp-btn dg">Reset lượt bị kẹt</button>
+                </form>
+            @elseif($brief['can_run'])
+                <form method="POST" action="{{ route('video-projects.inspiration', $project->id) }}"
+                      onsubmit="return vpConfirmOnce(this)">
+                    @csrf
+                    <button class="vp-btn pri">
+                        {{ $brief['analysed'] ? 'Phân tích lại (bài đã đổi)' : 'Gọi Haiku (Phân tích)' }}
+                    </button>
+                </form>
+            @else
+                <button class="vp-btn" disabled title="Bài viết không đổi — kết quả cũ vẫn đúng">Đã phân tích</button>
+            @endif
+        </div>
+
+        <div class="va-insp-grid">
+            <div>
+                <div class="va-lbl" style="margin-top:0">NGUỒN BÀI VIẾT</div>
+                <div class="va-src">
+                    @if($project->article === null)
+                        {{-- Dự án do Python đẩy về không đi qua bài viết nào. --}}
+                        <div class="t">Không gắn với bài viết nào</div>
+                        <div class="d">Dự án được tạo trực tiếp, không qua nút 🎬</div>
+                    @else
+                        <div class="t">{{ $project->article->title }}</div>
+                        @if($project->article->source_url)
+                            <a class="u" href="{{ $project->article->source_url }}" target="_blank" rel="noopener">{{ \Illuminate\Support\Str::limit($project->article->source_url, 70) }}</a>
+                        @endif
+                        <div class="d">
+                            @if($project->article->source_name){{ $project->article->source_name }} ·@endif
+                            Ngày tạo dự án: {{ $project->created_at?->format('d/m/Y H:i') ?? '—' }}
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            <div>
+                <div class="va-lbl" style="margin-top:0">TÓM TẮT Ý TƯỞNG <span>(Haiku)</span></div>
+                <div class="va-brief">
+                    @if($brief['status'] === 'failed' && $brief['error'])
+                        <div class="line"><span class="v" style="color:var(--vp-red)">{{ $brief['error'] }}</span></div>
+                    @endif
+                    @if(! $brief['analysed'])
+                        <div class="line">
+                            <span class="v">Chưa phân tích — bấm <b>Gọi Haiku</b> để bắt đầu.</span>
+                        </div>
+                    @else
+                        <div class="line">
+                            <span class="tick">✓</span>
+                            <span class="k">Chủ đề chính</span>
+                            <span class="v">{{ $brief['focus'] }}</span>
+                        </div>
+                        @foreach($brief['insights'] as $insight)
+                            <div class="line">
+                                <span class="tick">✓</span>
+                                <span class="k">{{ str_replace('_', ' ', $insight['aspect']) }}</span>
+                                <span class="v">{{ $insight['summary'] }}</span>
+                            </div>
+                        @endforeach
+                    @endif
+                </div>
+            </div>
+
+            <div class="va-hints">
+                <div class="h"><span>Gợi ý hình ảnh chính</span><span class="grow"></span><span>⌃</span></div>
+                <div class="chips">
+                    @forelse($brief['patterns'] as $pattern)
+                        <span class="chip">{{ $pattern }}</span>
+                    @empty
+                        <span class="none">Chưa có — bấm Gọi Haiku để phân tích.</span>
+                    @endforelse
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="va-grid">
@@ -152,6 +241,14 @@
 
 @section('script')
 <script>
+function vpConfirmOnce(form) {
+    if (!confirm('Gọi Claude Haiku — tốn tiền đó. Tiếp tục?')) { return false; }
+    var btn = form.querySelector('button');
+    btn.disabled = true;
+    btn.textContent = 'Đang phân tích…';
+    return true;
+}
+
 (function () {
     var count = document.querySelector('[data-c="a"]');
     function sync() {

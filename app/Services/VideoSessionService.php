@@ -19,10 +19,10 @@ use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Repositories\Interfaces\VideoSessionRepositoryInterface;
 use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use App\Services\Admin\AdminService;
+use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\PlanningStageStore;
 use App\Video\Concept\ClaudeConceptDesigner;
 use App\Video\Concept\Viewpoint;
-use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Pipeline\PipelineAborted;
 use App\Video\RenderPlan\RenderPlanAssembler;
 use App\Video\RenderPlan\RenderPlanMeta;
@@ -60,6 +60,7 @@ class VideoSessionService
         private VideoShotRepositoryInterface $shotRepository,
         private VideoRenderPlanService $renderPlanService,
         private PythonRunner $pythonRunner,
+        private InspirationStageRunner $inspirationRunner,
         private PlanningStageStore $stageStore = new PlanningStageStore,
     ) {}
 
@@ -91,24 +92,9 @@ class VideoSessionService
 
         Auth::loginUsingId($admin->id);
 
-        try {
-            $result = $this->renderPlanService->renderInspirationStage($article, $session->id);
-        } catch (\Throwable $e) {
-            Log::error('inspiration-stage: that bai', ['code' => $sessionCode, 'exception' => $e]);
-            $this->stageStore->finishFailed($stage->id, $token, $e->getMessage());
+        [$output] = $this->inspirationRunner->run($stage, $token, $article, $session->id);
 
-            return [false, 'failed'];
-        }
-
-        $this->stageStore->finishSucceeded(
-            $stage->id,
-            $token,
-            $result->rawResponse,
-            $this->renderPlanService->briefForStorage($result->brief, $article),
-            ['model' => 'haiku', 'instruction_version' => ClaudeInspirationAnalyst::INSTRUCTION_VERSION],
-        );
-
-        return [true, 'ok'];
+        return [$output !== null, $output !== null ? 'ok' : 'failed'];
     }
 
     /**

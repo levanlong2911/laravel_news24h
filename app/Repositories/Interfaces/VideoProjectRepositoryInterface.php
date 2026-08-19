@@ -12,4 +12,6 @@ interface VideoProjectRepositoryInterface extends RepositoryInterface
     public function firstOrCreateByName(string $name, ?string $subjectId): VideoProject;
 
     public function listAllWithCounts(): iterable;
+
+    public function getById(string $id): ?VideoProject;
 }

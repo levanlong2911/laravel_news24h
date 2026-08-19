@@ -9,7 +9,6 @@ return [
     'delete_error' => 'Delete error',
     'user_id_required' => 'Please enter email',
     'password_required' => 'Please enter password',
-    'login_fail' => 'The user name or password is incorrect.',
     'email_format' => 'Please enter a valid email address.',
     'send_email_successful' => 'Send email successful',
     'send_email_error' => 'There was an error sending mail',
@@ -24,4 +23,6 @@ return [
     'login_fail' => 'Email hoặc password không đúng',
     'login_success' => 'Đăng nhập thành công',
     'domain_already_exists' => 'Domain đã tồn tại',
+    'project_not_found' => 'Không tìm thấy dự án',
+    'inspiration_done' => 'Phân tích xong',
 ];

@@ -2,36 +2,28 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\VideoProject;
 use App\Services\VideoProjectService;
 
 class VideoProjectsController extends Controller
 {
     private VideoProjectService $videoProjectService;
 
-    public function __construct(
-        VideoProjectService $videoProjectService
-    )
+    public function __construct(VideoProjectService $videoProjectService)
     {
         $this->videoProjectService = $videoProjectService;
     }
 
-    /**
-     Get data by $articleId
-     */
     public function store(string $articleId)
     {
-        $project = $this->videoProjectService->getdataByArticleId($articleId);
-        if (!$project) {
-            return back()->with('error', 'Khong tim thay bai viet.');
+        [$project, $reason] = $this->videoProjectService->getdataByArticleId($articleId);
+
+        if ($project === null) {
+            return redirect()->route('article.index')->with('error', $reason);
         }
-        return view("video-projects.anchor", [
-            "route" => "video-projects",
-            "action" => "admin-video-projects",
-            "menu" => "menu-open",
-            "active" => "active",
-            'project' => $project
-        ]);
+
+        return redirect()
+            ->route('video-projects.anchor', $project->id)
+            ->with('success', __('messages.add_success'));
     }
 
     public function index()
@@ -41,23 +33,46 @@ class VideoProjectsController extends Controller
         ]);
     }
 
-    /**
-     * Màn ASSET CREATION.
-     *
-     * GET KHÔNG gọi Claude — prompt để rỗng cho tới khi người bấm
-     * "Generate Anchor". Đây đúng là lỗi đang có ở `video-session/{id}/anchor`:
-     * mở trang là tiêu ~$0.021, và trình duyệt thì tự gọi lại GET khi F5,
-     * bookmark hay prefetch.
-     */
     public function anchor(string $id)
     {
-        $project = VideoProject::findOrFail($id);
+        $project = $this->videoProjectService->getdataByprojectId($id);
 
-        return view('video-projects.anchor', $this->chrome() + [
-            'id' => $project->id,
+        if ($project === null) {
+            return redirect()->route('video-projects.index')
+                ->with('error', __('messages.project_not_found'));
+        }
+        $brief = $this->videoProjectService->latestInspiration($project->id);
+
+        return view('video-projects.anchor', [
+            'route' => 'video-projects.anchor',
+            'action' => 'video-projects.anchor',
+            'menu' => 'menu-open',
+            'active' => 'active',
+            'project' => $project,
+            'brief' => $brief,
             'prompt' => null,
             'reason' => 'chua sinh',
         ]);
+    }
+
+    public function inspiration(string $id)
+    {
+        [$brief, $reason] = $this->videoProjectService->runInspiration($id);
+
+        if ($brief === null) {
+            return back()->with('error', $reason);
+        }
+
+        return back()->with('success', $reason === 'cached'
+            ? 'Nội dung bài không đổi — dùng lại kết quả cũ, không gọi Claude.'
+            : __('messages.inspiration_done'));
+    }
+
+    public function resetInspiration(string $id)
+    {
+        return $this->videoProjectService->resetInspiration($id)
+            ? back()->with('success', 'Đã reset — bấm Gọi Haiku để chạy lại.')
+            : back()->with('error', 'Không có lượt nào đang kẹt để reset.');
     }
 
     public function reference(string $id)

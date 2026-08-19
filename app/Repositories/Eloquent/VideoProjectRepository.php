@@ -46,4 +46,12 @@ class VideoProjectRepository extends BaseRepository implements VideoProjectRepos
             ->latest()
             ->get();
     }
+
+    public function getById(string $id): ?VideoProject
+    {
+        return VideoProject::with([
+            'article:id,title,content,source_url,source_name,created_at,category_id',
+            'article.category:id,slug',
+        ])->find($id);
+    }
 }

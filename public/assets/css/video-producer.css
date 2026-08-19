@@ -284,3 +284,39 @@
 
 @media (max-width: 1300px) { .va-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) { .va-views { grid-template-columns: repeat(2, minmax(0, 1fr)); } .va-set, .va-set.four { grid-template-columns: repeat(2, minmax(0, 1fr)); } .va-cands { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Inspiration: brief Haiku trả về, đặt trên hai panel Prompt/Render ── */
+.va-insp { background: #fff; border: 1px solid var(--vp-line); border-radius: 9px; margin: 0 0 14px; }
+
+.va-insp-head { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--vp-line); }
+.va-insp-head .ico { width: 24px; height: 24px; border-radius: 6px; background: var(--vp-blue-bg); border: 1px solid var(--vp-blue-line); display: grid; place-items: center; font-size: .75rem; flex: 0 0 auto; }
+.va-insp-head .txt { flex: 1; min-width: 0; }
+.va-insp-head b { font-size: .84rem; color: var(--vp-blue); }
+.va-insp-head em { font-style: normal; font-size: .72rem; color: var(--vp-dim); }
+.va-insp-head p { margin: 3px 0 0; font-size: .71rem; color: var(--vp-dim); }
+
+.va-insp-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr) minmax(0, 1fr); gap: 12px; padding: 13px 14px; }
+
+.va-src { border: 1px solid var(--vp-line); border-radius: 7px; padding: 11px 12px; }
+.va-src .t { font-size: .77rem; font-weight: 600; color: var(--vp-ink); line-height: 1.45; }
+.va-src .u { display: block; font-size: .68rem; color: var(--vp-blue); margin-top: 5px; word-break: break-all; }
+.va-src .d { font-size: .66rem; color: var(--vp-faint); margin-top: 9px; }
+
+.va-brief .line { display: flex; gap: 9px; padding: 5px 0; font-size: .73rem; line-height: 1.5; }
+.va-brief .line + .line { border-top: 1px dashed var(--vp-line); }
+.va-brief .tick { color: var(--vp-green); flex: 0 0 auto; }
+/* Nhãn rộng cố định: aspect do Haiku tự đặt nên dài ngắn thất thường, để co
+   giãn thì cột giá trị nhảy lung tung giữa các dòng. */
+.va-brief .k { flex: 0 0 132px; color: var(--vp-dim); text-transform: capitalize; }
+.va-brief .v { flex: 1; min-width: 0; color: var(--vp-ink); }
+
+.va-hints { background: var(--vp-blue-bg); border: 1px solid var(--vp-blue-line); border-radius: 7px; padding: 11px 12px; }
+.va-hints .h { display: flex; align-items: center; gap: 6px; font-size: .71rem; font-weight: 600; color: #1e40af; margin-bottom: 9px; }
+.va-hints .h .grow { flex: 1; }
+.va-hints .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.va-hints .chip { font-size: .66rem; padding: 3px 8px; border-radius: 5px; background: #fff; border: 1px solid var(--vp-blue-line); color: #1e40af; }
+.va-hints .none { font-size: .68rem; color: var(--vp-dim); }
+
+@media (max-width: 1200px) {
+    .va-insp-grid { grid-template-columns: 1fr; }
+}
