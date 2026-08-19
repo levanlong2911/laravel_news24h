@@ -16,7 +16,7 @@ class VideoReclaimExpiredLeasesCommandTest extends TestCase
 
     private function expiredShot(): VideoShot
     {
-        $project = VideoProject::create(['name' => 'TEST reclaim cmd '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST reclaim cmd '.uniqid()]);
         $session = VideoSession::create([
             'project_id' => $project->id,
             'code' => 'test_reclaim_cmd_'.uniqid(),

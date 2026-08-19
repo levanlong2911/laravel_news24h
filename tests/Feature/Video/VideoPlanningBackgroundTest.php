@@ -3,6 +3,7 @@
 namespace Tests\Feature\Video;
 
 use App\Enums\VideoSessionStatus;
+use App\Jobs\BuildConceptStageJob;
 use App\Jobs\BuildVideoPlanJob;
 use App\Models\Admin;
 use App\Models\Article;
@@ -41,7 +42,7 @@ class VideoPlanningBackgroundTest extends TestCase
     {
         parent::setUp();
 
-        Queue::fake([BuildVideoPlanJob::class]);
+        Queue::fake([BuildConceptStageJob::class]);
     }
 
     private function article(): Article
@@ -101,8 +102,8 @@ class VideoPlanningBackgroundTest extends TestCase
         $this->assertNull($session->renderplan_json);
         $this->assertStringStartsWith('art_'.substr($article->id, 0, 8).'_', $session->code);
         Queue::assertPushed(
-            BuildVideoPlanJob::class,
-            fn (BuildVideoPlanJob $job) => $job->sessionCode === $session->code
+            BuildConceptStageJob::class,
+            fn (BuildConceptStageJob $job) => $job->sessionCode === $session->code
                 && $job->connection === 'video'
                 && $job->queue === 'video-planning',
         );
@@ -225,7 +226,8 @@ class VideoPlanningBackgroundTest extends TestCase
         $article = $this->article();
         $admin = $this->admin();
         [$session] = $this->service->startVideoPlanning($article->id, $admin->id);
-        $session->update(['status' => VideoSessionStatus::COMPOSING->value, 'renderplan_json' => ['x' => 1]]);
+        $session->update(['status' => VideoSessionStatus::COMPOSING->value]);
+        $this->storeRenderPlan($session, ['x' => 1]);
 
         $this->assertTrue($this->service->runVideoPlanningPipeline($session->code));
     }
@@ -255,7 +257,7 @@ class VideoPlanningBackgroundTest extends TestCase
         // nhien, di CHUNG duong voi "admin da bi xoa" — cung mot thong bao.
         $this->bindFakeRenderPlanService(); // shouldNotReceive('build')
         $article = $this->article();
-        $project = \App\Models\VideoProject::create(['name' => 'TEST no-admin '.uniqid()]);
+        $project = \App\Models\VideoProject::create(['title' => 'TEST no-admin '.uniqid()]);
         $session = VideoSession::create([
             'project_id' => $project->id,
             'article_id' => $article->id,

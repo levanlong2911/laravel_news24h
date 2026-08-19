@@ -45,7 +45,7 @@ class FinalCompositionConcurrencyTest extends TestCase
      */
     public function test_locking_the_session_row_genuinely_blocks_a_second_connection(): void
     {
-        $project = VideoProject::create(['name' => 'TEST race lock '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST race lock '.uniqid()]);
         $this->projectId = $project->id;
         $session = VideoSession::create([
             'project_id' => $project->id,

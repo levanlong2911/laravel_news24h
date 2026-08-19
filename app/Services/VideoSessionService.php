@@ -2,13 +2,16 @@
 
 namespace App\Services;
 
+use App\Enums\PlanningStageName;
 use App\Enums\VideoSessionStatus;
 use App\Enums\VideoShotStatus;
-use App\Jobs\BuildVideoPlanJob;
+use App\Jobs\BuildConceptStageJob;
 use App\Models\Article;
 use App\Models\VideoFinal;
 use App\Models\VideoFinalRender;
+use App\Models\VideoCostEntry;
 use App\Models\VideoRender;
+use App\Models\VideoRenderPlan;
 use App\Models\VideoSession;
 use App\Models\VideoShot;
 use App\Repositories\Interfaces\ArticleRepositoryInterface;
@@ -16,8 +19,13 @@ use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Repositories\Interfaces\VideoSessionRepositoryInterface;
 use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use App\Services\Admin\AdminService;
+use App\Services\Video\PlanningStageStore;
+use App\Video\Concept\ClaudeConceptDesigner;
+use App\Video\Concept\Viewpoint;
+use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Pipeline\PipelineAborted;
 use App\Video\RenderPlan\RenderPlanAssembler;
+use App\Video\RenderPlan\RenderPlanMeta;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -47,12 +55,155 @@ class VideoSessionService
     public function __construct(
         private AdminService $adminService,
         private ArticleRepositoryInterface $articleRepository,
-        private VideoProjectRepositoryInterface $projectRepository,
+        private VideoProjectRepositoryInterface $videoProjectRepository,
         private VideoSessionRepositoryInterface $sessionRepository,
         private VideoShotRepositoryInterface $shotRepository,
         private VideoRenderPlanService $renderPlanService,
         private PythonRunner $pythonRunner,
+        private PlanningStageStore $stageStore = new PlanningStageStore,
     ) {}
+
+    /**
+     * Chặng Haiku. Claim RIÊNG nên chạy lại chỉ tốn tiền một lần: lần thứ hai
+     * trả `already_succeeded` và brief được dựng lại từ `output_json`.
+     *
+     * @return array{0: bool, 1: string} [$ranOrSkipped, $reason]
+     *                                   reason: session_not_found|admin_not_found|claimed_by_other|already_succeeded|ok|failed
+     */
+    public function runInspirationStage(string $sessionCode): array
+    {
+        [$session, $admin, $article, $err] = $this->stageContext($sessionCode, 'inspiration-stage');
+
+        if ($err !== null) {
+            return [false, $err];
+        }
+
+        [$stage, $token, $reason] = $this->stageStore->claim(
+            $session->id,
+            (int) $session->planning_revision,
+            PlanningStageName::INSPIRATION,
+            ['article_id' => $article->id, 'title' => $article->title, 'content' => (string) $article->content],
+        );
+
+        if ($token === null) {
+            return [$reason === 'already_succeeded', $reason];
+        }
+
+        Auth::loginUsingId($admin->id);
+
+        try {
+            $result = $this->renderPlanService->renderInspirationStage($article, $session->id);
+        } catch (\Throwable $e) {
+            Log::error('inspiration-stage: that bai', ['code' => $sessionCode, 'exception' => $e]);
+            $this->stageStore->finishFailed($stage->id, $token, $e->getMessage());
+
+            return [false, 'failed'];
+        }
+
+        $this->stageStore->finishSucceeded(
+            $stage->id,
+            $token,
+            $result->rawResponse,
+            $this->renderPlanService->briefForStorage($result->brief, $article),
+            ['model' => 'haiku', 'instruction_version' => ClaudeInspirationAnalyst::INSTRUCTION_VERSION],
+        );
+
+        return [true, 'ok'];
+    }
+
+    /**
+     * Chặng Sonnet. Gọi Inspiration trước — nếu chặng đó đã xong thì brief dựng
+     * lại từ DB và Haiku KHÔNG chạy lần nữa.
+     *
+     * @return array{0: bool, 1: string} [$ranOrSkipped, $reason]
+     *                                   reason: session_not_found|admin_not_found|claimed_by_other|already_succeeded|missing_inspiration|ok|failed
+     */
+    public function runConceptStage(string $sessionCode): array
+    {
+        [$inspirationOk, $inspirationReason] = $this->runInspirationStage($sessionCode);
+
+        if (! $inspirationOk) {
+            return [false, $inspirationReason];
+        }
+
+        [$session, $admin, $article, $err] = $this->stageContext($sessionCode, 'concept-stage');
+
+        if ($err !== null) {
+            return [false, $err];
+        }
+
+        $stored = $this->stageStore->outputOf(
+            $session->id, (int) $session->planning_revision, PlanningStageName::INSPIRATION,
+        );
+
+        if (! is_array($stored) || $stored === []) {
+            Log::error('concept-stage: chua co inspiration da succeeded', ['code' => $sessionCode]);
+
+            return [false, 'missing_inspiration'];
+        }
+
+        [$stage, $token, $reason] = $this->stageStore->claim(
+            $session->id,
+            (int) $session->planning_revision,
+            PlanningStageName::CONCEPT,
+            ['article_id' => $article->id, 'inspiration_sha256' => hash('sha256', json_encode($stored))],
+        );
+
+        if ($token === null) {
+            return [$reason === 'already_succeeded', $reason];
+        }
+
+        Auth::loginUsingId($admin->id);
+
+        try {
+            $brief = $this->renderPlanService->briefFromStorage($stored);
+            $design = $this->renderPlanService->renderConceptStage($article, $brief, $session->id);
+        } catch (\Throwable $e) {
+            Log::error('concept-stage: that bai', ['code' => $sessionCode, 'exception' => $e]);
+            $this->stageStore->finishFailed($stage->id, $token, $e->getMessage());
+
+            return [false, 'failed'];
+        }
+
+        $this->stageStore->finishSucceeded(
+            $stage->id,
+            $token,
+            $design->rawResponse,
+            $design->concept->toArray(),
+            ['model' => 'sonnet', 'instruction_version' => ClaudeConceptDesigner::INSTRUCTION_VERSION],
+        );
+
+        return [true, 'ok'];
+    }
+
+    /**
+     * Ba câu kiểm mà cả hai chặng đều cần. Gộp lại vì chúng phải giống nhau —
+     * lệch một điều kiện là hai chặng có hai luật khác nhau về "được chạy không".
+     *
+     * @return array{0: ?VideoSession, 1: mixed, 2: mixed, 3: ?string}
+     */
+    private function stageContext(string $sessionCode, string $logTag): array
+    {
+        $session = VideoSession::query()->where('code', $sessionCode)->first();
+
+        if ($session === null) {
+            Log::error($logTag.': khong tim thay session', ['code' => $sessionCode]);
+
+            return [null, null, null, 'session_not_found'];
+        }
+
+        $admin = $session->requested_by_admin_id === null
+            ? null
+            : $this->adminService->getByIdAcc($session->requested_by_admin_id);
+
+        if (! $admin) {
+            Log::error($logTag.': admin khong ton tai, tu choi goi Claude', ['code' => $sessionCode]);
+
+            return [null, null, null, 'admin_not_found'];
+        }
+
+        return [$session, $admin, $this->articleRepository->show($session->article_id), null];
+    }
 
     /** Câu lệnh chạy tay tương đương, để hiện lên màn hình khi bắn hỏng. */
     public function manualCommandFor(string $script, string $sessionCode): string
@@ -145,7 +296,7 @@ class VideoSessionService
 
     private function createPlanningSession(Article $article, string $adminId): VideoSession
     {
-        $project = $this->projectRepository->findOrCreateByArticle($article->title, $article->id);
+        $project = $this->videoProjectRepository->findOrCreateByArticleId($article);
 
         return $this->sessionRepository->create([
             'project_id' => $project->id,
@@ -158,8 +309,12 @@ class VideoSessionService
 
     private function dispatchPlanningJob(VideoSession $session): bool
     {
+        if ((bool) config('video.planning_queue.sync')) {
+            return $this->runPlanningStagesInline($session->code);
+        }
+
         try {
-            BuildVideoPlanJob::dispatch($session->code);
+            BuildConceptStageJob::dispatch($session->code);
 
             return true;
         } catch (\Throwable $e) {
@@ -170,6 +325,99 @@ class VideoSessionService
 
             return false;
         }
+    }
+
+    private function runPlanningStagesInline(string $sessionCode): bool
+    {
+        [$ok, $reason] = $this->runConceptStage($sessionCode);
+        Log::info('planning-sync: chang concept', ['code' => $sessionCode, 'ok' => $ok, 'reason' => $reason]);
+
+        if (! $ok) {
+            return false;
+        }
+
+        [$ok, $reason] = $this->runFinalizeStage($sessionCode);
+        Log::info('planning-sync: chang finalize', ['code' => $sessionCode, 'ok' => $ok, 'reason' => $reason]);
+
+        return $ok;
+    }
+
+    /**
+     * @return array{0: bool, 1: string} [$ok, $reason]
+     *                                   reason: session_not_found|admin_not_found|claimed_by_other|already_succeeded|missing_concept|ok|failed
+     */
+    public function runFinalizeStage(string $sessionCode): array
+    {
+        $session = VideoSession::query()->where('code', $sessionCode)->first();
+
+        if ($session === null) {
+            Log::error('finalize-stage: khong tim thay session', ['code' => $sessionCode]);
+
+            return [false, 'session_not_found'];
+        }
+
+        $admin = $session->requested_by_admin_id === null
+            ? null
+            : $this->adminService->getByIdAcc($session->requested_by_admin_id);
+
+        if (! $admin) {
+            Log::error('finalize-stage: admin khong ton tai, tu choi goi Claude', ['code' => $sessionCode]);
+
+            return [false, 'admin_not_found'];
+        }
+
+        $revision = (int) $session->planning_revision;
+        $conceptRaw = $this->stageStore->rawResponseOf($session->id, $revision, PlanningStageName::CONCEPT);
+
+        if ($conceptRaw === null) {
+            Log::error('finalize-stage: chua co concept da succeeded', ['code' => $sessionCode]);
+
+            return [false, 'missing_concept'];
+        }
+
+        $article = $this->articleRepository->show($session->article_id);
+
+        [$stage, $token, $reason] = $this->stageStore->claim(
+            $session->id, $revision, PlanningStageName::FINALIZE, ['concept_sha256' => hash('sha256', $conceptRaw)],
+        );
+
+        if ($token === null) {
+            return [$reason === 'already_succeeded', $reason];
+        }
+
+        Auth::loginUsingId($admin->id);
+
+        $meta = new RenderPlanMeta(
+            Str::uuid()->toString(),
+            $article->id,
+            $article->title,
+            'en',
+            now()->toIso8601String(),
+            (string) ($article->category?->slug ?? ''),
+        );
+
+        try {
+            $renderPlan = $this->renderPlanService->runFinalizeStage($article, $conceptRaw, $meta, $session->id);
+        } catch (\Throwable $e) {
+            Log::error('finalize-stage: that bai', ['code' => $sessionCode, 'exception' => $e]);
+            $this->stageStore->finishFailed($stage->id, $token, $e->getMessage());
+            $session->update(['status' => VideoSessionStatus::FAILED->value, 'error_message' => $e->getMessage()]);
+
+            return [false, 'failed'];
+        }
+
+        $this->stageStore->finishSucceeded($stage->id, $token, '', $renderPlan);
+        $this->storeRenderPlan($session, $renderPlan);
+        $session->update(['status' => VideoSessionStatus::COMPOSING->value]);
+
+        if (! $this->pythonRunner->spawn(self::COMPOSE_SCRIPT, $sessionCode)) {
+            Log::warning('finalize-stage: khong ban duoc session_runner.py, can chay tay', [
+                'code' => $sessionCode,
+                'manual' => $this->manualCommandFor(self::COMPOSE_SCRIPT, $sessionCode),
+            ]);
+        }
+
+        return [true, 'ok'];
     }
 
     /**
@@ -273,10 +521,17 @@ class VideoSessionService
                 'scene_count' => count($renderPlan['scenes'] ?? []),
             ]);
 
+            // Luu ke hoach SAU khi gianh duoc quyen ghi, khong phai truoc. Cau
+            // UPDATE co dieu kien trong finishClaimedPlanning() la cho DUY NHAT
+            // kiem tra claim con la cua minh; ghi ke hoach truoc no la ghi de
+            // ket qua cua worker da chiem lai session.
             $wroteResult = $this->finishClaimedPlanning($sessionCode, $claimToken, [
-                'renderplan_json' => $renderPlan,
                 'status' => VideoSessionStatus::COMPOSING->value,
             ]);
+
+            if ($wroteResult) {
+                $this->storeRenderPlan($session, $renderPlan);
+            }
 
             if (! $wroteResult) {
                 // Claim da bi reset + chiem lai boi tien trinh khac trong luc
@@ -372,22 +627,8 @@ class VideoSessionService
         dump(['planning_step' => $step] + $context);
     }
 
-    /**
-     * Mo lai claim THU CONG — thao tac an toan CO CHU DICH cua nguoi van
-     * hanh, sau khi tu xac nhan (process list, log timestamp) tien trinh
-     * `video:build-plan` cu da chet that. Chi reset khi con `planning` — mot
-     * session da `composing`/`failed` thi claim da tu dong bi xoa luc ghi ket
-     * qua (`finishClaimedPlanning()`), khong con gi de reset.
-     */
     public function resetPlanningClaim(string $sessionCode): bool
     {
-        // whereNotNull TUONG MINH — dat null vao cot da null se khong doi gia
-        // tri gi, nen ve mat hanh vi hai dieu kien nay hien la thua (MySQL/PDO
-        // mac dinh khong dem dong "khop WHERE nhung khong doi gia tri" vao
-        // affected-rows). Van giu vi ba ly do: KHONG phu thuoc cau hinh PDO
-        // (PDO::MYSQL_ATTR_FOUND_ROWS co the bat o noi khac); noi ro invariant
-        // "chi reset session DANG THAT SU giu claim"; va tranh chay mot UPDATE
-        // khong can thiet.
         return VideoSession::query()
             ->where('code', $sessionCode)
             ->where('status', VideoSessionStatus::PLANNING->value)
@@ -606,13 +847,13 @@ class VideoSessionService
 
             $newRevision = ($existing->plan_revision ?? 0) + 1;
 
-            $project = $this->projectRepository->firstOrCreateByName($data['project'], $data['subject_id'] ?? null);
+            $project = $this->videoProjectRepository->firstOrCreateByName($data['project'], $data['subject_id'] ?? null);
             $session = $this->sessionRepository->updateOrCreateByCode($data['code'], [
                 'project_id' => $project->id,
-                'renderplan_json' => $data['renderplan'] ?? null,
                 'status' => VideoSessionStatus::REVIEWING->value,
                 'plan_revision' => $newRevision,
             ]);
+            $this->storeRenderPlan($session, $data['renderplan'] ?? null, $newRevision);
 
             $total = 0;
             foreach ($data['shots'] as $s) {
@@ -722,16 +963,79 @@ class VideoSessionService
         // phan biet {} object rong / [] array rong (Eloquent array cast). Sua
         // truoc khi Python nhan, khong thi Python cung se thay du lieu sai shape
         // giong het test da bat duoc. Xem RenderPlanAssembler::repairAfterDatabaseRoundTrip().
+        // Dung mang TUONG MINH chu khong gan nguoc vao model: renderplan_json gio
+        // la thuoc tinh suy ra tu quan he, gan vao no thi accessor doc de len va
+        // ban da sua bien mat khong bao loi. Bo khoa phai giong het truoc day.
         return $this->sessionRepository->findComposingWithProject()
             ->map(function (VideoSession $session) {
-                if (is_array($session->renderplan_json)) {
-                    $session->renderplan_json = RenderPlanAssembler::repairAfterDatabaseRoundTrip(
-                        $session->renderplan_json,
-                    );
-                }
+                $plan = $session->latestRenderPlan?->plan_json;
 
-                return $session;
+                return [
+                    'id' => $session->id,
+                    'project_id' => $session->project_id,
+                    'code' => $session->code,
+                    'renderplan_json' => is_array($plan)
+                        ? RenderPlanAssembler::repairAfterDatabaseRoundTrip($plan)
+                        : null,
+                    'project' => $session->project === null ? null : [
+                        'id' => $session->project->id,
+                        'title' => $session->project->title,
+                        'subject_id' => $session->project->subject_id,
+                    ],
+                ];
             });
+    }
+
+    /**
+     * GET /api/video-sessions/{code}/design-cells
+     *
+     * Ô thiết kế đã duyệt của DỰ ÁN chứa session này. Python dựng bảng `proven`
+     * từ đây thay vì từ shot của session — đó là toàn bộ điểm của bước này: ảnh
+     * trạng thái thuộc con tàu, dùng lại được qua nhiều lượt dựng video.
+     *
+     * CHỈ trả ô `approved` VÀ có artifact. Ô còn là `candidate` chưa chứng minh
+     * gì cả — cùng luật mà `resolve_motion_source()` đang áp cho shot `queued`.
+     *
+     * `source_cell_code` trả về MÃ chứ không phải id: Python không có bảng cell,
+     * đưa uuid sang là bắt nó cầm một khoá nó không tra được.
+     *
+     * @return array<string, mixed>
+     */
+    public function listDesignCellsForSession(string $sessionCode): array
+    {
+        $session = VideoSession::query()->where('code', $sessionCode)->first();
+
+        if ($session === null) {
+            return ['session_code' => $sessionCode, 'project_id' => null, 'design_cells' => []];
+        }
+
+        $cells = DB::table('video_design_cells as c')
+            ->join('video_artifacts as a', 'a.id', '=', 'c.selected_artifact_id')
+            ->leftJoin('video_design_cells as src', 'src.id', '=', 'c.source_cell_id')
+            ->where('c.project_id', $session->project_id)
+            ->where('c.status', 'approved')
+            ->orderBy('c.cell_code')
+            ->get([
+                'c.cell_code', 'c.cell_type', 'c.state', 'c.proves_state',
+                'c.prompt_sha256', 'a.storage_path', 'a.width', 'a.height',
+                'src.cell_code as source_cell_code',
+            ]);
+
+        return [
+            'session_code' => $sessionCode,
+            'project_id' => $session->project_id,
+            'design_cells' => $cells->map(fn ($c) => [
+                'cell_code' => $c->cell_code,
+                'cell_type' => $c->cell_type,
+                'state' => $c->state,
+                'proves_state' => $c->proves_state,
+                'source_cell_code' => $c->source_cell_code,
+                'artifact_path' => $c->storage_path,
+                'width' => $c->width,
+                'height' => $c->height,
+                'prompt_sha256' => $c->prompt_sha256,
+            ])->all(),
+        ];
     }
 
     // GET /api/video-shots/queued — runner Python poll
@@ -845,7 +1149,7 @@ class VideoSessionService
                 'lease_expires_at' => null,
             ]);
             if ($success) {
-                $shot->session()->increment('cost_actual', $cost);
+                $this->recordCost($session, $shot, $cost, $render ?? []);
             }
 
             if ($render !== null || $idempotencyKey !== null) {
@@ -1122,6 +1426,59 @@ class VideoSessionService
      *
      * @param  array<string, mixed>  $render
      */
+    // Truoc day chi cong don vao `video_sessions.cost_actual`, nen biet TONG ma
+    // khong biet tieu vao dau. Ghi tung dong de tra loi duoc "provider nao, model
+    // nao, giai doan nao"; tong la SUM chu khong phai mot cot rieng de lech.
+    // Moi lan luu la MOT BAN GHI MOI chu khong de len ban truoc: cot
+    // renderplan_json cu bi ghi de nen ke hoach truoc do bien mat khong dau vet.
+    // `revision` la khoa sap xep, khong dung thoi diem ghi.
+    private function storeRenderPlan(VideoSession $session, ?array $plan, ?int $revision = null): ?VideoRenderPlan
+    {
+        if ($plan === null) {
+            return null;
+        }
+
+        $revision ??= ((int) $session->renderPlans()->max('revision')) + 1;
+        $encoded = json_encode($plan, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $stored = VideoRenderPlan::updateOrCreate(
+            ['session_id' => $session->id, 'revision' => $revision],
+            [
+                'schema_version' => (string) ($plan['schema_version'] ?? ''),
+                'builder_version' => (string) ($plan['builder_version'] ?? ''),
+                'status' => 'active',
+                'scene_count' => count($plan['scenes'] ?? []),
+                'aspect_ratio' => $plan['aspect_ratio'] ?? null,
+                'width' => $plan['width'] ?? null,
+                'height' => $plan['height'] ?? null,
+                'target_duration_ms' => $plan['target_duration_ms'] ?? null,
+                'plan_json' => $plan,
+                'plan_hash' => hash('sha256', $encoded === false ? '' : $encoded),
+            ],
+        );
+
+        $session->setRelation('latestRenderPlan', $stored);
+
+        return $stored;
+    }
+
+    private function recordCost(VideoSession $session, VideoShot $shot, float $cost, array $render): void
+    {
+        VideoCostEntry::create([
+            'project_id' => $session->project_id,
+            'session_id' => $session->id,
+            'entity_type' => 'shot',
+            'entity_id' => $shot->id,
+            'stage' => 'render',
+            'provider' => $render['provider'] ?? '',
+            'model' => $render['model'] ?? '',
+            'usage_type' => $render['render_kind'] ?? 'image',
+            'quantity' => 1,
+            'unit' => 'render',
+            'cost_usd' => $cost,
+        ]);
+    }
+
     private function recordRender(
         VideoShot $shot,
         bool $success,
@@ -1171,5 +1528,43 @@ class VideoSessionService
             // KHONG bao gio true o day: duong nay khong soi pixel bao gio.
             'proof_verified' => false,
         ]);
+    }
+
+    /**
+     * @return array{0: ?string, 1: string} [$prompt, $reason]
+     *                                      reason: session_not_found|admin_not_found|claimed_by_other|missing_concept|failed|ok
+     */
+    public function renderImageAnchor(string $id, Viewpoint $viewpoint = Viewpoint::FrontThreeQuarter): array
+    {
+        $session = VideoSession::query()->whereKey($id)->first();
+
+        if ($session === null) {
+            return [null, 'session_not_found'];
+        }
+
+        [$ok, $reason] = $this->runConceptStage($session->code);
+
+        if (! $ok) {
+            return [null, $reason];
+        }
+
+        $conceptRaw = $this->stageStore->rawResponseOf(
+            $session->id,
+            (int) $session->planning_revision,
+            PlanningStageName::CONCEPT,
+        );
+
+        if ($conceptRaw === null || trim($conceptRaw) === '') {
+            return [null, 'missing_concept'];
+        }
+
+        return [
+            $this->renderPlanService->anchorPrompt(
+                $this->articleRepository->show($session->article_id),
+                $conceptRaw,
+                $viewpoint,
+            ),
+            'ok',
+        ];
     }
 }

@@ -45,7 +45,7 @@ class PlanRevisionConcurrencyTest extends TestCase
      */
     public function test_locking_the_shots_during_compose_genuinely_blocks_a_concurrent_claim(): void
     {
-        $project = VideoProject::create(['name' => 'TEST plan revision race '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST plan revision race '.uniqid()]);
         $this->projectId = $project->id;
         $session = VideoSession::create([
             'project_id' => $project->id,

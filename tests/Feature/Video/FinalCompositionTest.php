@@ -25,16 +25,16 @@ class FinalCompositionTest extends TestCase
         parent::setUp();
         $this->service = app(VideoSessionService::class);
 
-        $project = VideoProject::create(['name' => 'TEST final '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST final '.uniqid()]);
         $this->session = VideoSession::create([
             'project_id' => $project->id,
             'code' => 'test_final_'.uniqid(),
             'status' => 'done',
-            'renderplan_json' => [
-                'timeline' => [
-                    ['scene_id' => 'scene_a', 'start_sec' => 0, 'end_sec' => 5],
-                    ['scene_id' => 'scene_b', 'start_sec' => 5, 'end_sec' => 10],
-                ],
+        ]);
+        $this->storeRenderPlan($this->session, [
+            'timeline' => [
+                ['scene_id' => 'scene_a', 'start_sec' => 0, 'end_sec' => 5],
+                ['scene_id' => 'scene_b', 'start_sec' => 5, 'end_sec' => 10],
             ],
         ]);
     }
@@ -96,7 +96,7 @@ class FinalCompositionTest extends TestCase
                 'sent_prompt' => $beat, 'prompt_sha256' => hash('sha256', $beat), 'duration_ms' => 6000,
             ]);
         }
-        $this->session->update(['renderplan_json' => ['timeline' => $timeline]]);
+        $this->storeRenderPlan($this->session, ['timeline' => $timeline], 2);
 
         DB::enableQueryLog();
         $readiness = $this->service->finalCompositionReadiness($this->session->fresh());

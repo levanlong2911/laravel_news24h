@@ -34,21 +34,24 @@ class SessionComposeGuardTest extends TestCase
 
     private function makeSession(string $status, array $overrides = []): VideoSession
     {
-        $project = VideoProject::create(['name' => 'TEST compose guard '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST compose guard '.uniqid()]);
 
-        return VideoSession::create(array_merge([
+        $session = VideoSession::create(array_merge([
             'project_id' => $project->id,
             'code' => 'test_compose_guard_'.uniqid(),
             'status' => $status,
-            'renderplan_json' => ['scenes' => ['old']],
             'cost_estimate_total' => 1.23,
         ], $overrides));
+
+        $this->storeRenderPlan($session, ['scenes' => ['old']]);
+
+        return $session;
     }
 
     private function payload(VideoSession $session, string $shotCode = 's1'): array
     {
         return [
-            'project' => $session->project->name,
+            'project' => $session->project->title,
             'code' => $session->code,
             'renderplan' => ['scenes' => ['new']],
             'shots' => [[
@@ -61,9 +64,9 @@ class SessionComposeGuardTest extends TestCase
 
     public function test_compose_creates_a_new_session_as_reviewing(): void
     {
-        $project = VideoProject::create(['name' => 'TEST compose guard '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST compose guard '.uniqid()]);
         $result = $this->service->storeFromPython([
-            'project' => $project->name, 'code' => 'test_new_'.uniqid(),
+            'project' => $project->title, 'code' => 'test_new_'.uniqid(),
             'renderplan' => ['scenes' => []], 'shots' => [[
                 'shot_code' => 's1', 'kind' => 'motion', 'beat' => 'b1',
                 'render_plan' => ['cost_estimate' => 0.1],

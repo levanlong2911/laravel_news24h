@@ -23,7 +23,7 @@ class VideoShotClaimTest extends TestCase
         parent::setUp();
 
         $this->shots = app(VideoShotRepositoryInterface::class);
-        $project = VideoProject::create(['name' => 'TEST claim '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST claim '.uniqid()]);
         $this->session = VideoSession::create([
             'project_id' => $project->id,
             'code' => 'test_claim_'.uniqid(),

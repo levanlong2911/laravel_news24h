@@ -24,7 +24,7 @@ class VideoShotClaimApiTest extends TestCase
         config(['video.api_token' => 'claim-api-test-token']);
         $this->headers = ['X-Video-Token' => 'claim-api-test-token'];
 
-        $project = VideoProject::create(['name' => 'TEST claim API '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST claim API '.uniqid()]);
         $this->session = VideoSession::create([
             'project_id' => $project->id,
             'code' => 'test_claim_api_'.uniqid(),

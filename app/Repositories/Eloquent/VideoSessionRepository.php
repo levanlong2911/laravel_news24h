@@ -15,20 +15,23 @@ class VideoSessionRepository extends BaseRepository implements VideoSessionRepos
 
     public function listAllWithProjectAndShotCount(): iterable
     {
-        return VideoSession::with('project')->withCount('shots')->latest()->get();
+        return VideoSession::with(['project', 'admin:id,name', 'article:id,category_id', 'article.category:id,name'])
+            ->withCount('shots')->latest()->get();
     }
 
     public function findWithProjectAndShots(string $id): VideoSession
     {
-        return VideoSession::with(['project', 'shots.latestRender'])->findOrFail($id);
+        return VideoSession::with(['project', 'shots.latestRender', 'latestRenderPlan'])
+            ->withSum('costEntries as cost_actual', 'cost_usd')
+            ->findOrFail($id);
     }
 
     // GET /api/video-sessions/composing — runner poll de compose prompt
     public function findComposingWithProject(): iterable
     {
         return VideoSession::where('status', VideoSessionStatus::COMPOSING->value)
-            ->with('project:id,name,subject_id')
-            ->get(['id', 'project_id', 'code', 'renderplan_json']);
+            ->with(['project:id,title,subject_id', 'latestRenderPlan'])
+            ->get(['id', 'project_id', 'code']);
     }
 
     public function updateOrCreateByCode(string $code, array $attributes): VideoSession

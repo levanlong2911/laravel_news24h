@@ -34,7 +34,7 @@ class RenderLineageTest extends TestCase
         parent::setUp();
         $this->service = app(VideoSessionService::class);
 
-        $project = VideoProject::create(['name' => 'TEST lineage '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST lineage '.uniqid()]);
         $this->session = VideoSession::create([
             'project_id' => $project->id,
             'code' => 'test_lineage_'.uniqid(),

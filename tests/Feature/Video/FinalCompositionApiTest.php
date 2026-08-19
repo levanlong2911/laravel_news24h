@@ -26,14 +26,14 @@ class FinalCompositionApiTest extends TestCase
         config(['video.api_token' => 'final-api-test-token']);
         $this->headers = ['X-Video-Token' => 'final-api-test-token'];
 
-        $project = VideoProject::create(['name' => 'TEST final API '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST final API '.uniqid()]);
         $this->session = VideoSession::create([
             'project_id' => $project->id,
             'code' => 'test_final_api_'.uniqid(),
             'status' => 'done',
-            'renderplan_json' => [
-                'timeline' => [['scene_id' => 'scene_a', 'start_sec' => 0, 'end_sec' => 5]],
-            ],
+        ]);
+        $this->storeRenderPlan($this->session, [
+            'timeline' => [['scene_id' => 'scene_a', 'start_sec' => 0, 'end_sec' => 5]],
         ]);
     }
 

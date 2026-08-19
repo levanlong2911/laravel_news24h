@@ -37,7 +37,7 @@ class ShotStateMachineTest extends TestCase
         parent::setUp();
         $this->service = app(VideoSessionService::class);
 
-        $project = VideoProject::create(['name' => 'TEST state machine '.uniqid()]);
+        $project = VideoProject::create(['title' => 'TEST state machine '.uniqid()]);
         $this->session = VideoSession::create([
             'project_id' => $project->id,
             'code' => 'test_statemachine_'.uniqid(),
@@ -64,7 +64,7 @@ class ShotStateMachineTest extends TestCase
     private function composePayload(string $shotCode, array $overrides = []): array
     {
         return [
-            'project' => $this->session->project->name,
+            'project' => $this->session->project->title,
             'code' => $this->session->code,
             'renderplan' => ['scenes' => []],
             'shots' => [array_merge([
@@ -343,7 +343,7 @@ class ShotStateMachineTest extends TestCase
 
         // s1 bi bo, s2 doi noi dung, s3 la shot moi
         $this->service->storeFromPython([
-            'project' => $this->session->project->name,
+            'project' => $this->session->project->title,
             'code' => $this->session->code,
             'renderplan' => ['scenes' => []],
             'shots' => [
@@ -373,7 +373,7 @@ class ShotStateMachineTest extends TestCase
 
         // Payload moi bo s1, chi con s2 — s1 dang o trang thai bao ve.
         $result = $this->service->storeFromPython([
-            'project' => $this->session->project->name,
+            'project' => $this->session->project->title,
             'code' => $this->session->code,
             'renderplan' => ['scenes' => []],
             'shots' => [['shot_code' => 's2', 'kind' => 'motion', 'beat' => 'b1', 'shot_type' => 'establish', 'spec' => [], 'compiled_prompt' => 'p2', 'render_plan' => ['cost_estimate' => 0.1]]],
