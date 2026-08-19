@@ -40,6 +40,7 @@ Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])
     ->group(function () {
         Route::post('/render-plans', [VideoSessionController::class, 'apiStore']);
         Route::get('/video-sessions/composing', [VideoSessionController::class, 'apiComposing']);
+        Route::get('/video-sessions/{code}/design-cells', [VideoSessionController::class, 'apiDesignCells']);
         Route::get('/video-shots/queued', [VideoSessionController::class, 'apiQueued']);
         Route::post('/video-shots/claim', [VideoSessionController::class, 'apiClaim']);
         Route::post('/video-shots/reclaim-expired', [VideoSessionController::class, 'apiReclaimExpired']);

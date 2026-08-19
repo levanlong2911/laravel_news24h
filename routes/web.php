@@ -19,6 +19,7 @@ use App\Http\Controllers\ModalConfirmController;
 use App\Http\Controllers\NewsWebController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
+use App\Http\Controllers\VideoProjectsController;
 use App\Http\Controllers\VideoSessionController;
 use App\Models\VideoSession;
 use Illuminate\Support\Facades\Route;
@@ -140,12 +141,22 @@ Route::group(
         Route::delete('/delete',                    [PromptFrameworkController::class, 'delete']) ->name('prompt-framework.delete');
     });
 
+    // video projects — chủ thể sống qua nhiều lượt: ảnh neo & ảnh tham chiếu
+    Route::group(['prefix' => 'video-projects'], function () {
+        Route::post('/from-article/{article}',  [VideoProjectsController::class, 'store'])->name('video-projects.store');
+        Route::get('/',              [VideoProjectsController::class, 'index'])->name('video-projects.index');
+        Route::get('/{id}/anchor',              [VideoProjectsController::class, 'anchor'])->name('video-projects.anchor');
+        Route::get('/{id}/reference',           [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
+    });
+
     // video sessions — approval gate: duyệt prompt trên màn hình rồi mới render (ADR v1.1)
     Route::group(['prefix' => 'video-session'], function () {
         Route::get('/',                    [VideoSessionController::class, 'index'])->name('video-session.index');
         // Route::match(['get','post'],'/add',         [VideoSessionController::class, 'add'])    ->name('video-session.add');
         Route::match(['get','post'],'/creat-video/{id}',[VideoSessionController::class, 'creatVideo'])       ->name('video-session.creatVideo');
-        Route::get('/{id}',                [VideoSessionController::class, 'show'])->name('video-session.show');
+        Route::get('/{id}/anchor',                [VideoSessionController::class, 'imageAnchor'])->name('video-session.imageAnchor');
+        Route::get('/{id}/reference',                [VideoSessionController::class, 'imageReference'])->name('video-session.imageReference');
+        Route::get('/{id}/scene/{scene}/{step?}', [VideoSessionController::class, 'scene'])->name('video-session.scene');
         Route::post('/{id}/approve-selected', [VideoSessionController::class, 'approveSelected'])->name('video-session.approve-selected');
         Route::post('/{id}/queue',         [VideoSessionController::class, 'queueApproved'])->name('video-session.queue');
         // 🔍 Thử render — không gọi vendor, không đổi dữ liệu

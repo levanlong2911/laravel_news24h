@@ -224,12 +224,11 @@
                                     <i class="fas fa-robot {{ $article->status === 'processing' ? 'fa-spin' : '' }}"></i>
                                 </button>
                             </form>
-                            <form method="POST" action="{{ route('video-session.creatVideo', $article->id) }}" class="d-inline">
+                            <form method="POST" action="{{ route('video-projects.store', $article->id) }}" class="d-inline">
                                 @csrf
                                 <button class="btn btn-xs btn-outline-primary"
-                                        title="{{ in_array($article->id, $articleIdsInVideoProgress) ? 'Da co session dang xu ly' : 'Tao Video Prompt' }}"
-                                        {{ in_array($article->id, $articleIdsInVideoProgress) ? 'disabled' : '' }}>
-                                    <i class="fas fa-video {{ in_array($article->id, $articleIdsInVideoProgress) ? 'fa-spin' : '' }}"></i>
+                                        title="Create video">
+                                    <i class="fas fa-video "></i>
                                 </button>
                             </form>
                             <form method="POST" action="{{ route('article.destroy', $article) }}" class="d-inline"

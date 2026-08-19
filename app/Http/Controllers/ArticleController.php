@@ -45,11 +45,11 @@ class ArticleController extends Controller
         // voi VideoSessionController::show()). Tinh trung voi guard that su
         // chan viec tao trung o VideoSessionService::startVideoPlanning(),
         // qua VideoSessionStatus::nonTerminalValues() dung chung.
-        $articleIdsInVideoProgress = VideoSession::query()
-            ->whereIn('article_id', $articles->pluck('id'))
-            ->whereIn('status', VideoSessionStatus::nonTerminalValues())
-            ->pluck('article_id')
-            ->all();
+        // $articleIdsInVideoProgress = VideoSession::query()
+        //     ->whereIn('article_id', $articles->pluck('id'))
+        //     ->whereIn('status', VideoSessionStatus::nonTerminalValues())
+        //     ->pluck('article_id')
+        //     ->all();
 
         return view('admin.articles.index', [
             'route' => 'article',
@@ -60,7 +60,7 @@ class ArticleController extends Controller
             'keywords' => $keywords,
             'status' => $status,
             'keywordId' => $keywordId,
-            'articleIdsInVideoProgress' => $articleIdsInVideoProgress,
+            // 'articleIdsInVideoProgress' => $articleIdsInVideoProgress,
         ]);
     }
 

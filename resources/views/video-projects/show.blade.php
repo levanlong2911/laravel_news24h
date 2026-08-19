@@ -9,7 +9,7 @@
 --}}
 @if($session->status === 'planning')
 <div class="card card-default"><div class="card-body">
-  <span class="text-warning">⏳ Đang lên kế hoạch</span> — pipeline Claude đang chạy nền
+  <span class="text-warning">⏳ {{ \App\Enums\VideoSessionStatus::PLANNING->label() }}</span> — pipeline Claude đang chạy nền
   (thường 25-90 giây). F5 trang này để xem tiến độ.
 </div></div>
 @elseif($session->status === 'failed' && $session->renderplan_json === null)
@@ -22,7 +22,7 @@
 @endif
 
 <div class="card card-default"><div class="card-body">
-  <b>{{ $session->project->name }}</b> — {{ $session->shots->count() }} shot ·
+  <b>{{ $session->project->title }}</b> — {{ $session->shots->count() }} shot ·
   Ước tính: <b>${{ number_format($session->cost_estimate_total, 2) }}</b> ·
   Thực chi: <b>${{ number_format($session->cost_actual, 2) }}</b> ·
   Đã duyệt: <b>{{ $session->shots->where('status', 'approved')->count() }}</b> ·
@@ -153,7 +153,7 @@
       @if($shownNegative)<hr><small><b>Negative:</b> {{ $shownNegative }}</small>@endif
       @if($shot->review_note)<hr><small class="text-danger"><b>Note:</b> {{ $shot->review_note }}</small>@endif</details></td>
   <td>{{ $shot->render_plan['provider'] ?? '?' }} / ${{ number_format($shot->cost_estimate, 2) }}</td>
-  <td><span class="badge badge-secondary">{{ $shot->status }}</span></td>
+  <td><span class="badge badge-secondary">{{ \App\Enums\VideoShotStatus::tryFrom($shot->status)?->label() ?? $shot->status }}</span></td>
   <td>
     @if(in_array($shot->status, ['draft', 'needs_revision', 'rejected']))
       <button class="btn btn-xs btn-success" formaction="{{ route('video-shot.action', $shot->id) }}" name="action" value="approve">✔</button>

@@ -46,6 +46,28 @@ enum VideoShotStatus: string
     case SUPERSEDED = 'superseded';
 
     /**
+     * Nhan hien thi. Bang RIENG, khong dung chung voi VideoSessionStatus: ba chuoi
+     * `draft`/`rendering`/`failed` trung ten o ca hai enum nhung khac nghia —
+     * session `rendering` la "dang co shot chay", shot `rendering` la "chinh clip
+     * nay dang dung".
+     */
+    public function label(): string
+    {
+        return match ($this) {
+            self::DRAFT => 'Draft',
+            self::APPROVED => 'Approved',
+            self::NEEDS_REVISION => 'Needs revision',
+            self::REJECTED => 'Rejected',
+            self::QUEUED => 'Queued',
+            self::CLAIMED => 'Claimed',
+            self::RENDERING => 'Rendering',
+            self::RENDERED => 'Rendered',
+            self::FAILED => 'Failed',
+            self::SUPERSEDED => 'Superseded',
+        };
+    }
+
+    /**
      * Con o TRUOC hang doi render — Duyet/Sua/Tu choi con hop nghia. Sau khi
      * QUEUED, quyet dinh duyet lai la vo nghia (da vao hang doi/render roi)
      * va nguy hiem (dua mot shot da RENDERED (ton tien that) quay lai

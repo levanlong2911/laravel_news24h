@@ -4,38 +4,6 @@ namespace App\Enums;
 
 use App\Traits\EnumTrait;
 
-/**
- * Trang thai vong doi cua mot VideoSession.
- *
- * Gia tri chuoi phai KHOP CHINH XAC voi du lieu da co trong cot
- * video_sessions.status (migration 2026_07_19_200000, string(20), default
- * 'draft') — doi gia tri o day la lam hong du lieu cu.
- *
- * Luong that (xem VideoSessionService):
- *   DRAFT           — mac dinh cua cot, chua dung toi trong code
- *   PLANNING        — session da tao (co code, co article_id), pipeline Claude
- *                     dang chay NEN (video:build-plan --session=, §18.30);
- *                     renderplan_json con null
- *   COMPOSING       — renderplan_json da co, cho Python bien dich prompt
- *   REVIEWING       — Python da day shot len, cho nguoi duyet
- *   RENDERING       — da co shot duoc queue de render. O LAI day ke ca khi
- *                     MOI shot da render xong — "san sang ghep final" la
- *                     mot phep tinh doc (finalCompositionReadiness()), khong
- *                     phai mot trang thai rieng, nen KHONG tu chuyen sang
- *                     DONE chi vi hang doi shot da rong (xem
- *                     VideoSessionService::syncSessionRenderStatus() —
- *                     2026-08-13, truoc do day la mot bug: session bao "done"
- *                     du chua he co final video nao).
- *   COMPOSING_FINAL — startFinalComposition() da tao VideoFinal va ban
- *                     compose_final.py; DONE/FAILED chi den tu ket qua CUA
- *                     LUOT GHEP NAY (recordFinalCompositionResult()), khong
- *                     con lien quan gi den trang thai tung shot rieng le.
- *
- * Terminal states: DONE chi khi final video ghep THANH CONG
- * (recordFinalCompositionResult() success=true). FAILED khi mot shot that
- * bai giua chung render, khi final that bai (vendor loi, hoac callback thieu
- * plan_json da chot), hoac khi pipeline Claude o PLANNING tu than that bai.
- */
 enum VideoSessionStatus: string
 {
     use EnumTrait;
@@ -50,11 +18,28 @@ enum VideoSessionStatus: string
     case FAILED = 'failed';
 
     /**
-     * "Bài này đang có một lượt sản xuất chưa xong" — dùng ở HAI chỗ phải
-     * đồng ý với nhau: chặn bấm hai lần (VideoSessionService::startVideoPlanning())
-     * và disable nút trên danh sách bài viết (ArticleController::index()).
-     * Tách hằng ở đây để không lệch danh sách giữa hai nơi.
+     * Nhãn hiển thị, đặt CẠNH case để thêm trạng thái mới là buộc phải thêm nhãn —
+     * `match` không có `default` nên thiếu một case là lỗi ngay lúc chạy dev, không
+     * lọt ra production dưới dạng slug thô.
      *
+     * KHÔNG dùng chung bảng với VideoShotStatus: ba chuỗi `draft`/`rendering`/
+     * `failed` trùng tên ở cả hai enum nhưng khác nghĩa hoàn toàn.
+     */
+    public function label(): string
+    {
+        return match ($this) {
+            self::DRAFT => 'Draft',
+            self::PLANNING => 'Planning',
+            self::COMPOSING => 'Composing prompts',
+            self::REVIEWING => 'Pending review',
+            self::RENDERING => 'Rendering',
+            self::COMPOSING_FINAL => 'Composing final',
+            self::DONE => 'Done',
+            self::FAILED => 'Failed',
+        };
+    }
+
+    /**
      * @return list<string>
      */
     public static function nonTerminalValues(): array

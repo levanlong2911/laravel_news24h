@@ -11,4 +11,9 @@ class ArticleRepository extends BaseRepository implements ArticleRepositoryInter
     {
         return Article::class;
     }
+
+    public function getInfoArticleId($id)
+    {
+        return $this->model->find($id);
+    }
 }

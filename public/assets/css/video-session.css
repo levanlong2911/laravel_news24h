@@ -1,0 +1,493 @@
+/* Màn Video Sessions. Mọi lớp đều tiền tố `vs-` nên không rò ra phần còn lại
+   của admin — không cần bọc thêm scope. */
+
+.vs-page {
+    --vs-line: #e3e8ef;
+    --vs-muted: #6b7280;
+    --vs-ink: #111827;
+    --vs-soft: #f8fafc;
+    --vs-focus: #93c5fd;
+    --vs-alert: #b91c1c;
+}
+
+/* ---- Khung ---------------------------------------------------------- */
+
+.vs-card {
+    background: #fff;
+    border: 1px solid var(--vs-line);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Toolbar (chip trạng thái) và hàng điều khiển là hai khối anh em, gộp lại
+   thành một cụm đầu bảng: chỉ khối DƯỚI mới kẻ vạch ngăn với bảng. */
+.vs-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px 14px 10px;
+}
+
+.vs-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 0 14px 14px;
+    border-bottom: 1px solid var(--vs-line);
+}
+
+/* overflow-x nằm ở ĐÂY, không nằm ở .vs-card — để bảng cuộn ngang mà toolbar
+   vẫn đứng yên trên màn hẹp. */
+.vs-scroll {
+    overflow-x: auto;
+}
+
+/* ---- Ô tìm / chọn / nút ---------------------------------------------- */
+
+.vs-controls input,
+.vs-controls select,
+.vs-reset {
+    height: 34px;
+    padding: 6px 12px;
+    font-size: .86rem;
+    color: var(--vs-ink);
+    background: #fff;
+    border: 1px solid var(--vs-line);
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+/* `width` PHẢI khai ở đây: common.css:360 có luật toàn cục `select{width:100%}`,
+   thiếu dòng này là select chiếm trọn hàng và đẩy nút xuống dòng dưới. */
+.vs-controls input {
+    flex: 1 1 240px;
+    width: auto;
+    min-width: 200px;
+    max-width: 380px;
+}
+
+.vs-controls select {
+    flex: 0 0 190px;
+    width: 190px;
+    padding-right: 30px;
+}
+
+.vs-controls input::placeholder {
+    color: #9ca3af;
+}
+
+.vs-controls input:focus,
+.vs-controls select:focus {
+    border-color: var(--vs-focus);
+    outline: 2px solid var(--vs-focus);
+    outline-offset: -1px;
+}
+
+.vs-reset {
+    flex: 0 0 auto;
+    color: var(--vs-muted);
+}
+
+/* ---- Chip lọc trạng thái --------------------------------------------- */
+
+.vs-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.vs-filters button {
+    padding: 4px 14px;
+    font-size: .82rem;
+    color: var(--vs-muted);
+    background: #fff;
+    border: 1px solid var(--vs-line);
+    border-radius: 999px;
+}
+
+.vs-filters button.on {
+    color: #fff;
+    background: var(--vs-ink);
+    border-color: var(--vs-ink);
+}
+
+/* ---- Bảng ------------------------------------------------------------ */
+
+.vs-table {
+    width: 100%;
+    min-width: 940px;
+    margin: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.vs-table th {
+    padding: 10px 14px;
+    font-size: .74rem;
+    font-weight: 600;
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    white-space: nowrap;
+    color: var(--vs-muted);
+    background: var(--vs-soft);
+    border-bottom: 1px solid var(--vs-line);
+}
+
+.vs-table td {
+    padding: 12px 14px;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--vs-line);
+}
+
+.vs-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.vs-table tbody tr:hover {
+    background: var(--vs-soft);
+}
+
+.vs-empty {
+    padding: 44px 16px;
+    text-align: center;
+    color: var(--vs-muted);
+}
+
+/* ---- Ô trong bảng ---------------------------------------------------- */
+
+.vs-name {
+    display: block;
+    margin-bottom: 2px;
+    font-weight: 600;
+    color: var(--vs-ink);
+}
+
+.vs-code {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: .76rem;
+    color: var(--vs-muted);
+}
+
+.vs-err {
+    margin-top: 3px;
+    font-size: .76rem;
+    color: var(--vs-alert);
+}
+
+.vs-tag {
+    display: inline-block;
+    padding: 2px 9px;
+    font-size: .78rem;
+    white-space: nowrap;
+    color: #374151;
+    background: var(--vs-soft);
+    border: 1px solid var(--vs-line);
+    border-radius: 4px;
+}
+
+.vs-by {
+    display: block;
+    font-size: .85rem;
+    color: var(--vs-ink);
+}
+
+/* Session do Python đẩy về không có người yêu cầu — nghiêng + xám để phân biệt
+   với tên admin thật, không phải để trống. */
+.vs-by.bot {
+    font-style: italic;
+    color: var(--vs-muted);
+}
+
+.vs-num {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Chỉ tô đỏ khi VƯỢT dự toán. Thực chi thấp không có nghĩa là tiết kiệm. */
+.vs-num.over {
+    font-weight: 600;
+    color: var(--vs-alert);
+}
+
+/* ---- Huy hiệu trạng thái (theo App\Enums\VideoSessionStatus) ---------- */
+
+.vs-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: .75rem;
+    font-weight: 600;
+    white-space: nowrap;
+    border-radius: 999px;
+}
+
+.vs-draft            { background: #f1f5f9; color: #475569; }
+.vs-planning         { background: #fef3c7; color: #92400e; }
+.vs-composing,
+.vs-composing_final  { background: #e0f2fe; color: #075985; }
+.vs-reviewing        { background: #dbeafe; color: #1e40af; }
+.vs-rendering        { background: #ede9fe; color: #5b21b6; }
+.vs-done             { background: #dcfce7; color: #166534; }
+.vs-failed           { background: #fee2e2; color: #991b1b; }
+
+/* ====================================================================
+   MÀN 2 — Production Workspace (show.blade.php). Tiền tố `vw-`.
+   Dùng chung khối token `.vs-page` ở đầu file.
+   ==================================================================== */
+
+.vw-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px;
+    background: #fff;
+    border: 1px solid var(--vs-line);
+    border-radius: 8px;
+    margin-bottom: 14px;
+}
+
+.vw-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--vs-ink);
+    margin: 0 0 3px;
+}
+
+.vw-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: .82rem;
+    color: var(--vs-muted);
+}
+
+.vw-meta b {
+    color: var(--vs-ink);
+    font-variant-numeric: tabular-nums;
+}
+
+.vw-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.vw-actions form {
+    margin: 0;
+}
+
+/* ---- Chuỗi dựng dần ---------------------------------------------- */
+
+.vw-chain {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+    overflow-x: auto;
+    padding: 14px;
+}
+
+.vw-link {
+    flex: 0 0 190px;
+    border: 1px solid var(--vs-line);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--vs-soft);
+}
+
+/* Mũi tên giữa hai mắt = QUAN HỆ dựng dần, không phải trang trí: mắt sau sửa
+   lên ảnh của mắt trước. */
+.vw-arrow {
+    flex: 0 0 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--vs-muted);
+    font-size: 1.1rem;
+}
+
+.vw-link img {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #e5e7eb;
+}
+
+.vw-link-body {
+    padding: 8px 10px;
+    background: #fff;
+    border-top: 1px solid var(--vs-line);
+}
+
+.vw-state {
+    display: inline-block;
+    padding: 2px 8px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: .72rem;
+    border-radius: 4px;
+    background: #dcfce7;
+    color: #166534;
+}
+
+.vw-state.miss {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* ---- Hai cột: rail cảnh + chi tiết -------------------------------- */
+
+.vw-split {
+    display: grid;
+    grid-template-columns: 270px minmax(0, 1fr);
+    gap: 14px;
+    margin-bottom: 14px;
+}
+
+@media (max-width: 980px) {
+    .vw-split { grid-template-columns: minmax(0, 1fr); }
+}
+
+.vw-rail {
+    background: #fff;
+    border: 1px solid var(--vs-line);
+    border-radius: 8px;
+    overflow: hidden;
+    align-self: start;
+}
+
+.vw-scene {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
+    text-align: left;
+    background: #fff;
+    border: 0;
+    border-bottom: 1px solid var(--vs-line);
+}
+
+.vw-scene:last-child { border-bottom: 0; }
+.vw-scene:hover { background: var(--vs-soft); }
+
+.vw-scene.on {
+    background: #eff6ff;
+    box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.vw-scene-n {
+    font-variant-numeric: tabular-nums;
+    color: var(--vs-muted);
+    font-size: .76rem;
+}
+
+.vw-scene-id {
+    display: block;
+    font-size: .86rem;
+    font-weight: 600;
+    color: var(--vs-ink);
+    word-break: break-word;
+}
+
+.vw-panel {
+    background: #fff;
+    border: 1px solid var(--vs-line);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.vw-panel[hidden] { display: none; }
+
+.vw-h {
+    font-size: .74rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--vs-muted);
+    margin: 18px 0 6px;
+}
+
+.vw-h:first-child { margin-top: 0; }
+
+.vw-prose {
+    font-size: .88rem;
+    line-height: 1.55;
+    color: #374151;
+    margin: 0;
+}
+
+.vw-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 10px;
+}
+
+.vw-kv {
+    padding: 8px 10px;
+    background: var(--vs-soft);
+    border: 1px solid var(--vs-line);
+    border-radius: 6px;
+}
+
+.vw-kv span {
+    display: block;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--vs-muted);
+}
+
+.vw-kv b {
+    font-size: .86rem;
+    color: var(--vs-ink);
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.vw-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: .86rem;
+    line-height: 1.5;
+    color: #374151;
+}
+
+.vw-note {
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: .84rem;
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.vw-pre {
+    max-height: 26rem;
+    overflow: auto;
+    padding: 10px 12px;
+    font-size: .78rem;
+    line-height: 1.5;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 6px;
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.vw-section {
+    background: #fff;
+    border: 1px solid var(--vs-line);
+    border-radius: 8px;
+    margin-bottom: 14px;
+    overflow: hidden;
+}
+
+.vw-section > .vw-cap {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--vs-line);
+    font-weight: 600;
+    color: var(--vs-ink);
+    font-size: .9rem;
+}

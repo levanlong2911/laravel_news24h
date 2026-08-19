@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\SceneStep;
 use App\Enums\VideoShotStatus;
 use App\Services\VideoSessionService;
 use App\Video\Analysis\RenderPlanQualityReport;
@@ -29,6 +30,7 @@ class VideoSessionController extends Controller
 
     public function index()
     {
+
         return view('video-session.index', [
             'route' => 'video-session',
             'action' => 'admin-video-session',
@@ -38,33 +40,73 @@ class VideoSessionController extends Controller
         ]);
     }
 
-    public function show(string $id)
+    public function imageAnchor(string $id)
     {
+        $adminId = auth()->id();
+
+        if ($adminId === null) {
+            return back()->with('error', 'Khong xac dinh duoc admin dang dang nhap — dang nhap lai roi thu.');
+        }
+        [$prompt, $reason] = $this->videoSessionService->renderImageAnchor($id);
+
+        return view('video-projects.anchor', [
+            'route' => 'video-session',
+            'action' => 'admin-video-session',
+            'menu' => 'menu-open',
+            'active' => 'active',
+            'id' => $id,
+            'prompt' => $prompt,
+            'reason' => $reason,
+        ]);
+    }
+
+    public function imageReference(string $id)
+    {
+
+        return view('video-projects.reference', [
+            'route' => 'video-session',
+            'action' => 'admin-video-session',
+            'menu' => 'menu-open',
+            'active' => 'active',
+        ]);
+    }
+
+    public function scene(string $id, string $scene, string $step = 'planning')
+    {
+        $stage = SceneStep::tryFrom($step);
+        abort_if($stage === null, 404);
+
         $session = $this->videoSessionService->findForShow($id);
+        $plan = is_array($session->renderplan_json) ? $session->renderplan_json : [];
+        $scenes = collect($plan['scenes'] ?? []);
 
-        // Tinh MOT LAN o day roi truyen xuong, khong goi trong Blade: view lay
-        // ca `warnings` lan `metrics` o hai cho khac nhau, goi trong view la 2
-        // lan tinh lai cung mot thu. Deterministic nen ket qua giong nhau,
-        // nhung khong co ly do de tinh hai lan.
-        //
-        // KHONG luu vao DB: bao cao la ham thuan cua RenderPlan, tinh lai luon
-        // re — con luu thi se cu di ngay khi them/sua check, ma nguong hien tai
-        // van con la phong doan (§18.19).
-        //
-        // `renderplan_json` CO THE null: storeFromPython() set no tu
-        // `$data['renderplan'] ?? null`, nen session do Python day ve co the
-        // khong co plan. null => khong render panel, KHONG nem loi.
-        $plan = $session->renderplan_json;
+        $current = $scenes->firstWhere('id', $scene);
+        abort_if($current === null, 404);
 
-        return view('video-session.show', [
+        $shots = $session->shots->keyBy('beat');
+        $chain = $session->shots
+            ->where('kind', 'chain')
+            ->sortBy(fn ($s) => $s->render_plan['chain_index'] ?? 99)
+            ->values();
+
+        $provenBy = $chain
+            ->filter(fn ($s) => ($s->render_plan['proves_state'] ?? null) !== null)
+            ->keyBy(fn ($s) => $s->render_plan['proves_state']);
+
+        return view('video-projects.scene', [
             'route' => 'video-session',
             'action' => 'admin-video-session',
             'menu' => 'menu-open',
             'active' => 'active',
             'session' => $session,
-            'quality' => is_array($plan) && $plan !== [] ? $this->qualityReport->analyze($plan) : null,
-            'finalReadiness' => $this->videoSessionService->finalCompositionReadiness($session),
-            'latestFinal' => $session->finals()->latest()->first(),
+            'step' => $stage,
+            'scenes' => $scenes,
+            'scene' => $current,
+            'shots' => $shots,
+            'shot' => $shots->get($current['id']),
+            'chain' => $chain,
+            'provenBy' => $provenBy,
+            'quality' => $plan !== [] ? $this->qualityReport->analyze($plan) : null,
         ]);
     }
 
@@ -255,6 +297,17 @@ class VideoSessionController extends Controller
         }
 
         return $this->videoSessionService->listComposing();
+    }
+
+    // GET /api/video-sessions/{code}/design-cells — Python doc o thiet ke da duyet
+    // cua DU AN, de dung bang `proven` thay vi doc shot cua rieng session.
+    public function apiDesignCells(Request $r, string $code)
+    {
+        if (! $this->checkToken($r)) {
+            return response()->json(['error' => 'unauthorized'], 401);
+        }
+
+        return response()->json($this->videoSessionService->listDesignCellsForSession($code));
     }
 
     // GET /api/video-shots/queued — runner Python poll
