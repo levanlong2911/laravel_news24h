@@ -38,6 +38,11 @@ class VideoProject extends Model
         return $this->hasMany(VideoCostEntry::class, 'project_id');
     }
 
+    public function planningStages()
+    {
+        return $this->hasMany(VideoPlanningStage::class, 'project_id');
+    }
+
     public function designCells()
     {
         return $this->hasMany(VideoDesignCell::class, 'project_id');

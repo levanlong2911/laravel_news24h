@@ -5,11 +5,16 @@ namespace App\Services\Video;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
+use App\Models\VideoProject;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class PlanningStageStore
 {
+    private const LEASE_SECONDS = 180;
+
     /**
      * @param  array<string, mixed>  $input
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
@@ -21,11 +26,95 @@ class PlanningStageStore
         PlanningStageName $stage,
         array $input,
     ): array {
+        return $this->claimIn('session_id', $sessionId, $planningRevision, $stage, $input);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
+     *                                                              reason: project_not_found|claimed_by_other|already_succeeded|claimed
+     */
+    public function claimProjectStage(string $projectId, PlanningStageName $stage, array $input): array
+    {
+        $hash = $this->hash($input);
         $claimToken = (string) Str::uuid();
 
-        return DB::transaction(function () use ($sessionId, $planningRevision, $stage, $input, $claimToken) {
+        try {
+            return DB::transaction(function () use ($projectId, $stage, $input, $hash, $claimToken) {
+                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+
+                $rows = VideoPlanningStage::query()
+                    ->where('project_id', $projectId)
+                    ->where('stage', $stage->value)
+                    ->get();
+
+                $live = $rows->first(fn ($r) => $r->status === VideoPlanningStageStatus::RUNNING->value
+                    && $r->claim_token !== null
+                    && $r->lease_expires_at?->isFuture());
+
+                if ($live !== null) {
+                    return [$live, null, 'claimed_by_other'];
+                }
+
+                $done = $rows->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+                    ->where('input_hash', $hash)
+                    ->sortByDesc('planning_revision')
+                    ->first();
+
+                if ($done !== null) {
+                    return [$done, null, 'already_succeeded'];
+                }
+
+                $attributes = [
+                    'status' => VideoPlanningStageStatus::RUNNING->value,
+                    'input_json' => $input,
+                    'input_hash' => $hash,
+                    'claim_token' => $claimToken,
+                    'claimed_at' => now(),
+                    'lease_expires_at' => now()->addSeconds(self::LEASE_SECONDS),
+                    'started_at' => now(),
+                    'error_message' => null,
+                ];
+
+                $expired = $rows->firstWhere('status', VideoPlanningStageStatus::RUNNING->value);
+
+                if ($expired !== null) {
+                    $expired->update($attributes);
+
+                    return [$expired, $claimToken, 'claimed'];
+                }
+
+                return [
+                    VideoPlanningStage::create($attributes + [
+                        'project_id' => $projectId,
+                        'planning_revision' => ((int) $rows->max('planning_revision')) + 1,
+                        'stage' => $stage->value,
+                    ]),
+                    $claimToken,
+                    'claimed',
+                ];
+            });
+        } catch (ModelNotFoundException $e) {
+            return [null, null, 'project_not_found'];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string}
+     */
+    private function claimIn(
+        string $column,
+        string $id,
+        int $planningRevision,
+        PlanningStageName $stage,
+        array $input,
+    ): array {
+        $claimToken = (string) Str::uuid();
+
+        return DB::transaction(function () use ($column, $id, $planningRevision, $stage, $input, $claimToken) {
             $row = VideoPlanningStage::query()
-                ->where('session_id', $sessionId)
+                ->where($column, $id)
                 ->where('planning_revision', $planningRevision)
                 ->where('stage', $stage->value)
                 ->lockForUpdate()
@@ -51,7 +140,7 @@ class PlanningStageStore
 
             if ($row === null) {
                 $row = VideoPlanningStage::create($attributes + [
-                    'session_id' => $sessionId,
+                    $column => $id,
                     'planning_revision' => $planningRevision,
                     'stage' => $stage->value,
                 ]);
@@ -102,24 +191,59 @@ class PlanningStageStore
     /** @return array<string, mixed>|null */
     public function outputOf(string $sessionId, int $planningRevision, PlanningStageName $stage): ?array
     {
-        $row = VideoPlanningStage::query()
-            ->where('session_id', $sessionId)
+        return $this->succeeded('session_id', $sessionId, $stage)
             ->where('planning_revision', $planningRevision)
-            ->where('stage', $stage->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
-
-        return $row?->output_json;
+            ->value('output_json');
     }
 
     public function rawResponseOf(string $sessionId, int $planningRevision, PlanningStageName $stage): ?string
     {
-        return VideoPlanningStage::query()
-            ->where('session_id', $sessionId)
+        return $this->succeeded('session_id', $sessionId, $stage)
             ->where('planning_revision', $planningRevision)
-            ->where('stage', $stage->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->value('raw_response');
+    }
+
+    /** @return array<string, mixed>|null */
+    public function latestOutputForProject(string $projectId, PlanningStageName $stage): ?array
+    {
+        return $this->succeeded('project_id', $projectId, $stage)
+            ->orderByDesc('planning_revision')
+            ->value('output_json');
+    }
+
+    /** @return array{0: ?VideoPlanningStage, 1: bool} */
+    public function latestStageForProject(string $projectId, PlanningStageName $stage, array $input): array
+    {
+        $latest = VideoPlanningStage::query()
+            ->where('project_id', $projectId)
+            ->where('stage', $stage->value)
+            ->orderByDesc('planning_revision')
+            ->first();
+
+        return [$latest, $latest?->input_hash === $this->hash($input)];
+    }
+
+    public function releaseClaim(string $stageId, string $reason): bool
+    {
+        return VideoPlanningStage::query()
+            ->whereKey($stageId)
+            ->whereNotNull('claim_token')
+            ->update([
+                'status' => VideoPlanningStageStatus::FAILED->value,
+                'error_message' => $reason,
+                'claim_token' => null,
+                'claimed_at' => null,
+                'lease_expires_at' => null,
+                'finished_at' => now(),
+            ]) > 0;
+    }
+
+    private function succeeded(string $column, string $id, PlanningStageName $stage): Builder
+    {
+        return VideoPlanningStage::query()
+            ->where($column, $id)
+            ->where('stage', $stage->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value);
     }
 
     /** @param array<string, mixed> $attributes */
@@ -131,6 +255,7 @@ class PlanningStageStore
             ->update($attributes + [
                 'claim_token' => null,
                 'claimed_at' => null,
+                'lease_expires_at' => null,
                 'finished_at' => now(),
             ]) > 0;
     }

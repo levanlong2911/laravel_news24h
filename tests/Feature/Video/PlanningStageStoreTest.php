@@ -9,6 +9,7 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoSession;
 use App\Services\Video\PlanningStageStore;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
@@ -20,14 +21,16 @@ class PlanningStageStoreTest extends TestCase
 
     private VideoSession $session;
 
+    private VideoProject $project;
+
     protected function setUp(): void
     {
         parent::setUp();
 
         $this->store = new PlanningStageStore;
-        $project = VideoProject::create(['title' => 'TEST stage '.uniqid()]);
+        $this->project = VideoProject::create(['title' => 'TEST stage '.uniqid()]);
         $this->session = VideoSession::create([
-            'project_id' => $project->id,
+            'project_id' => $this->project->id,
             'code' => 'test_stage_'.uniqid(),
             'status' => VideoSessionStatus::PLANNING->value,
         ]);
@@ -127,5 +130,116 @@ class PlanningStageStoreTest extends TestCase
         $this->assertSame('claimed', $reason);
         $this->assertNotNull($newToken);
         $this->assertSame(['brief' => 'rev0'], $this->store->outputOf($this->session->id, 0, PlanningStageName::INSPIRATION));
+    }
+
+    public function test_a_project_scoped_stage_records_the_project_not_the_session(): void
+    {
+        [$stage, $token, $reason] = $this->store->claimProjectStage(
+            $this->project->id, PlanningStageName::INSPIRATION, ['title' => 'A yacht'],
+        );
+
+        $this->assertSame('claimed', $reason);
+        $this->assertNotNull($token);
+        $this->assertSame($this->project->id, $stage->project_id);
+        $this->assertNull($stage->session_id);
+    }
+
+    public function test_two_projects_do_not_see_each_others_stages(): void
+    {
+        $other = VideoProject::create(['title' => 'TEST stage other '.uniqid()]);
+
+        [$mine, $token] = $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, []);
+        $this->store->finishSucceeded($mine->id, $token, 'raw', ['article_focus' => 'cua toi']);
+
+        $this->assertNull($this->store->latestOutputForProject($other->id, PlanningStageName::INSPIRATION));
+        $this->assertSame(
+            ['article_focus' => 'cua toi'],
+            $this->store->latestOutputForProject($this->project->id, PlanningStageName::INSPIRATION),
+        );
+    }
+
+    public function test_the_latest_revision_wins_when_the_article_changed(): void
+    {
+        [$first, $t1] = $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, ['content' => 'ban goc']);
+        $this->store->finishSucceeded($first->id, $t1, 'raw', ['article_focus' => 'ban 1']);
+
+        [$second, $t2, $reason] = $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, ['content' => 'da sua']);
+
+        $this->assertSame('claimed', $reason);
+        $this->assertSame(2, $second->planning_revision);
+
+        $this->store->finishSucceeded($second->id, $t2, 'raw', ['article_focus' => 'ban 2']);
+
+        $this->assertSame(
+            ['article_focus' => 'ban 2'],
+            $this->store->latestOutputForProject($this->project->id, PlanningStageName::INSPIRATION),
+        );
+    }
+
+    public function test_the_same_article_is_never_analysed_twice(): void
+    {
+        $input = ['content' => 'khong doi'];
+
+        [$first, $token] = $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, $input);
+        $this->store->finishSucceeded($first->id, $token, 'raw', ['article_focus' => 'ban dau']);
+
+        [$again, $newToken, $reason] = $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, $input);
+
+        $this->assertSame('already_succeeded', $reason);
+        $this->assertNull($newToken);
+        $this->assertSame(['article_focus' => 'ban dau'], $again->output_json);
+    }
+
+    public function test_a_second_click_while_the_first_is_still_running_gets_nothing(): void
+    {
+        $input = ['content' => 'dang chay'];
+
+        [, $token] = $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, $input);
+        $this->assertNotNull($token);
+
+        [, $secondToken, $reason] = $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, $input);
+
+        $this->assertSame('claimed_by_other', $reason);
+        $this->assertNull($secondToken);
+        $this->assertSame(1, VideoPlanningStage::where('project_id', $this->project->id)->count());
+    }
+
+    public function test_a_dead_run_is_taken_over_once_its_lease_expired(): void
+    {
+        [$dead, $token] = $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, ['content' => 'chet giua chung']);
+        $dead->update(['lease_expires_at' => now()->subMinute()]);
+
+        [$taken, $newToken, $reason] = $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, ['content' => 'chet giua chung']);
+
+        $this->assertSame('claimed', $reason);
+        $this->assertNotNull($newToken);
+        $this->assertNotSame($token, $newToken);
+        $this->assertSame($dead->id, $taken->id);
+        $this->assertSame(1, VideoPlanningStage::where('project_id', $this->project->id)->count());
+    }
+
+    public function test_an_unknown_project_cannot_be_claimed(): void
+    {
+        [$stage, $token, $reason] = $this->store->claimProjectStage(
+            'khong-co-that', PlanningStageName::INSPIRATION, [],
+        );
+
+        $this->assertNull($stage);
+        $this->assertNull($token);
+        $this->assertSame('project_not_found', $reason);
+    }
+
+    public function test_a_project_cannot_hold_two_stages_at_the_same_revision(): void
+    {
+        $this->store->claimProjectStage($this->project->id, PlanningStageName::INSPIRATION, []);
+
+        $this->expectException(UniqueConstraintViolationException::class);
+
+        VideoPlanningStage::create([
+            'project_id' => $this->project->id,
+            'planning_revision' => 1,
+            'stage' => PlanningStageName::INSPIRATION->value,
+            'status' => VideoPlanningStageStatus::RUNNING->value,
+        ]);
     }
 }
