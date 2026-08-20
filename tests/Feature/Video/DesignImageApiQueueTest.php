@@ -78,6 +78,53 @@ class DesignImageApiQueueTest extends TestCase
         $this->assertNotNull($order['queued_at']);
     }
 
+    public function test_the_work_order_prices_the_image_so_python_never_guesses(): void
+    {
+        // Mot hang so chung cho moi quality la sai 7 lan giua low va high. Gia
+        // di theo don hang vi Laravel la noi biet nguoi dung chon gi.
+        foreach (['low' => 0.015, 'medium' => 0.041, 'high' => 0.11, 'auto' => 0.11] as $quality => $price) {
+            $image = $this->image();
+            $image->update(['prompt_spec_json' => ['quality' => $quality] + $this->spec()]);
+            app(DesignImageQueue::class)->enqueue($image->id);
+
+            $order = collect($this->getJson('/api/video-design-images/queued')->assertOk()->json())
+                ->firstWhere('id', $image->id);
+
+            $this->assertSame($quality, $order['quality']);
+            $this->assertSame($price, $order['cost_estimate']);
+        }
+    }
+
+    public function test_a_setting_outside_the_vocabulary_is_held_back_not_guessed_at(): void
+    {
+        // Python khong sua duoc `quality => ultra`: no chi fail SAU khi da nhan
+        // viec va giu lease. Chan o day, dung doan mot gia roi phat viec hong.
+        Log::spy();
+
+        foreach ([['quality' => 'ultra'], ['model' => 'dall-e-9']] as $broken) {
+            $image = $this->image();
+            $image->update(['prompt_spec_json' => $broken + $this->spec()]);
+            app(DesignImageQueue::class)->enqueue($image->id);
+
+            $ids = collect($this->getJson('/api/video-design-images/queued')->assertOk()->json())
+                ->pluck('id');
+
+            $this->assertNotContains($image->id, $ids, 'thiet lap la ma van duoc phat viec');
+        }
+
+        Log::shouldHaveReceived('warning')->twice();
+    }
+
+    public function test_a_price_is_never_guessed_low_when_the_quality_cannot_be_read(): void
+    {
+        // Lop thu hai: neu mot ngay nao do co duong khac dua spec la vao day.
+        $this->assertSame(
+            0.11,
+            (new \ReflectionMethod(\App\Http\Controllers\VideoDesignImagesController::class, 'costEstimate'))
+                ->invoke(app(\App\Http\Controllers\VideoDesignImagesController::class), ['quality' => 'ultra']),
+        );
+    }
+
     public function test_a_cell_nobody_queued_is_not_offered_as_work(): void
     {
         $candidate = $this->image();

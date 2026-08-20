@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Enums\DesignImageStatus;
+use App\Enums\ImageModel;
+use App\Enums\ImageQuality;
 use App\Models\VideoDesignImage;
 use App\Services\Video\DesignImageQueue;
 use Illuminate\Http\Request;
@@ -51,7 +53,8 @@ class VideoDesignImagesController extends Controller
             }
         }
 
-        return true;
+        return ImageQuality::tryFrom((string) $spec['quality']) !== null
+            && ImageModel::tryFrom((string) $spec['model']) !== null;
     }
 
     public function claim(Request $r)
@@ -154,9 +157,16 @@ class VideoDesignImagesController extends Controller
             'quality' => $spec['quality'] ?? '',
             'size' => $spec['size'] ?? '',
             'variations' => (int) ($spec['variations'] ?? 1),
+            'cost_estimate' => $this->costEstimate($spec),
             'prompt_sha256' => $image->prompt_sha256,
             'queued_at' => optional($image->queued_at)->toIso8601String(),
         ];
+    }
+
+    private function costEstimate(array $spec): float
+    {
+        return (ImageQuality::tryFrom((string) ($spec['quality'] ?? '')) ?? ImageQuality::HIGH)
+            ->estimatedCostUsd();
     }
 
     /**

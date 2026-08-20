@@ -29,6 +29,16 @@ enum ImageQuality: string
         };
     }
 
+    public function estimatedCostUsd(): float
+    {
+        return match ($this) {
+            self::LOW => 0.015,
+            self::MEDIUM => 0.041,
+            self::HIGH => 0.11,
+            self::AUTO => 0.11,
+        };
+    }
+
     public function hint(): string
     {
         return match ($this) {
