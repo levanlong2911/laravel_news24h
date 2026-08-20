@@ -30,7 +30,7 @@ class RenderLedgerIntegrityTest extends TestCase
         $crossed = [];
 
         foreach (VideoRender::with('shot', 'sourceRender.shot')->whereNotNull('source_render_id')->get() as $render) {
-            if ($render->sourceRender === null) {
+            if ($render->sourceRender === null || $render->shot === null || $render->sourceRender->shot === null) {
                 continue;
             }
             if ($render->shot->session_id !== $render->sourceRender->shot->session_id) {
@@ -76,9 +76,9 @@ class RenderLedgerIntegrityTest extends TestCase
          */
         $broken = [];
 
-        foreach (VideoRender::with('shot')->get() as $render) {
+        foreach (VideoRender::with('shot', 'designImage')->get() as $render) {
             if (hash('sha256', (string) $render->sent_prompt) !== $render->prompt_sha256) {
-                $broken[] = $render->shot->shot_code;
+                $broken[] = $render->shot?->shot_code ?? $render->designImage?->image_code ?? $render->id;
             }
         }
 

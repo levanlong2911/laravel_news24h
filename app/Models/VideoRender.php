@@ -22,7 +22,7 @@ class VideoRender extends Model
     use HasUuids;
 
     protected $fillable = [
-        'shot_id', 'attempt_no', 'idempotency_key', 'render_kind', 'provider', 'model',
+        'shot_id', 'design_image_id', 'attempt_no', 'idempotency_key', 'render_kind', 'provider', 'model',
         'sent_prompt', 'prompt_sha256', 'request_sha256', 'negative_prompt',
         'source_render_id', 'source_kind', 'requires_state', 'proves_state',
         'artifact_path', 'artifact_dir', 'width', 'height', 'duration_ms', 'bytes',
@@ -44,6 +44,12 @@ class VideoRender extends Model
     public function shot()
     {
         return $this->belongsTo(VideoShot::class, 'shot_id');
+    }
+
+    /** Chủ sở hữu thứ hai của một lượt render — ô thiết kế ảnh, không thuộc session nào. */
+    public function designImage()
+    {
+        return $this->belongsTo(VideoDesignImage::class, 'design_image_id');
     }
 
     /** Tấm ảnh đã đẻ ra lượt render này — null nếu sinh từ chữ. */

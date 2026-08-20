@@ -14,6 +14,8 @@ class VideoDesignImage extends Model
         'proves_state', 'source_image_id', 'prompt_spec_json', 'prompt_sha256',
         'selected_artifact_id', 'status', 'revision', 'approved_at', 'approved_by',
         'metadata_json',
+        'worker_id', 'claim_token', 'claimed_at', 'lease_expires_at',
+        'queued_at', 'render_error',
     ];
 
     protected $casts = [
@@ -22,6 +24,9 @@ class VideoDesignImage extends Model
         'prompt_spec_json' => 'array',
         'metadata_json' => 'array',
         'approved_at' => 'datetime',
+        'claimed_at' => 'datetime',
+        'lease_expires_at' => 'datetime',
+        'queued_at' => 'datetime',
     ];
 
     public function project()
