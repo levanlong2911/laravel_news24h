@@ -237,22 +237,10 @@ class VideoSessionController extends Controller
             ));
     }
 
-    // ---------- API cho Python (X-Video-Token khop video.api_token da nap) ----------
-    private function checkToken(Request $r): bool
-    {
-        $t = config('video.api_token');
+    // ---------- API cho Python (token do middleware `video.token` giu) ----------
 
-        return is_string($t)
-            && $t !== ''
-            && hash_equals($t, (string) $r->header('X-Video-Token'));
-    }
-
-    // POST /api/render-plans — Python đẩy session + shots (spec là INPUT, prompt là OUTPUT)
     public function apiStore(Request $r)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
         // Validate ca NOI DUNG tung shot, khong chi cap tren cung. shot_code/
         // kind/beat duoc storeFromPython() truy cap TRUC TIEP (khong co ??
         // mac dinh) — thieu mot key la loi luc chay, sau khi vai shot da ghi
@@ -292,10 +280,6 @@ class VideoSessionController extends Controller
     // GET /api/video-sessions/composing — runner poll de compose prompt
     public function apiComposing(Request $r)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
-
         return $this->videoSessionService->listComposing();
     }
 
@@ -303,30 +287,18 @@ class VideoSessionController extends Controller
     // cua DU AN, de dung bang `proven` thay vi doc shot cua rieng session.
     public function apiDesignCells(Request $r, string $code)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
-
         return response()->json($this->videoSessionService->listDesignCellsForSession($code));
     }
 
     // GET /api/video-shots/queued — runner Python poll
     public function apiQueued(Request $r)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
-
         return $this->videoSessionService->listQueuedShots();
     }
 
     // POST /api/video-shots/claim — atomic claim theo session, mot token cho ca batch.
     public function apiClaim(Request $r)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
-
         $data = $r->validate([
             'session_code' => 'required|string|max:64',
             'worker_id' => 'required|string|max:100',
@@ -345,10 +317,6 @@ class VideoSessionController extends Controller
     // PATCH /api/video-shots/{id}/heartbeat — chi owner con lease moi gia han duoc.
     public function apiHeartbeat(Request $r, string $shotId)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
-
         $data = $r->validate([
             'worker_id' => 'required|string|max:100',
             'claim_token' => 'required|uuid',
@@ -370,10 +338,6 @@ class VideoSessionController extends Controller
     // POST /api/video-shots/reclaim-expired — van hanh/scheduler goi dinh ky.
     public function apiReclaimExpired(Request $r)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
-
         return response()->json([
             'requeued' => $this->videoSessionService->reclaimExpiredShotLeases(),
         ]);
@@ -382,9 +346,6 @@ class VideoSessionController extends Controller
     // PATCH /api/video-shots/{id}/result — runner báo kết quả
     public function apiResult(Request $r, string $shotId)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
         $data = $r->validate([
             'success' => 'required|boolean',
             'artifact_path' => 'nullable|string|max:255',
@@ -425,10 +386,6 @@ class VideoSessionController extends Controller
     // GET /api/video-finals/composing — Python kéo kế hoạch ghép final
     public function apiFinalsComposing(Request $r)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
-
         $data = $r->validate([
             'session_code' => 'required|string|max:64',
         ]);
@@ -439,10 +396,6 @@ class VideoSessionController extends Controller
     // PATCH /api/video-finals/{id}/result — Python báo kết quả FFmpeg
     public function apiFinalResult(Request $r, string $finalId)
     {
-        if (! $this->checkToken($r)) {
-            return response()->json(['error' => 'unauthorized'], 401);
-        }
-
         $data = $r->validate([
             'success' => 'required|boolean',
             'video_path' => 'required_if:success,true|string|max:255',

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\ApiAdvertisementController;
 use App\Http\Controllers\Api\PostApiController;
 use App\Http\Controllers\Api\RedditController;
+use App\Http\Controllers\VideoDesignImagesController;
 use App\Http\Controllers\VideoSessionController;
 use Illuminate\Support\Facades\Route;
 
@@ -36,7 +37,7 @@ Route::prefix('ads')->group(function () {
 // Video production API — Python Composer/Runner (token X-Video-Token riêng,
 // bỏ DomainContext vì middleware đó đòi api_key của Domain cho mọi /api/*)
 Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])
-    ->middleware(['video.correlation'])
+    ->middleware(['video.correlation', 'video.token'])
     ->group(function () {
         Route::post('/render-plans', [VideoSessionController::class, 'apiStore']);
         Route::get('/video-sessions/composing', [VideoSessionController::class, 'apiComposing']);
@@ -48,4 +49,11 @@ Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])
         Route::patch('/video-shots/{shotId}/result', [VideoSessionController::class, 'apiResult']);
         Route::get('/video-finals/composing', [VideoSessionController::class, 'apiFinalsComposing']);
         Route::patch('/video-finals/{finalId}/result', [VideoSessionController::class, 'apiFinalResult']);
+
+        // O thiet ke anh — thuoc PROJECT, khong thuoc session nao
+        Route::get('/video-design-images/queued', [VideoDesignImagesController::class, 'queued']);
+        Route::post('/video-design-images/claim', [VideoDesignImagesController::class, 'claim']);
+        Route::post('/video-design-images/reclaim-expired', [VideoDesignImagesController::class, 'reclaimExpired']);
+        Route::patch('/video-design-images/{imageId}/heartbeat', [VideoDesignImagesController::class, 'heartbeat']);
+        Route::patch('/video-design-images/{imageId}/result', [VideoDesignImagesController::class, 'result']);
     });

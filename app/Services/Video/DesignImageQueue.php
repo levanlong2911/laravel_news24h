@@ -196,7 +196,7 @@ class DesignImageQueue
 
                 $image->update([
                     'status' => ($success ? DesignImageStatus::RENDERED : DesignImageStatus::FAILED)->value,
-                    'render_error' => $success ? null : ($renderError ?: 'render that bai, worker khong noi ly do'),
+                    'render_error' => $success ? null : ($renderError ?: 'Render failed and the worker gave no reason'),
                     'worker_id' => null,
                     'claim_token' => null,
                     'claimed_at' => null,
