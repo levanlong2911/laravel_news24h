@@ -70,6 +70,7 @@ class VideoProjectsController extends Controller
             'compiledPrompt' => $compiledPrompt,
             'compileReason' => $compileReason,
             'nextImageCode' => $nextImageCode,
+            'anchorCells' => $this->videoProjectService->anchorCells($project->id),
             'prompt' => null,
             'reason' => 'chua sinh',
         ]);
@@ -158,10 +159,29 @@ class VideoProjectsController extends Controller
         });
     }
 
+    public function enqueueDesignImage(string $id, string $imageId)
+    {
+        [$image, $reason] = $this->videoProjectService->enqueueDesignImage($id, $imageId);
+
+        if ($image === null) {
+            return back()->with('error', $this->anchorMessage($reason));
+        }
+
+        $message = match ($reason) {
+            'queued' => __('messages.anchor_render_queued', ['code' => $image->image_code]),
+            'already_queued' => __('messages.anchor_render_already_queued', ['code' => $image->image_code]),
+            'not_enqueueable' => __('messages.anchor_render_not_enqueueable', ['code' => $image->image_code]),
+            default => $reason,
+        };
+
+        return back()->with($reason === 'queued' ? 'success' : 'error', $message);
+    }
+
     private function anchorMessage(string $reason): string
     {
         return match ($reason) {
             'project_not_found' => __('messages.project_not_found'),
+            'image_not_found' => __('messages.anchor_image_not_found'),
             'no_category' => __('messages.anchor_no_category'),
             'no_concept' => __('messages.anchor_no_concept'),
             default => $reason,

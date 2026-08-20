@@ -151,6 +151,7 @@ Route::group(
         Route::post('/{id}/concept',            [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
         Route::post('/{id}/concept/reset',      [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
         Route::post('/{id}/anchor-image',       [VideoProjectsController::class, 'createAnchorImage'])->name('video-projects.anchor-image');
+        Route::post('/{id}/design-images/{imageId}/enqueue', [VideoProjectsController::class, 'enqueueDesignImage'])->name('video-projects.design-image-enqueue');
         Route::get('/{id}/reference',           [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
     });
 

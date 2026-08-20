@@ -39,6 +39,20 @@ class VideoDesignImage extends Model
         return $this->belongsTo(VideoArtifact::class, 'selected_artifact_id');
     }
 
+    /**
+     * Cac UNG VIEN da render. Khac `artifact()` — cai do la tam DA DUOC CHON,
+     * va chi 3.4 (nguoi bam duyet) moi set `selected_artifact_id`.
+     */
+    public function artifacts()
+    {
+        return $this->hasMany(VideoArtifact::class, 'design_image_id');
+    }
+
+    public function renders()
+    {
+        return $this->hasMany(VideoRender::class, 'design_image_id');
+    }
+
     public function source()
     {
         return $this->belongsTo(self::class, 'source_image_id');

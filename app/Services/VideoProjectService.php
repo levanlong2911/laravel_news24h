@@ -13,6 +13,7 @@ use App\Models\VideoProject;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\ConceptStageRunner;
+use App\Services\Video\DesignImageQueue;
 use App\Services\Video\DesignImageStore;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\PlanningStageStore;
@@ -36,6 +37,8 @@ class VideoProjectService
 
     private DesignImageStore $designImageStore;
 
+    private DesignImageQueue $designImageQueue;
+
     private VideoRenderPlanService $renderPlanService;
 
     public function __construct(
@@ -47,6 +50,7 @@ class VideoProjectService
         VideoRenderPlanService $renderPlanService,
         PythonPromptCompiler $promptCompiler,
         DesignImageStore $designImageStore,
+        DesignImageQueue $designImageQueue,
     ) {
         $this->videoProjectRepository = $videoProjectRepository;
         $this->articleService = $articleService;
@@ -56,6 +60,7 @@ class VideoProjectService
         $this->renderPlanService = $renderPlanService;
         $this->promptCompiler = $promptCompiler;
         $this->designImageStore = $designImageStore;
+        $this->designImageQueue = $designImageQueue;
     }
 
     public function listAll(): iterable
@@ -269,6 +274,32 @@ class VideoProjectService
             'can_run' => ! $matchesInput || $latest->status === VideoPlanningStageStatus::FAILED->value,
             'prompt' => $succeeded ? $this->anchorPromptFor($project, $latest->output_json ?? []) : null,
         ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function anchorCells(string $projectId): array
+    {
+        return $this->designImageStore->anchorCellsFor($projectId);
+    }
+
+    /**
+     * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
+     *                                                reason: queued|already_queued|not_enqueueable|image_not_found
+     */
+    public function enqueueDesignImage(string $projectId, string $imageId): array
+    {
+        // O phai thuoc DUNG du an tren URL. Khong co cho nao mot id la duoc day
+        // o cua du an khac vao hang doi — do la tieu tien cua nguoi khac.
+        $owned = VideoDesignImage::query()
+            ->whereKey($imageId)
+            ->where('project_id', $projectId)
+            ->exists();
+
+        if (! $owned) {
+            return [null, 'image_not_found'];
+        }
+
+        return $this->designImageQueue->enqueue($imageId);
     }
 
     public function nextImageCode(string $projectId, string $creator): string

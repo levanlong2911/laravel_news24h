@@ -29,6 +29,15 @@ enum ImageQuality: string
         };
     }
 
+    /**
+     * Doc quality tu mot spec da luu. Gia tri la hoac vang thi lay HIGH: uoc cao
+     * con sua duoc, uoc thap thi so cai noi doi ve so tien da tieu.
+     */
+    public static function fromSpecOrHigh(mixed $value): self
+    {
+        return self::tryFrom((string) $value) ?? self::HIGH;
+    }
+
     public function estimatedCostUsd(): float
     {
         return match ($this) {

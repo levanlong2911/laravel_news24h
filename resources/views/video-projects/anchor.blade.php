@@ -7,24 +7,6 @@
 
 @section('content')
 @php
-    $candidate1 = asset('renders/shots/a26f7a87-67b1-40fc-91ac-f9581093d722.jpg');
-    $candidate2 = asset('renders/shots/a2718f3f-4265-494f-add0-a96fd35f7d9f.jpg');
-
-    $qaChecklist = [
-        'Proportions match (5.8:1)',
-        'Deck tiers = 4',
-        'Bow vertical & concave facet',
-        'Superstructure continuous',
-        'No extra elements (mast, radar domes, etc.)',
-    ];
-
-    $refSummary = [
-        'Environment' => '1 ảnh',
-        'Subject Identity' => '3 ảnh',
-        'Construction Master' => '0 ảnh',
-        'Equipment' => '0 ảnh',
-    ];
-
 @endphp
 
 <div class="container-fluid vp">
@@ -281,59 +263,92 @@ Has Analyzed</button>
                 <em>(Render &amp; duyệt ảnh neo)</em>
             </div>
 
-            <div class="va-fields one">
-                <div class="va-field">
-                    <label>Asset Name</label>
-                    <div class="ctl"><span>master_vessel_anchor_v1</span><span class="ok">Generated</span></div>
-                </div>
-            </div>
-
-            <div class="va-lbl" style="padding-left:14px">ANCHOR PREVIEW <span>(Ứng viên lựa chọn)</span></div>
-            <div class="va-cands">
-                <div class="va-cand pick">
-                    <div class="cap">CANDIDATE 1<span class="badge">★ Chọn</span></div>
-                    <img src="{{ $candidate1 }}" alt="Candidate 1">
-                    <div class="meta">
-                        Model: GPT Image 2 &nbsp;|&nbsp; 1024×1536 (2:3)<br>
-                        Created: 2026-08-15 10:21:11<br>
-                        Cost: $0.17
+            @forelse($anchorCells as $cell)
+                <div class="va-fields one">
+                    <div class="va-field">
+                        <label>Asset Name</label>
+                        <div class="ctl">
+                            <span>{{ $cell['image_code'] }}</span>
+                            <span class="{{ $cell['has_failed'] ? 'dg' : 'ok' }}">{{ $cell['status_label'] }}</span>
+                        </div>
                     </div>
                 </div>
-                <div class="va-cand">
-                    <div class="cap">CANDIDATE 2</div>
-                    <img src="{{ $candidate2 }}" alt="Candidate 2">
-                    <div class="meta">
-                        Model: GPT Image 2 &nbsp;|&nbsp; 1024×1536 (2:3)<br>
-                        Created: 2026-08-15 10:21:11<br>
-                        Cost: $0.17
-                    </div>
+
+                @if($cell['render_error'])
+                    <div class="alert alert-danger mx-3">{{ $cell['render_error'] }}</div>
+                @endif
+
+                <div class="va-lbl" style="padding-left:14px">
+                    {{ $cell['variations'] }} ảnh &middot; {{ $cell['quality'] }} &middot; {{ $cell['size'] }}
+                    <span>
+                        Ước lượng ${{ number_format($cell['cost_unit'], 3) }}
+                        × {{ $cell['variations'] }} = ${{ number_format($cell['cost_estimate'], 3) }}
+                        @if($cell['cost_recorded'] > 0)
+                            &middot; sổ cái ghi ${{ number_format($cell['cost_recorded'], 4) }}
+                        @endif
+                    </span>
                 </div>
-            </div>
 
-            <div class="va-lbl" style="padding-left:14px">QA CHECKLIST</div>
-            <div class="va-check">
-                @foreach($qaChecklist as $item)
-                    <div class="line">
-                        <span class="tick">✓</span>
-                        <span>{{ $item }}</span>
-                        <span class="grow"></span>
-                        <span class="pass">PASS</span>
+                @if($cell['is_live'])
+                    <div class="va-lbl" style="padding-left:14px;color:var(--vp-amber-fg);font-weight:400">
+                        Đang chờ worker nhận việc{{ $cell['queued_at'] ? ' — vào hàng đợi '.$cell['queued_at']->diffForHumans() : '' }}.
+                        Tải lại trang để xem tiến độ.
                     </div>
-                @endforeach
+                @elseif($cell['can_render'])
+                    <form method="POST" id="renderCell{{ $loop->index }}"
+                          action="{{ route('video-projects.design-image-enqueue', [$project->id, $cell['id']]) }}"
+                          data-modal="confirmRender{{ $loop->index }}" onsubmit="return vpLockForm(this)">
+                        @csrf
+                    </form>
+                    <div style="padding:0 14px 10px">
+                        <button type="button" class="vp-btn pri" data-toggle="modal"
+                                data-target="#confirmRender{{ $loop->index }}" data-busy="Đang xếp hàng…">
+                            {{ $cell['has_failed'] ? 'Render lại →' : 'Render Anchor →' }}
+                        </button>
+                    </div>
+                    @include('modal.confirm_action', [
+                        'id' => 'confirmRender'.$loop->index,
+                        'form' => 'renderCell'.$loop->index,
+                        'content' => 'Gửi ô này cho gpt-image-2 render — TÁC VỤ NÀY TÍNH TIỀN.',
+                        'detail' => $cell['variations'].' ảnh · '.$cell['quality'].' · '.$cell['size']
+                            .' — ước lượng $'.number_format($cell['cost_estimate'], 3),
+                    ])
+                @endif
+
+                @if($cell['candidates'] !== [])
+                    <div class="va-lbl" style="padding-left:14px">ANCHOR PREVIEW <span>(Ứng viên lựa chọn)</span></div>
+                    <div class="va-cands">
+                        @foreach($cell['candidates'] as $index => $candidate)
+                            <div class="va-cand">
+                                <div class="cap">CANDIDATE {{ $index + 1 }}</div>
+                                <img src="{{ asset($candidate['url']) }}" alt="Candidate {{ $index + 1 }}">
+                                <div class="meta">
+                                    {{ $cell['quality'] }} &nbsp;|&nbsp; {{ $candidate['width'] }}×{{ $candidate['height'] }}<br>
+                                    {{ $candidate['created_at']?->format('Y-m-d H:i:s') }}<br>
+                                    sha {{ $candidate['sha'] }}
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            @empty
+                <div class="va-lbl" style="padding-left:14px">
+                    Chưa có ô nào — dựng prompt rồi bấm <b>Generate Anchor</b> ở khối 1.
+                </div>
+            @endforelse
+
+            <div class="va-lbl" style="padding-left:14px">QA CHECKLIST
+                <span>(chưa nối — sẽ làm ở bước duyệt ảnh)</span>
             </div>
 
-            <div class="va-lbl" style="padding-left:14px">REFERENCE SUMMARY</div>
-            <div class="va-sum">
-                @foreach($refSummary as $name => $count)
-                    <div class="line"><span>{{ $name }}</span><span class="grow"></span><b>{{ $count }}</b></div>
-                @endforeach
-                <div class="line total"><span>Total</span><span class="grow"></span><b>4 ảnh</b></div>
+            <div class="va-lbl" style="padding-left:14px">REFERENCE SUMMARY
+                <span>(chưa nối — màn ảnh tham chiếu chưa làm)</span>
             </div>
 
             <div class="va-foot">
-                <button class="vp-btn">Regenerate</button>
-                <button class="vp-btn">⤓ Download</button>
-                <a class="vp-btn ok" href="">✓ Approve as Canonical Anchor</a>
+                <button class="vp-btn" disabled title="Not connected yet">Regenerate</button>
+                <button class="vp-btn" disabled title="Not connected yet">⤓ Download</button>
+                <button class="vp-btn ok" disabled title="Approval is step 3.4">✓ Approve as Canonical Anchor</button>
                 {{-- <a class="vp-btn ok" href="{{ route('video-session.imageReference', $id-) }}">✓ Approve as Canonical Anchor</a> --}}
             </div>
         </div>

@@ -2,6 +2,10 @@
 
 namespace App\Services\Video;
 
+use App\Enums\DesignImageStatus;
+use App\Enums\ImageQuality;
+use App\Models\VideoArtifact;
+use App\Models\VideoCostEntry;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -18,6 +22,8 @@ class DesignImageStore
     private const CODE_MAX = 100;
 
     private const IDENTITY_KEYS = ['prompt', 'model', 'quality', 'size'];
+
+    private const ANCHOR_TYPE = 'identity_anchor';
 
     /**
      * @param  array<string, mixed>  $spec
@@ -42,7 +48,7 @@ class DesignImageStore
                     VideoDesignImage::create([
                         'project_id' => $projectId,
                         'image_code' => $this->nextImageCode($projectId, $creator),
-                        'image_type' => 'identity_anchor',
+                        'image_type' => self::ANCHOR_TYPE,
                         'prompt_spec_json' => $spec,
                         'prompt_sha256' => $sha,
                         'status' => 'candidate',
@@ -62,6 +68,73 @@ class DesignImageStore
 
             return [$existing, 'already_exists'];
         }
+    }
+
+    /**
+     * O anh neo cua du an, moi nhat truoc, kem ung vien da render.
+     *
+     * Hien TAT CA o chu khong chi o moi nhat: doi quality hay resolution la sinh
+     * mot o moi, va mot o da tieu tien ma bi giau khoi man hinh la kieu hong te
+     * nhat — no van nam trong so cai, chi la khong ai nhin thay.
+     *
+     * `cost_recorded` doc tu `video_cost_entries`, KHAC `cost_estimate`: uoc
+     * luong la thu ta noi truoc khi tra tien, so cai la thu da xay ra.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function anchorCellsFor(string $projectId): array
+    {
+        $spent = VideoCostEntry::query()
+            ->where('project_id', $projectId)
+            ->where('entity_type', 'design_image')
+            ->selectRaw('entity_id, SUM(cost_usd) as total')
+            ->groupBy('entity_id')
+            ->pluck('total', 'entity_id');
+
+        return VideoDesignImage::query()
+            ->where('project_id', $projectId)
+            ->where('image_type', self::ANCHOR_TYPE)
+            ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
+            ->latest('created_at')
+            ->get()
+            ->map(fn (VideoDesignImage $image) => $this->cellView($image, (float) ($spent[$image->id] ?? 0)))
+            ->all();
+    }
+
+    /** @return array<string, mixed> */
+    private function cellView(VideoDesignImage $image, float $recorded): array
+    {
+        $spec = $image->prompt_spec_json ?? [];
+        $variations = max(1, (int) ($spec['variations'] ?? 1));
+        $unit = ImageQuality::fromSpecOrHigh($spec['quality'] ?? '')->estimatedCostUsd();
+
+        return [
+            'id' => $image->id,
+            'image_code' => $image->image_code,
+            'status' => $image->status,
+            'status_label' => DesignImageStatus::tryFrom($image->status)?->label() ?? $image->status,
+            'is_live' => in_array($image->status, array_merge(
+                [DesignImageStatus::QUEUED->value], DesignImageStatus::leasedValues(),
+            ), true),
+            'can_render' => in_array($image->status, DesignImageStatus::enqueueableValues(), true),
+            'has_failed' => $image->status === DesignImageStatus::FAILED->value,
+            'render_error' => $image->render_error,
+            'queued_at' => $image->queued_at,
+            'quality' => (string) ($spec['quality'] ?? ''),
+            'size' => (string) ($spec['size'] ?? ''),
+            'variations' => $variations,
+            'cost_unit' => $unit,
+            'cost_estimate' => $unit * $variations,
+            'cost_recorded' => $recorded,
+            'candidates' => $image->artifacts->map(fn (VideoArtifact $artifact) => [
+                'id' => $artifact->id,
+                'url' => $artifact->storage_path,
+                'width' => $artifact->width,
+                'height' => $artifact->height,
+                'created_at' => $artifact->created_at,
+                'sha' => substr((string) $artifact->sha256, 0, 12),
+            ])->all(),
+        ];
     }
 
     public function nextImageCode(string $projectId, string $creator): string

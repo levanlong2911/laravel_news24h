@@ -165,8 +165,7 @@ class VideoDesignImagesController extends Controller
 
     private function costEstimate(array $spec): float
     {
-        return (ImageQuality::tryFrom((string) ($spec['quality'] ?? '')) ?? ImageQuality::HIGH)
-            ->estimatedCostUsd();
+        return ImageQuality::fromSpecOrHigh($spec['quality'] ?? '')->estimatedCostUsd();
     }
 
     /**
