@@ -148,6 +148,8 @@ Route::group(
         Route::get('/{id}/anchor',              [VideoProjectsController::class, 'anchor'])->name('video-projects.anchor');
         Route::post('/{id}/inspiration',        [VideoProjectsController::class, 'inspiration'])->name('video-projects.inspiration');
         Route::post('/{id}/inspiration/reset',  [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
+        Route::post('/{id}/concept',            [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
+        Route::post('/{id}/concept/reset',      [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
         Route::get('/{id}/reference',           [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
     });
 

@@ -995,27 +995,27 @@ class VideoSessionService
             return ['session_code' => $sessionCode, 'project_id' => null, 'design_cells' => []];
         }
 
-        $cells = DB::table('video_design_cells as c')
+        $cells = DB::table('video_design_images as c')
             ->join('video_artifacts as a', 'a.id', '=', 'c.selected_artifact_id')
-            ->leftJoin('video_design_cells as src', 'src.id', '=', 'c.source_cell_id')
+            ->leftJoin('video_design_images as src', 'src.id', '=', 'c.source_image_id')
             ->where('c.project_id', $session->project_id)
             ->where('c.status', 'approved')
-            ->orderBy('c.cell_code')
+            ->orderBy('c.image_code')
             ->get([
-                'c.cell_code', 'c.cell_type', 'c.state', 'c.proves_state',
+                'c.image_code', 'c.image_type', 'c.state', 'c.proves_state',
                 'c.prompt_sha256', 'a.storage_path', 'a.width', 'a.height',
-                'src.cell_code as source_cell_code',
+                'src.image_code as source_image_code',
             ]);
 
         return [
             'session_code' => $sessionCode,
             'project_id' => $session->project_id,
             'design_cells' => $cells->map(fn ($c) => [
-                'cell_code' => $c->cell_code,
-                'cell_type' => $c->cell_type,
+                'cell_code' => $c->image_code,
+                'cell_type' => $c->image_type,
                 'state' => $c->state,
                 'proves_state' => $c->proves_state,
-                'source_cell_code' => $c->source_cell_code,
+                'source_cell_code' => $c->source_image_code,
                 'artifact_path' => $c->storage_path,
                 'width' => $c->width,
                 'height' => $c->height,
@@ -1534,20 +1534,20 @@ class VideoSessionService
             return [null, $reason];
         }
 
-        $conceptRaw = $this->stageStore->rawResponseOf(
+        $concept = $this->stageStore->outputOf(
             $session->id,
             (int) $session->planning_revision,
             PlanningStageName::CONCEPT,
         );
 
-        if ($conceptRaw === null || trim($conceptRaw) === '') {
+        if (! is_array($concept) || $concept === []) {
             return [null, 'missing_concept'];
         }
 
         return [
             $this->renderPlanService->anchorPrompt(
                 $this->articleRepository->show($session->article_id),
-                $conceptRaw,
+                $concept,
                 $viewpoint,
             ),
             'ok',

@@ -1,0 +1,41 @@
+<?php
+
+namespace App\Enums;
+
+use App\Traits\EnumTrait;
+
+enum ImageQuality: string
+{
+    use EnumTrait;
+
+    case LOW = 'low';
+    case MEDIUM = 'medium';
+    case HIGH = 'high';
+    case AUTO = 'auto';
+
+    /** @return list<string> */
+    public static function values(): array
+    {
+        return array_column(self::cases(), 'value');
+    }
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::LOW => 'Low',
+            self::MEDIUM => 'Medium',
+            self::HIGH => 'High',
+            self::AUTO => 'Auto',
+        };
+    }
+
+    public function hint(): string
+    {
+        return match ($this) {
+            self::LOW => 'Nháp nhanh, ảnh xem thử',
+            self::MEDIUM => 'Ảnh neo — dùng lại cho mọi cảnh sau',
+            self::HIGH => 'Chữ dày, sơ đồ, sửa ảnh nhạy danh tính',
+            self::AUTO => 'Để nhà cung cấp chọn',
+        };
+    }
+}

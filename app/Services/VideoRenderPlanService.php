@@ -535,12 +535,15 @@ class VideoRenderPlanService
         }
     }
 
-    public function anchorPrompt(Article $article, string $conceptRaw, Viewpoint $viewpoint): string
+    /** @param array<string, mixed> $conceptStored */
+    public function anchorPrompt(Article $article, array $conceptStored, Viewpoint $viewpoint): string
     {
         $profile = $this->profileOrFail((string) ($article->category?->slug ?? ''));
 
         return (new AnchorPrompt)->build(
-            (new CreativeConceptParser)->parse($conceptRaw)->canonicalised($profile),
+            (new CreativeConceptParser)
+                ->parse(json_encode($conceptStored, JSON_THROW_ON_ERROR))
+                ->canonicalised($profile),
             $profile,
             $viewpoint,
         );

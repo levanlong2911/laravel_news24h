@@ -91,10 +91,10 @@
                         <p>Prompt Framework</p>
                     </a>
                 </li>
-                <li class="nav-item {{ ($route == 'video-session') ? $menu ?? '' : '' }}">
-                    <a href="{{ route('video-session.index') }}" class="nav-link d-inline-flex {{ ($action == 'video-session-index') ? $active ?? '' : '' }}">
+                <li class="nav-item {{ ($route == 'video-projects') ? $menu ?? '' : '' }}">
+                    <a href="{{ route('video-projects.index') }}" class="nav-link d-inline-flex {{ ($action == 'video-projects-index') ? $active ?? '' : '' }}">
                         <i class="nav-icon fas fa-robot"></i>
-                        <p>Prompt Video</p>
+                        <p>Creat Video</p>
                     </a>
                 </li>
                 @if(auth()->user()->isAdmin())

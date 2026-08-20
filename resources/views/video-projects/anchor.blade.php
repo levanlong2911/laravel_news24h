@@ -53,11 +53,12 @@
                       onsubmit="return vpConfirmOnce(this)">
                     @csrf
                     <button class="vp-btn pri">
-                        {{ $brief['analysed'] ? 'Phân tích lại (bài đã đổi)' : 'Gọi Haiku (Phân tích)' }}
+                        {{ $brief['analysed'] ? 'Phân tích lại (bài đã đổi)' : 'Analysis' }}
                     </button>
                 </form>
             @else
-                <button class="vp-btn" disabled title="Bài viết không đổi — kết quả cũ vẫn đúng">Đã phân tích</button>
+                <button class="vp-btn" disabled title="Bài viết không đổi — kết quả cũ vẫn đúng">
+Has Analyzed</button>
             @endif
         </div>
 
@@ -83,14 +84,14 @@
             </div>
 
             <div>
-                <div class="va-lbl" style="margin-top:0">TÓM TẮT Ý TƯỞNG <span>(Haiku)</span></div>
+                <div class="va-lbl" style="margin-top:0">TÓM TẮT Ý TƯỞNG</div>
                 <div class="va-brief">
-                    @if($brief['status'] === 'failed' && $brief['error'])
+                    @if($brief['error'])
                         <div class="line"><span class="v" style="color:var(--vp-red)">{{ $brief['error'] }}</span></div>
                     @endif
                     @if(! $brief['analysed'])
                         <div class="line">
-                            <span class="v">Chưa phân tích — bấm <b>Gọi Haiku</b> để bắt đầu.</span>
+                            <span class="v">Chưa phân tích</span>
                         </div>
                     @else
                         <div class="line">
@@ -115,7 +116,7 @@
                     @forelse($brief['patterns'] as $pattern)
                         <span class="chip">{{ $pattern }}</span>
                     @empty
-                        <span class="none">Chưa có — bấm Gọi Haiku để phân tích.</span>
+                        <span class="none">Chưa có</span>
                     @endforelse
                 </div>
             </div>
@@ -129,16 +130,37 @@
                 <span class="n">1</span>
                 <b>Prompt Anchor</b>
                 <em>(Viết prompt ảnh neo)</em>
+                <span class="grow"></span>
+                @if(! $brief['analysed'])
+                    <button class="vp-btn sm" disabled title="Cần phân tích bài viết trước">Creat Prompt</button>
+                @elseif($concept['running'])
+                    <button class="vp-btn sm" disabled>Go to creat prompt...</button>
+                @elseif($concept['stuck'])
+                    <form method="POST" action="{{ route('video-projects.concept-reset', $project->id) }}">
+                        @csrf
+                        <button class="vp-btn sm dg">Reset Prompt</button>
+                    </form>
+                @elseif($concept['can_run'])
+                    <form method="POST" action="{{ route('video-projects.concept', $project->id) }}"
+                          onsubmit="return vpConfirmConcept(this)">
+                        @csrf
+                        <button class="vp-btn sm pri">
+                            {{ $concept['analysed'] ? 'Creat Prompt news' : 'Creat Prompt' }}
+                        </button>
+                    </form>
+                @else
+                    <button class="vp-btn sm" disabled title="Brief không đổi — concept cũ vẫn đúng">Prompt</button>
+                @endif
             </div>
 
             <div class="va-fields">
                 <div class="va-field">
                     <label>Asset Group</label>
-                    <div class="ctl sel">Subject Identity (Tàu chính)</div>
+                    <div class="ctl">Subject Identity — <code>identity_anchor</code></div>
                 </div>
                 <div class="va-field">
                     <label>Asset Name</label>
-                    <div class="ctl"><span>master_vessel_anchor_v1</span><span class="cnt">21/100</span></div>
+                    <div class="ctl"><span>{{ $nextImageCode }}</span><span class="cnt">{{ strlen($nextImageCode) }}/100</span></div>
                 </div>
             </div>
 
@@ -149,20 +171,61 @@
 
             <div class="va-body">
                 <div class="va-lbl">ANCHOR PROMPT
+                    @if($concept['error'])
+                        <span style="color:var(--vp-red);font-weight:400">{{ $concept['error'] }}</span>
+                    @elseif($compiledPrompt === null)
+                        <span style="color:var(--vp-red);font-weight:400">{{ $compileReason }}</span>
+                    @else
+                        <span>(do Python biên dịch — đúng chuỗi sẽ gửi gpt-image-2)</span>
+                    @endif
                     {{-- <span>@if($prompt === null)(chưa dựng được — {{ $reason }})@else(Ảnh neo / Canonical)@endif</span> --}}
                 </div>
-                <textarea class="va-ta" data-v="a-main">...</textarea>
+                <textarea class="va-ta" data-v="a-main">{{ $compiledPrompt ?? '' }}</textarea>
+                <div class="va-lbl" data-v="a-neg" hidden style="color:var(--vp-amber-fg);font-weight:400">
+                    Không được gửi — gpt-image-2 không nhận tham số phủ định.
+                    Nội dung tránh né nằm trong khối <b>AVOID</b> của prompt đã biên dịch.
+                </div>
                 <textarea class="va-ta" data-v="a-neg" hidden>mast, radar dome, helipad, flags, crew, tender, water, sea, sky, dock, crane, scaffolding, text, watermark, logo</textarea>
-                <div class="va-count"><span data-c="a">0</span>/4000</div>
+                <div class="va-count"><span data-c="a">0</span>/6000</div>
             </div>
 
             <div class="va-lbl" style="padding-left:14px">MODEL &amp; SETTINGS</div>
             <div class="va-set">
-                <div class="va-field"><label>Model</label><div class="ctl sel">GPT Image 2</div></div>
-                <div class="va-field"><label>Quality</label><div class="ctl sel">High</div></div>
-                <div class="va-field"><label>Resolution</label><div class="ctl sel">1024 × 1536 (9:16)</div></div>
-                <div class="va-field"><label>Seed</label><div class="ctl sel">Auto</div></div>
-                <div class="va-field"><label>Variations</label><div class="ctl sel">2</div></div>
+                <div class="va-field">
+                    <label>Model</label>
+                    <select class="ctl" name="model">
+                        @foreach(\App\Enums\ImageModel::cases() as $m)
+                            <option value="{{ $m->value }}">{{ $m->label() }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="va-field">
+                    <label>Quality</label>
+                    <select class="ctl" name="quality">
+                        @foreach(\App\Enums\ImageQuality::cases() as $q)
+                            <option value="{{ $q->value }}" title="{{ $q->hint() }}"
+                                    @selected($q === \App\Enums\ImageQuality::MEDIUM)>{{ $q->label() }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="va-field">
+                    <label>Resolution</label>
+                    <select class="ctl" name="resolution">
+                        @foreach(\App\Enums\ImageResolution::cases() as $r)
+                            <option value="{{ $r->value }}"
+                                    @selected($r === \App\Enums\ImageResolution::PORTRAIT)>{{ $r->label() }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="va-field">
+                    <label>Variations</label>
+                    <select class="ctl" name="variations">
+                        @foreach(\App\Enums\ImageVariations::cases() as $v)
+                            <option value="{{ $v->value }}"
+                                    @selected($v === \App\Enums\ImageVariations::TWO)>{{ $v->label() }}</option>
+                        @endforeach
+                    </select>
+                </div>
             </div>
             <div class="va-adv">Advanced ⌄</div>
 
@@ -191,8 +254,8 @@
                     <div class="cap">CANDIDATE 1<span class="badge">★ Chọn</span></div>
                     <img src="{{ $candidate1 }}" alt="Candidate 1">
                     <div class="meta">
-                        Model: GPT Image 2 &nbsp;|&nbsp; 1024×1536 (9:16)<br>
-                        Seed: 12345 &nbsp;|&nbsp; Created: 2026-08-15 10:21:11<br>
+                        Model: GPT Image 2 &nbsp;|&nbsp; 1024×1536 (2:3)<br>
+                        Created: 2026-08-15 10:21:11<br>
                         Cost: $0.17
                     </div>
                 </div>
@@ -200,8 +263,8 @@
                     <div class="cap">CANDIDATE 2</div>
                     <img src="{{ $candidate2 }}" alt="Candidate 2">
                     <div class="meta">
-                        Model: GPT Image 2 &nbsp;|&nbsp; 1024×1536 (9:16)<br>
-                        Seed: 12345 &nbsp;|&nbsp; Created: 2026-08-15 10:21:11<br>
+                        Model: GPT Image 2 &nbsp;|&nbsp; 1024×1536 (2:3)<br>
+                        Created: 2026-08-15 10:21:11<br>
                         Cost: $0.17
                     </div>
                 </div>
@@ -241,6 +304,14 @@
 
 @section('script')
 <script>
+function vpConfirmConcept(form) {
+    if (!confirm('Gọi Claude Sonnet dựng concept — tốn khoảng $0.05. Tiếp tục?')) { return false; }
+    var btn = form.querySelector('button');
+    btn.disabled = true;
+    btn.textContent = 'Đang dựng…';
+    return true;
+}
+
 function vpConfirmOnce(form) {
     if (!confirm('Gọi Claude Haiku — tốn tiền đó. Tiếp tục?')) { return false; }
     var btn = form.querySelector('button');
