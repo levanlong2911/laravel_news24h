@@ -28,8 +28,14 @@ class VideoProjectsController extends Controller
 
     public function index()
     {
-        return view('video-projects.index', $this->chrome() + [
-            'projects' => $this->videoProjectService->listAll(),
+        $projects = $this->videoProjectService->listAll();
+
+        return view('video-projects.index', [
+            'route' => 'video-projects',
+            'action' => 'video-projects-index',
+            'menu' => 'menu-open',
+            'active' => 'active',
+            'projects' => $projects,
         ]);
     }
 
@@ -47,8 +53,8 @@ class VideoProjectsController extends Controller
         $nextImageCode = $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name);
 
         return view('video-projects.anchor', [
-            'route' => 'video-projects.anchor',
-            'action' => 'video-projects.anchor',
+            'route' => 'video-projects',
+            'action' => 'video-projects-index',
             'menu' => 'menu-open',
             'active' => 'active',
             'project' => $project,
