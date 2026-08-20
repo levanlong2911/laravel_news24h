@@ -43,9 +43,9 @@ class VideoProject extends Model
         return $this->hasMany(VideoPlanningStage::class, 'project_id');
     }
 
-    public function designCells()
+    public function designImages()
     {
-        return $this->hasMany(VideoDesignCell::class, 'project_id');
+        return $this->hasMany(VideoDesignImage::class, 'project_id');
     }
 
     public function activeSession()

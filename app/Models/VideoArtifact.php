@@ -10,7 +10,7 @@ class VideoArtifact extends Model
     use HasUuids;
 
     protected $fillable = [
-        'project_id', 'session_id', 'scene_id', 'shot_id', 'render_id', 'design_cell_id',
+        'project_id', 'session_id', 'scene_id', 'shot_id', 'render_id', 'design_image_id',
         'artifact_type', 'role', 'storage_disk', 'storage_path', 'mime_type',
         'file_size', 'sha256', 'width', 'height', 'duration_ms', 'metadata_json',
     ];
@@ -43,8 +43,8 @@ class VideoArtifact extends Model
         return $this->belongsTo(VideoRender::class, 'render_id');
     }
 
-    public function designCell()
+    public function designImage()
     {
-        return $this->belongsTo(VideoDesignCell::class, 'design_cell_id');
+        return $this->belongsTo(VideoDesignImage::class, 'design_image_id');
     }
 }

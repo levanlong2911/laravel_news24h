@@ -5,13 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
-class VideoDesignCell extends Model
+class VideoDesignImage extends Model
 {
     use HasUuids;
 
     protected $fillable = [
-        'project_id', 'identity_id', 'cell_code', 'cell_type', 'state', 'slot_index',
-        'proves_state', 'source_cell_id', 'prompt_spec_json', 'prompt_sha256',
+        'project_id', 'identity_id', 'image_code', 'image_type', 'state', 'slot_index',
+        'proves_state', 'source_image_id', 'prompt_spec_json', 'prompt_sha256',
         'selected_artifact_id', 'status', 'revision', 'approved_at', 'approved_by',
         'metadata_json',
     ];
@@ -36,12 +36,12 @@ class VideoDesignCell extends Model
 
     public function source()
     {
-        return $this->belongsTo(self::class, 'source_cell_id');
+        return $this->belongsTo(self::class, 'source_image_id');
     }
 
     public function next()
     {
-        return $this->hasMany(self::class, 'source_cell_id');
+        return $this->hasMany(self::class, 'source_image_id');
     }
 
     public function approver()

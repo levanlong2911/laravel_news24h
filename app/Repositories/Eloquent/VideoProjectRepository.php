@@ -37,7 +37,7 @@ class VideoProjectRepository extends BaseRepository implements VideoProjectRepos
         return VideoProject::query()
             ->with(['article:id,title,category_id', 'article.category:id,name', 'admin:id,name'])
             ->withCount('sessions')
-            ->withCount(['designCells as approved_assets_count' => fn ($q) => $q->where('status', 'approved')])
+            ->withCount(['designImages as approved_assets_count' => fn ($q) => $q->where('status', 'approved')])
             ->withSum('costEntries as cost_actual_sum', 'cost_usd')
             ->addSelect(['latest_status' => VideoSession::select('status')
                 ->whereColumn('project_id', 'video_projects.id')

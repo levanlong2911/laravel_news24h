@@ -15,7 +15,7 @@ use Tests\TestCase;
  * một session mới toanh của cùng dự án vẫn thấy ảnh trạng thái đã duyệt, nên
  * không có lý do gì render lại chúng.
  */
-class DesignCellApiTest extends TestCase
+class DesignImageApiTest extends TestCase
 {
     use DatabaseTransactions;
 
@@ -60,7 +60,7 @@ class DesignCellApiTest extends TestCase
         $artifactId = (string) Str::uuid();
         $cellId = (string) Str::uuid();
 
-        // design_cell_id noi SAU: hai bang tro vao nhau, chen thang la 1452.
+        // design_image_id noi SAU: hai bang tro vao nhau, chen thang la 1452.
         DB::table('video_artifacts')->insert([
             'id' => $artifactId, 'project_id' => $project->id,
             'artifact_type' => 'image', 'storage_disk' => 'public',
@@ -69,16 +69,16 @@ class DesignCellApiTest extends TestCase
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        DB::table('video_design_cells')->insert([
-            'id' => $cellId, 'project_id' => $project->id, 'cell_code' => $code,
-            'cell_type' => 'construction_state', 'state' => 'construction',
-            'proves_state' => $provesState, 'source_cell_id' => $sourceCellId,
+        DB::table('video_design_images')->insert([
+            'id' => $cellId, 'project_id' => $project->id, 'image_code' => $code,
+            'image_type' => 'construction_state', 'state' => 'construction',
+            'proves_state' => $provesState, 'source_image_id' => $sourceCellId,
             'prompt_sha256' => hash('sha256', $code),
             'selected_artifact_id' => $artifactId, 'status' => $status, 'revision' => 1,
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        DB::table('video_artifacts')->where('id', $artifactId)->update(['design_cell_id' => $cellId]);
+        DB::table('video_artifacts')->where('id', $artifactId)->update(['design_image_id' => $cellId]);
 
         return [$cellId, $artifactId];
     }
