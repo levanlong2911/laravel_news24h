@@ -2,7 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ImageModel;
+use App\Enums\ImageQuality;
+use App\Enums\ImageResolution;
+use App\Enums\ImageVariations;
 use App\Services\VideoProjectService;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class VideoProjectsController extends Controller
 {
@@ -50,6 +56,7 @@ class VideoProjectsController extends Controller
         $brief = $this->videoProjectService->latestInspiration($project->id);
         $concept = $this->videoProjectService->latestConcept($project->id);
         [$compiledPrompt, $compileReason] = $this->videoProjectService->compiledAnchorPrompt($project->id);
+        $compileReason = $this->anchorMessage($compileReason);
         $nextImageCode = $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name);
 
         return view('video-projects.anchor', [
@@ -110,6 +117,55 @@ class VideoProjectsController extends Controller
         return $done
             ? back()->with('success', 'Đã reset — bấm Dựng Concept để chạy lại.')
             : back()->with('error', $reason);
+    }
+
+    public function createAnchorImage(Request $request, string $id)
+    {
+        $data = $request->validate([
+            'model' => ['required', Rule::enum(ImageModel::class)],
+            'quality' => ['required', Rule::enum(ImageQuality::class)],
+            'resolution' => ['required', Rule::enum(ImageResolution::class)],
+            'variations' => ['required', 'integer', Rule::in(ImageVariations::values())],
+        ], [
+            'model.required' => __('messages.anchor_setting_required', ['field' => 'Model']),
+            'model.*' => __('messages.anchor_setting_invalid', ['field' => 'Model']),
+            'quality.required' => __('messages.anchor_setting_required', ['field' => 'Quality']),
+            'quality.*' => __('messages.anchor_setting_invalid', ['field' => 'Quality']),
+            'resolution.required' => __('messages.anchor_setting_required', ['field' => 'Resolution']),
+            'resolution.*' => __('messages.anchor_setting_invalid', ['field' => 'Resolution']),
+            'variations.required' => __('messages.anchor_setting_required', ['field' => 'Variations']),
+            'variations.integer' => __('messages.anchor_setting_invalid', ['field' => 'Variations']),
+            'variations.in' => __('messages.anchor_setting_invalid', ['field' => 'Variations']),
+        ]);
+
+        [$image, $reason] = $this->videoProjectService->createAnchorImage(
+            $id,
+            (string) auth()->user()?->name,
+            ImageModel::from($data['model']),
+            ImageQuality::from($data['quality']),
+            ImageResolution::from($data['resolution']),
+            ImageVariations::from((int) $data['variations']),
+        );
+
+        if ($image === null) {
+            return back()->with('error', $this->anchorMessage($reason));
+        }
+
+        return back()->with('success', match ($reason) {
+            'created' => __('messages.anchor_image_created', ['code' => $image->image_code]),
+            'already_exists' => __('messages.anchor_image_exists', ['code' => $image->image_code]),
+            default => $reason,
+        });
+    }
+
+    private function anchorMessage(string $reason): string
+    {
+        return match ($reason) {
+            'project_not_found' => __('messages.project_not_found'),
+            'no_category' => __('messages.anchor_no_category'),
+            'no_concept' => __('messages.anchor_no_concept'),
+            default => $reason,
+        };
     }
 
     public function reference(string $id)

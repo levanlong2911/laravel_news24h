@@ -150,6 +150,7 @@ Route::group(
         Route::post('/{id}/inspiration/reset',  [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
         Route::post('/{id}/concept',            [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
         Route::post('/{id}/concept/reset',      [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
+        Route::post('/{id}/anchor-image',       [VideoProjectsController::class, 'createAnchorImage'])->name('video-projects.anchor-image');
         Route::get('/{id}/reference',           [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
     });
 

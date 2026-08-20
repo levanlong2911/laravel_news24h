@@ -2,6 +2,10 @@
 
 namespace App\Services;
 
+use App\Enums\ImageModel;
+use App\Enums\ImageQuality;
+use App\Enums\ImageResolution;
+use App\Enums\ImageVariations;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoDesignImage;
@@ -9,21 +13,15 @@ use App\Models\VideoProject;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\ConceptStageRunner;
+use App\Services\Video\DesignImageStore;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\PythonPromptCompiler;
 use App\Video\Concept\Viewpoint;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class VideoProjectService
 {
-    private const CODE_PREFIX = 'master_vessel_';
-
-    private const CODE_SUFFIX = '_anchor_v';
-
-    private const CODE_MAX = 100;
-
     private VideoProjectRepositoryInterface $videoProjectRepository;
 
     private ArticleService $articleService;
@@ -36,6 +34,8 @@ class VideoProjectService
 
     private PythonPromptCompiler $promptCompiler;
 
+    private DesignImageStore $designImageStore;
+
     private VideoRenderPlanService $renderPlanService;
 
     public function __construct(
@@ -46,6 +46,7 @@ class VideoProjectService
         ConceptStageRunner $conceptRunner,
         VideoRenderPlanService $renderPlanService,
         PythonPromptCompiler $promptCompiler,
+        DesignImageStore $designImageStore,
     ) {
         $this->videoProjectRepository = $videoProjectRepository;
         $this->articleService = $articleService;
@@ -54,6 +55,7 @@ class VideoProjectService
         $this->conceptRunner = $conceptRunner;
         $this->renderPlanService = $renderPlanService;
         $this->promptCompiler = $promptCompiler;
+        $this->designImageStore = $designImageStore;
     }
 
     public function listAll(): iterable
@@ -271,51 +273,55 @@ class VideoProjectService
 
     public function nextImageCode(string $projectId, string $creator): string
     {
-        $slug = Str::slug($creator, '_');
-
-        if ($slug === '') {
-            throw new \InvalidArgumentException('nextImageCode: thieu ten nguoi tao');
-        }
-
-        $now = now();
-        $stamp = $now->format('dmY').'_'.$now->format('His');
-        $room = self::CODE_MAX - strlen(self::CODE_PREFIX.'_'.$stamp.self::CODE_SUFFIX) - 3;
-        $prefix = self::CODE_PREFIX.Str::limit($slug, max(1, $room), '').'_'.$stamp.self::CODE_SUFFIX;
-
-        return $prefix.($this->highestAnchorNumberToday($projectId, $now) + 1);
+        return $this->designImageStore->nextImageCode($projectId, $creator);
     }
 
-    private function highestAnchorNumberToday(string $projectId, \DateTimeInterface $now): int
-    {
-        $max = 0;
-        $dayMark = '%_'.$now->format('dmY').'_%'.self::CODE_SUFFIX.'%';
+    /**
+     * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
+     *                                                reason: created|already_exists|project_not_found|<loi bien dich prompt>
+     */
+    public function createAnchorImage(
+        string $projectId,
+        string $creator,
+        ImageModel $model,
+        ImageQuality $quality,
+        ImageResolution $resolution,
+        ImageVariations $variations,
+    ): array {
+        [$prompt, $reason] = $this->compiledAnchorPrompt($projectId);
 
-        foreach (VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_code', 'like', $dayMark)
-            ->pluck('image_code') as $code) {
-            if (preg_match('/'.preg_quote(self::CODE_SUFFIX, '/').'(\d+)$/', $code, $found)) {
-                $max = max($max, (int) $found[1]);
-            }
+        if ($prompt === null) {
+            return [null, $reason];
         }
 
-        return $max;
+        return $this->designImageStore->createCandidate($projectId, $creator, [
+            'prompt' => $prompt,
+            'model' => $model->value,
+            'quality' => $quality->value,
+            'size' => $resolution->value,
+            'variations' => $variations->value,
+        ]);
     }
 
     /** @return array{0: ?string, 1: string} */
     public function compiledAnchorPrompt(string $projectId): array
     {
         $project = $this->videoProjectRepository->getById($projectId);
-        $category = (string) ($project?->article?->category?->slug ?? '');
+
+        if ($project === null) {
+            return [null, 'project_not_found'];
+        }
+
+        $category = (string) ($project->article?->category?->slug ?? '');
 
         if ($category === '') {
-            return [null, 'Du an khong co category — khong tra duoc ho so ben Python'];
+            return [null, 'no_category'];
         }
 
         $concept = $this->stageStore->latestOutputForProject($project->id, PlanningStageName::CONCEPT);
 
         if ($concept === null) {
-            return [null, 'Chua dung concept — bam Dung Concept truoc'];
+            return [null, 'no_concept'];
         }
 
         return $this->promptCompiler->compile($category, $concept);

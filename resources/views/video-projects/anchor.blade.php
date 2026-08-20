@@ -29,6 +29,16 @@
 
 <div class="container-fluid vp">
 
+    @if($errors->any())
+        <div class="alert alert-danger">
+            <ul class="mb-0 pl-3">
+                @foreach($errors->all() as $message)
+                    <li>{{ $message }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <div class="va-title">
         <h2>A. ASSET CREATION WORKFLOW</h2>
         <span>(Tạo Asset Nền tảng: Ảnh neo &amp; Ảnh tham chiếu)</span>
@@ -50,12 +60,19 @@
                 </form>
             @elseif($brief['can_run'])
                 <form method="POST" action="{{ route('video-projects.inspiration', $project->id) }}"
-                      onsubmit="return vpConfirmOnce(this)">
+                      id="inspirationForm" data-modal="confirmInspiration" onsubmit="return vpLockForm(this)">
                     @csrf
-                    <button class="vp-btn pri">
-                        {{ $brief['analysed'] ? 'Phân tích lại (bài đã đổi)' : 'Analysis' }}
-                    </button>
                 </form>
+                <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#confirmInspiration"
+                        data-busy="Đang phân tích…">
+                    {{ $brief['analysed'] ? 'Phân tích lại (bài đã đổi)' : 'Analysis' }}
+                </button>
+                @include('modal.confirm_action', [
+                    'id' => 'confirmInspiration',
+                    'form' => 'inspirationForm',
+                    'content' => 'Gọi Claude Haiku phân tích bài viết — tác vụ này tính tiền.',
+                    'detail' => 'Lượt gần nhất tốn $0.009209.',
+                ])
             @else
                 <button class="vp-btn" disabled title="Bài viết không đổi — kết quả cũ vẫn đúng">
 Has Analyzed</button>
@@ -142,12 +159,19 @@ Has Analyzed</button>
                     </form>
                 @elseif($concept['can_run'])
                     <form method="POST" action="{{ route('video-projects.concept', $project->id) }}"
-                          onsubmit="return vpConfirmConcept(this)">
+                          id="conceptForm" data-modal="confirmConcept" onsubmit="return vpLockForm(this)">
                         @csrf
-                        <button class="vp-btn sm pri">
-                            {{ $concept['analysed'] ? 'Creat Prompt news' : 'Creat Prompt' }}
-                        </button>
                     </form>
+                    <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmConcept"
+                            data-busy="Đang dựng…">
+                        {{ $concept['analysed'] ? 'Creat Prompt news' : 'Creat Prompt' }}
+                    </button>
+                    @include('modal.confirm_action', [
+                        'id' => 'confirmConcept',
+                        'form' => 'conceptForm',
+                        'content' => 'Gọi Claude Sonnet dựng concept ảnh neo — tác vụ này tính tiền.',
+                        'detail' => 'Lượt gần nhất tốn $0.027915.',
+                    ])
                 @else
                     <button class="vp-btn sm" disabled title="Brief không đổi — concept cũ vẫn đúng">Prompt</button>
                 @endif
@@ -159,7 +183,7 @@ Has Analyzed</button>
                     <div class="ctl">Subject Identity — <code>identity_anchor</code></div>
                 </div>
                 <div class="va-field">
-                    <label>Asset Name</label>
+                    <label>Asset Name <em>(mã dự kiến)</em></label>
                     <div class="ctl"><span>{{ $nextImageCode }}</span><span class="cnt">{{ strlen($nextImageCode) }}/100</span></div>
                 </div>
             </div>
@@ -190,47 +214,63 @@ Has Analyzed</button>
             </div>
 
             <div class="va-lbl" style="padding-left:14px">MODEL &amp; SETTINGS</div>
+            <form method="POST" action="{{ route('video-projects.anchor-image', $project->id) }}"
+                  id="anchorImageForm" data-modal="confirmAnchorImage" onsubmit="return vpLockForm(this)">
+                @csrf
             <div class="va-set">
                 <div class="va-field">
                     <label>Model</label>
-                    <select class="ctl" name="model">
+                    <select class="ctl" name="model" required>
                         @foreach(\App\Enums\ImageModel::cases() as $m)
-                            <option value="{{ $m->value }}">{{ $m->label() }}</option>
+                            <option value="{{ $m->value }}"
+                                    @selected(old('model', \App\Enums\ImageModel::GPT_IMAGE_2->value) === $m->value)>{{ $m->label() }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="va-field">
                     <label>Quality</label>
-                    <select class="ctl" name="quality">
+                    <select class="ctl" name="quality" required>
                         @foreach(\App\Enums\ImageQuality::cases() as $q)
                             <option value="{{ $q->value }}" title="{{ $q->hint() }}"
-                                    @selected($q === \App\Enums\ImageQuality::MEDIUM)>{{ $q->label() }}</option>
+                                    @selected(old('quality', \App\Enums\ImageQuality::MEDIUM->value) === $q->value)>{{ $q->label() }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="va-field">
                     <label>Resolution</label>
-                    <select class="ctl" name="resolution">
+                    <select class="ctl" name="resolution" required>
                         @foreach(\App\Enums\ImageResolution::cases() as $r)
                             <option value="{{ $r->value }}"
-                                    @selected($r === \App\Enums\ImageResolution::PORTRAIT)>{{ $r->label() }}</option>
+                                    @selected(old('resolution', \App\Enums\ImageResolution::PORTRAIT->value) === $r->value)>{{ $r->label() }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="va-field">
                     <label>Variations</label>
-                    <select class="ctl" name="variations">
+                    <select class="ctl" name="variations" required>
                         @foreach(\App\Enums\ImageVariations::cases() as $v)
                             <option value="{{ $v->value }}"
-                                    @selected($v === \App\Enums\ImageVariations::TWO)>{{ $v->label() }}</option>
+                                    @selected((int) old('variations', \App\Enums\ImageVariations::TWO->value) === $v->value)>{{ $v->label() }}</option>
                         @endforeach
                     </select>
                 </div>
             </div>
             <div class="va-adv">Advanced ⌄</div>
+            </form>
 
             <div class="va-foot">
-                <button class="vp-btn pri">Generate Anchor →</button>
+                @if($compiledPrompt === null)
+                    <button class="vp-btn pri" disabled title="Chưa có anchor prompt">Generate Anchor →</button>
+                @else
+                    <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#confirmAnchorImage"
+                            data-busy="Đang tạo…">Generate Anchor →</button>
+                    @include('modal.confirm_action', [
+                        'id' => 'confirmAnchorImage',
+                        'form' => 'anchorImageForm',
+                        'content' => 'Tạo ô thiết kế ảnh neo với prompt và thiết lập đang chọn?',
+                        'detail' => 'Bước này chưa gọi gpt-image-2 và chưa tính tiền — chỉ ghi ô chờ render.',
+                    ])
+                @endif
             </div>
         </div>
 
@@ -304,19 +344,13 @@ Has Analyzed</button>
 
 @section('script')
 <script>
-function vpConfirmConcept(form) {
-    if (!confirm('Gọi Claude Sonnet dựng concept — tốn khoảng $0.05. Tiếp tục?')) { return false; }
-    var btn = form.querySelector('button');
-    btn.disabled = true;
-    btn.textContent = 'Đang dựng…';
-    return true;
-}
-
-function vpConfirmOnce(form) {
-    if (!confirm('Gọi Claude Haiku — tốn tiền đó. Tiếp tục?')) { return false; }
-    var btn = form.querySelector('button');
-    btn.disabled = true;
-    btn.textContent = 'Đang phân tích…';
+function vpLockForm(form) {
+    var trigger = document.querySelector('[data-target="#' + form.dataset.modal + '"]');
+    if (trigger) {
+        trigger.disabled = true;
+        if (trigger.dataset.busy) { trigger.textContent = trigger.dataset.busy; }
+    }
+    document.querySelectorAll('[form="' + form.id + '"]').forEach(function (btn) { btn.disabled = true; });
     return true;
 }
 

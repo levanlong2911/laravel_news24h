@@ -23,6 +23,12 @@ return [
     'login_fail' => 'Email hoặc password không đúng',
     'login_success' => 'Đăng nhập thành công',
     'domain_already_exists' => 'Domain đã tồn tại',
-    'project_not_found' => 'Không tìm thấy dự án',
+    'project_not_found' => 'Project not found',
+    'anchor_no_category' => 'Project has no category — cannot resolve the Python profile',
+    'anchor_no_concept' => 'No concept yet — run Create Prompt first',
+    'anchor_image_created' => 'Design cell :code created — queued for render',
+    'anchor_image_exists' => 'Same prompt and settings already exist: :code',
+    'anchor_setting_required' => 'Please choose :field',
+    'anchor_setting_invalid' => ':field is not a valid choice',
     'inspiration_done' => 'Phân tích xong',
 ];
