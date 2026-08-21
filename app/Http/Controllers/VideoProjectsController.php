@@ -139,7 +139,7 @@ class VideoProjectsController extends Controller
             'variations.in' => __('messages.anchor_setting_invalid', ['field' => 'Variations']),
         ]);
 
-        [$image, $reason] = $this->videoProjectService->createAnchorImage(
+        [$image, $reason] = $this->videoProjectService->createAndRenderAnchorImage(
             $id,
             (string) auth()->user()?->name,
             ImageModel::from($data['model']),
@@ -152,9 +152,14 @@ class VideoProjectsController extends Controller
             return back()->with('error', $this->anchorMessage($reason));
         }
 
-        return back()->with('success', match ($reason) {
-            'created' => __('messages.anchor_image_created', ['code' => $image->image_code]),
-            'already_exists' => __('messages.anchor_image_exists', ['code' => $image->image_code]),
+        return back()->with($reason === 'rendered' ? 'success' : 'error', match ($reason) {
+            'rendered' => __('messages.anchor_image_rendered', ['code' => $image->image_code]),
+            'failed' => __('messages.anchor_image_failed', [
+                'code' => $image->image_code,
+                'reason' => (string) $image->render_error,
+            ]),
+            'timed_out' => __('messages.anchor_image_timed_out', ['code' => $image->image_code]),
+            'not_enqueueable' => __('messages.anchor_render_not_enqueueable', ['code' => $image->image_code]),
             default => $reason,
         });
     }

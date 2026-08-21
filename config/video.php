@@ -49,6 +49,18 @@ return [
         'log_retention_days' => env('VIDEO_RUNNER_LOG_RETENTION_DAYS', 21),
     ],
 
+    /*
+     * Bam nut la render NGAY, dung doi tai cho (DesignImageRenderer).
+     *
+     * TAT o phpunit.xml: mot test lo goi duong nay se spawn worker THAT va
+     * tieu tien that. Hom 2026-08-20 chuyen do da xay ra — chi thoat vi
+     * DatabaseTransactions khien worker khong nhin thay o chua commit. Do la
+     * MAY, khong phai thiet ke, nen cho no mot cong tac tuong minh.
+     *
+     * Test nao muon thu duong nay phai bat lai VA thay PythonRunner bang gia.
+     */
+    'sync_render' => (bool) env('VIDEO_SYNC_RENDER', true),
+
     'planning_queue' => [
         'connection' => env('VIDEO_PLANNING_QUEUE_CONNECTION', 'video'),
         'name' => env('VIDEO_PLANNING_QUEUE', 'video-planning'),

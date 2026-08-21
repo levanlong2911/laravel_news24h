@@ -169,6 +169,23 @@ class DesignImageApiQueueTest extends TestCase
         $this->assertSame(DesignImageStatus::CLAIMED->value, $image->status);
     }
 
+    public function test_a_claim_can_name_the_one_cell_it_wants(): void
+    {
+        // Nguoi bam nut tren man hinh doi DUNG o cua ho. Khong co `image_id` thi
+        // luot chay dong bo se cam luon nhung o dang cho cua du an khac.
+        $mine = $this->queued();
+        $other = $this->queued();
+
+        $body = $this->postJson('/api/video-design-images/claim', [
+            'worker_id' => 'worker-a',
+            'image_id' => $mine->id,
+        ])->assertOk()->json();
+
+        $this->assertSame([$mine->id], collect($body['images'])->pluck('id')->all());
+        $this->assertSame(DesignImageStatus::CLAIMED->value, $mine->refresh()->status);
+        $this->assertSame(DesignImageStatus::QUEUED->value, $other->refresh()->status);
+    }
+
     public function test_a_claim_without_a_worker_is_rejected(): void
     {
         $this->postJson('/api/video-design-images/claim', [])->assertStatus(422);

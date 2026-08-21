@@ -385,6 +385,36 @@ class DesignImageQueueTest extends TestCase
         $this->assertSame('render', $entry->stage);
     }
 
+    public function test_the_ledger_keeps_what_the_provider_said_word_for_word(): void
+    {
+        // OpenAI KHONG tra ve so do — cung lam la `usage` theo token. Nen moi con
+        // so tien trong so cai van la UOC LUONG cho toi khi doi chieu duoc voi hoa
+        // don that, va thu duy nhat doi chieu duoc la nguyen van cai nay.
+        $image = $this->claimed();
+        $usage = ['input_tokens' => 412, 'output_tokens' => 1056, 'total_tokens' => 1468];
+
+        $this->queue->reportResult($image->id, true, null, [
+            $this->item(['provider_usage' => $usage, 'provider_request_id' => 'req_abc123']),
+        ], $this->workerId, $this->claimToken);
+
+        $render = VideoRender::where('design_image_id', $image->id)->firstOrFail();
+
+        $this->assertSame($usage, $render->response_json);
+        $this->assertSame('req_abc123', $render->provider_request_id);
+    }
+
+    public function test_a_provider_that_reports_no_usage_leaves_the_column_empty_not_invented(): void
+    {
+        $image = $this->claimed();
+
+        $this->queue->reportResult($image->id, true, null, [$this->item()], $this->workerId, $this->claimToken);
+
+        $render = VideoRender::where('design_image_id', $image->id)->firstOrFail();
+
+        $this->assertNull($render->response_json);
+        $this->assertNull($render->provider_request_id);
+    }
+
     public function test_the_ledger_hashes_the_prompt_it_actually_stored(): void
     {
         $image = $this->claimed();

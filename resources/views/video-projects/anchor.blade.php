@@ -245,12 +245,12 @@ Has Analyzed</button>
                     <button class="vp-btn pri" disabled title="Chưa có anchor prompt">Generate Anchor →</button>
                 @else
                     <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#confirmAnchorImage"
-                            data-busy="Đang tạo…">Generate Anchor →</button>
+                            data-busy="Đang render… (khoảng 20 giây)">Generate Anchor →</button>
                     @include('modal.confirm_action', [
                         'id' => 'confirmAnchorImage',
                         'form' => 'anchorImageForm',
-                        'content' => 'Tạo ô thiết kế ảnh neo với prompt và thiết lập đang chọn?',
-                        'detail' => 'Bước này chưa gọi gpt-image-2 và chưa tính tiền — chỉ ghi ô chờ render.',
+                        'content' => 'Gọi gpt-image-2 render ngay với prompt và thiết lập đang chọn — TÁC VỤ NÀY TÍNH TIỀN.',
+                        'detail' => 'Ước lượng theo thiết lập đang chọn. Trang sẽ đứng đợi tới khi có ảnh.',
                     ])
                 @endif
             </div>
@@ -359,6 +359,26 @@ Has Analyzed</button>
 
 @section('script')
 <script>
+(function () {
+    var prices = @json(collect(\App\Enums\ImageQuality::cases())
+        ->mapWithKeys(fn ($q) => [$q->value => $q->estimatedCostUsd()]));
+    var form = document.getElementById('anchorImageForm');
+    var box = document.querySelector('#confirmAnchorImage .modal-body p:last-child');
+    if (!form || !box) { return; }
+
+    function sync() {
+        var unit = prices[form.querySelector('[name=quality]').value] || 0;
+        var count = parseInt(form.querySelector('[name=variations]').value, 10) || 1;
+        box.textContent = count + ' ảnh · ' + form.querySelector('[name=quality]').value
+            + ' · ' + form.querySelector('[name=resolution]').value
+            + ' — ước lượng $' + unit.toFixed(3) + ' × ' + count
+            + ' = $' + (unit * count).toFixed(3) + '. Trang sẽ đứng đợi tới khi có ảnh.';
+    }
+
+    form.querySelectorAll('select').forEach(function (el) { el.addEventListener('change', sync); });
+    sync();
+})();
+
 function vpLockForm(form) {
     var trigger = document.querySelector('[data-target="#' + form.dataset.modal + '"]');
     if (trigger) {

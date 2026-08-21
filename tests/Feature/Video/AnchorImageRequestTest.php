@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Video;
 
+use App\Enums\DesignImageStatus;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\Admin;
@@ -9,6 +10,7 @@ use App\Models\Article;
 use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Services\PythonRunner;
 use App\Services\Video\PythonPromptCompiler;
 use App\Services\VideoProjectService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -114,8 +116,10 @@ class AnchorImageRequestTest extends TestCase
         return $project;
     }
 
-    public function test_a_valid_submit_creates_one_candidate_and_says_so(): void
+    public function test_a_valid_submit_creates_a_cell_and_puts_it_in_the_queue(): void
     {
+        // `VIDEO_SYNC_RENDER=false` trong phpunit.xml: khong spawn worker, khong
+        // tieu tien. O dung o `queued` — dung cho worker that se nhat len.
         $project = $this->projectWithConcept();
 
         $compiler = Mockery::mock(PythonPromptCompiler::class);
@@ -130,12 +134,85 @@ class AnchorImageRequestTest extends TestCase
 
         $response->assertRedirect(route('video-projects.anchor', $project->id));
         $this->assertCount(1, $images);
-        $this->assertSame('candidate', $images->first()->status);
+        $this->assertSame(DesignImageStatus::QUEUED->value, $images->first()->status);
         $this->assertSame('CAMERA: front three-quarter.', $images->first()->prompt_spec_json['prompt']);
-        $this->assertSame(
-            __('messages.anchor_image_created', ['code' => $images->first()->image_code]),
-            session('success'),
-        );
+    }
+
+    public function test_the_switch_that_keeps_tests_from_spending_money_actually_stops_the_worker(): void
+    {
+        // Mot test lo goi duong nay se spawn worker THAT. Chot nay la thu duy
+        // nhat dung giua mot lan chay test va mot hoa don.
+        $project = $this->projectWithConcept();
+
+        $compiler = Mockery::mock(PythonPromptCompiler::class);
+        $compiler->shouldReceive('compile')->andReturn(['CAMERA: front three-quarter.', '']);
+        $this->instance(PythonPromptCompiler::class, $compiler);
+
+        $runner = Mockery::mock(PythonRunner::class);
+        $runner->shouldNotReceive('runAndWait');
+        $this->instance(PythonRunner::class, $runner);
+        $this->forgetService();
+
+        $this->assertFalse(config('video.sync_render'));
+
+        $this->from(route('video-projects.anchor', $project->id))
+            ->post(route('video-projects.anchor-image', $project->id), $this->settings())
+            ->assertRedirect(route('video-projects.anchor', $project->id));
+    }
+
+    public function test_a_finished_render_reports_the_image_not_the_queue(): void
+    {
+        $project = $this->projectWithConcept();
+
+        $compiler = Mockery::mock(PythonPromptCompiler::class);
+        $compiler->shouldReceive('compile')->andReturn(['CAMERA: front three-quarter.', '']);
+        $this->instance(PythonPromptCompiler::class, $compiler);
+
+        // Worker gia: danh dau o `rendered` dung nhu worker that lam qua callback.
+        $runner = Mockery::mock(PythonRunner::class);
+        $runner->shouldReceive('runAndWait')->once()
+            ->andReturnUsing(function (string $script, array $args) use ($project) {
+                VideoDesignImage::where('project_id', $project->id)
+                    ->update(['status' => DesignImageStatus::RENDERED->value]);
+
+                return [true, 'ok'];
+            });
+        $this->instance(PythonRunner::class, $runner);
+        config(['video.sync_render' => true]);
+        $this->forgetService();
+
+        $this->from(route('video-projects.anchor', $project->id))
+            ->post(route('video-projects.anchor-image', $project->id), $this->settings())
+            ->assertSessionHas('success');
+    }
+
+    public function test_a_failed_render_puts_the_reason_on_the_screen(): void
+    {
+        $project = $this->projectWithConcept();
+
+        $compiler = Mockery::mock(PythonPromptCompiler::class);
+        $compiler->shouldReceive('compile')->andReturn(['CAMERA: front three-quarter.', '']);
+        $this->instance(PythonPromptCompiler::class, $compiler);
+
+        $runner = Mockery::mock(PythonRunner::class);
+        $runner->shouldReceive('runAndWait')->once()
+            ->andReturnUsing(function () use ($project) {
+                VideoDesignImage::where('project_id', $project->id)->update([
+                    'status' => DesignImageStatus::FAILED->value,
+                    'render_error' => 'openai tra 500 sau 3 lan thu',
+                ]);
+
+                return [true, 'boom'];
+            });
+        $this->instance(PythonRunner::class, $runner);
+        config(['video.sync_render' => true]);
+        $this->forgetService();
+
+        $this->from(route('video-projects.anchor', $project->id))
+            ->post(route('video-projects.anchor-image', $project->id), $this->settings())
+            ->assertSessionHas('error');
+
+        $this->assertStringContainsString('openai tra 500 sau 3 lan thu', session('error'));
     }
 
     public function test_an_unknown_project_is_named_as_such_not_blamed_on_the_category(): void

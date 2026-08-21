@@ -76,23 +76,32 @@ class DesignImageQueue
         string $claimToken,
         int $limit,
         DateTimeInterface $leaseExpiresAt,
+        ?string $imageId = null,
     ): iterable {
         // MariaDB 10.4 khong co SKIP LOCKED. Mot UPDATE ... LIMIT la nguyen tu:
         // hai worker khong the cung khop mot dong sau khi status doi.
         $limit = max(1, min($limit, self::CLAIM_MAX));
         $now = now();
 
+        // `image_id` de nguoi bam nut tren man hinh nhan DUNG o cua ho, khong
+        // vo tinh cam luon nhung o dang cho cua du an khac.
+        $bindings = [
+            DesignImageStatus::CLAIMED->value, $workerId, $claimToken, $now,
+            $leaseExpiresAt, $now, DesignImageStatus::QUEUED->value,
+        ];
+
+        if ($imageId !== null) {
+            $bindings[] = $imageId;
+        }
+
         DB::update(
             'UPDATE video_design_images
              SET status = ?, worker_id = ?, claim_token = ?, claimed_at = ?,
                  lease_expires_at = ?, updated_at = ?
-             WHERE status = ?
+             WHERE status = ?'.($imageId === null ? '' : ' AND id = ?').'
              ORDER BY queued_at, id
              LIMIT '.$limit,
-            [
-                DesignImageStatus::CLAIMED->value, $workerId, $claimToken, $now,
-                $leaseExpiresAt, $now, DesignImageStatus::QUEUED->value,
-            ],
+            $bindings,
         );
 
         return VideoDesignImage::query()
@@ -313,6 +322,11 @@ class DesignImageQueue
             'cost_usd' => (float) ($item['cost'] ?? 0),
             'provider_ms' => $event['provider_ms'] ?? null,
             'status' => $hasArtifact ? 'succeeded' : 'failed',
+            // OpenAI KHONG tra ve so do. Giu nguyen van thu no NOI — day la thu
+            // duy nhat sau nay doi chieu duoc `cost_usd` (uoc luong) voi hoa don
+            // that. Vut di thi khong bao gio lay lai duoc.
+            'provider_request_id' => $item['provider_request_id'] ?? null,
+            'response_json' => is_array($item['provider_usage'] ?? null) ? $item['provider_usage'] : null,
             'error_message' => $item['error'] ?? null,
             'proof_verified' => false,
         ]);

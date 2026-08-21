@@ -28,6 +28,7 @@ class VideoRender extends Model
         'artifact_path', 'artifact_dir', 'width', 'height', 'duration_ms', 'bytes',
         'cost_usd', 'provider_ms', 'status', 'error_message',
         'proof_method', 'proof_verified',
+        'provider_request_id', 'request_json', 'response_json',
     ];
 
     protected $casts = [
@@ -39,6 +40,8 @@ class VideoRender extends Model
         'cost_usd' => 'float',
         'provider_ms' => 'integer',
         'proof_verified' => 'boolean',
+        'request_json' => 'array',
+        'response_json' => 'array',
     ];
 
     public function shot()

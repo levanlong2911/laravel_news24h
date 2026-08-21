@@ -14,6 +14,7 @@ use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\ConceptStageRunner;
 use App\Services\Video\DesignImageQueue;
+use App\Services\Video\DesignImageRenderer;
 use App\Services\Video\DesignImageStore;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\PlanningStageStore;
@@ -39,6 +40,8 @@ class VideoProjectService
 
     private DesignImageQueue $designImageQueue;
 
+    private DesignImageRenderer $designImageRenderer;
+
     private VideoRenderPlanService $renderPlanService;
 
     public function __construct(
@@ -51,6 +54,7 @@ class VideoProjectService
         PythonPromptCompiler $promptCompiler,
         DesignImageStore $designImageStore,
         DesignImageQueue $designImageQueue,
+        DesignImageRenderer $designImageRenderer,
     ) {
         $this->videoProjectRepository = $videoProjectRepository;
         $this->articleService = $articleService;
@@ -61,6 +65,7 @@ class VideoProjectService
         $this->promptCompiler = $promptCompiler;
         $this->designImageStore = $designImageStore;
         $this->designImageQueue = $designImageQueue;
+        $this->designImageRenderer = $designImageRenderer;
     }
 
     public function listAll(): iterable
@@ -300,6 +305,33 @@ class VideoProjectService
         }
 
         return $this->designImageQueue->enqueue($imageId);
+    }
+
+    /**
+     * Tao o roi RENDER NGAY, dung doi tai cho. Dedupe cua `createCandidate()` va
+     * `enqueueableValues()` van la hai chot giu tien: bam muoi lan cung mot thiet
+     * lap thi lan dau tao o va render, chin lan sau gap `already_exists` roi
+     * `not_enqueueable` — khong co lan tra tien thu hai.
+     *
+     * @return array{0: ?VideoDesignImage, 1: string}
+     */
+    public function createAndRenderAnchorImage(
+        string $projectId,
+        string $creator,
+        ImageModel $model,
+        ImageQuality $quality,
+        ImageResolution $resolution,
+        ImageVariations $variations,
+    ): array {
+        [$image, $reason] = $this->createAnchorImage(
+            $projectId, $creator, $model, $quality, $resolution, $variations,
+        );
+
+        if ($image === null) {
+            return [null, $reason];
+        }
+
+        return $this->designImageRenderer->renderNow($image->id);
     }
 
     public function nextImageCode(string $projectId, string $creator): string
