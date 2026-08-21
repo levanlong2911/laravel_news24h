@@ -170,7 +170,12 @@
 .vp-btn.ok:hover { color: #fff; }
 .vp-btn.dg { color: var(--vp-red); border-color: #fecaca; }
 .vp-btn.sm { padding: 4px 10px; font-size: .72rem; }
-.vp-btn[disabled] { opacity: .5; pointer-events: none; }
+/* Xam that su, khong chi mo di: `.ok` nen xanh dam ma chi opacity .5 thi van
+   doc ra la nut song. Va KHONG chan pointer tren <button> — `disabled` da chan
+   click roi, con chan pointer thi title/tooltip khong bao gio hien, nguoi dung
+   mat luon cau giai thich vi sao nut tat. */
+.vp-btn[disabled] { opacity: .45; filter: grayscale(1); cursor: not-allowed; }
+a.vp-btn[disabled] { pointer-events: none; }
 
 .vp-tabs { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--vp-line); }
 .vp-tab { padding: 10px 14px; font-size: .77rem; color: var(--vp-dim); border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; }
