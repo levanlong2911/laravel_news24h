@@ -50,6 +50,14 @@ class SessionArticleLinkTest extends TestCase
         // Backfill bang tien to chuoi la mot phep DOAN. Test nay bat no phai dong
         // y voi khoa: lech nhau nghia la co ai do gan nham, va moi thu truy nguoc
         // tu do tro di deu sai bai.
+        //
+        // Bang RONG khac han bang CO session ma khong cai nao link duoc. Truong
+        // hop dau la mot may chua chay gi; truong hop sau la duong ghi hong. Chot
+        // ben duoi chi noi duoc mot cau cho ca hai, nen tach o day.
+        if (VideoSession::count() === 0) {
+            $this->markTestSkipped('Chua co session nao — audit nay can du lieu that de kiem.');
+        }
+
         $checked = 0;
 
         foreach (VideoSession::whereNotNull('article_id')->get() as $session) {

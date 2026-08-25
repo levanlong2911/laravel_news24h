@@ -242,4 +242,46 @@ class PlanningStageStoreTest extends TestCase
             'status' => VideoPlanningStageStatus::RUNNING->value,
         ]);
     }
+
+    public function test_a_paid_call_that_failed_still_keeps_what_it_paid_for(): void
+    {
+        // 2026-08-23: mot luot concept fail voi cost_usd = 0.0269 nhung
+        // raw_response = NULL, nen khong ai doc duoc Sonnet da tra ve con so nao.
+        // Duong thanh cong luu raw, hash, model, phien ban; duong that bai chi
+        // luu tien. Bat doi xung do chinh la con bo.
+        [$stage, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
+
+        $this->store->finishFailed($stage->id, $token, 'design_length_m ngoai khoang', [
+            'model' => 'sonnet',
+            'instruction_version' => 'concept-v11',
+            'tokens_in' => 1200,
+            'tokens_out' => 800,
+            'cost_usd' => 0.0269,
+        ], '{"design_length_m": 36.6}');
+
+        $row = VideoPlanningStage::find($stage->id);
+
+        $this->assertSame('{"design_length_m": 36.6}', $row->raw_response);
+        $this->assertSame(hash('sha256', '{"design_length_m": 36.6}'), $row->output_hash);
+        $this->assertSame('sonnet', $row->model);
+        $this->assertSame('concept-v11', $row->instruction_version);
+        $this->assertSame(1200, $row->tokens_in);
+        $this->assertEqualsWithDelta(0.0269, (float) $row->cost_usd, 0.00001);
+    }
+
+    public function test_a_failure_with_no_answer_records_no_answer(): void
+    {
+        // Loi mang thi THAT SU khong co raw. Ghi chuoi rong vao day se khien mot
+        // hang "co raw nhung raw rong" khong phan biet duoc voi "chua bao gio
+        // nhan duoc gi".
+        [$stage, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
+
+        $this->store->finishFailed($stage->id, $token, 'cURL error 28: timeout');
+
+        $row = VideoPlanningStage::find($stage->id);
+
+        $this->assertNull($row->raw_response);
+        $this->assertNull($row->output_hash);
+        $this->assertNull($row->model);
+    }
 }

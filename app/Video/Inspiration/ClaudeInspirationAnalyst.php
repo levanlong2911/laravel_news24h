@@ -61,7 +61,7 @@ final class ClaudeInspirationAnalyst
             // $correction = $this->correction($lastViolations);
         }
 
-        throw new InvalidInspirationBrief($lastViolations);
+        throw new InvalidInspirationBrief($lastViolations, $response->text);
     }
 
     // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.

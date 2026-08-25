@@ -6,6 +6,7 @@ use App\Models\Article;
 use App\Models\VideoPlanningStage;
 use App\Services\VideoRenderPlanService;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
+use App\Video\Inspiration\InvalidInspirationBrief;
 use Illuminate\Support\Facades\Log;
 
 class InspirationStageRunner
@@ -23,7 +24,7 @@ class InspirationStageRunner
     }
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
-    public function run(
+    public function callInHaiku(
         VideoPlanningStage $stage,
         string $claimToken,
         Article $article,
@@ -38,7 +39,10 @@ class InspirationStageRunner
                 'exception' => $e,
             ]);
 
-            return $this->fail($stage->id, $claimToken, $e->getMessage());
+            return $this->fail(
+                $stage->id, $claimToken, $e->getMessage(),
+                $e instanceof InvalidInspirationBrief ? $e->rawResponse : '',
+            );
         }
 
         $output = $this->renderPlanService->briefForStorage($result->brief, $article);
@@ -51,7 +55,9 @@ class InspirationStageRunner
                 'output' => $output,
             ]);
 
-            return $this->fail($stage->id, $claimToken, $empty);
+            // Haiku DA tra loi xong o duong nay — raw dang nam trong tay, chi la
+            // truoc day khong ai cam no.
+            return $this->fail($stage->id, $claimToken, $empty, $result->rawResponse);
         }
 
         $this->stageStore->finishSucceeded(
@@ -59,10 +65,7 @@ class InspirationStageRunner
             $claimToken,
             $result->rawResponse,
             $output,
-            $this->usage() + [
-                'model' => 'haiku',
-                'instruction_version' => ClaudeInspirationAnalyst::INSTRUCTION_VERSION,
-            ],
+            $this->usage(),
         );
 
         return [$output, 'ok'];
@@ -88,19 +91,29 @@ class InspirationStageRunner
     }
 
     /** @return array{0: null, 1: string} */
-    private function fail(string $stageId, string $claimToken, string $reason): array
-    {
-        $this->stageStore->finishFailed($stageId, $claimToken, $reason, $this->usage());
+    private function fail(
+        string $stageId,
+        string $claimToken,
+        string $reason,
+        string $rawResponse = '',
+    ): array {
+        $this->stageStore->finishFailed($stageId, $claimToken, $reason, $this->usage(), $rawResponse);
 
         return [null, $reason];
     }
 
-    /** @return array{tokens_in:int,tokens_out:int,cost_usd:float} */
+    /**
+     * Xem ghi chu cung ten o ConceptStageRunner.
+     *
+     * @return array<string, mixed>
+     */
     private function usage(): array
     {
         $totals = $this->renderPlanService->lastUsage() ?? [];
 
         return [
+            'model' => 'haiku',
+            'instruction_version' => ClaudeInspirationAnalyst::INSTRUCTION_VERSION,
             'tokens_in' => $totals['tokens_in'] ?? 0,
             'tokens_out' => $totals['tokens_out'] ?? 0,
             'cost_usd' => $totals['cost_usd'] ?? 0,

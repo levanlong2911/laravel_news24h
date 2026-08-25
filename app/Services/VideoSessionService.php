@@ -7,9 +7,9 @@ use App\Enums\VideoSessionStatus;
 use App\Enums\VideoShotStatus;
 use App\Jobs\BuildConceptStageJob;
 use App\Models\Article;
+use App\Models\VideoCostEntry;
 use App\Models\VideoFinal;
 use App\Models\VideoFinalRender;
-use App\Models\VideoCostEntry;
 use App\Models\VideoRender;
 use App\Models\VideoRenderPlan;
 use App\Models\VideoSession;
@@ -92,7 +92,7 @@ class VideoSessionService
 
         Auth::loginUsingId($admin->id);
 
-        [$output] = $this->inspirationRunner->run($stage, $token, $article, $session->id);
+        [$output] = $this->inspirationRunner->callInHaiku($stage, $token, $article, $session->id);
 
         return [$output !== null, $output !== null ? 'ok' : 'failed'];
     }

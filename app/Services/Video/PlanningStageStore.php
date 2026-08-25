@@ -30,17 +30,30 @@ class PlanningStageStore
     }
 
     /**
+     * `$force` bo qua DUNG MOT dieu: "da co ket qua thanh cong voi cung input".
+     * Moi chot khac giu nguyen — dac biet la `$live`, nen hai lan bam lien tiep
+     * trong mot ky lease van chi mot lan goi model.
+     *
+     * Dung cho nut "dung lai concept": cung bai, cung brief, nhung nguoi dung
+     * muon model thu lai. Do la mot lan CHI TIEN CO CHU DICH, khac han voi viec
+     * bam nham hai lan — nen no phai di qua mot nut rieng, khong phai mot co an
+     * trong request.
+     *
      * @param  array<string, mixed>  $input
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
      *                                                              reason: project_not_found|claimed_by_other|already_succeeded|claimed
      */
-    public function claimProjectStage(string $projectId, PlanningStageName $stage, array $input): array
-    {
+    public function claimProjectStage(
+        string $projectId,
+        PlanningStageName $stage,
+        array $input,
+        bool $force = false,
+    ): array {
         $hash = $this->hash($input);
         $claimToken = (string) Str::uuid();
 
         try {
-            return DB::transaction(function () use ($projectId, $stage, $input, $hash, $claimToken) {
+            return DB::transaction(function () use ($projectId, $stage, $input, $hash, $claimToken, $force) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
                 $rows = VideoPlanningStage::query()
@@ -61,7 +74,7 @@ class PlanningStageStore
                     ->sortByDesc('planning_revision')
                     ->first();
 
-                if ($done !== null) {
+                if ($done !== null && ! $force) {
                     return [$done, null, 'already_succeeded'];
                 }
 
@@ -177,11 +190,30 @@ class PlanningStageStore
     }
 
     /** @param array{tokens_in?: int, tokens_out?: int, cost_usd?: float} $usage */
-    public function finishFailed(string $stageId, string $claimToken, string $error, array $usage = []): bool
-    {
+    /**
+     * `$rawResponse` di CUOI de moi loi goi hien co giu nguyen hieu luc.
+     *
+     * Duong that bai truoc day chi ghi tien va thong bao loi, trong khi duong
+     * thanh cong ghi ca raw, hash, model va phien ban. Bat doi xung do chinh la
+     * con bo: mot cu goi da tra tien sinh ra cau tra loi BAT KE no co qua duoc
+     * validate hay khong.
+     */
+    public function finishFailed(
+        string $stageId,
+        string $claimToken,
+        string $error,
+        array $usage = [],
+        string $rawResponse = '',
+    ): bool {
         return $this->finishClaimed($stageId, $claimToken, [
             'status' => VideoPlanningStageStatus::FAILED->value,
             'error_message' => $error,
+            // null chu khong phai chuoi rong: loi mang thi that su khong co raw,
+            // va mot o rong trong DB khong phan biet duoc hai truong hop do.
+            'raw_response' => $rawResponse !== '' ? $rawResponse : null,
+            'output_hash' => $rawResponse !== '' ? hash('sha256', $rawResponse) : null,
+            'model' => $usage['model'] ?? null,
+            'instruction_version' => $usage['instruction_version'] ?? null,
             'tokens_in' => $usage['tokens_in'] ?? 0,
             'tokens_out' => $usage['tokens_out'] ?? 0,
             'cost_usd' => $usage['cost_usd'] ?? 0,

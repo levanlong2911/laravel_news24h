@@ -6,6 +6,7 @@ use App\Models\Article;
 use App\Models\VideoPlanningStage;
 use App\Services\VideoRenderPlanService;
 use App\Video\Concept\ClaudeConceptDesigner;
+use App\Video\Concept\InvalidCreativeConcept;
 use App\Video\Inspiration\InspirationBrief;
 use Illuminate\Support\Facades\Log;
 
@@ -24,7 +25,7 @@ class ConceptStageRunner
     }
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
-    public function run(
+    public function goToSonnet(
         VideoPlanningStage $stage,
         string $claimToken,
         Article $article,
@@ -40,7 +41,10 @@ class ConceptStageRunner
                 'exception' => $e,
             ]);
 
-            $this->stageStore->finishFailed($stage->id, $claimToken, $e->getMessage(), $this->usage());
+            $this->stageStore->finishFailed(
+                $stage->id, $claimToken, $e->getMessage(), $this->usage(),
+                $e instanceof InvalidCreativeConcept ? $e->rawResponse : '',
+            );
 
             return [null, $e->getMessage()];
         }
@@ -52,21 +56,26 @@ class ConceptStageRunner
             $claimToken,
             $design->rawResponse,
             $output,
-            $this->usage() + [
-                'model' => 'sonnet',
-                'instruction_version' => ClaudeConceptDesigner::INSTRUCTION_VERSION,
-            ],
+            $this->usage(),
         );
 
         return [$output, 'ok'];
     }
 
-    /** @return array{tokens_in:int,tokens_out:int,cost_usd:float} */
+    /**
+     * Model va phien ban di CUNG so lieu, khong phai thu gan them o duong thanh
+     * cong. Giu hai danh sach song song chinh la ly do duong that bai tung mat
+     * ca hai truong nay.
+     *
+     * @return array<string, mixed>
+     */
     private function usage(): array
     {
         $totals = $this->renderPlanService->lastUsage() ?? [];
 
         return [
+            'model' => 'sonnet',
+            'instruction_version' => ClaudeConceptDesigner::INSTRUCTION_VERSION,
             'tokens_in' => $totals['tokens_in'] ?? 0,
             'tokens_out' => $totals['tokens_out'] ?? 0,
             'cost_usd' => $totals['cost_usd'] ?? 0,
