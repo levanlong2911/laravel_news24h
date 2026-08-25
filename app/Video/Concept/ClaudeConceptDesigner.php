@@ -9,7 +9,7 @@ use App\Video\Llm\LlmRequest;
 
 final class ClaudeConceptDesigner
 {
-    public const INSTRUCTION_VERSION = 'concept-v8';
+    public const INSTRUCTION_VERSION = 'concept-v15';
 
     private const MAX_ATTEMPTS = 1;
 
@@ -48,7 +48,7 @@ final class ClaudeConceptDesigner
                 self::INSTRUCTION_VERSION,
                 $this->model,
                 maxTokens: 2500,
-                temperature: 0.7,
+                temperature: 0.3,
             ));
 
             try {
@@ -67,7 +67,7 @@ final class ClaudeConceptDesigner
             }
         }
 
-        throw new InvalidCreativeConcept($violations);
+        throw new InvalidCreativeConcept($violations, $response->text);
     }
 
     private function instruction(CategoryCreativeProfile $profile): string
@@ -85,6 +85,20 @@ final class ClaudeConceptDesigner
         $aspects = implode("\n", array_map(fn (string $aspect) => "- {$aspect}", $profile->inspectionAspects));
         $slotLines = implode("\n", $slots);
         $maxFeatures = ConceptValidator::MAX_FEATURES;
+
+        // Bo hang neu ho so khong khai: mot tieu de rong day model di tim mot
+        // danh sach khong ton tai.
+        $antipatterns = $profile->conceptAntipatterns === [] ? '' : implode("\n", [
+            'Avoid concept structures that require any of these antipatterns, unless the',
+            'supplied source_insights explicitly require them:',
+            ...array_map(fn (string $item) => "- {$item}", $profile->conceptAntipatterns),
+            '',
+            'design_thesis and governing_line must describe the unifying envelope of the',
+            'whole object. massing_rhythm must explain how volumes merge, carve, overlap,',
+            'or share that envelope.',
+            '',
+            '',
+        ]);
 
         $viewpoints = implode("\n", array_map(
             fn (string $name, string $text) => "- {$name}: {$text}",
@@ -107,12 +121,12 @@ final class ClaudeConceptDesigner
 
         Bad: "A poetic form that appears to flow endlessly through space, dissolving
         the boundary between structure and horizon."
-        Good: "One continuous line integrates the primary volumes."
+        Good: "The response states one organising rule without imagery."
 
         The word budgets below are guidance, not a counting exercise. Staying near
         them keeps the specification readable.
 
-        Return ONLY one raw JSON object with exactly these fields:
+        {$antipatterns}Return ONLY one raw JSON object with exactly these fields:
 
         "design_thesis": one sentence, at most 24 words, stating the organising idea
         of the whole design.
@@ -120,15 +134,34 @@ final class ClaudeConceptDesigner
         "design_identity": an object with exactly these keys:
         {$slotLines}
 
-        For every identity slot that counts repeated parts, preserve that exact
-        count throughout the concept. If form_relationships groups those parts into
-        fewer larger masses, state the grouping explicitly without changing the
-        underlying part count. Do not introduce an unexplained competing count.
+        Numeric bounds are hard design constraints. If the source material gives a
+        value outside a bound, transform it into a new value inside the bound;
+        never copy the out-of-range source value.
+
+        An identity slot that counts repeated parts fixes that count as a
+        VERIFICATION CONSTRAINT: the finished object must contain exactly that many.
+        It is not the design motif. State the count once, in its own identity slot,
+        and do not restate it in any other slot, in design_thesis, form_relationships,
+        signature_features, or decisions. Never resolve a counted slot as that many
+        separate stacked elements; the count must read inside one continuous form.
+
+        Bad: "Five tiers step aft and inboard progressively; forward face of each
+        tier is vertical."
+        Why: this resolves a counted slot as that many separate objects, so the form
+        reads as a stack rather than one mass.
+
+        Counted levels must remain individually verifiable while belonging to one
+        continuous primary mass. Do not describe them as independent repeated slabs.
+        Do not copy the example's specific configuration, geometry, silhouette,
+        orientation, numerical count or sentence structure. Examples demonstrate
+        only the acceptance or rejection principle.
 
         "form_relationships": an object with exactly three fields, each at most
         30 words:
         - governing_line: the dominant line or geometry connecting the whole object
-        - massing_rhythm: how major volumes transition, taper, overlap, or repeat
+        - massing_rhythm: how the major volumes read as ONE continuous mass, where
+          it swells, narrows, or is carved away. Describe volumes and the envelope
+          containing them, never a count of levels
         - feature_integration: the PRINCIPLE by which signature features grow from
           the main form instead of looking attached afterward. State the principle
           only — never name an individual feature here.
@@ -151,7 +184,13 @@ final class ClaudeConceptDesigner
 
         An inspired decision must transform the reference rather than reproduce its
         complete configuration. An uncovered aspect must use invented provenance.
+        A decision whose value came from replacing an out-of-range source number must
+        use invented provenance: a bound produced that number, not the source, and
+        scaling a rejected value is not the transformation this rule means.
         Do not write camera, lighting, rendering, provider, or prompt terminology.
+
+        Return valid UTF-8 JSON only: no Markdown fences, prose, comments, trailing
+        commas, null values, empty required strings or additional fields.
         TEXT;
     }
 

@@ -32,6 +32,7 @@ final class CreativeProfileResolver
             $profile['viewpoint_guidance'] ?? [],
             $profile['arc_stages'] ?? [],
             $profile['arc_required_stages'] ?? [],
+            $profile['concept_antipatterns'] ?? [],
         );
     }
 }

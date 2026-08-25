@@ -61,6 +61,23 @@ return [
      */
     'sync_render' => (bool) env('VIDEO_SYNC_RENDER', true),
 
+    /*
+     * `queue`  — enqueue roi goi worker; worker claim, giu lease, bao ve qua
+     *            outbox ben. Duong cho production.
+     * `direct` — Laravel goi Python, doc stdout, tu ghi so cai. Ngan va de soi,
+     *            nhung MAT outbox: tien trinh chet sau khi provider tinh tien
+     *            thi khong co gi phat lai.
+     */
+    'render_mode' => env('VIDEO_RENDER_MODE', 'direct'),
+
+    /*
+     * Cau dao tong cho MOI lan sinh tien trinh Python. TAT trong phpunit.xml:
+     * Python la thu goi provider, nen mot test lo cham vao duong nay se tra
+     * tien that. Test nao muon thu phai bat lai TUONG MINH va thay PythonRunner
+     * bang gia.
+     */
+    'python_runner_enabled' => (bool) env('VIDEO_PYTHON_RUNNER', true),
+
     'planning_queue' => [
         'connection' => env('VIDEO_PLANNING_QUEUE_CONNECTION', 'video'),
         'name' => env('VIDEO_PLANNING_QUEUE', 'video-planning'),
@@ -122,6 +139,22 @@ return [
                 // ngược trong danh sách này. Phần tử ĐẦU và CUỐI cũng là ràng
                 // buộc: scene đầu phải là `design`, scene cuối phải là `operation`.
                 // Hạng mục khác (phục chế xe, xây nhà) khai trình tự của riêng nó.
+                /*
+                 * Hinh dang da THAT BAI, khong phai so thich. Moi muc doi duoc
+                 * mot lan render da tra tien; dung them muc nao chua co bang chung.
+                 *
+                 * Danh sach nay di vao instruction cua Sonnet. Danh sach ben
+                 * `yacht.json` (visual_antipatterns) di vao prompt anh, va hai
+                 * cai KHONG phai ban sao cua nhau: mot cai noi voi nguoi thiet ke,
+                 * mot cai noi voi nguoi ve.
+                 */
+                'concept_antipatterns' => [
+                    'independent horizontal slabs stacked like a wedding cake',
+                    'apartment-block or cruise-ship massing',
+                    'decorative mast, radar domes, antennas unless required by source evidence',
+                    'bulbous bow, anchor pockets, or unexplained hull-side apertures unless required by source evidence',
+                ],
+
                 'arc_stages' => ['design', 'construction', 'finishing', 'completion', 'operation'],
 
                 // Được phép lặp và được phép bỏ qua `finishing`; bốn cái này thì không.
@@ -157,14 +190,28 @@ return [
                  * (automotive…) khai bộ khe riêng mà không cần nhánh code.
                  */
                 'identity_slots' => [
-                    // 75 m la SAN BIEN TAP cua ho so nay, khong phai dinh nghia
-                    // ky thuat cua "superyacht".
-                    'design_length_m' => ['type' => 'number', 'min' => 75.0, 'max' => 180.0],
+                    // 100 m la SAN BIEN TAP cua ho so nay, khong phai dinh nghia
+                    // ky thuat cua "superyacht". San tung la 75 m; nang len 100 m
+                    // 2026-08-24 theo quyet dinh bien tap.
+                    //
+                    // San CHAN duoc cai sai nhung khong DAY duoc cai dung: bon lan
+                    // Sonnet tra duoi san (74/72/72 tu bai nguon 70 m, roi
+                    // 2026-08-23 tu bai 120-foot ~ 36,6 m) vi khong dong nao bao no
+                    // phai lam gi khi nguon nho hon. Comment PHP nay khong den duoc
+                    // model — chi `guidance` di vao instruction.
+                    'design_length_m' => [
+                        'type' => 'number',
+                        'min' => 100.0,
+                        'max' => 180.0,
+                        'guidance' => 'Editorial floor: if the source vessel is smaller, '
+                            .'scale the new design up to at least 100 m.',
+                    ],
                     'length_to_beam_ratio' => ['type' => 'number', 'min' => 2.0, 'max' => 12.0],
                     'design_draft_m' => ['type' => 'number', 'min' => 2.0, 'max' => 6.0],
                     'visible_freeboard_at_midships_m' => ['type' => 'number', 'min' => 1.5, 'max' => 6.0],
                     'typical_deck_to_deck_height_m' => ['type' => 'number', 'min' => 2.6, 'max' => 3.5],
-                    'visible_deck_tiers' => ['type' => 'integer', 'min' => 1, 'max' => 10],
+                    'visible_deck_tiers' => ['type' => 'integer', 'min' => 1, 'max' => 10,
+                        'guidance' => 'A verification count, not a design motif. State it here and nowhere else.'],
                     'bow_profile' => ['type' => 'text', 'max_length' => 120],
                     'stern_architecture' => ['type' => 'text', 'max_length' => 120],
                     'superstructure_massing' => ['type' => 'text', 'max_length' => 120],
@@ -172,6 +219,11 @@ return [
                     'hull_material' => ['type' => 'text', 'max_length' => 60],
                     'superstructure_material' => ['type' => 'text', 'max_length' => 60],
                     'hull_colour' => ['type' => 'text', 'max_length' => 60],
+                    'boot_stripe_colour' => [
+                        'type' => 'text',
+                        'max_length' => 90,
+                        'guidance' => 'State the boot stripe colour and its placement along the lower hull.',
+                    ],
                     'superstructure_colour' => ['type' => 'text', 'max_length' => 60],
                 ],
 

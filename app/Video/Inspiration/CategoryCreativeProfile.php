@@ -31,6 +31,7 @@ final class CategoryCreativeProfile
         public readonly array $viewpointGuidance = [],
         public readonly array $arcStages = [],
         public readonly array $arcRequiredStages = [],
+        public readonly array $conceptAntipatterns = [],
     ) {
         foreach ([$key, $mission] as $value) {
             if (trim($value) === '') {
@@ -52,6 +53,25 @@ final class CategoryCreativeProfile
                     throw new InvalidArgumentException("Creative profile {$name} contains an invalid key.");
                 }
             }
+        }
+
+        // Rong la hop le: category khong khai hinh dang cam nao van chay duoc.
+        // Nhung mot muc null hay mot mang long nhau se noi muon o luc dung
+        // instruction, khi khong ai con nho no den tu config nao.
+        foreach ($conceptAntipatterns as $item) {
+            if (! is_string($item) || trim($item) === '') {
+                throw new InvalidArgumentException(
+                    "Creative profile {$key} concept_antipatterns must contain only non-empty strings.",
+                );
+            }
+        }
+
+        // Lap mot muc khong lam hong logic, nhung no in ra prompt hai lan va lam
+        // model tuong day la hai rang buoc khac nhau.
+        if (count($conceptAntipatterns) !== count(array_unique($conceptAntipatterns))) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} concept_antipatterns must be unique.",
+            );
         }
 
         $this->assertIdentitySlotsAreSatisfiable($identitySlots);

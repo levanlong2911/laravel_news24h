@@ -3,6 +3,7 @@
 namespace Tests\Feature\Video;
 
 use App\Services\Video\CreativeProfileResolver;
+use App\Video\Concept\ClaudeConceptDesigner;
 use App\Video\Concept\ConceptValidator;
 use App\Video\Concept\CreativeConcept;
 use App\Video\Concept\DesignDecision;
@@ -11,6 +12,9 @@ use App\Video\Concept\Provenance;
 use App\Video\Concept\SignatureFeature;
 use App\Video\Concept\Viewpoint;
 use App\Video\Inspiration\InspirationBrief;
+use App\Video\Llm\LlmClient;
+use App\Video\Llm\LlmRequest;
+use App\Video\Llm\LlmResponse;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -29,12 +33,34 @@ class CreativeProfileResolverTest extends TestCase
     {
         $slots = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots ?? [];
 
-        $this->assertCount(14, $slots);
+        $this->assertCount(15, $slots);
         $this->assertArrayNotHasKey('hull_vertical_proportions', $slots);
 
         foreach ($slots as $name => $spec) {
             $this->assertContains($spec['type'], ['text', 'integer', 'number'], "slot {$name}");
         }
+    }
+
+    public function test_the_boot_stripe_is_a_declared_slot_not_a_guess_by_the_image_model(): void
+    {
+        // Anh dau tien co mot signature feature noi '...separating hull colour from
+        // boot stripe', trong khi COLOR PALETTE chi khai hai mau — gpt-image-2 tu
+        // bia mau dai nuoc. Khe nay dong lo hong do o dung nguon: concept.
+        $slot = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots['boot_stripe_colour'] ?? null;
+
+        $this->assertNotNull($slot);
+        $this->assertSame('text', $slot['type']);
+        $this->assertStringContainsString('placement', $slot['guidance']);
+    }
+
+    public function test_a_two_part_slot_gets_a_budget_wide_enough_for_both_parts(): void
+    {
+        // Ngan sach tu tu suy tu max_length: intdiv(max_length, 7). Khe nay doi
+        // MAU va VI TRI, nen 60 (8 tu) la vua khit khong con cho xoay — cac khe
+        // hai-viec khac deu 120.
+        $slot = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots['boot_stripe_colour'] ?? [];
+
+        $this->assertGreaterThanOrEqual(11, intdiv((int) $slot['max_length'], 7));
     }
 
     /** @dataProvider verticalSlots */
@@ -59,11 +85,14 @@ class CreativeProfileResolverTest extends TestCase
 
     public function test_the_profile_declares_an_editorial_length_floor(): void
     {
-        // Ba concept truoc ra 74m/72m/72m tu bai nguon 70m. San 75m la quyet
-        // dinh bien tap cua ho so nay, khong phai chan gia tri phi ly.
         $slots = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots ?? [];
+        $slot = $slots['design_length_m'];
 
-        $this->assertSame(['type' => 'number', 'min' => 75.0, 'max' => 180.0], $slots['design_length_m']);
+        $this->assertSame('number', $slot['type']);
+        $this->assertSame(100.0, $slot['min']);
+        $this->assertSame(180.0, $slot['max']);
+        $this->assertStringContainsString('scale', $slot['guidance']);
+        $this->assertStringContainsString('100 m', $slot['guidance']);
         $this->assertSame(
             ['design_length_m', 'length_to_beam_ratio'],
             array_slice(array_keys($slots), 0, 2),
@@ -135,8 +164,6 @@ class CreativeProfileResolverTest extends TestCase
 
         $profile->assertConceptReady();
 
-        // Invariant là "khác mission của Inspiration", không phải "vắng một từ
-        // cụ thể" — khoá câu chữ thì mission hợp lệ sau này vẫn đỏ oan.
         $this->assertNotSame('', trim($profile->conceptMission));
         $this->assertNotSame($profile->mission, $profile->conceptMission);
     }
@@ -163,10 +190,128 @@ class CreativeProfileResolverTest extends TestCase
 
     public function test_unconfigured_category_resolves_to_null(): void
     {
-        // null CHƯA phải fail-closed: nó trao cho người gọi đúng cái
-        // `$profile !== null ? creative() : evidenceBound()`. Ba mode
-        // Creative/EvidenceBound/Disabled chưa được cài — chưa có chỗ gọi nên
-        // đổi kiểu trả về sau vẫn không phá gì.
         $this->assertNull((new CreativeProfileResolver)->resolve('unconfigured-category'));
+    }
+
+    public function test_the_shipped_profile_names_the_forms_that_already_failed(): void
+    {
+        $profile = (new CreativeProfileResolver)->resolve('yacht');
+
+        $this->assertContains(
+            'independent horizontal slabs stacked like a wedding cake',
+            $profile->conceptAntipatterns,
+        );
+        $this->assertCount(4, $profile->conceptAntipatterns);
+    }
+
+    public function test_the_counted_slot_says_what_its_number_is_for(): void
+    {
+        $profile = (new CreativeProfileResolver)->resolve('yacht');
+
+        $this->assertStringContainsString(
+            'verification count',
+            $profile->identitySlots['visible_deck_tiers']['guidance'],
+        );
+    }
+
+    public function test_the_instruction_sent_to_sonnet_is_locked_to_its_version(): void
+    {
+        $method = new \ReflectionMethod(ClaudeConceptDesigner::class, 'instruction');
+        $method->setAccessible(true);
+
+        $instruction = $method->invoke(
+            new ClaudeConceptDesigner(new class implements LlmClient
+            {
+                public function complete(LlmRequest $request): LlmResponse
+                {
+                    throw new \LogicException('instruction() khong duoc goi model');
+                }
+            }),
+            (new CreativeProfileResolver)->resolve('yacht'),
+        );
+
+        $this->assertSame('concept-v15', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertSame(
+            '9745712aad360828b3ae85afc23dc56c3060c0c356e865c5cfdc682f5439010a',
+            hash('sha256', $instruction),
+            'Instruction doi ma version khong doi.',
+        );
+    }
+
+    public function test_a_mistyped_forbidden_form_is_caught_while_building_the_profile(): void
+    {
+        config(['video.creative_profiles.profiles.luxury_vessel.concept_antipatterns' => ['ok', null]]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must contain only non-empty strings');
+
+        (new CreativeProfileResolver)->resolve('yacht');
+    }
+
+    public function test_the_same_forbidden_form_twice_is_refused(): void
+    {
+        // In hai lan lam model tuong day la hai rang buoc khac nhau.
+        config(['video.creative_profiles.profiles.luxury_vessel.concept_antipatterns' => ['x', 'x']]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be unique');
+
+        (new CreativeProfileResolver)->resolve('yacht');
+    }
+
+    public function test_a_category_that_forbids_nothing_still_resolves(): void
+    {
+        config(['video.creative_profiles.profiles.luxury_vessel.concept_antipatterns' => []]);
+
+        $this->assertSame([], (new CreativeProfileResolver)->resolve('yacht')->conceptAntipatterns);
+    }
+
+    /** @dataProvider lengthsAroundTheFloor */
+    public function test_the_floor_is_a_hard_gate_not_a_hint(float $length, bool $refused): void
+    {
+        // Guidance day model ve dung phia. Validator van phai TU CHOI neu no
+        // khong nghe — tuyet doi khong lang le keo 99.9 len 100, vi lam vay la
+        // sua cau tra loi cua model roi gia vo no tra loi dung.
+        $profile = (new CreativeProfileResolver)->resolve('yacht');
+
+        $identity = [];
+        foreach ($profile->identitySlots as $name => $spec) {
+            $identity[$name] = match ($spec['type']) {
+                'integer' => (int) $spec['min'],
+                'number' => (float) $spec['min'],
+                default => 'a plain description',
+            };
+        }
+        $identity['design_length_m'] = $length;
+
+        $violations = (new ConceptValidator)->validate(
+            new CreativeConcept(
+                'One line unifies the whole vessel.',
+                $identity,
+                [new SignatureFeature('a recessed stern pool', [Viewpoint::RearThreeQuarter])],
+                array_map(
+                    fn (string $aspect) => new DesignDecision($aspect, Provenance::Invented, 'Decided independently.'),
+                    $profile->inspectionAspects,
+                ),
+                new FormRelationships('One line.', 'Volumes taper.', 'Features grow from the form.'),
+            ),
+            $profile,
+            new InspirationBrief(['design_profile'], 'A focus.', [], []),
+        )->fatalViolations;
+
+        $offending = array_filter($violations, fn (string $v) => str_contains($v, 'design_length_m'));
+
+        $this->assertSame($refused, $offending !== [], implode('; ', $violations));
+    }
+
+    /** @return array<string, array{float, bool}> */
+    public static function lengthsAroundTheFloor(): array
+    {
+        return [
+            'just under the floor' => [99.9, true],
+            'exactly on the floor' => [100.0, false],
+            'the source article value' => [36.6, true],
+            'the value the old floor allowed' => [78.0, true],
+        ];
     }
 }
