@@ -32,6 +32,7 @@
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="VIDEO_SYNC_RENDER" value="false"/>
+        <env name="VIDEO_PYTHON_RUNNER" value="false"/>
         <env name="VIDEO_CREATIVE_CONCEPT_MODE" value="disabled"/>
         <!-- Cờ gỡ lỗi trong .env không được đổi luồng chạy của test: bật nó lên
              thì dispatchPlanningJob() chạy chặng Claude NGAY trong request thay

@@ -167,6 +167,9 @@ class DesignImageQueueTest extends TestCase
 
     public function test_an_expired_lease_returns_the_cell_to_the_queue(): void
     {
+        // Che do `queue` co worker nen nhat lai. Che do `direct` thi khong —
+        // xem DesignImageDirectRenderTest.
+        config(['video.render_mode' => 'queue']);
         $image = $this->claimed();
         $image->update(['lease_expires_at' => now()->subMinute()]);
 

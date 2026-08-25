@@ -73,7 +73,7 @@ class DesignImageStore
     /**
      * O anh neo cua du an, moi nhat truoc, kem ung vien da render.
      *
-     * Hien TAT CA o chu khong chi o moi nhat: doi quality hay resolution la sinh
+     * Hien TAT CA o chu khong chi o moi nhat: doi quality hay size la sinh
      * mot o moi, va mot o da tieu tien ma bi giau khoi man hinh la kieu hong te
      * nhat — no van nam trong so cai, chi la khong ai nhin thay.
      *

@@ -22,7 +22,12 @@ class DesignImageApiQueueTest extends TestCase
     {
         parent::setUp();
 
-        config(['video.api_token' => 'token-loaded-before-runtime']);
+        // Bo test nay thu duong HANG DOI (worker Python poll). Che do mac dinh
+        // la `direct`, ma o do lease het han thanh `failed` chu khong ve `queued`.
+        config([
+            'video.api_token' => 'token-loaded-before-runtime',
+            'video.render_mode' => 'queue',
+        ]);
         $this->withHeader('X-Video-Token', 'token-loaded-before-runtime');
         $this->project = VideoProject::create(['title' => 'TEST api queue '.uniqid()]);
     }

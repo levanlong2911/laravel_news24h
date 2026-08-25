@@ -97,21 +97,15 @@ class PythonRunner
     }
 
     /**
-     * Chạy VÀ CHỜ, trả nguyên văn stdout+stderr. Chỉ dùng cho lượt KHÔNG tiêu tiền.
-     *
-     * Vì sao không dùng `spawn()`: nó cố ý không chờ, vì render thật mất 6-18
-     * phút. Lượt thử thì ngược lại — nó tồn tại để NGƯỜI ĐỌC KẾT QUẢ, mà kết quả
-     * bắn vào file log rồi bảo người dùng đi mở log là làm hỏng chính mục đích
-     * của nút. Chạy thử không gọi vendor nên xong trong ~1 giây.
-     *
-     * `$args` thay cho `--session=` cứng: lượt thử truyền `--preflight-file`, một
-     * đường dẫn — không phải mã session.
-     *
      * @param  list<string>  $args
      * @return array{0: bool, 1: string} [chạy được?, output]
      */
     public function runAndWait(string $script, array $args, int $timeoutSeconds = 120): array
     {
+        if (! config('video.python_runner_enabled', true)) {
+            return [false, 'PythonRunner bi tat (VIDEO_PYTHON_RUNNER=false) — khong spawn tien trinh nao.'];
+        }
+
         $dir = (string) config('video.runner.runner_dir', '');
 
         if ($dir === '') {
@@ -140,9 +134,6 @@ class PythonRunner
             return [false, 'Chay that bai: '.$e->getMessage()];
         }
 
-        // KHÔNG dựa vào exit code để quyết "có kết quả hay không": script thử in
-        // ra chẩn đoán hữu ích rồi vẫn có thể thoát khác 0. Output mới là thứ
-        // người dùng cần, kể cả khi nó là một traceback.
         return [true, trim($process->getOutput()."\n".$process->getErrorOutput())];
     }
 

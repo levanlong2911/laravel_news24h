@@ -11,6 +11,7 @@ use App\Models\VideoRender;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Hang doi render cho o thiet ke anh — song song voi hang doi shot, khong dung
@@ -26,6 +27,10 @@ use Illuminate\Support\Facades\DB;
 class DesignImageQueue
 {
     private const CLAIM_MAX = 100;
+
+    public const COLLECTION = 'design-images';
+
+    private const DIRECT_WORKER = 'laravel:direct';
 
     private const ENTITY_TYPE = 'design_image';
 
@@ -131,14 +136,23 @@ class DesignImageQueue
             ]) === 1;
     }
 
+    /**
+     * Che do `queue` co worker nen nhat lai, nen tra o ve `queued` la dung. Che do
+     * `direct` KHONG co worker nao ca — de `queued` thi man hinh trong nhu dang cho
+     * ai do, ma khong ai chay, va o ket vinh vien. Danh `failed` kem ly do thi
+     * nguoi dung thay ngay va bam render lai duoc.
+     */
     public function reclaimExpiredLeases(): int
     {
+        $direct = config('video.render_mode') === 'direct';
+
         return VideoDesignImage::query()
             ->whereIn('status', DesignImageStatus::leasedValues())
             ->whereNotNull('lease_expires_at')
             ->where('lease_expires_at', '<=', now())
             ->update([
-                'status' => DesignImageStatus::QUEUED->value,
+                'status' => ($direct ? DesignImageStatus::FAILED : DesignImageStatus::QUEUED)->value,
+                'render_error' => $direct ? 'Direct render exceeded its lease before reporting a result' : null,
                 'worker_id' => null,
                 'claim_token' => null,
                 'claimed_at' => null,
@@ -196,6 +210,129 @@ class DesignImageQueue
                 }
 
                 if (! $this->ownsTheClaim($image, $workerId, $claimToken)) {
+                    return [null, 'claim_not_owned_or_expired'];
+                }
+
+                foreach ($renders as $item) {
+                    $this->record($image, $projectId, $item);
+                }
+
+                $image->update([
+                    'status' => ($success ? DesignImageStatus::RENDERED : DesignImageStatus::FAILED)->value,
+                    'render_error' => $success ? null : ($renderError ?: 'Render failed and the worker gave no reason'),
+                    'worker_id' => null,
+                    'claim_token' => null,
+                    'claimed_at' => null,
+                    'lease_expires_at' => null,
+                ]);
+
+                return [$image->refresh(), 'recorded'];
+            });
+        } catch (ModelNotFoundException) {
+            return [null, 'image_not_found'];
+        }
+    }
+
+    /**
+     * Giu o TRUOC khi goi provider, ngay tren hang du lieu — dung giao thuc ma
+     * `PlanningStageStore::claimProjectStage()` dung cho Haiku/Sonnet.
+     *
+     * Khong co buoc nay thi hai lan bam cach nhau 5 giay trong luc render deu
+     * thay `candidate` va deu chay: TRA TIEN HAI LAN. Dedupe theo prompt hash
+     * khong cuu duoc ca do — no chan tao o trung, khong chan render o cu hai lan.
+     *
+     * `lease_expires_at` de lenh thu hoi co san nhat len khi request chet giua
+     * chung; khong co no thi o ket o `rendering` vinh vien.
+     *
+     * @return array{0: ?VideoDesignImage, 1: ?string, 2: string} [$image, $claimToken, $reason]
+     */
+    public function claimForDirectRender(string $imageId, int $leaseSeconds = 90): array
+    {
+        $claimToken = (string) Str::uuid();
+
+        try {
+            return DB::transaction(function () use ($imageId, $leaseSeconds, $claimToken) {
+                $projectId = VideoDesignImage::query()->whereKey($imageId)->value('project_id');
+
+                if ($projectId === null) {
+                    return [null, null, 'image_not_found'];
+                }
+
+                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+                $image = VideoDesignImage::query()->whereKey($imageId)->firstOrFail();
+
+                if (! in_array($image->status, DesignImageStatus::enqueueableValues(), true)) {
+                    return [$image, null, 'not_enqueueable'];
+                }
+
+                $now = now();
+                $image->update([
+                    'status' => DesignImageStatus::RENDERING->value,
+                    'worker_id' => self::DIRECT_WORKER,
+                    'claim_token' => $claimToken,
+                    'claimed_at' => $now,
+                    'lease_expires_at' => $now->copy()->addSeconds($leaseSeconds),
+                    'queued_at' => $image->queued_at ?? $now,
+                    'render_error' => null,
+                ]);
+
+                return [$image, $claimToken, 'claimed'];
+            });
+        } catch (ModelNotFoundException) {
+            return [null, null, 'image_not_found'];
+        }
+    }
+
+    /**
+     * Ghi ket qua cua duong thang. Python khong goi nguoc Laravel, nen Laravel tu
+     * ghi tu thu doc duoc tren stdout.
+     *
+     * VAN kiem claim token: lease co the da bi thu trong luc render (request cham,
+     * lenh reclaim chay), va o co the da thuoc ve mot luot khac. Ghi de len ket qua
+     * cua nguoi khac la lam hong ca hai.
+     *
+     * Dung lai DUNG `record()` cua duong hang doi. So cai chi duoc phep co MOT noi
+     * ghi — hai ban cai dat thi som muon cung lech nhau ve tien.
+     *
+     * Mat gi so voi duong hang doi: khong outbox. Tien trinh chet SAU khi provider
+     * da tinh tien thi khong co gi phat lai — xem `video:sweep-orphan-design-renders`.
+     *
+     * @param  list<array<string, mixed>>  $renders
+     * @return array{0: ?VideoDesignImage, 1: string}
+     */
+    public function recordDirectResult(
+        string $imageId,
+        string $claimToken,
+        bool $success,
+        ?string $renderError,
+        array $renders,
+    ): array {
+        if ($success && $renders === []) {
+            return [null, 'result_success_without_renders'];
+        }
+
+        $invalid = $this->firstInvalidItem($renders);
+
+        if ($invalid !== null) {
+            return [null, $invalid];
+        }
+
+        try {
+            return DB::transaction(function () use ($imageId, $claimToken, $success, $renderError, $renders) {
+                $projectId = VideoDesignImage::query()->whereKey($imageId)->value('project_id');
+
+                if ($projectId === null) {
+                    return [null, 'image_not_found'];
+                }
+
+                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+                $image = VideoDesignImage::query()->whereKey($imageId)->firstOrFail();
+
+                if ($this->alreadyRecorded($image->id, $renders)) {
+                    return [$image, 'replayed'];
+                }
+
+                if (! $this->ownsTheClaim($image, self::DIRECT_WORKER, $claimToken)) {
                     return [null, 'claim_not_owned_or_expired'];
                 }
 
