@@ -150,8 +150,10 @@ Route::group(
         Route::post('/{id}/inspiration/reset',  [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
         Route::post('/{id}/concept',            [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
         Route::post('/{id}/concept/reset',      [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
+        Route::post('/{id}/concept/rerun',      [VideoProjectsController::class, 'rerunConcept'])->name('video-projects.concept-rerun');
         Route::post('/{id}/anchor-image',       [VideoProjectsController::class, 'createAnchorImage'])->name('video-projects.anchor-image');
-        Route::post('/{id}/design-images/{imageId}/enqueue', [VideoProjectsController::class, 'enqueueDesignImage'])->name('video-projects.design-image-enqueue');
+        Route::post('/{id}/anchor/compile',     [VideoProjectsController::class, 'compileAnchorPrompt'])->name('video-projects.anchor-compile');
+        Route::post('/{id}/design-images/{imageId}/enqueue', [VideoProjectsController::class, 'renderDesignImage'])->name('video-projects.design-image-enqueue');
         Route::get('/{id}/reference',           [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
     });
 

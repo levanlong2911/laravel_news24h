@@ -477,7 +477,6 @@ class VideoRenderPlanService
         ?string $videoSessionId = null,
     ): ConceptDesignResult {
         $profile = $this->profileOrFail((string) ($article->category?->slug ?? ''));
-
         $accumulator = new CostAccumulatingLlmClient($this->spendingLlmClient());
         $this->lastRun = $accumulator;
 

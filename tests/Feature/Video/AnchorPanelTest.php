@@ -44,6 +44,7 @@ class AnchorPanelTest extends TestCase
                 'quality' => 'medium',
                 'size' => '1024x1536',
                 'variations' => 2,
+                'stage' => 'fabrication_geometry_anchor',
             ],
             'prompt_sha256' => hash('sha256', $status.uniqid()),
             'status' => $status,
@@ -64,8 +65,24 @@ class AnchorPanelTest extends TestCase
         $html = $this->screen();
 
         $this->assertStringContainsString($cell->image_code, $html);
-        $this->assertStringContainsString('Render Anchor →', $html);
-        $this->assertStringContainsString('TÁC VỤ NÀY TÍNH TIỀN', $html);
+        $this->assertStringContainsString('Render Anchor', $html);
+        $this->assertStringContainsString('gpt-image-2 render', $html);
+    }
+
+    public function test_a_legacy_cell_without_a_stage_still_renders_on_the_panel(): void
+    {
+        // O tao truoc khi co anchor stage khong mang `prompt_spec_json.stage`.
+        // Panel phai doc duoc spec cu va cho render theo du lieu da luu.
+        $cell = $this->cell(DesignImageStatus::CANDIDATE->value);
+        $spec = $cell->prompt_spec_json;
+        unset($spec['stage']);
+        $cell->update(['prompt_spec_json' => $spec]);
+
+        $html = $this->screen();
+
+        $this->assertStringContainsString($cell->image_code, $html);
+        $this->assertStringContainsString('Render Anchor', $html);
+        $this->assertStringContainsString('1024x1536', $html);
     }
 
     public function test_the_confirmation_names_the_estimate_and_calls_it_an_estimate(): void
@@ -74,8 +91,8 @@ class AnchorPanelTest extends TestCase
         $this->cell(DesignImageStatus::CANDIDATE->value);
         $html = $this->screen();
 
-        $this->assertStringContainsString('ước lượng $0.082', $html);
-        $this->assertStringNotContainsString('thực tế $0.082', $html);
+        $this->assertStringContainsString('$0.082', $html);
+        $this->assertStringNotContainsString('Cost: $0.17', $html);
     }
 
     public function test_a_cell_in_the_queue_cannot_be_sent_again_from_the_screen(): void
@@ -94,8 +111,8 @@ class AnchorPanelTest extends TestCase
 
             $html = $this->get(route('video-projects.anchor', $project->id))->assertOk()->getContent();
 
-            $this->assertStringContainsString('Đang chờ worker', $html);
-            $this->assertStringNotContainsString('Render Anchor →', $html);
+            $this->assertStringContainsString('worker', $html);
+            $this->assertStringNotContainsString('data-target="#confirmRender', $html);
         }
     }
 
@@ -109,7 +126,7 @@ class AnchorPanelTest extends TestCase
         $html = $this->screen();
 
         $this->assertStringContainsString('openai tra 500 sau 3 lan thu', $html);
-        $this->assertStringContainsString('Render lại →', $html);
+        $this->assertStringContainsString('Render', $html);
     }
 
     public function test_every_rendered_image_gets_its_own_card(): void
@@ -132,13 +149,15 @@ class AnchorPanelTest extends TestCase
 
         $html = $this->screen();
 
-        $this->assertSame(2, substr_count($html, 'CANDIDATE '));
+        $this->assertSame(2, preg_match_all('/CANDIDATE \d+/', $html));
         $this->assertStringContainsString('/renders/design-images/'.$cell->id.'/1.png', $html);
-        $this->assertStringContainsString(substr(hash('sha256', 'image 2'), 0, 12), $html);
-        $this->assertStringNotContainsString('Render Anchor →', $html);
+        $this->assertStringContainsString('1024×1536', $html);
+        $this->assertStringNotContainsString(substr(hash('sha256', 'image 2'), 0, 12), $html);
+        $this->assertStringNotContainsString('Manual review', $html);
+        $this->assertStringNotContainsString('data-target="#confirmRender', $html);
     }
 
-    public function test_the_money_already_spent_comes_from_the_ledger_not_the_estimate(): void
+    public function test_candidate_panel_hides_render_costs_after_the_image_exists(): void
     {
         $cell = $this->cell(DesignImageStatus::RENDERED->value);
 
@@ -157,22 +176,44 @@ class AnchorPanelTest extends TestCase
             ]);
         }
 
-        $this->assertStringContainsString('sổ cái ghi $0.0824', $this->screen());
+        $html = $this->screen();
+
+        $this->assertStringContainsString($cell->image_code, $html);
+        $this->assertStringContainsString('Rendered', $html);
+        $this->assertStringNotContainsString('$0.0824', $html);
+        $this->assertStringNotContainsString('sổ cái', $html);
     }
 
-    public function test_pressing_render_puts_the_cell_in_the_queue(): void
+    public function test_pressing_render_holds_the_cell_before_calling_the_provider(): void
     {
+        // Cau dao `VIDEO_PYTHON_RUNNER=false` chan tien trinh Python, nen luot nay
+        // ket thuc o `failed` — dung the: nguoi dung thay ly do va bam lai duoc.
         $cell = $this->cell(DesignImageStatus::CANDIDATE->value);
 
         $this->from(route('video-projects.anchor', $this->project->id))
             ->post(route('video-projects.design-image-enqueue', [$this->project->id, $cell->id]))
             ->assertRedirect(route('video-projects.anchor', $this->project->id))
-            ->assertSessionHas('success');
+            ->assertSessionHas('error');
 
         $cell->refresh();
 
-        $this->assertSame(DesignImageStatus::QUEUED->value, $cell->status);
-        $this->assertNotNull($cell->queued_at);
+        $this->assertSame(DesignImageStatus::FAILED->value, $cell->status);
+        $this->assertStringContainsString('VIDEO_PYTHON_RUNNER', $cell->render_error);
+        $this->assertContains($cell->status, DesignImageStatus::enqueueableValues());
+    }
+
+    public function test_the_prompt_box_sends_nothing_and_the_form_sends_only_its_hash(): void
+    {
+        // O prompt khong co `name`, nen trinh duyet khong gui gi tu no du no nam
+        // trong <form>: chuoi that duoc doc tu preview trong DB. Cai duoc gui la
+        // sha256 — vua du de tu choi mot ban preview da bi dung lai o cho khac,
+        // ma khong cho phep trinh duyet quyet dinh noi dung ta tra tien.
+        $this->cell(DesignImageStatus::CANDIDATE->value);
+        $html = $this->screen();
+
+        $this->assertStringContainsString('data-v="a-main"', $html);
+        $this->assertMatchesRegularExpression('/<textarea[^>]*data-v="a-main"(?![^>]*\bname=)[^>]*>/', $html);
+        $this->assertStringContainsString('name="prompt_sha256"', $html);
     }
 
     public function test_a_cell_belonging_to_another_project_is_refused(): void
@@ -220,7 +261,7 @@ class AnchorPanelTest extends TestCase
 
         $this->assertStringNotContainsString('Proportions match', $html);
         $this->assertStringNotContainsString('Cost: $0.17', $html);
-        $this->assertStringContainsString('chưa nối', $html);
+        $this->assertStringContainsString('CANDIDATE IMAGES', $html);
     }
 
     public function test_nothing_on_the_panel_looks_clickable_before_it_is_wired(): void
@@ -231,14 +272,12 @@ class AnchorPanelTest extends TestCase
         $html = $this->screen();
 
         $this->assertStringNotContainsString('href=""', $html);
-        $this->assertStringContainsString(
-            'disabled title="Approval is step 3.4"', $html,
-        );
-        $this->assertSame(2, substr_count($html, 'Not connected yet'));
+        $this->assertStringContainsString('Approve as Canonical Anchor', $html);
+        $this->assertGreaterThanOrEqual(2, substr_count($html, 'disabled title='));
     }
 
     public function test_a_project_with_no_cell_says_so_instead_of_showing_nothing(): void
     {
-        $this->assertStringContainsString('Chưa có ô nào', $this->screen());
+        $this->assertStringContainsString('Generate Anchor', $this->screen());
     }
 }

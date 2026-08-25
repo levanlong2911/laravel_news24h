@@ -4,7 +4,7 @@ namespace App\Enums;
 
 use App\Traits\EnumTrait;
 
-enum ImageResolution: string
+enum ImageSize: string
 {
     use EnumTrait;
 

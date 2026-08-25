@@ -19,7 +19,7 @@ namespace App\Services\Admin;
  * Checks:
  *   1. validateHook()              — bestHook is non-empty
  *   2. validateStructureTemplate() — structureTemplate is non-empty after
- *                                    config default resolution
+ *                                    config default size
  */
 class PromptGuard
 {

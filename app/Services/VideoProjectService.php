@@ -2,9 +2,10 @@
 
 namespace App\Services;
 
+use App\Enums\AnchorStage;
 use App\Enums\ImageModel;
 use App\Enums\ImageQuality;
-use App\Enums\ImageResolution;
+use App\Enums\ImageSize;
 use App\Enums\ImageVariations;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
@@ -13,12 +14,15 @@ use App\Models\VideoProject;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\ConceptStageRunner;
+use App\Services\Video\DesignImageDirectRenderer;
 use App\Services\Video\DesignImageQueue;
 use App\Services\Video\DesignImageRenderer;
 use App\Services\Video\DesignImageStore;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\PythonPromptCompiler;
+use App\Video\Concept\ClaudeConceptDesigner;
+use App\Video\Concept\Provenance;
 use App\Video\Concept\Viewpoint;
 use Illuminate\Support\Facades\Log;
 
@@ -42,6 +46,8 @@ class VideoProjectService
 
     private DesignImageRenderer $designImageRenderer;
 
+    private DesignImageDirectRenderer $designImageDirectRenderer;
+
     private VideoRenderPlanService $renderPlanService;
 
     public function __construct(
@@ -55,6 +61,7 @@ class VideoProjectService
         DesignImageStore $designImageStore,
         DesignImageQueue $designImageQueue,
         DesignImageRenderer $designImageRenderer,
+        DesignImageDirectRenderer $designImageDirectRenderer,
     ) {
         $this->videoProjectRepository = $videoProjectRepository;
         $this->articleService = $articleService;
@@ -66,6 +73,7 @@ class VideoProjectService
         $this->designImageStore = $designImageStore;
         $this->designImageQueue = $designImageQueue;
         $this->designImageRenderer = $designImageRenderer;
+        $this->designImageDirectRenderer = $designImageDirectRenderer;
     }
 
     public function listAll(): iterable
@@ -112,10 +120,12 @@ class VideoProjectService
             return [null, 'Du an nay khong gan voi bai viet nao'];
         }
 
+        $dataInput = $this->inspirationInput($project);
+
         [$stage, $token, $reason] = $this->stageStore->claimProjectStage(
             $project->id,
             PlanningStageName::INSPIRATION,
-            $this->inspirationInput($project),
+            $dataInput,
         );
 
         if ($reason === 'already_succeeded') {
@@ -126,7 +136,7 @@ class VideoProjectService
             return [null, 'Đang có một lượt phân tích chạy cho dự án này — đợi xong rồi thử lại'];
         }
 
-        return $this->inspirationRunner->run($stage, $token, $project->article);
+        return $this->inspirationRunner->callInHaiku($stage, $token, $project->article);
     }
 
     /** @return array<string, mixed> */
@@ -142,10 +152,13 @@ class VideoProjectService
             return $this->emptyInspiration('Du an nay khong gan voi bai viet nao');
         }
 
+        // data send Haiku
+        $projectById = $this->inspirationInput($project);
+
         [$latest, $matchesInput] = $this->stageStore->latestStageForProject(
             $project->id,
             PlanningStageName::INSPIRATION,
-            $this->inspirationInput($project),
+            $projectById,
         );
 
         if ($latest === null) {
@@ -197,8 +210,8 @@ class VideoProjectService
             : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
     }
 
-    /** @return array{0: ?string, 1: string} */
-    public function runConcept(string $projectId): array
+    /** @return array{0: ?array<string, mixed>, 1: string} */
+    public function runConcept(string $projectId, bool $force = false): array
     {
         $project = $this->videoProjectRepository->getById($projectId);
 
@@ -212,30 +225,35 @@ class VideoProjectService
             return [null, 'Chua co ket qua phan tich — bam Goi Haiku truoc'];
         }
 
+        $dataInput = $this->conceptInput($project, $briefStored);
+
         [$stage, $token, $reason] = $this->stageStore->claimProjectStage(
             $project->id,
             PlanningStageName::CONCEPT,
-            $this->conceptInput($project, $briefStored),
+            $dataInput,
+            $force,
         );
 
         if ($reason === 'already_succeeded') {
-            return [$this->anchorPromptFor($project, $stage->output_json ?? []), 'cached'];
+            return [$stage->output_json ?? [], 'cached'];
         }
 
         if ($token === null) {
             return [null, 'Dang co mot luot dung concept chay cho du an nay'];
         }
 
-        [$concept, $runReason] = $this->conceptRunner->run(
+        $dataHaiku = $this->renderPlanService->briefFromStorage($briefStored);
+
+        [$concept, $runReason] = $this->conceptRunner->goToSonnet(
             $stage,
             $token,
             $project->article,
-            $this->renderPlanService->briefFromStorage($briefStored),
+            $dataHaiku,
         );
 
         return $concept === null
             ? [null, $runReason]
-            : [$this->anchorPromptFor($project, $concept), 'ok'];
+            : [$concept, 'ok'];
     }
 
     /** @return array<string, mixed> */
@@ -270,6 +288,9 @@ class VideoProjectService
         $succeeded = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value;
         $claimed = $latest->status === VideoPlanningStageStatus::RUNNING->value;
 
+        $output = $succeeded ? ($latest->output_json ?? []) : [];
+        $decisions = $output['decisions'] ?? [];
+
         return [
             'analysed' => $succeeded,
             'status' => $latest->status,
@@ -277,8 +298,69 @@ class VideoProjectService
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest->error_message,
             'can_run' => ! $matchesInput || $latest->status === VideoPlanningStageStatus::FAILED->value,
-            'prompt' => $succeeded ? $this->anchorPromptFor($project, $latest->output_json ?? []) : null,
+            'thesis' => $output['design_thesis'] ?? null,
+            'identity' => $output['design_identity'] ?? [],
+            'relationships' => $output['form_relationships'] ?? [],
+            'features' => $output['signature_features'] ?? [],
+            'decisions' => $decisions,
+            'json' => $output,
+            'meta' => $succeeded ? [
+                'model' => $latest->model,
+                'instruction_version' => $latest->instruction_version,
+                'tokens_in' => $latest->tokens_in,
+                'tokens_out' => $latest->tokens_out,
+                'cost_usd' => $latest->cost_usd,
+                'finished_at' => $latest->finished_at,
+            ] : [],
+            'provenance_summary' => $this->provenanceSummary($decisions),
+            'frozen_at' => $succeeded ? $latest->finished_at : null,
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $decisions
+     * @return array<string, int>|null
+     */
+    private function provenanceSummary(array $decisions): ?array
+    {
+        if ($decisions === []) {
+            return null;
+        }
+
+        $counts = [Provenance::Inspired->value => 0, Provenance::Invented->value => 0];
+
+        foreach ($decisions as $decision) {
+            $value = (string) ($decision['provenance'] ?? '');
+
+            if (array_key_exists($value, $counts)) {
+                $counts[$value]++;
+            }
+        }
+
+        return [
+            'total' => count($decisions),
+            'inspired' => $counts[Provenance::Inspired->value],
+            'invented' => $counts[Provenance::Invented->value],
+        ];
+    }
+
+    /**
+     * Duong render dang bat.
+     *
+     * `direct` la duong DONG BO cua production: claim + lease ngay tren hang du
+     * lieu roi goi provider, cung hinh dang voi duong Haiku/Sonnet. Boc mot Job
+     * ra ngoai sau nay khong phai sua gi ben trong.
+     *
+     * `queue` la duong worker Python poll — de danh cho luc chay nen hang loat.
+     *
+     * Ca hai deu di qua `DesignImageQueue::record()` khi ghi so cai: so cai chi
+     * duoc phep co MOT noi ghi.
+     */
+    private function renderer(): DesignImageRenderer|DesignImageDirectRenderer
+    {
+        return config('video.render_mode') === 'direct'
+            ? $this->designImageDirectRenderer
+            : $this->designImageRenderer;
     }
 
     /** @return list<array<string, mixed>> */
@@ -289,9 +371,9 @@ class VideoProjectService
 
     /**
      * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
-     *                                                reason: queued|already_queued|not_enqueueable|image_not_found
+     *                                                reason: rendered|failed|not_enqueueable|image_not_found
      */
-    public function enqueueDesignImage(string $projectId, string $imageId): array
+    public function renderDesignImage(string $projectId, string $imageId): array
     {
         // O phai thuoc DUNG du an tren URL. Khong co cho nao mot id la duoc day
         // o cua du an khac vao hang doi — do la tieu tien cua nguoi khac.
@@ -304,34 +386,51 @@ class VideoProjectService
             return [null, 'image_not_found'];
         }
 
-        return $this->designImageQueue->enqueue($imageId);
+        return $this->renderer()->renderNow($imageId);
     }
 
     /**
-     * Tao o roi RENDER NGAY, dung doi tai cho. Dedupe cua `createCandidate()` va
-     * `enqueueableValues()` van la hai chot giu tien: bam muoi lan cung mot thiet
-     * lap thi lan dau tao o va render, chin lan sau gap `already_exists` roi
-     * `not_enqueueable` — khong co lan tra tien thu hai.
+     * Nut Generate KHONG bien dich lai. Prompt da nam trong preview tu luot
+     * Compile; form chi gui hash de chung minh nguoi dung dang nhin dung ban do.
+     * Hash lech nghia la preview da bi dung lai o cho khac -> tu choi, khong tieu tien.
      *
-     * @return array{0: ?VideoDesignImage, 1: string}
+     * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
+     *                                                reason: rendered|failed|timed_out|already_exists|
+     *                                                anchor_prompt_missing|anchor_prompt_stale|project_not_found
      */
-    public function createAndRenderAnchorImage(
+    public function renderAnchorFromPreview(
         string $projectId,
         string $creator,
+        string $promptHash,
         ImageModel $model,
         ImageQuality $quality,
-        ImageResolution $resolution,
         ImageVariations $variations,
     ): array {
-        [$image, $reason] = $this->createAnchorImage(
-            $projectId, $creator, $model, $quality, $resolution, $variations,
-        );
+        $preview = $this->anchorPromptPreview($projectId);
 
-        if ($image === null) {
-            return [null, $reason];
+        if ($preview === null) {
+            return [null, 'anchor_prompt_missing'];
         }
 
-        return $this->designImageRenderer->renderNow($image->id);
+        if ($preview['prompt_sha256'] !== $promptHash) {
+            return [null, 'anchor_prompt_stale'];
+        }
+
+        // Ba enum nay da qua `tryFrom` trong `anchorPromptPreview()`, nen `from()`
+        // o day khong the nem.
+        [$image, $reason] = $this->createAnchorImage(
+            $projectId,
+            $creator,
+            $preview['prompt'],
+            AnchorStage::from($preview['stage']),
+            Viewpoint::from($preview['viewpoint']),
+            ImageSize::from($preview['size']),
+            $model,
+            $quality,
+            $variations,
+        );
+
+        return $image === null ? [null, $reason] : $this->renderer()->renderNow($image->id);
     }
 
     public function nextImageCode(string $projectId, string $creator): string
@@ -341,34 +440,38 @@ class VideoProjectService
 
     /**
      * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
-     *                                                reason: created|already_exists|project_not_found|<loi bien dich prompt>
+     *                                                reason: created|already_exists|project_not_found
      */
     public function createAnchorImage(
         string $projectId,
         string $creator,
+        string $prompt,
+        AnchorStage $stage,
+        Viewpoint $viewpoint,
+        ImageSize $size,
         ImageModel $model,
         ImageQuality $quality,
-        ImageResolution $resolution,
         ImageVariations $variations,
     ): array {
-        [$prompt, $reason] = $this->compiledAnchorPrompt($projectId);
-
-        if ($prompt === null) {
-            return [null, $reason];
-        }
-
         return $this->designImageStore->createCandidate($projectId, $creator, [
             'prompt' => $prompt,
+            'operation' => 'generate',
             'model' => $model->value,
             'quality' => $quality->value,
-            'size' => $resolution->value,
+            'size' => $size->value,
             'variations' => $variations->value,
+            'stage' => $stage->value,
+            'viewpoint' => $viewpoint->value,
         ]);
     }
 
     /** @return array{0: ?string, 1: string} */
-    public function compiledAnchorPrompt(string $projectId): array
-    {
+    public function compiledAnchorPrompt(
+        string $projectId,
+        AnchorStage $stage,
+        Viewpoint $viewpoint,
+        ImageSize $size,
+    ): array {
         $project = $this->videoProjectRepository->getById($projectId);
 
         if ($project === null) {
@@ -387,7 +490,66 @@ class VideoProjectService
             return [null, 'no_concept'];
         }
 
-        return $this->promptCompiler->compile($category, $concept);
+        return $this->promptCompiler->compile(
+            $category, $concept, $viewpoint->value,
+            $size->width(), $size->height(), $stage->value,
+        );
+    }
+
+    /** @return array{prompt:string,prompt_sha256:string,stage:string,viewpoint:string,size:string,compiled_at:string}|null */
+    public function anchorPromptPreview(string $projectId): ?array
+    {
+        $project = $this->videoProjectRepository->getById($projectId);
+        $preview = $project?->metadata_json['anchor_prompt_preview'] ?? null;
+
+        if (! is_array($preview)) {
+            return null;
+        }
+
+        $size = $preview['size'] ?? $preview['resolution'] ?? null;
+        $preview['size'] = $size;
+
+        foreach (['prompt', 'prompt_sha256', 'stage', 'viewpoint', 'size', 'compiled_at'] as $key) {
+            if (! is_string($preview[$key] ?? null) || trim($preview[$key]) === '') {
+                return null;
+            }
+        }
+
+        if (AnchorStage::tryFrom($preview['stage']) === null
+            || Viewpoint::tryFrom($preview['viewpoint']) === null
+            || ImageSize::tryFrom($preview['size']) === null) {
+            return null;
+        }
+
+        return $preview;
+    }
+
+    public function storeAnchorPromptPreview(
+        string $projectId,
+        AnchorStage $stage,
+        Viewpoint $viewpoint,
+        ImageSize $size,
+        string $prompt,
+    ): bool {
+        $project = $this->videoProjectRepository->getById($projectId);
+
+        if ($project === null) {
+            return false;
+        }
+
+        $metadata = $project->metadata_json ?? [];
+        $metadata['anchor_prompt_preview'] = [
+            'prompt' => $prompt,
+            'prompt_sha256' => hash('sha256', $prompt),
+            'stage' => $stage->value,
+            'viewpoint' => $viewpoint->value,
+            'size' => $size->value,
+            'compiled_at' => now()->toIso8601String(),
+        ];
+
+        $project->metadata_json = $metadata;
+
+        return $project->save();
     }
 
     /** @return array{0: bool, 1: string} */
@@ -434,7 +596,15 @@ class VideoProjectService
             'stuck' => false,
             'error' => $reason,
             'can_run' => true,
-            'prompt' => null,
+            'thesis' => null,
+            'identity' => [],
+            'relationships' => [],
+            'features' => [],
+            'decisions' => [],
+            'json' => [],
+            'meta' => [],
+            'provenance_summary' => null,
+            'frozen_at' => null,
         ];
     }
 
@@ -447,15 +617,8 @@ class VideoProjectService
         return [
             'article_id' => $project->article->id,
             'inspiration_sha256' => hash('sha256', json_encode($briefStored, JSON_THROW_ON_ERROR)),
+            'instruction_version' => ClaudeConceptDesigner::INSTRUCTION_VERSION,
         ];
-    }
-
-    /** @param array<string, mixed> $concept */
-    private function anchorPromptFor(VideoProject $project, array $concept): ?string
-    {
-        return $concept === []
-            ? null
-            : $this->renderPlanService->anchorPrompt($project->article, $concept, Viewpoint::FrontThreeQuarter);
     }
 
     /** @return array<string, mixed> */
