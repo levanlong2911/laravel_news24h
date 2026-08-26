@@ -7,46 +7,23 @@ use Illuminate\Support\Facades\Log;
 
 class ClaudeWriterService
 {
-    private const MODELS = [
-        'haiku' => 'claude-haiku-4-5-20251001',
-        'sonnet' => 'claude-sonnet-4-6',
+
+    private const MODEL_CATALOG = [
+        'haiku' => [
+            'id' => 'claude-haiku-4-5-20251001',
+            'max_tokens' => 4096,
+            'input_usd_per_mtok' => 1.00,
+            'output_usd_per_mtok' => 5.00,
+        ],
+        'sonnet' => [
+            'id' => 'claude-sonnet-4-6',
+            'max_tokens' => 8000,
+            'input_usd_per_mtok' => 3.00,
+            'output_usd_per_mtok' => 15.00,
+        ],
     ];
 
-    private const MAX_TOKENS = [
-        'haiku' => 4096,
-        'sonnet' => 8000,
-    ];
 
-    /**
-     * Gia THAT theo bang gia Anthropic, USD / 1M token.
-     *
-     * SUA 2026-07-31: haiku truoc ghi 0.80/4.00 — SAI, gia dung la 1.00/5.00.
-     * He qua: MOI con so chi phi ghi lai truoc ngay nay deu THAP hon thuc te
-     * dung 20% (nhan 1.25 de ra so that). Luong video chay 100% Haiku nen bi
-     * anh huong toan bo; luong CMS chi lech o cac cu Haiku, phan Sonnet dung.
-     * Phat hien bang cach doi chieu voi platform.claude.com/usage.
-     *
-     * sonnet 3.00/15.00 = Sonnet 4.6, DA DUNG, khong doi.
-     */
-    public const PRICE_INPUT = [
-        'haiku' => 1.00,
-        'sonnet' => 3.00,
-    ];
-
-    public const PRICE_OUTPUT = [
-        'haiku' => 5.00,
-        'sonnet' => 15.00,
-    ];
-
-    /**
-     * He so gia cho token cache, nhan voi PRICE_INPUT cua chinh model do.
-     *
-     * Cache doc re gan 10 lan, cache GHI dat hon input thuong 25% (TTL 5 phut).
-     * Hien project CHUA gui `cache_control` nen hai truong nay luon 0 — tinh
-     * san vi `usage.input_tokens` chi la PHAN CHUA CACHE: ngay nao bat cache
-     * ma khong cong hai truong nay thi chi phi se tut xuong am tham, dung kieu
-     * sai vua phai di tim.
-     */
     private const CACHE_WRITE_MULTIPLIER = 1.25;
 
     private const CACHE_READ_MULTIPLIER = 0.10;
@@ -61,31 +38,41 @@ class ClaudeWriterService
 
     private const MAX_CONCURRENT = 8;   // max đồng thời (parallel workers)
 
-    /**
-     * $modelType co phai khoa hop le trong bang MODELS khong?
-     *
-     * Chi mo ra CAU HOI, giu nguyen bang MODELS private — caller khong can biet
-     * model id day du, chi can biet khoa cua minh co dung khong.
-     *
-     * Ton tai vi hai default trong class nay LECH NHAU: generate() roi ve
-     * 'haiku' con costUsd() roi ve 'sonnet'. Nen mot khoa sai se goi Haiku
-     * nhung ghi hoa don gia Sonnet, va khong co gi bao loi. Caller nen hoi
-     * truoc (xem ClaudeWriterAdapter::complete()) thay vi de roi am tham.
-     */
     public static function supports(string $modelType): bool
     {
-        return isset(self::MODELS[$modelType]);
+        return isset(self::MODEL_CATALOG[$modelType]);
+    }
+
+    /**
+     * @return array{id: string, max_tokens: int, input_usd_per_mtok: float, output_usd_per_mtok: float}
+     */
+    private static function entry(string $modelType): array
+    {
+        if (! isset(self::MODEL_CATALOG[$modelType])) {
+            throw new \InvalidArgumentException(sprintf(
+                'Khoa model khong co trong MODEL_CATALOG: "%s". Hop le: %s',
+                $modelType,
+                implode(', ', array_keys(self::MODEL_CATALOG)),
+            ));
+        }
+
+        return self::MODEL_CATALOG[$modelType];
+    }
+
+    public static function modelId(string $modelType): string
+    {
+        return self::entry($modelType)['id'];
+    }
+
+    public static function maxTokensFor(string $modelType): int
+    {
+        return self::entry($modelType)['max_tokens'];
     }
 
     /**
      * @param  int  $cacheWriteTokens  `usage.cache_creation_input_tokens`
      * @param  int  $cacheReadTokens  `usage.cache_read_input_tokens`
-     *
-     * Hai tham so cache co MAC DINH 0 nen moi caller cu (ArticlePipelineService,
-     * HookEngine, test) khong phai doi gi. Chung khong phai trang tri: Anthropic
-     * tinh `usage.input_tokens` la PHAN CHUA CACHE, nen tong prompt that =
-     * input + cache_write + cache_read. Bo qua hai truong do la bo qua tien
-     * that ngay khi ai do bat cache.
+
      */
     public static function costUsd(
         int $inputTokens,
@@ -94,8 +81,9 @@ class ClaudeWriterService
         int $cacheWriteTokens = 0,
         int $cacheReadTokens = 0,
     ): float {
-        $priceIn = self::PRICE_INPUT[$modelType] ?? self::PRICE_INPUT['sonnet'];
-        $priceOut = self::PRICE_OUTPUT[$modelType] ?? self::PRICE_OUTPUT['sonnet'];
+        $entry = self::entry($modelType);
+        $priceIn = $entry['input_usd_per_mtok'];
+        $priceOut = $entry['output_usd_per_mtok'];
 
         return (
             $inputTokens * $priceIn
@@ -128,23 +116,14 @@ class ClaudeWriterService
 
     /**
      * @param  int|null  $maxTokens  Trần output cho RIÊNG cú gọi này. null → dùng bảng
-     *                               MAX_TOKENS theo model (hành vi cũ, không đổi cho caller phía CMS).
+     *                               trần mặc định theo model (hành vi cũ, không đổi cho caller phía CMS).
      *
-     * Thêm tham số này 2026-07-30 vì bug thật: `LlmRequest` ĐÃ có `maxTokens`
-     * (mặc định 8192) nhưng `ClaudeWriterAdapter` không có đường nào truyền
-     * xuống, nên mọi cú gọi của pipeline video đều rơi về 4096 của bảng. Trích
-     * xuất một bài 2851 ký tự cần hơn 4096 token output ⇒ JSON bị cắt cụt ⇒
-     * `MalformedExtraction`. Đúng LỚP LỖI đã sửa ngày 2026-07-29 với
-     * `$request->model`: field có thật, ý định có thật, rơi âm thầm ở adapter.
-     *
-     * Nâng trần KHÔNG làm tăng chi phí mỗi cú gọi (tính theo token THẬT SỰ sinh
-     * ra), và KHÔNG chạm cổng duyệt chi vì `GatedLlmClient` ước lượng theo
-     * INPUT token, không theo trần output.
+
      */
     public function generate(string $prompt, string $modelType = 'haiku', string $system = '', ?int $maxTokens = null, ?float $temperature = null): ClaudeResponse
     {
-        $model = self::MODELS[$modelType] ?? self::MODELS['haiku'];
-        $maxTokens ??= self::MAX_TOKENS[$modelType] ?? 2048;
+        $model = self::modelId($modelType);
+        $maxTokens ??= self::maxTokensFor($modelType);
 
         $requestBody = $this->requestBody($prompt, $model, $maxTokens, $system, $temperature);
         $encodedBody = json_encode($requestBody, JSON_UNESCAPED_UNICODE);

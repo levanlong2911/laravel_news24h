@@ -142,23 +142,18 @@ class VideoRenderPlanUsageLogTest extends TestCase
 
     public function test_the_price_table_matches_the_official_anthropic_rates(): void
     {
-        // ĐỎ 2026-07-31: bảng giá ghi haiku 0.80/4.00 — SAI, giá thật 1.00/5.00.
-        // Phát hiện vì số trong trang Claude Usage không khớp
-        // platform.claude.com/usage. Lệch đúng 1.25× ⇒ MỌI con số chi phí ghi
-        // trước ngày đó đều thấp hơn thực tế 20%.
-        //
-        // Khoá bằng hằng số viết tay chứ không đọc lại chính bảng đó — đọc lại
-        // thì test luôn xanh kể cả khi bảng sai, tức là không khoá gì cả.
-        $this->assertSame(1.00, \App\Services\Admin\ClaudeWriterService::PRICE_INPUT['haiku']);
-        $this->assertSame(5.00, \App\Services\Admin\ClaudeWriterService::PRICE_OUTPUT['haiku']);
-        $this->assertSame(3.00, \App\Services\Admin\ClaudeWriterService::PRICE_INPUT['sonnet']);
-        $this->assertSame(15.00, \App\Services\Admin\ClaudeWriterService::PRICE_OUTPUT['sonnet']);
+
+        $priceIn = fn (string $m) => \App\Services\Admin\ClaudeWriterService::costUsd(1_000_000, 0, $m);
+        $priceOut = fn (string $m) => \App\Services\Admin\ClaudeWriterService::costUsd(0, 1_000_000, $m);
+
+        $this->assertSame(1.00, $priceIn('haiku'));
+        $this->assertSame(5.00, $priceOut('haiku'));
+        $this->assertSame(3.00, $priceIn('sonnet'));
+        $this->assertSame(15.00, $priceOut('sonnet'));
     }
 
     public function test_measured_production_run_reproduces_the_known_cost(): void
     {
-        // Số token THẬT đo từ log lần chạy 2026-07-30 10:00 (9 cú gọi Haiku).
-        // Giá ĐÚNG: $1.00/1M in, $5.00/1M out.
         $expected = 10781 / 1e6 * 1.00 + 6168 / 1e6 * 5.00;
 
         $this->assertEqualsWithDelta(0.041621, $expected, 1e-6);
@@ -172,8 +167,6 @@ class VideoRenderPlanUsageLogTest extends TestCase
 
     public function test_cache_tokens_are_billed_at_their_own_rates(): void
     {
-        // `usage.input_tokens` của Anthropic CHỈ là phần chưa cache. Ba loại
-        // token đầu vào có ba đơn giá khác nhau — cộng gộp một giá là sai tiền.
         $inputOnly = \App\Services\Admin\ClaudeWriterService::costUsd(1000, 0, 'haiku');
         $cacheWrite = \App\Services\Admin\ClaudeWriterService::costUsd(0, 0, 'haiku', cacheWriteTokens: 1000);
         $cacheRead = \App\Services\Admin\ClaudeWriterService::costUsd(0, 0, 'haiku', cacheReadTokens: 1000);
@@ -184,7 +177,6 @@ class VideoRenderPlanUsageLogTest extends TestCase
 
     public function test_cache_tokens_default_to_zero_so_old_callers_are_unaffected(): void
     {
-        // ArticlePipelineService/HookEngine gọi costUsd() 3 tham số như cũ.
         $this->assertSame(
             \App\Services\Admin\ClaudeWriterService::costUsd(1000, 500, 'haiku'),
             \App\Services\Admin\ClaudeWriterService::costUsd(1000, 500, 'haiku', 0, 0),
@@ -193,7 +185,7 @@ class VideoRenderPlanUsageLogTest extends TestCase
 
     public function test_total_input_tokens_includes_the_cache_tokens(): void
     {
-        // Lấy `inputTokens` một mình là ĐẾM THIẾU khi có cache.
+
         $response = new \App\Services\Admin\ClaudeResponse('x', 100, 50, 'end_turn', 200, 700);
 
         $this->assertSame(1000, $response->totalInputTokens());
