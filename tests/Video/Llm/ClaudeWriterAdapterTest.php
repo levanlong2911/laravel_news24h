@@ -290,4 +290,40 @@ class ClaudeWriterAdapterTest extends TestCase
 
         $this->assertSame('day du', $adapter->complete($this->request('haiku'))->text);
     }
+
+    private function providerSpy(string $providerModel): ClaudeWriterService
+    {
+        $writer = $this->createMock(ClaudeWriterService::class);
+        $writer->method('generate')
+            ->willReturn(new ClaudeResponse('ket qua', 100, 50, 'end_turn', 0, 0, $providerModel));
+
+        return $writer;
+    }
+
+    public function test_the_provider_model_reaches_the_response(): void
+    {
+        $adapter = new ClaudeWriterAdapter($this->providerSpy('claude-haiku-4-5-20251001'));
+
+        $this->assertSame(
+            'claude-haiku-4-5-20251001',
+            $adapter->complete($this->request('haiku'))->providerModel,
+        );
+    }
+
+    public function test_the_alias_stays_in_the_model_field(): void
+    {
+        $adapter = new ClaudeWriterAdapter($this->providerSpy('claude-sonnet-4-6'));
+
+        $response = $adapter->complete($this->request('sonnet'));
+
+        $this->assertSame('sonnet', $response->model);
+        $this->assertSame('claude-sonnet-4-6', $response->providerModel);
+    }
+
+    public function test_an_unnamed_provider_model_leaves_the_field_empty(): void
+    {
+        $adapter = new ClaudeWriterAdapter($this->providerSpy(''));
+
+        $this->assertSame('', $adapter->complete($this->request('haiku'))->providerModel);
+    }
 }

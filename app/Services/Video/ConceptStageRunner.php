@@ -75,6 +75,7 @@ class ConceptStageRunner
 
         return [
             'model' => 'sonnet',
+            'provider_model' => $totals['provider_model'] ?? null,
             'instruction_version' => ClaudeConceptDesigner::INSTRUCTION_VERSION,
             'tokens_in' => $totals['tokens_in'] ?? 0,
             'tokens_out' => $totals['tokens_out'] ?? 0,

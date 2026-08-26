@@ -113,6 +113,7 @@ class InspirationStageRunner
 
         return [
             'model' => 'haiku',
+            'provider_model' => $totals['provider_model'] ?? null,
             'instruction_version' => ClaudeInspirationAnalyst::INSTRUCTION_VERSION,
             'tokens_in' => $totals['tokens_in'] ?? 0,
             'tokens_out' => $totals['tokens_out'] ?? 0,

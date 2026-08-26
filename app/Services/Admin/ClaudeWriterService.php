@@ -93,6 +93,21 @@ class ClaudeWriterService
         ) / 1_000_000;
     }
 
+    private function responseFromBody(array $json): ClaudeResponse
+    {
+        return new ClaudeResponse(
+            $json['content'][0]['text'] ?? '',
+            $json['usage']['input_tokens'] ?? 0,
+            $json['usage']['output_tokens'] ?? 0,
+            $json['stop_reason'] ?? '',
+            // Luon 0 khi chua bat cache_control — doc de phong, xem
+            // docblock CACHE_WRITE_MULTIPLIER.
+            $json['usage']['cache_creation_input_tokens'] ?? 0,
+            $json['usage']['cache_read_input_tokens'] ?? 0,
+            $json['model'] ?? '',
+        );
+    }
+
     /** @return array<string, mixed> */
     private function requestBody(string $prompt, string $model, int $maxTokens, string $system, ?float $temperature): array
     {
@@ -169,16 +184,9 @@ class ClaudeWriterService
                 $json = json_decode($body, true);
 
                 if ($httpStatus === 200) {
-                    $stopReason = $json['stop_reason'] ?? '';
-                    $text = $json['content'][0]['text'] ?? '';
-                    $inputTokens = $json['usage']['input_tokens'] ?? 0;
-                    $outputTokens = $json['usage']['output_tokens'] ?? 0;
-                    // Luon 0 khi chua bat cache_control — doc de phong, xem
-                    // docblock CACHE_WRITE_MULTIPLIER.
-                    $cacheWriteTokens = $json['usage']['cache_creation_input_tokens'] ?? 0;
-                    $cacheReadTokens = $json['usage']['cache_read_input_tokens'] ?? 0;
+                    $response = $this->responseFromBody($json);
 
-                    if ($stopReason === 'max_tokens') {
+                    if ($response->stopReason === 'max_tokens') {
                         // Van TRA VE ban cat do (khong nem o day) — caller CMS
                         // co the dung duoc doan van dang do. Nhung tu 2026-07-30
                         // `stop_reason` di THEO ClaudeResponse, nen caller nao
@@ -186,24 +194,25 @@ class ClaudeWriterService
                         // `wasTruncated()` thay vi doan qua log.
                         Log::warning('Claude output truncated at max_tokens — returning partial', [
                             'model' => $model,
-                            'tokens' => $outputTokens,
+                            'tokens' => $response->outputTokens,
                             'max_tokens' => $maxTokens,
                         ]);
                     } else {
                         Log::debug('Claude OK', [
                             'model' => $model,
+                            'provider_model' => $response->providerModel,
                             'attempt' => $attempt,
-                            'stop_reason' => $stopReason,
-                            'input_tokens' => $inputTokens,
-                            'output_tokens' => $outputTokens,
-                            'cache_write_tokens' => $cacheWriteTokens,
-                            'cache_read_tokens' => $cacheReadTokens,
-                            'cost_usd' => round(self::costUsd($inputTokens, $outputTokens, $modelType, $cacheWriteTokens, $cacheReadTokens), 6),
-                            'chars' => strlen($text),
+                            'stop_reason' => $response->stopReason,
+                            'input_tokens' => $response->inputTokens,
+                            'output_tokens' => $response->outputTokens,
+                            'cache_write_tokens' => $response->cacheWriteTokens,
+                            'cache_read_tokens' => $response->cacheReadTokens,
+                            'cost_usd' => round(self::costUsd($response->inputTokens, $response->outputTokens, $modelType, $response->cacheWriteTokens, $response->cacheReadTokens), 6),
+                            'chars' => strlen($response->text),
                         ]);
                     }
 
-                    return new ClaudeResponse($text, $inputTokens, $outputTokens, $stopReason, $cacheWriteTokens, $cacheReadTokens);
+                    return $response;
                 }
 
                 if ($httpStatus === 400) {

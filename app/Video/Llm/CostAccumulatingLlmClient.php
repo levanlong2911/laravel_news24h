@@ -14,6 +14,9 @@ final class CostAccumulatingLlmClient implements LlmClient
 
     private int $latencyMs = 0;
 
+    /** @var list<string> */
+    private array $providerModels = [];
+
     public function __construct(
         private readonly LlmClient $inner,
     ) {}
@@ -28,11 +31,15 @@ final class CostAccumulatingLlmClient implements LlmClient
         $this->costUsd += $response->costUsd;
         $this->latencyMs += $response->latencyMs;
 
+        if ($response->providerModel !== '' && ! in_array($response->providerModel, $this->providerModels, true)) {
+            $this->providerModels[] = $response->providerModel;
+        }
+
         return $response;
     }
 
     /**
-     * @return array{call_count: int, tokens_in: int, tokens_out: int, cost_usd: float, latency_ms: int}
+     * @return array{call_count: int, tokens_in: int, tokens_out: int, cost_usd: float, latency_ms: int, provider_model: string}
      */
     public function totals(): array
     {
@@ -42,6 +49,7 @@ final class CostAccumulatingLlmClient implements LlmClient
             'tokens_out' => $this->tokensOut,
             'cost_usd' => $this->costUsd,
             'latency_ms' => $this->latencyMs,
+            'provider_model' => implode(', ', $this->providerModels),
         ];
     }
 
@@ -52,5 +60,6 @@ final class CostAccumulatingLlmClient implements LlmClient
         $this->tokensOut = 0;
         $this->costUsd = 0.0;
         $this->latencyMs = 0;
+        $this->providerModels = [];
     }
 }

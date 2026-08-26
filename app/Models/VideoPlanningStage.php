@@ -13,7 +13,7 @@ class VideoPlanningStage extends Model
         'project_id', 'session_id', 'planning_revision', 'stage', 'status',
         'input_json', 'input_hash', 'raw_response', 'output_json', 'output_hash',
         'claim_token', 'claimed_at', 'lease_expires_at',
-        'model', 'instruction_version', 'tokens_in', 'tokens_out', 'cost_usd',
+        'model', 'provider_model', 'instruction_version', 'tokens_in', 'tokens_out', 'cost_usd',
         'error_message', 'started_at', 'finished_at',
     ];
 

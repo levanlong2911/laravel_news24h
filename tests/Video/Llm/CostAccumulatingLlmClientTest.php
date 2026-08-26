@@ -53,6 +53,7 @@ class CostAccumulatingLlmClientTest extends TestCase
             'tokens_out' => 150,
             'cost_usd'   => 0.03,
             'latency_ms' => 600,
+            'provider_model' => '',
         ], $client->totals());
     }
 
@@ -62,6 +63,7 @@ class CostAccumulatingLlmClientTest extends TestCase
 
         $this->assertSame([
             'call_count' => 0, 'tokens_in' => 0, 'tokens_out' => 0, 'cost_usd' => 0.0, 'latency_ms' => 0,
+            'provider_model' => '',
         ], $client->totals());
     }
 
@@ -75,5 +77,26 @@ class CostAccumulatingLlmClientTest extends TestCase
         $client->reset();
 
         $this->assertSame(0, $client->totals()['call_count']);
+    }
+
+    public function test_repeated_calls_to_one_model_list_it_once(): void
+    {
+        $client = new CostAccumulatingLlmClient($this->stubClient(
+            new LlmResponse('text', 'sonnet', 100, 50, 200, 0.01, 'text', 'claude-sonnet-4-6'),
+        ));
+
+        $client->complete($this->request());
+        $client->complete($this->request());
+
+        $this->assertSame('claude-sonnet-4-6', $client->totals()['provider_model']);
+    }
+
+    public function test_a_response_that_names_no_provider_model_adds_nothing(): void
+    {
+        $client = new CostAccumulatingLlmClient($this->stubClient(new LlmResponse('text', 'sonnet')));
+
+        $client->complete($this->request());
+
+        $this->assertSame('', $client->totals()['provider_model']);
     }
 }

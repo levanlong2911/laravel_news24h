@@ -36,6 +36,7 @@ final class ClaudeResponse
         public readonly string $stopReason = '',
         public readonly int $cacheWriteTokens = 0,
         public readonly int $cacheReadTokens = 0,
+        public readonly string $providerModel = '',
     ) {}
 
     /**

@@ -13,6 +13,7 @@ final class LlmResponse
         public readonly float $costUsd = 0.0,
         /** Nguyên văn phản hồi. Giữ lại để truy hallucination sau này. */
         public readonly string $raw = '',
+        public readonly string $providerModel = '',
     ) {
     }
 }

@@ -45,4 +45,41 @@ class ClaudeRequestBodyTest extends TestCase
     {
         $this->assertSame(0.7, $this->body(0.7)['temperature']);
     }
+
+    /** @param array<string, mixed> $json */
+    private function parsed(array $json): \App\Services\Admin\ClaudeResponse
+    {
+        $method = new ReflectionMethod(ClaudeWriterService::class, 'responseFromBody');
+        $method->setAccessible(true);
+
+        return $method->invoke(new ClaudeWriterService, $json);
+    }
+
+    public function test_the_provider_model_is_read_from_the_response_body(): void
+    {
+        $response = $this->parsed([
+            'model' => 'claude-sonnet-4-6',
+            'stop_reason' => 'end_turn',
+            'content' => [['text' => 'xong']],
+            'usage' => ['input_tokens' => 120, 'output_tokens' => 40],
+        ]);
+
+        $this->assertSame('claude-sonnet-4-6', $response->providerModel);
+        $this->assertSame('xong', $response->text);
+        $this->assertSame(120, $response->inputTokens);
+        $this->assertSame(40, $response->outputTokens);
+    }
+
+    public function test_a_body_without_a_model_yields_an_empty_provider_model(): void
+    {
+        $this->assertSame('', $this->parsed(['content' => [['text' => 'xong']]])->providerModel);
+    }
+
+    public function test_the_provider_model_is_not_confused_with_the_alias(): void
+    {
+        $response = $this->parsed(['model' => 'claude-haiku-4-5-20251001']);
+
+        $this->assertSame('claude-haiku-4-5-20251001', $response->providerModel);
+        $this->assertNotSame('haiku', $response->providerModel);
+    }
 }

@@ -284,4 +284,44 @@ class PlanningStageStoreTest extends TestCase
         $this->assertNull($row->output_hash);
         $this->assertNull($row->model);
     }
+
+    public function test_a_finished_stage_keeps_the_alias_and_the_provider_model_apart(): void
+    {
+        [$stage, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
+
+        $this->store->finishSucceeded($stage->id, $token, '{"ok": true}', ['ok' => true], [
+            'model' => 'sonnet',
+            'provider_model' => 'claude-sonnet-4-6',
+            'instruction_version' => 'concept-v15',
+            'tokens_in' => 100,
+            'tokens_out' => 50,
+            'cost_usd' => 0.001,
+        ]);
+
+        $row = VideoPlanningStage::find($stage->id);
+
+        $this->assertSame('sonnet', $row->model);
+        $this->assertSame('claude-sonnet-4-6', $row->provider_model);
+    }
+
+    public function test_a_failed_stage_records_the_provider_model_too(): void
+    {
+        [$stage, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
+
+        $this->store->finishFailed($stage->id, $token, 'khong hop le', [
+            'model' => 'sonnet',
+            'provider_model' => 'claude-sonnet-4-6',
+        ], '{"raw": 1}');
+
+        $this->assertSame('claude-sonnet-4-6', VideoPlanningStage::find($stage->id)->provider_model);
+    }
+
+    public function test_an_unknown_provider_model_is_stored_as_null_not_as_a_guess(): void
+    {
+        [$stage, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
+
+        $this->store->finishFailed($stage->id, $token, 'cURL error 28: timeout');
+
+        $this->assertNull(VideoPlanningStage::find($stage->id)->provider_model);
+    }
 }

@@ -165,10 +165,7 @@ class PlanningStageStore
         });
     }
 
-    /**
-     * @param  array<string, mixed>  $output
-     * @param  array{model?: string, instruction_version?: string, tokens_in?: int, tokens_out?: int, cost_usd?: float}  $usage
-     */
+
     public function finishSucceeded(
         string $stageId,
         string $claimToken,
@@ -182,6 +179,7 @@ class PlanningStageStore
             'output_json' => $output,
             'output_hash' => hash('sha256', $rawResponse),
             'model' => $usage['model'] ?? null,
+            'provider_model' => $usage['provider_model'] ?? null,
             'instruction_version' => $usage['instruction_version'] ?? null,
             'tokens_in' => $usage['tokens_in'] ?? 0,
             'tokens_out' => $usage['tokens_out'] ?? 0,
@@ -213,6 +211,7 @@ class PlanningStageStore
             'raw_response' => $rawResponse !== '' ? $rawResponse : null,
             'output_hash' => $rawResponse !== '' ? hash('sha256', $rawResponse) : null,
             'model' => $usage['model'] ?? null,
+            'provider_model' => $usage['provider_model'] ?? null,
             'instruction_version' => $usage['instruction_version'] ?? null,
             'tokens_in' => $usage['tokens_in'] ?? 0,
             'tokens_out' => $usage['tokens_out'] ?? 0,

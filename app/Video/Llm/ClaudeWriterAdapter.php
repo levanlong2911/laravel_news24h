@@ -68,6 +68,7 @@ final class ClaudeWriterAdapter implements LlmClient
                 $response->cacheReadTokens,
             ),
             $response->text,
+            $response->providerModel,
         );
     }
 }
