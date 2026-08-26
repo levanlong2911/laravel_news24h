@@ -151,7 +151,7 @@
                             @csrf
                         </form>
                         <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmConcept"
-                                data-busy="Đang dựng…">{{ $concept['analysed'] ? 'Dựng lại' : 'Creat Prompt' }}</button>
+                                data-busy="Đang dựng…">{{ $concept['status'] === null ? 'Creat Prompt' : 'Dựng lại concept' }}</button>
                         @include('modal.confirm_action', [
                             'id' => 'confirmConcept',
                             'form' => 'conceptForm',

@@ -275,15 +275,23 @@ class VideoProjectService
             return $this->emptyConcept();
         }
 
+        $conceptInput = $this->conceptInput($project, $briefStored);
+
         [$latest, $matchesInput] = $this->stageStore->latestStageForProject(
             $project->id,
             PlanningStageName::CONCEPT,
-            $this->conceptInput($project, $briefStored),
+            $conceptInput,
         );
 
         if ($latest === null) {
             return $this->emptyConcept();
         }
+
+        $hasCachedSuccess = $this->stageStore->hasSucceededForProject(
+            $project->id,
+            PlanningStageName::CONCEPT,
+            $conceptInput,
+        );
 
         $succeeded = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value;
         $claimed = $latest->status === VideoPlanningStageStatus::RUNNING->value;
@@ -297,7 +305,7 @@ class VideoProjectService
             'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest->error_message,
-            'can_run' => ! $matchesInput || $latest->status === VideoPlanningStageStatus::FAILED->value,
+            'can_run' => ! $matchesInput || ! $hasCachedSuccess,
             'thesis' => $output['design_thesis'] ?? null,
             'identity' => $output['design_identity'] ?? [],
             'relationships' => $output['form_relationships'] ?? [],

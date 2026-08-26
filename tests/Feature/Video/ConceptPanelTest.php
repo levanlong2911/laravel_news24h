@@ -173,4 +173,68 @@ class ConceptPanelTest extends TestCase
         $this->assertStringContainsString('design_thesis', $html);
         $this->assertStringNotContainsString('design_thesis', $this->summaryOf($html));
     }
+
+    private function realConceptHash(): string
+    {
+        $service = app(\App\Services\VideoProjectService::class);
+        $input = new \ReflectionMethod($service, 'conceptInput');
+        $input->setAccessible(true);
+
+        $store = app(\App\Services\Video\PlanningStageStore::class);
+        $hash = new \ReflectionMethod($store, 'hash');
+        $hash->setAccessible(true);
+
+        return $hash->invoke($store, $input->invoke($service, $this->project->fresh(), ['source_insights' => []]));
+    }
+
+    public function test_a_project_with_no_concept_yet_offers_to_create(): void
+    {
+        $html = $this->screen();
+
+        $this->assertStringContainsString('Creat Prompt', $html);
+        $this->assertStringNotContainsString(route('video-projects.concept-rerun', $this->project->id), $html);
+    }
+
+    public function test_a_failed_concept_with_no_cached_success_offers_to_build_again(): void
+    {
+        $this->stage(PlanningStageName::CONCEPT, [], [
+            'status' => VideoPlanningStageStatus::FAILED->value,
+            'input_hash' => $this->realConceptHash(),
+            'error_message' => 'Claude tra ve rong',
+        ]);
+
+        $html = $this->screen();
+
+        $this->assertStringContainsString('Dựng lại concept', $html);
+        $this->assertStringNotContainsString('Creat Prompt', $html);
+        $this->assertStringContainsString(route('video-projects.concept', $this->project->id).'"', $html);
+    }
+
+    public function test_a_failed_concept_that_still_has_a_cached_success_offers_the_paid_rerun(): void
+    {
+        $hash = $this->realConceptHash();
+
+        $this->stage(PlanningStageName::CONCEPT, $this->concept(), ['input_hash' => $hash]);
+        $this->stage(PlanningStageName::CONCEPT, [], [
+            'planning_revision' => 2,
+            'status' => VideoPlanningStageStatus::FAILED->value,
+            'input_hash' => $hash,
+            'error_message' => 'Claude tra ve rong',
+        ]);
+
+        $html = $this->screen();
+
+        $this->assertStringContainsString(route('video-projects.concept-rerun', $this->project->id), $html);
+        $this->assertStringNotContainsString('Creat Prompt', $html);
+    }
+
+    public function test_a_succeeded_concept_with_the_same_brief_offers_the_paid_rerun(): void
+    {
+        $this->stage(PlanningStageName::CONCEPT, $this->concept(), ['input_hash' => $this->realConceptHash()]);
+
+        $this->assertStringContainsString(
+            route('video-projects.concept-rerun', $this->project->id),
+            $this->screen(),
+        );
+    }
 }

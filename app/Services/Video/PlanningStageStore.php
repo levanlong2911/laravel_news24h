@@ -256,6 +256,16 @@ class PlanningStageStore
         return [$latest, $latest?->input_hash === $this->hash($input)];
     }
 
+    public function hasSucceededForProject(string $projectId, PlanningStageName $stage, array $input): bool
+    {
+        return VideoPlanningStage::query()
+            ->where('project_id', $projectId)
+            ->where('stage', $stage->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->where('input_hash', $this->hash($input))
+            ->exists();
+    }
+
     public function releaseClaim(string $stageId, string $reason): bool
     {
         return VideoPlanningStage::query()
