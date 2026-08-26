@@ -14,6 +14,7 @@ final class LlmResponse
         /** Nguyên văn phản hồi. Giữ lại để truy hallucination sau này. */
         public readonly string $raw = '',
         public readonly string $providerModel = '',
+        public readonly int $thinkingTokens = 0,
     ) {
     }
 }

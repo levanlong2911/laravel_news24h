@@ -39,22 +39,7 @@ final class ClaudeWriterAdapter implements LlmClient
             );
         }
 
-        if (trim($response->text) === '') {
-            throw new LlmUnavailable('Claude trả về rỗng — coi là lỗi, KHÔNG coi là "bài báo không có sự thật nào"');
-        }
-
-        if ($response->wasTruncated()) {
-            throw new LlmUnavailable(sprintf(
-                'Claude bị CẮT ở trần %d token output (đã sinh %d) nên kết quả không hoàn chỉnh — '
-                    .'ĐÃ TỐN PHÍ cú gọi này. Bài quá dài so với trần: tăng LlmRequest::$maxTokens '
-                    .'(hiện %d) rồi chạy lại. Bấm lại nguyên trạng sẽ hỏng y hệt và mất thêm tiền.',
-                $request->maxTokens,
-                $response->outputTokens,
-                $request->maxTokens,
-            ));
-        }
-
-        return new LlmResponse(
+        $llmResponse = new LlmResponse(
             $response->text,
             $modelType,
             $response->totalInputTokens(),
@@ -69,6 +54,31 @@ final class ClaudeWriterAdapter implements LlmClient
             ),
             $response->text,
             $response->providerModel,
+            $response->thinkingTokens,
         );
+
+        if ($response->wasTruncated()) {
+            throw new LlmUnavailable(sprintf(
+                'Claude bị CẮT ở trần %d token output (đã sinh %d, trong đó %d là thinking và %d là chữ) '
+                    .'nên kết quả không hoàn chỉnh — ĐÃ TỐN PHÍ cú gọi này. Có thể do bài dài, hoặc do model '
+                    .'dùng adaptive thinking trong cùng max_tokens. Tăng LlmRequest::$maxTokens (hiện %d) '
+                    .'hoặc probe cấu hình thinking riêng trước khi chạy lại. Bấm lại nguyên trạng sẽ hỏng '
+                    .'y hệt và mất thêm tiền.',
+                $request->maxTokens,
+                $response->outputTokens,
+                $response->thinkingTokens,
+                max(0, $response->outputTokens - $response->thinkingTokens),
+                $request->maxTokens,
+            ), $llmResponse);
+        }
+
+        if (trim($response->text) === '') {
+            throw new LlmUnavailable(
+                'Claude trả về rỗng — coi là lỗi, KHÔNG coi là "bài báo không có sự thật nào"',
+                $llmResponse,
+            );
+        }
+
+        return $llmResponse;
     }
 }

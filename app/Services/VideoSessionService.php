@@ -156,7 +156,7 @@ class VideoSessionService
             $token,
             $design->rawResponse,
             $design->concept->toArray(),
-            ['model' => 'sonnet', 'instruction_version' => ClaudeConceptDesigner::INSTRUCTION_VERSION],
+            ['model' => ClaudeConceptDesigner::MODEL, 'instruction_version' => ClaudeConceptDesigner::INSTRUCTION_VERSION],
         );
 
         return [true, 'ok'];

@@ -494,7 +494,7 @@ class VideoRenderPlanService
      *
      * @return array<string, mixed>
      */
-    /** @return array{call_count:int,tokens_in:int,tokens_out:int,cost_usd:float,latency_ms:int,provider_model:string}|null */
+    /** @return array{call_count:int,tokens_in:int,tokens_out:int,cost_usd:float,latency_ms:int,provider_model:string,thinking_tokens:int}|null */
     public function lastUsage(): ?array
     {
         return $this->lastRun?->totals();

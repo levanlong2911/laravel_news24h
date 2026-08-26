@@ -324,4 +324,52 @@ class PlanningStageStoreTest extends TestCase
 
         $this->assertNull(VideoPlanningStage::find($stage->id)->provider_model);
     }
+
+    public function test_a_finished_stage_records_what_thinking_ate(): void
+    {
+        [$stage, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
+
+        $this->store->finishSucceeded($stage->id, $token, '{"ok": true}', ['ok' => true], [
+            'model' => 'sonnet5',
+            'provider_model' => 'claude-sonnet-5',
+            'tokens_in' => 2700,
+            'tokens_out' => 1900,
+            'thinking_tokens' => 400,
+            'cost_usd' => 0.024,
+        ]);
+
+        $row = VideoPlanningStage::find($stage->id);
+
+        $this->assertSame(400, $row->thinking_tokens);
+        $this->assertSame(1900, $row->tokens_out);
+    }
+
+    public function test_a_failed_stage_records_the_thinking_that_ate_the_ceiling(): void
+    {
+        [$stage, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
+
+        $this->store->finishFailed($stage->id, $token, 'bi cat o tran', [
+            'model' => 'sonnet5',
+            'provider_model' => 'claude-sonnet-5',
+            'tokens_in' => 2700,
+            'tokens_out' => 2500,
+            'thinking_tokens' => 2500,
+            'cost_usd' => 0.0304,
+        ], '');
+
+        $row = VideoPlanningStage::find($stage->id);
+
+        $this->assertSame(2500, $row->thinking_tokens);
+        $this->assertSame(2500, $row->tokens_out);
+        $this->assertEqualsWithDelta(0.0304, (float) $row->cost_usd, 0.00001);
+    }
+
+    public function test_a_stage_with_no_measurement_stores_zero_thinking(): void
+    {
+        [$stage, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
+
+        $this->store->finishFailed($stage->id, $token, 'cURL error 28: timeout');
+
+        $this->assertSame(0, VideoPlanningStage::find($stage->id)->thinking_tokens);
+    }
 }

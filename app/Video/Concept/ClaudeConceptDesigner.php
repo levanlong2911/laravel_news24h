@@ -11,6 +11,8 @@ final class ClaudeConceptDesigner
 {
     public const INSTRUCTION_VERSION = 'concept-v15';
 
+    public const MODEL = 'sonnet5';
+
     private const MAX_ATTEMPTS = 1;
 
     // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.
@@ -20,7 +22,7 @@ final class ClaudeConceptDesigner
         private readonly LlmClient $llm,
         private readonly CreativeConceptParser $parser = new CreativeConceptParser,
         private readonly ConceptValidator $validator = new ConceptValidator,
-        private readonly string $model = 'sonnet',
+        private readonly string $model = self::MODEL,
     ) {}
 
     public function design(InspirationBrief $brief, CategoryCreativeProfile $profile): ConceptDesignResult
@@ -48,7 +50,6 @@ final class ClaudeConceptDesigner
                 self::INSTRUCTION_VERSION,
                 $this->model,
                 maxTokens: 2500,
-                temperature: 0.3,
             ));
 
             try {

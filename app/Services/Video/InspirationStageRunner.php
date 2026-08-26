@@ -117,6 +117,7 @@ class InspirationStageRunner
             'instruction_version' => ClaudeInspirationAnalyst::INSTRUCTION_VERSION,
             'tokens_in' => $totals['tokens_in'] ?? 0,
             'tokens_out' => $totals['tokens_out'] ?? 0,
+            'thinking_tokens' => $totals['thinking_tokens'] ?? 0,
             'cost_usd' => $totals['cost_usd'] ?? 0,
         ];
     }

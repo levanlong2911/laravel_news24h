@@ -2,7 +2,13 @@
 
 namespace App\Video\Llm;
 
-/** Mô hình không gọi được. Fail fast — Truth Layer không đoán thay nó. */
 final class LlmUnavailable extends \RuntimeException
 {
+    public function __construct(
+        string $message,
+        public readonly ?LlmResponse $billed = null,
+        ?\Throwable $previous = null,
+    ) {
+        parent::__construct($message, 0, $previous);
+    }
 }

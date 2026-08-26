@@ -326,4 +326,88 @@ class ClaudeWriterAdapterTest extends TestCase
 
         $this->assertSame('', $adapter->complete($this->request('haiku'))->providerModel);
     }
+
+    private function spyReturning(\App\Services\Admin\ClaudeResponse $response): ClaudeWriterService
+    {
+        $writer = $this->createMock(ClaudeWriterService::class);
+        $writer->method('generate')->willReturn($response);
+
+        return $writer;
+    }
+
+    public function test_a_truncated_call_is_reported_as_truncated_not_as_empty(): void
+    {
+        $adapter = new ClaudeWriterAdapter($this->spyReturning(
+            new ClaudeResponse('', 2700, 2500, 'max_tokens', 0, 0, 'claude-sonnet-5'),
+        ));
+
+        try {
+            $adapter->complete($this->request('sonnet5'));
+            $this->fail('phai nem');
+        } catch (LlmUnavailable $e) {
+            $this->assertStringContainsString('token output', $e->getMessage());
+            $this->assertStringContainsString('adaptive thinking', $e->getMessage());
+            $this->assertStringNotContainsString('rỗng', $e->getMessage());
+        }
+    }
+
+    public function test_a_paid_failure_carries_what_it_cost(): void
+    {
+        $adapter = new ClaudeWriterAdapter($this->spyReturning(
+            new ClaudeResponse('', 2700, 2500, 'max_tokens', 0, 0, 'claude-sonnet-5'),
+        ));
+
+        try {
+            $adapter->complete($this->request('sonnet5'));
+            $this->fail('phai nem');
+        } catch (LlmUnavailable $e) {
+            $this->assertNotNull($e->billed);
+            $this->assertSame(2700, $e->billed->tokensIn);
+            $this->assertSame(2500, $e->billed->tokensOut);
+            $this->assertSame('claude-sonnet-5', $e->billed->providerModel);
+            $this->assertGreaterThan(0.0, $e->billed->costUsd);
+        }
+    }
+
+    public function test_an_empty_answer_that_was_not_truncated_still_carries_its_cost(): void
+    {
+        $adapter = new ClaudeWriterAdapter($this->spyReturning(
+            new ClaudeResponse('', 100, 5, 'end_turn', 0, 0, 'claude-sonnet-5'),
+        ));
+
+        try {
+            $adapter->complete($this->request('sonnet5'));
+            $this->fail('phai nem');
+        } catch (LlmUnavailable $e) {
+            $this->assertStringContainsString('rỗng', $e->getMessage());
+            $this->assertNotNull($e->billed);
+            $this->assertSame(100, $e->billed->tokensIn);
+        }
+    }
+
+    public function test_a_call_that_never_reached_the_provider_carries_nothing(): void
+    {
+        $adapter = new ClaudeWriterAdapter($this->createMock(ClaudeWriterService::class));
+
+        try {
+            $adapter->complete($this->request('khong-ton-tai'));
+            $this->fail('phai nem');
+        } catch (LlmUnavailable $e) {
+            $this->assertNull($e->billed);
+        }
+    }
+
+    public function test_the_truncation_message_says_how_much_of_the_ceiling_thinking_took(): void
+    {
+        $adapter = new ClaudeWriterAdapter($this->spyReturning(
+            new ClaudeResponse('', 2700, 2500, 'max_tokens', 0, 0, 'claude-sonnet-5', 2500),
+        ));
+
+        try {
+            $adapter->complete($this->request('sonnet5'));
+            $this->fail('phai nem');
+        } catch (LlmUnavailable $e) {
+            $this->assertStringContainsString('trong đó 2500 là thinking và 0 là chữ', $e->getMessage());
+        }
+    }
 }

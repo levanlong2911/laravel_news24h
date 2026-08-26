@@ -14,12 +14,21 @@ class ClaudeWriterService
             'max_tokens' => 4096,
             'input_usd_per_mtok' => 1.00,
             'output_usd_per_mtok' => 5.00,
+            'thinking' => null,
         ],
         'sonnet' => [
             'id' => 'claude-sonnet-4-6',
             'max_tokens' => 8000,
             'input_usd_per_mtok' => 3.00,
             'output_usd_per_mtok' => 15.00,
+            'thinking' => null,
+        ],
+        'sonnet5' => [
+            'id' => 'claude-sonnet-5',
+            'max_tokens' => 8000,
+            'input_usd_per_mtok' => 2.00,
+            'output_usd_per_mtok' => 10.00,
+            'thinking' => 'disabled',
         ],
     ];
 
@@ -44,7 +53,7 @@ class ClaudeWriterService
     }
 
     /**
-     * @return array{id: string, max_tokens: int, input_usd_per_mtok: float, output_usd_per_mtok: float}
+     * @return array{id: string, max_tokens: int, input_usd_per_mtok: float, output_usd_per_mtok: float, thinking: ?string}
      */
     private static function entry(string $modelType): array
     {
@@ -95,8 +104,15 @@ class ClaudeWriterService
 
     private function responseFromBody(array $json): ClaudeResponse
     {
+        $text = [];
+        foreach ($json['content'] ?? [] as $block) {
+            if (($block['type'] ?? '') === 'text' && isset($block['text'])) {
+                $text[] = $block['text'];
+            }
+        }
+
         return new ClaudeResponse(
-            $json['content'][0]['text'] ?? '',
+            trim(implode('', $text)),
             $json['usage']['input_tokens'] ?? 0,
             $json['usage']['output_tokens'] ?? 0,
             $json['stop_reason'] ?? '',
@@ -105,17 +121,23 @@ class ClaudeWriterService
             $json['usage']['cache_creation_input_tokens'] ?? 0,
             $json['usage']['cache_read_input_tokens'] ?? 0,
             $json['model'] ?? '',
+            $json['usage']['output_tokens_details']['thinking_tokens'] ?? 0,
         );
     }
 
     /** @return array<string, mixed> */
-    private function requestBody(string $prompt, string $model, int $maxTokens, string $system, ?float $temperature): array
+    private function requestBody(string $prompt, string $modelType, string $model, int $maxTokens, string $system, ?float $temperature): array
     {
         $body = [
             'model' => $model,
             'max_tokens' => $maxTokens,
             'messages' => [['role' => 'user', 'content' => $prompt]],
         ];
+
+        $thinking = self::entry($modelType)['thinking'] ?? null;
+        if ($thinking !== null) {
+            $body['thinking'] = ['type' => $thinking];
+        }
 
         // `!== null` chu khong phai truthy: 0.0 la mot temperature hop le.
         if ($temperature !== null) {
@@ -140,7 +162,7 @@ class ClaudeWriterService
         $model = self::modelId($modelType);
         $maxTokens ??= self::maxTokensFor($modelType);
 
-        $requestBody = $this->requestBody($prompt, $model, $maxTokens, $system, $temperature);
+        $requestBody = $this->requestBody($prompt, $modelType, $model, $maxTokens, $system, $temperature);
         $encodedBody = json_encode($requestBody, JSON_UNESCAPED_UNICODE);
         if ($encodedBody === false) {
             // Fallback: strip invalid UTF-8 rồi encode lại
@@ -201,6 +223,7 @@ class ClaudeWriterService
                         Log::debug('Claude OK', [
                             'model' => $model,
                             'provider_model' => $response->providerModel,
+                            'thinking_tokens' => $response->thinkingTokens,
                             'attempt' => $attempt,
                             'stop_reason' => $response->stopReason,
                             'input_tokens' => $response->inputTokens,

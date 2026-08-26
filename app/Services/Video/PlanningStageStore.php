@@ -183,6 +183,7 @@ class PlanningStageStore
             'instruction_version' => $usage['instruction_version'] ?? null,
             'tokens_in' => $usage['tokens_in'] ?? 0,
             'tokens_out' => $usage['tokens_out'] ?? 0,
+            'thinking_tokens' => $usage['thinking_tokens'] ?? 0,
             'cost_usd' => $usage['cost_usd'] ?? 0,
         ]);
     }
@@ -215,6 +216,7 @@ class PlanningStageStore
             'instruction_version' => $usage['instruction_version'] ?? null,
             'tokens_in' => $usage['tokens_in'] ?? 0,
             'tokens_out' => $usage['tokens_out'] ?? 0,
+            'thinking_tokens' => $usage['thinking_tokens'] ?? 0,
             'cost_usd' => $usage['cost_usd'] ?? 0,
         ]);
     }

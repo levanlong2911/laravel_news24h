@@ -61,7 +61,8 @@ class ClaudeConceptDesignerTest extends TestCase
             $this->profile(),
         );
 
-        $this->assertSame('sonnet', $requests[0]->model);
+        $this->assertSame(ClaudeConceptDesigner::MODEL, $requests[0]->model);
+        $this->assertSame('sonnet5', ClaudeConceptDesigner::MODEL);
         $this->assertSame('concept-v15', $requests[0]->instructionVersion);
         $this->assertStringContainsString('form_relationships', $requests[0]->instruction);
         $this->assertSame('Volumes taper progressively.', $result->concept->formRelationships->massingRhythm);
@@ -321,7 +322,7 @@ class ClaudeConceptDesignerTest extends TestCase
             $this->profile(),
         );
 
-        $this->assertSame(0.3, $requests[0]->temperature);
+        $this->assertNull($requests[0]->temperature);
         $this->assertSame('concept-v15', $requests[0]->instructionVersion);
     }
 

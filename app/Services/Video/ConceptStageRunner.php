@@ -8,6 +8,7 @@ use App\Services\VideoRenderPlanService;
 use App\Video\Concept\ClaudeConceptDesigner;
 use App\Video\Concept\InvalidCreativeConcept;
 use App\Video\Inspiration\InspirationBrief;
+use App\Video\Llm\LlmUnavailable;
 use Illuminate\Support\Facades\Log;
 
 class ConceptStageRunner
@@ -42,8 +43,7 @@ class ConceptStageRunner
             ]);
 
             $this->stageStore->finishFailed(
-                $stage->id, $claimToken, $e->getMessage(), $this->usage(),
-                $e instanceof InvalidCreativeConcept ? $e->rawResponse : '',
+                $stage->id, $claimToken, $e->getMessage(), $this->usage(), $this->rawFrom($e),
             );
 
             return [null, $e->getMessage()];
@@ -69,16 +69,26 @@ class ConceptStageRunner
      *
      * @return array<string, mixed>
      */
+    private function rawFrom(\Throwable $e): string
+    {
+        if ($e instanceof InvalidCreativeConcept) {
+            return $e->rawResponse;
+        }
+
+        return $e instanceof LlmUnavailable ? (string) $e->billed?->raw : '';
+    }
+
     private function usage(): array
     {
         $totals = $this->renderPlanService->lastUsage() ?? [];
 
         return [
-            'model' => 'sonnet',
+            'model' => ClaudeConceptDesigner::MODEL,
             'provider_model' => $totals['provider_model'] ?? null,
             'instruction_version' => ClaudeConceptDesigner::INSTRUCTION_VERSION,
             'tokens_in' => $totals['tokens_in'] ?? 0,
             'tokens_out' => $totals['tokens_out'] ?? 0,
+            'thinking_tokens' => $totals['thinking_tokens'] ?? 0,
             'cost_usd' => $totals['cost_usd'] ?? 0,
         ];
     }

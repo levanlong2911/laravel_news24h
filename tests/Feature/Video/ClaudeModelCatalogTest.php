@@ -3,6 +3,7 @@
 namespace Tests\Feature\Video;
 
 use App\Services\Admin\ClaudeWriterService;
+use App\Video\Concept\ClaudeConceptDesigner;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -75,5 +76,36 @@ class ClaudeModelCatalogTest extends TestCase
             ClaudeWriterService::costUsd(1_000_000, 1_000_000, 'haiku'),
             ClaudeWriterService::costUsd(1_000_000, 1_000_000, 'sonnet'),
         );
+    }
+
+    public function test_the_sonnet_five_row_resolves_to_its_own_model_id(): void
+    {
+        $this->assertTrue(ClaudeWriterService::supports('sonnet5'));
+        $this->assertSame('claude-sonnet-5', ClaudeWriterService::modelId('sonnet5'));
+        $this->assertSame(8000, ClaudeWriterService::maxTokensFor('sonnet5'));
+    }
+
+    public function test_the_two_sonnet_rows_point_at_different_models(): void
+    {
+        $this->assertNotSame(
+            ClaudeWriterService::modelId('sonnet'),
+            ClaudeWriterService::modelId('sonnet5'),
+        );
+        $this->assertSame('claude-sonnet-4-6', ClaudeWriterService::modelId('sonnet'));
+    }
+
+    public function test_the_two_sonnet_rows_are_priced_apart(): void
+    {
+        $this->assertSame(2.00, ClaudeWriterService::costUsd(1_000_000, 0, 'sonnet5'));
+        $this->assertSame(10.00, ClaudeWriterService::costUsd(0, 1_000_000, 'sonnet5'));
+        $this->assertSame(3.00, ClaudeWriterService::costUsd(1_000_000, 0, 'sonnet'));
+        $this->assertSame(15.00, ClaudeWriterService::costUsd(0, 1_000_000, 'sonnet'));
+    }
+
+    public function test_the_concept_designer_runs_on_the_sonnet_five_row(): void
+    {
+        $this->assertSame('sonnet5', ClaudeConceptDesigner::MODEL);
+        $this->assertTrue(ClaudeWriterService::supports(ClaudeConceptDesigner::MODEL));
+        $this->assertSame('claude-sonnet-5', ClaudeWriterService::modelId(ClaudeConceptDesigner::MODEL));
     }
 }
