@@ -34,6 +34,7 @@ final class CreativeProfileResolver
             $profile['arc_required_stages'] ?? [],
             $profile['concept_antipatterns'] ?? [],
             $profile['concept_forbidden_terms'] ?? [],
+            $profile['identity_cross_checks'] ?? [],
         );
     }
 }

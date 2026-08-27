@@ -33,6 +33,7 @@ final class CategoryCreativeProfile
         public readonly array $arcRequiredStages = [],
         public readonly array $conceptAntipatterns = [],
         public readonly array $conceptForbiddenTerms = [],
+        public readonly array $identityCrossChecks = [],
     ) {
         foreach ([$key, $mission] as $value) {
             if (trim($value) === '') {
@@ -90,6 +91,7 @@ final class CategoryCreativeProfile
         }
 
         $this->assertIdentitySlotsAreSatisfiable($identitySlots);
+        $this->assertIdentityCrossChecksAreSatisfiable($identityCrossChecks, $identitySlots, $key);
     }
 
     /**
@@ -156,6 +158,46 @@ final class CategoryCreativeProfile
     }
 
     /** @param array<string, array<string, mixed>> $slots */
+    private function assertIdentityCrossChecksAreSatisfiable(array $checks, array $slots, string $key): void
+    {
+        foreach ($checks as $check) {
+            if (! is_array($check) || ($check['kind'] ?? null) !== 'ratio') {
+                throw new InvalidArgumentException("Creative profile {$key} identity_cross_checks supports kind ratio only.");
+            }
+
+            if (array_diff(['kind', 'numerator', 'denominator', 'equals', 'tolerance'], array_keys($check)) !== []
+                || array_diff(array_keys($check), ['kind', 'numerator', 'denominator', 'equals', 'tolerance']) !== []) {
+                throw new InvalidArgumentException(
+                    "Creative profile {$key} identity_cross_checks must declare kind, numerator, denominator, equals, tolerance.",
+                );
+            }
+
+            foreach (['numerator', 'denominator', 'equals'] as $role) {
+                $name = $check[$role];
+
+                if (! is_string($name) || ! isset($slots[$name])) {
+                    throw new InvalidArgumentException(
+                        "Creative profile {$key} identity_cross_checks {$role} does not name an identity slot.",
+                    );
+                }
+
+                if ($slots[$name]['type'] !== 'number') {
+                    throw new InvalidArgumentException(
+                        "Creative profile {$key} identity_cross_checks {$role} {$name} must be a number slot.",
+                    );
+                }
+            }
+
+            if ((! is_int($check['tolerance']) && ! is_float($check['tolerance']))
+                || (is_float($check['tolerance']) && ! is_finite($check['tolerance']))
+                || $check['tolerance'] <= 0) {
+                throw new InvalidArgumentException(
+                    "Creative profile {$key} identity_cross_checks tolerance must be a positive finite number.",
+                );
+            }
+        }
+    }
+
     private function assertIdentitySlotsAreSatisfiable(array $slots): void
     {
         foreach ($slots as $name => $spec) {

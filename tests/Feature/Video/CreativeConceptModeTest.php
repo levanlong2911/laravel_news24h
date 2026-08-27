@@ -178,6 +178,10 @@ class CreativeConceptModeTest extends TestCase
         };
 
         $identity = array_map($slotValue, $profile->identitySlots);
+        $identity['design_length_m'] = 120.0;
+        $identity['design_beam_m'] = 20.0;
+        $identity['length_to_beam_ratio'] = 6.0;
+
 
         $decisions = array_map(
             fn (string $aspect) => [

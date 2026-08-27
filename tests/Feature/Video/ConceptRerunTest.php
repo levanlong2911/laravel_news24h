@@ -119,6 +119,10 @@ class ConceptRerunTest extends TestCase
         };
 
         $identity = array_map($slotValue, $profile['identity_slots']);
+        $identity['design_length_m'] = 120.0;
+        $identity['design_beam_m'] = 20.0;
+        $identity['length_to_beam_ratio'] = 6.0;
+
 
         return [
             'design_thesis' => 'One continuous line ties the whole form together.',

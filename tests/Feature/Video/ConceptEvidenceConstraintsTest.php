@@ -102,4 +102,166 @@ class ConceptEvidenceConstraintsTest extends TestCase
         $this->assertStringContainsString('do not', mb_strtolower($instruction));
         $this->assertStringContainsString('restate the same shape in different words', $instruction);
     }
+
+    public function test_the_beam_is_a_declared_slot_not_a_number_python_has_to_derive(): void
+    {
+        $slot = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots['design_beam_m'] ?? [];
+
+        $this->assertSame('number', $slot['type']);
+        $this->assertSame(10.0, $slot['min']);
+        $this->assertSame(35.0, $slot['max']);
+        $this->assertStringContainsString('consistent with design_length_m', $slot['guidance']);
+    }
+
+    public function test_the_hull_carries_the_sheer_as_a_closed_value(): void
+    {
+        $hull = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots['hull'] ?? [];
+
+        $this->assertSame('object', $hull['type']);
+        $this->assertSame(['sheer', 'midbody', 'keel'], array_keys($hull['fields']));
+        $this->assertContains('continuous_gentle_rise_toward_bow', $hull['fields']['sheer']['values']);
+        $this->assertSame(['continuous_central_baseline'], $hull['fields']['keel']['values']);
+    }
+
+    public function test_the_hull_does_not_restate_the_material_or_the_bow(): void
+    {
+        $hull = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots['hull'] ?? [];
+
+        foreach (['type', 'forefoot', 'chine'] as $elsewhere) {
+            $this->assertArrayNotHasKey($elsewhere, $hull['fields'], $elsewhere);
+        }
+    }
+
+    public function test_a_beam_outside_the_declared_band_is_refused(): void
+    {
+        $this->assertContains(
+            'design_identity.design_beam_m must be between 10 and 35',
+            $this->violationsFor(['design_identity' => ['design_beam_m' => 44.0]]),
+        );
+    }
+
+    public function test_a_missing_beam_is_refused(): void
+    {
+        $this->assertContains('design_identity is missing slot design_beam_m', $this->violationsFor());
+    }
+
+    public function test_a_hull_field_outside_its_enum_is_refused(): void
+    {
+        $this->assertContains(
+            'design_identity.hull.keel must be one of continuous_central_baseline',
+            $this->violationsFor(['design_identity' => ['hull' => [
+                'sheer' => 'continuous_level', 'midbody' => 'full_displacement', 'keel' => 'skeg',
+            ]]]),
+        );
+    }
+
+    public function test_the_instruction_asks_for_the_beam_and_the_hull(): void
+    {
+        $profile = (new CreativeProfileResolver)->resolve('yacht');
+        $designer = new \App\Video\Concept\ClaudeConceptDesigner(
+            new class implements \App\Video\Llm\LlmClient
+            {
+                public function complete(\App\Video\Llm\LlmRequest $request): \App\Video\Llm\LlmResponse
+                {
+                    throw new \LogicException('instruction() khong duoc goi model');
+                }
+            }
+        );
+        $method = new \ReflectionMethod($designer, 'instruction');
+        $method->setAccessible(true);
+        $instruction = $method->invoke($designer, $profile);
+
+        $this->assertStringContainsString('- design_beam_m: number, between 10 and 35.', $instruction);
+        $this->assertStringContainsString('- hull: an object with exactly these keys:', $instruction);
+        $this->assertStringContainsString('  - sheer: exactly one of: continuous_gentle_rise_toward_bow, continuous_level.', $instruction);
+        $this->assertStringContainsString('  - keel: always continuous_central_baseline.', $instruction);
+    }
+
+    /** @param array<string, mixed> $dimensions */
+    private function crossCheckViolationsFor(array $dimensions): array
+    {
+        return $this->violationsFor(['design_identity' => $dimensions]);
+    }
+
+    public function test_a_ratio_that_agrees_with_length_over_beam_passes(): void
+    {
+        $violations = $this->crossCheckViolationsFor([
+            'design_length_m' => 120.0, 'design_beam_m' => 17.65, 'length_to_beam_ratio' => 6.8,
+        ]);
+
+        $this->assertNotContains(
+            'design_identity.length_to_beam_ratio is inconsistent with design_length_m and design_beam_m',
+            $violations,
+        );
+    }
+
+    public function test_a_ratio_that_disagrees_with_length_over_beam_is_refused(): void
+    {
+        $violations = $this->crossCheckViolationsFor([
+            'design_length_m' => 120.0, 'design_beam_m' => 23.1, 'length_to_beam_ratio' => 6.8,
+        ]);
+
+        $this->assertContains(
+            'design_identity.length_to_beam_ratio is inconsistent with design_length_m and design_beam_m',
+            $violations,
+        );
+    }
+
+    public function test_a_missing_slot_leaves_the_cross_check_silent(): void
+    {
+        foreach ($this->violationsFor() as $violation) {
+            $this->assertStringNotContainsString('is inconsistent with', $violation);
+        }
+    }
+
+    public function test_a_cross_check_naming_a_slot_that_is_not_a_number_fails_at_boot(): void
+    {
+        config(['video.creative_profiles.profiles.luxury_vessel.identity_cross_checks' => [[
+            'kind' => 'ratio', 'numerator' => 'design_length_m',
+            'denominator' => 'hull_colour', 'equals' => 'length_to_beam_ratio', 'tolerance' => 0.08,
+        ]]]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('denominator hull_colour must be a number slot');
+
+        (new CreativeProfileResolver)->resolve('yacht');
+    }
+
+    /** @dataProvider unusableTolerances */
+    public function test_a_tolerance_that_can_never_refuse_anything_fails_at_boot(mixed $tolerance): void
+    {
+        config(['video.creative_profiles.profiles.luxury_vessel.identity_cross_checks' => [[
+            'kind' => 'ratio', 'numerator' => 'design_length_m',
+            'denominator' => 'design_beam_m', 'equals' => 'length_to_beam_ratio', 'tolerance' => $tolerance,
+        ]]]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('tolerance must be a positive finite number');
+
+        (new CreativeProfileResolver)->resolve('yacht');
+    }
+
+    /** @return array<string, array{mixed}> */
+    public static function unusableTolerances(): array
+    {
+        return [
+            'not a number at all' => ['0.08'],
+            'nan never compares true' => [NAN],
+            'infinity never compares true' => [INF],
+            'negative' => [-0.08],
+        ];
+    }
+
+    public function test_a_cross_check_with_a_zero_tolerance_fails_at_boot(): void
+    {
+        config(['video.creative_profiles.profiles.luxury_vessel.identity_cross_checks' => [[
+            'kind' => 'ratio', 'numerator' => 'design_length_m',
+            'denominator' => 'design_beam_m', 'equals' => 'length_to_beam_ratio', 'tolerance' => 0,
+        ]]]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('tolerance must be a positive finite number');
+
+        (new CreativeProfileResolver)->resolve('yacht');
+    }
 }

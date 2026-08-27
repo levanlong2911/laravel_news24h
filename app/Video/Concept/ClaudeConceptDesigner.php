@@ -9,7 +9,7 @@ use App\Video\Llm\LlmRequest;
 
 final class ClaudeConceptDesigner
 {
-    public const INSTRUCTION_VERSION = 'concept-v17';
+    public const INSTRUCTION_VERSION = 'concept-v18';
 
     public const MODEL = 'sonnet5';
 

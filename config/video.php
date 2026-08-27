@@ -148,6 +148,16 @@ return [
                  * cai KHONG phai ban sao cua nhau: mot cai noi voi nguoi thiet ke,
                  * mot cai noi voi nguoi ve.
                  */
+                'identity_cross_checks' => [
+                    [
+                        'kind' => 'ratio',
+                        'numerator' => 'design_length_m',
+                        'denominator' => 'design_beam_m',
+                        'equals' => 'length_to_beam_ratio',
+                        'tolerance' => 0.08,
+                    ],
+                ],
+
                 'concept_forbidden_terms' => [
                     'cantilever',
                     'cantilevered',
@@ -221,6 +231,12 @@ return [
                         'guidance' => 'Editorial floor: if the source vessel is smaller, '
                             .'scale the new design up to at least 100 m.',
                     ],
+                    'design_beam_m' => [
+                        'type' => 'number',
+                        'min' => 10.0,
+                        'max' => 35.0,
+                        'guidance' => 'Beam must be consistent with design_length_m and length_to_beam_ratio.',
+                    ],
                     'length_to_beam_ratio' => ['type' => 'number', 'min' => 5.5, 'max' => 7.5],
                     'design_draft_m' => ['type' => 'number', 'min' => 2.0, 'max' => 6.0],
                     'visible_freeboard_at_midships_m' => ['type' => 'number', 'min' => 1.5, 'max' => 6.0],
@@ -233,6 +249,11 @@ return [
                         'waterline_entry' => ['type' => 'enum', 'values' => ['fine', 'moderate', 'full']],
                         'forefoot' => ['type' => 'enum', 'values' => ['continuous_convex', 'hard_knuckle', 'rounded']],
                         'chine' => ['type' => 'enum', 'values' => ['hard_to_midships', 'soft', 'none']],
+                    ]],
+                    'hull' => ['type' => 'object', 'fields' => [
+                        'sheer' => ['type' => 'enum', 'values' => ['continuous_gentle_rise_toward_bow', 'continuous_level']],
+                        'midbody' => ['type' => 'enum', 'values' => ['full_displacement', 'slender_displacement']],
+                        'keel' => ['type' => 'enum', 'values' => ['continuous_central_baseline']],
                     ]],
                     'stern' => ['type' => 'object', 'fields' => [
                         'transom' => ['type' => 'enum', 'values' => ['plumb_full_beam']],

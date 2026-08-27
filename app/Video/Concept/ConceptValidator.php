@@ -54,6 +54,7 @@ final class ConceptValidator
 
         $this->checkProse('design_thesis', $concept->designThesis, self::RECOMMENDED_THESIS_LENGTH, $violations, $warnings);
         $this->checkIdentity($concept, $profile, $violations, $warnings);
+        $this->checkIdentityCrossChecks($concept, $profile, $violations);
         $this->checkFormRelationships($concept, $violations, $warnings);
         $this->checkFeatures($concept, $violations, $warnings);
         $this->checkDecisions($concept, $profile, $brief, $violations, $warnings);
@@ -192,6 +193,29 @@ final class ConceptValidator
 
         if ($value < $spec['min'] || $value > $spec['max']) {
             $violations[] = "design_identity.{$slot} must be between {$spec['min']} and {$spec['max']}";
+        }
+    }
+
+    /** @param list<string> $violations */
+    private function checkIdentityCrossChecks(CreativeConcept $concept, CategoryCreativeProfile $profile, array &$violations): void
+    {
+        foreach ($profile->identityCrossChecks as $check) {
+            $numerator = $concept->designIdentity[$check['numerator']] ?? null;
+            $denominator = $concept->designIdentity[$check['denominator']] ?? null;
+            $declared = $concept->designIdentity[$check['equals']] ?? null;
+
+            $usable = fn ($v) => (is_int($v) || is_float($v)) && ! is_bool($v) && (! is_float($v) || is_finite($v));
+
+            if (! $usable($numerator) || ! $usable($denominator) || ! $usable($declared) || (float) $denominator === 0.0) {
+                continue;
+            }
+
+            if (abs($numerator / $denominator - $declared) > $check['tolerance']) {
+                $violations[] = sprintf(
+                    'design_identity.%s is inconsistent with %s and %s',
+                    $check['equals'], $check['numerator'], $check['denominator'],
+                );
+            }
         }
     }
 

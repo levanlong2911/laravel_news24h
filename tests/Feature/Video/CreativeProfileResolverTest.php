@@ -33,7 +33,7 @@ class CreativeProfileResolverTest extends TestCase
     {
         $slots = (new CreativeProfileResolver)->resolve('yacht')?->identitySlots ?? [];
 
-        $this->assertCount(15, $slots);
+        $this->assertCount(17, $slots);
         $this->assertArrayNotHasKey('hull_vertical_proportions', $slots);
 
         foreach ($slots as $name => $spec) {
@@ -94,8 +94,8 @@ class CreativeProfileResolverTest extends TestCase
         $this->assertStringContainsString('scale', $slot['guidance']);
         $this->assertStringContainsString('100 m', $slot['guidance']);
         $this->assertSame(
-            ['design_length_m', 'length_to_beam_ratio'],
-            array_slice(array_keys($slots), 0, 2),
+            ['design_length_m', 'design_beam_m', 'length_to_beam_ratio'],
+            array_slice(array_keys($slots), 0, 3),
         );
     }
 
@@ -230,9 +230,9 @@ class CreativeProfileResolverTest extends TestCase
             (new CreativeProfileResolver)->resolve('yacht'),
         );
 
-        $this->assertSame('concept-v17', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertSame('concept-v18', ClaudeConceptDesigner::INSTRUCTION_VERSION);
         $this->assertSame(
-            '7abd060375b425fcfae8b1b76d5e2940c890ab9b9b5bd7764506440221cfce0d',
+            'f7974f683d454631c61a8daef35fdc20c3853cc55109049544a31e87d173e971',
             hash('sha256', $instruction),
             'Instruction doi ma version khong doi.',
         );
@@ -299,7 +299,7 @@ class CreativeProfileResolverTest extends TestCase
             new InspirationBrief(['design_profile'], 'A focus.', [], []),
         )->fatalViolations;
 
-        $offending = array_filter($violations, fn (string $v) => str_contains($v, 'design_length_m'));
+        $offending = array_filter($violations, fn (string $v) => str_starts_with($v, 'design_identity.design_length_m'));
 
         $this->assertSame($refused, $offending !== [], implode('; ', $violations));
     }
