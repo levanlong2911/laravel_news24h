@@ -9,7 +9,7 @@ use App\Video\Llm\LlmRequest;
 
 final class ClaudeConceptDesigner
 {
-    public const INSTRUCTION_VERSION = 'concept-v15';
+    public const INSTRUCTION_VERSION = 'concept-v16';
 
     public const MODEL = 'sonnet5';
 
@@ -71,16 +71,45 @@ final class ClaudeConceptDesigner
         throw new InvalidCreativeConcept($violations, $response->text);
     }
 
+    /** @param array<string, mixed> $spec */
+    private function slotGuidance(array $spec): string
+    {
+        return isset($spec['guidance']) ? ' Guidance: '.$spec['guidance'] : '';
+    }
+
+    /** @param array<string, mixed> $spec */
+    private function slotLine(string $name, array $spec): string
+    {
+        // Ngan sach tu suy tu chinh khe: 120 ky tu -> 17 tu, 60 -> 8. Mot
+        // con so chung se tu sinh warning o cac khe ngan.
+        $guidance = $this->slotGuidance($spec);
+
+        if ($spec['type'] === 'enum') {
+            return count($spec['values']) === 1
+                ? "- {$name}: always {$spec['values'][0]}.{$guidance}"
+                : "- {$name}: exactly one of: ".implode(', ', $spec['values']).'.'.$guidance;
+        }
+
+        return $spec['type'] === 'text'
+            ? '- '.$name.': one compact technical phrase, at most '.max(3, intdiv((int) $spec['max_length'], 7)).' words.'.$guidance
+            : "- {$name}: {$spec['type']}, between {$spec['min']} and {$spec['max']}.{$guidance}";
+    }
+
     private function instruction(CategoryCreativeProfile $profile): string
     {
         $slots = [];
         foreach ($profile->identitySlots as $name => $spec) {
-            // Ngan sach tu suy tu chinh khe: 120 ky tu -> 17 tu, 60 -> 8. Mot
-            // con so chung se tu sinh warning o cac khe ngan.
-            $guidance = isset($spec['guidance']) ? ' Guidance: '.$spec['guidance'] : '';
-            $slots[] = $spec['type'] === 'text'
-                ? '- '.$name.': one compact technical phrase, at most '.max(3, intdiv((int) $spec['max_length'], 7)).' words.'.$guidance
-                : "- {$name}: {$spec['type']}, between {$spec['min']} and {$spec['max']}.{$guidance}";
+            if ($spec['type'] === 'object') {
+                $lines = ['- '.$name.': an object with exactly these keys:'.$this->slotGuidance($spec)];
+                foreach ($spec['fields'] as $field => $fieldSpec) {
+                    $lines[] = '  '.$this->slotLine($field, $fieldSpec);
+                }
+                $slots[] = implode("\n", $lines);
+
+                continue;
+            }
+
+            $slots[] = $this->slotLine($name, $spec);
         }
 
         $aspects = implode("\n", array_map(fn (string $aspect) => "- {$aspect}", $profile->inspectionAspects));

@@ -69,14 +69,17 @@ class CreativeConceptOrderingTest extends TestCase
         ]);
 
         $profile = (new CreativeProfileResolver)->resolve('yacht');
-        $identity = [];
-        foreach ($profile->identitySlots as $name => $spec) {
-            $identity[$name] = match ($spec['type']) {
+        $slotValue = function (array $spec) use (&$slotValue) {
+            return match ($spec['type']) {
                 'integer' => (int) $spec['min'],
                 'number' => (float) $spec['min'],
+                'enum' => $spec['values'][0],
+                'object' => array_map($slotValue, $spec['fields']),
                 default => 'compact technical description',
             };
-        }
+        };
+
+        $identity = array_map($slotValue, $profile->identitySlots);
         $brief = [
             'article_patterns' => [$profile->articlePatterns[0]],
             'article_focus' => 'A source about a large vessel.',

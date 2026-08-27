@@ -6,7 +6,7 @@ use InvalidArgumentException;
 
 final class CategoryCreativeProfile
 {
-    private const SLOT_TYPES = ['text', 'integer', 'number'];
+    private const SLOT_TYPES = ['text', 'integer', 'number', 'object', 'enum'];
 
     private const MAX_SLOT_GUIDANCE_LENGTH = 200;
 
@@ -148,52 +148,100 @@ final class CategoryCreativeProfile
                 throw new InvalidArgumentException('Creative profile identity_slots contains an invalid slot name.');
             }
 
-            if (! is_array($spec) || ! isset($spec['type']) || ! in_array($spec['type'], self::SLOT_TYPES, true)) {
-                throw new InvalidArgumentException("Creative profile identity slot {$name} must declare type text|integer|number.");
+            $this->assertSlotSpecIsSatisfiable($name, $spec);
+        }
+    }
+
+    private function assertSlotSpecIsSatisfiable(string $name, mixed $spec): void
+    {
+        if (! is_array($spec) || ! isset($spec['type']) || ! in_array($spec['type'], self::SLOT_TYPES, true)) {
+            throw new InvalidArgumentException("Creative profile identity slot {$name} must declare type ".implode('|', self::SLOT_TYPES).'.');
+        }
+
+        // Tập key đóng: `maximum` gõ nhầm thay cho `max` phải nổ lúc deploy,
+        // không được bỏ qua im lặng.
+        $expected = match ($spec['type']) {
+            'text' => ['type', 'max_length'],
+            'object' => ['type', 'fields'],
+            'enum' => ['type', 'values'],
+            default => ['type', 'min', 'max'],
+        };
+        $allowed = [...$expected, 'guidance'];
+
+        if (array_diff(array_keys($spec), $allowed) !== [] || array_diff($expected, array_keys($spec)) !== []) {
+            throw new InvalidArgumentException(
+                "Creative profile identity slot {$name} must declare ".implode(', ', $expected).' and may declare guidance.',
+            );
+        }
+
+        if (array_key_exists('guidance', $spec)
+            && (! is_string($spec['guidance'])
+                || trim($spec['guidance']) === ''
+                || mb_strlen($spec['guidance']) > self::MAX_SLOT_GUIDANCE_LENGTH)) {
+            throw new InvalidArgumentException(
+                "Creative profile identity slot {$name} guidance must be a non-empty string of at most ".self::MAX_SLOT_GUIDANCE_LENGTH.' characters.',
+            );
+        }
+
+        if ($spec['type'] === 'text') {
+            if (! is_int($spec['max_length']) || $spec['max_length'] < 1) {
+                throw new InvalidArgumentException("Creative profile identity slot {$name} must declare max_length > 0.");
             }
 
-            // Tập key đóng: `maximum` gõ nhầm thay cho `max` phải nổ lúc deploy,
-            // không được bỏ qua im lặng.
-            $expected = $spec['type'] === 'text' ? ['type', 'max_length'] : ['type', 'min', 'max'];
-            $allowed = [...$expected, 'guidance'];
+            return;
+        }
 
-            if (array_diff(array_keys($spec), $allowed) !== [] || array_diff($expected, array_keys($spec)) !== []) {
-                throw new InvalidArgumentException(
-                    "Creative profile identity slot {$name} must declare ".implode(', ', $expected).' and may declare guidance.',
-                );
+        if ($spec['type'] === 'enum') {
+            if (! is_array($spec['values']) || $spec['values'] === []) {
+                throw new InvalidArgumentException("Creative profile identity slot {$name} must declare at least one value.");
             }
 
-            if (array_key_exists('guidance', $spec)
-                && (! is_string($spec['guidance'])
-                    || trim($spec['guidance']) === ''
-                    || mb_strlen($spec['guidance']) > self::MAX_SLOT_GUIDANCE_LENGTH)) {
-                throw new InvalidArgumentException(
-                    "Creative profile identity slot {$name} guidance must be a non-empty string of at most ".self::MAX_SLOT_GUIDANCE_LENGTH.' characters.',
-                );
+            foreach ($spec['values'] as $value) {
+                if (! is_string($value) || preg_match('/\A[a-z][a-z0-9_]*\z/', $value) !== 1) {
+                    throw new InvalidArgumentException("Creative profile identity slot {$name} has an invalid value.");
+                }
             }
 
-            if ($spec['type'] === 'text') {
-                if (! is_int($spec['max_length']) || $spec['max_length'] < 1) {
-                    throw new InvalidArgumentException("Creative profile identity slot {$name} must declare max_length > 0.");
+            if (count($spec['values']) !== count(array_unique($spec['values']))) {
+                throw new InvalidArgumentException("Creative profile identity slot {$name} has duplicate values.");
+            }
+
+            return;
+        }
+
+        if ($spec['type'] === 'object') {
+            if (! is_array($spec['fields']) || $spec['fields'] === []) {
+                throw new InvalidArgumentException("Creative profile identity slot {$name} must declare at least one field.");
+            }
+
+            foreach ($spec['fields'] as $field => $fieldSpec) {
+                if (! is_string($field) || preg_match('/\A[a-z][a-z0-9_]*\z/', $field) !== 1) {
+                    throw new InvalidArgumentException("Creative profile identity slot {$name} contains an invalid field name.");
                 }
 
-                continue;
-            }
-
-            foreach (['min', 'max'] as $bound) {
-                if (! is_int($spec[$bound]) && ! is_float($spec[$bound])) {
-                    throw new InvalidArgumentException("Creative profile identity slot {$name} must declare a numeric {$bound}.");
+                if (is_array($fieldSpec) && ($fieldSpec['type'] ?? null) === 'object') {
+                    throw new InvalidArgumentException("Creative profile identity slot {$name}.{$field} must not nest another object.");
                 }
 
-                // NAN lọt qua thì phép so min > max bên dưới luôn false.
-                if (is_float($spec[$bound]) && ! is_finite($spec[$bound])) {
-                    throw new InvalidArgumentException("Creative profile identity slot {$name} must declare a finite {$bound}.");
-                }
+                $this->assertSlotSpecIsSatisfiable("{$name}.{$field}", $fieldSpec);
             }
 
-            if ($spec['min'] > $spec['max']) {
-                throw new InvalidArgumentException("Creative profile identity slot {$name} has min greater than max.");
+            return;
+        }
+
+        foreach (['min', 'max'] as $bound) {
+            if (! is_int($spec[$bound]) && ! is_float($spec[$bound])) {
+                throw new InvalidArgumentException("Creative profile identity slot {$name} must declare a numeric {$bound}.");
             }
+
+            // NAN lọt qua thì phép so min > max bên dưới luôn false.
+            if (is_float($spec[$bound]) && ! is_finite($spec[$bound])) {
+                throw new InvalidArgumentException("Creative profile identity slot {$name} must declare a finite {$bound}.");
+            }
+        }
+
+        if ($spec['min'] > $spec['max']) {
+            throw new InvalidArgumentException("Creative profile identity slot {$name} has min greater than max.");
         }
     }
 }

@@ -167,14 +167,17 @@ class CreativeConceptModeTest extends TestCase
             'excluded_context' => [],
         ]);
 
-        $identity = [];
-        foreach ($profile->identitySlots as $name => $spec) {
-            $identity[$name] = match ($spec['type']) {
+        $slotValue = function (array $spec) use (&$slotValue) {
+            return match ($spec['type']) {
                 'integer' => (int) $spec['min'],
                 'number' => (float) $spec['min'],
+                'enum' => $spec['values'][0],
+                'object' => array_map($slotValue, $spec['fields']),
                 default => 'a plain description',
             };
-        }
+        };
+
+        $identity = array_map($slotValue, $profile->identitySlots);
 
         $decisions = array_map(
             fn (string $aspect) => [

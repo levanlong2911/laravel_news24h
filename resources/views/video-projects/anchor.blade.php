@@ -182,7 +182,7 @@
                         <div class="t">{{ $concept['thesis'] }}</div>
                         <div class="ids">
                             @foreach(array_slice($concept['identity'], 0, 6, true) as $key => $value)
-                                <span><em>{{ str_replace('_', ' ', $key) }}</em> {{ \Illuminate\Support\Str::limit((string) $value, 38) }}</span>
+                                <span><em>{{ str_replace('_', ' ', $key) }}</em> {{ \Illuminate\Support\Str::limit(is_array($value) ? implode(' · ', $value) : (string) $value, 38) }}</span>
                             @endforeach
                         </div>
                         @if($concept['relationships'] !== [])
@@ -526,8 +526,8 @@
         if (button) {
             button.disabled = !ready;
             button.title = !hasPrompt
-                ? 'ChÆ°a cÃ³ anchor prompt'
-                : (missing.length ? 'ChÆ°a chá»n: ' + missing.join(', ') : '');
+                ? 'Chưa có anchor prompt'
+                : (missing.length ? 'Chưa chọn: ' + missing.join(', ') : '');
         }
 
         var unit = prices[form.querySelector('[name=quality]').value] || 0;

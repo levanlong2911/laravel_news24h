@@ -37,7 +37,7 @@ class CreativeProfileResolverTest extends TestCase
         $this->assertArrayNotHasKey('hull_vertical_proportions', $slots);
 
         foreach ($slots as $name => $spec) {
-            $this->assertContains($spec['type'], ['text', 'integer', 'number'], "slot {$name}");
+            $this->assertContains($spec['type'], ['text', 'integer', 'number', 'object'], "slot {$name}");
         }
     }
 
@@ -230,9 +230,9 @@ class CreativeProfileResolverTest extends TestCase
             (new CreativeProfileResolver)->resolve('yacht'),
         );
 
-        $this->assertSame('concept-v15', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertSame('concept-v16', ClaudeConceptDesigner::INSTRUCTION_VERSION);
         $this->assertSame(
-            '9745712aad360828b3ae85afc23dc56c3060c0c356e865c5cfdc682f5439010a',
+            'a688e35a19b8c393bddcfcb2d0f0366c0c79db25f79be80a943b2aa70422b3a3',
             hash('sha256', $instruction),
             'Instruction doi ma version khong doi.',
         );

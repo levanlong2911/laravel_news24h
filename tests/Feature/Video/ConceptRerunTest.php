@@ -108,13 +108,17 @@ class ConceptRerunTest extends TestCase
     private function concept(): array
     {
         $profile = config('video.creative_profiles.profiles.luxury_vessel');
-        $identity = [];
+        $slotValue = function (array $spec) use (&$slotValue) {
+            return match ($spec['type']) {
+                'integer' => (int) $spec['min'],
+                'number' => (float) $spec['min'],
+                'enum' => $spec['values'][0],
+                'object' => array_map($slotValue, $spec['fields']),
+                default => 'test value',
+            };
+        };
 
-        foreach ($profile['identity_slots'] as $name => $spec) {
-            $identity[$name] = $spec['type'] === 'text'
-                ? 'test value'
-                : ($spec['type'] === 'integer' ? (int) $spec['min'] : (float) $spec['min']);
-        }
+        $identity = array_map($slotValue, $profile['identity_slots']);
 
         return [
             'design_thesis' => 'One continuous line ties the whole form together.',

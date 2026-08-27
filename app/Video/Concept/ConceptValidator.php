@@ -149,6 +149,36 @@ final class ConceptValidator
 
                 break;
 
+            case 'enum':
+                if (! in_array($value, $spec['values'], true)) {
+                    $violations[] = "design_identity.{$slot} must be one of ".implode(', ', $spec['values']);
+                }
+
+                return;
+
+            case 'object':
+                if (! is_array($value) || ($value !== [] && array_is_list($value))) {
+                    $violations[] = "design_identity.{$slot} must be an object";
+
+                    return;
+                }
+
+                foreach (array_diff(array_keys($spec['fields']), array_keys($value)) as $missing) {
+                    $violations[] = "design_identity.{$slot} is missing field {$missing}";
+                }
+
+                foreach (array_diff(array_keys($value), array_keys($spec['fields'])) as $unknown) {
+                    $violations[] = "design_identity.{$slot} contains unknown field {$unknown}";
+                }
+
+                foreach ($spec['fields'] as $field => $fieldSpec) {
+                    if (array_key_exists($field, $value)) {
+                        $this->checkSlotValue("{$slot}.{$field}", $fieldSpec, $value[$field], $violations, $warnings);
+                    }
+                }
+
+                return;
+
             case 'number':
                 if ((! is_int($value) && ! is_float($value)) || (is_float($value) && ! is_finite($value))) {
                     $violations[] = "design_identity.{$slot} must be a finite number";
@@ -241,9 +271,7 @@ final class ConceptValidator
         $fields = ['design_thesis' => $concept->designThesis];
 
         foreach ($concept->designIdentity as $slot => $value) {
-            if (is_string($value)) {
-                $fields["design_identity.{$slot}"] = $value;
-            }
+            $fields += $this->flattenStrings("design_identity.{$slot}", $value);
         }
 
         foreach ($concept->formRelationships->toArray() as $name => $value) {
@@ -266,6 +294,25 @@ final class ConceptValidator
                 }
             }
         }
+    }
+
+    /** @return array<string, string> */
+    private function flattenStrings(string $path, mixed $value): array
+    {
+        if (is_string($value)) {
+            return [$path => $value];
+        }
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $flat = [];
+        foreach ($value as $key => $inner) {
+            $flat += $this->flattenStrings("{$path}.{$key}", $inner);
+        }
+
+        return $flat;
     }
 
     private function containsTerm(string $haystack, string $term): bool

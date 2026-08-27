@@ -77,7 +77,7 @@ class ConceptContractVersionTest extends TestCase
         // v10 doi LUAT DEM: so lan lap khong con duoc mang di khap concept. Concept
         // v9 nao con trong DB deu la ban co so dem lan khap noi — chung phai bi
         // hash tu choi, khong duoc phuc vu tiep.
-        $this->assertSame('concept-v15', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertSame('concept-v16', ClaudeConceptDesigner::INSTRUCTION_VERSION);
         $this->assertStringContainsString(
             'verification count',
             config('video.creative_profiles.profiles.luxury_vessel.identity_slots')['visible_deck_tiers']['guidance'],
