@@ -17,12 +17,16 @@ class ConceptStageRunner
 
     private VideoRenderPlanService $renderPlanService;
 
+    private VisualIdentityStore $identityStore;
+
     public function __construct(
         PlanningStageStore $stageStore,
         VideoRenderPlanService $renderPlanService,
+        VisualIdentityStore $identityStore,
     ) {
         $this->stageStore = $stageStore;
         $this->renderPlanService = $renderPlanService;
+        $this->identityStore = $identityStore;
     }
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
@@ -58,6 +62,15 @@ class ConceptStageRunner
             $output,
             $this->usage(),
         );
+
+        $identity = $this->identityStore->freezeFromConcept((string) $stage->project_id, $output);
+
+        if ($identity === null) {
+            Log::warning('concept-stage: visual identity freeze skipped', [
+                'stage_id' => $stage->id,
+                'project_id' => $stage->project_id,
+            ]);
+        }
 
         return [$output, 'ok'];
     }

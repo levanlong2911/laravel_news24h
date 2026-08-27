@@ -21,6 +21,7 @@ use App\Services\Video\DesignImageStore;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\PythonPromptCompiler;
+use App\Services\Video\VisualIdentityStore;
 use App\Video\Concept\ClaudeConceptDesigner;
 use App\Video\Concept\Provenance;
 use App\Video\Concept\Viewpoint;
@@ -50,6 +51,8 @@ class VideoProjectService
 
     private VideoRenderPlanService $renderPlanService;
 
+    private VisualIdentityStore $identityStore;
+
     public function __construct(
         VideoProjectRepositoryInterface $videoProjectRepository,
         ArticleService $articleService,
@@ -62,6 +65,7 @@ class VideoProjectService
         DesignImageQueue $designImageQueue,
         DesignImageRenderer $designImageRenderer,
         DesignImageDirectRenderer $designImageDirectRenderer,
+        VisualIdentityStore $identityStore,
     ) {
         $this->videoProjectRepository = $videoProjectRepository;
         $this->articleService = $articleService;
@@ -74,6 +78,7 @@ class VideoProjectService
         $this->designImageQueue = $designImageQueue;
         $this->designImageRenderer = $designImageRenderer;
         $this->designImageDirectRenderer = $designImageDirectRenderer;
+        $this->identityStore = $identityStore;
     }
 
     public function listAll(): iterable
@@ -436,6 +441,11 @@ class VideoProjectService
             $model,
             $quality,
             $variations,
+            [
+                'identity_id' => $preview['identity_id'] ?? null,
+                'identity_hash' => $preview['identity_hash'] ?? null,
+                'identity_version' => $preview['identity_version'] ?? null,
+            ],
         );
 
         return $image === null ? [null, $reason] : $this->renderer()->renderNow($image->id);
@@ -460,8 +470,9 @@ class VideoProjectService
         ImageModel $model,
         ImageQuality $quality,
         ImageVariations $variations,
+        array $identity = [],
     ): array {
-        return $this->designImageStore->createCandidate($projectId, $creator, [
+        return $this->designImageStore->createCandidate($projectId, $creator, $identity + [
             'prompt' => $prompt,
             'operation' => 'generate',
             'model' => $model->value,
@@ -473,7 +484,7 @@ class VideoProjectService
         ]);
     }
 
-    /** @return array{0: ?string, 1: string} */
+    /** @return array{0: ?string, 1: string, 2: ?array<string, mixed>} */
     public function compiledAnchorPrompt(
         string $projectId,
         AnchorStage $stage,
@@ -483,28 +494,30 @@ class VideoProjectService
         $project = $this->videoProjectRepository->getById($projectId);
 
         if ($project === null) {
-            return [null, 'project_not_found'];
+            return [null, 'project_not_found', null];
         }
 
         $category = (string) ($project->article?->category?->slug ?? '');
 
         if ($category === '') {
-            return [null, 'no_category'];
+            return [null, 'no_category', null];
         }
 
         $concept = $this->stageStore->latestOutputForProject($project->id, PlanningStageName::CONCEPT);
 
         if ($concept === null) {
-            return [null, 'no_concept'];
+            return [null, 'no_concept', null];
         }
 
-        return $this->promptCompiler->compile(
+        [$prompt, $reason] = $this->promptCompiler->compile(
             $category, $concept, $viewpoint->value,
             $size->width(), $size->height(), $stage->value,
         );
+
+        return [$prompt, $reason, $concept];
     }
 
-    /** @return array{prompt:string,prompt_sha256:string,stage:string,viewpoint:string,size:string,compiled_at:string}|null */
+    /** @return array{prompt:string,prompt_sha256:string,stage:string,viewpoint:string,size:string,compiled_at:string,identity_id:?string,identity_hash:?string,identity_version:?int}|null */
     public function anchorPromptPreview(string $projectId): ?array
     {
         $project = $this->videoProjectRepository->getById($projectId);
@@ -538,6 +551,7 @@ class VideoProjectService
         Viewpoint $viewpoint,
         ImageSize $size,
         string $prompt,
+        array $concept,
     ): bool {
         $project = $this->videoProjectRepository->getById($projectId);
 
@@ -546,9 +560,14 @@ class VideoProjectService
         }
 
         $metadata = $project->metadata_json ?? [];
+        $identity = $this->identityStore->freezeFromConcept($project->id, $concept);
+
         $metadata['anchor_prompt_preview'] = [
             'prompt' => $prompt,
             'prompt_sha256' => hash('sha256', $prompt),
+            'identity_id' => $identity?->id,
+            'identity_hash' => $identity?->identity_hash,
+            'identity_version' => $identity?->version,
             'stage' => $stage->value,
             'viewpoint' => $viewpoint->value,
             'size' => $size->value,

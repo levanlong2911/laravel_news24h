@@ -21,7 +21,7 @@ class DesignImageStore
 
     private const CODE_MAX = 100;
 
-    private const IDENTITY_KEYS = ['prompt', 'model', 'quality', 'size'];
+    private const IDENTITY_KEYS = ['prompt', 'model', 'quality', 'size', 'variations'];
 
     private const ANCHOR_TYPE = 'identity_anchor';
 
@@ -47,6 +47,7 @@ class DesignImageStore
                 return [
                     VideoDesignImage::create([
                         'project_id' => $projectId,
+                        'identity_id' => $spec['identity_id'] ?? null,
                         'image_code' => $this->nextImageCode($projectId, $creator),
                         'image_type' => self::ANCHOR_TYPE,
                         'prompt_spec_json' => $spec,

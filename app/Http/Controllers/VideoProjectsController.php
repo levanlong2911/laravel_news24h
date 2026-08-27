@@ -183,15 +183,15 @@ class VideoProjectsController extends Controller
         $viewpoint = Viewpoint::from($data['viewpoint']);
         $size = ImageSize::from($data['size']);
 
-        [$prompt, $reason] = $this->videoProjectService->compiledAnchorPrompt(
+        [$prompt, $reason, $concept] = $this->videoProjectService->compiledAnchorPrompt(
             $id, $stage, $viewpoint, $size,
         );
 
-        if ($prompt === null) {
+        if ($prompt === null || $concept === null) {
             return back()->withInput()->with('error', $this->anchorMessage($reason));
         }
 
-        $this->videoProjectService->storeAnchorPromptPreview($id, $stage, $viewpoint, $size, $prompt);
+        $this->videoProjectService->storeAnchorPromptPreview($id, $stage, $viewpoint, $size, $prompt, $concept);
 
         return back();
     }

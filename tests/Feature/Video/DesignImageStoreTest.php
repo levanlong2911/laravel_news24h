@@ -49,7 +49,7 @@ class DesignImageStoreTest extends TestCase
         $this->assertLessThanOrEqual(100, strlen($image->image_code));
     }
 
-    public function test_changing_only_the_variation_count_reuses_the_same_cell(): void
+    public function test_changing_the_variation_count_opens_a_second_cell(): void
     {
         [$first] = $this->store->createCandidate($this->project->id, 'Van Long', $this->spec());
 
@@ -57,9 +57,11 @@ class DesignImageStoreTest extends TestCase
             $this->project->id, 'Van Long', $this->spec(['variations' => 1]),
         );
 
-        $this->assertSame('already_exists', $reason);
-        $this->assertSame($first->id, $second->id);
-        $this->assertSame(1, VideoDesignImage::where('project_id', $this->project->id)->count());
+        $this->assertSame('created', $reason);
+        $this->assertNotSame($first->id, $second->id);
+        $this->assertSame(2, $first->prompt_spec_json['variations']);
+        $this->assertSame(1, $second->prompt_spec_json['variations']);
+        $this->assertSame(2, VideoDesignImage::where('project_id', $this->project->id)->count());
     }
 
     public function test_changing_the_quality_opens_a_second_cell(): void
@@ -109,15 +111,15 @@ class DesignImageStoreTest extends TestCase
     public function test_the_identity_hash_ignores_key_order_but_not_the_prompt(): void
     {
         $ordered = $this->store->identityHash([
-            'prompt' => 'A', 'model' => 'gpt-image-2', 'quality' => 'low', 'size' => '1024x1536',
+            'prompt' => 'A', 'model' => 'gpt-image-2', 'quality' => 'low', 'size' => '1024x1536', 'variations' => 2,
         ]);
         $shuffled = $this->store->identityHash([
-            'size' => '1024x1536', 'quality' => 'low', 'model' => 'gpt-image-2', 'prompt' => 'A',
+            'variations' => 2, 'size' => '1024x1536', 'quality' => 'low', 'model' => 'gpt-image-2', 'prompt' => 'A',
         ]);
 
         $this->assertSame($ordered, $shuffled);
         $this->assertNotSame($ordered, $this->store->identityHash([
-            'prompt' => 'B', 'model' => 'gpt-image-2', 'quality' => 'low', 'size' => '1024x1536',
+            'prompt' => 'B', 'model' => 'gpt-image-2', 'quality' => 'low', 'size' => '1024x1536', 'variations' => 2,
         ]));
     }
 

@@ -17,7 +17,11 @@ class ConceptStageRunnerUsageTest extends TestCase
         $renderPlan = $this->createMock(VideoRenderPlanService::class);
         $renderPlan->method('lastUsage')->willReturn($totals);
 
-        $runner = new ConceptStageRunner($this->createMock(PlanningStageStore::class), $renderPlan);
+        $runner = new ConceptStageRunner(
+            $this->createMock(PlanningStageStore::class),
+            $renderPlan,
+            new \App\Services\Video\VisualIdentityStore,
+        );
 
         $method = new ReflectionMethod(ConceptStageRunner::class, 'usage');
         $method->setAccessible(true);
