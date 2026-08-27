@@ -1,0 +1,125 @@
+{
+    "design_thesis": "One faceted shell tapers continuously bow to stern, its glazing bands reading as a single carved ribbon.",
+    "design_identity": {
+        "design_length_m": 120,
+        "length_to_beam_ratio": 5.2,
+        "design_draft_m": 4.3,
+        "visible_freeboard_at_midships_m": 3.6,
+        "typical_deck_to_deck_height_m": 3.1,
+        "visible_deck_tiers": 4,
+        "bow": {
+            "stem": "raked",
+            "rake_degrees": 14,
+            "waterline_entry": "fine",
+            "forefoot": "continuous_convex",
+            "chine": "hard_to_midships"
+        },
+        "stern": {
+            "transom": "raked_full_beam",
+            "platform": "fold_down",
+            "transom_face": "faceted glass panel flanked by dark composite fins"
+        },
+        "superstructure": {
+            "envelope": "faceted_continuous_shell",
+            "massing_position": "central_aft",
+            "external_read": "single_integrated_mass",
+            "profile_note": "shell tapers aft into low sculpted wing decks"
+        },
+        "openings": {
+            "aperture_bands": 4,
+            "distribution": "horizontal_ribbon",
+            "vertical_extent": "mixed_by_zone",
+            "surface_relationship": "flush_recessed",
+            "hull_openings": "minimal_service"
+        },
+        "hull_material": "welded steel hull with vacuum-insulated core",
+        "superstructure_material": "aluminum superstructure with composite fairing panels",
+        "hull_colour": "graphite grey satin finish",
+        "boot_stripe_colour": "narrow gloss black stripe above waterline",
+        "superstructure_colour": "pearl white with graphite accents"
+    },
+    "form_relationships": {
+        "governing_line": "A single raked sheer line runs unbroken from stem to stern, tying hull and superstructure into one tapered form.",
+        "massing_rhythm": "The envelope narrows from a broad midship beam toward a compressed bow and a wide raked transom, carved by continuous glazing.",
+        "feature_integration": "Signature elements emerge as continuations of the hull's structural facets rather than applied fittings."
+    },
+    "signature_features": [
+        {
+            "description": "Continuous faceted glazing ribbon wraps from bow shoulder to aft quarter",
+            "visible_from": [
+                "side",
+                "front_three_quarter"
+            ]
+        },
+        {
+            "description": "Glass balustrade decks cantilever seamlessly from the superstructure shell",
+            "visible_from": [
+                "side",
+                "rear_three_quarter"
+            ]
+        },
+        {
+            "description": "Raked full-beam transom with faceted glass face and fold-down platform",
+            "visible_from": [
+                "rear_three_quarter"
+            ]
+        }
+    ],
+    "decisions": [
+        {
+            "aspect": "size_and_dimensions",
+            "provenance": "inspired",
+            "decision": "Retained the 120 m overall length while adjusting beam ratio to 5.2 for a leaner, more continuous silhouette."
+        },
+        {
+            "aspect": "form_and_proportions",
+            "provenance": "inspired",
+            "decision": "Translated sculpted angular lines into a faceted continuous shell rather than separate stacked superstructure blocks."
+        },
+        {
+            "aspect": "spatial_layout",
+            "provenance": "inspired",
+            "decision": "Distributed principal living spaces across three internal deck zones, unified visually by one uninterrupted glazing band."
+        },
+        {
+            "aspect": "deck_organization",
+            "provenance": "invented",
+            "decision": "Organized four visible tiers around a central atrium void that threads sightlines from bow lounge to aft deck."
+        },
+        {
+            "aspect": "materials_and_finishes",
+            "provenance": "invented",
+            "decision": "Applied matte graphite hull composite paired with warm oak and stone interior surfaces for acoustic mass."
+        },
+        {
+            "aspect": "amenities",
+            "provenance": "invented",
+            "decision": "Included a beach club, dive support locker, and convertible aft lounge accessible from the fold-down platform."
+        },
+        {
+            "aspect": "windows_and_glazing",
+            "provenance": "inspired",
+            "decision": "Extended signature glazing into a flush recessed ribbon spanning four aperture bands with frameless glass balustrades."
+        },
+        {
+            "aspect": "wellness_and_relaxation",
+            "provenance": "invented",
+            "decision": "Placed a spa deck with plunge pool and treatment suite within the forward superstructure volume."
+        },
+        {
+            "aspect": "transformable_spaces",
+            "provenance": "invented",
+            "decision": "Designed the aft main deck lounge with retractable glazing to merge interior and exterior entertaining zones."
+        },
+        {
+            "aspect": "capacity",
+            "provenance": "inspired",
+            "decision": "Retained six-cabin guest configuration, sized generously for extended cruising and charter comfort."
+        },
+        {
+            "aspect": "construction_new_build_and_refit",
+            "provenance": "inspired",
+            "decision": "Integrated commercial-grade automation, water treatment, and multilayer acoustic insulation throughout the hull and shell structure."
+        }
+    ]
+}

@@ -201,7 +201,7 @@ class CreativeConceptModeTest extends TestCase
                 'feature_integration' => 'Features grow out of the main volume.',
             ],
             'signature_features' => [[
-                'description' => 'a cantilevered bow fin',
+                'description' => 'a recessed bow facet',
                 'visible_from' => ['front_three_quarter'],
             ]],
             'decisions' => $decisions,

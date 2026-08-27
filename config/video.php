@@ -148,6 +148,21 @@ return [
                  * cai KHONG phai ban sao cua nhau: mot cai noi voi nguoi thiet ke,
                  * mot cai noi voi nguoi ve.
                  */
+                'concept_forbidden_terms' => [
+                    'cantilever',
+                    'cantilevered',
+                    'cantilevering',
+                    'wedding cake',
+                    'stacked slabs',
+                    'apartment block',
+                    'cruise ship',
+                    'bulbous',
+                    'overhanging',
+                    'floating slab',
+                    'fin',
+                    'fins',
+                ],
+
                 'concept_antipatterns' => [
                     'independent horizontal slabs stacked like a wedding cake',
                     'apartment-block or cruise-ship massing',
@@ -206,22 +221,22 @@ return [
                         'guidance' => 'Editorial floor: if the source vessel is smaller, '
                             .'scale the new design up to at least 100 m.',
                     ],
-                    'length_to_beam_ratio' => ['type' => 'number', 'min' => 2.0, 'max' => 12.0],
+                    'length_to_beam_ratio' => ['type' => 'number', 'min' => 5.5, 'max' => 7.5],
                     'design_draft_m' => ['type' => 'number', 'min' => 2.0, 'max' => 6.0],
                     'visible_freeboard_at_midships_m' => ['type' => 'number', 'min' => 1.5, 'max' => 6.0],
                     'typical_deck_to_deck_height_m' => ['type' => 'number', 'min' => 2.6, 'max' => 3.5],
-                    'visible_deck_tiers' => ['type' => 'integer', 'min' => 1, 'max' => 10,
+                    'visible_deck_tiers' => ['type' => 'integer', 'min' => 3, 'max' => 6,
                         'guidance' => 'A verification count, not a design motif. State it here and nowhere else.'],
                     'bow' => ['type' => 'object', 'fields' => [
-                        'stem' => ['type' => 'enum', 'values' => ['plumb', 'near_plumb', 'raked']],
+                        'stem' => ['type' => 'enum', 'values' => ['plumb', 'near_plumb']],
                         'rake_degrees' => ['type' => 'number', 'min' => 0.0, 'max' => 25.0],
                         'waterline_entry' => ['type' => 'enum', 'values' => ['fine', 'moderate', 'full']],
                         'forefoot' => ['type' => 'enum', 'values' => ['continuous_convex', 'hard_knuckle', 'rounded']],
                         'chine' => ['type' => 'enum', 'values' => ['hard_to_midships', 'soft', 'none']],
                     ]],
                     'stern' => ['type' => 'object', 'fields' => [
-                        'transom' => ['type' => 'enum', 'values' => ['plumb_full_beam', 'raked_full_beam', 'tapered']],
-                        'platform' => ['type' => 'enum', 'values' => ['recessed_waterline', 'fold_down', 'none']],
+                        'transom' => ['type' => 'enum', 'values' => ['plumb_full_beam']],
+                        'platform' => ['type' => 'enum', 'values' => ['recessed_waterline']],
                         'transom_face' => ['type' => 'text', 'max_length' => 90],
                     ]],
                     'superstructure' => ['type' => 'object', 'fields' => [

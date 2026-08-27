@@ -9,7 +9,7 @@ use App\Video\Llm\LlmRequest;
 
 final class ClaudeConceptDesigner
 {
-    public const INSTRUCTION_VERSION = 'concept-v16';
+    public const INSTRUCTION_VERSION = 'concept-v17';
 
     public const MODEL = 'sonnet5';
 
@@ -130,6 +130,14 @@ final class ClaudeConceptDesigner
             '',
         ]);
 
+        $forbidden = $profile->conceptForbiddenTerms === [] ? '' : implode("\n", [
+            'These forms are refused outright. Do not use the words below, and do not',
+            'restate the same shape in different words:',
+            implode(', ', $profile->conceptForbiddenTerms).'.',
+            '',
+            '',
+        ]);
+
         $viewpoints = implode("\n", array_map(
             fn (string $name, string $text) => "- {$name}: {$text}",
             array_keys($profile->viewpointGuidance),
@@ -156,7 +164,7 @@ final class ClaudeConceptDesigner
         The word budgets below are guidance, not a counting exercise. Staying near
         them keeps the specification readable.
 
-        {$antipatterns}Return ONLY one raw JSON object with exactly these fields:
+        {$antipatterns}{$forbidden}Return ONLY one raw JSON object with exactly these fields:
 
         "design_thesis": one sentence, at most 24 words, stating the organising idea
         of the whole design.

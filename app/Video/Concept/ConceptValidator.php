@@ -58,6 +58,7 @@ final class ConceptValidator
         $this->checkFeatures($concept, $violations, $warnings);
         $this->checkDecisions($concept, $profile, $brief, $violations, $warnings);
         $this->checkExcludedIdentity($concept, $brief, $violations);
+        $this->checkForbiddenTerms($concept, $profile, $violations);
 
         return new ConceptValidationResult(array_values(array_unique($violations)), $warnings);
     }
@@ -268,6 +269,38 @@ final class ConceptValidator
             return;
         }
 
+        foreach ($this->proseFields($concept) as $where => $text) {
+            foreach ($excluded as $value) {
+                if ($this->containsTerm(mb_strtolower($text), $value)) {
+                    $violations[] = "{$where} contains excluded identity context";
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * @param  list<string>  $violations
+     */
+    private function checkForbiddenTerms(CreativeConcept $concept, CategoryCreativeProfile $profile, array &$violations): void
+    {
+        if ($profile->conceptForbiddenTerms === []) {
+            return;
+        }
+
+        foreach ($this->proseFields($concept) as $where => $text) {
+            foreach ($profile->conceptForbiddenTerms as $term) {
+                if ($this->containsTerm(mb_strtolower($text), mb_strtolower($term))) {
+                    $violations[] = "{$where} uses a forbidden form: {$term}";
+                    break;
+                }
+            }
+        }
+    }
+
+    /** @return array<string, string> */
+    private function proseFields(CreativeConcept $concept): array
+    {
         $fields = ['design_thesis' => $concept->designThesis];
 
         foreach ($concept->designIdentity as $slot => $value) {
@@ -286,14 +319,7 @@ final class ConceptValidator
             $fields["decisions[{$index}].decision"] = $decision->decision;
         }
 
-        foreach ($fields as $where => $text) {
-            foreach ($excluded as $value) {
-                if ($this->containsTerm(mb_strtolower($text), $value)) {
-                    $violations[] = "{$where} contains excluded identity context";
-                    break;
-                }
-            }
-        }
+        return $fields;
     }
 
     /** @return array<string, string> */

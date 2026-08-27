@@ -230,9 +230,9 @@ class CreativeProfileResolverTest extends TestCase
             (new CreativeProfileResolver)->resolve('yacht'),
         );
 
-        $this->assertSame('concept-v16', ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $this->assertSame('concept-v17', ClaudeConceptDesigner::INSTRUCTION_VERSION);
         $this->assertSame(
-            'a688e35a19b8c393bddcfcb2d0f0366c0c79db25f79be80a943b2aa70422b3a3',
+            '7abd060375b425fcfae8b1b76d5e2940c890ab9b9b5bd7764506440221cfce0d',
             hash('sha256', $instruction),
             'Instruction doi ma version khong doi.',
         );

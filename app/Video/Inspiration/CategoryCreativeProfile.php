@@ -32,6 +32,7 @@ final class CategoryCreativeProfile
         public readonly array $arcStages = [],
         public readonly array $arcRequiredStages = [],
         public readonly array $conceptAntipatterns = [],
+        public readonly array $conceptForbiddenTerms = [],
     ) {
         foreach ([$key, $mission] as $value) {
             if (trim($value) === '') {
@@ -71,6 +72,20 @@ final class CategoryCreativeProfile
         if (count($conceptAntipatterns) !== count(array_unique($conceptAntipatterns))) {
             throw new InvalidArgumentException(
                 "Creative profile {$key} concept_antipatterns must be unique.",
+            );
+        }
+
+        foreach ($conceptForbiddenTerms as $item) {
+            if (! is_string($item) || trim($item) === '') {
+                throw new InvalidArgumentException(
+                    "Creative profile {$key} concept_forbidden_terms must contain only non-empty strings.",
+                );
+            }
+        }
+
+        if (count($conceptForbiddenTerms) !== count(array_unique($conceptForbiddenTerms))) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} concept_forbidden_terms must be unique.",
             );
         }
 
