@@ -158,6 +158,30 @@ return [
                     ],
                 ],
 
+                'design_spec_export' => [
+                    'schema_version' => '1.0',
+
+                    'invariants' => [
+                        'length_to_beam_ratio',
+                        'bow_geometry',
+                        'stern_geometry',
+                        'continuous_sheer',
+                        'superstructure_envelope',
+                        'enclosed_deck_level_count',
+                        'opening_layout',
+                    ],
+
+                    'export_aliases' => [
+                        'bow.forefoot' => ['continuous_convex' => 'continuous_convex_transition'],
+                        'bow.chine' => ['hard_to_midships' => 'hard_chine_to_midships'],
+                        'stern.transom' => ['plumb_full_beam' => 'plumb_full_beam_transom'],
+                        'stern.platform' => ['recessed_waterline' => 'integrated_recessed_waterline_platform'],
+                        'superstructure.envelope' => ['one_continuous_shell' => 'one_continuous_primary_shell'],
+                        'openings.distribution' => ['horizontal_ribbon' => 'horizontal_flush_ribbon_apertures'],
+                        'openings.hull_openings' => ['sparse_service' => 'sparse_service_openings'],
+                    ],
+                ],
+
                 'concept_forbidden_terms' => [
                     'cantilever',
                     'cantilevered',

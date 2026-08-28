@@ -35,6 +35,7 @@ final class CreativeProfileResolver
             $profile['concept_antipatterns'] ?? [],
             $profile['concept_forbidden_terms'] ?? [],
             $profile['identity_cross_checks'] ?? [],
+            $profile['design_spec_export'] ?? [],
         );
     }
 }

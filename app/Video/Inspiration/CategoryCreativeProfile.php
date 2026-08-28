@@ -34,6 +34,7 @@ final class CategoryCreativeProfile
         public readonly array $conceptAntipatterns = [],
         public readonly array $conceptForbiddenTerms = [],
         public readonly array $identityCrossChecks = [],
+        public readonly array $designSpecExport = [],
     ) {
         foreach ([$key, $mission] as $value) {
             if (trim($value) === '') {
@@ -92,6 +93,85 @@ final class CategoryCreativeProfile
 
         $this->assertIdentitySlotsAreSatisfiable($identitySlots);
         $this->assertIdentityCrossChecksAreSatisfiable($identityCrossChecks, $identitySlots, $key);
+        $this->assertDesignSpecExportIsSatisfiable($designSpecExport, $identitySlots, $key);
+    }
+
+    /**
+     * Alias chi doi TEN khi xuat DesignSpec; du lieu duoc dong bang van giu ten
+     * ngan, vi Python doc thang ten do.
+     */
+    public function exportAlias(string $path, mixed $value): mixed
+    {
+        $map = $this->designSpecExport['export_aliases'][$path] ?? null;
+
+        return is_array($map) && is_string($value) ? ($map[$value] ?? $value) : $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $export
+     * @param  array<string, array<string, mixed>>  $slots
+     */
+    private function assertDesignSpecExportIsSatisfiable(array $export, array $slots, string $key): void
+    {
+        if ($export === []) {
+            return;
+        }
+
+        if (! is_string($export['schema_version'] ?? null) || trim($export['schema_version']) === '') {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export must declare a schema_version.");
+        }
+
+        $invariants = $export['invariants'] ?? [];
+
+        if (! is_array($invariants) || $invariants === [] || count($invariants) !== count(array_unique($invariants))) {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export invariants must be non-empty and unique.");
+        }
+
+        foreach ($invariants as $name) {
+            if (! is_string($name) || preg_match('/\A[a-z][a-z0-9_]*\z/', $name) !== 1) {
+                throw new InvalidArgumentException("Creative profile {$key} design_spec_export contains an invalid invariant name.");
+            }
+        }
+
+        foreach ($export['export_aliases'] ?? [] as $path => $map) {
+            $this->assertExportAliasIsSatisfiable((string) $path, $map, $slots, $key);
+        }
+    }
+
+    /**
+     * Mot alias tro vao gia tri khong con trong enum se chet tham: DesignSpec
+     * xuat ra ten ngan trong khi ca profile tuong da doi ten.
+     *
+     * @param  array<string, array<string, mixed>>  $slots
+     */
+    private function assertExportAliasIsSatisfiable(string $path, mixed $map, array $slots, string $key): void
+    {
+        if (! is_array($map) || $map === []) {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export alias {$path} must map at least one value.");
+        }
+
+        $parts = explode('.', $path);
+
+        if (count($parts) !== 2) {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export alias {$path} must name slot.field.");
+        }
+
+        [$slot, $field] = $parts;
+        $spec = $slots[$slot]['fields'][$field] ?? null;
+
+        if (($spec['type'] ?? null) !== 'enum') {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export alias {$path} must name an enum field.");
+        }
+
+        foreach ($map as $from => $to) {
+            if (! in_array($from, $spec['values'], true)) {
+                throw new InvalidArgumentException("Creative profile {$key} design_spec_export alias {$path} maps {$from}, which is not one of its enum values.");
+            }
+
+            if (! is_string($to) || trim($to) === '') {
+                throw new InvalidArgumentException("Creative profile {$key} design_spec_export alias {$path} must map {$from} to a non-empty name.");
+            }
+        }
     }
 
     /**
