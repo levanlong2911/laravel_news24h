@@ -11,52 +11,52 @@ use Tests\TestCase;
 
 class DesignSpecExportTest extends TestCase
 {
+    /**
+     * Truong DesignSpec xuat ra ma phuong_an_1.md khong khai. Ghim lai: neu de
+     * "thua" tu do thi ai them truong moi cung khong ai biet.
+     */
+    private const EXTRA_BEYOND_THE_CONTRACT = [
+        'finished_materials.boot_stripe',
+        'finished_materials.boot_stripe.colour',
+        'permanent_geometry.openings.vertical_extent',
+        'permanent_geometry.stern.transom_face',
+        'permanent_geometry.superstructure.profile_note',
+    ];
+
     private const INVARIANTS = [
         'stern_geometry', 'continuous_sheer', 'opening_layout', 'bow_geometry', 'superstructure_envelope',
     ];
 
     private function profile(): CategoryCreativeProfile
     {
-        return (new CreativeProfileResolver)->resolve('superyacht');
+        return (new CreativeProfileResolver)->resolve('yacht');
     }
 
     private function concept(): CreativeConcept
     {
-        $identity = [
-            'design_length_m' => 120,
-            'design_beam_m' => 17.5,
-            'length_to_beam_ratio' => 6.9,
-            'design_draft_m' => 4.2,
-            'visible_freeboard_at_midships_m' => 3.4,
-            'typical_deck_to_deck_height_m' => 3.1,
-            'visible_deck_tiers' => 4,
-            'bow' => [
-                'stem' => 'near_plumb', 'rake_degrees' => 8, 'waterline_entry' => 'fine',
-                'forefoot' => 'continuous_convex', 'chine' => 'hard_to_midships',
-            ],
-            'hull' => [
-                'sheer' => 'continuous_gentle_rise_toward_bow',
-                'midbody' => 'slender_displacement', 'keel' => 'continuous_central_baseline',
-            ],
-            'stern' => [
-                'transom' => 'plumb_full_beam', 'platform' => 'recessed_waterline',
-                'transom_face' => 'vertical glazed panel',
-            ],
-            'superstructure' => [
-                'envelope' => 'faceted_continuous_shell', 'massing_position' => 'central_aft',
-                'external_read' => 'single_integrated_mass', 'profile_note' => 'shell narrows aft',
-            ],
-            'openings' => [
-                'aperture_bands' => 4, 'distribution' => 'horizontal_ribbon',
-                'vertical_extent' => 'mixed_by_zone', 'surface_relationship' => 'flush_recessed',
-                'hull_openings' => 'minimal_service',
-            ],
-            'hull_material' => 'painted steel',
-            'superstructure_material' => 'aluminium alloy',
-            'hull_colour' => 'graphite grey satin',
-            'boot_stripe_colour' => 'narrow platinum stripe',
-            'superstructure_colour' => 'pale titanium white',
-        ];
+        $profile = $this->profile();
+
+        // Dung tu chinh profile: them mot khe vao hop dong thi fixture tu co,
+        // khong phai nho sua tay va khong bao gio loi thoi.
+        $slotValue = function (array $spec) use (&$slotValue) {
+            return match ($spec['type']) {
+                'integer' => (int) $spec['min'],
+                'number' => (float) $spec['min'],
+                'enum' => $spec['values'][0],
+                'boolean' => true,
+                'object' => array_map($slotValue, $spec['fields']),
+                default => 'compact technical description',
+            };
+        };
+
+        $identity = array_map($slotValue, $profile->identitySlots);
+        $identity['design_length_m'] = 120.0;
+        $identity['design_beam_m'] = 17.5;
+        $identity['length_to_beam_ratio'] = 6.9;
+        $identity['visible_deck_tiers'] = 4;
+        $identity['openings']['aperture_bands'] = 4;
+        // derivedHullType() doc chu kim loai o day.
+        $identity['hull_material'] = 'welded marine grade steel';
 
         return (new CreativeConceptParser)->parse(json_encode([
             'design_thesis' => 'One faceted shell tapers continuously from bow to transom.',
@@ -89,7 +89,7 @@ class DesignSpecExportTest extends TestCase
         $concept = $this->concept();
         $before = $concept->toArray();
 
-        $concept->toDesignSpec($this->profile(), 'superyacht');
+        $concept->toDesignSpec($this->profile(), 'yacht');
 
         $this->assertSame($before, $concept->toArray());
         $this->assertArrayNotHasKey('schema_version', $concept->toArray());
@@ -98,14 +98,14 @@ class DesignSpecExportTest extends TestCase
 
     public function test_laravel_recomputes_the_ratio_instead_of_trusting_the_model(): void
     {
-        $spec = $this->concept()->toDesignSpec($this->profile(), 'superyacht');
+        $spec = $this->concept()->toDesignSpec($this->profile(), 'yacht');
 
         $this->assertSame(6.857, $spec['dimensions']['length_to_beam_ratio']);
     }
 
     public function test_the_export_renames_enum_values_the_profile_declares(): void
     {
-        $spec = $this->concept()->toDesignSpec($this->profile(), 'superyacht');
+        $spec = $this->concept()->toDesignSpec($this->profile(), 'yacht');
         $geometry = $spec['permanent_geometry'];
 
         $this->assertSame('continuous_convex_transition', $geometry['bow']['forefoot']);
@@ -168,7 +168,7 @@ class DesignSpecExportTest extends TestCase
 
         $spec = (new CreativeConcept(
             'A thesis.', $identity, [], [], $source->formRelationships,
-        ))->toDesignSpec($this->profile(), 'superyacht');
+        ))->toDesignSpec($this->profile(), 'yacht');
 
         $this->assertArrayNotHasKey('boot_stripe', $spec['finished_materials']);
         $this->assertArrayNotHasKey('draft_m', $spec['dimensions']);
@@ -177,11 +177,67 @@ class DesignSpecExportTest extends TestCase
 
     public function test_the_envelope_comes_from_the_profile_and_the_article_not_from_the_model(): void
     {
-        $spec = $this->concept()->toDesignSpec($this->profile(), 'superyacht');
+        $spec = $this->concept()->toDesignSpec($this->profile(), 'yacht');
 
         $this->assertSame('1.0', $spec['schema_version']);
-        $this->assertSame('superyacht', $spec['object_type']);
+        $this->assertSame('yacht', $spec['object_type']);
         $this->assertContains('enclosed_deck_level_count', $spec['invariants']);
         $this->assertCount(7, $spec['invariants']);
+    }
+
+    /**
+     * Hop dong that nam trong docs/video/phuong_an_1.md. Doi chieu voi no chu
+     * khong voi mot danh sach khoa viet tay o day — danh sach viet tay troi
+     * cung luc voi code, con tai lieu thi khong.
+     */
+    public function test_the_export_covers_every_path_the_contract_document_names(): void
+    {
+        $contract = $this->contractPaths();
+        $exported = $this->pathsOf($this->concept()->toDesignSpec($this->profile(), 'yacht'));
+
+        $this->assertSame([], array_values(array_diff($contract, $exported)),
+            'DesignSpec thieu duong dan ma phuong_an_1.md khai.');
+
+        $this->assertSame(self::EXTRA_BEYOND_THE_CONTRACT, array_values(array_diff($exported, $contract)),
+            'DesignSpec xuat them duong dan chua duoc ghim — them truong phai la viec co y.');
+    }
+
+    /** @return list<string> */
+    private function contractPaths(): array
+    {
+        $document = base_path('docs/video/phuong_an_1.md');
+        $this->assertFileExists($document);
+
+        $found = preg_match('/## JSON contract\s*
+\s*```json
+(.*?)
+```/s', (string) file_get_contents($document), $match);
+
+        $this->assertSame(1, $found,
+            'Khong tim thay khoi "## JSON contract" trong phuong_an_1.md — tai lieu doi dinh dang, khong phai code sai.');
+
+        return $this->pathsOf(json_decode($match[1], true, 512, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param  array<string, mixed>  $value
+     * @return list<string>
+     */
+    private function pathsOf(array $value, string $prefix = ''): array
+    {
+        $paths = [];
+
+        foreach ($value as $key => $inner) {
+            $path = $prefix === '' ? (string) $key : "{$prefix}.{$key}";
+            $paths[] = $path;
+
+            if (is_array($inner) && ! array_is_list($inner)) {
+                $paths = [...$paths, ...$this->pathsOf($inner, $path)];
+            }
+        }
+
+        sort($paths);
+
+        return $paths;
     }
 }
