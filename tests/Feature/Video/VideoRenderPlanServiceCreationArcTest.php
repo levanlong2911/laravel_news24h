@@ -105,12 +105,19 @@ class VideoRenderPlanServiceCreationArcTest extends TestCase
         $this->assertSame(30.0, end($result['timeline'])['end_sec']);
     }
 
-    public function test_superyacht_category_uses_the_same_vessel_phase_set(): void
+    /**
+     * `superyacht` tung la bi danh cua `yacht` o ca hai ban do slug. Chuyen muc
+     * do khong ton tai trong CMS, va hai ten cho mot ho so la cho de nham lan —
+     * nen no phai roi vao duong "khong khop", khong duoc am tham chay tiep.
+     */
+    public function test_superyacht_is_no_longer_a_category_of_its_own(): void
     {
-        $result = $this->applyCreationArc($this->baseRenderPlan(), $this->articleWithCategory('superyacht'));
+        $renderPlan = $this->baseRenderPlan();
 
-        $this->assertSame('creation_design', $result['scenes'][0]['id']);
-        $this->assertCount(6, $result['scenes']);
+        $this->assertSame(
+            $renderPlan,
+            $this->applyCreationArc($renderPlan, $this->articleWithCategory('superyacht')),
+        );
     }
 
     // ---- Thêm category mới = THÊM DỮ LIỆU, không sửa code (§1, §18.23) ----

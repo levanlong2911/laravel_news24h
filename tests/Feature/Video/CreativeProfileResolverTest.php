@@ -25,7 +25,7 @@ class CreativeProfileResolverTest extends TestCase
         $resolver = new CreativeProfileResolver;
 
         $this->assertSame('luxury_vessel', $resolver->resolve('yacht')?->key);
-        $this->assertSame('luxury_vessel', $resolver->resolve('superyacht')?->key);
+        $this->assertSame('luxury_vessel', $resolver->resolve('yacht')?->key);
         $this->assertCount(11, $resolver->resolve('yacht')?->inspectionAspects ?? []);
     }
 
