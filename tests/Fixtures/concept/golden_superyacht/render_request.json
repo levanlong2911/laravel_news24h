@@ -1,0 +1,5 @@
+{
+  "available": false,
+  "reason": "Anh duoc render trong ChatGPT UI, khong co provider request, quality hay elapsed_ms.",
+  "expected_from": "GptImageAdapter khi render qua API"
+}

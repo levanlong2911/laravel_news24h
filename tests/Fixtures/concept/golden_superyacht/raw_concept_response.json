@@ -1,0 +1,5 @@
+{
+  "available": false,
+  "reason": "Prompt nay khong do Sonnet sinh ra, nen khong co raw response tuong ung.",
+  "expected_from": "PlanningStage concept raw_response"
+}

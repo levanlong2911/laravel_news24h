@@ -1,0 +1,5 @@
+{
+  "available": false,
+  "reason": "Prompt nay duoc viet tay, khong sinh ra tu InspirationBrief nao.",
+  "expected_from": "PlanningStage inspiration output_json"
+}

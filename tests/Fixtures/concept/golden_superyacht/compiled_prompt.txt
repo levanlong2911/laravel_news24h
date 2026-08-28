@@ -1,0 +1,738 @@
+PROMPT VERSION
+
+`master_superyacht_geometry_pro_v2`
+
+PROVIDER INTENT
+
+Production-grade text-to-image specification for one canonical fabrication-state superyacht geometry candidate. Geometry and count constraints have priority over surface detail and presentation polish.
+
+COMPOSITION / FRAMING
+Render a restrained front three-quarter view from off the port bow.
+Use one fixed camera position as if viewed from an elevated inspection walkway. Position the camera approximately 35 degrees above the superyacht’s design waterline and sufficiently far from the superyacht to minimize perspective distortion.
+Use a moderate-telephoto, low-distortion perspective so the bow and stern render at nearly the same scale. Do not enlarge the near end of the superyacht.
+
+PRIORITY ORDER — OVERRIDES ALL LATER WORDING
+
+When any later instruction can be interpreted in more than one way, apply this priority order:
+
+1. Preserve one physically continuous hull envelope from keel through forefoot to stem, with no separate lower-bow projection.
+2. Preserve the complete 124-metre, approximately 7.4:1 superyacht silhouette without perspective shortening or widening.
+3. Preserve exactly five enclosed floor levels while containing them inside two connected primary superstructure masses and one continuous external structural envelope.
+4. Preserve the asymmetric central-aft massing, long foredeck and controlled aft open-deck zone.
+5. Preserve the permanent aperture layout and fabrication state.
+6. Preserve camera, background, lighting and presentation details.
+
+The descriptions of Tier 1 through Tier 5 define internal floor-level verification and local footprints. They must not be interpreted as five separate boxes, five detached slabs or five independent roof plates.
+
+CAMERA GEOMETRY CLARIFICATION
+
+- Camera azimuth: approximately 25 to 30 degrees from a true port-side profile toward the bow.
+- Camera elevation angle: approximately 30 to 35 degrees above the horizontal design-waterline plane.
+- Optical-axis downward pitch: approximately 12 to 18 degrees, sufficient to reveal deck footprints without becoming a top-down view.
+- Moderate-telephoto projection equivalent to a distant technical-inspection viewpoint.
+- The visible bow face occupies approximately 10 to 14 percent of the projected superyacht length.
+- The port-side elevation remains the dominant visible surface.
+- Deck tops remain visible but foreshortened; they must not dominate the image.
+
+If the phrase “35 degrees above the design waterline” conflicts with these definitions, use the explicit azimuth, elevation and optical-axis values above.
+The superyacht orientation is fixed:
+
+- Bow at the left.
+- Stern at the right.
+- Port side clearly visible.
+- Bow slightly nearer to the camera than the stern.
+- Superyacht level and not heeling.
+- Complete superyacht visible from bow tip to transom and from uppermost roof to keel baseline.
+
+The projected longitudinal axis must read predominantly left-to-right, with only the shallow natural diagonal required by the restrained three-quarter view.
+Do not place the superyacht steeply from one corner of the canvas to the opposite corner.
+OUTPUT CANVAS
+Landscape 3:2 output canvas, 1536 × 1024 pixels.
+Use the canvas width for the superyacht’s long axis.
+Keep clear empty margin:
+
+- Beyond the bow.
+- Beyond the stern.
+- Above the uppermost roof.
+- Below the keel.
+- Along both visible sides.
+
+Nothing may be cropped.
+Camera geometry and declared superyacht proportions take priority over filling the canvas.
+Never shorten, compress, widen, rotate, vertically stretch or steepen the superyacht to fill the frame.
+USE CASE
+Photorealistic natural technical-reference visualisation.
+ASSET TYPE
+Primary fabrication-state geometry identity anchor: `master_superyacht_geometry`.
+PRIMARY REQUEST
+Render one original, coherent and physically plausible 124-metre steel private superyacht that does not exist.
+The superyacht is structurally complete but entirely unfinished and unoutfitted.
+Treat every declared dimension, hull feature, superstructure relationship and opening arrangement as part of one integrated naval-architecture design.
+Do not treat the listed attributes as unrelated decorative features.
+This image must establish one stable canonical superyacht geometry for later:
+
+- Multi-view identity references.
+- Construction-stage images.
+- Completion-stage images.
+- Sea-trial images.
+- Operational scenes.
+
+SUBJECT STATE
+The primary hull, main decks, internal bulkheads and all five enclosed superstructure shells are structurally complete.
+All exterior structural surfaces remain in advanced fabrication condition.
+The superyacht has:
+
+- Unfinished medium-grey marine-grade steel plating.
+- Restrained visible weld seams.
+- Grinding marks around completed welds.
+- Visible plate butt lines.
+- Subtle physically plausible welding distortion.
+- Large but controlled irregular patches of red-oxide primer.
+- Slight tonal variation between adjacent fabricated steel plates.
+
+Regular weld mapping may suggest the rhythm of the internal framing, but no internal frames or stiffeners may be visible through the closed exterior plating.
+Every window and door aperture defined by the permanent opening language has been cut to its complete final shape and proportion.
+All apertures remain:
+
+- Completely empty.
+- Unglazed.
+- Unframed.
+- Dark inside.
+- Free from reflective panes.
+- Free from visible interior fit-out.
+
+No finished paint, gloss, polish, chrome, varnish, teak, final railings or luxury surface treatment has been applied.
+SCENE / BACKDROP
+Place the superyacht in a neutral light-grey seamless virtual design studio.
+Present it as one isolated full-scale superyacht.
+Show:
+
+- Complete topsides.
+- Complete superstructure.
+- Complete declared below-design-waterline hull envelope.
+- Complete keel baseline.
+- Complete bow and stern geometry.
+
+Use a subtle neutral background gradient.
+A very soft ambient grounding cue may appear beneath the hull only to establish spatial separation. It must not imply a physical floor, cradle or support.
+Do not show:
+
+- Physical water.
+- Waves or wake.
+- Horizon.
+- Sky.
+- Ground or visible floor boundary.
+- Shipyard hall.
+- Dry dock.
+- Cradle.
+- Plinth.
+- Keel blocks.
+- Supports.
+- Scaffolding.
+- Cranes.
+- Slings.
+- Workers.
+- Vehicles.
+- Equipment.
+
+DESIGN THESIS
+One uninterrupted hull sheer establishes the governing longitudinal datum.
+Five enclosed superstructure tiers form one integrated, asymmetric central-aft composition. Each tier has a distinct architectural footprint and structural relationship to the volume below.
+The superstructure must read as one coherent private-yacht architecture, not as five independent horizontal slabs.
+SUBJECT AND IDENTITY
+
+- Design length: exactly 124 metres.
+- Length-to-beam ratio: approximately 7.4:1.
+- Derived design beam: approximately 16.76 metres.
+- Design draft: approximately 4.6 metres.
+- Visible freeboard at midships: approximately 3.8 metres.
+- Total hull depth from keel baseline to main sheer at midships: approximately 8.4 metres.
+- Typical structural deck-to-deck interval: approximately 2.9 metres.
+- Enclosed superstructure tiers above the hull: exactly five.
+
+LONGITUDINAL DISTRIBUTION — HARD PROPORTION CONTROL
+
+Use the projected overall length as a visual station system measured from the bow:
+
+- Open foredeck zone: approximately 24 percent of overall length.
+- Enclosed superstructure zone: approximately 58 percent of overall length.
+- Open aft-deck and transom zone: approximately 18 percent of overall length.
+- Forward face of the primary enclosed superstructure begins near station 0.24.
+- Highest external superstructure mass is centred near station 0.62.
+- The final enclosed superstructure surface ends before the aft open-deck and transom zone.
+
+These proportions control the visible composition. Do not shorten the foredeck, extend enclosed structure to the bow, push the highest mass forward or compress the aft architecture.
+
+VERTICAL PROPORTION CONTROL
+
+The declared five floor levels must fit within a compressed private-superyacht envelope rather than forming a tall hotel-like stack.
+
+- Preserve the typical 2.9-metre internal structural deck interval.
+- Keep the complete external height from keel baseline to uppermost roof approximately 22 to 24 metres.
+- Keep the external height-to-length ratio below approximately 0.20.
+- Do not enlarge floor fasciae, roof thicknesses or inter-tier structural bands to exaggerate the visible height.
+- Keep the uppermost two floor levels visually lighter and more compact than the lower superstructure mass without turning them into detached boxes.
+- The hull must retain sufficient visual depth and displacement volume; do not shrink the hull to make the five floor levels fit.
+
+TIER-COUNTING RULE
+Only enclosed architectural volumes count as superstructure tiers.
+The following do not count as tiers:
+
+- Hull.
+- Main deck surface.
+- Open deck areas.
+- Roof slabs.
+- Roof overhangs.
+- Parapets.
+- Fascia lines.
+- Empty glazing apertures.
+- Recessed shadow lines.
+- Structural trim.
+
+Tier 5 is the smallest and uppermost enclosed volume.
+Its thin roof is not a sixth tier.
+There is:
+
+- No open top tier.
+- No sixth tier.
+- No raised pilothouse above Tier 5.
+- No open flybridge above Tier 5.
+- No equipment deck.
+- No mast base resembling an additional storey.
+
+HULL GEOMETRY
+The hull is a long, narrow and hydrodynamically credible steel displacement-superyacht form.
+BOW PROFILE — HARD GEOMETRY CONSTRAINT
+Create a sharp conventional raked superyacht bow with a fine centreline entry.
+The visible stem is inclined approximately 12 degrees from vertical, with the upper bow projecting slightly farther forward than the design-waterline entry. This rake applies only to the above-water stem profile.
+The bow must have:
+
+- A sharp and clearly defined centreline.
+- A fine, physically credible design-waterline entry.
+- A continuous forefoot that blends directly from the stem into the main underwater hull body.
+- A smooth straight-to-gently-convex underwater profile forward of midships.
+- Adequate underwater displacement volume carried inside the primary hull envelope, not in a separate forward projection.
+- A clean structural knuckle where the topsides transition toward the underwater body.
+- A long clean upper-bow profile.
+
+CRITICAL FOREFOOT RULE
+The underwater bow and the stem are one continuous hull surface. The forefoot must rise naturally into the stem without any separate appendage, lobe, nose, pod or cylindrical projection.
+
+POSITIVE FOREFOOT CONSTRUCTION PRIORITY
+
+Construct the bow from this positive surface sequence before applying any avoidance language:
+
+1. Begin with one sharp raked above-water stem on the centreline.
+2. Continue that stem downward through the design-waterline entry without a break.
+3. Blend the same surface aft and downward into a fine gently convex forefoot.
+4. Merge the forefoot directly into the central keel baseline inside the primary hull envelope.
+5. Carry required displacement volume aft of the entry instead of projecting it forward.
+
+The final side silhouette contains exactly one forward profile from upper stem to keel transition. No secondary outline exists below it.
+At and below the design waterline:
+
+- The foremost underwater point must remain on or immediately adjacent to the stem/centreline envelope.
+- No underwater volume may project forward beyond the natural continuation of the stem and forefoot.
+- The bottom of the bow must taper continuously into the fine entry.
+- The transition from keel baseline to forefoot to stem must read as one uninterrupted naval-architecture curve.
+
+ABSOLUTELY NO BULBOUS BOW
+Do not create:
+
+- A bulbous bow of any size.
+- A rounded submarine-like nose below the stem.
+- A cylindrical or capsule-shaped projection.
+- A torpedo-shaped underwater appendage.
+- A separate lower-bow lobe.
+- A forward-projecting bulb at or below the waterline.
+- A cruise-ship or merchant-ship bulbous-bow silhouette.
+- A second bow profile beneath the primary stem.
+- A reverse bow.
+- A rounded bow.
+- A clipper curve.
+- A blunt rectangular bow face.
+
+The intended result is a displacement-superyacht bow with a sharp raked stem and a fine integrated forefoot, never an oceangoing commercial-ship bulbous bow.
+HARD CHINE
+A pronounced but structurally integrated hard-chine knuckle begins at the stem near the design waterline and continues cleanly toward midships.
+The chine must:
+
+- Separate the topsides visually from the underwater body.
+- Remain part of the hull plating.
+- Follow a physically credible longitudinal transition.
+- Not appear as an attached rail, stripe or decorative molding.
+
+MIDBODY
+Maintain sufficient displacement volume through the central hull.
+The midbody must not become:
+
+- A flat rectangular barge.
+- An extremely shallow shell.
+- An excessively thin knife-like form.
+- A hull with an exaggerated external keel block.
+
+UNDERWATER BODY
+Show the complete underwater hull envelope.
+The underwater hull envelope must remain a single continuous primary hull volume. At the bow, it must merge directly into the fine forefoot and stem; it must never terminate in or generate a separate bulb, pod, nose or forward appendage.
+Use a clean central keel baseline through the middle portion of the hull, transitioning naturally upward toward:
+
+- The fine bow entry.
+- The controlled aft underwater taper.
+
+Do not add:
+
+- Propellers.
+- Shafts.
+- Rudders.
+- Pods.
+- Stabiliser fins.
+- Thrusters.
+- Unspecified underwater appendages.
+
+STERN ARCHITECTURE
+Terminate the hull in a broad, plumb, full-beam transom.
+The transom must remain:
+
+- Wide.
+- Structurally continuous with both hull sides.
+- Predominantly vertical.
+- Free from an aft overhang.
+- Clearly different from a pointed or rounded stern.
+
+Integrate one full-width stepped platform into the transom at the design waterline.
+The platform must:
+
+- Be recessed into the stern volume.
+- Appear formed by subtracting from the transom architecture.
+- Extend across nearly the full transom width.
+- Have one clearly readable stepped transition.
+- Remain visibly supported by the primary hull structure.
+- Not appear attached afterward.
+- Not resemble a floating shelf.
+- Not become an open beach-club room.
+- Not become a tender garage.
+
+GOVERNING SHEER
+The hull sheer forms one uninterrupted longitudinal datum rising approximately 0.6 metres from stern to bow.
+The sheer belongs to the hull and remains continuous from bow to stern.
+The setbacks, lower edges and principal horizontal divisions of the five enclosed superstructure tiers are visually coordinated with this datum.
+The sheer itself must not:
+
+- Physically cross through the upper tiers.
+- Become a diagonal stripe across the superstructure.
+- Break into several competing lines.
+- Become an exaggerated wave.
+- Be interrupted by detached modules.
+
+SUPERSTRUCTURE PLACEMENT
+Place the complete superstructure in a central-aft position.
+Maintain:
+
+- A long uninterrupted open foredeck.
+- Clear distance between the bow and the forward face of Tier 1.
+- A readable sequence of stepped open decks toward the stern.
+- Clear separation between enclosed volumes and open deck breaks.
+- A long, low and horizontally dominant private-yacht silhouette.
+
+The superstructure must not extend excessively close to either the bow or the transom.
+SUPERSTRUCTURE MASSING
+Place exactly five enclosed tiers above the hull.
+The five tiers progressively reduce in length and width, but they must not form a uniform symmetrical pyramid.
+Use non-uniform forward and aft setbacks.
+The leading and trailing edges of the tiers must not align into five mechanically repeated diagonal steps.
+
+UNIFIED SUPERSTRUCTURE ENVELOPE — HARD OVERRIDE
+
+The five declared tiers are five enclosed floor levels, not five independent exterior objects.
+
+Organise them inside exactly two connected primary masses:
+
+- Primary Mass A contains Tier 1, Tier 2 and Tier 3 inside one long lower structural shell growing continuously from the main deck.
+- Primary Mass B contains Tier 4 and Tier 5 inside one compact upper structural shell integrated with the central core and roof transition of Primary Mass A.
+- One continuous external side envelope, aligned vertical structural zones and at least one broad diagonal or curved structural bridge visually join both masses.
+- Solid shell surfaces cross multiple floor datums so the eye reads one superstructure architecture before reading five individual levels.
+- No floor level may be outlined on all sides by a projecting slab.
+- No floor level may receive an independent floating roof.
+- Horizontal deck-edge and roof projections remain narrow, subordinate and discontinuous.
+- Forward and aft setbacks vary non-uniformly and do not form a repeated stair-step diagonal.
+- Tier 5 terminates inside the shared roof-and-side envelope; it does not sit on top as a separate penthouse box.
+
+The later Tier 1 through Tier 5 sections define local function, support and relative footprint only. Where their wording could imply five stacked boxes, this unified-envelope rule takes precedence.
+
+The required visual reading is:
+
+1. One complete steel superyacht.
+2. One coherent central-aft superstructure architecture.
+3. Two connected primary masses.
+4. Exactly five verifiable enclosed floor levels within those masses.
+
+Never reverse this hierarchy.
+TIER 1
+Tier 1 is the longest enclosed superstructure volume.
+It:
+
+- Grows directly from the main deck.
+- Occupies the central-aft portion of the superyacht.
+- Remains visually distinct from the hull.
+- Establishes the primary structural base for all upper tiers.
+- Leaves a long open foredeck.
+- Leaves a readable aft deck zone.
+
+Tier 1 must not blend into the hull as an additional topside band.
+TIER 2
+Tier 2 is distinctly shorter than Tier 1.
+It:
+
+- Steps aft and inboard.
+- Uses unequal forward and aft setbacks.
+- Remains fully supported by Tier 1.
+- Has a distinct architectural footprint.
+- Does not repeat Tier 1 as a scaled copy.
+
+TIER 3
+Tier 3 is more compact than Tier 2.
+It:
+
+- Is positioned farther aft.
+- Forms the principal bridge and upper social volume.
+- Uses a different forward-to-aft relationship from Tier 2.
+- Remains connected to the central structural core.
+- Does not become a floating glass box.
+
+TIER 4
+Tier 4 is distinctly shorter and narrower than Tier 3.
+It:
+
+- Continues the aft-biased composition.
+- Has restrained overhangs.
+- Remains physically supported.
+- Does not repeat the same setback distance used below.
+
+TIER 5
+Tier 5 is the smallest and final enclosed upper volume.
+It:
+
+- Occupies the upper central-aft portion.
+- Has one complete ribbon-shaped empty aperture.
+- Has one thin integrated roof.
+- Terminates the vertical composition.
+- Does not support any additional enclosed structure.
+
+No permanent architectural volume may appear above Tier 5.
+MASSING RHYTHM
+The reduction from Tier 1 to Tier 5 must be progressive but non-uniform.
+Each tier must have an individually readable architectural role.
+The complete massing must appear:
+
+- Asymmetric along the longitudinal axis.
+- Integrated vertically.
+- Central-aft biased.
+- Structurally credible.
+- Appropriate to a private superyacht.
+- Long and horizontally composed.
+
+It must not resemble:
+
+- A wedding cake.
+- A cruise ship.
+- A passenger ferry.
+- A hotel.
+- An apartment building.
+- Five independent floating slabs.
+- A symmetrical stepped pyramid.
+
+OPENING LANGUAGE
+Each of the five enclosed superstructure tiers contains exactly one principal continuous longitudinal ribbon-shaped glazing aperture.
+Show exactly five corresponding horizontal aperture bands.
+
+APERTURE RHYTHM CONTROL — HARD OVERRIDE
+
+The five apertures verify the five floor levels but must not turn the superstructure into five repetitive black stripes.
+
+- Recess every ribbon aperture inside the shared external steel shell.
+- Vary aperture length, height and fore-aft termination according to the two connected primary masses.
+- Do not align all five forward ends or all five aft ends.
+- Use broad aligned solid structural zones that visually connect plating above and below adjacent aperture datums.
+- Keep strong solid corner zones around the forward and aft ends of both primary masses.
+- Do not place a thick projecting deck slab directly beneath every aperture.
+- Do not place a detached roof plate directly above every aperture.
+- Apertures remain individually countable as exactly five, but the outer steel shell remains visually dominant over the dark voids.
+- The complete opening system reads as controlled cuts within one architecture, not as alternating steel-and-black horizontal storeys.
+
+The term “continuous ribbon-shaped aperture” means one coherent opening belonging to its floor level. It does not require identical length, identical height, full-width glazing or a cruise-ship-style uninterrupted black band.
+Each aperture:
+
+- Follows the unique longitudinal footprint of its tier.
+- Is cut fully through the surrounding steel plating.
+- Remains completely empty.
+- Has no installed glass.
+- Has no fitted frame.
+- Has no mullion infill.
+- Has no reflective or tinted pane.
+- Has no visible finished interior.
+- Remains separated from the aperture above and below by substantial structural steel surfaces.
+
+The apertures must not merge into one continuous black void between tiers.
+Do not create:
+
+- Repeated passenger-cabin windows.
+- Apartment-style window modules.
+- Individual portlights interrupting the ribbon apertures.
+- Strong repeated vertical mullions.
+- More than five principal ribbon-shaped apertures.
+- A hull glazing band that resembles a sixth tier.
+
+HULL-SIDE OPENINGS
+Hull-side service openings must remain sparse, subordinate and intentionally aligned.
+They may include a limited number of empty rectangular or rounded fabrication cut-outs.
+Do not create rows of repeated passenger-cabin portlights.
+The location and shape of all visible permanent openings become part of the canonical superyacht identity and must remain stable in later reference views.
+FEATURE INTEGRATION
+Every deck recess, opening, platform and structural transition must be created by extending, folding or subtracting from the primary hull or superstructure surfaces.
+No permanent element may appear:
+
+- Glued onto the exterior.
+- Suspended independently.
+- Supported by a decorative bracket.
+- Mounted on an unrelated pedestal.
+- Detached from the primary architecture.
+
+Every deck and overhang must have physically credible structural support.
+VISIBLE SIGNATURE FEATURES
+
+- One sharp conventional raked bow with a fine centreline entry.
+- One integrated hard-chine knuckle running from the stem toward midships.
+- One uninterrupted hull sheer rising approximately 0.6 metres from stern to bow.
+- Exactly five enclosed superstructure tiers.
+- Exactly five corresponding continuous ribbon-shaped empty apertures.
+- One asymmetric central-aft superstructure composition.
+- One long uninterrupted open foredeck.
+- One broad plumb full-beam transom.
+- One full-width stepped platform recessed into the transom at the design waterline.
+
+MATERIALS / FABRICATION
+HULL
+Unfinished welded marine-grade steel plate.
+Use:
+
+- Medium-grey bare steel.
+- Restrained weld seams.
+- Plate butt lines.
+- Grinding marks.
+- Subtle welding distortion.
+- Controlled irregular red-oxide primer patches.
+
+SUPERSTRUCTURE
+All five enclosed tiers are fabricated from unfinished marine-grade steel plate.
+Use the same fabrication-state material language as the hull, with slightly cleaner plate work appropriate to the upper structure.
+No final coating has been applied.
+OPENINGS
+All apertures are empty, dark, unglazed and unframed.
+There are no reflective surfaces inside the openings.
+COLOR PALETTE
+Use only fabrication-state colours:
+
+- Bare steel: medium neutral grey.
+- Freshly ground areas: slightly lighter grey.
+- Weld seams: restrained dark-grey and heat-affected tones.
+- Primer patches: irregular muted red oxide.
+- Empty apertures: neutral dark interior voids.
+- Background: uniform light grey.
+
+Do not introduce:
+
+- Finished hull colour.
+- Warm-white superstructure paint.
+- Boot stripe.
+- Decorative metallic accent.
+- Glossy black glazing.
+- Chrome.
+- Teak.
+- Finished luxury materials.
+
+STYLE / MEDIUM
+Photorealistic isolated naval-architecture fabrication reference render.
+The result should resemble a high-quality technical documentation image of one real steel superyacht at an advanced fabrication stage.
+Prioritize:
+
+- Geometric clarity.
+- Accurate silhouette.
+- Readable tier count.
+- Structural plausibility.
+- Consistent surface state.
+- Clear permanent opening layout.
+
+Do not produce cinematic concept art, a brochure image or a finished-yacht advertisement.
+LIGHTING / MOOD
+Use even, neutral and technically clear studio illumination across the complete superyacht.
+Bow and stern must be equally exposed and equally readable.
+Use soft directional lighting with controlled ambient fill.
+Reveal:
+
+- Complete hull silhouette.
+- Raked bow profile.
+- Waterline entry.
+- Chine knuckle.
+- Hull sheer.
+- Underwater form.
+- Transom architecture.
+- Stern platform.
+- Five superstructure footprints.
+- Five aperture bands.
+- Deck breaks.
+- Plate seams.
+- Weld mapping.
+- Grinding marks.
+- Primer patches.
+- Transitions between structural volumes.
+
+Use sharp focus from bow to stern.
+No shallow depth of field.
+Avoid:
+
+- Dramatic atmosphere.
+- Deep shadows hiding either end.
+- Strong specular highlights.
+- Sunset coloration.
+- Fog.
+- Volumetric lighting.
+- Bloom.
+- Lens flare.
+- Cinematic colour grading.
+
+DETAIL CONTROL
+Do not install final railings.
+Only permanent structural bulwarks already formed from steel plating may be present.
+Do not add:
+
+- Mast.
+- Radar dome.
+- Satellite dome.
+- Antenna array.
+- Bridge-top equipment.
+- Exterior emergency stairs.
+- Tenders.
+- Cranes.
+- Davits.
+- Rescue boats.
+- Pools.
+- Helipads.
+- Furniture.
+- Sun loungers.
+- Umbrellas.
+- Lifestyle props.
+- Workers or other people.
+
+TEXT
+No visible text, lettering, superyacht name, registration number, flag, measurements, annotations, labels, logos, signatures or watermark anywhere in the image.
+HARD CONSTRAINTS
+
+- Render exactly one superyacht.
+- Keep the complete superyacht inside the canvas.
+- Bow remains at the left.
+- Stern remains at the right.
+- Port side remains clearly visible.
+- Maintain the restrained high front-three-quarter camera.
+- Maintain approximately 35 degrees of camera elevation.
+- Maintain a shallow natural diagonal, predominantly left-to-right.
+- Preserve the 124-metre design identity.
+- Preserve the approximately 7.4:1 length-to-beam ratio.
+- Preserve the declared draft and freeboard relationships.
+- Show exactly five enclosed superstructure tiers.
+- Show exactly five corresponding ribbon-shaped empty apertures.
+- Do not create a sixth tier.
+- Do not create an open top tier.
+- Preserve the asymmetric central-aft massing.
+- Preserve the long open foredeck.
+- Preserve the raked above-water stem and the fine integrated non-bulbous forefoot.
+- Preserve a single continuous bow-to-keel hull envelope with no separate underwater projection.
+- Absolutely no bulbous bow, lower-bow lobe, cylindrical nose, pod or torpedo-shaped projection.
+- Preserve the integrated chine knuckle.
+- Preserve the uninterrupted hull sheer.
+- Preserve the broad plumb full-beam transom.
+- Preserve the recessed full-width stepped platform.
+- Preserve the complete underwater hull envelope.
+- Preserve the unfinished steel fabrication state.
+- Keep all permanent geometry physically plausible and structurally supported.
+- No people, other superyachts, scenery, text, logos or watermark.
+
+AVOID
+
+- A different superyacht.
+- Cropped bow, stern, roof or keel.
+- Wide-angle stretching.
+- Fisheye distortion.
+- Enlarged near bow.
+- Shortened hull.
+- Widened beam.
+- Increased freeboard.
+- Vertically enlarged superstructure.
+- Steep corner-to-corner placement.
+- Uniform repeated tier setbacks.
+- Symmetrical pyramid massing.
+- Independent horizontal slabs stacked like a wedding cake.
+- Apartment-block, hotel, ferry or cruise-ship massing.
+- A sixth tier.
+- An open fifth tier.
+- Roof slabs interpreted as extra tiers.
+- Missing or duplicated aperture bands.
+- Installed glazing.
+- Reflective or tinted panes.
+- Fitted window frames.
+- Mullion infill.
+- Visible completed interiors.
+- Repeated passenger-cabin windows.
+- Internal frames visible through closed plating.
+- External rib-like structures on closed plating.
+- Any bulbous bow, including subtle, partial or small bulbous forms.
+- Any rounded submarine-like, cylindrical, capsule-shaped or torpedo-shaped projection below the bow.
+- Any underwater geometry projecting forward independently of the stem/forefoot.
+- Rounded, reverse or clipper bow.
+- Blunt rectangular bow face.
+- Pointed, rounded or overhanging stern.
+- Attached or floating stern platform.
+- Exaggerated keel block.
+- Fantasy geometry.
+- Intersecting surfaces.
+- Unsupported decks or overhangs.
+- Finished paint.
+- Gloss.
+- Chrome.
+- Varnish.
+- Teak.
+- Polished topsides.
+- Brochure-grade finished surfaces.
+- Shipyard hall.
+- Scaffolding.
+- Cranes.
+- Slings.
+- Cradles.
+- Supports.
+- Workers.
+- Water.
+- Horizon.
+- Sky.
+- Strong cast shadow.
+- Reflection.
+- Text, logos or watermark.
+
+OUTPUT INTENT
+Produce one production-ready `master_superyacht_geometry` identity anchor.
+The image must clearly and permanently establish:
+
+- Overall hull proportions.
+- Bow geometry, including the sharp raked stem and fine integrated non-bulbous forefoot.
+- Chine geometry.
+- Sheer line.
+- Underwater hull envelope.
+- Broad transom.
+- Integrated stern platform.
+- Exact five-tier count.
+- Asymmetric superstructure massing.
+- Long open foredeck.
+- Deck-break relationships.
+- Exact ribbon-aperture count.
+- Permanent opening layout.
+- Fabrication-state structural surfaces.
+
+Optimize the image for geometric clarity, natural private-yacht design and reliable identity continuity across later multi-view, construction, completion, sea-trial and operational renders.

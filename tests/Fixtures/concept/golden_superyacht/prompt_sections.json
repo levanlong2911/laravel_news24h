@@ -1,0 +1,267 @@
+{
+  "available": true,
+  "derived_from": "compiled_prompt.txt",
+  "section_count": 52,
+  "sections": [
+    {
+      "name": "PROMPT VERSION",
+      "line": 1,
+      "chars": 35
+    },
+    {
+      "name": "PROVIDER INTENT",
+      "line": 5,
+      "chars": 201
+    },
+    {
+      "name": "COMPOSITION / FRAMING",
+      "line": 9,
+      "chars": 463
+    },
+    {
+      "name": "PRIORITY ORDER — OVERRIDES ALL LATER WORDING",
+      "line": 14,
+      "chars": 954
+    },
+    {
+      "name": "CAMERA GEOMETRY CLARIFICATION",
+      "line": 27,
+      "chars": 1357
+    },
+    {
+      "name": "OUTPUT CANVAS",
+      "line": 49,
+      "chars": 459
+    },
+    {
+      "name": "USE CASE",
+      "line": 63,
+      "chars": 57
+    },
+    {
+      "name": "ASSET TYPE",
+      "line": 65,
+      "chars": 81
+    },
+    {
+      "name": "PRIMARY REQUEST",
+      "line": 67,
+      "chars": 622
+    },
+    {
+      "name": "SUBJECT STATE",
+      "line": 80,
+      "chars": 1107
+    },
+    {
+      "name": "SCENE / BACKDROP",
+      "line": 105,
+      "chars": 748
+    },
+    {
+      "name": "DESIGN THESIS",
+      "line": 138,
+      "chars": 379
+    },
+    {
+      "name": "SUBJECT AND IDENTITY",
+      "line": 142,
+      "chars": 456
+    },
+    {
+      "name": "LONGITUDINAL DISTRIBUTION — HARD PROPORTION CONTROL",
+      "line": 153,
+      "chars": 727
+    },
+    {
+      "name": "VERTICAL PROPORTION CONTROL",
+      "line": 166,
+      "chars": 767
+    },
+    {
+      "name": "TIER-COUNTING RULE",
+      "line": 177,
+      "chars": 561
+    },
+    {
+      "name": "HULL GEOMETRY",
+      "line": 203,
+      "chars": 92
+    },
+    {
+      "name": "BOW PROFILE — HARD GEOMETRY CONSTRAINT",
+      "line": 205,
+      "chars": 822
+    },
+    {
+      "name": "CRITICAL FOREFOOT RULE",
+      "line": 218,
+      "chars": 186
+    },
+    {
+      "name": "POSITIVE FOREFOOT CONSTRUCTION PRIORITY",
+      "line": 221,
+      "chars": 1068
+    },
+    {
+      "name": "ABSOLUTELY NO BULBOUS BOW",
+      "line": 239,
+      "chars": 613
+    },
+    {
+      "name": "HARD CHINE",
+      "line": 256,
+      "chars": 374
+    },
+    {
+      "name": "MIDBODY",
+      "line": 265,
+      "chars": 242
+    },
+    {
+      "name": "UNDERWATER BODY",
+      "line": 274,
+      "chars": 582
+    },
+    {
+      "name": "STERN ARCHITECTURE",
+      "line": 292,
+      "chars": 737
+    },
+    {
+      "name": "GOVERNING SHEER",
+      "line": 315,
+      "chars": 557
+    },
+    {
+      "name": "SUPERSTRUCTURE PLACEMENT",
+      "line": 327,
+      "chars": 456
+    },
+    {
+      "name": "SUPERSTRUCTURE MASSING",
+      "line": 338,
+      "chars": 309
+    },
+    {
+      "name": "UNIFIED SUPERSTRUCTURE ENVELOPE — HARD OVERRIDE",
+      "line": 344,
+      "chars": 1629
+    },
+    {
+      "name": "TIER 1",
+      "line": 370,
+      "chars": 389
+    },
+    {
+      "name": "TIER 2",
+      "line": 382,
+      "chars": 234
+    },
+    {
+      "name": "TIER 3",
+      "line": 392,
+      "chars": 275
+    },
+    {
+      "name": "TIER 4",
+      "line": 402,
+      "chars": 215
+    },
+    {
+      "name": "TIER 5",
+      "line": 411,
+      "chars": 336
+    },
+    {
+      "name": "MASSING RHYTHM",
+      "line": 422,
+      "chars": 543
+    },
+    {
+      "name": "OPENING LANGUAGE",
+      "line": 444,
+      "chars": 192
+    },
+    {
+      "name": "APERTURE RHYTHM CONTROL — HARD OVERRIDE",
+      "line": 448,
+      "chars": 1955
+    },
+    {
+      "name": "HULL-SIDE OPENINGS",
+      "line": 485,
+      "chars": 387
+    },
+    {
+      "name": "FEATURE INTEGRATION",
+      "line": 490,
+      "chars": 443
+    },
+    {
+      "name": "VISIBLE SIGNATURE FEATURES",
+      "line": 501,
+      "chars": 557
+    },
+    {
+      "name": "MATERIALS / FABRICATION",
+      "line": 513,
+      "chars": 0
+    },
+    {
+      "name": "HULL",
+      "line": 514,
+      "chars": 216
+    },
+    {
+      "name": "SUPERSTRUCTURE",
+      "line": 525,
+      "chars": 246
+    },
+    {
+      "name": "OPENINGS",
+      "line": 529,
+      "chars": 107
+    },
+    {
+      "name": "COLOR PALETTE",
+      "line": 532,
+      "chars": 500
+    },
+    {
+      "name": "STYLE / MEDIUM",
+      "line": 553,
+      "chars": 467
+    },
+    {
+      "name": "LIGHTING / MOOD",
+      "line": 566,
+      "chars": 821
+    },
+    {
+      "name": "DETAIL CONTROL",
+      "line": 603,
+      "chars": 394
+    },
+    {
+      "name": "TEXT",
+      "line": 626,
+      "chars": 160
+    },
+    {
+      "name": "HARD CONSTRAINTS",
+      "line": 628,
+      "chars": 1486
+    },
+    {
+      "name": "AVOID",
+      "line": 659,
+      "chars": 1612
+    },
+    {
+      "name": "OUTPUT INTENT",
+      "line": 719,
+      "chars": 751
+    }
+  ]
+}

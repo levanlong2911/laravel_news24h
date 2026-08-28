@@ -121,6 +121,11 @@ return [
         'mode' => env('VIDEO_CREATIVE_CONCEPT_MODE', 'disabled'),
     ],
 
+    'tests' => [
+        'known_good_geometry_prompt_sha256' => '2092f18636fa1cc798d6c6708c1fc09968333a35f1d2abb86315b28c8f716a4b',
+        'known_good_geometry_render_sha256' => 'b2d52e0e6384b01d1457aff320a6d6bea0cb3846786042c7ca140d518eb3f116',
+    ],
+
     'creative_profiles' => [
         'categories' => [
             'yacht' => 'luxury_vessel',

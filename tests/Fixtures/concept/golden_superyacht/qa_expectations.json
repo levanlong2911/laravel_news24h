@@ -1,0 +1,20 @@
+{
+  "asset_type": "master_superyacht_geometry",
+  "verified_by": "claude_visual_count",
+  "human_confirmed": false,
+  "held": [
+    "no bulbous bow",
+    "fabrication state with red-oxide primer",
+    "apertures empty and unglazed",
+    "bow left, stern right, port side visible",
+    "complete subject in frame",
+    "studio backdrop with no water"
+  ],
+  "deviated": [
+    "mast and radar or satellite domes present",
+    "final railings present",
+    "projecting deck slab beneath every aperture",
+    "repeated hull portholes",
+    "open top level above tier five"
+  ]
+}

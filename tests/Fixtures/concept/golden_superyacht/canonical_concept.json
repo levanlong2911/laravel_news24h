@@ -1,0 +1,5 @@
+{
+  "available": false,
+  "reason": "Khong co CreativeConcept tuong ung: prompt ta 124 m / 7.4 / 5 tier, con concept-v18 trong DB la 120 m / 6.9 / 4 tier — hai con tau khac nhau.",
+  "expected_from": "CreativeConceptParser::parse() roi canonicalised()"
+}
