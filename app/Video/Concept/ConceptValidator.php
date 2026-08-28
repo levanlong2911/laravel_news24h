@@ -151,6 +151,13 @@ final class ConceptValidator
 
                 break;
 
+            case 'boolean':
+                if (! is_bool($value)) {
+                    $violations[] = "design_identity.{$slot} must be true or false";
+                }
+
+                return;
+
             case 'enum':
                 if (! in_array($value, $spec['values'], true)) {
                     $violations[] = "design_identity.{$slot} must be one of ".implode(', ', $spec['values']);

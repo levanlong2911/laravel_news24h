@@ -10,11 +10,10 @@ final class CreativeConcept
         'hull' => ['hull_material' => 'material', 'hull_colour' => 'colour'],
         'superstructure' => ['superstructure_material' => 'material', 'superstructure_colour' => 'colour'],
         'boot_stripe' => ['boot_stripe_colour' => 'colour'],
+        'glazing' => ['glazing_type' => 'type'],
     ];
 
     private const SPEC_GEOMETRY = ['bow', 'hull', 'stern', 'superstructure', 'openings'];
-
-    private const SPEC_FIELD_NAMES = ['aperture_bands' => 'superstructure_bands'];
 
     /**
      * @param  array<string, mixed>  $designIdentity  khoá đúng bằng profile.identity_slots
@@ -145,7 +144,13 @@ final class CreativeConcept
             $fields = [];
 
             foreach ($value as $field => $inner) {
-                $fields[self::SPEC_FIELD_NAMES[$field] ?? $field] = $profile->exportAlias("{$slot}.{$field}", $inner);
+                $fields[$profile->exportKeyName($slot, $field)] = $profile->exportAlias("{$slot}.{$field}", $inner);
+            }
+
+            if ($slot === 'hull') {
+                $type = $this->derivedHullType();
+                // Phuong an 1 dat `type` dau khoi hull.
+                $fields = $type === null ? $fields : ['type' => $type] + $fields;
             }
 
             $geometry[$slot] = $fields;
@@ -158,6 +163,31 @@ final class CreativeConcept
         }
 
         return $geometry;
+    }
+
+    /**
+     * `hull.type` cua DesignSpec KHONG phai mot khe Sonnet khai — no gop hai
+     * su that da co (kim loai o hull_material, ho than o hull.midbody). Khai
+     * rieng se thanh nguon su that thu ba va ba cho se troi khoi nhau.
+     *
+     * Vat lieu nhac ca hai kim loai, hoac khong nhac cai nao, thi tra null:
+     * mot ca nhap nhang phai HIEN RA chu khong duoc doan thanh cai khop truoc.
+     */
+    private function derivedHullType(): ?string
+    {
+        if (($this->designIdentity['hull']['midbody'] ?? null) === null) {
+            return null;
+        }
+
+        $material = mb_strtolower((string) ($this->designIdentity['hull_material'] ?? ''));
+        $steel = str_contains($material, 'steel');
+        $aluminium = str_contains($material, 'aluminium') || str_contains($material, 'aluminum');
+
+        return match (true) {
+            $steel && ! $aluminium => 'steel_displacement',
+            $aluminium && ! $steel => 'aluminium_displacement',
+            default => null,
+        };
     }
 
     /** @return array<string, mixed> */

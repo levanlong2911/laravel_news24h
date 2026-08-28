@@ -9,7 +9,7 @@ use App\Video\Llm\LlmRequest;
 
 final class ClaudeConceptDesigner
 {
-    public const INSTRUCTION_VERSION = 'concept-v18';
+    public const INSTRUCTION_VERSION = 'concept-v19';
 
     public const MODEL = 'sonnet5';
 
@@ -88,6 +88,10 @@ final class ClaudeConceptDesigner
             return count($spec['values']) === 1
                 ? "- {$name}: always {$spec['values'][0]}.{$guidance}"
                 : "- {$name}: exactly one of: ".implode(', ', $spec['values']).'.'.$guidance;
+        }
+
+        if ($spec['type'] === 'boolean') {
+            return "- {$name}: true or false.{$guidance}";
         }
 
         return $spec['type'] === 'text'

@@ -82,7 +82,7 @@ class CreativeConceptTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'], ['bow' => ['type' => 'boolean']]);
+        new CategoryCreativeProfile('p', 'm', ['x'], ['size'], ['owner'], ['bow' => ['type' => 'colour']]);
     }
 
     public function test_a_text_slot_without_a_positive_max_length_is_refused(): void

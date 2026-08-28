@@ -11,6 +11,10 @@ use Tests\TestCase;
 
 class DesignSpecExportTest extends TestCase
 {
+    private const INVARIANTS = [
+        'stern_geometry', 'continuous_sheer', 'opening_layout', 'bow_geometry', 'superstructure_envelope',
+    ];
+
     private function profile(): CategoryCreativeProfile
     {
         return (new CreativeProfileResolver)->resolve('superyacht');
@@ -106,9 +110,10 @@ class DesignSpecExportTest extends TestCase
 
         $this->assertSame('continuous_convex_transition', $geometry['bow']['forefoot']);
         $this->assertSame('hard_chine_to_midships', $geometry['bow']['chine']);
-        $this->assertSame('plumb_full_beam_transom', $geometry['stern']['transom']);
+        $this->assertSame('plumb_full_beam_transom', $geometry['stern']['type']);
         $this->assertSame('integrated_recessed_waterline_platform', $geometry['stern']['platform']);
-        $this->assertSame('horizontal_flush_ribbon_apertures', $geometry['openings']['distribution']);
+        $this->assertSame('horizontal_flush_ribbon_apertures', $geometry['openings']['language']);
+        $this->assertSame('flush_recessed', $geometry['openings']['configuration']);
         $this->assertSame(4, $geometry['openings']['superstructure_bands']);
         $this->assertSame(4, $geometry['superstructure']['enclosed_deck_levels']);
     }
@@ -118,17 +123,40 @@ class DesignSpecExportTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('maps raked_full_beam, which is not one of its enum values');
 
-        new CategoryCreativeProfile(
+        $this->profileWithExport([
+            'schema_version' => '1.0',
+            'invariants' => self::INVARIANTS,
+            'export_aliases' => ['stern.transom' => ['raked_full_beam' => 'raked_full_beam_transom']],
+        ]);
+    }
+
+    public function test_a_profile_that_pins_too_few_invariants_is_refused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('must declare at least 5 invariants');
+
+        $this->profileWithExport([
+            'schema_version' => '1.0',
+            'invariants' => ['stern_geometry', 'continuous_sheer', 'opening_layout', 'bow_geometry'],
+            'export_aliases' => [],
+        ]);
+    }
+
+    public function test_the_shipped_profile_pins_enough_invariants(): void
+    {
+        $this->assertGreaterThanOrEqual(5, count($this->profile()->designSpecExport['invariants']));
+    }
+
+    /** @param array<string, mixed> $export */
+    private function profileWithExport(array $export): CategoryCreativeProfile
+    {
+        return new CategoryCreativeProfile(
             'test_profile', 'Design something new.', ['design_profile'], ['size'], ['owner'],
             ['stern' => ['type' => 'object', 'fields' => [
                 'transom' => ['type' => 'enum', 'values' => ['plumb_full_beam']],
             ]]],
             'Mission.', [], [], [], [], [], [],
-            [
-                'schema_version' => '1.0',
-                'invariants' => ['stern_geometry'],
-                'export_aliases' => ['stern.transom' => ['raked_full_beam' => 'raked_full_beam_transom']],
-            ],
+            $export,
         );
     }
 

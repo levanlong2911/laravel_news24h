@@ -185,6 +185,13 @@ return [
                         'openings.distribution' => ['horizontal_ribbon' => 'horizontal_flush_ribbon_apertures'],
                         'openings.hull_openings' => ['sparse_service' => 'sparse_service_openings'],
                     ],
+
+                    'export_key_names' => [
+                        'stern.transom' => 'type',
+                        'openings.aperture_bands' => 'superstructure_bands',
+                        'openings.distribution' => 'language',
+                        'openings.surface_relationship' => 'configuration',
+                    ],
                 ],
 
                 'concept_forbidden_terms' => [
@@ -287,12 +294,24 @@ return [
                     'stern' => ['type' => 'object', 'fields' => [
                         'transom' => ['type' => 'enum', 'values' => ['plumb_full_beam']],
                         'platform' => ['type' => 'enum', 'values' => ['recessed_waterline']],
+                        'overhang' => [
+                            'type' => 'boolean',
+                            'guidance' => 'true only when the stern projects aft beyond the transom base.',
+                        ],
                         'transom_face' => ['type' => 'text', 'max_length' => 90],
                     ]],
                     'superstructure' => ['type' => 'object', 'fields' => [
                         'envelope' => ['type' => 'enum', 'values' => ['one_continuous_shell', 'faceted_continuous_shell', 'swept_integrated_shell']],
                         'massing_position' => ['type' => 'enum', 'values' => ['central', 'central_aft', 'aft']],
                         'external_read' => ['type' => 'enum', 'values' => ['single_integrated_mass', 'continuous_low_volume', 'compressed_wedge_mass']],
+                        'long_foredeck' => [
+                            'type' => 'boolean',
+                            'guidance' => 'true when the foredeck runs clear for roughly a fifth of the length or more.',
+                        ],
+                        'tier_rule' => ['type' => 'enum', 'values' => [
+                            'verifiable_within_one_continuous_mass',
+                            'verifiable_within_two_connected_masses',
+                        ]],
                         'profile_note' => ['type' => 'text', 'max_length' => 90],
                     ]],
                     'openings' => ['type' => 'object', 'fields' => [
@@ -307,6 +326,11 @@ return [
                         'surface_relationship' => ['type' => 'enum', 'values' => ['flush_recessed', 'flush']],
                         'hull_openings' => ['type' => 'enum', 'values' => ['sparse_service', 'minimal_service', 'none']],
                     ]],
+                    'glazing_type' => [
+                        'type' => 'text',
+                        'max_length' => 60,
+                        'guidance' => 'The finished glazing only; at fabrication stage every aperture is still empty.',
+                    ],
                     'hull_material' => ['type' => 'text', 'max_length' => 60],
                     'superstructure_material' => ['type' => 'text', 'max_length' => 60],
                     'hull_colour' => ['type' => 'text', 'max_length' => 60],

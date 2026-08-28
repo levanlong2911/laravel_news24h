@@ -6,11 +6,13 @@ use InvalidArgumentException;
 
 final class CategoryCreativeProfile
 {
-    private const SLOT_TYPES = ['text', 'integer', 'number', 'object', 'enum'];
+    private const SLOT_TYPES = ['text', 'integer', 'number', 'object', 'enum', 'boolean'];
 
     private const MAX_SLOT_GUIDANCE_LENGTH = 200;
 
     private const MAX_VIEWPOINT_GUIDANCE_LENGTH = 400;
+
+    private const MIN_DESIGN_SPEC_INVARIANTS = 5;
 
     /**
      * @param  list<string>  $articlePatterns
@@ -108,6 +110,15 @@ final class CategoryCreativeProfile
     }
 
     /**
+     * Doi TEN khoa khi xuat DesignSpec. Du lieu duoc dong bang giu ten cu, vi
+     * Python doc thang ten do.
+     */
+    public function exportKeyName(string $slot, string $field): string
+    {
+        return $this->designSpecExport['export_key_names']["{$slot}.{$field}"] ?? $field;
+    }
+
+    /**
      * @param  array<string, mixed>  $export
      * @param  array<string, array<string, mixed>>  $slots
      */
@@ -123,8 +134,17 @@ final class CategoryCreativeProfile
 
         $invariants = $export['invariants'] ?? [];
 
-        if (! is_array($invariants) || $invariants === [] || count($invariants) !== count(array_unique($invariants))) {
-            throw new InvalidArgumentException("Creative profile {$key} design_spec_export invariants must be non-empty and unique.");
+        if (! is_array($invariants) || count($invariants) !== count(array_unique($invariants))) {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export invariants must be unique.");
+        }
+
+        // Mot DesignSpec khai hai ba bat bien roi dung o do thi khong con la
+        // hop dong: no chi ke vai thu de nho, con phan con lai troi tu do.
+        if (count($invariants) < self::MIN_DESIGN_SPEC_INVARIANTS) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} design_spec_export must declare at least "
+                .self::MIN_DESIGN_SPEC_INVARIANTS.' invariants.',
+            );
         }
 
         foreach ($invariants as $name) {
@@ -135,6 +155,46 @@ final class CategoryCreativeProfile
 
         foreach ($export['export_aliases'] ?? [] as $path => $map) {
             $this->assertExportAliasIsSatisfiable((string) $path, $map, $slots, $key);
+        }
+
+        $this->assertExportKeyNamesAreSatisfiable($export['export_key_names'] ?? [], $slots, $key);
+    }
+
+    /**
+     * Hai field cung doi ve mot ten thi field sau de len field truoc, va
+     * DesignSpec mat mot gia tri ma khong ai bao.
+     *
+     * @param  array<string, mixed>  $names
+     * @param  array<string, array<string, mixed>>  $slots
+     */
+    private function assertExportKeyNamesAreSatisfiable(array $names, array $slots, string $key): void
+    {
+        $renamed = [];
+
+        foreach ($names as $path => $to) {
+            if (! is_string($to) || preg_match('/\A[a-z][a-z0-9_]*\z/', $to) !== 1) {
+                throw new InvalidArgumentException("Creative profile {$key} design_spec_export key name {$path} must map to a valid field name.");
+            }
+
+            $parts = explode('.', (string) $path);
+
+            if (count($parts) !== 2 || ! isset($slots[$parts[0]]['fields'][$parts[1]])) {
+                throw new InvalidArgumentException("Creative profile {$key} design_spec_export key name {$path} must name an existing slot.field.");
+            }
+
+            $renamed[$parts[0]][$parts[1]] = $to;
+        }
+
+        foreach ($renamed as $slot => $map) {
+            $final = [];
+
+            foreach (array_keys($slots[$slot]['fields']) as $field) {
+                $final[] = $map[$field] ?? $field;
+            }
+
+            if (count($final) !== count(array_unique($final))) {
+                throw new InvalidArgumentException("Creative profile {$key} design_spec_export key names collide inside {$slot}.");
+            }
         }
     }
 
@@ -301,6 +361,7 @@ final class CategoryCreativeProfile
             'text' => ['type', 'max_length'],
             'object' => ['type', 'fields'],
             'enum' => ['type', 'values'],
+            'boolean' => ['type'],
             default => ['type', 'min', 'max'],
         };
         $allowed = [...$expected, 'guidance'];
@@ -325,6 +386,11 @@ final class CategoryCreativeProfile
                 throw new InvalidArgumentException("Creative profile identity slot {$name} must declare max_length > 0.");
             }
 
+            return;
+        }
+
+        // Khong co bien nao de kiem: khoa cho phep da chan o bang $expected.
+        if ($spec['type'] === 'boolean') {
             return;
         }
 

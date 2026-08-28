@@ -172,6 +172,7 @@ class CreativeConceptModeTest extends TestCase
                 'integer' => (int) $spec['min'],
                 'number' => (float) $spec['min'],
                 'enum' => $spec['values'][0],
+                'boolean' => true,
                 'object' => array_map($slotValue, $spec['fields']),
                 default => 'a plain description',
             };
