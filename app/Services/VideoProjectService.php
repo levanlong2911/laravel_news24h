@@ -14,6 +14,7 @@ use App\Models\VideoProject;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\ConceptStageRunner;
+use App\Services\Video\CreativeProfileResolver;
 use App\Services\Video\DesignImageDirectRenderer;
 use App\Services\Video\DesignImageQueue;
 use App\Services\Video\DesignImageRenderer;
@@ -23,6 +24,7 @@ use App\Services\Video\PlanningStageStore;
 use App\Services\Video\PythonPromptCompiler;
 use App\Services\Video\VisualIdentityStore;
 use App\Video\Concept\ClaudeConceptDesigner;
+use App\Video\Concept\CreativeConceptParser;
 use App\Video\Concept\Provenance;
 use App\Video\Concept\Viewpoint;
 use Illuminate\Support\Facades\Log;
@@ -317,6 +319,7 @@ class VideoProjectService
             'features' => $output['signature_features'] ?? [],
             'decisions' => $decisions,
             'json' => $output,
+            'design_spec' => $this->designSpecOf($project, $output),
             'meta' => $succeeded ? [
                 'model' => $latest->model,
                 'instruction_version' => $latest->instruction_version,
@@ -614,6 +617,38 @@ class VideoProjectService
     }
 
     /** @return array<string, mixed> */
+    /**
+     * Ban XUAT theo hop dong DesignSpec, dung canh JSON goc de doi chieu duoc
+     * bang mat. Hong o day khong duoc lam sap man hinh concept: neu khong dung
+     * lai duoc concept thi tra rong, khong nem.
+     *
+     * @param  array<string, mixed>  $output
+     * @return array<string, mixed>
+     */
+    private function designSpecOf(VideoProject $project, array $output): array
+    {
+        $slug = (string) ($project->article?->category?->slug ?? '');
+        $profile = $slug === '' ? null : (new CreativeProfileResolver)->resolve($slug);
+
+        if ($profile === null || ($output['design_identity'] ?? []) === []) {
+            return [];
+        }
+
+        try {
+            return (new CreativeConceptParser)
+                ->parse(json_encode($output, JSON_THROW_ON_ERROR))
+                ->canonicalised($profile)
+                ->toDesignSpec($profile, $slug);
+        } catch (\Throwable $e) {
+            Log::warning('design-spec: khong xuat duoc tu concept da luu', [
+                'project_id' => $project->id,
+                'exception' => $e,
+            ]);
+
+            return [];
+        }
+    }
+
     private function emptyConcept(?string $reason = null): array
     {
         return [
@@ -629,6 +664,7 @@ class VideoProjectService
             'features' => [],
             'decisions' => [],
             'json' => [],
+            'design_spec' => [],
             'meta' => [],
             'provenance_summary' => null,
             'frozen_at' => null,

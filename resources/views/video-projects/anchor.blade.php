@@ -240,8 +240,14 @@
                         @endif
                         @if($concept['json'] !== [])
                             <details class="va-more">
-                                <summary>Concept JSON</summary>
+                                <summary>Concept JSON — Sonnet trả về</summary>
                                 <pre class="cjson">{{ json_encode($concept['json'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre>
+                            </details>
+                        @endif
+                        @if(($concept['design_spec'] ?? []) !== [])
+                            <details class="va-more">
+                                <summary>DesignSpec — bản Laravel xuất</summary>
+                                <pre class="cjson">{{ json_encode($concept['design_spec'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre>
                             </details>
                         @endif
                     @endif
