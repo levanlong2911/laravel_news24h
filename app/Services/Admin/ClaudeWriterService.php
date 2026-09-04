@@ -37,6 +37,7 @@ class ClaudeWriterService
     private const CACHE_READ_MULTIPLIER     = 0.10;
 
     private const MAX_RETRIES    = 5;
+    private const MAX_TIMEOUT_ATTEMPTS = 2;
     private const BASE_DELAY_S   = 3;   // normal errors: 3s, 6s, 12s...
     private const DELAY_529_S    = 30;  // 529 Overloaded: 30s, 60s, 90s...
     private const RPM_LIMIT      = 40;  // max requests/phút gửi tới Anthropic
@@ -127,6 +128,7 @@ class ClaudeWriterService
             $body       = curl_exec($ch);
             $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $curlError  = curl_error($ch);
+            $curlErrno  = curl_errno($ch);
 
             $latencyMs  = (int) round((microtime(true) - $startedMs) * 1000);
             $finishedAt = new \DateTimeImmutable();
@@ -143,13 +145,28 @@ class ClaudeWriterService
             $attemptError   = $curlError ?: null;
 
             if ($httpStatus === 200 && is_array($json)) {
-                $attemptText  = $json['content'][0]['text'] ?? '';
+                $attemptText = '';
+                foreach ($json['content'] ?? [] as $block) {
+                    if (is_array($block) && ($block['type'] ?? null) === 'text') {
+                        $attemptText .= $block['text'] ?? '';
+                    }
+                }
+
                 $attemptUsage = TokenUsage::fromResponse(
                     $usageJson ?? [],
                     model:     $model,
                     modelType: $modelType,
                     requestId: $requestId,
                 );
+
+                if ($attemptText === '' && $attemptUsage->outputTokens > 0) {
+                    Log::error('Claude 200 nhung khong doc duoc text', [
+                        'model'         => $model,
+                        'stop_reason'   => $json['stop_reason'] ?? null,
+                        'block_types'   => array_column($json['content'] ?? [], 'type'),
+                        'output_tokens' => $attemptUsage->outputTokens,
+                    ]);
+                }
             } elseif ($attemptError === null) {
                 $attemptError = is_array($json) ? ($json['error']['message'] ?? $body) : $body;
             }
@@ -183,6 +200,14 @@ class ClaudeWriterService
             if ($curlError ?? false) {
                 $lastError = "cURL error: {$curlError}";
                 Log::warning("Claude exception (attempt {$attempt}/" . self::MAX_RETRIES . "): {$lastError}");
+
+                if ($curlErrno === CURLE_OPERATION_TIMEDOUT && $attempt >= self::MAX_TIMEOUT_ATTEMPTS) {
+                    Log::error('Claude timeout — dung retry, moi lan timeout van bi tinh tien', [
+                        'model'    => $model,
+                        'attempts' => $attempt,
+                    ]);
+                    break;
+                }
             } else {
                 if ($httpStatus === 200) {
                     // Đã parse ở trên để ghi sổ — dùng lại, không parse hai lần.
@@ -210,7 +235,7 @@ class ClaudeWriterService
                         ]);
                     }
 
-                    return new ClaudeResponse($text, $usage);
+                    return new ClaudeResponse($text, $usage, $stopReason);
                 }
 
                 if ($httpStatus === 400) {

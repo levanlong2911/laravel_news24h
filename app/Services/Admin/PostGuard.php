@@ -101,13 +101,20 @@ class PostGuard
         }
 
         if (!is_array($data)) {
-            Log::warning('[PostGuard] JSON parse failed', ['raw' => substr($raw, 0, 500)]);
+            Log::warning('[PostGuard] JSON parse failed', [
+                'raw_len' => strlen($raw),
+                'raw'     => $raw,
+            ]);
             return [null, GuardReason::JSON_INVALID];
         }
 
         foreach (self::REQUIRED_FIELDS as $field) {
             if (empty($data[$field])) {
-                Log::warning("[PostGuard] Missing required field: {$field}");
+                Log::warning("[PostGuard] Missing required field: {$field}", [
+                    'keys_found' => array_keys($data),
+                    'raw_len'    => strlen($raw),
+                    'raw'        => $raw,
+                ]);
                 return [null, GuardReason::MISSING_FIELDS];
             }
 

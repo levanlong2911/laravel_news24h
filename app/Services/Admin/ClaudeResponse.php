@@ -18,8 +18,19 @@ final class ClaudeResponse
     public function __construct(
         public readonly string     $text,
         public readonly TokenUsage $usage,
+        public readonly ?string    $stopReason = null,
     ) {
         $this->inputTokens  = $usage->inputTokens;
         $this->outputTokens = $usage->outputTokens;
+    }
+
+    public function wasTruncated(): bool
+    {
+        return $this->stopReason === 'max_tokens';
+    }
+
+    public function failed(): bool
+    {
+        return $this->stopReason === null;
     }
 }
