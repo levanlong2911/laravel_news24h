@@ -25,6 +25,10 @@ class ClaudeWriterService
         'sonnet' => ['effort' => 'medium'],
     ];
 
+    private const THINKING = [
+        'sonnet' => ['type' => 'disabled'],
+    ];
+
 
     public const PRICE_INPUT = [
         'haiku'  => 1.00,
@@ -87,6 +91,9 @@ class ClaudeWriterService
         ];
         if (isset(self::OUTPUT_CONFIG[$modelType])) {
             $requestBody['output_config'] = self::OUTPUT_CONFIG[$modelType];
+        }
+        if (isset(self::THINKING[$modelType])) {
+            $requestBody['thinking'] = self::THINKING[$modelType];
         }
         if ($system !== '') {
             $requestBody['system'] = $system;
