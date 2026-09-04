@@ -21,6 +21,10 @@ class ClaudeWriterService
         'sonnet' => 8000,
     ];
 
+    private const OUTPUT_CONFIG = [
+        'sonnet' => ['effort' => 'medium'],
+    ];
+
 
     public const PRICE_INPUT = [
         'haiku'  => 1.00,
@@ -81,6 +85,9 @@ class ClaudeWriterService
             'max_tokens' => $maxTokens,
             'messages'   => [['role' => 'user', 'content' => $prompt]],
         ];
+        if (isset(self::OUTPUT_CONFIG[$modelType])) {
+            $requestBody['output_config'] = self::OUTPUT_CONFIG[$modelType];
+        }
         if ($system !== '') {
             $requestBody['system'] = $system;
         }
