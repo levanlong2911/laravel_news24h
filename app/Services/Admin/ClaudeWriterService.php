@@ -8,20 +8,12 @@ use Illuminate\Support\Str;
 
 class ClaudeWriterService
 {
-    /**
-     * Phiên bản bảng giá đang áp dụng, ghi vào mỗi dòng sổ cái.
-     *
-     * Có tiền tố nhà cung cấp để sổ cái tự mô tả — ngày có thêm openai/google/fal
-     * thì chuỗi '2026-08-05' trần không cho biết nó là giá của ai.
-     *
-     * Đổi giá → đổi chuỗi này. Sổ cái giữ token thô nên mọi dòng cũ vẫn tính lại
-     * được theo đúng bảng giá thời điểm đó, kể cả khi phát hiện bảng giá cũ ghi sai.
-     */
-    public const PRICING_VERSION = 'anthropic-v2026-08-05';
+
+    public const PRICING_VERSION = 'anthropic-v2026-09-04';
 
     private const MODELS = [
         'haiku'  => 'claude-haiku-4-5-20251001',
-        'sonnet' => 'claude-sonnet-4-6',
+        'sonnet' => 'claude-sonnet-5',
     ];
 
     private const MAX_TOKENS = [
@@ -29,36 +21,18 @@ class ClaudeWriterService
         'sonnet' => 8000,
     ];
 
-    /**
-     * Giá USD trên 1 triệu token. Đối chiếu lần cuối: 2026-08-05.
-     *
-     * Haiku trước đây ghi 0.80 / 4.00 trong khi bảng giá thật là 1.00 / 5.00,
-     * nên mọi con số chi phí Haiku trong dashboard thấp hơn thực tế 20%. Dòng
-     * chú thích cũ chỉ nói "update when Anthropic changes rates" và không ai
-     * cập nhật — giá là dữ liệu bên ngoài, nó trôi mà không báo.
-     *
-     * Khi sửa hai bảng này, ghi lại ngày đối chiếu ở trên. Con số cũ không thể
-     * truy ngược: claude_usage_logs chỉ lưu total_tokens và total_cost_usd,
-     * không lưu model lẫn tách vào/ra, nên bản ghi lịch sử vĩnh viễn thiếu 20%
-     * ở phần Haiku.
-     */
+
     public const PRICE_INPUT = [
         'haiku'  => 1.00,
-        'sonnet' => 3.00,
+        'sonnet' => 2.00,
     ];
 
     public const PRICE_OUTPUT = [
         'haiku'  => 5.00,
-        'sonnet' => 15.00,
+        'sonnet' => 10.00,
     ];
 
-    /**
-     * Hệ số nhân trên giá INPUT cho token cache.
-     *
-     * Ghi cache 5 phút 1,25× · ghi cache 1 giờ 2× · đọc cache 0,1×. Pipeline
-     * chưa gửi cache_control ở đâu nên hai khoản này luôn 0; để sẵn hằng số để
-     * ngày bật caching không phải đi tìm lại công thức.
-     */
+
     private const CACHE_WRITE_5M_MULTIPLIER = 1.25;
     private const CACHE_READ_MULTIPLIER     = 0.10;
 
@@ -68,13 +42,6 @@ class ClaudeWriterService
     private const RPM_LIMIT      = 40;  // max requests/phút gửi tới Anthropic
     private const MAX_CONCURRENT = 8;   // max đồng thời (parallel workers)
 
-    /**
-     * Chi phí USD của một request, tính đủ bốn khoản token.
-     *
-     * Thay cho costUsd(int, int, string) cũ — bản cũ chỉ nhận input/output nên
-     * không thể tính token cache, và buộc chỗ gọi phải tự nhớ modelType. Giờ
-     * TokenUsage mang sẵn cả hai, không truyền nhầm được.
-     */
     public static function costOf(TokenUsage $usage): float
     {
         $priceIn  = self::PRICE_INPUT[$usage->modelType]  ?? self::PRICE_INPUT['sonnet'];
@@ -92,14 +59,6 @@ class ClaudeWriterService
         private readonly RequestLedgerRecorder $ledger = new RequestLedgerRecorder(),
     ) {}
 
-    /**
-     * $context đi THEO LỜI GỌI, không phải trạng thái của service.
-     *
-     * ClaudeWriterService không được bind singleton: ArticlePipelineService và
-     * HookEngine mỗi bên giữ một instance riêng. Đặt context lên service thì set
-     * ở pipeline xong lượt gọi của HookEngine vẫn rỗng — đúng lượt từng bị bỏ
-     * quên cả token lẫn tiền.
-     */
     public function generate(
         string  $prompt,
         string  $modelType = 'haiku',
@@ -139,9 +98,6 @@ class ClaudeWriterService
             $this->waitForRpmSlot();       // block nếu đạt RPM_LIMIT
             $this->acquireConcurrent();    // block nếu đạt MAX_CONCURRENT
 
-            // Anthropic trả header `request-id` trên mọi response. Không bắt ở đây
-            // thì mất luôn — dùng để đối chất khi cost_report lệch, và khi mở
-            // ticket support. CURLOPT_RETURNTRANSFER chỉ giữ body, không giữ header.
             $requestId = null;
 
             $ch = curl_init('https://api.anthropic.com/v1/messages');
@@ -177,8 +133,6 @@ class ClaudeWriterService
 
             $this->releaseConcurrent();    // giải phóng slot ngay sau HTTP call
 
-            // curl trả 0 khi chưa kết nối được — không phải mã HTTP. Chuẩn hoá về
-            // null để billedFrom() phân loại thành 'unknown' thay vì 'no'.
             $httpStatus = $httpStatus > 0 ? (int) $httpStatus : null;
 
             $json      = is_string($body) ? json_decode($body, true) : null;
@@ -200,9 +154,6 @@ class ClaudeWriterService
                 $attemptError = is_array($json) ? ($json['error']['message'] ?? $body) : $body;
             }
 
-            // ── GHI SỔ: đúng MỘT chỗ, trước mọi nhánh return/continue ──────────
-            // Đặt ở đây có chủ ý. Ghi trong từng nhánh thì thêm một nhánh mới là
-            // quên một nhánh — và khoản tiền đó biến mất không dấu vết.
             $this->ledger->record(
                 callUuid:        $callUuid,
                 attempt:         $attempt,
@@ -283,12 +234,6 @@ class ClaudeWriterService
             }
         }
 
-        // CẢNH BÁO KẾ TOÁN: usage rỗng ở đây KHÔNG có nghĩa là không tốn tiền.
-        //
-        // Nếu một lượt thất bại vì timeout (CURLOPT_TIMEOUT = 60) trong khi
-        // Anthropic đã sinh xong token, họ vẫn tính tiền còn phía mình không hề
-        // nhận được response để đọc usage. Đây là phần chi phí VÔ HÌNH với ledger,
-        // và là lý do phải đối soát với cost_report thay vì tin vào tổng tự cộng.
         Log::error('Claude failed after ' . self::MAX_RETRIES . ' attempts', [
             'model'      => $model,
             'last_error' => $lastError,
