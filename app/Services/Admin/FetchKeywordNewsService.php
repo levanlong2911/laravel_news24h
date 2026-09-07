@@ -41,7 +41,7 @@ class FetchKeywordNewsService
 
         if (empty($allRaw)) {
             Log::warning("[FetchNews] No results: {$kw->name}");
-            return ['saved' => 0, 'top' => 0, 'recent' => 0];
+            return ['saved' => 0, 'top' => 0, 'recent' => 0, 'raw' => 0];
         }
         $scored = $this->serpApi->filterAndScore($allRaw);
 
@@ -125,7 +125,7 @@ class FetchKeywordNewsService
 
         if (empty($top10) && empty($recent50)) {
             Log::warning("[FetchNews] Nothing to save: {$kw->name}");
-            return ['saved' => 0, 'top' => 0, 'recent' => 0];
+            return ['saved' => 0, 'top' => 0, 'recent' => 0, 'raw' => count($allRaw)];
         }
 
         // Merge, dedup by URL (top > recent)
@@ -200,7 +200,7 @@ class FetchKeywordNewsService
 
         Log::info("[FetchNews] Saved {$saved} for: {$kw->name} (top=" . count($top10) . " recent=" . count($recent50) . ")");
 
-        return ['saved' => $saved, 'top' => count($top10), 'recent' => count($recent50)];
+        return ['saved' => $saved, 'top' => count($top10), 'recent' => count($recent50), 'raw' => count($allRaw)];
     }
 
     private function buildTopics(array $articles, array $viralScores): array

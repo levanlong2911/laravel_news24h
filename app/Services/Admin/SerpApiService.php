@@ -5,6 +5,7 @@ namespace App\Services\Admin;
 
 use App\Models\NewsSource;
 use App\Models\NewsWeb;
+use App\Support\RequestBudget;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Illuminate\Support\Facades\Cache;
@@ -14,6 +15,9 @@ class SerpApiService
 {
     protected Client $client;
     protected string $apiKey;
+
+    private const HTTP_TIMEOUT_S = 20;
+    private const RETRY_DELAYS   = [0, 3];
 
     protected function trustedSources(string $categoryId = ''): array
     {
@@ -39,7 +43,7 @@ class SerpApiService
         $this->apiKey = config('services.serpapi.key');
 
         $this->client = new Client([
-            'timeout'         => 15,
+            'timeout'         => self::HTTP_TIMEOUT_S,
             'connect_timeout' => 5,
             'headers'         => ['Accept' => 'application/json'],
         ]);
@@ -200,11 +204,28 @@ class SerpApiService
     // RETRY — exponential backoff cho network errors
     // ══════════════════════════════════════════════
 
-    private function withRetry(callable $fn, string $context = '', int $maxAttempts = 3): array
+    private function redact(string $message): string
     {
-        $delays = [0, 5, 15]; // giây: lần 1 ngay, lần 2 chờ 5s, lần 3 chờ 15s
+        return preg_replace('/api_key=[^&\s]+/', 'api_key=***', $message);
+    }
+
+    private function withRetry(callable $fn, string $context = ''): array
+    {
+        $delays      = self::RETRY_DELAYS;
+        $maxAttempts = count($delays);
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            $needed    = $delays[$attempt] + self::HTTP_TIMEOUT_S;
+            $remaining = RequestBudget::remainingSeconds();
+
+            if ($remaining < $needed) {
+                Log::warning("SerpAPI {$context}: bo attempt {$attempt} — khong du thoi gian, khong goi API", [
+                    'remaining' => round($remaining, 1),
+                    'needed'    => $needed,
+                ]);
+                break;
+            }
+
             if ($attempt > 0) {
                 sleep($delays[$attempt]);
                 Log::info("SerpAPI {$context}: retry attempt {$attempt}");
@@ -217,19 +238,19 @@ class SerpApiService
 
                 // 401/403/422: lỗi config, không retry
                 if (in_array($status, [401, 403, 422])) {
-                    Log::error("SerpAPI {$context}: fatal error {$status} — " . $e->getMessage());
+                    Log::error("SerpAPI {$context}: fatal error {$status} — " . $this->redact($e->getMessage()));
                     return [];
                 }
 
                 // 429 Rate limit hoặc 5xx server error: retry
-                Log::warning("SerpAPI {$context}: attempt {$attempt} failed ({$status}) — " . $e->getMessage());
+                Log::warning("SerpAPI {$context}: attempt {$attempt} failed ({$status}) — " . $this->redact($e->getMessage()));
 
                 if ($attempt === $maxAttempts - 1) {
                     Log::error("SerpAPI {$context}: all {$maxAttempts} attempts failed");
                     return [];
                 }
             } catch (\Exception $e) {
-                Log::warning("SerpAPI {$context}: attempt {$attempt} exception — " . $e->getMessage());
+                Log::warning("SerpAPI {$context}: attempt {$attempt} exception — " . $this->redact($e->getMessage()));
 
                 if ($attempt === $maxAttempts - 1) {
                     Log::error("SerpAPI {$context}: all {$maxAttempts} attempts failed");
