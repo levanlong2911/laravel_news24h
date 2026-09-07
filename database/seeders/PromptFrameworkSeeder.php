@@ -869,16 +869,17 @@ STEP 1 — HOOK TYPE (pick one)
 ══════════════════════════════════════════
 HOOK MUST contain at least one specific detail: a name, a number, a date, or a place.
 A hook without a concrete anchor is not a hook — it is a vague tease. Rewrite it.
+Write the hook in complete sentences. A fragment with no verb is not a hook.
 
 A) SHOCK STAT
    The most jaw-dropping number, front and alone. No preamble. No "after" or "despite".
    Bad:  "No team blinked."
-   Good: "$5.8M on the table. Zero takers. Aubrey stays."
+   Good: "Aubrey had $5.8M on the table and not one team made an offer."
 
 B) COLD QUOTE
    The most explosive quote, zero setup before it. Attribution follows immediately.
    Bad:  "He made his feelings clear at the Combine."
-   Good: "'I want to be here long-term.' Three months later, no extension."
+   Good: "'I want to be here long-term.' Three months later he still has no extension."
 
 C) SCENE-SETTER
    Exact time + place + action. Reader lands inside the moment.
@@ -886,9 +887,10 @@ C) SCENE-SETTER
    Good: "Friday at 4 p.m.: the offer-sheet window closed, and Aubrey's phone stayed quiet."
 
 D) CONTRAST
-   Two facts. Instant gap. Short sentences. No connectors between them.
+   Two facts, one gap. No connectors between them.
    Bad:  "Despite his struggles, he bounced back."
-   Good: "January: MVP front-runner. March: on waivers."
+   Bad:  "January: MVP front-runner. March: on waivers."
+   Good: "In January he led the MVP race. By March he was on waivers."
 
 E) CONSEQUENCE
    Start with the aftermath. Pull back one sentence to reveal why.
