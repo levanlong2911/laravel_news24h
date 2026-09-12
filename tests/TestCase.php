@@ -5,10 +5,24 @@ namespace Tests;
 use App\Models\VideoRenderPlan;
 use App\Models\VideoSession;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Http;
 
 abstract class TestCase extends BaseTestCase
 {
     use CreatesApplication;
+
+    /**
+     * Mot request HTTP khong duoc fake se nem thay vi di ra ngoai. Ngay
+     * 2026-09-07 bon test con tin vao cau dao `VIDEO_PYTHON_RUNNER=false` sau
+     * khi duong render da chuyen sang REST, va da goi that gpt-image-2 het
+     * $0.25. Chot nay nam o day de moi test moi them vao deu duoc bao ve.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::preventStrayRequests();
+    }
 
     /**
      * Ke hoach render da roi khoi `video_sessions.renderplan_json` sang bang

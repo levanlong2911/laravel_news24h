@@ -38,5 +38,12 @@
              thì dispatchPlanningJob() chạy chặng Claude NGAY trong request thay
              vì đẩy job, nên Queue::assertPushed() không bao giờ tới lượt. -->
         <env name="VIDEO_PLANNING_SYNC" value="false"/>
+        <!-- Lop chan thu hai sau Http::preventStrayRequests() trong TestCase:
+             mot request lot luoi cung chi nhan 401, khong tinh tien. Gia tri
+             phai KHAC RONG vi OpenAiImageClient nem khi thieu key. -->
+        <env name="OPENAI_API_KEY" value="test-key-not-real"/>
+        <env name="CLAUDE_API_KEY" value="test-key-not-real"/>
+        <env name="FAL_API_KEY" value="test-key-not-real"/>
+        <env name="SERPAPI_KEY" value="test-key-not-real"/>
     </php>
 </phpunit>
