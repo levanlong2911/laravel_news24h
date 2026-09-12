@@ -1,0 +1,72 @@
+{
+  "profile_key": "generic_physical_object",
+  "profile_version": "1.0",
+  "refinements": {
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "overall_length": {
+          "type": "number"
+        },
+        "overall_width": {
+          "type": "number"
+        },
+        "overall_height": {
+          "type": "number"
+        },
+        "dimension_unit": {
+          "type": "string"
+        }
+      }
+    },
+    "permanent_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_form"
+      ],
+      "properties": {
+        "primary_form": {
+          "type": "string"
+        },
+        "secondary_forms": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "openings": {
+          "type": "string"
+        },
+        "structural_expression": {
+          "type": "string"
+        }
+      }
+    },
+    "form_relationships": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "primary_to_secondary": {
+          "type": "string"
+        },
+        "overall_balance": {
+          "type": "string"
+        }
+      }
+    },
+    "finished_materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "primary": {
+          "type": "string"
+        },
+        "secondary": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

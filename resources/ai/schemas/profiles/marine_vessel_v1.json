@@ -1,0 +1,279 @@
+{
+  "profile_key": "marine_vessel",
+  "profile_version": "1.0",
+  "refinements": {
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "length_m",
+        "beam_m"
+      ],
+      "properties": {
+        "length_m": {
+          "type": "number",
+          "minimum": 40
+        },
+        "beam_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "draft_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "freeboard_midships_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "deck_to_deck_height_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "overall_height_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "length_to_beam_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "permanent_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hull",
+        "bow",
+        "stern",
+        "superstructure"
+      ],
+      "properties": {
+        "bow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stem",
+            "waterline_entry"
+          ],
+          "properties": {
+            "stem": {
+              "type": "string"
+            },
+            "rake_degrees": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 25
+            },
+            "waterline_entry": {
+              "type": "string"
+            },
+            "forefoot": {
+              "type": "string"
+            },
+            "chine": {
+              "type": "string"
+            }
+          }
+        },
+        "hull": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "sheer"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "sheer": {
+              "type": "string"
+            },
+            "midbody": {
+              "type": "string"
+            },
+            "keel": {
+              "type": "string"
+            },
+            "chine": {
+              "type": "string"
+            }
+          }
+        },
+        "stern": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "transom": {
+              "type": "string"
+            },
+            "transom_form": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "platform_geometry": {
+              "type": "string"
+            },
+            "overhang": {
+              "type": "boolean"
+            },
+            "transom_face": {
+              "type": "string"
+            }
+          }
+        },
+        "superstructure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "massing"
+          ],
+          "properties": {
+            "primary_tier_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "enclosed_deck_levels": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "massing": {
+              "type": "string"
+            },
+            "envelope": {
+              "type": "string"
+            },
+            "massing_position": {
+              "type": "string"
+            },
+            "external_read": {
+              "type": "string"
+            },
+            "long_foredeck": {
+              "type": "boolean"
+            },
+            "tier_rule": {
+              "type": "string"
+            },
+            "profile_note": {
+              "type": "string"
+            },
+            "tier_progression": {
+              "type": "string"
+            },
+            "longitudinal_extent": {
+              "type": "string"
+            }
+          }
+        },
+        "openings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "distribution",
+            "vertical_extent",
+            "surface_relationship",
+            "hull_openings"
+          ],
+          "properties": {
+            "aperture_bands": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "distribution": {
+              "type": "string"
+            },
+            "vertical_extent": {
+              "type": "string"
+            },
+            "surface_relationship": {
+              "type": "string"
+            },
+            "hull_openings": {
+              "type": "string"
+            },
+            "window_strategy": {
+              "type": "string"
+            },
+            "door_strategy": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "form_relationships": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "governing_line": {
+          "type": "string"
+        },
+        "massing_rhythm": {
+          "type": "string"
+        },
+        "feature_integration": {
+          "type": "string"
+        },
+        "hull_to_superstructure": {
+          "type": "string"
+        },
+        "tier_progression": {
+          "type": "string"
+        },
+        "bow_to_midbody": {
+          "type": "string"
+        },
+        "midbody_to_stern": {
+          "type": "string"
+        }
+      }
+    },
+    "finished_materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hull_material": {
+          "type": "string"
+        },
+        "superstructure_material": {
+          "type": "string"
+        },
+        "hull_colour": {
+          "type": "string"
+        },
+        "boot_stripe_colour": {
+          "type": "string"
+        },
+        "superstructure_colour": {
+          "type": "string"
+        },
+        "glazing_type": {
+          "type": "string"
+        },
+        "hull": {
+          "type": "string"
+        },
+        "superstructure": {
+          "type": "string"
+        },
+        "glazing": {
+          "type": "string"
+        },
+        "exterior_decking": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

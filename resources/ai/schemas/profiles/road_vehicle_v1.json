@@ -1,0 +1,97 @@
+{
+  "profile_key": "road_vehicle",
+  "profile_version": "1.0",
+  "refinements": {
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "overall_length_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "overall_width_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "overall_height_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "wheelbase_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "permanent_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "body"
+      ],
+      "properties": {
+        "body": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "primary_volume"
+          ],
+          "properties": {
+            "primary_volume": {
+              "type": "string"
+            },
+            "cabin_proportion": {
+              "type": "string"
+            },
+            "wheel_configuration": {
+              "type": "string"
+            },
+            "opening_pattern": {
+              "type": "string"
+            }
+          }
+        },
+        "lighting": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "front_signature": {
+              "type": "string"
+            },
+            "rear_signature": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "form_relationships": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "body_to_cabin": {
+          "type": "string"
+        },
+        "wheelbase_to_overhangs": {
+          "type": "string"
+        }
+      }
+    },
+    "finished_materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "glazing": {
+          "type": "string"
+        },
+        "trim": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

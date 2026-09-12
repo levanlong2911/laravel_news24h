@@ -1,0 +1,91 @@
+{
+  "profile_key": "industrial_machine",
+  "profile_version": "1.0",
+  "refinements": {
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "overall_length_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "overall_width_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "overall_height_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "mass_tonnes": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "permanent_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_frame"
+      ],
+      "properties": {
+        "primary_frame": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "structural_layout"
+          ],
+          "properties": {
+            "structural_layout": {
+              "type": "string"
+            },
+            "load_path": {
+              "type": "string"
+            },
+            "support_points": {
+              "type": "string"
+            }
+          }
+        },
+        "functional_modules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "operator_interfaces": {
+          "type": "string"
+        }
+      }
+    },
+    "form_relationships": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "frame_to_modules": {
+          "type": "string"
+        },
+        "access_to_work_zones": {
+          "type": "string"
+        }
+      }
+    },
+    "finished_materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "frame": {
+          "type": "string"
+        },
+        "panels": {
+          "type": "string"
+        },
+        "wear_surfaces": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

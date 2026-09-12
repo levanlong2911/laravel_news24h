@@ -1,0 +1,133 @@
+{
+  "profile_key": "architecture",
+  "profile_version": "1.0",
+  "refinements": {
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "overall_length_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "overall_width_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "overall_height_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "floor_count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "permanent_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_massing",
+        "facade",
+        "roof"
+      ],
+      "properties": {
+        "primary_massing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization"
+          ],
+          "properties": {
+            "organization": {
+              "type": "string"
+            },
+            "volume_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "vertical_progression": {
+              "type": "string"
+            }
+          }
+        },
+        "facade": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "primary_geometry": {
+              "type": "string"
+            },
+            "opening_pattern": {
+              "type": "string"
+            },
+            "depth_strategy": {
+              "type": "string"
+            }
+          }
+        },
+        "circulation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "primary_vertical": {
+              "type": "string"
+            },
+            "primary_horizontal": {
+              "type": "string"
+            }
+          }
+        },
+        "roof": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "geometry"
+          ],
+          "properties": {
+            "geometry": {
+              "type": "string"
+            },
+            "edge_condition": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "form_relationships": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_to_upper_mass": {
+          "type": "string"
+        },
+        "facade_to_structure": {
+          "type": "string"
+        },
+        "circulation_to_massing": {
+          "type": "string"
+        }
+      }
+    },
+    "finished_materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "primary_facade": {
+          "type": "string"
+        },
+        "secondary_facade": {
+          "type": "string"
+        },
+        "glazing": {
+          "type": "string"
+        },
+        "roof": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "profile_key": "aircraft",
+  "profile_version": "1.0",
+  "refinements": {
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "length_m",
+        "wingspan_m"
+      ],
+      "properties": {
+        "length_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "wingspan_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height_m": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "permanent_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fuselage",
+        "wing",
+        "tail"
+      ],
+      "properties": {
+        "fuselage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cross_section",
+            "nose_geometry"
+          ],
+          "properties": {
+            "cross_section": {
+              "type": "string"
+            },
+            "nose_geometry": {
+              "type": "string"
+            },
+            "aft_taper": {
+              "type": "string"
+            }
+          }
+        },
+        "wing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "planform",
+            "mount_position"
+          ],
+          "properties": {
+            "planform": {
+              "type": "string"
+            },
+            "mount_position": {
+              "type": "string"
+            },
+            "sweep": {
+              "type": "string"
+            },
+            "tip_geometry": {
+              "type": "string"
+            }
+          }
+        },
+        "engine_configuration": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mounting": {
+              "type": "string"
+            },
+            "integration": {
+              "type": "string"
+            }
+          }
+        },
+        "tail": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "configuration"
+          ],
+          "properties": {
+            "configuration": {
+              "type": "string"
+            },
+            "vertical_surface": {
+              "type": "string"
+            },
+            "horizontal_surface": {
+              "type": "string"
+            }
+          }
+        },
+        "landing_configuration": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "primary_gear_layout": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "form_relationships": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wing_to_fuselage": {
+          "type": "string"
+        },
+        "tail_to_fuselage": {
+          "type": "string"
+        },
+        "engine_to_airframe": {
+          "type": "string"
+        }
+      }
+    },
+    "finished_materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "primary_skin": {
+          "type": "string"
+        },
+        "glazing": {
+          "type": "string"
+        },
+        "leading_surfaces": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
