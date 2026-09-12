@@ -636,10 +636,16 @@ class VideoProjectsController extends Controller
             : 'error';
     }
 
+    /**
+     * Reason co the mang mot chi tiet sau dau `|` — ten tam nen chang han —
+     * de man hinh noi duoc "Chua duyet Paint shed" thay vi mot ma chung chung.
+     */
     private function sceneKeyframeMessage(string $reason): string
     {
-        $key = 'messages.scene_keyframe_'.$reason;
-        $text = __($key);
+        [$code, $detail] = array_pad(explode('|', $reason, 2), 2, null);
+
+        $key = 'messages.scene_keyframe_'.$code;
+        $text = __($key, $detail === null ? [] : ['name' => $detail]);
 
         return $text === $key ? $reason : $text;
     }

@@ -288,7 +288,7 @@
                                title="{{ $slot['role'] }} · {{ $slot['title'] }} · {{ $slot['sha'] }}">
                                 <img src="{{ $slot['url'] }}" alt="{{ $slot['title'] }}">
                                 <span class="cap">
-                                    <b class="n">{{ $slot['position'] + 1 }}</b>
+                                    <b class="n">{{ $slot['position'] + 1 }} GỬI</b>
                                     {{ $slot['title'] }}
                                     @if($slot['primary'])<b>SỬA</b>@endif
                                 </span>

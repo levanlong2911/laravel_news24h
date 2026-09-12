@@ -131,6 +131,11 @@ return [
     'scene_image_preservation_unknown' => 'Không dựng được prompt ảnh: bản này khai một khối bảo toàn không nhận ra',
     'scene_no_profile' => 'Chuyên mục của bài này chưa có profile lập kế hoạch scene',
     'scene_identity_unreadable' => 'Không đọc được phần định danh từ prompt ảnh neo đã duyệt',
+    'scene_keyframe_environment_no_profile' => 'Chuyên mục của bài này chưa có thư viện môi trường nên scene không biết dựng ở đâu',
+    'scene_keyframe_environment_undeclared' => 'Profile không khai môi trường cho milestone của scene này',
+    'scene_keyframe_environment_unknown_milestone' => 'Thư viện môi trường không biết milestone mà scene này khai',
+    'scene_keyframe_environment_ambiguous' => 'Scene này gộp nhiều nơi chốn khác nhau — tách scene hoặc lập lại kế hoạch',
+    'scene_keyframe_environment_plate_missing' => 'Chưa duyệt tấm nền :name — sang Environment Library render và duyệt trước',
     'environment_no_profile' => 'Chuyên mục của bài này chưa có thư viện môi trường',
     'environment_unknown_key' => 'Profile không khai môi trường này',
 ];

@@ -150,6 +150,82 @@ class SceneProfileTest extends TestCase
         $this->assertSame([], $profile->environmentKeys());
     }
 
+    public function test_the_two_shipped_vessel_profiles_stay_key_for_key_identical(): void
+    {
+        $dir = resource_path('ai/profiles/scene_planning');
+
+        $v1 = SceneProfile::load($dir, 'vessel_v1');
+        $v2 = SceneProfile::load($dir, 'vessel_v2');
+
+        $this->assertSame(
+            $v1->phaseKeys(), $v2->phaseKeys(),
+            'scene plans made under vessel_v1 resolve their environment through vessel_v2',
+        );
+        $this->assertSame($v1->milestoneKeys(), $v2->milestoneKeys());
+    }
+
+    public function test_a_scene_inside_one_phase_resolves_to_that_phases_environment(): void
+    {
+        $profile = $this->vesselV2();
+
+        $this->assertSame(
+            ['shipyard_hall', 'ok'],
+            $profile->environmentForMilestones(['hull_framing', 'shell_plating']),
+        );
+        $this->assertSame(
+            ['design_studio', 'ok'],
+            $profile->environmentForMilestones(['concept_sketch']),
+        );
+    }
+
+    public function test_a_milestone_override_beats_the_environment_of_its_group(): void
+    {
+        $this->assertSame(
+            ['open_water', 'ok'],
+            $this->vesselV2()->environmentForMilestones(['sea_trial']),
+        );
+    }
+
+    public function test_a_scene_spanning_two_places_is_refused_rather_than_guessed(): void
+    {
+        $this->assertSame(
+            [null, 'ambiguous_environment'],
+            $this->vesselV2()->environmentForMilestones(['launched', 'sea_trial']),
+        );
+    }
+
+    public function test_an_unknown_milestone_is_refused(): void
+    {
+        $this->assertSame(
+            [null, 'unknown_milestone'],
+            $this->vesselV2()->environmentForMilestones(['hull_framing', 'nothing_like_this']),
+        );
+        $this->assertSame(
+            [null, 'unknown_milestone'],
+            $this->vesselV2()->environmentForMilestones([['not', 'a', 'string']]),
+        );
+    }
+
+    public function test_no_milestone_at_all_is_refused(): void
+    {
+        $this->assertSame([null, 'no_milestones'], $this->vesselV2()->environmentForMilestones([]));
+    }
+
+    public function test_a_profile_without_environments_resolves_to_nothing(): void
+    {
+        $profile = SceneProfile::load(resource_path('ai/profiles/scene_planning'), 'vessel_v1');
+
+        $this->assertSame(
+            [null, 'no_environment'],
+            $profile->environmentForMilestones(['hull_framing']),
+        );
+    }
+
+    private function vesselV2(): SceneProfile
+    {
+        return SceneProfile::load(resource_path('ai/profiles/scene_planning'), 'vessel_v2');
+    }
+
     /** @return iterable<string, array{0: mixed, 1: string}> */
     public static function brokenEnvironmentProvider(): iterable
     {

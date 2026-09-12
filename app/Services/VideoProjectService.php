@@ -82,7 +82,7 @@ class VideoProjectService
         'anchor' => [DesignImageStore::ANCHOR_TYPE],
         'source_keyframe' => [DesignImageStore::SCENE_KEYFRAME_TYPE],
         'identity' => [DesignImageStore::ANCHOR_TYPE, DesignImageStore::REFERENCE_TYPE],
-        'environment' => [DesignImageStore::REFERENCE_TYPE],
+        'environment' => [DesignImageStore::ENVIRONMENT_TYPE],
         'geometry' => [DesignImageStore::REFERENCE_TYPE, DesignImageStore::SCENE_KEYFRAME_TYPE],
     ];
 
@@ -1025,15 +1025,21 @@ class VideoProjectService
             'title' => $continues ? 'Từ '.$scene->source_scene_code : 'Ảnh neo',
         ])];
 
+        [$plate, $plateWhy] = $this->approvedPlate($projectId, $scene);
+
+        if ($plate === null) {
+            return [null, $plateWhy];
+        }
+
         foreach (['identity', 'environment', 'geometry'] as $role) {
             if (count($slots) >= self::SCENE_MAX_SOURCE_IMAGES) {
                 break;
             }
 
             $entry = match ($role) {
-                'identity' => $continues ? $anchor : $this->pickView($views, $used, false),
-                'environment' => $this->pickView($views, $used, true),
-                default => $this->pickView($views, $used, false),
+                'identity' => $continues ? $anchor : $this->pickView($views, $used),
+                'environment' => $plate,
+                default => $this->pickView($views, $used),
             };
 
             if ($entry === null || array_key_exists($entry['artifact_id'], $used)) {
@@ -1076,17 +1082,10 @@ class VideoProjectService
      * @param  array<string, bool>  $used
      * @return array<string, mixed>|null
      */
-    private function pickView(array $views, array $used, bool $wantEnvironment): ?array
+    private function pickView(array $views, array $used): ?array
     {
         foreach ($views as $view) {
             if (array_key_exists($view['artifact_id'], $used)) {
-                continue;
-            }
-
-            $carriesEnvironment = $view['environment'] !== ''
-                && $view['environment'] !== ReferenceEnvironment::NEUTRAL_STUDIO->value;
-
-            if ($wantEnvironment !== $carriesEnvironment) {
                 continue;
             }
 
@@ -1099,6 +1098,96 @@ class VideoProjectService
         }
 
         return null;
+    }
+
+    /**
+     * Slot moi truong LUON lay tam nen sach, khong bao gio lay reference view:
+     * reference view mang than tau, nen no se nhet mot vo thu hai vao prompt.
+     *
+     * @return array{0: ?array<string, mixed>, 1: string} [$entry, $reason]
+     */
+    private function approvedPlate(string $projectId, VideoRenderScene $scene): array
+    {
+        $profile = $this->environmentProfileFor($projectId);
+
+        if ($profile === null) {
+            return [null, 'environment_no_profile'];
+        }
+
+        [$key, $why] = $profile->environmentForMilestones(
+            is_array($scene->milestone_keys) ? $scene->milestone_keys : [],
+        );
+
+        if ($key === null) {
+            return [null, match ($why) {
+                'ambiguous_environment' => 'environment_ambiguous',
+                'unknown_milestone' => 'environment_unknown_milestone',
+                default => 'environment_undeclared',
+            }];
+        }
+
+        $label = $profile->environmentLabelOf($key) ?? $key;
+        $plate = $this->approvedPlates($projectId)[$key] ?? null;
+
+        return $plate === null
+            ? [null, 'environment_plate_missing|'.$label]
+            : [array_replace($plate, ['title' => $label]), 'ok'];
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function approvedPlates(string $projectId): array
+    {
+        $memoKey = 'plates:'.$projectId;
+
+        if ($this->sourceMemo !== null && array_key_exists($memoKey, $this->sourceMemo)) {
+            return $this->sourceMemo[$memoKey];
+        }
+
+        $plates = [];
+
+        foreach (VideoDesignImage::query()
+            ->where('project_id', $projectId)
+            ->where('image_type', DesignImageStore::ENVIRONMENT_TYPE)
+            ->where('status', DesignImageStatus::APPROVED->value)
+            ->whereNotNull('selected_artifact_id')
+            ->whereNotNull('environment_key')
+            ->with('artifact')
+            ->get() as $row) {
+            if ($row->artifact === null) {
+                continue;
+            }
+
+            $plates[(string) $row->environment_key] = [
+                'artifact_id' => (string) $row->selected_artifact_id,
+                'candidate_id' => (string) $row->id,
+                'sha256' => (string) $row->artifact->sha256,
+                'title' => (string) $row->environment_key,
+            ];
+        }
+
+        if ($this->sourceMemo !== null) {
+            $this->sourceMemo[$memoKey] = $plates;
+        }
+
+        return $plates;
+    }
+
+    private function environmentProfileFor(string $projectId): ?SceneProfile
+    {
+        $memoKey = 'env_profile:'.$projectId;
+
+        if ($this->sourceMemo !== null && array_key_exists($memoKey, $this->sourceMemo)) {
+            return $this->sourceMemo[$memoKey];
+        }
+
+        $project = $this->videoProjectRepository->getById($projectId);
+        $profile = $project === null ? null : $this->environmentProfile($project);
+
+        if ($this->sourceMemo !== null) {
+            $this->sourceMemo[$memoKey] = $profile;
+        }
+
+        return $profile;
     }
 
     /** @return list<array<string, mixed>> */

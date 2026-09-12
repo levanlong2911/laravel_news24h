@@ -392,6 +392,36 @@ class EnvironmentPlateTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_the_same_environment_at_another_quality_is_a_new_row(): void
+    {
+        $this->fakeGenerateReturns();
+
+        $this->post($this->url(), $this->settings());
+        $this->post($this->url(), $this->settings(['quality' => 'high']));
+
+        $this->assertSame(
+            ['high', 'low'],
+            $this->plates()->get()
+                ->map(fn ($image) => $image->prompt_spec_json['quality'])
+                ->sort()->values()->all(),
+        );
+    }
+
+    public function test_the_same_environment_at_another_size_is_a_new_row(): void
+    {
+        $this->fakeGenerateReturns();
+
+        $this->post($this->url(), $this->settings());
+        $this->post($this->url(), $this->settings(['size' => '1024x1024']));
+
+        $this->assertSame(
+            ['1024x1024', '1152x2048'],
+            $this->plates()->get()
+                ->map(fn ($image) => $image->prompt_spec_json['size'])
+                ->sort()->values()->all(),
+        );
+    }
+
     public function test_two_different_environments_are_two_different_rows(): void
     {
         $this->fakeGenerateReturns();

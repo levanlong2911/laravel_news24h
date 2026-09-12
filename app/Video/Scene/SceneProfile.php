@@ -12,7 +12,7 @@ final class SceneProfile
 
     /**
      * @param  list<array<string, mixed>>  $groups
-     * @param  array<string, array{index: int, phase: string, label: string, required: bool}>  $flat
+     * @param  array<string, array{index: int, phase: string, label: string, required: bool, environment: mixed}>  $flat
      */
     private function __construct(
         public readonly string $version,
@@ -217,6 +217,39 @@ final class SceneProfile
         return $this->environments[$key]['prompt'] ?? null;
     }
 
+    /**
+     * @param  list<mixed>  $milestoneKeys
+     * @return array{0: ?string, 1: string} [$environmentKey, $reason]
+     *                                      reason: ok|no_milestones|unknown_milestone|
+     *                                              no_environment|ambiguous_environment
+     */
+    public function environmentForMilestones(array $milestoneKeys): array
+    {
+        if ($milestoneKeys === []) {
+            return [null, 'no_milestones'];
+        }
+
+        $found = [];
+
+        foreach ($milestoneKeys as $key) {
+            if (! is_string($key) || ! array_key_exists($key, $this->flat)) {
+                return [null, 'unknown_milestone'];
+            }
+
+            $environment = $this->flat[$key]['environment'] ?? null;
+
+            if (! is_string($environment) || $environment === '') {
+                return [null, 'no_environment'];
+            }
+
+            $found[$environment] = true;
+        }
+
+        return count($found) === 1
+            ? [(string) array_key_first($found), 'ok']
+            : [null, 'ambiguous_environment'];
+    }
+
     /** @return list<string> */
     public function phaseKeys(): array
     {
@@ -267,7 +300,7 @@ final class SceneProfile
 
     /**
      * @param  list<mixed>  $groups
-     * @return array{0: array<string, array{index: int, phase: string, label: string, required: bool}>, 1: int}
+     * @return array{0: array<string, array{index: int, phase: string, label: string, required: bool, environment: mixed}>, 1: int}
      */
     private static function flatten(array $groups): array
     {
@@ -330,6 +363,7 @@ final class SceneProfile
                     'phase' => $phase,
                     'label' => $label,
                     'required' => $isRequired,
+                    'environment' => $milestone['environment'] ?? $group['environment'] ?? null,
                 ];
 
                 $required += $isRequired ? 1 : 0;

@@ -60,7 +60,10 @@ class ScenePlanFlowTest extends TestCase
 
         [$categoryId, $slug] = $this->category();
 
-        config(['video.scene_plan.profiles.'.$slug => 'vessel_v1']);
+        config([
+            'video.scene_plan.profiles.'.$slug => 'vessel_v1',
+            'video.environment.profiles.'.$slug => 'vessel_v2',
+        ]);
 
         $this->owner = $this->admin();
         $this->project = VideoProject::create([
@@ -70,6 +73,7 @@ class ScenePlanFlowTest extends TestCase
         ]);
 
         $this->approvedAnchor(self::ANCHOR_PROMPT);
+        $this->approveEveryPlate();
         $this->inspirationBrief();
 
         $this->actingAs($this->owner);
@@ -179,6 +183,7 @@ class ScenePlanFlowTest extends TestCase
     {
         VideoDesignImage::query()
             ->where('project_id', $this->project->id)
+            ->where('image_type', DesignImageStore::ANCHOR_TYPE)
             ->sole()
             ->forceFill(['prompt_spec_json' => ['prompt' =>
                 "ASSET TYPE\nCanonical geometry identity anchor.\n\n"
@@ -2484,10 +2489,12 @@ class ScenePlanFlowTest extends TestCase
         $this->assertSame('1152x2048', $preview['size']);
         $this->assertSame('low', $preview['quality']);
         $this->assertNull($preview['cost_estimate']);
-        $this->assertCount(1, $preview['sources']);
+        $this->assertCount(2, $preview['sources']);
         $this->assertSame('anchor', $preview['sources'][0]['role']);
         $this->assertSame(0, $preview['sources'][0]['position']);
         $this->assertSame('current', $preview['sources'][0]['state']);
+        $this->assertSame('environment', $preview['sources'][1]['role']);
+        $this->assertSame(1, $preview['sources'][1]['position']);
         $this->assertSame(
             (string) $this->approvedAnchorRow()->selected_artifact_id,
             $preview['sources'][0]['artifact_id'],
@@ -2616,14 +2623,18 @@ class ScenePlanFlowTest extends TestCase
                 ->filter(static fn (array $part): bool => ! isset($part['filename']))
                 ->mapWithKeys(static fn (array $part): array => [$part['name'] => $part['contents']]);
 
-            $this->assertCount(1, $files);
+            $this->assertCount(2, $files, 'anchor plus the approved environment plate');
             $this->assertSame(
-                'image',
-                $files[0]['name'],
-                'one source must ride the field the paid construction chain proved',
+                ['image[]', 'image[]'],
+                array_column($files, 'name'),
+                'order is the contract: the prompt names each image by index',
             );
-            $this->assertSame('source_00.png', $files[0]['filename']);
+            $this->assertSame(
+                ['source_00.png', 'source_01.png'],
+                array_column($files, 'filename'),
+            );
             $this->assertSame('anchor-bytes', $files[0]['contents']);
+            $this->assertSame('plate-bytes-design_studio', $files[1]['contents']);
             $this->assertSame($preview['prompt'], $fields['prompt']);
             $this->assertSame('1152x2048', $fields['size']);
             $this->assertSame('low', $fields['quality']);
@@ -2997,7 +3008,7 @@ class ScenePlanFlowTest extends TestCase
         $candidate = $this->writeCandidate($scene, $preview);
         $spec = $candidate->prompt_spec_json;
 
-        $this->assertCount(3, $spec['sources'], 'this case needs a manifest with two references');
+        $this->assertCount(4, $spec['sources'], 'this case needs a manifest with three references');
 
         $spec['sources'][2] = array_replace($spec['sources'][2], [
             'role' => $spec['sources'][1]['role'],
@@ -3027,14 +3038,15 @@ class ScenePlanFlowTest extends TestCase
         )[(string) $scene->id];
 
         $this->assertSame(
-            ['anchor', 'identity', 'geometry'],
+            ['anchor', 'identity', 'environment', 'geometry'],
             array_column($cell['slots'], 'role'),
         );
-        $this->assertSame([0, 1, 2], array_column($cell['slots'], 'position'));
+        $this->assertSame([0, 1, 2, 3], array_column($cell['slots'], 'position'));
         $this->assertTrue($cell['slots'][0]['primary']);
         $this->assertFalse($cell['slots'][1]['primary']);
         $this->assertSame('Ảnh neo', $cell['slots'][0]['title']);
         $this->assertSame('Port Side', $cell['slots'][1]['title']);
+        $this->assertSame('Design studio', $cell['slots'][2]['title']);
     }
 
     public function test_a_continuation_manifest_puts_the_anchor_second(): void
@@ -3048,7 +3060,7 @@ class ScenePlanFlowTest extends TestCase
         )[(string) $this->sceneRow(2)->id];
 
         $this->assertSame(
-            ['source_keyframe', 'identity', 'geometry'],
+            ['source_keyframe', 'identity', 'environment', 'geometry'],
             array_column($cell['slots'], 'role'),
         );
         $this->assertStringContainsString(
@@ -3078,16 +3090,95 @@ class ScenePlanFlowTest extends TestCase
         }
     }
 
-    public function test_a_missing_environment_leaves_the_slot_out_rather_than_filling_it(): void
+    public function test_an_unapproved_plate_blocks_the_scene_and_names_the_place(): void
     {
         $scene = $this->planOnce();
         $this->approvedReference('port_side', 'port-bytes');
+        $this->dropPlates();
 
-        $cell = app(VideoProjectService::class)->sceneSourceCells(
+        $cell = $this->cellFor($scene, $scene->id);
+
+        $this->assertSame([], $cell['slots']);
+        $this->assertSame('environment_plate_missing|Design studio', $cell['blocked_reason']);
+    }
+
+    public function test_a_scene_spanning_two_places_blocks_instead_of_guessing(): void
+    {
+        $scene = $this->planOnce();
+        $this->sceneRow(1)->forceFill(['milestone_keys' => ['launched', 'sea_trial']])->save();
+
+        $cell = $this->cellFor($scene, $this->sceneRow(1)->id);
+
+        $this->assertSame([], $cell['slots']);
+        $this->assertSame('environment_ambiguous', $cell['blocked_reason']);
+    }
+
+    public function test_a_milestone_the_environment_profile_never_heard_of_blocks(): void
+    {
+        $scene = $this->planOnce();
+        $this->sceneRow(1)->forceFill(['milestone_keys' => ['nothing_like_this']])->save();
+
+        $this->assertSame(
+            'environment_unknown_milestone',
+            $this->cellFor($scene, $this->sceneRow(1)->id)['blocked_reason'],
+        );
+    }
+
+    public function test_a_category_without_an_environment_library_blocks_every_scene(): void
+    {
+        $scene = $this->planOnce();
+
+        config(['video.environment.profiles' => []]);
+
+        $this->assertSame(
+            'environment_no_profile',
+            $this->cellFor($scene, $scene->id)['blocked_reason'],
+        );
+    }
+
+    public function test_a_plate_of_the_wrong_place_does_not_satisfy_a_scene(): void
+    {
+        $scene = $this->planOnce();
+        $this->dropPlates();
+        $this->approvedPlate('open_water');
+
+        $this->assertSame(
+            'environment_plate_missing|Design studio',
+            $this->cellFor($scene, $scene->id)['blocked_reason'],
+        );
+    }
+
+    public function test_a_plate_that_is_only_rendered_is_not_good_enough(): void
+    {
+        $scene = $this->planOnce();
+        $this->dropPlates();
+
+        $artifact = $this->approvedPlate('design_studio');
+
+        VideoDesignImage::query()
+            ->whereKey($artifact->design_image_id)
+            ->update(['status' => DesignImageStatus::RENDERED->value]);
+
+        $this->assertSame(
+            'environment_plate_missing|Design studio',
+            $this->cellFor($scene, $scene->id)['blocked_reason'],
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function cellFor(VideoRenderScene $scene, string $sceneId): array
+    {
+        return app(VideoProjectService::class)->sceneSourceCells(
             (string) $this->project->id, (int) $scene->revision,
-        )[(string) $scene->id];
+        )[$sceneId];
+    }
 
-        $this->assertNotContains('environment', array_column($cell['slots'], 'role'));
+    private function dropPlates(): void
+    {
+        VideoDesignImage::query()
+            ->where('project_id', $this->project->id)
+            ->where('image_type', DesignImageStore::ENVIRONMENT_TYPE)
+            ->delete();
     }
 
     public function test_the_prompt_names_every_image_by_index(): void
@@ -3300,7 +3391,7 @@ class ScenePlanFlowTest extends TestCase
             ->sole();
 
         $this->assertSame(
-            ['anchor', 'identity'],
+            ['anchor', 'identity', 'environment'],
             array_column($candidate->prompt_spec_json['sources'], 'role'),
             'the manifest comes from the contract, never from posted picks',
         );
@@ -3312,10 +3403,10 @@ class ScenePlanFlowTest extends TestCase
                 static fn (array $part): bool => isset($part['filename']),
             ));
 
-            $this->assertCount(2, $files);
-            $this->assertSame(['image[]', 'image[]'], array_column($files, 'name'));
+            $this->assertCount(3, $files);
+            $this->assertSame(['image[]', 'image[]', 'image[]'], array_column($files, 'name'));
             $this->assertSame(
-                ['anchor-bytes', 'port-bytes'],
+                ['anchor-bytes', 'port-bytes', 'plate-bytes-design_studio'],
                 array_column($files, 'contents'),
                 'bytes go out in manifest order',
             );
@@ -3954,7 +4045,7 @@ class ScenePlanFlowTest extends TestCase
         $this->assertSame('scene_plan_changed_since_review', $previewReason);
         $this->assertSame('scene_plan_changed_since_review', $shown['blocked_reason']);
         $this->assertTrue($shown['from_snapshot']);
-        $this->assertCount(1, $shown['sources']);
+        $this->assertCount(2, $shown['sources']);
 
         [$resumed, $resumeReason] = app(VideoProjectService::class)->resumeSceneCandidate(
             (string) $this->project->id,
@@ -4152,6 +4243,66 @@ class ScenePlanFlowTest extends TestCase
         $artifact = VideoArtifact::query()->whereKey($artifactId)->firstOrFail();
 
         return (string) Storage::disk((string) $artifact->storage_disk)->get((string) $artifact->storage_path);
+    }
+
+    /** @return array<string, VideoArtifact> */
+    private function approveEveryPlate(): array
+    {
+        $plates = [];
+
+        foreach (['design_studio', 'shipyard_hall', 'paint_shed', 'launch_quay', 'open_water'] as $key) {
+            $plates[$key] = $this->approvedPlate($key);
+        }
+
+        return $plates;
+    }
+
+    private function approvedPlate(string $environmentKey): VideoArtifact
+    {
+        $candidate = VideoDesignImage::create([
+            'project_id' => $this->project->id,
+            'image_code' => 'environment_'.uniqid(),
+            'image_type' => DesignImageStore::ENVIRONMENT_TYPE,
+            'environment_key' => $environmentKey,
+            'prompt_spec_json' => [
+                'operation' => 'environment_plate',
+                'spec_version' => \App\Video\Environment\EnvironmentPlatePrompt::VERSION,
+                'environment_key' => $environmentKey,
+                'prompt' => 'An empty location plate. '.$environmentKey,
+                'model' => 'gpt-image-2',
+                'quality' => 'low',
+                'size' => '1152x2048',
+                'variations' => 1,
+            ],
+            'prompt_sha256' => hash('sha256', uniqid('', true)),
+            'status' => DesignImageStatus::RENDERED->value,
+            'revision' => 1,
+        ]);
+
+        $bytes = 'plate-bytes-'.$environmentKey;
+        $path = 'plates/'.uniqid().'.png';
+        Storage::disk('video_artifacts')->put($path, $bytes);
+
+        $artifact = VideoArtifact::create([
+            'project_id' => $this->project->id,
+            'design_image_id' => $candidate->id,
+            'artifact_type' => 'image',
+            'role' => 'candidate',
+            'storage_disk' => 'video_artifacts',
+            'storage_path' => $path,
+            'mime_type' => 'image/png',
+            'sha256' => hash('sha256', $bytes),
+            'width' => 1152,
+            'height' => 2048,
+        ]);
+
+        $candidate->forceFill([
+            'selected_artifact_id' => $artifact->id,
+            'status' => DesignImageStatus::APPROVED->value,
+            'approved_at' => now(),
+        ])->save();
+
+        return $artifact;
     }
 
     private function approvedReference(
