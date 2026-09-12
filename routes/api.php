@@ -5,6 +5,8 @@ use App\Http\Controllers\Api\PostApiController;
 use App\Http\Controllers\Api\RedditController;
 use App\Http\Controllers\VideoDesignImagesController;
 use App\Http\Controllers\VideoSessionController;
+use App\Video\Render\Controllers\RenderQaController;
+use App\Video\Render\Controllers\RenderWorkerController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -56,4 +58,32 @@ Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])
         Route::post('/video-design-images/reclaim-expired', [VideoDesignImagesController::class, 'reclaimExpired']);
         Route::patch('/video-design-images/{imageId}/heartbeat', [VideoDesignImagesController::class, 'heartbeat']);
         Route::patch('/video-design-images/{imageId}/result', [VideoDesignImagesController::class, 'result']);
+    });
+
+Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])
+    ->prefix('internal/render-worker')
+    ->middleware([
+        'render.worker.auth',
+        'throttle:render-worker',
+    ])
+    ->group(function (): void {
+        Route::post('/claim', [RenderWorkerController::class, 'claim']);
+        Route::post('/{render}/heartbeat', [RenderWorkerController::class, 'heartbeat']);
+        Route::post('/{render}/checkpoint', [RenderWorkerController::class, 'checkpoint']);
+        Route::post('/{render}/submitted', [RenderWorkerController::class, 'submitted']);
+        Route::post('/{render}/complete', [RenderWorkerController::class, 'complete']);
+        Route::post('/{render}/retry', [RenderWorkerController::class, 'retry']);
+        Route::post('/{render}/ambiguous', [RenderWorkerController::class, 'ambiguous']);
+        Route::post('/{render}/fail', [RenderWorkerController::class, 'fail']);
+        Route::post('/{render}/recover-artifacts', [RenderWorkerController::class, 'recoverArtifacts']);
+    });
+
+Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])
+    ->prefix('internal/render-qa')
+    ->middleware([
+        'render.worker.auth',
+        'throttle:render-worker',
+    ])
+    ->group(function (): void {
+        Route::post('/{qaRun}/complete', [RenderQaController::class, 'complete']);
     });

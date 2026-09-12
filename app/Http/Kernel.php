@@ -69,5 +69,6 @@ class Kernel extends HttpKernel
         'admin' => \App\Http\Middleware\EnsureIsAdmin::class,
         'video.correlation' => \App\Http\Middleware\AttachVideoCorrelationId::class,
         'video.token' => \App\Http\Middleware\VideoApiToken::class,
+        'render.worker.auth' => \App\Http\Middleware\RenderWorkerAuth::class,
     ];
 }

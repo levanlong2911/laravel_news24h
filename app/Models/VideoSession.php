@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Video\Concept\Persistence\Models\CanonicalConceptRevision;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -10,7 +11,7 @@ class VideoSession extends Model
     use HasUuids;
 
     protected $fillable = [
-        'project_id', 'article_id', 'requested_by_admin_id', 'code',
+        'project_id', 'canonical_concept_revision_id', 'article_id', 'requested_by_admin_id', 'code',
         'status', 'planning_claimed_at', 'planning_claim_token', 'error_message',
         'cost_estimate_total', 'plan_revision',
     ];
@@ -34,6 +35,11 @@ class VideoSession extends Model
     public function latestRenderPlan()
     {
         return $this->hasOne(VideoRenderPlan::class, 'session_id')->latestOfMany('revision');
+    }
+
+    public function canonicalConceptRevision()
+    {
+        return $this->belongsTo(CanonicalConceptRevision::class, 'canonical_concept_revision_id');
     }
 
     public function costEntries()

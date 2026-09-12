@@ -7,66 +7,12 @@ use App\Video\Evidence\EvidenceIndex;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
 
-/**
- * Hypothesis Generator chạy trên một mô hình thật.
- *
- * Chỉ dùng cho integration test và lần ghi đầu tiên (có duyệt). KHÔNG BAO GIỜ
- * chạy trong CI — CI dùng RecordedExtractor.
- *
- * Nó không biết `app/Services/AI` tồn tại; nó chỉ biết LlmClient. Mai CMS sửa
- * AIService thì chỉ adapter chịu, Truth Layer không đổi.
- */
 final class ClaudeExtractor implements Extractor
 {
-    /**
-     * Version hoá có chủ ý. Sáu tháng sau, khi truy một hallucination, biết được
-     * lúc đó dùng instruction nào là khác biệt giữa "sửa được" và "đoán mò".
-     */
-    /**
-     * v4 (2026-08-06) — THÍ NGHIỆM KỶ LUẬT BẰNG CHỨNG, không phải vá recall.
-     *
-     * Đo được trên bài "ISA Amarcord 82" dưới v3, artifact
-     * `video_extraction_artifacts` của session art_a27033cd_260807_044301:
-     *
-     *     Haiku đề xuất       29 claim, tìm ĐỦ hồ bơi · helipad · đường cong boong
-     *     parser bỏ            0
-     *     Gatekeeper cho qua   80.6%
-     *     3/7 lượt loại        VALUE_NOT_SUPPORTED
-     *
-     * Ba con số đầu loại sạch ba giả thuyết đã theo đuổi cả ngày (recall kém,
-     * parser nuốt, cổng quá khắt). Bệnh thật nằm ở con số thứ tư: model TÌM
-     * ĐƯỢC rồi DIỄN ĐẠT LẠI — "glass bottom and edge" thay vì "glass",
-     * "present" thay vì "helipad". Cổng loại đúng; thứ cần sửa là cách trao.
-     *
-     * Nên v4 KHÔNG bảo model tìm nhiều hơn. Nó chỉ dạy cách trao thứ đã tìm
-     * được. Và cố ý KHÔNG kèm ontology — thêm cả hai cùng lúc thì số liệu
-     * không nói được cái nào có tác dụng.
-     */
     public const INSTRUCTION_VERSION = 'extract-v4';
 
-    /**
-     * @param  string  $model  Khoá model ('haiku'|'sonnet') — Extractor TỰ QUYẾT
-     *                         và LlmClient chuyển tiếp nguyên văn xuống
-     *                         ClaudeWriterService.
-     *
-     *                         ĐỔI 2026-07-29: trước đó docblock ở đây ghi
-     *                         "Extractor không được quyết, việc chọn model THẬT
-     *                         nằm ở LlmClient" — câu đó ĐÚNG vào thời điểm ấy vì
-     *                         ClaudeWriterAdapter giữ model riêng và phớt lờ
-     *                         $request->model. Nay adapter đã tôn trọng
-     *                         $request->model nên trách nhiệm chuyển về đây, và
-     *                         docblock phải đổi theo. Bằng chứng của bug cũ:
-     *                         ClaudeProducer khai 'haiku' từ 2026-07-23 mà suốt
-     *                         6 ngày vẫn chạy Sonnet.
-     */
     public function __construct(
         private readonly LlmClient $llm,
-        // Haiku (2026-07-29, user chốt): cả pipeline video chạy Haiku để tiết
-        // kiệm. RỦI RO ĐÃ BIẾT, chưa đo: Extractor KHÔNG "tóm tắt" — nó phải
-        // trả evidence_quote NGUYÊN VĂN để Gatekeeper đi tìm lại trong bài,
-        // không thấy là loại thẳng. Đó là việc chính xác từng chữ, không phải
-        // nén ý. Nếu recall tụt so với baseline Sonnet (World Graph bài
-        // "The Sixth Sense": 7 entity) thì đây là chỗ đầu tiên phải xem lại.
         private readonly string $model = 'haiku',
         private readonly CandidateGraphParser $parser = new CandidateGraphParser,
     ) {}
@@ -82,9 +28,6 @@ final class ClaudeExtractor implements Extractor
 
         $response = $this->llm->complete($request);
 
-        // `$diagnostics` do parser điền qua tham chiếu — nó đếm những gì bị bỏ
-        // giữa `raw` và `candidates`. Không có nó thì "bài báo nghèo thông tin"
-        // và "parser nuốt hết" trông y hệt nhau.
         $candidates = $this->parser->parse($response->text, $diagnostics);
 
         return new ExtractionResult(
@@ -100,13 +43,6 @@ final class ClaudeExtractor implements Extractor
         );
     }
 
-    /**
-     * Cho mô hình xem ĐÚNG văn bản mà Gatekeeper sẽ đi tìm.
-     *
-     * Nếu cho xem HTML thô, quote trả về sẽ mang theo markup hoặc khoảng trắng
-     * khác, `EvidenceIndex::find()` sẽ trượt, và mọi claim bị loại oan — một
-     * Gatekeeper hoạt động hoàn hảo mà không sự thật nào qua nổi.
-     */
     private function renderArticle(RawArticle $article, EvidenceIndex $index): string
     {
         $lines = ["ARTICLE ID: {$article->id}", ''];
@@ -118,12 +54,6 @@ final class ClaudeExtractor implements Extractor
         return implode("\n", $lines);
     }
 
-    /**
-     * Chú ý những gì instruction này KHÔNG yêu cầu:
-     *   - không xin offset  → mô hình đếm ký tự rất tệ và sẽ bịa số trông hợp lý
-     *   - không xin scene/act/camera → Extractor chỉ đưa giả thuyết, không giúp Planner
-     *   - không xin suy luận → nói thẳng: thà bỏ sót còn hơn suy diễn
-     */
     private function instruction(): string
     {
         return <<<'TEXT'

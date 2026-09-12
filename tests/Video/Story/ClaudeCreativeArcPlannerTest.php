@@ -2,8 +2,7 @@
 
 namespace Tests\Video\Story;
 
-use App\Video\Concept\CreativeConcept;
-use App\Video\Concept\FormRelationships;
+use App\Video\Concept\Canonical\CanonicalDesignSpec;
 use App\Video\Inspiration\CategoryCreativeProfile;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
@@ -14,15 +13,38 @@ use PHPUnit\Framework\TestCase;
 
 class ClaudeCreativeArcPlannerTest extends TestCase
 {
-    private function concept(): CreativeConcept
+    private function concept(): CanonicalDesignSpec
     {
-        return new CreativeConcept(
-            'One continuous line governs the object.',
-            [],
-            [],
-            [],
-            new FormRelationships('one line', 'measured volumes', 'integrated features'),
-        );
+        return CanonicalDesignSpec::fromArray([
+            'schema_version' => '1.0',
+            'object_type' => 'yacht',
+            'design_thesis' => ['text' => 'One continuous line governs the object.', 'role' => 'soft_design_guidance'],
+            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['enclosed_deck_level_count']],
+            'dimensions' => ['length_m' => 80.0],
+            'permanent_geometry' => ['superstructure' => ['enclosed_deck_levels' => 4]],
+            'relationships' => [[
+                'id' => 'R001',
+                'type' => 'count',
+                'subject_path' => 'permanent_geometry.superstructure.enclosed_deck_levels',
+                'value' => 4,
+            ]],
+            'form_relationships' => ['governing_line' => 'one line'],
+            'finished_materials' => ['hull' => ['material' => 'aluminium']],
+            'exclusions' => [['id' => 'E001', 'target_path' => 'permanent_geometry', 'forbid' => 'cantilever']],
+            'invariants' => [[
+                'id' => 'I001',
+                'name' => 'enclosed_deck_level_count',
+                'source_path' => 'permanent_geometry.superstructure.enclosed_deck_levels',
+                'constraint_type' => 'count',
+                'severity' => 'hard',
+                'visual_verification' => true,
+            ]],
+            'provenance' => [[
+                'target_path' => 'dimensions',
+                'origin' => 'invented',
+                'source_aspects' => [],
+            ]],
+        ]);
     }
 
     private function profile(): CategoryCreativeProfile

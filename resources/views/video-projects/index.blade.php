@@ -82,7 +82,9 @@
                 </td>
                 <td class="vs-num">{{ $p->sessions_count }}</td>
                 <td class="vs-num">{{ $p->approved_assets_count }}</td>
-                <td class="vs-num">${{ number_format((float) $p->cost_actual_sum, 2) }}</td>
+                <td class="vs-num">
+                    ${{ number_format((float) $p->cost_actual_sum, 2) }}@if(($p->unpriced_cost_count ?? 0) > 0)<span class="vs-pill vs-draft" title="{{ $p->unpriced_cost_count }} render(s) have no price yet — this total is incomplete">+?</span>@endif
+                </td>
                 <td><a class="btn btn-sm btn-primary" href="{{ route('video-projects.anchor', $p->id) }}">Open</a></td>
             </tr>
         @empty

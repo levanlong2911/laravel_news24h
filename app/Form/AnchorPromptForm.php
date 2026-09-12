@@ -2,8 +2,9 @@
 
 namespace App\Form;
 
-use App\Enums\AnchorStage;
+use App\Enums\ImageModel;
 use App\Enums\ImageSize;
+use App\Enums\PromptProducer;
 use App\Video\Concept\Viewpoint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -18,17 +19,20 @@ class AnchorPromptForm
     {
         $validator = Validator::make($request->all(),
             [
-                'stage' => ['required', Rule::enum(AnchorStage::class)],
                 'viewpoint' => ['required', Rule::enum(Viewpoint::class)],
                 'size' => ['required', Rule::enum(ImageSize::class)],
+                'model' => ['required', Rule::enum(ImageModel::class)],
+                'producer' => ['required', Rule::enum(PromptProducer::class)],
             ],
             [
-                'stage.required' => __('messages.anchor_setting_required', ['field' => 'Stage']),
-                'stage.*' => __('messages.anchor_setting_invalid', ['field' => 'Stage']),
                 'viewpoint.required' => __('messages.anchor_setting_required', ['field' => 'Viewpoint']),
                 'viewpoint.*' => __('messages.anchor_setting_invalid', ['field' => 'Viewpoint']),
                 'size.required' => __('messages.anchor_setting_required', ['field' => 'Size']),
                 'size.*' => __('messages.anchor_setting_invalid', ['field' => 'Size']),
+                'model.required' => __('messages.anchor_setting_required', ['field' => 'Model']),
+                'model.*' => __('messages.anchor_setting_invalid', ['field' => 'Model']),
+                'producer.required' => __('messages.anchor_setting_required', ['field' => 'Nguồn prompt']),
+                'producer.*' => __('messages.anchor_setting_invalid', ['field' => 'Nguồn prompt']),
             ]);
 
         return $validator->validate();

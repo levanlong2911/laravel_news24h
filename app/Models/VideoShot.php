@@ -13,14 +13,20 @@ class VideoShot extends Model
     protected $fillable = ['session_id', 'beat', 'shot_code', 'shot_type', 'kind', 'spec_json',
         'compiled_prompt', 'negative_prompt', 'render_plan', 'status', 'review_note',
         'preview_path', 'artifact_path', 'cost_estimate', 'approved_at', 'worker_id',
-        'claim_token', 'claimed_at', 'lease_expires_at', 'plan_revision'];
+        'claim_token', 'claimed_at', 'lease_expires_at', 'plan_revision',
+        'scene_id', 'scene_sequence_index', 'from_state_id', 'to_state_id',
+        'transition_id', 'scene_status', 'scene_image_render_id', 'video_render_id',
+        'scene_projection_hash', 'motion_spec_hash', 'state_committed_at',
+        'approved_qa_report_id', 'approved_artifact_hash', 'approved_by_admin_id'];
 
     protected $casts = [
         'spec_json' => 'array',
         'render_plan' => 'array',
+        'scene_sequence_index' => 'integer',
         'approved_at' => 'datetime',
         'claimed_at' => 'datetime',
         'lease_expires_at' => 'datetime',
+        'state_committed_at' => 'datetime',
     ];
 
     public function session()

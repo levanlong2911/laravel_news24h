@@ -2,10 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\SceneStep;
 use App\Enums\VideoShotStatus;
 use App\Services\VideoSessionService;
-use App\Video\Analysis\RenderPlanQualityReport;
 use Illuminate\Http\Request;
 
 /**
@@ -14,18 +12,8 @@ use Illuminate\Http\Request;
  */
 class VideoSessionController extends Controller
 {
-    /**
-     * @param  RenderPlanQualityReport  $qualityReport  Tiêm THẲNG vào Controller, không bọc
-     *                                                  qua VideoSessionService — cân nhắc rồi chọn (2026-07-30):
-     *                                                  báo cáo là HÀM THUẦN của RenderPlan, không đọc/ghi DB, không thuộc
-     *                                                  vòng đời session (thứ VideoSessionService chịu trách nhiệm). Bọc
-     *                                                  thêm một method pass-through kèm null-check ở service chỉ là nghi
-     *                                                  thức — cùng lý do đã dùng để loại việc tiêm VideoPipelineFactory
-     *                                                  (§18 checkpoint). Việc duy nhất ở đây là "có plan để soi không".
-     */
     public function __construct(
         private VideoSessionService $videoSessionService,
-        private RenderPlanQualityReport $qualityReport,
     ) {}
 
     public function index()
@@ -37,76 +25,6 @@ class VideoSessionController extends Controller
             'menu' => 'menu-open',
             'active' => 'active',
             'sessions' => $this->videoSessionService->listAll(),
-        ]);
-    }
-
-    public function imageAnchor(string $id)
-    {
-        $adminId = auth()->id();
-
-        if ($adminId === null) {
-            return back()->with('error', 'Khong xac dinh duoc admin dang dang nhap — dang nhap lai roi thu.');
-        }
-        [$prompt, $reason] = $this->videoSessionService->renderImageAnchor($id);
-
-        return view('video-projects.anchor', [
-            'route' => 'video-session',
-            'action' => 'admin-video-session',
-            'menu' => 'menu-open',
-            'active' => 'active',
-            'id' => $id,
-            'prompt' => $prompt,
-            'reason' => $reason,
-        ]);
-    }
-
-    public function imageReference(string $id)
-    {
-
-        return view('video-projects.reference', [
-            'route' => 'video-session',
-            'action' => 'admin-video-session',
-            'menu' => 'menu-open',
-            'active' => 'active',
-        ]);
-    }
-
-    public function scene(string $id, string $scene, string $step = 'planning')
-    {
-        $stage = SceneStep::tryFrom($step);
-        abort_if($stage === null, 404);
-
-        $session = $this->videoSessionService->findForShow($id);
-        $plan = is_array($session->renderplan_json) ? $session->renderplan_json : [];
-        $scenes = collect($plan['scenes'] ?? []);
-
-        $current = $scenes->firstWhere('id', $scene);
-        abort_if($current === null, 404);
-
-        $shots = $session->shots->keyBy('beat');
-        $chain = $session->shots
-            ->where('kind', 'chain')
-            ->sortBy(fn ($s) => $s->render_plan['chain_index'] ?? 99)
-            ->values();
-
-        $provenBy = $chain
-            ->filter(fn ($s) => ($s->render_plan['proves_state'] ?? null) !== null)
-            ->keyBy(fn ($s) => $s->render_plan['proves_state']);
-
-        return view('video-projects.scene', [
-            'route' => 'video-session',
-            'action' => 'admin-video-session',
-            'menu' => 'menu-open',
-            'active' => 'active',
-            'session' => $session,
-            'step' => $stage,
-            'scenes' => $scenes,
-            'scene' => $current,
-            'shots' => $shots,
-            'shot' => $shots->get($current['id']),
-            'chain' => $chain,
-            'provenBy' => $provenBy,
-            'quality' => $plan !== [] ? $this->qualityReport->analyze($plan) : null,
         ]);
     }
 
@@ -193,48 +111,6 @@ class VideoSessionController extends Controller
         [$ok, $output] = $this->videoSessionService->previewRender($id);
 
         return back()->with($ok ? 'preflight' : 'error', $output);
-    }
-
-    /**
-     * Nut "Tao Video" trong cot Actions cua tung bai viet.
-     *
-     * §18.30: chi tao session + dua pipeline Claude vao QUEUE roi tra ve NGAY —
-     * khong con try/catch quanh pipeline o day, vi pipeline khong con chay
-     * trong request nay nua. Loi pipeline (PipelineAborted, LLM tu choi...)
-     * gio nam trong `video_sessions.error_message`, doc lai luc F5 trang show.
-     */
-    public function creatVideo(Request $request, string $id)
-    {
-        // Route nam sau middleware 'auth' nen auth()->id() gan nhu khong bao
-        // gio null — nhung startVideoPlanning() khong con nhan nullable, nen
-        // chan tai day thay vi de TypeError roi thanh trang loi 500 kho hieu.
-        $adminId = auth()->id();
-
-        if ($adminId === null) {
-            return back()->with('error', 'Khong xac dinh duoc admin dang dang nhap — dang nhap lai roi thu.');
-        }
-
-        [$session, $queued, $reason] = $this->videoSessionService->startVideoPlanning($id, (string) $adminId);
-
-        if ($reason === 'admin_not_found') {
-            return back()->with('error', 'Admin dang dang nhap khong con hop le — dang nhap lai roi thu.');
-        }
-
-        if ($reason === 'already_in_progress') {
-            return redirect()->route('video-session.show', $session->id)
-                ->with('warning', 'Bai nay da co mot session dang xu ly (chua xong) — khong tao them.');
-        }
-
-        if ($queued) {
-            return redirect()->route('video-session.show', $session->id)
-                ->with('status', 'Da dua pipeline Claude vao hang doi. F5 trang nay de xem tien do.');
-        }
-
-        return redirect()->route('video-session.show', $session->id)
-            ->with('warning', sprintf(
-                'Session da tao nhung KHONG dua duoc vao queue. Chay tay: %s',
-                $this->videoSessionService->manualArtisanCommandFor('video:build-plan', ['--session='.$session->code]),
-            ));
     }
 
     // ---------- API cho Python (token do middleware `video.token` giu) ----------

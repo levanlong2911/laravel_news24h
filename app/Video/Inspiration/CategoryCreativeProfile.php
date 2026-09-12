@@ -37,6 +37,8 @@ final class CategoryCreativeProfile
         public readonly array $conceptForbiddenTerms = [],
         public readonly array $identityCrossChecks = [],
         public readonly array $designSpecExport = [],
+        public readonly array $proseCountGuard = [],
+        public readonly string $version = '1.0',
     ) {
         foreach ([$key, $mission] as $value) {
             if (trim($value) === '') {
@@ -96,6 +98,66 @@ final class CategoryCreativeProfile
         $this->assertIdentitySlotsAreSatisfiable($identitySlots);
         $this->assertIdentityCrossChecksAreSatisfiable($identityCrossChecks, $identitySlots, $key);
         $this->assertDesignSpecExportIsSatisfiable($designSpecExport, $identitySlots, $key);
+        $this->assertProseCountGuardIsSatisfiable($proseCountGuard, $key);
+    }
+
+    /**
+     * @param  array<string, mixed>  $guard
+     */
+    private function assertProseCountGuardIsSatisfiable(array $guard, string $key): void
+    {
+        if ($guard === []) {
+            return;
+        }
+
+        $missing = array_diff(['nouns', 'max_filler_words'], array_keys($guard));
+        if ($missing !== []) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} prose_count_guard must declare ".implode(', ', $missing).'.',
+            );
+        }
+
+        if ($guard['nouns'] === [] || count($guard['nouns']) !== count(array_unique($guard['nouns']))) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} prose_count_guard nouns must be non-empty and unique.",
+            );
+        }
+
+        // Chi chu cai va khoang trang: danh tu di thang vao mot regex, va mot
+        // ky tu meta lot vao day thi luat bat nham ma khong ai thay.
+        foreach ($guard['nouns'] as $noun) {
+            if (! is_string($noun) || preg_match('/\A[a-z]+(?: [a-z]+)*\z/', $noun) !== 1) {
+                throw new InvalidArgumentException(
+                    "Creative profile {$key} prose_count_guard nouns must be lowercase words.",
+                );
+            }
+        }
+
+        if (! is_int($guard['max_filler_words']) || $guard['max_filler_words'] < 0) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} prose_count_guard max_filler_words must be a non-negative integer.",
+            );
+        }
+    }
+
+
+    /**
+     * Hinh dang de dua vao ConceptInput. Chi phoi nhung gi tang thiet ke duoc
+     * phep doc; khong phoi `identitySlots` tho vi do la hop dong noi bo.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return [
+            'key' => $this->key,
+            'version' => $this->version,
+            'mission' => $this->mission,
+            'inspection_aspects' => $this->inspectionAspects,
+            'concept_mission' => $this->conceptMission,
+            'concept_antipatterns' => $this->conceptAntipatterns,
+            'concept_forbidden_terms' => $this->conceptForbiddenTerms,
+        ];
     }
 
     /**
@@ -119,6 +181,43 @@ final class CategoryCreativeProfile
     }
 
     /**
+     * `source_path` chi duoc kiem TEN o day; no tro vao ban XUAT chu khong vao
+     * identity_slots, nen phep giai duong dan phai chay tren spec that — xem
+     * DesignSpecExportTest.
+     */
+    private function assertInvariantIsSatisfiable(mixed $invariant, string $key): void
+    {
+        if (! is_array($invariant)) {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export invariants must be objects.");
+        }
+
+        $missing = array_diff(['name', 'source_path', 'constraint_type', 'severity', 'visual_verification'], array_keys($invariant));
+        if ($missing !== []) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} design_spec_export invariant must declare ".implode(', ', $missing).'.',
+            );
+        }
+
+        foreach (['name', 'constraint_type'] as $field) {
+            if (! is_string($invariant[$field]) || preg_match('/\A[a-z][a-z0-9_]*\z/', $invariant[$field]) !== 1) {
+                throw new InvalidArgumentException("Creative profile {$key} design_spec_export invariant {$field} is invalid.");
+            }
+        }
+
+        if (! is_string($invariant['source_path']) || preg_match('/\A[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\z/', $invariant['source_path']) !== 1) {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export invariant source_path is invalid.");
+        }
+
+        if (! in_array($invariant['severity'], ['hard', 'soft'], true)) {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export invariant severity must be hard or soft.");
+        }
+
+        if (! is_bool($invariant['visual_verification'])) {
+            throw new InvalidArgumentException("Creative profile {$key} design_spec_export invariant visual_verification must be a boolean.");
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $export
      * @param  array<string, array<string, mixed>>  $slots
      */
@@ -133,8 +232,11 @@ final class CategoryCreativeProfile
         }
 
         $invariants = $export['invariants'] ?? [];
+        $names = is_array($invariants)
+            ? array_map(fn ($item) => is_array($item) ? ($item['name'] ?? null) : $item, $invariants)
+            : [];
 
-        if (! is_array($invariants) || count($invariants) !== count(array_unique($invariants))) {
+        if (! is_array($invariants) || count($names) !== count(array_unique($names, SORT_REGULAR))) {
             throw new InvalidArgumentException("Creative profile {$key} design_spec_export invariants must be unique.");
         }
 
@@ -147,10 +249,8 @@ final class CategoryCreativeProfile
             );
         }
 
-        foreach ($invariants as $name) {
-            if (! is_string($name) || preg_match('/\A[a-z][a-z0-9_]*\z/', $name) !== 1) {
-                throw new InvalidArgumentException("Creative profile {$key} design_spec_export contains an invalid invariant name.");
-            }
+        foreach ($invariants as $invariant) {
+            $this->assertInvariantIsSatisfiable($invariant, $key);
         }
 
         foreach ($export['export_aliases'] ?? [] as $path => $map) {
@@ -301,40 +401,107 @@ final class CategoryCreativeProfile
     private function assertIdentityCrossChecksAreSatisfiable(array $checks, array $slots, string $key): void
     {
         foreach ($checks as $check) {
-            if (! is_array($check) || ($check['kind'] ?? null) !== 'ratio') {
-                throw new InvalidArgumentException("Creative profile {$key} identity_cross_checks supports kind ratio only.");
-            }
+            match (is_array($check) ? ($check['kind'] ?? null) : null) {
+                'ratio' => $this->assertRatioCrossCheck($check, $slots, $key),
+                'equals' => $this->assertEqualsCrossCheck($check, $slots, $key),
+                default => throw new InvalidArgumentException(
+                    "Creative profile {$key} identity_cross_checks supports kind ratio, equals.",
+                ),
+            };
+        }
+    }
 
-            if (array_diff(['kind', 'numerator', 'denominator', 'equals', 'tolerance'], array_keys($check)) !== []
-                || array_diff(array_keys($check), ['kind', 'numerator', 'denominator', 'equals', 'tolerance']) !== []) {
-                throw new InvalidArgumentException(
-                    "Creative profile {$key} identity_cross_checks must declare kind, numerator, denominator, equals, tolerance.",
-                );
-            }
+    /**
+     * Mot cap dau cham la do sau toi da cua hop dong — object khong long them
+     * object duoc, nen khong co cap thu ba de tro toi.
+     *
+     * @param  array<string, array<string, mixed>>  $slots
+     * @return array<string, mixed>|null
+     */
+    private function slotSpecAt(string $path, array $slots): ?array
+    {
+        $parts = explode('.', $path);
 
-            foreach (['numerator', 'denominator', 'equals'] as $role) {
-                $name = $check[$role];
+        if (count($parts) === 1) {
+            return $slots[$parts[0]] ?? null;
+        }
 
-                if (! is_string($name) || ! isset($slots[$name])) {
-                    throw new InvalidArgumentException(
-                        "Creative profile {$key} identity_cross_checks {$role} does not name an identity slot.",
-                    );
-                }
+        if (count($parts) !== 2 || ($slots[$parts[0]]['type'] ?? null) !== 'object') {
+            return null;
+        }
 
-                if ($slots[$name]['type'] !== 'number') {
-                    throw new InvalidArgumentException(
-                        "Creative profile {$key} identity_cross_checks {$role} {$name} must be a number slot.",
-                    );
-                }
-            }
+        return $slots[$parts[0]]['fields'][$parts[1]] ?? null;
+    }
 
-            if ((! is_int($check['tolerance']) && ! is_float($check['tolerance']))
-                || (is_float($check['tolerance']) && ! is_finite($check['tolerance']))
-                || $check['tolerance'] <= 0) {
-                throw new InvalidArgumentException(
-                    "Creative profile {$key} identity_cross_checks tolerance must be a positive finite number.",
-                );
-            }
+    /**
+     * @param  array<string, mixed>  $check
+     * @param  array<string, array<string, mixed>>  $slots
+     */
+    private function assertRatioCrossCheck(array $check, array $slots, string $key): void
+    {
+        $this->assertCrossCheckKeys($check, ['kind', 'numerator', 'denominator', 'equals', 'tolerance'], $key);
+
+        foreach (['numerator', 'denominator', 'equals'] as $role) {
+            $this->assertCrossCheckRole($check[$role], $role, 'number', $slots, $key);
+        }
+
+        if ((! is_int($check['tolerance']) && ! is_float($check['tolerance']))
+            || (is_float($check['tolerance']) && ! is_finite($check['tolerance']))
+            || $check['tolerance'] <= 0) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} identity_cross_checks tolerance must be a positive finite number.",
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $check
+     * @param  array<string, array<string, mixed>>  $slots
+     */
+    private function assertEqualsCrossCheck(array $check, array $slots, string $key): void
+    {
+        $this->assertCrossCheckKeys($check, ['kind', 'left', 'right'], $key);
+
+        foreach (['left', 'right'] as $role) {
+            $this->assertCrossCheckRole($check[$role], $role, 'integer', $slots, $key);
+        }
+
+        if ($check['left'] === $check['right']) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} identity_cross_checks equals compares a slot with itself.",
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $check
+     * @param  list<string>  $expected
+     */
+    private function assertCrossCheckKeys(array $check, array $expected, string $key): void
+    {
+        if (array_diff($expected, array_keys($check)) !== [] || array_diff(array_keys($check), $expected) !== []) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} identity_cross_checks {$check['kind']} must declare "
+                .implode(', ', $expected).'.',
+            );
+        }
+    }
+
+    /** @param array<string, array<string, mixed>> $slots */
+    private function assertCrossCheckRole(mixed $path, string $role, string $type, array $slots, string $key): void
+    {
+        $spec = is_string($path) ? $this->slotSpecAt($path, $slots) : null;
+
+        if ($spec === null) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} identity_cross_checks {$role} does not name an identity slot.",
+            );
+        }
+
+        if (($spec['type'] ?? null) !== $type) {
+            throw new InvalidArgumentException(
+                "Creative profile {$key} identity_cross_checks {$role} {$path} must be a {$type} slot.",
+            );
         }
     }
 

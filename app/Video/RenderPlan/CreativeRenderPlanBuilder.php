@@ -2,7 +2,7 @@
 
 namespace App\Video\RenderPlan;
 
-use App\Video\Concept\CreativeConcept;
+use App\Video\Concept\Canonical\CanonicalDesignSpec;
 use App\Video\Story\CreationArcPlanner;
 
 final class CreativeRenderPlanBuilder
@@ -10,7 +10,7 @@ final class CreativeRenderPlanBuilder
     /** @param array<string, array<string, mixed>> $phases
      * @return array<string, mixed>
      */
-    public function build(RenderPlanMeta $meta, CreativeConcept $concept, array $phases): array
+    public function build(RenderPlanMeta $meta, CanonicalDesignSpec $concept, array $phases): array
     {
         $heroId = 'creative_subject';
         $plan = [

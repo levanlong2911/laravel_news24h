@@ -27,9 +27,18 @@ final class VisualIdentityStore
         string $name = 'master_vessel',
         string $type = self::SUBJECT,
     ): ?VideoVisualIdentity {
-        $identity = $conceptOutput['design_identity'] ?? null;
+        // Duoi Phan 1 khong con khoa `design_identity`: ban sac hinh anh nam
+        // o BA nhanh cua CanonicalDesignSpec. Gop dung ba nhanh do —
+        // design_thesis la dan duong mem, con exclusions/provenance/invariants
+        // la sieu du lieu ve cach spec duoc lam ra, khong phai hinh dang cua
+        // vat the. De chung vao thi doi mot cau van la doi luon con tau.
+        $identity = array_filter([
+            'dimensions' => $conceptOutput['dimensions'] ?? null,
+            'permanent_geometry' => $conceptOutput['permanent_geometry'] ?? null,
+            'finished_materials' => $conceptOutput['finished_materials'] ?? null,
+        ], static fn (mixed $branch): bool => is_array($branch) && $branch !== []);
 
-        if (! is_array($identity) || $identity === []) {
+        if ($identity === []) {
             return null;
         }
 

@@ -3,8 +3,6 @@
 namespace Tests\Feature\Video;
 
 use App\Enums\DesignImageStatus;
-use App\Models\VideoArtifact;
-use App\Models\VideoCostEntry;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
@@ -73,14 +71,6 @@ class DesignImageDirectRenderTest extends TestCase
         ];
     }
 
-    private function workerReturns(array $payload): void
-    {
-        $runner = Mockery::mock(PythonRunner::class);
-        $runner->shouldReceive('runAndWait')->once()
-            ->andReturn([true, "chan doan tren stderr\n".json_encode($payload)]);
-        $this->instance(PythonRunner::class, $runner);
-    }
-
     // ---- cau dao tong -------------------------------------------------
 
     public function test_the_breaker_stops_a_python_process_from_ever_starting(): void
@@ -94,18 +84,6 @@ class DesignImageDirectRenderTest extends TestCase
 
         $this->assertFalse($ok);
         $this->assertStringContainsString('VIDEO_PYTHON_RUNNER', $output);
-    }
-
-    public function test_a_run_with_the_breaker_off_leaves_the_cell_failed_and_says_why(): void
-    {
-        $cell = $this->cell();
-
-        [$done, $reason] = app(DesignImageDirectRenderer::class)->renderNow($cell->id);
-
-        $this->assertSame('failed', $reason);
-        $this->assertSame(DesignImageStatus::FAILED->value, $done->refresh()->status);
-        $this->assertStringContainsString('VIDEO_PYTHON_RUNNER', $done->render_error);
-        $this->assertSame(0, VideoRender::where('design_image_id', $cell->id)->count());
     }
 
     // ---- claim / lease ------------------------------------------------
@@ -157,21 +135,6 @@ class DesignImageDirectRenderTest extends TestCase
 
     // ---- ghi so cai ---------------------------------------------------
 
-    public function test_a_finished_render_lands_in_all_three_books(): void
-    {
-        $cell = $this->cell();
-        $this->workerReturns(['ok' => true, 'error' => null, 'renders' => [$this->renderItem()]]);
-
-        [$done, $reason] = app(DesignImageDirectRenderer::class)->renderNow($cell->id);
-
-        $this->assertSame('rendered', $reason);
-        $this->assertSame(DesignImageStatus::RENDERED->value, $done->status);
-        $this->assertSame(1, VideoRender::where('design_image_id', $cell->id)->count());
-        $this->assertSame(1, VideoArtifact::where('design_image_id', $cell->id)->count());
-        $this->assertSame(1, VideoCostEntry::where('entity_id', $cell->id)->count());
-        $this->assertNull($done->worker_id, 'Lease phai duoc tra lai sau khi xong');
-    }
-
     public function test_the_python_spec_carries_the_render_operation(): void
     {
         $cell = $this->cell();
@@ -196,23 +159,6 @@ class DesignImageDirectRenderTest extends TestCase
         $this->assertSame('edit', $seen['operation']);
         $this->assertSame('gpt-image-2', $seen['model']);
         $this->assertSame('1024x1536', $seen['size']);
-    }
-
-    public function test_a_batch_that_died_halfway_still_records_the_image_it_paid_for(): void
-    {
-        $cell = $this->cell();
-        $this->workerReturns([
-            'ok' => false,
-            'error' => 'anh 2/2 hong: openai 500',
-            'renders' => [$this->renderItem()],
-        ]);
-
-        [$done, $reason] = app(DesignImageDirectRenderer::class)->renderNow($cell->id);
-
-        $this->assertSame('failed', $reason);
-        $this->assertSame('anh 2/2 hong: openai 500', $done->render_error);
-        $this->assertSame(1, VideoRender::where('design_image_id', $cell->id)->count());
-        $this->assertSame(1, VideoCostEntry::where('entity_id', $cell->id)->count());
     }
 
     public function test_a_result_carrying_the_wrong_token_is_refused(): void

@@ -173,10 +173,11 @@ class ConceptRerunTest extends TestCase
             'output_json' => $brief,
         ]);
 
-        // `input_hash` phai la hash THAT cua `conceptInput()`. Sai mot chut thi
-        // man hinh doc ra "brief da doi" va hien nut khac — bai test se xanh hoac
-        // do vi mot ly do khong lien quan gi toi thu dang kiem.
-        $conceptInput = new ReflectionMethod(VideoProjectService::class, 'conceptInput');
+        // `input_hash` phai la hash THAT cua `canonicalConceptStageInput()`.
+        // Sai mot chut thi man hinh doc ra "dau vao da doi" va hien nut khac —
+        // bai test se xanh hoac do vi mot ly do khong lien quan gi toi thu dang
+        // kiem.
+        $conceptInput = new ReflectionMethod(VideoProjectService::class, 'canonicalConceptStageInput');
         $conceptInput->setAccessible(true);
         $hash = new ReflectionMethod(PlanningStageStore::class, 'hash');
         $hash->setAccessible(true);
@@ -188,7 +189,9 @@ class ConceptRerunTest extends TestCase
             'status' => VideoPlanningStageStatus::SUCCEEDED->value,
             'input_json' => [],
             'input_hash' => $hash->invoke($this->store, $conceptInput->invoke(
-                app(VideoProjectService::class), $project->fresh('article'), $brief,
+                app(VideoProjectService::class),
+                $project->fresh('article'),
+                (string) ($project->fresh('article')->article->category?->slug ?? ''),
             )),
             'output_json' => $this->concept(),
         ]);

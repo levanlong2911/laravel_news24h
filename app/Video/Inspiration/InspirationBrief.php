@@ -2,6 +2,8 @@
 
 namespace App\Video\Inspiration;
 
+use App\Video\Profiles\CategoryCreativeProfile as ObjectProfile;
+
 final class InspirationBrief
 {
     /**
@@ -16,47 +18,10 @@ final class InspirationBrief
         public readonly array $excludedContext,
     ) {}
 
-    // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.
-    //     /**
-    //      * Lượt hỏi lại sinh lại TOÀN BỘ brief, không vá đúng chỗ — đo được trên bài
-    //      * Launchpad: sửa hai summary lẫn tên hãng thì mất luôn một aspect hợp lệ và
-    //      * một article_pattern. Hợp nhất ở đây để lỗi identity không kéo theo dữ liệu
-    //      * đã đúng.
-    //      */
-    //     public function mergedWith(self $newer): self
-    //     {
-    //         $insights = [];
-    //
-    //         foreach ($this->sourceInsights as $insight) {
-    //             $insights[$insight->aspect] = $insight;
-    //         }
-    //
-    //         foreach ($newer->sourceInsights as $insight) {
-    //             $insights[$insight->aspect] = $insight;
-    //         }
-    //
-    //         $excluded = [];
-    //
-    //         foreach ([...$this->excludedContext, ...$newer->excludedContext] as $item) {
-    //             $excluded[$item->type.'|'.self::normalize($item->value)] ??= $item;
-    //         }
-    //
-    //         return new self(
-    //             array_values(array_unique([...$this->articlePatterns, ...$newer->articlePatterns])),
-    //             $newer->articleFocus,
-    //             array_values($insights),
-    //             array_values($excluded),
-    //         );
-    //     }
-
     /**
-     * Nhóm quan sát mà brief NÀY chưa cung cấp insight — KHÔNG phải khẳng định
-     * bài viết không có dữ liệu. Bài Synthesis nói về refit ở ba câu mà model
-     * vẫn không trích; nó vẫn nằm ở đây.
-     *
      * @return list<string>
      */
-    public function uncoveredAspects(CategoryCreativeProfile $profile): array
+    public function uncoveredAspects(CategoryCreativeProfile|ObjectProfile $profile): array
     {
         $found = array_fill_keys(array_map(
             fn (SourceInsight $insight) => $insight->aspect,
@@ -70,7 +35,7 @@ final class InspirationBrief
     }
 
     /** @return array<string, mixed> */
-    public function toArray(CategoryCreativeProfile $profile): array
+    public function toArray(CategoryCreativeProfile|ObjectProfile $profile): array
     {
         return [
             'article_patterns' => $this->articlePatterns,
@@ -81,8 +46,40 @@ final class InspirationBrief
         ];
     }
 
-    private static function normalize(string $value): string
+    /** @return list<string> */
+    public function coveredAspects(): array
     {
-        return mb_strtolower(trim(preg_replace('/\s+/u', ' ', $value) ?? $value));
+        return array_values(array_unique(array_map(
+            fn (SourceInsight $insight) => $insight->aspect,
+            $this->sourceInsights,
+        )));
+    }
+
+    public function hasSourceAspect(string $aspect): bool
+    {
+        return in_array($aspect, $this->coveredAspects(), true);
+    }
+
+    /**
+     * Tach hai nguon: `inspiration` la thu Haiku tra ve, `coverage` la thu
+     * Laravel tinh tu profile. Nhin payload la biet ngay phan nao do ai chiu
+     * trach nhiem.
+     *
+     * @return array<string, mixed>
+     */
+    public function toConceptInput(CategoryCreativeProfile|ObjectProfile $profile): array
+    {
+        return [
+            'inspiration' => [
+                'article_patterns' => $this->articlePatterns,
+                'article_focus' => $this->articleFocus,
+                'source_insights' => array_map(fn (SourceInsight $item) => $item->toArray(), $this->sourceInsights),
+                'excluded_context' => array_map(fn (ExcludedContext $item) => $item->toArray(), $this->excludedContext),
+            ],
+
+            'coverage' => [
+                'uncovered_aspects' => $this->uncoveredAspects($profile),
+            ],
+        ];
     }
 }

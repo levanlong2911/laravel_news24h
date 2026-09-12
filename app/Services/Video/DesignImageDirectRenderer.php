@@ -4,87 +4,91 @@ namespace App\Services\Video;
 
 use App\Enums\DesignImageStatus;
 use App\Enums\ImageQuality;
+use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
-use App\Services\PythonRunner;
+use App\Models\VideoRender;
+use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
+use RuntimeException;
+use Throwable;
 
 /**
- * Duong render dong bo: Laravel giu o, goi Python, doc ket qua tren stdout, tu
- * ghi so cai. Python KHONG goi nguoc Laravel mot lan nao.
+ * Duong render dong bo: Laravel giu o, goi thang OpenAI, tu ghi so cai.
  *
  * Cung hinh dang voi duong Haiku/Sonnet dang chay: claim + lease NGAY TREN HANG
- * DU LIEU roi moi goi provider. Nho vay boc mot Job ra ngoai sau nay khong phai
- * sua gi ben trong — chay nen hay chay trong request deu an toan nhu nhau.
+ * DU LIEU roi moi goi provider. Boc mot Job ra ngoai sau nay khong phai sua gi
+ * ben trong.
  *
- * Bon chot giu tien:
- *   1. `python_runner_enabled` — cau dao tong o `PythonRunner`
- *   2. dedupe theo prompt hash o `DesignImageStore::createCandidate()`
- *   3. `claimForDirectRender()` — bam lan hai trong luc render gap `rendering`
- *   4. claim token kiem lai truoc khi ghi so cai
+ * Ba chot giu tien:
+ *   1. dedupe theo prompt hash o `DesignImageStore::createCandidate()`
+ *   2. `claimForDirectRender()` — bam lan hai trong luc render gap `rendering`
+ *   3. claim token kiem lai truoc khi ghi so cai
  *
  * Con thieu so voi duong hang doi: khong co outbox. Tien trinh chet SAU khi
- * provider da tinh tien thi khong co gi phat lai — xem
- * `video:sweep-orphan-design-renders`.
- *
- * VA no KHONG chua duoc WinError 10106: van la PHP sinh tien trinh Python, nen
- * van phai chay qua Apache chu khong phai `artisan serve`.
+ * provider da tinh tien thi khong co gi phat lai.
  */
 class DesignImageDirectRenderer
 {
-    private const SCRIPT = 'render_design_image_once.py';
-
-    private const BUDGET_SECONDS = 90;
-
-    public function __construct(private DesignImageQueue $queue, private PythonRunner $pythonRunner) {}
+    public function __construct(
+        private DesignImageQueue $queue,
+        private OpenAiImageClient $client,
+        private FilesystemFactory $storage,
+    ) {}
 
     /**
+     * @param  list<string>|null  $acceptStatuses
      * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
      *                                                reason: rendered|failed|not_enqueueable|image_not_found|<chan doan>
      */
-    public function renderNow(string $imageId): array
+    public function renderNow(string $imageId, ?array $acceptStatuses = null): array
     {
-        [$image, $claimToken, $reason] = $this->queue->claimForDirectRender($imageId, self::BUDGET_SECONDS);
+        $budget = $this->budgetSeconds();
+
+        [$image, $claimToken, $reason] = $this->queue->claimForDirectRender(
+            $imageId, $budget, $acceptStatuses,
+        );
 
         if ($claimToken === null) {
             return [$image, $reason];
         }
 
-        $specPath = $this->writeSpec($image, $image->prompt_spec_json ?? [], $claimToken);
-
+        /*
+         * Mot ngoai le thoat ra khoi day la claim treo toi het lease va so cai
+         * khong co dong nao — trong khi provider co the da tinh tien. Nen moi
+         * duong ra deu phai di qua `recordDirectResult()`.
+         */
         try {
-            [, $output] = $this->pythonRunner->runAndWait(
-                self::SCRIPT, ['--spec', $specPath], self::BUDGET_SECONDS,
-            );
-        } finally {
-            @unlink($specPath);
-        }
+            $spec = $this->spec($image, $image->prompt_spec_json ?? [], $claimToken);
 
-        $result = $this->readResult($output);
-
-        if ($result === null) {
-
-            $this->queue->recordDirectResult(
-                $imageId, $claimToken, false,
-                'Khong doc duoc ket qua tu worker: '.mb_substr(trim($output), -400), [],
-            );
-
-            // Khong doc duoc ket qua: co the tien trinh chet truoc khi in gi. Tra
-            // NGUYEN VAN output ra man hinh — do la thu duy nhat noi duoc chuyen gi.
-            Log::warning('DesignImageDirectRenderer: khong doc duoc ket qua', [
+            $result = match ($spec['operation']) {
+                'mirror' => $this->mirror($image, $spec, $claimToken),
+                'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
+                'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
+                'environment_plate' => $this->client->generate($spec, $budget),
+                'generate' => $this->client->generate($spec, $budget),
+                default => throw new RuntimeException(
+                    'Unknown render operation: '.$spec['operation'],
+                ),
+            };
+        } catch (Throwable $e) {
+            Log::error('DesignImageDirectRenderer: client nem, nha claim', [
                 'image_id' => $imageId,
-                'output' => mb_substr($output, -2000),
+                'exception' => $e,
             ]);
 
-            return [$image->refresh(), 'failed'];
+            $result = [
+                'ok' => false,
+                'error' => get_class($e).': '.$e->getMessage(),
+                'renders' => [],
+            ];
         }
 
         [$done, $recordReason] = $this->queue->recordDirectResult(
             $imageId,
             $claimToken,
-            (bool) ($result['ok'] ?? false),
-            $result['error'] ?? null,
-            array_values($result['renders'] ?? []),
+            $result['ok'],
+            $result['error'],
+            $result['renders'],
         );
 
         if ($done === null) {
@@ -94,57 +98,231 @@ class DesignImageDirectRenderer
         return [$done, $done->status === DesignImageStatus::RENDERED->value ? 'rendered' : 'failed'];
     }
 
-    /** @param array<string, mixed> $spec */
-    private function writeSpec(VideoDesignImage $image, array $spec, string $claimToken): string
+    private function budgetSeconds(): int
     {
-        $path = rtrim((string) config('video.runner.log_dir'), '/\\')
-            .DIRECTORY_SEPARATOR.'design_image_'.Str::uuid().'.json';
-
-        if (! is_dir(dirname($path))) {
-            @mkdir(dirname($path), 0775, true);
-        }
-
-        file_put_contents($path, json_encode([
-            'image_id' => $image->id,
-            // Python khong dung toi, nhung file spec la thu con lai khi di tim mot
-            // luot render da chay: co token thi doi chieu duoc voi hang du lieu.
-            'claim_token' => $claimToken,
-            'prompt' => $spec['prompt'] ?? '',
-            'operation' => $spec['operation'] ?? 'generate',
-            'model' => $spec['model'] ?? '',
-            'quality' => $spec['quality'] ?? '',
-            'size' => $spec['size'] ?? '',
-            'variations' => (int) ($spec['variations'] ?? 1),
-            'cost_estimate' => ImageQuality::fromSpecOrHigh($spec['quality'] ?? '')->estimatedCostUsd(),
-            'out_dir' => storage_path('app/design-image-renders'),
-            'pub_dir' => public_path('renders/'.DesignImageQueue::COLLECTION),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-
-        return $path;
+        return (int) config('video.openai_image.timeout', 300) + 60;
     }
 
     /**
-     * Doc dong JSON CUOI CUNG. `runAndWait()` noi stdout va stderr lam mot, ma
-     * script in chan doan ra stderr — nen khong the parse ca khoi.
-     *
-     * @return array<string, mixed>|null
+     * @param  array<string, mixed>  $spec
+     * @return array<string, mixed>
      */
-    private function readResult(string $output): ?array
+    private function spec(VideoDesignImage $image, array $spec, string $claimToken): array
     {
-        $lines = array_reverse(array_filter(array_map('trim', explode("\n", $output))));
+        $quality = ImageQuality::fromSpecOrHigh($spec['quality'] ?? '');
+        $pricing = (string) ($spec['pricing'] ?? 'estimated');
 
-        foreach ($lines as $line) {
-            if (! str_starts_with($line, '{')) {
-                continue;
-            }
+        return [
+            'image_id' => $image->id,
+            'project_id' => $image->project_id,
+            'claim_token' => $claimToken,
+            'prompt' => (string) ($spec['prompt'] ?? ''),
+            'operation' => (string) ($spec['operation'] ?? 'generate'),
+            'model' => (string) ($spec['model'] ?? ''),
+            'quality' => $quality->value,
+            'size' => (string) ($spec['size'] ?? ''),
+            'variations' => (int) ($spec['variations'] ?? 1),
+            'pricing' => $pricing,
+            'cost_estimate' => $pricing === 'unpriced' ? null : $quality->estimatedCostUsd(),
+            'source_artifact_id' => $spec['source_artifact_id'] ?? null,
+            'source_artifact_sha256' => (string) ($spec['source_artifact_sha256'] ?? ''),
+            'derivation_version' => (string) ($spec['derivation_version'] ?? ''),
+            'render_scene_id' => $spec['render_scene_id'] ?? null,
+            'environment_key' => $spec['environment_key'] ?? null,
+            'reference_manifest_hash' => (string) ($spec['reference_manifest_hash'] ?? ''),
+            'sources' => is_array($spec['sources'] ?? null) ? $spec['sources'] : [],
+        ];
+    }
 
-            $decoded = json_decode($line, true);
-
-            if (is_array($decoded) && array_key_exists('renders', $decoded)) {
-                return $decoded;
-            }
+    /**
+     * Keyframe LUON dung mot anh nguon, va no di truong `image` — dang day da
+     * duoc chung minh bang tien that o chuoi dung hinh.
+     *
+     * @param  array<string, mixed>  $spec
+     * @param  list<array{bytes: string, filename: string}>  $images
+     * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>}
+     */
+    private function sendManifest(array $spec, array $images, int $budget): array
+    {
+        if ($images === [] || count($images) > OpenAiImageClient::MAX_SOURCE_IMAGES) {
+            throw new RuntimeException('Scene keyframe manifest is outside the source cap.');
         }
 
-        return null;
+        return count($images) === 1
+            ? $this->client->edit($spec, $images[0]['bytes'], $images[0]['filename'], $budget)
+            : $this->client->editWithSources($spec, $images, $budget);
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec
+     * @return list<array{bytes: string, filename: string}>
+     */
+    private function manifestBytes(VideoDesignImage $image, array $spec): array
+    {
+        $sources = $spec['sources'] ?? [];
+
+        if (! is_array($sources) || ! array_is_list($sources) || $sources === []) {
+            throw new RuntimeException('Scene keyframe spec carries no source manifest.');
+        }
+
+        $images = [];
+
+        foreach ($sources as $position => $entry) {
+            if (! is_array($entry) || ($entry['position'] ?? null) !== $position) {
+                throw new RuntimeException('Scene keyframe manifest is out of order.');
+            }
+
+            $artifact = VideoArtifact::query()
+                ->whereKey($entry['artifact_id'] ?? null)
+                ->where('project_id', $image->project_id)
+                ->first();
+
+            if ($artifact === null
+                || (string) $artifact->design_image_id !== (string) ($entry['candidate_id'] ?? '')) {
+                throw new RuntimeException('Scene keyframe source no longer belongs to its candidate.');
+            }
+
+            $images[] = [
+                'bytes' => $this->verifiedBytes($artifact, [
+                    'source_artifact_sha256' => $entry['sha256'] ?? '',
+                ]),
+                'filename' => 'source_'.str_pad((string) $position, 2, '0', STR_PAD_LEFT).'.png',
+            ];
+        }
+
+        return $images;
+    }
+
+    /** @param array<string, mixed> $spec */
+    private function sourceArtifact(VideoDesignImage $image, array $spec): VideoArtifact
+    {
+        $artifact = VideoArtifact::query()
+            ->whereKey($spec['source_artifact_id'] ?? null)
+            ->where('project_id', $image->project_id)
+            ->first();
+
+        if ($artifact === null) {
+            throw new RuntimeException('Reference source artifact does not belong to project.');
+        }
+
+        return $artifact;
+    }
+
+    /** @param array<string, mixed> $spec */
+    private function sourceBytes(VideoDesignImage $image, array $spec): string
+    {
+        return $this->verifiedBytes($this->sourceArtifact($image, $spec), $spec);
+    }
+
+    /** @param array<string, mixed> $spec */
+    private function verifiedBytes(VideoArtifact $artifact, array $spec): string
+    {
+        $bytes = $this->storage
+            ->disk((string) $artifact->storage_disk)
+            ->get((string) $artifact->storage_path);
+
+        if (! is_string($bytes) || $bytes === '') {
+            throw new RuntimeException('Reference source artifact file is missing.');
+        }
+
+        $expectedSha = trim((string) ($spec['source_artifact_sha256'] ?? ''));
+
+        if ($expectedSha === '' || ! hash_equals($expectedSha, hash('sha256', $bytes))) {
+            throw new RuntimeException('Reference source artifact checksum mismatch.');
+        }
+
+        return $bytes;
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec
+     * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>}
+     */
+    private function mirror(VideoDesignImage $image, array $spec, string $claimToken): array
+    {
+        $artifact = $this->sourceArtifact($image, $spec);
+
+        if ($artifact->render_id === null) {
+            throw new RuntimeException('Reference source artifact has no render row to trace back to.');
+        }
+
+        $sourceRender = VideoRender::query()->whereKey($artifact->render_id)->first();
+
+        if ($sourceRender === null || $sourceRender->status !== 'succeeded') {
+            throw new RuntimeException('Reference source render did not succeed.');
+        }
+
+        $bytes = $this->verifiedBytes($artifact, $spec);
+
+        @ini_set('memory_limit', (string) config('video.openai_image.memory_limit', '1024M'));
+        $startedAt = microtime(true);
+
+        $canvas = @imagecreatefromstring($bytes);
+
+        if ($canvas === false) {
+            throw new RuntimeException('Reference source artifact is not a readable image.');
+        }
+
+        try {
+            imageflip($canvas, IMG_FLIP_HORIZONTAL);
+
+            ob_start();
+            imagepng($canvas);
+            $flipped = (string) ob_get_clean();
+            $width = imagesx($canvas);
+            $height = imagesy($canvas);
+        } finally {
+            imagedestroy($canvas);
+        }
+
+        if ($flipped === '') {
+            throw new RuntimeException('Mirrored image could not be encoded.');
+        }
+
+        $disk = (string) config('video.openai_image.disk');
+        $dir = $spec['project_id'].'/'.$spec['image_id'].'/renders/'.$claimToken;
+        $path = $dir.'/output_000.png';
+
+        if (! $this->storage->disk($disk)->put($path, $flipped)) {
+            throw new RuntimeException('Mirrored image could not be written to disk.');
+        }
+
+        $request = [
+            'derivation' => 'horizontal_flip',
+            'derivation_version' => (string) ($spec['derivation_version'] ?? ''),
+            'source_artifact_id' => $artifact->id,
+            'source_artifact_sha256' => (string) $artifact->sha256,
+        ];
+
+        return [
+            'ok' => true,
+            'error' => null,
+            'renders' => [[
+                'idempotency_key' => $claimToken.':0',
+                'storage_disk' => $disk,
+                'storage_path' => $path,
+                'artifact_sha256' => hash('sha256', $flipped),
+                'mime_type' => 'image/png',
+                'width' => $width,
+                'height' => $height,
+                'bytes' => strlen($flipped),
+                'cost' => 0.0,
+                'pricing' => 'free',
+                'provider_request_id' => null,
+                'provider_usage' => null,
+                'render' => [
+                    'provider' => 'local',
+                    'model' => 'gd',
+                    'render_kind' => 'reference_mirror',
+                    'sent_prompt' => (string) $spec['prompt'],
+                    'source_kind' => 'image',
+                    'artifact_dir' => $dir,
+                    'provider_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+                    'request_sha256' => hash('sha256', json_encode($request, JSON_THROW_ON_ERROR)),
+                    'source_render_id' => $sourceRender->id,
+                    'request_json' => $request,
+                ],
+            ]],
+        ];
     }
 }

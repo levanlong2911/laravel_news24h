@@ -16,6 +16,13 @@ enum ImageModel: string
         return array_column(self::cases(), 'value');
     }
 
+    public function provider(): string
+    {
+        return match ($this) {
+            self::GPT_IMAGE_2 => 'openai',
+        };
+    }
+
     public function label(): string
     {
         return match ($this) {

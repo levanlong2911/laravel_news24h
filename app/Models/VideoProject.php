@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Video\Concept\Persistence\Models\CanonicalConceptRevision;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -51,5 +52,10 @@ class VideoProject extends Model
     public function activeSession()
     {
         return $this->belongsTo(VideoSession::class, 'active_session_id');
+    }
+
+    public function canonicalConceptRevisions()
+    {
+        return $this->hasMany(CanonicalConceptRevision::class, 'video_project_id');
     }
 }

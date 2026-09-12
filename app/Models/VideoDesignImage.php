@@ -10,8 +10,8 @@ class VideoDesignImage extends Model
     use HasUuids;
 
     protected $fillable = [
-        'project_id', 'identity_id', 'image_code', 'image_type', 'state', 'slot_index',
-        'proves_state', 'source_image_id', 'prompt_spec_json', 'prompt_sha256',
+        'project_id', 'identity_id', 'render_scene_id', 'image_code', 'image_type', 'state', 'slot_index',
+        'proves_state', 'environment_key', 'source_image_id', 'prompt_spec_json', 'prompt_sha256',
         'selected_artifact_id', 'status', 'revision', 'approved_at', 'approved_by',
         'metadata_json',
         'worker_id', 'claim_token', 'claimed_at', 'lease_expires_at',

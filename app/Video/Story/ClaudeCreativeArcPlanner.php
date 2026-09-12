@@ -2,7 +2,7 @@
 
 namespace App\Video\Story;
 
-use App\Video\Concept\CreativeConcept;
+use App\Video\Concept\Canonical\CanonicalDesignSpec;
 use App\Video\Inspiration\CategoryCreativeProfile;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
@@ -20,7 +20,7 @@ final class ClaudeCreativeArcPlanner
     ) {}
 
     /** @return array<string, array<string, mixed>> */
-    public function plan(CreativeConcept $concept, CategoryCreativeProfile $profile): array
+    public function plan(CanonicalDesignSpec $concept, CategoryCreativeProfile $profile): array
     {
         $profile->assertArcReady();
 

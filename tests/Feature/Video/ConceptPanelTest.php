@@ -177,14 +177,18 @@ class ConceptPanelTest extends TestCase
     private function realConceptHash(): string
     {
         $service = app(\App\Services\VideoProjectService::class);
-        $input = new \ReflectionMethod($service, 'conceptInput');
+        $input = new \ReflectionMethod($service, 'canonicalConceptStageInput');
         $input->setAccessible(true);
 
         $store = app(\App\Services\Video\PlanningStageStore::class);
         $hash = new \ReflectionMethod($store, 'hash');
         $hash->setAccessible(true);
 
-        return $hash->invoke($store, $input->invoke($service, $this->project->fresh(), ['source_insights' => []]));
+        $project = $this->project->fresh('article');
+
+        return $hash->invoke($store, $input->invoke(
+            $service, $project, (string) ($project->article->category?->slug ?? ''),
+        ));
     }
 
     public function test_a_project_with_no_concept_yet_offers_to_create(): void

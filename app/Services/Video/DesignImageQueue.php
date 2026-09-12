@@ -8,6 +8,7 @@ use App\Models\VideoCostEntry;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
+use App\Video\Render\Enums\RenderStatus;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -244,14 +245,28 @@ class DesignImageQueue
      * `lease_expires_at` de lenh thu hoi co san nhat len khi request chet giua
      * chung; khong co no thi o ket o `rendering` vinh vien.
      *
+     * @param  list<string>|null  $acceptStatuses  Thu hep tap trang thai duoc nhan.
+     *                                             `null` giu nguyen hop dong cu.
      * @return array{0: ?VideoDesignImage, 1: ?string, 2: string} [$image, $claimToken, $reason]
      */
-    public function claimForDirectRender(string $imageId, int $leaseSeconds = 90): array
-    {
+    public function claimForDirectRender(
+        string $imageId,
+        int $leaseSeconds = 90,
+        ?array $acceptStatuses = null,
+    ): array {
+        $enqueueable = DesignImageStatus::enqueueableValues();
+        $accept = $acceptStatuses === null
+            ? $enqueueable
+            : array_values(array_intersect($acceptStatuses, $enqueueable));
+
+        if ($accept === []) {
+            return [null, null, 'no_acceptable_status'];
+        }
+
         $claimToken = (string) Str::uuid();
 
         try {
-            return DB::transaction(function () use ($imageId, $leaseSeconds, $claimToken) {
+            return DB::transaction(function () use ($imageId, $leaseSeconds, $claimToken, $accept, $enqueueable) {
                 $projectId = VideoDesignImage::query()->whereKey($imageId)->value('project_id');
 
                 if ($projectId === null) {
@@ -261,8 +276,10 @@ class DesignImageQueue
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
                 $image = VideoDesignImage::query()->whereKey($imageId)->firstOrFail();
 
-                if (! in_array($image->status, DesignImageStatus::enqueueableValues(), true)) {
-                    return [$image, null, 'not_enqueueable'];
+                if (! in_array($image->status, $accept, true)) {
+                    return [$image, null, in_array($image->status, $enqueueable, true)
+                        ? 'retry_not_confirmed'
+                        : 'not_enqueueable'];
                 }
 
                 $now = now();
@@ -340,20 +357,106 @@ class DesignImageQueue
                     $this->record($image, $projectId, $item);
                 }
 
-                $image->update([
-                    'status' => ($success ? DesignImageStatus::RENDERED : DesignImageStatus::FAILED)->value,
-                    'render_error' => $success ? null : ($renderError ?: 'Render failed and the worker gave no reason'),
-                    'worker_id' => null,
-                    'claim_token' => null,
-                    'claimed_at' => null,
-                    'lease_expires_at' => null,
-                ]);
+                $this->finaliseImage($image, $success, $renderError);
 
                 return [$image->refresh(), 'recorded'];
             });
         } catch (ModelNotFoundException) {
             return [null, 'image_not_found'];
         }
+    }
+
+    /**
+     * Duong `render_mode=canonical`: hang `video_renders` da do RenderDispatchService
+     * tao va may trang thai Phan 14 dan toi `succeeded`, nen o day KHONG duoc tao
+     * them hang nua — chi gan artifact vao hang do roi ket so o anh.
+     *
+     * @param  list<array<string, mixed>>  $artifacts
+     * @return array{0: ?VideoDesignImage, 1: string}
+     */
+    public function recordCanonicalResult(
+        string $imageId,
+        ?string $claimToken,
+        bool $success,
+        ?string $renderError,
+        ?VideoRender $render,
+        array $artifacts,
+    ): array {
+        if ($success && ($render === null || $artifacts === [])) {
+            return [null, 'result_success_without_renders'];
+        }
+
+        try {
+            return DB::transaction(function () use ($imageId, $claimToken, $success, $renderError, $render, $artifacts) {
+                $projectId = VideoDesignImage::query()->whereKey($imageId)->value('project_id');
+
+                if ($projectId === null) {
+                    return [null, 'image_not_found'];
+                }
+
+                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+                $image = VideoDesignImage::query()->whereKey($imageId)->firstOrFail();
+
+                // `$claimToken === null` la che do HOA GIAI: khong con lease nao
+                // dang giu vi request truoc da chet. Bang chung thay the la hang
+                // render DA o `succeeded` — ma dua no toi do la `complete()`, von
+                // doi dung claim_token cua hang render va doi chieu ca manifest.
+                // Chuoi bang chung khong dut, chi doi chu the.
+                if ($claimToken === null) {
+                    if ($render === null || $render->execution_status !== RenderStatus::SUCCEEDED) {
+                        return [null, 'reconcile_requires_succeeded_render'];
+                    }
+                } elseif (! $this->ownsTheClaim($image, self::DIRECT_WORKER, $claimToken)) {
+                    return [null, 'claim_not_owned_or_expired'];
+                }
+
+                foreach ($artifacts as $artifact) {
+                    // Khoa phat lai la (render, sha256): mot chuoi byte chi duoc
+                    // ghi vao bang mot lan du tien trinh chay lai bao nhieu luot.
+                    $exists = VideoArtifact::query()
+                        ->where('render_id', $render->id)
+                        ->where('sha256', $artifact['sha256'])
+                        ->exists();
+
+                    if ($exists) {
+                        continue;
+                    }
+
+                    VideoArtifact::create([
+                        'project_id' => $projectId,
+                        'design_image_id' => $image->id,
+                        'render_id' => $render->id,
+                        'artifact_type' => 'image',
+                        'role' => 'candidate',
+                        'storage_disk' => $artifact['storage_disk'],
+                        'storage_path' => $artifact['storage_path'],
+                        'mime_type' => $artifact['mime_type'] ?? 'image/png',
+                        'file_size' => $artifact['file_size'] ?? null,
+                        'sha256' => $artifact['sha256'],
+                        'width' => $artifact['width'] ?? null,
+                        'height' => $artifact['height'] ?? null,
+                    ]);
+                }
+
+                $this->finaliseImage($image, $success, $renderError);
+
+                return [$image->refresh(), 'recorded'];
+            });
+        } catch (ModelNotFoundException) {
+            return [null, 'image_not_found'];
+        }
+    }
+
+    private function finaliseImage(VideoDesignImage $image, bool $success, ?string $renderError): void
+    {
+        $image->update([
+            'status' => ($success ? DesignImageStatus::RENDERED : DesignImageStatus::FAILED)->value,
+            'render_error' => $success ? null : ($renderError ?: 'Render failed and the worker gave no reason'),
+            'worker_id' => null,
+            'claim_token' => null,
+            'claimed_at' => null,
+            'lease_expires_at' => null,
+        ]);
     }
 
     /** @param list<array<string, mixed>> $renders */
@@ -451,6 +554,8 @@ class DesignImageQueue
             'request_sha256' => $event['request_sha256'] ?? null,
             'negative_prompt' => $event['negative_prompt'] ?? null,
             'source_kind' => $event['source_kind'] ?? 'text',
+            'source_render_id' => $event['source_render_id'] ?? null,
+            'request_json' => $event['request_json'] ?? null,
             'artifact_path' => $item['storage_path'] ?? null,
             'artifact_dir' => $event['artifact_dir'] ?? null,
             'width' => $item['width'] ?? null,
@@ -496,7 +601,10 @@ class DesignImageQueue
             'usage_type' => $event['render_kind'],
             'quantity' => 1,
             'unit' => 'render',
+            // Cot NOT NULL, nen `unpriced` van phai ghi 0. `metadata_json` la cho
+            // duy nhat phan biet duoc "chua dinh gia" voi "mien phi".
             'cost_usd' => (float) ($item['cost'] ?? 0),
+            'metadata_json' => ['pricing' => (string) ($item['pricing'] ?? 'estimated')],
         ]);
     }
 }

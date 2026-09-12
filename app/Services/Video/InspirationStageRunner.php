@@ -103,7 +103,7 @@ class InspirationStageRunner
     }
 
     /**
-     * Xem ghi chu cung ten o ConceptStageRunner.
+     * Xem ghi chu cung ten o VideoProjectService::runCanonicalConcept().
      *
      * @return array<string, mixed>
      */

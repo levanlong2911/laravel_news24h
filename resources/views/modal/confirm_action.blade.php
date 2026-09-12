@@ -4,7 +4,8 @@
             <div class="modal-body">
                 <p class="p-3 text-center mb-0">{{ $content }}</p>
                 @if(($detail ?? '') !== '')
-                    <p class="text-center text-muted mb-0" style="font-size:.82rem">{{ $detail }}</p>
+                    <p class="text-center text-muted mb-0" style="font-size:.82rem"
+                       @if(($detailId ?? '') !== '') id="{{ $detailId }}" @endif>{{ $detail }}</p>
                 @endif
             </div>
             <div class="modal-footer justify-content-between">

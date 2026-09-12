@@ -7,9 +7,13 @@ return [
 
     'api_token' => env('VIDEO_API_TOKEN'),
 
+    'render_worker_token' => env('RENDER_WORKER_TOKEN'),
+
     'runner' => [
         'python_bin' => env('VIDEO_PYTHON_BIN', 'python'),
         'runner_dir' => env('VIDEO_RUNNER_DIR', ''),
+
+        'artifact_root' => env('VIDEO_RENDER_ARTIFACT_ROOT', ''),
 
         'log_dir' => env('VIDEO_RUNNER_LOG_DIR', storage_path('logs/video-runner')),
 
@@ -19,6 +23,14 @@ return [
     'sync_render' => (bool) env('VIDEO_SYNC_RENDER', true),
 
     'render_mode' => env('VIDEO_RENDER_MODE', 'direct'),
+
+    'openai_image' => [
+        'disk' => env('VIDEO_IMAGE_DISK', 'video_artifacts'),
+
+        'memory_limit' => env('VIDEO_IMAGE_MEMORY_LIMIT', '1024M'),
+
+        'timeout' => (int) env('VIDEO_IMAGE_TIMEOUT', 300),
+    ],
 
     'python_runner_enabled' => (bool) env('VIDEO_PYTHON_RUNNER', true),
 
@@ -66,19 +78,74 @@ return [
                         'equals' => 'length_to_beam_ratio',
                         'tolerance' => 0.08,
                     ],
+                    [
+                        'kind' => 'equals',
+                        'left' => 'visible_deck_tiers',
+                        'right' => 'openings.aperture_bands',
+                    ],
+                ],
+
+                'prose_count_guard' => [
+                    'nouns' => [
+                        'deck', 'decks', 'tier', 'tiers', 'level', 'levels',
+                        'storey', 'storeys', 'stories',
+                    ],
+                    'max_filler_words' => 2,
                 ],
 
                 'design_spec_export' => [
                     'schema_version' => '1.0',
 
                     'invariants' => [
-                        'length_to_beam_ratio',
-                        'bow_geometry',
-                        'stern_geometry',
-                        'continuous_sheer',
-                        'superstructure_envelope',
-                        'enclosed_deck_level_count',
-                        'opening_layout',
+                        [
+                            'name' => 'length_to_beam_ratio',
+                            'source_path' => 'dimensions.length_to_beam_ratio',
+                            'constraint_type' => 'proportion',
+                            'severity' => 'hard',
+                            'visual_verification' => false,
+                        ],
+                        [
+                            'name' => 'bow_geometry',
+                            'source_path' => 'permanent_geometry.bow',
+                            'constraint_type' => 'geometry',
+                            'severity' => 'hard',
+                            'visual_verification' => true,
+                        ],
+                        [
+                            'name' => 'stern_geometry',
+                            'source_path' => 'permanent_geometry.stern',
+                            'constraint_type' => 'geometry',
+                            'severity' => 'hard',
+                            'visual_verification' => true,
+                        ],
+                        [
+                            'name' => 'continuous_sheer',
+                            'source_path' => 'permanent_geometry.hull.sheer',
+                            'constraint_type' => 'continuity',
+                            'severity' => 'hard',
+                            'visual_verification' => true,
+                        ],
+                        [
+                            'name' => 'superstructure_envelope',
+                            'source_path' => 'permanent_geometry.superstructure.envelope',
+                            'constraint_type' => 'geometry',
+                            'severity' => 'hard',
+                            'visual_verification' => true,
+                        ],
+                        [
+                            'name' => 'enclosed_deck_level_count',
+                            'source_path' => 'permanent_geometry.superstructure.enclosed_deck_levels',
+                            'constraint_type' => 'count',
+                            'severity' => 'hard',
+                            'visual_verification' => true,
+                        ],
+                        [
+                            'name' => 'opening_layout',
+                            'source_path' => 'permanent_geometry.openings',
+                            'constraint_type' => 'layout',
+                            'severity' => 'hard',
+                            'visual_verification' => true,
+                        ],
                     ],
 
                     'export_aliases' => [
@@ -115,6 +182,7 @@ return [
                 ],
 
                 'concept_antipatterns' => [
+                    'the category default: a three-tier stepped superstructure set aft on a long foredeck, a raked stem, a reverse transom with full-beam swim platform, and continuous horizontal glazing bands',
                     'independent horizontal slabs stacked like a wedding cake',
                     'apartment-block or cruise-ship massing',
                     'decorative mast, radar domes, antennas unless required by source evidence',
@@ -252,12 +320,73 @@ return [
         ],
     ],
 
+    'environment' => [
+        'profiles' => [
+            'yacht' => 'vessel_v2',
+        ],
+    ],
+
+    'scene_plan' => [
+        'prompt_path' => resource_path('ai/prompts/scene_plan_v3.txt'),
+
+        'prompt_version' => env('SCENE_PLAN_PROMPT_VERSION', 'scene-plan-v3'),
+
+        'model' => env('SCENE_PLAN_MODEL'),
+
+        /*
+         * Gioi han van hanh, KHONG phai ngan sach da do. Nen 261 token/scene o
+         * ban v1; v2 them bon truong moi va reasoning nam trong cung ngan sach.
+         */
+        'max_tokens' => (int) env('SCENE_PLAN_MAX_TOKENS', 32000),
+
+        'max_scenes' => (int) env('SCENE_PLAN_MAX_SCENES', 24),
+
+        'profile_dir' => resource_path('ai/profiles/scene_planning'),
+
+        'profiles' => [
+            'yacht' => 'vessel_v1',
+        ],
+
+        /*
+         * Ca hai deu nullable. `seconds_per_clip` la do dai clip nha cung cap
+         * that su sinh ra, nen chua chon provider thi chua co so. Thieu ca hai
+         * thi planner van quyet N bang san + coverage + muc chi tiet.
+         */
+        /*
+         * `model` de trong thi reviewer dung dung model cua author. Cung model
+         * KHONG phai kiem dinh doc lap — no chi la mot luot doc lai.
+         */
+        'review' => [
+            'enabled' => (bool) env('SCENE_REVIEW_ENABLED', true),
+            'prompt_path' => resource_path('ai/prompts/scene_review_v3.txt'),
+            'prompt_version' => env('SCENE_REVIEW_PROMPT_VERSION', 'scene-review-v3'),
+            'model' => env('SCENE_REVIEW_MODEL'),
+            'max_tokens' => (int) env('SCENE_REVIEW_MAX_TOKENS', 32000),
+            'max_rounds' => (int) env('SCENE_REVIEW_MAX_ROUNDS', 2),
+        ],
+
+        'target_duration_seconds' => is_numeric(env('SCENE_PLAN_TARGET_DURATION_SECONDS'))
+            ? (int) env('SCENE_PLAN_TARGET_DURATION_SECONDS')
+            : null,
+
+        'seconds_per_clip' => is_numeric(env('SCENE_PLAN_SECONDS_PER_CLIP'))
+            ? (int) env('SCENE_PLAN_SECONDS_PER_CLIP')
+            : null,
+    ],
+
     'creation_arc' => [
         'categories' => [
             'yacht' => 'vessel',
 
             'cars' => 'restoration',
             'moto' => 'restoration',
+        ],
+
+        'subject_classes' => [
+            'yacht' => 'superyacht',
+
+            'cars' => 'car',
+            'moto' => 'motorcycle',
         ],
 
         'phase_sets' => [
@@ -355,6 +484,27 @@ return [
                             'The grinder advances along the seam and a smooth faired strip remains behind it, the finished stretch extending continuously while the rough section ahead grows shorter.',
                             'A tight fan of orange sparks streams from the contact point and travels with the grinder, always originating exactly where the disc meets the hull.',
                             'Fine dust drifts down the hull face below the contact point, settling on the platform rail.',
+                        ],
+                    ],
+
+                    'sea_trial' => [
+                        'requires_state' => 'finished_vessel',
+                        'purpose' => 'ACTION',
+                        'render_strategy' => 'VIDEO',
+                        'objective' => 'Prove the vessel works — the first time the hull is driven against open water rather than held by the yard.',
+
+                        'camera_target' => 'bow_wave',
+                        'hero' => 'bow_wave',
+
+                        'camera' => ['framing' => 'WIDE', 'movement' => 'TRACK', 'speed' => 'MEDIUM'],
+                        'aesthetic' => ['emotion' => 'DRAMATIC', 'composition' => 'RULE_OF_THIRDS', 'light_intensity' => 'NEUTRAL', 'light_grade' => 'COOL'],
+                        'setting' => ['environment' => 'open_coastal_water'],
+                        'crowd' => ['crew' => 2],
+                        'composition_note' => '{hero_name} runs at trial speed across open grey-blue water under an overcast morning sky, two crew in high-visibility jackets standing at the bridge wing rail, no land in frame.',
+                        'micro_physics' => [
+                            'A bow wave builds continuously along the fine forward entry and peels outward, its crest lengthening astern as the vessel holds speed.',
+                            'The wake behind the transom widens and flattens with distance, its centre line staying aligned with the hull.',
+                            'Spray lifts from the bow shoulder and falls back to the water surface, never rising above the sheerline.',
                         ],
                     ],
 

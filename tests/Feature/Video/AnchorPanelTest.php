@@ -184,24 +184,6 @@ class AnchorPanelTest extends TestCase
         $this->assertStringNotContainsString('sổ cái', $html);
     }
 
-    public function test_pressing_render_holds_the_cell_before_calling_the_provider(): void
-    {
-        // Cau dao `VIDEO_PYTHON_RUNNER=false` chan tien trinh Python, nen luot nay
-        // ket thuc o `failed` — dung the: nguoi dung thay ly do va bam lai duoc.
-        $cell = $this->cell(DesignImageStatus::CANDIDATE->value);
-
-        $this->from(route('video-projects.anchor', $this->project->id))
-            ->post(route('video-projects.design-image-enqueue', [$this->project->id, $cell->id]))
-            ->assertRedirect(route('video-projects.anchor', $this->project->id))
-            ->assertSessionHas('error');
-
-        $cell->refresh();
-
-        $this->assertSame(DesignImageStatus::FAILED->value, $cell->status);
-        $this->assertStringContainsString('VIDEO_PYTHON_RUNNER', $cell->render_error);
-        $this->assertContains($cell->status, DesignImageStatus::enqueueableValues());
-    }
-
     public function test_the_prompt_box_sends_nothing_and_the_form_sends_only_its_hash(): void
     {
         // O prompt khong co `name`, nen trinh duyet khong gui gi tu no du no nam

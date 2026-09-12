@@ -12,7 +12,7 @@ class VideoCostEntry extends Model
     protected $fillable = [
         'project_id', 'session_id', 'entity_type', 'entity_id', 'stage',
         'provider', 'model', 'usage_type', 'quantity', 'unit', 'cost_usd',
-        'metadata_json',
+        'metadata_json', 'cost_idempotency_key',
     ];
 
     protected $casts = [

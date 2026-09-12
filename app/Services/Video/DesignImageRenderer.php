@@ -41,6 +41,11 @@ class DesignImageRenderer
      */
     public function renderNow(string $imageId): array
     {
+        $existing = VideoDesignImage::query()->find($imageId);
+        if ($existing !== null && ($existing->prompt_spec_json['operation'] ?? 'generate') === 'edit') {
+            return [$existing, 'edit_not_supported_by_worker'];
+        }
+
         [$image, $reason] = $this->queue->enqueue($imageId);
 
         if ($image === null || $reason === 'not_enqueueable') {

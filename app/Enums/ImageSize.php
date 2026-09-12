@@ -14,6 +14,13 @@ enum ImageSize: string
     case SQUARE_2K = '2048x2048';
     case LANDSCAPE_2K = '2048x1152';
     case LANDSCAPE_4K = '3840x2160';
+
+    /*
+     * Ba kho 9:16 chuan. `PORTRAIT` 1024x1536 la 2:3, KHONG phai 9:16.
+     * Rang buoc gpt-image-2: hai canh chia het 16, tong diem anh 655.360-8.294.400.
+     */
+    case VERTICAL_HD = '720x1280';
+    case VERTICAL_2K = '1152x2048';
     case PORTRAIT_4K = '2160x3840';
 
     /** @return list<string> */

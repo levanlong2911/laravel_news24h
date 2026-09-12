@@ -2,23 +2,50 @@
 
 namespace Tests\Video\RenderPlan;
 
-use App\Video\Concept\CreativeConcept;
-use App\Video\Concept\FormRelationships;
+use App\Video\Concept\Canonical\CanonicalDesignSpec;
 use App\Video\RenderPlan\CreativeRenderPlanBuilder;
 use App\Video\RenderPlan\RenderPlanMeta;
 use PHPUnit\Framework\TestCase;
 
 class CreativeRenderPlanBuilderTest extends TestCase
 {
+    private function concept(): CanonicalDesignSpec
+    {
+        return CanonicalDesignSpec::fromArray([
+            'schema_version' => '1.0',
+            'object_type' => 'yacht',
+            'design_thesis' => ['text' => 'One continuous line governs the object.', 'role' => 'soft_design_guidance'],
+            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['enclosed_deck_level_count']],
+            'dimensions' => ['length_m' => 80.0],
+            'permanent_geometry' => ['superstructure' => ['enclosed_deck_levels' => 4]],
+            'relationships' => [[
+                'id' => 'R001',
+                'type' => 'count',
+                'subject_path' => 'permanent_geometry.superstructure.enclosed_deck_levels',
+                'value' => 4,
+            ]],
+            'form_relationships' => ['governing_line' => 'one line'],
+            'finished_materials' => ['hull' => ['material' => 'aluminium']],
+            'exclusions' => [['id' => 'E001', 'target_path' => 'permanent_geometry', 'forbid' => 'cantilever']],
+            'invariants' => [[
+                'id' => 'I001',
+                'name' => 'enclosed_deck_level_count',
+                'source_path' => 'permanent_geometry.superstructure.enclosed_deck_levels',
+                'constraint_type' => 'count',
+                'severity' => 'hard',
+                'visual_verification' => true,
+            ]],
+            'provenance' => [[
+                'target_path' => 'dimensions',
+                'origin' => 'invented',
+                'source_aspects' => [],
+            ]],
+        ]);
+    }
+
     public function test_it_builds_the_plan_directly_from_the_concept_and_dynamic_phases(): void
     {
-        $concept = new CreativeConcept(
-            'One line governs the form.',
-            ['length' => 80.0],
-            [],
-            [],
-            new FormRelationships('one line', 'measured volumes', 'integrated features'),
-        );
+        $concept = $this->concept();
         $phase = [
             'purpose' => 'ESTABLISH',
             'objective' => 'Show the design.',

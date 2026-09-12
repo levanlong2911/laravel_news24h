@@ -19,6 +19,7 @@ use App\Http\Controllers\ModalConfirmController;
 use App\Http\Controllers\NewsWebController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\TagController;
+use App\Http\Controllers\VideoArtifactController;
 use App\Http\Controllers\VideoProjectsController;
 use App\Http\Controllers\VideoSessionController;
 use App\Models\VideoSession;
@@ -154,17 +155,25 @@ Route::group(
         Route::post('/{id}/anchor-image',       [VideoProjectsController::class, 'createAnchorImage'])->name('video-projects.anchor-image');
         Route::post('/{id}/anchor/compile',     [VideoProjectsController::class, 'compileAnchorPrompt'])->name('video-projects.anchor-compile');
         Route::post('/{id}/design-images/{imageId}/enqueue', [VideoProjectsController::class, 'renderDesignImage'])->name('video-projects.design-image-enqueue');
-        Route::get('/{id}/reference',           [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
+        Route::post('/{id}/anchor/approve',      [VideoProjectsController::class, 'approveAnchor'])->name('video-projects.anchor-approve');
+        Route::post('/{id}/reference/approve', [VideoProjectsController::class, 'approveReference'])->name('video-projects.reference-approve');
+        Route::match(['get', 'post'], '/{id}/reference', [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
+        Route::post('/{id}/environment/approve', [VideoProjectsController::class, 'approveEnvironment'])->name('video-projects.environment-approve');
+        Route::match(['get', 'post'], '/{id}/environment', [VideoProjectsController::class, 'environment'])->name('video-projects.environment');
+        Route::get('/{id}/scene/{scene?}/{step?}', [VideoProjectsController::class, 'scene'])->name('video-projects.scene');
+        Route::post('/{id}/scenes/plan',        [VideoProjectsController::class, 'planScenes'])->name('video-projects.scenes-plan');
+        Route::get('/{id}/scenes/{sceneId}/keyframe/preview', [VideoProjectsController::class, 'sceneKeyframePreview'])->name('video-projects.scene-keyframe-preview');
+        Route::post('/{id}/scenes/{sceneId}/keyframe',        [VideoProjectsController::class, 'renderSceneKeyframe'])->name('video-projects.scene-keyframe-render');
+        Route::get('/{id}/scene-keyframes/{image}/state',     [VideoProjectsController::class, 'sceneKeyframeState'])->name('video-projects.scene-keyframe-state');
+        Route::post('/{id}/scene-keyframes/{image}/retry',    [VideoProjectsController::class, 'retrySceneKeyframe'])->name('video-projects.scene-keyframe-retry');
+        Route::post('/{id}/scene-keyframes/{image}/approve',  [VideoProjectsController::class, 'approveSceneKeyframe'])->name('video-projects.scene-keyframe-approve');
     });
+
+    Route::get('/video-artifacts/{artifact}', [VideoArtifactController::class, 'show'])->name('video-artifacts.show');
 
     // video sessions — approval gate: duyệt prompt trên màn hình rồi mới render (ADR v1.1)
     Route::group(['prefix' => 'video-session'], function () {
         Route::get('/',                    [VideoSessionController::class, 'index'])->name('video-session.index');
-        // Route::match(['get','post'],'/add',         [VideoSessionController::class, 'add'])    ->name('video-session.add');
-        Route::match(['get','post'],'/creat-video/{id}',[VideoSessionController::class, 'creatVideo'])       ->name('video-session.creatVideo');
-        Route::get('/{id}/anchor',                [VideoSessionController::class, 'imageAnchor'])->name('video-session.imageAnchor');
-        Route::get('/{id}/reference',                [VideoSessionController::class, 'imageReference'])->name('video-session.imageReference');
-        Route::get('/{id}/scene/{scene}/{step?}', [VideoSessionController::class, 'scene'])->name('video-session.scene');
         Route::post('/{id}/approve-selected', [VideoSessionController::class, 'approveSelected'])->name('video-session.approve-selected');
         Route::post('/{id}/queue',         [VideoSessionController::class, 'queueApproved'])->name('video-session.queue');
         // 🔍 Thử render — không gọi vendor, không đổi dữ liệu
@@ -231,11 +240,3 @@ Route::group(
 Route::middleware('auth:sanctum')->get('/posts', function () {
     return \App\Models\Post::latest()->get();
 });
-
-// Route::get('/test-domain', function () {
-//     dd(
-//         function_exists('currentDomain'),
-//         currentDomain(),
-//         request()->getHost()
-//     );
-// });

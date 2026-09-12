@@ -21,8 +21,6 @@ use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use App\Services\Admin\AdminService;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\PlanningStageStore;
-use App\Video\Concept\ClaudeConceptDesigner;
-use App\Video\Concept\Viewpoint;
 use App\Video\Pipeline\PipelineAborted;
 use App\Video\RenderPlan\RenderPlanAssembler;
 use App\Video\RenderPlan\RenderPlanMeta;
@@ -156,7 +154,11 @@ class VideoSessionService
             $token,
             $design->rawResponse,
             $design->concept->toArray(),
-            ['model' => ClaudeConceptDesigner::MODEL, 'instruction_version' => ClaudeConceptDesigner::INSTRUCTION_VERSION],
+            [
+                'model' => 'canonical',
+                'provider_model' => (string) config('canonical_concept.anthropic.model'),
+                'instruction_version' => (string) config('canonical_concept.prompt_version'),
+            ],
         );
 
         return [true, 'ok'];
@@ -282,7 +284,10 @@ class VideoSessionService
 
     private function createPlanningSession(Article $article, string $adminId): VideoSession
     {
-        $project = $this->videoProjectRepository->findOrCreateByArticleId($article);
+        $project = $this->videoProjectRepository->findOrCreateByArticleId(
+            $article,
+            \App\Models\Admin::find($adminId),
+        );
 
         return $this->sessionRepository->create([
             'project_id' => $project->id,
@@ -1516,41 +1521,4 @@ class VideoSessionService
         ]);
     }
 
-    /**
-     * @return array{0: ?string, 1: string} [$prompt, $reason]
-     *                                      reason: session_not_found|admin_not_found|claimed_by_other|missing_concept|failed|ok
-     */
-    public function renderImageAnchor(string $id, Viewpoint $viewpoint = Viewpoint::FrontThreeQuarter): array
-    {
-        $session = VideoSession::query()->whereKey($id)->first();
-
-        if ($session === null) {
-            return [null, 'session_not_found'];
-        }
-
-        [$ok, $reason] = $this->runConceptStage($session->code);
-
-        if (! $ok) {
-            return [null, $reason];
-        }
-
-        $concept = $this->stageStore->outputOf(
-            $session->id,
-            (int) $session->planning_revision,
-            PlanningStageName::CONCEPT,
-        );
-
-        if (! is_array($concept) || $concept === []) {
-            return [null, 'missing_concept'];
-        }
-
-        return [
-            $this->renderPlanService->anchorPrompt(
-                $this->articleRepository->show($session->article_id),
-                $concept,
-                $viewpoint,
-            ),
-            'ok',
-        ];
-    }
 }

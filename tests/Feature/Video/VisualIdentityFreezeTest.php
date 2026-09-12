@@ -42,16 +42,44 @@ class VisualIdentityFreezeTest extends TestCase
         $this->store = new VisualIdentityStore;
     }
 
-    /** @param array<string, mixed> $overrides */
+    /**
+     * Ba nhanh ban sac cua CanonicalDesignSpec — dung ba nhanh ma
+     * freezeFromConcept() dong bang.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
     private function concept(array $overrides = []): array
     {
-        return ['design_identity' => array_replace([
-            'design_length_m' => 120.0,
-            'design_beam_m' => 17.5,
-            'length_to_beam_ratio' => 6.9,
-            'bow' => ['stem' => 'near_plumb', 'rake_degrees' => 8.0],
-            'hull_colour' => 'graphite grey satin',
-        ], $overrides)];
+        return array_replace_recursive([
+            'dimensions' => [
+                'length_m' => 120.0,
+                'beam_m' => 17.5,
+                'length_to_beam_ratio' => 6.857,
+            ],
+            'permanent_geometry' => [
+                'bow' => ['stem' => 'near_plumb', 'rake_degrees' => 8.0],
+            ],
+            'finished_materials' => [
+                'hull' => ['colour' => 'graphite grey satin'],
+            ],
+        ], $overrides);
+    }
+
+    /**
+     * Phan ma freezeFromConcept() thuc su bam, tach rieng de test hash goi
+     * duoc truc tiep.
+     *
+     * @param  array<string, mixed>  $concept
+     * @return array<string, mixed>
+     */
+    private function identityOf(array $concept): array
+    {
+        return array_filter([
+            'dimensions' => $concept['dimensions'] ?? null,
+            'permanent_geometry' => $concept['permanent_geometry'] ?? null,
+            'finished_materials' => $concept['finished_materials'] ?? null,
+        ], static fn (mixed $branch): bool => is_array($branch) && $branch !== []);
     }
 
     public function test_freezing_a_concept_creates_the_first_revision(): void
@@ -83,7 +111,7 @@ class VisualIdentityFreezeTest extends TestCase
     public function test_a_changed_identity_opens_a_new_revision(): void
     {
         $this->store->freezeFromConcept($this->project->id, $this->concept());
-        $second = $this->store->freezeFromConcept($this->project->id, $this->concept(['length_to_beam_ratio' => 6.2]));
+        $second = $this->store->freezeFromConcept($this->project->id, $this->concept(['dimensions' => ['length_to_beam_ratio' => 6.2]]));
 
         $this->assertSame(2, $second->version);
         $this->assertSame(2, VideoVisualIdentity::where('project_id', $this->project->id)->count());
@@ -92,11 +120,11 @@ class VisualIdentityFreezeTest extends TestCase
     public function test_the_hash_ignores_the_order_the_model_wrote_the_keys_in(): void
     {
         $ordered = $this->concept();
-        $shuffled = ['design_identity' => array_reverse($ordered['design_identity'], true)];
+        $shuffled = array_reverse($ordered, true);
 
         $this->assertSame(
-            $this->store->hash($ordered['design_identity']),
-            $this->store->hash($shuffled['design_identity']),
+            $this->store->hash($this->identityOf($ordered)),
+            $this->store->hash($this->identityOf($shuffled)),
         );
 
         $first = $this->store->freezeFromConcept($this->project->id, $ordered);
@@ -107,37 +135,41 @@ class VisualIdentityFreezeTest extends TestCase
 
     public function test_the_hash_ignores_key_order_inside_a_nested_slot(): void
     {
-        $a = $this->concept(['bow' => ['stem' => 'near_plumb', 'rake_degrees' => 8.0]]);
-        $b = $this->concept(['bow' => ['rake_degrees' => 8.0, 'stem' => 'near_plumb']]);
+        $a = $this->concept();
+        $b = $this->concept();
+        $b['permanent_geometry']['bow'] = ['rake_degrees' => 8.0, 'stem' => 'near_plumb'];
 
         $this->assertSame(
-            $this->store->hash($a['design_identity']),
-            $this->store->hash($b['design_identity']),
+            $this->store->hash($this->identityOf($a)),
+            $this->store->hash($this->identityOf($b)),
         );
     }
 
     public function test_the_frozen_row_holds_the_identity_and_nothing_else_from_the_concept(): void
     {
         $identity = $this->store->freezeFromConcept($this->project->id, $this->concept() + [
-            'design_thesis' => 'One shell carries the whole hull.',
-            'decisions' => [['aspect' => 'capacity', 'provenance' => 'invented', 'decision' => 'Six cabins.']],
+            'design_thesis' => ['text' => 'One shell carries the whole hull.', 'role' => 'soft_design_guidance'],
+            'provenance' => [['target_path' => 'dimensions', 'origin' => 'invented', 'source_aspects' => []]],
+            'invariants' => [['id' => 'I001', 'name' => 'x', 'source_path' => 'dimensions.length_m',
+                'constraint_type' => 'exact_value', 'severity' => 'hard', 'visual_verification' => true]],
         ]);
 
-        $this->assertArrayHasKey('design_length_m', $identity->identity_json);
+        $this->assertArrayHasKey('dimensions', $identity->identity_json);
         $this->assertArrayNotHasKey('design_thesis', $identity->identity_json);
-        $this->assertArrayNotHasKey('decisions', $identity->identity_json);
+        $this->assertArrayNotHasKey('provenance', $identity->identity_json);
+        $this->assertArrayNotHasKey('invariants', $identity->identity_json);
     }
 
     public function test_a_concept_without_an_identity_freezes_nothing(): void
     {
-        $this->assertNull($this->store->freezeFromConcept($this->project->id, ['design_thesis' => 'x']));
-        $this->assertNull($this->store->freezeFromConcept($this->project->id, ['design_identity' => []]));
+        $this->assertNull($this->store->freezeFromConcept($this->project->id, ['design_thesis' => ['text' => 'x']]));
+        $this->assertNull($this->store->freezeFromConcept($this->project->id, ['dimensions' => []]));
     }
 
     public function test_the_latest_revision_is_the_one_offered(): void
     {
         $this->store->freezeFromConcept($this->project->id, $this->concept());
-        $second = $this->store->freezeFromConcept($this->project->id, $this->concept(['design_beam_m' => 18.0]));
+        $second = $this->store->freezeFromConcept($this->project->id, $this->concept(['dimensions' => ['beam_m' => 18.0]]));
 
         $this->assertSame($second->id, $this->store->latestForProject($this->project->id)?->id);
     }
@@ -152,7 +184,12 @@ class VisualIdentityFreezeTest extends TestCase
             \App\Enums\AnchorStage::cases()[0],
             \App\Video\Concept\Viewpoint::cases()[0],
             \App\Enums\ImageSize::cases()[0],
-            $prompt,
+            \App\Video\Concept\Handoff\CompiledAnchorPrompt::fromPython([
+                'prompt' => $prompt,
+                'prompt_hash' => hash('sha256', $prompt),
+                'provider' => \App\Enums\ImageModel::GPT_IMAGE_2->provider(),
+                'model' => \App\Enums\ImageModel::GPT_IMAGE_2->value,
+            ], 'revision-for-test'),
             $concept,
         );
 
@@ -191,13 +228,13 @@ class VisualIdentityFreezeTest extends TestCase
 
     public function test_the_preview_stamps_the_concept_it_compiled_not_the_newest_identity(): void
     {
-        $newer = $this->store->freezeFromConcept($this->project->id, $this->concept(['design_beam_m' => 18.0]));
+        $newer = $this->store->freezeFromConcept($this->project->id, $this->concept(['dimensions' => ['beam_m' => 18.0]]));
 
         $preview = $this->compilePreview($this->concept());
 
         $this->assertNotSame($newer->id, $preview['identity_id']);
         $this->assertSame(2, $preview['identity_version']);
-        $this->assertSame($this->store->hash($this->concept()['design_identity']), $preview['identity_hash']);
+        $this->assertSame($this->store->hash($this->identityOf($this->concept())), $preview['identity_hash']);
     }
 
     public function test_a_concept_rerun_between_compile_and_generate_does_not_move_the_image(): void
@@ -207,7 +244,7 @@ class VisualIdentityFreezeTest extends TestCase
         $preview = $this->compilePreview($this->concept());
         $first = $this->store->latestForProject($this->project->id);
 
-        $second = $this->store->freezeFromConcept($this->project->id, $this->concept(['design_beam_m' => 18.0]));
+        $second = $this->store->freezeFromConcept($this->project->id, $this->concept(['dimensions' => ['beam_m' => 18.0]]));
         $this->assertNotSame($first->id, $second->id);
         $this->assertSame($second->id, $this->store->latestForProject($this->project->id)->id);
 
@@ -248,72 +285,6 @@ class VisualIdentityFreezeTest extends TestCase
 
         $this->assertSame('already_exists', $reason);
         $this->assertSame($bare->id, $again->id);
-    }
-
-    /** @param array<string, mixed> $designIdentity */
-    private function runConceptStage(array $designIdentity): array
-    {
-        $stage = new \App\Models\VideoPlanningStage;
-        $stage->id = (string) \Illuminate\Support\Str::uuid();
-        $stage->project_id = $this->project->id;
-
-        $concept = new \App\Video\Concept\CreativeConcept(
-            'One shell carries the whole hull.',
-            $designIdentity,
-            [],
-            [],
-            new \App\Video\Concept\FormRelationships('a line', 'a rhythm', 'an integration'),
-        );
-
-        $renderPlan = $this->createMock(\App\Services\VideoRenderPlanService::class);
-        $renderPlan->method('renderConceptStage')->willReturn(
-            new \App\Video\Concept\ConceptDesignResult($concept, [], 1, '{"raw":true}'),
-        );
-        $renderPlan->method('lastUsage')->willReturn(null);
-
-        $runner = new \App\Services\Video\ConceptStageRunner(
-            $this->createMock(\App\Services\Video\PlanningStageStore::class),
-            $renderPlan,
-            $this->store,
-        );
-
-        return $runner->goToSonnet(
-            $stage,
-            'a-claim-token',
-            new \App\Models\Article,
-            new \App\Video\Inspiration\InspirationBrief([], 'a focus', [], []),
-        );
-    }
-
-    public function test_a_succeeded_concept_stage_freezes_its_identity(): void
-    {
-        \Illuminate\Support\Facades\Log::spy();
-
-        [$output, $reason] = $this->runConceptStage($this->concept()['design_identity']);
-
-        $this->assertSame('ok', $reason);
-        $this->assertSame(1, VideoVisualIdentity::where('project_id', $this->project->id)->count());
-        $this->assertSame(
-            $this->store->hash($output['design_identity']),
-            $this->store->latestForProject($this->project->id)->identity_hash,
-        );
-
-        \Illuminate\Support\Facades\Log::shouldNotHaveReceived('warning');
-    }
-
-    public function test_a_concept_stage_whose_freeze_finds_nothing_still_succeeds_but_warns(): void
-    {
-        \Illuminate\Support\Facades\Log::spy();
-
-        [, $reason] = $this->runConceptStage([]);
-
-        $this->assertSame('ok', $reason);
-        $this->assertSame(0, VideoVisualIdentity::where('project_id', $this->project->id)->count());
-
-        \Illuminate\Support\Facades\Log::shouldHaveReceived('warning')
-            ->once()
-            ->withArgs(fn (string $message, array $context) => $message === 'concept-stage: visual identity freeze skipped'
-                && $context['project_id'] === $this->project->id);
     }
 
     public function test_the_hash_keeps_the_order_of_a_list_because_that_order_can_carry_meaning(): void

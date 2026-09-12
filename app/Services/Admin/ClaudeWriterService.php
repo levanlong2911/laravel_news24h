@@ -241,7 +241,11 @@ class ClaudeWriterService
                 if ($httpStatus === 400) {
                     Log::error('Claude 400 Bad Request', ['body' => $body]);
 
-                    return new ClaudeResponse('', 0, 0);
+                    $message = is_array($json)
+                        ? (string) ($json['error']['message'] ?? $body)
+                        : (string) $body;
+
+                    throw new \RuntimeException("Claude 400 Bad Request: {$message}");
                 }
 
                 $lastError = "HTTP {$httpStatus}: ".($json['error']['message'] ?? $body);

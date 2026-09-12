@@ -36,6 +36,13 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->onFailure(fn () => \Log::error('Scheduler: video:reclaim-expired-design-image-leases failed'));
 
+        // Lease render 120s (§14.89): heartbeat 30s nen mot phut du bat kip,
+        // va worker chet o SUBMITTING phai duoc danh provider_unknown som.
+        $schedule->command('video:recover-expired-render-leases')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->onFailure(fn () => \Log::error('Scheduler: video:recover-expired-render-leases failed'));
+
         $schedule->command('video:prune-runner-logs')
             ->dailyAt('03:30')
             ->withoutOverlapping()

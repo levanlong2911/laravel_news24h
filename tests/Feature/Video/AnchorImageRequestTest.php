@@ -340,6 +340,7 @@ class AnchorImageRequestTest extends TestCase
                 'stage' => 'fabrication_geometry_anchor',
                 'viewpoint' => 'front_three_quarter',
                 'size' => $size,
+                'model' => 'gpt-image-2',
             ],
         );
 
@@ -432,6 +433,7 @@ class AnchorImageRequestTest extends TestCase
                 'stage' => 'fabrication_geometry_anchor',
                 'viewpoint' => 'front_three_quarter',
                 'size' => '1536x1024',
+                'model' => 'gpt-image-2',
             ],
         );
 
@@ -480,6 +482,7 @@ class AnchorImageRequestTest extends TestCase
                 'stage' => 'finished_identity_anchor',
                 'viewpoint' => 'side',
                 'size' => '1536x1024',
+                'model' => 'gpt-image-2',
             ]);
 
         $this->assertCount(1, $calls);
@@ -500,6 +503,7 @@ class AnchorImageRequestTest extends TestCase
                 'stage' => 'finished_identity_anchor',
                 'viewpoint' => 'side',
                 'size' => '1536x1024',
+                'model' => 'gpt-image-2',
             ])->assertRedirect(route('video-projects.anchor', $project->id));
 
         $project->refresh();
@@ -532,6 +536,7 @@ class AnchorImageRequestTest extends TestCase
                 'stage' => 'finished_identity_anchor',
                 'viewpoint' => 'front_three_quarter',
                 'size' => '1536x1024',
+                'model' => 'gpt-image-2',
             ])->assertRedirect(route('video-projects.anchor', $project->id));
 
         $html = $this->get(route('video-projects.anchor', $project->id))
@@ -647,6 +652,7 @@ class AnchorImageRequestTest extends TestCase
                 'stage' => 'fabrication_geometry_anchor',
                 'viewpoint' => 'front_three_quarter',
                 'size' => '1536x1024',
+                'model' => 'gpt-image-2',
             ]);
 
         $compile = array_values(array_filter(
@@ -669,6 +675,7 @@ class AnchorImageRequestTest extends TestCase
                 'stage' => 'fabrication_geometry_anchor',
                 'viewpoint' => 'front_three_quarter',
                 'size' => '1024x1536',
+                'model' => 'gpt-image-2',
             ]);
 
         $compile = array_values(array_filter(

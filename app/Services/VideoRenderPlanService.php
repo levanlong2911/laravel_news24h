@@ -7,13 +7,14 @@ use App\Models\Article;
 use App\Services\Video\CreativeProfileResolver;
 use App\Services\Video\ExtractionArtifactRecorder;
 use App\Video\Article\RawArticle;
-use App\Video\Concept\AnchorPrompt;
-use App\Video\Concept\ClaudeConceptDesigner;
+use App\Video\Concept\BuildCanonicalConcept;
+use App\Video\Concept\Canonical\CanonicalDesignSpec;
 use App\Video\Concept\ConceptDesignResult;
-use App\Video\Concept\CreativeConcept;
-use App\Video\Concept\CreativeConceptParser;
-use App\Video\Concept\InvalidCreativeConcept;
+use App\Video\Concept\ConceptInput;
+use App\Video\Concept\Exceptions\CanonicalValidationException;
+use App\Video\Concept\SonnetScreenConceptDesigner;
 use App\Video\Concept\Viewpoint;
+use App\Video\Profiles\CategoryCreativeProfileResolver as CanonicalProfileResolver;
 use App\Video\Inspiration\CategoryCreativeProfile;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Inspiration\InspirationBrief;
@@ -35,53 +36,12 @@ use App\Video\World\VerifiedWorldGraph;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-/**
- * Article -> RenderPlan. KHONG luu gi, KHONG doc/ghi VideoSession. `build()`
- * nhan `$videoSessionId` (2026-08-13) nhung CHI dung lam nhan ghi so — mot
- * chuoi di qua toi `recordUsage()`, khong bao gio query/load VideoSession —
- * giu dung tinh than "khong biet VideoSession ton tai" ban dau.
- *
- * Tach ra khoi VideoSessionService (2026-07-29) vi class do dang ganh HAI
- * trach nhiem: vong doi session (list/approve/queue/report — 8 method ngan) va
- * chay pipeline AI (dung LLM stack, pipeline, creation arc — keo theo 6 import
- * chang lien quan gi den session).
- *
- * Day KHONG phai abstraction moi: no soi guong dung quy uoc da co san phia CMS,
- * ghi trong CLAUDE.md — "ArticlePipelineService::run() is the single entry
- * point for AI writing... The caller owns persistence, status updates". Phia
- * CMS da tach nhu vay tu truoc; phia video den nay moi lam.
- *
- * Loi ich do duoc:
- *   - Test khong con phai di qua VideoSessionService (voi 4 mock repository
- *     chang lien quan) chi de cham toi applyCreationArc() — xem
- *     tests/Feature/Video/VideoRenderPlanServiceCreationArcTest.php.
- *
- * CHUA lam (dung ghi la da lam): VideoBenchmark van tu lap LLM stack + pipeline
- * o 2 cho rieng (benchmarkRunner/semanticRunner) vi no can boc them
- * CostAccumulatingLlmClient de cong don chi phi — thu ma production khong can.
- * Trung lap con do. Da chan duoc phan nguy hiem nhat: ca hai ben gio doc CUNG
- * config('video.llm_cost_ceiling_usd') thay vi benchmark hardcode 0.05, nen
- * khong con configuration drift ve tran chi phi.
- */
 class VideoRenderPlanService
 {
-    /**
-     * Nhan `action` trong `claude_usage_logs` — TACH KHOI 'send_to_claude' va
-     * 'synthesize' cua phia CMS de bao cao chia duoc chi phi video ra rieng.
-     * Hai luong dung chung bang nhung KHONG duoc lan nhau.
-     */
     public const USAGE_ACTION = 'video_renderplan';
 
     public const STAGE_USAGE_ACTION = 'video_concept_stage';
 
-    /**
-     * Accumulator cua lan `build()` GAN NHAT — de `recordUsage()` doc totals
-     * trong `finally`, ke ca khi pipeline nem.
-     *
-     * State trong service la co y va co gioi han: `build()` gan lai o dong dau,
-     * va service nay resolve theo tung request (khong bind singleton), nen
-     * khong co chuyen hai bai lan token cua nhau.
-     */
     private ?CostAccumulatingLlmClient $lastRun = null;
 
     /**
@@ -114,21 +74,11 @@ class VideoRenderPlanService
     public function __construct(
         private ClaudeWriterAdapter $claudeWriterAdapter,
         private VideoPipelineFactory $videoPipelineFactory,
-        // Ghi bang chung cua Truth Layer. O DAY chu khong o trong pipeline:
-        // `app/Video/` khong duoc biet Eloquent ton tai. Pipeline chi goi mot
-        // callable; closure duoc dinh nghia o tang nay.
         private ExtractionArtifactRecorder $artifactRecorder = new ExtractionArtifactRecorder,
         private CreativeProfileResolver $creativeProfileResolver = new CreativeProfileResolver,
     ) {}
 
     /**
-     * Chay that Truth -> Story -> Scene -> Intent -> Editorial -> Producer ->
-     * Director -> RenderPlan (VideoPlanningPipeline, §18), roi chen Creation
-     * Arc neu category khop.
-     *
-     * CANH BAO: goi Claude 11+ lan (Extractor + Producer + N x Director),
-     * thuc te 25-90 giay. Caller KHONG duoc boc ham nay trong DB transaction.
-     *
      * @return array<string, mixed> RenderPlan san sang json_encode
      */
     public function build(Article $article, ?string $videoSessionId = null): array
@@ -163,8 +113,6 @@ class VideoRenderPlanService
                     $category,
                     $accumulator,
                     $meta,
-                    $article,
-                    $videoSessionId,
                 );
             } finally {
                 $this->recordUsage($article, $videoSessionId);
@@ -429,23 +377,11 @@ class VideoRenderPlanService
         string $category,
         LlmClient $llm,
         RenderPlanMeta $meta,
-        Article $article,
-        ?string $videoSessionId,
     ): array {
         $profile = $this->profileOrFail($category);
 
         $brief = $this->inspirationStage($rawArticle, $profile, $llm)->brief;
-        $design = $this->conceptStage($brief, $profile, $llm);
-
-        if ($design->warnings !== []) {
-            Log::warning('video_creative_concept_warnings', [
-                'article_id' => $article->id,
-                'video_session_id' => $videoSessionId,
-                'category' => $category,
-                'attempts' => $design->attempts,
-                'warnings' => $design->warningsToArray(),
-            ]);
-        }
+        $design = $this->conceptStage($brief, $category);
 
         return $this->finalizeStage($design->concept, $meta, $llm, $profile);
     }
@@ -476,12 +412,18 @@ class VideoRenderPlanService
         InspirationBrief $brief,
         ?string $videoSessionId = null,
     ): ConceptDesignResult {
-        $profile = $this->profileOrFail((string) ($article->category?->slug ?? ''));
+        $category = (string) ($article->category?->slug ?? '');
+
+        // Van goi profileOrFail: no la cai chan category chua khai profile, va
+        // duong canonical phai tu choi o dung cho do chu khong di tiep bang
+        // profile fallback.
+        $this->profileOrFail($category);
+
         $accumulator = new CostAccumulatingLlmClient($this->spendingLlmClient());
         $this->lastRun = $accumulator;
 
         try {
-            return $this->conceptStage($brief, $profile, $accumulator);
+            return $this->conceptStage($brief, $category);
         } finally {
             $this->recordUsage($article, $videoSessionId, self::STAGE_USAGE_ACTION);
         }
@@ -494,6 +436,37 @@ class VideoRenderPlanService
      *
      * @return array<string, mixed>
      */
+    /**
+     * Concept cho man hinh /admin/video-projects/{id}/anchor.
+     *
+     * Chang nay chi goi Sonnet va luu creative_concept shape ma Python
+     * image_prompt compiler dang doc. Nut Compile Prompt moi goi Python.
+     *
+     * @return array<string, mixed>
+     */
+    public function renderScreenConceptStage(
+        Article $article,
+        InspirationBrief $brief,
+        ?string $videoSessionId = null,
+    ): array {
+        $category = (string) ($article->category?->slug ?? '');
+        $profile = $this->profileOrFail($category);
+
+        $accumulator = new CostAccumulatingLlmClient($this->spendingLlmClient());
+        $this->lastRun = $accumulator;
+
+        try {
+            return (new SonnetScreenConceptDesigner)->design(
+                llm: $accumulator,
+                brief: $brief,
+                profile: $profile,
+                objectType: $category,
+            );
+        } finally {
+            $this->recordUsage($article, $videoSessionId, self::STAGE_USAGE_ACTION);
+        }
+    }
+
     /** @return array{call_count:int,tokens_in:int,tokens_out:int,cost_usd:float,latency_ms:int,provider_model:string,thinking_tokens:int}|null */
     public function lastUsage(): ?array
     {
@@ -522,7 +495,11 @@ class VideoRenderPlanService
         ?string $videoSessionId = null,
     ): array {
         $profile = $this->profileOrFail((string) ($article->category?->slug ?? ''));
-        $concept = (new CreativeConceptParser)->parse($conceptRaw)->canonicalised($profile);
+        // Ban da luu ROI la ban da chuan hoa: normalizer chay o
+        // CanonicalConceptProcessor truoc khi dong bang, khong chay lai o day.
+        $concept = CanonicalDesignSpec::fromArray(
+            (array) json_decode($conceptRaw, true, 512, JSON_THROW_ON_ERROR),
+        );
 
         $accumulator = new CostAccumulatingLlmClient($this->spendingLlmClient());
         $this->lastRun = $accumulator;
@@ -532,20 +509,6 @@ class VideoRenderPlanService
         } finally {
             $this->recordUsage($article, $videoSessionId, self::STAGE_USAGE_ACTION);
         }
-    }
-
-    /** @param array<string, mixed> $conceptStored */
-    public function anchorPrompt(Article $article, array $conceptStored, Viewpoint $viewpoint): string
-    {
-        $profile = $this->profileOrFail((string) ($article->category?->slug ?? ''));
-
-        return (new AnchorPrompt)->build(
-            (new CreativeConceptParser)
-                ->parse(json_encode($conceptStored, JSON_THROW_ON_ERROR))
-                ->canonicalised($profile),
-            $profile,
-            $viewpoint,
-        );
     }
 
     private function profileOrFail(string $category): CategoryCreativeProfile
@@ -567,17 +530,40 @@ class VideoRenderPlanService
         return (new ClaudeInspirationAnalyst($llm))->analyze($rawArticle, $profile);
     }
 
+    /**
+     * BuildCanonicalConcept lo tron chang: designer -> validate -> repair DUNG
+     * MOT lan -> normalize -> re-validate -> hash -> freeze.
+     *
+     * KHONG nhan $llm: designer canonical noi chuyen voi Anthropic qua client
+     * structured-output rieng, nam ngoai CostAccumulatingLlmClient. Chi phi
+     * chang nay doc o bang attempt cua canonical, khong doc o lastUsage().
+     *
+     * revision = 1 vi seam nay khong giu bo dem revision — duong co revision
+     * that la CanonicalConceptExecutionService ben VideoProjectService.
+     */
     private function conceptStage(
         InspirationBrief $brief,
-        CategoryCreativeProfile $profile,
-        LlmClient $llm,
+        string $objectType,
     ): ConceptDesignResult {
-        return (new ClaudeConceptDesigner($llm))->design($brief, $profile);
+        $input = new ConceptInput(
+            objectType: $objectType,
+            inspiration: $brief,
+            profile: app(CanonicalProfileResolver::class)->resolve($objectType),
+        );
+
+        $frozen = app(BuildCanonicalConcept::class)->build($input, 1);
+
+        return new ConceptDesignResult(
+            $frozen->spec,
+            $frozen->revision,
+            $frozen->hash,
+            $frozen->canonicalJson,
+        );
     }
 
     /** @return array<string, mixed> */
     private function finalizeStage(
-        CreativeConcept $concept,
+        CanonicalDesignSpec $concept,
         RenderPlanMeta $meta,
         LlmClient $llm,
         CategoryCreativeProfile $profile,
@@ -611,8 +597,8 @@ class VideoRenderPlanService
 
         try {
             $brief = (new ClaudeInspirationAnalyst($llm))->analyze($rawArticle, $profile)->brief;
-            $design = (new ClaudeConceptDesigner($llm))->design($brief, $profile);
-        } catch (InvalidCreativeConcept|InvalidInspirationBrief $e) {
+            $design = $this->conceptStage($brief, $category);
+        } catch (CanonicalValidationException|InvalidInspirationBrief $e) {
             if ($mode !== 'observe') {
                 throw $e;
             }
@@ -622,21 +608,15 @@ class VideoRenderPlanService
                 'video_session_id' => $videoSessionId,
                 'category' => $category,
                 'exception' => $e::class,
-                'violations' => $e->violations,
+                // Hai nhanh vi hai hinh dang loi khac nhau, KHONG gop bang
+                // getMessage(): errorPayload() giu duoc path cua tung loi, do
+                // moi la thu doc duoc khi mo log ra.
+                'violations' => $e instanceof CanonicalValidationException
+                    ? $e->errorPayload()
+                    : $e->violations,
             ]);
 
             return $renderPlan;
-        }
-
-        // Warning KHONG mang noi dung field — chi code/path/so do, vi no vao log.
-        if ($design->warnings !== []) {
-            Log::warning('video_creative_concept_warnings', [
-                'article_id' => $article->id,
-                'video_session_id' => $videoSessionId,
-                'category' => $category,
-                'attempts' => $design->attempts,
-                'warnings' => $design->warningsToArray(),
-            ]);
         }
 
         if ($mode === 'observe') {
@@ -644,7 +624,8 @@ class VideoRenderPlanService
                 'article_id' => $article->id,
                 'video_session_id' => $videoSessionId,
                 'category' => $category,
-                'attempts' => $design->attempts,
+                'revision' => $design->revision,
+                'hash' => $design->hash,
                 'concept' => $design->concept->toArray(),
             ]);
 

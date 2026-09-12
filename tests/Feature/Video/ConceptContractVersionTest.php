@@ -5,7 +5,6 @@ namespace Tests\Feature\Video;
 use App\Models\Article;
 use App\Models\VideoProject;
 use App\Services\VideoProjectService;
-use App\Video\Concept\ClaudeConceptDesigner;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use ReflectionMethod;
@@ -35,11 +34,11 @@ class ConceptContractVersionTest extends TestCase
             'article_id' => $article->id,
         ]);
 
-        $method = new ReflectionMethod(VideoProjectService::class, 'conceptInput');
+        $method = new ReflectionMethod(VideoProjectService::class, 'canonicalConceptStageInput');
         $method->setAccessible(true);
 
-        $input = $method->invoke(app(VideoProjectService::class), $project->fresh('article'), ['brief' => 1]);
-        $input['instruction_version'] = $version;
+        $input = $method->invoke(app(VideoProjectService::class), $project->fresh('article'), 'yacht');
+        $input['canonical_prompt_version'] = $version;
 
         return $input;
     }
@@ -52,39 +51,36 @@ class ConceptContractVersionTest extends TestCase
         return $method->invoke(app(\App\Services\Video\PlanningStageStore::class), $input);
     }
 
-    public function test_the_concept_input_carries_the_instruction_version(): void
+    public function test_the_concept_input_carries_the_prompt_version(): void
     {
-        $input = $this->conceptInput(ClaudeConceptDesigner::INSTRUCTION_VERSION);
+        $version = (string) config('canonical_concept.prompt_version');
+        $input = $this->conceptInput($version);
 
-        $this->assertArrayHasKey('instruction_version', $input);
-        $this->assertSame(ClaudeConceptDesigner::INSTRUCTION_VERSION, $input['instruction_version']);
+        $this->assertArrayHasKey('canonical_prompt_version', $input);
+        $this->assertSame($version, $input['canonical_prompt_version']);
     }
 
     public function test_changing_the_instruction_changes_the_hash_that_gates_a_rerun(): void
     {
         $this->assertNotSame(
-            $this->hash($this->conceptInput('concept-v8')),
-            $this->hash($this->conceptInput('concept-v9')),
+            $this->hash($this->conceptInput('concept-v1')),
+            $this->hash($this->conceptInput('concept-v2')),
             'Bump phien ban ma hash khong doi thi concept cu bi phuc vu tiep, im lang',
         );
     }
 
-    public function test_the_shipped_version_is_the_one_that_knows_about_the_boot_stripe(): void
+    public function test_the_gate_also_watches_the_schema_and_the_model(): void
     {
-        // `boot_stripe_colour` vao identity_slots o v9. Neu ai do them khe moi ma
-        // quen bump, concept cu van duoc dung va prompt van thieu mau dai nuoc.
-        //
-        // v10 doi LUAT DEM: so lan lap khong con duoc mang di khap concept. Concept
-        // v9 nao con trong DB deu la ban co so dem lan khap noi — chung phai bi
-        // hash tu choi, khong duoc phuc vu tiep.
-        $this->assertSame('concept-v19', ClaudeConceptDesigner::INSTRUCTION_VERSION);
-        $this->assertStringContainsString(
-            'verification count',
-            config('video.creative_profiles.profiles.luxury_vessel.identity_slots')['visible_deck_tiers']['guidance'],
-        );
-        $this->assertArrayHasKey(
-            'boot_stripe_colour',
-            config('video.creative_profiles.profiles.luxury_vessel.identity_slots'),
-        );
+        // Duoi Phan 1 co BA thu doi duoc ket qua concept, khong con mot:
+        // prompt, schema cua CanonicalDesignSpec, va model. Doi bat ky cai nao
+        // ma hash khong doi thi concept cu bi phuc vu tiep, im lang.
+        $base = $this->conceptInput((string) config('canonical_concept.prompt_version'));
+
+        foreach (['canonical_schema_version', 'canonical_model'] as $key) {
+            $changed = $base;
+            $changed[$key] = $base[$key].'-changed';
+
+            $this->assertNotSame($this->hash($base), $this->hash($changed), $key);
+        }
     }
 }

@@ -124,7 +124,11 @@ class PythonRunner
         );
 
         try {
-            $process = new \Symfony\Component\Process\Process($command, $dir, null, null, $timeoutSeconds);
+            // Symfony lay env mac dinh bang cach GIAO getenv() voi $_SERVER. O CLI
+            // hai tap trung nhau nen khong sao, nhung trong mot request cua
+            // `artisan serve` thi $_SERVER la bien HTTP — giao sup con vai bien,
+            // `SystemRoot` bien mat, va Python khong nap noi Winsock (WinError 10106).
+            $process = new \Symfony\Component\Process\Process($command, $dir, getenv(), null, $timeoutSeconds);
             $process->run();
         } catch (\Throwable $e) {
             Log::error('PythonRunner: chay dong bo that bai', [

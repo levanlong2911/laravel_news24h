@@ -133,133 +133,56 @@
             <div class="vp-panel">
                 <div class="va-head">
                     <span class="n">3</span>
-                    <b>SONNET CREATIVE CONCEPT</b>
+                    <b>ANCHOR PROMPT</b>
                     <span class="grow"></span>
-                    @if($concept['analysed'])<span class="va-tag ok">Đã đóng băng</span>@endif
+                    @if($compiledPrompt !== null)<span class="va-tag ok">Đã có prompt</span>@endif
                     @if(! $brief['analysed'])
-                        <button class="vp-btn sm" disabled title="Cần phân tích bài viết trước">Creat Prompt</button>
-                    @elseif($concept['running'])
-                        <button class="vp-btn sm" disabled>Đang dựng…</button>
-                    @elseif($concept['stuck'])
+                        <button class="vp-btn sm" disabled title="Cần brief Haiku trước">Creat Prompt</button>
+                    @elseif($anchorPrompt['running'])
+                        <button class="vp-btn sm" disabled>Đang viết…</button>
                         <form method="POST" action="{{ route('video-projects.concept-reset', $project->id) }}">
                             @csrf
-                            <button class="vp-btn sm dg">Reset Prompt</button>
+                            <button class="vp-btn sm dg">Reset lượt bị kẹt</button>
                         </form>
-                    @elseif($concept['can_run'])
+                    @else
                         <form method="POST" action="{{ route('video-projects.concept', $project->id) }}"
                               id="conceptForm" data-modal="confirmConcept" onsubmit="return vpLockForm(this)">
                             @csrf
                         </form>
                         <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmConcept"
-                                data-busy="Đang dựng…">{{ $concept['status'] === null ? 'Creat Prompt' : 'Dựng lại concept' }}</button>
+                                data-busy="Đang viết…">{{ $compiledPrompt === null ? 'Creat Prompt' : 'Viết lại prompt' }}</button>
                         @include('modal.confirm_action', [
                             'id' => 'confirmConcept',
                             'form' => 'conceptForm',
-                            'content' => 'Gọi Claude Sonnet dựng concept ảnh neo — tác vụ này tính tiền.',
-                        ])
-                    @else
-                        <form method="POST" action="{{ route('video-projects.concept-rerun', $project->id) }}"
-                              id="conceptRerunForm" data-modal="confirmRerun" onsubmit="return vpLockForm(this)">
-                            @csrf
-                        </form>
-                        <button type="button" class="vp-btn sm" data-toggle="modal" data-target="#confirmRerun"
-                                data-busy="Đang dựng…">Dựng lại concept</button>
-                        @include('modal.confirm_action', [
-                            'id' => 'confirmRerun',
-                            'form' => 'conceptRerunForm',
-                            'content' => 'The brief has not changed. Sonnet will build a new concept. THIS ACTION COSTS MONEY.',
-                            'detail' => 'The previous concept remains available as its own revision. Last concept run cost about $0.027.',
+                            'content' => 'Gọi gpt-5.6-terra (medium) viết prompt ảnh từ brief Haiku — tác vụ này tính tiền.',
+                            'detail' => 'Cùng brief + cùng thiết lập thì dùng lại bản đã lưu, không gọi lại model.',
                         ])
                     @endif
                 </div>
-
-                <div class="va-concept">
-                    @if($concept['error'])
-                        <div class="t" style="color:var(--vp-red)">{{ $concept['error'] }}</div>
-                    @elseif(! $concept['analysed'])
-                        <div class="t">Chưa dựng concept</div>
+                <div class="va-body">
+                    @if($anchorPrompt['error'])
+                    <div class="va-lbl" style="color:var(--vp-red);font-weight:400">{{ $anchorPrompt['error'] }}</div>
+                    @elseif($compiledPrompt === null)
+                    <div class="va-lbl" style="color:var(--vp-red);font-weight:400">{{ $compileReason }}</div>
                     @else
-                        <div class="t">{{ $concept['thesis'] }}</div>
-                        <div class="ids">
-                            @foreach(array_slice($concept['identity'], 0, 6, true) as $key => $value)
-                                <span><em>{{ str_replace('_', ' ', $key) }}</em> {{ \Illuminate\Support\Str::limit(is_array($value) ? implode(' · ', $value) : (string) $value, 38) }}</span>
-                            @endforeach
-                        </div>
-                        @if($concept['relationships'] !== [])
-                            <div class="rel">
-                                @foreach(['governing_line', 'massing_rhythm', 'feature_integration'] as $key)
-                                    @if(! empty($concept['relationships'][$key]))
-                                        <div><em>{{ str_replace('_', ' ', $key) }}</em>{{ $concept['relationships'][$key] }}</div>
-                                    @endif
-                                @endforeach
-                            </div>
-                        @endif
-                        @if($concept['features'] !== [])
-                            <ul class="feat">
-                                @foreach($concept['features'] as $feature)
-                                    <li>
-                                        {{ $feature['description'] ?? '' }}
-                                        @foreach($feature['visible_from'] ?? [] as $viewpoint)
-                                            <span>{{ str_replace('_', ' ', $viewpoint) }}</span>
-                                        @endforeach
-                                    </li>
-                                @endforeach
-                            </ul>
-                        @endif
-                        @if($concept['provenance_summary'])
-                            <div class="prov">
-                                {{ $concept['provenance_summary']['total'] }} quyết định
-                                &middot; {{ $concept['provenance_summary']['inspired'] }} inspired
-                                &middot; {{ $concept['provenance_summary']['invented'] }} invented
-                            </div>
-                        @endif
-                        @if($concept['meta'] !== [])
-                            <div class="d">
-                                {{ $concept['meta']['model'] }}
-                                &middot; {{ $concept['meta']['instruction_version'] }}
-                                &middot; {{ number_format((int) $concept['meta']['tokens_in']) }}&rarr;{{ number_format((int) $concept['meta']['tokens_out']) }} token
-                                &middot; ${{ number_format((float) $concept['meta']['cost_usd'], 4) }}
-                            </div>
-                        @endif
-                        @if($concept['frozen_at'])
-                            <div class="d">🔒 Đóng băng lúc {{ $concept['frozen_at']->format('d/m/Y H:i') }}</div>
-                        @endif
-                        @if($concept['decisions'] !== [])
-                            <details class="va-more">
-                                <summary>Quyết định ({{ count($concept['decisions']) }})</summary>
-                                <div class="dec">
-                                    @foreach($concept['decisions'] as $decision)
-                                        <div>
-                                            <em>{{ str_replace('_', ' ', (string) ($decision['aspect'] ?? '')) }}</em>
-                                            <b class="{{ ($decision['provenance'] ?? '') === 'invented' ? 'iv' : 'in' }}">{{ $decision['provenance'] ?? '' }}</b>
-                                            {{ $decision['decision'] ?? '' }}
-                                        </div>
-                                    @endforeach
-                                </div>
-                            </details>
-                        @endif
-                        @if($concept['json'] !== [])
-                            <details class="va-more">
-                                <summary>Concept JSON — Sonnet trả về</summary>
-                                <pre class="cjson">{{ json_encode($concept['json'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre>
-                            </details>
-                        @endif
-                        @if(($concept['design_spec'] ?? []) !== [])
-                            <details class="va-more">
-                                <summary>DesignSpec — bản Laravel xuất</summary>
-                                <pre class="cjson">{{ json_encode($concept['design_spec'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}</pre>
-                            </details>
-                        @endif
+                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">
+                        Prompt đã lưu &middot; <b>{{ $selectedStage->label() }}</b>
+                        &middot; viết bởi <b>{{ $previewPromptVersion ?? '—' }}</b>
+                    </div>
                     @endif
-                </div>
-            </div>
 
-            <div class="vp-panel">
-                <div class="va-head">
-                    <span class="n">4</span>
-                    <b>ANCHOR SETUP</b>
-                </div>
-                <div class="va-fields">
+                    <textarea class="va-ta" data-v="a-main" readonly>{{ $compiledPrompt ?? '' }}</textarea>
+
+                    <div class="va-count"><span data-c="a">0</span> ký tự</div>
+
+                    <form method="POST" action="{{ route('video-projects.anchor-image', $project->id) }}"
+                          id="anchorImageForm" data-modal="confirmAnchorImage"
+                          onsubmit="return vpLockForm(this)" hidden>
+                        @csrf
+                        <input type="hidden" name="prompt_sha256" value="{{ $compiledPromptHash ?? '' }}">
+                    </form>
+
+                    <div class="va-fields">
                     <div class="va-field">
                         <label>Asset Group</label>
                         <div class="ctl">Subject Identity — <code>identity_anchor</code></div>
@@ -268,43 +191,9 @@
                         <label>Asset Name <em>(mã dự kiến)</em></label>
                         <div class="ctl"><span>{{ $nextImageCode }}</span><span class="cnt">{{ strlen($nextImageCode) }}/100</span></div>
                     </div>
-                </div>
-            </div>
-
-            <div class="vp-panel">
-                <div class="va-head">
-                    <span class="n">5</span>
-                    <b>PROMPT SETUP</b>
-                    <span class="grow"></span>
-                    <em>Ba ô này quyết định nội dung prompt</em>
-                </div>
-                <form method="POST" action="{{ route('video-projects.anchor-compile', $project->id) }}"
-                      id="promptSetupForm">
-                    @csrf
-                    <div class="va-set">
-                        <div class="va-field">
-                            <label>Stage</label>
-                            <select class="ctl" name="stage" required>
-                                <option value="" @selected($selectedStage === null)>Choose stage</option>
-                                @foreach(\App\Enums\AnchorStage::cases() as $s)
-                                    <option value="{{ $s->value }}"
-                                            @selected($selectedStage?->value === $s->value)>{{ $s->label() }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="va-field">
-                            <label>Viewpoint</label>
-                            <select class="ctl" name="viewpoint" required>
-                                <option value="" @selected($selectedViewpoint === null)>Choose viewpoint</option>
-                                @foreach(\App\Video\Concept\Viewpoint::cases() as $vp)
-                                    <option value="{{ $vp->value }}"
-                                            @selected($selectedViewpoint?->value === $vp->value)>{{ $viewpointLabels[$vp->value] ?? $vp->value }}</option>
-                                @endforeach
-                            </select>
-                        </div>
                         <div class="va-field">
                             <label>Size</label>
-                            <select class="ctl" name="size" required>
+                            <select class="ctl" name="size" form="anchorImageForm" required @disabled($compiledPrompt === null)>
                                 <option value="" @selected($selectedSize === null)>Choose size</option>
                                 @foreach(\App\Enums\ImageSize::cases() as $r)
                                     <option value="{{ $r->value }}"
@@ -312,71 +201,9 @@
                                 @endforeach
                             </select>
                         </div>
-                    </div>
-                    <div class="va-foot">
-                        <button type="submit" class="vp-btn pri">Compile Prompt &lt;/&gt;</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <div class="va-col">
-
-            <div class="vp-panel">
-                <div class="va-head">
-                    <b>COMPILED ANCHOR PROMPT</b>
-                    @if($compiledPrompt !== null)<span class="va-tag ok">✓ VALID</span>@endif
-                    <span class="grow"></span>
-                </div>
-
-                <form method="POST" action="{{ route('video-projects.anchor-image', $project->id) }}"
-                      id="anchorImageForm" data-modal="confirmAnchorImage" data-size="{{ $selectedSize?->value }}"
-                      onsubmit="return vpLockForm(this)">
-                        @csrf
-                        <input type="hidden" name="prompt_sha256" value="{{ $compiledPromptHash ?? '' }}">
-
-                    <div class="va-body">
-                        @if($concept['error'])
-                        <div class="va-lbl" style="color:var(--vp-red);font-weight:400">{{ $concept['error'] }}</div>
-                        @elseif($compiledPrompt === null)
-                        <div class="va-lbl" style="color:var(--vp-red);font-weight:400">{{ $compileReason }}</div>
-                        @else
-                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">
-                            Saved compiled preview. Generate Anchor stores a render candidate.
-                            &middot; Compiled for:
-                            <b>{{ $selectedStage->label() }}</b> &middot;
-                            <b>{{ $viewpointLabels[$selectedViewpoint->value] ?? $selectedViewpoint->value }}</b> &middot;
-                            <b>{{ $selectedSize->label() }}</b>
-                        </div>
-                        @endif
-
-                        <textarea class="va-ta" data-v="a-main" readonly>{{ $compiledPrompt ?? '' }}</textarea>
-
-                        <div class="va-count"><span data-c="a">0</span>/12000</div>
-                    </div>
-
-                    <div class="va-head" style="border-top:1px solid var(--vp-line)">
-                        <b>RENDER SETUP</b>
-                        <span class="grow"></span>
-                        @if($compiledPrompt === null)
-                        <button class="vp-btn pri" disabled title="Chưa có anchor prompt">Generate Anchor ✦</button>
-                        @else
-                        <button type="button" id="generateAnchorButton" class="vp-btn pri" disabled
-                                data-toggle="modal" data-target="#confirmAnchorImage"
-                                data-busy="Đang render… (khoảng 20 giây)">Generate Anchor ✦</button>
-                        @include('modal.confirm_action', [
-                            'id' => 'confirmAnchorImage',
-                            'form' => 'anchorImageForm',
-                            'content' => 'Gọi gpt-image-2 render ngay với prompt và thiết lập đang chọn — TÁC VỤ NÀY TÍNH TIỀN.',
-                            'detail' => 'Ước lượng theo thiết lập đang chọn. Trang sẽ đứng đợi tới khi có ảnh.',
-                        ])
-                        @endif
-                    </div>
-
-                        <div class="va-set">
                         <div class="va-field">
                             <label>Model</label>
-                            <select class="ctl" name="model" required @disabled($compiledPrompt === null)>
+                            <select class="ctl" name="model" form="anchorImageForm" required @disabled($compiledPrompt === null)>
                                 <option value="" @selected($selectedModel === null)>Choose model</option>
                                 @foreach(\App\Enums\ImageModel::cases() as $m)
                                     <option value="{{ $m->value }}"
@@ -386,7 +213,7 @@
                         </div>
                         <div class="va-field">
                             <label>Quality</label>
-                            <select class="ctl" name="quality" required @disabled($compiledPrompt === null)>
+                            <select class="ctl" name="quality" form="anchorImageForm" required @disabled($compiledPrompt === null)>
                                 <option value="" @selected($selectedQuality === null)>Choose quality</option>
                                 @foreach(\App\Enums\ImageQuality::cases() as $q)
                                     <option value="{{ $q->value }}" title="{{ $q->hint() }}"
@@ -396,7 +223,7 @@
                         </div>
                         <div class="va-field">
                             <label>Variations</label>
-                            <select class="ctl" name="variations" required @disabled($compiledPrompt === null)>
+                            <select class="ctl" name="variations" form="anchorImageForm" required @disabled($compiledPrompt === null)>
                                 <option value="" @selected($selectedVariations === null)>Choose variations</option>
                                 @foreach(\App\Enums\ImageVariations::cases() as $v)
                                     <option value="{{ $v->value }}"
@@ -405,9 +232,24 @@
                             </select>
                         </div>
                     </div>
-                </form>
+                    <div class="va-foot">
+                        <button type="button" id="generateAnchorButton" class="vp-btn pri"
+                                data-toggle="modal" data-target="#confirmAnchorImage"
+                                data-busy="Đang render…">Render Image</button>
+                    </div>
+                    @include('modal.confirm_action', [
+                        'id' => 'confirmAnchorImage',
+                        'form' => 'anchorImageForm',
+                        'content' => 'Gửi prompt này cho gpt-image-2 render — TÁC VỤ NÀY TÍNH TIỀN.',
+                        'detail' => 'Đang tính…',
+                    ])
+
+                </div>
             </div>
 
+        </div>
+
+        <div class="va-col">
             <div class="vp-panel">
                 <div class="va-head">
                     <b>CANDIDATE IMAGES</b>
@@ -428,7 +270,7 @@
                     @if($cell['candidates'] === [])
                         <div class="va-cell">
                             <span class="code">{{ $cell['image_code'] }}</span>
-                            <span class="va-tag {{ $cell['has_failed'] ? 'dg' : 'ok' }}">{{ $cell['status_label'] }}</span>
+                            <span class="va-tag {{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</span>
                             <span class="grow"></span>
                             <span class="d">{{ $cell['variations'] }} ảnh &middot; {{ $cell['quality'] }} &middot; {{ $cell['size'] }}</span>
                         </div>
@@ -440,8 +282,15 @@
 
                     @if($cell['is_live'])
                         <div class="va-lbl" style="padding-left:14px;color:var(--vp-amber-fg);font-weight:400">
-                            Đang chờ worker nhận việc{{ $cell['queued_at'] ? ' — vào hàng đợi '.$cell['queued_at']->diffForHumans() : '' }}.
-                            Tải lại trang để xem tiến độ.
+                            @if($cell['worker'] === null)
+                                Đang chờ worker nhận việc{{ $cell['queued_at'] ? ' — vào hàng đợi '.$cell['queued_at']->diffForHumans() : '' }}.
+                                Tải lại trang để xem tiến độ.
+                            @elseif(in_array($cell['worker'], ['laravel:direct', 'laravel:canonical'], true))
+                                Laravel đang render ngay trong request này — trang sẽ đứng đợi tới khi có ảnh.
+                                Nếu request bị ngắt, tải lại trang là kết quả được đối chiếu từ đĩa.
+                            @else
+                                Worker <b>{{ $cell['worker'] }}</b> đang render. Tải lại trang để xem tiến độ.
+                            @endif
                         </div>
                     @elseif($cell['can_render'])
                         <form method="POST" id="renderCell{{ $loop->index }}"
@@ -469,6 +318,11 @@
                     </div>
                 @endforelse
 
+                <form method="POST" action="{{ route('video-projects.anchor-approve', $project->id) }}"
+                      id="approveAnchorForm" onsubmit="return vpLockForm(this)" hidden>
+                    @csrf
+                </form>
+
                 @if($candidateCards->isNotEmpty())
                     <div class="va-cands">
                         @foreach($candidateCards as $cardIndex => $card)
@@ -481,10 +335,13 @@
                                      width="{{ $candidate['width'] }}" height="{{ $candidate['height'] }}">
                                 <div class="cap">
                                     <span>
-                                        <input type="radio" disabled title="Chọn ứng viên — chưa nối">
+                                        <input type="radio" name="artifact_id" form="approveAnchorForm" required
+                                               value="{{ $candidate['id'] }}"
+                                               @checked($cell['selected_artifact_id'] === $candidate['id'])
+                                               @disabled(! $cell['can_approve'])>
                                         CANDIDATE {{ $cardIndex + 1 }}
                                     </span>
-                                    @if($cardIndex === 0)
+                                    @if($cell['selected_artifact_id'] === $candidate['id'])
                                         <b>Preferred</b>
                                     @endif
                                 </div>
@@ -501,7 +358,8 @@
 
                 <div class="va-foot">
                     <button class="vp-btn" disabled title="Chưa nối">Regenerate ⟳</button>
-                    <button class="vp-btn ok" disabled title="Chưa nối — lô duyệt anchor">✓ Approve as Canonical Anchor 🔒</button>
+                    <button type="submit" form="approveAnchorForm" class="vp-btn ok"
+                            data-busy="Đang duyệt…">✓ Approve as Canonical Anchor 🔒</button>
                 </div>
             </div>
         </div>
@@ -511,6 +369,7 @@
 @endsection
 
 @section('script')
+<script src="{{ asset('assets/js/video-producer.js') }}?v={{ filemtime(public_path('assets/js/video-producer.js')) }}"></script>
 <script>
 (function () {
     var prices = @json(collect(\App\Enums\ImageQuality::cases())
@@ -521,11 +380,11 @@
     if (!form || !box) { return; }
 
     function sync() {
-        var missing = ['model', 'quality', 'variations'].filter(function (name) {
-            var el = form.querySelector('[name=' + name + ']');
+        var missing = ['size', 'model', 'quality', 'variations'].filter(function (name) {
+            var el = form.elements[name];
             return !el || el.value === '';
         });
-        var promptHash = form.querySelector('[name=prompt_sha256]');
+        var promptHash = form.elements.prompt_sha256;
         var hasPrompt = promptHash && promptHash.value.trim() !== '';
         var ready = hasPrompt && missing.length === 0;
 
@@ -536,29 +395,19 @@
                 : (missing.length ? 'Chưa chọn: ' + missing.join(', ') : '');
         }
 
-        var unit = prices[form.querySelector('[name=quality]').value] || 0;
-        var count = parseInt(form.querySelector('[name=variations]').value, 10) || 1;
-        box.textContent = count + ' ảnh · ' + form.querySelector('[name=quality]').value
-            + ' · ' + (form.dataset.size || '')
+        var unit = prices[form.elements.quality.value] || 0;
+        var count = parseInt(form.elements.variations.value, 10) || 1;
+        box.textContent = count + ' ảnh · ' + form.elements.quality.value
+            + ' · ' + form.elements.size.value
             + ' — ước lượng $' + unit.toFixed(3) + ' × ' + count
             + ' = $' + (unit * count).toFixed(3) + '. Trang sẽ đứng đợi tới khi có ảnh.';
     }
 
-    form.querySelectorAll('select').forEach(function (el) { el.addEventListener('change', sync); });
+    Array.from(form.elements)
+        .filter(function (el) { return el.tagName === 'SELECT'; })
+        .forEach(function (el) { el.addEventListener('change', sync); });
     sync();
 })();
-
-function vpLockForm(form) {
-    var trigger = document.querySelector('[data-target="#' + form.dataset.modal + '"]');
-    if (trigger) {
-        trigger.disabled = true;
-        if (trigger.dataset.busy) { trigger.textContent = trigger.dataset.busy; }
-    }
-    window.setTimeout(function () {
-        document.querySelectorAll('[form="' + form.id + '"]').forEach(function (btn) { btn.disabled = true; });
-    }, 0);
-    return true;
-}
 
 (function () {
     var count = document.querySelector('[data-c="a"]');
