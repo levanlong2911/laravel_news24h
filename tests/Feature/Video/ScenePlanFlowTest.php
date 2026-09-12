@@ -3090,6 +3090,80 @@ class ScenePlanFlowTest extends TestCase
         }
     }
 
+    public function test_the_header_counts_the_keyframes_that_are_really_approved(): void
+    {
+        Http::fake();
+        $this->planOnce();
+
+        $this->assertSame(0, $this->approvedInHeader());
+
+        $scene = $this->sceneRow(1);
+        [$preview] = $this->previewOf($scene);
+        $this->writeCandidate($scene, $preview);
+
+        $this->assertSame(
+            0,
+            $this->approvedInHeader(),
+            'a candidate that nobody approved is not a rendered scene',
+        );
+
+        $this->approvedKeyframeFor($this->sceneRow(2));
+
+        $this->assertSame(1, $this->approvedInHeader());
+    }
+
+    private function approvedInHeader(): int
+    {
+        return (int) $this->get(route('video-projects.scene', $this->project->id))
+            ->viewData('summary')['approved'];
+    }
+
+    public function test_the_header_summary_carries_nothing_nobody_reads(): void
+    {
+        $this->planOnce();
+
+        $this->assertSame(
+            ['approved'],
+            array_keys($this->get(route('video-projects.scene', $this->project->id))->viewData('summary')),
+        );
+    }
+
+    public function test_a_scene_blocked_on_its_plate_offers_the_way_to_fix_it(): void
+    {
+        $this->planOnce();
+        $this->dropPlates();
+
+        $response = $this->get(route('video-projects.scene', $this->project->id));
+
+        $response->assertSee(route('video-projects.environment', $this->project->id), false);
+        $response->assertSee('Environment Library →', false);
+    }
+
+    public function test_a_block_that_has_nothing_to_do_with_places_offers_no_such_link(): void
+    {
+        $this->planOnce();
+
+        VideoRenderScene::query()
+            ->where('project_id', $this->project->id)
+            ->update(['milestone_keys' => json_encode(['hull_framing'])]);
+
+        $response = $this->get(route('video-projects.scene', $this->project->id));
+        $sources = $response->viewData('sources');
+
+        $blocked = collect($sources)->filter(fn (array $cell) => $cell['blocked_reason'] !== null);
+
+        $this->assertNotEmpty(
+            $blocked,
+            'scenes that continue an unapproved keyframe are still blocked',
+        );
+        $this->assertEmpty(
+            $blocked->filter(fn (array $cell) => str_starts_with((string) $cell['blocked_code'], 'environment_')),
+            'every plate is approved, so nothing may be blocked on a place',
+        );
+
+        $response->assertDontSee('Environment Library →', false);
+    }
+
     public function test_an_unapproved_plate_blocks_the_scene_and_names_the_place(): void
     {
         $scene = $this->planOnce();

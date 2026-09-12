@@ -279,7 +279,7 @@
                     @endif
                 </div>
 
-                @php($refs = $sources[$s['scene_id']] ?? ['slots' => [], 'blocked_reason' => null])
+                @php($refs = $sources[$s['scene_id']] ?? ['slots' => [], 'blocked_reason' => null, 'blocked_code' => null])
                 <div class="vs-c vs-refs">
                     <div class="vs-slots">
                         @foreach($refs['slots'] as $slot)
@@ -305,6 +305,9 @@
                     @if($refs['blocked_reason'])
                         <div class="m" style="margin-top:6px;color:var(--vp-amber-fg)">
                             {{ $refs['blocked_reason'] }}
+                            @if(str_starts_with((string) ($refs['blocked_code'] ?? ''), 'environment_'))
+                                <a href="{{ route('video-projects.environment', $id) }}">Environment Library →</a>
+                            @endif
                         </div>
                     @endif
                 </div>

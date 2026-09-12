@@ -476,6 +476,8 @@ class VideoProjectsController extends Controller
 
         abort_if($scenes !== [] && $current === null, 404);
 
+        $keyframes = $this->videoProjectService->sceneKeyframeCells($id, $plan['revision']);
+
         return view('video-projects.scene', $this->chrome() + [
             'id' => $id,
             'project' => $project,
@@ -489,7 +491,7 @@ class VideoProjectsController extends Controller
             'profileNotice' => $plan['profile_notice'],
             'preservationNotice' => $plan['preservation_notice'],
             'review' => $plan['review'],
-            'keyframes' => $this->videoProjectService->sceneKeyframeCells($id, $plan['revision']),
+            'keyframes' => $keyframes,
             'referenceRoles' => [
                 'identity' => 'Identity view',
                 'environment' => 'Environment',
@@ -497,12 +499,19 @@ class VideoProjectsController extends Controller
             ],
             'sources' => collect($this->videoProjectService->sceneSourceCells($id, $plan['revision']))
                 ->map(fn (array $cell): array => array_replace($cell, [
+                    'blocked_code' => $cell['blocked_reason'] === null
+                        ? null
+                        : explode('|', (string) $cell['blocked_reason'], 2)[0],
                     'blocked_reason' => $cell['blocked_reason'] === null
                         ? null
                         : $this->sceneKeyframeMessage((string) $cell['blocked_reason']),
                 ]))
                 ->all(),
-            'summary' => ['shots' => 0, 'estimate' => 0.0, 'actual' => 0.0, 'approved' => 0, 'queued' => 0],
+            'summary' => [
+                'approved' => collect($keyframes)
+                    ->filter(static fn (array $cell): bool => $cell['approved'] !== null)
+                    ->count(),
+            ],
         ]);
     }
 
