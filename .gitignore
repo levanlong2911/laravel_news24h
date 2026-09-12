@@ -21,3 +21,6 @@ yarn-error.log
 /.vscode
 
 .codegpt
+# Dump tam va script do choi o goc cay — khong thuoc ve lich su
+/.tmp_*
+/_inspect_relations.php
