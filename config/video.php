@@ -32,6 +32,19 @@ return [
         'timeout' => (int) env('VIDEO_IMAGE_TIMEOUT', 300),
     ],
 
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY'),
+
+        'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com'),
+
+        'versions' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('GEMINI_API_VERSIONS', 'v1beta,v1')),
+        ))),
+
+        'timeout' => (int) env('GEMINI_HTTP_TIMEOUT', 60),
+    ],
+
     'python_runner_enabled' => (bool) env('VIDEO_PYTHON_RUNNER', true),
 
     'planning_queue' => [
