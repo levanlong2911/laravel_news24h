@@ -1,0 +1,107 @@
+{
+  "profile_version": "vessel_v2",
+  "subject_class": "superyacht",
+  "objective": "Show the whole making of this vessel, from the first drawing to the finished vessel in use.",
+  "detail_level": "step_by_step",
+  "scope": "full_lifecycle",
+  "min_scenes": 10,
+  "max_milestones_per_scene": 3,
+  "environments": [
+    {
+      "key": "design_studio",
+      "label": "Design studio",
+      "prompt": "A naval architect's design office: drawing boards, large pinned elevation sheets, screens showing line plans, a wide desk with rolled drawings, daylight from tall windows."
+    },
+    {
+      "key": "shipyard_hall",
+      "label": "Shipyard hall",
+      "prompt": "The interior of a shipbuilding assembly hall: steel roof trusses, an overhead travelling crane on its rails, a marked building berth with support blocks in a straight row, work platforms and staged steel plate, high side windows."
+    },
+    {
+      "key": "paint_shed",
+      "label": "Paint shed",
+      "prompt": "The interior of an enclosed fairing and paint shed: sealed white walls, even diffuse lighting from ceiling banks, mobile scaffolding towers, masking sheets and extraction ducting, no daylight."
+    },
+    {
+      "key": "launch_quay",
+      "label": "Launch quay",
+      "prompt": "A shipyard launch quay at the water's edge under open sky: concrete apron with bollards and mooring lines, a travel lift or quayside crane, calm harbour water, yard sheds in the distance."
+    },
+    {
+      "key": "open_water",
+      "label": "Open water",
+      "prompt": "Open sea under open sky, nothing but water to the horizon: moderate swell, natural daylight, no land, no harbour, no structure of any kind."
+    }
+  ],
+  "milestone_groups": [
+    {
+      "key": "design",
+      "label": "Design",
+      "environment": "design_studio",
+      "milestones": [
+        { "key": "concept_sketch", "label": "First exterior sketch", "required": true },
+        { "key": "general_arrangement", "label": "General arrangement laid out", "required": true },
+        { "key": "design_frozen", "label": "Design signed off", "required": false }
+      ]
+    },
+    {
+      "key": "preparation",
+      "label": "Preparation",
+      "environment": "shipyard_hall",
+      "milestones": [
+        { "key": "berth_prepared", "label": "Hall and building berth ready", "required": true },
+        { "key": "material_staged", "label": "Material staged", "required": false }
+      ]
+    },
+    {
+      "key": "rough_build",
+      "label": "Rough build",
+      "environment": "shipyard_hall",
+      "milestones": [
+        { "key": "bottom_structure", "label": "Bottom structure", "required": true },
+        { "key": "hull_framing", "label": "Hull framing", "required": true },
+        { "key": "shell_plating", "label": "Shell plating", "required": true },
+        { "key": "deck_fitted", "label": "Deck fitted", "required": true },
+        { "key": "superstructure", "label": "Superstructure", "required": true }
+      ]
+    },
+    {
+      "key": "installation",
+      "label": "Installation",
+      "environment": "shipyard_hall",
+      "milestones": [
+        { "key": "machinery_installed", "label": "Machinery installed", "required": true },
+        { "key": "systems_installed", "label": "Systems installed", "required": false }
+      ]
+    },
+    {
+      "key": "finishing",
+      "label": "Finishing",
+      "environment": "paint_shed",
+      "milestones": [
+        { "key": "surface_faired", "label": "Surface faired", "required": true },
+        { "key": "painted", "label": "Painted", "required": true },
+        { "key": "glazed", "label": "Glazing fitted", "required": true },
+        { "key": "interior_fitted", "label": "Living space fitted", "required": false }
+      ]
+    },
+    {
+      "key": "testing",
+      "label": "Testing",
+      "environment": "launch_quay",
+      "milestones": [
+        { "key": "yard_check", "label": "Yard or quayside check", "required": false },
+        { "key": "launched", "label": "Launched", "required": true },
+        { "key": "sea_trial", "label": "Sea trial", "required": true, "environment": "open_water" }
+      ]
+    },
+    {
+      "key": "in_use",
+      "label": "In use",
+      "environment": "open_water",
+      "milestones": [
+        { "key": "vessel_in_service", "label": "Finished vessel in use", "required": true }
+      ]
+    }
+  ]
+}

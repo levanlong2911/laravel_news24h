@@ -1,0 +1,73 @@
+{
+  "profile_version": "vessel_v1",
+  "subject_class": "superyacht",
+  "objective": "Show the whole making of this vessel, from the first drawing to the finished vessel in use.",
+  "detail_level": "step_by_step",
+  "scope": "full_lifecycle",
+  "min_scenes": 10,
+  "max_milestones_per_scene": 3,
+  "milestone_groups": [
+    {
+      "key": "design",
+      "label": "Design",
+      "milestones": [
+        { "key": "concept_sketch", "label": "First exterior sketch", "required": true },
+        { "key": "general_arrangement", "label": "General arrangement laid out", "required": true },
+        { "key": "design_frozen", "label": "Design signed off", "required": false }
+      ]
+    },
+    {
+      "key": "preparation",
+      "label": "Preparation",
+      "milestones": [
+        { "key": "berth_prepared", "label": "Hall and building berth ready", "required": true },
+        { "key": "material_staged", "label": "Material staged", "required": false }
+      ]
+    },
+    {
+      "key": "rough_build",
+      "label": "Rough build",
+      "milestones": [
+        { "key": "bottom_structure", "label": "Bottom structure", "required": true },
+        { "key": "hull_framing", "label": "Hull framing", "required": true },
+        { "key": "shell_plating", "label": "Shell plating", "required": true },
+        { "key": "deck_fitted", "label": "Deck fitted", "required": true },
+        { "key": "superstructure", "label": "Superstructure", "required": true }
+      ]
+    },
+    {
+      "key": "installation",
+      "label": "Installation",
+      "milestones": [
+        { "key": "machinery_installed", "label": "Machinery installed", "required": true },
+        { "key": "systems_installed", "label": "Systems installed", "required": false }
+      ]
+    },
+    {
+      "key": "finishing",
+      "label": "Finishing",
+      "milestones": [
+        { "key": "surface_faired", "label": "Surface faired", "required": true },
+        { "key": "painted", "label": "Painted", "required": true },
+        { "key": "glazed", "label": "Glazing fitted", "required": true },
+        { "key": "interior_fitted", "label": "Living space fitted", "required": false }
+      ]
+    },
+    {
+      "key": "testing",
+      "label": "Testing",
+      "milestones": [
+        { "key": "yard_check", "label": "Yard or quayside check", "required": false },
+        { "key": "launched", "label": "Launched", "required": true },
+        { "key": "sea_trial", "label": "Sea trial", "required": true }
+      ]
+    },
+    {
+      "key": "in_use",
+      "label": "In use",
+      "milestones": [
+        { "key": "vessel_in_service", "label": "Finished vessel in use", "required": true }
+      ]
+    }
+  ]
+}
