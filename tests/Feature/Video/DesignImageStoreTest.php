@@ -258,6 +258,87 @@ class DesignImageStoreTest extends TestCase
     }
 
     /** @return array<string, mixed> */
+    public function test_an_unpriced_spec_offers_no_cost_estimate(): void
+    {
+        $this->pricedCell(DesignImageStore::ENVIRONMENT_TYPE, ['pricing' => 'unpriced', 'quality' => null]);
+
+        $cell = $this->store->environmentCellsFor($this->project->id)[0];
+
+        $this->assertSame('unpriced', $cell['pricing']);
+        $this->assertNull($cell['cost_unit']);
+        $this->assertNull($cell['cost_estimate']);
+    }
+
+    public function test_a_ledger_row_marked_unpriced_flags_the_recorded_cost(): void
+    {
+        $image = $this->pricedCell(DesignImageStore::ENVIRONMENT_TYPE, ['pricing' => 'unpriced', 'quality' => null]);
+        $this->ledgerRow($image->id, 'unpriced');
+
+        $cell = $this->store->environmentCellsFor($this->project->id)[0];
+
+        $this->assertTrue($cell['cost_recorded_unpriced']);
+        $this->assertSame(0.0, $cell['cost_recorded']);
+    }
+
+    public function test_a_ledger_row_marked_estimated_does_not_flag_the_recorded_cost(): void
+    {
+        $image = $this->pricedCell(DesignImageStore::ENVIRONMENT_TYPE);
+        $this->ledgerRow($image->id, 'estimated');
+
+        $cell = $this->store->environmentCellsFor($this->project->id)[0];
+
+        $this->assertFalse($cell['cost_recorded_unpriced']);
+        $this->assertIsFloat($cell['cost_estimate']);
+    }
+
+    public function test_a_reference_cell_is_never_shown_as_unpriced(): void
+    {
+        $image = $this->pricedCell(DesignImageStore::REFERENCE_TYPE);
+        $this->ledgerRow($image->id, 'estimated');
+
+        $cell = $this->store->referenceCellsFor($this->project->id)[0];
+
+        $this->assertFalse($cell['cost_recorded_unpriced']);
+        $this->assertSame('estimated', $cell['pricing']);
+        $this->assertIsFloat($cell['cost_estimate']);
+    }
+
+    /** @param array<string, mixed> $override */
+    private function pricedCell(string $type, array $override = []): VideoDesignImage
+    {
+        return VideoDesignImage::create([
+            'project_id' => $this->project->id,
+            'image_type' => $type,
+            'image_code' => 'priced_'.uniqid(),
+            'environment_key' => $type === DesignImageStore::ENVIRONMENT_TYPE ? 'paint_shed' : null,
+            'prompt_spec_json' => $this->spec($override),
+            'prompt_sha256' => hash('sha256', uniqid('', true)),
+            'status' => DesignImageStatus::RENDERED->value,
+        ]);
+    }
+
+    private function ledgerRow(string $entityId, string $pricing): void
+    {
+        $id = (string) Str::uuid();
+
+        DB::table('video_cost_entries')->insert([
+            'id' => $id,
+            'project_id' => $this->project->id,
+            'entity_type' => 'design_image',
+            'entity_id' => $entityId,
+            'provider' => 'test',
+            'model' => 'test-model',
+            'usage_type' => 'render',
+            'quantity' => 1,
+            'unit' => 'render',
+            'cost_usd' => 0,
+            'metadata_json' => json_encode(['pricing' => $pricing]),
+            'cost_idempotency_key' => 'test_'.$id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
     private function spec(array $override = []): array
     {
         return $override + [

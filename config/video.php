@@ -47,6 +47,94 @@ return [
         'evidence_dir' => resource_path('ai/providers'),
     ],
 
+    'media_models' => [
+        'image' => [
+            'environment_plate' => [
+                [
+                    'id' => 'openai:gpt-image-2',
+                    'provider' => 'openai',
+                    'model' => 'gpt-image-2',
+                    'label' => 'GPT Image 2',
+                    'default' => true,
+                    'pricing' => 'estimated',
+                    'max_variations' => 2,
+                    'controls' => [
+                        'sizes' => [
+                            '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152',
+                            '3840x2160', '720x1280', '1152x2048', '2160x3840',
+                        ],
+                        'default_size' => '1152x2048',
+                        'qualities' => ['low', 'medium', 'high'],
+                        'default_quality' => 'low',
+                    ],
+                ],
+                [
+                    'id' => 'gemini:gemini-3.1-flash-lite-image',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-3.1-flash-lite-image',
+                    'label' => 'Nano Banana 2 Lite',
+                    'default' => false,
+                    'pricing' => 'unpriced',
+                    'max_variations' => 1,
+                    'api_version' => 'v1',
+                    'shape' => 'image_config',
+                    'controls' => [
+                        'aspect_ratios' => ['9:16'],
+                        'default_aspect_ratio' => '9:16',
+                        'image_sizes' => ['1K'],
+                        'default_image_size' => '1K',
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_12.json',
+                        'image_config' => 'gemini_image_config_2026_09_13.json',
+                    ],
+                ],
+                [
+                    'id' => 'gemini:gemini-3.1-flash-image',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-3.1-flash-image',
+                    'label' => 'Nano Banana 2',
+                    'default' => false,
+                    'pricing' => 'unpriced',
+                    'max_variations' => 1,
+                    'api_version' => 'v1',
+                    'shape' => 'image_config',
+                    'controls' => [
+                        'aspect_ratios' => ['9:16'],
+                        'default_aspect_ratio' => '9:16',
+                        'image_sizes' => ['1K'],
+                        'default_image_size' => '1K',
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_12.json',
+                        'image_config' => 'gemini_image_config_2026_09_13.json',
+                    ],
+                ],
+                [
+                    'id' => 'gemini:gemini-3-pro-image',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-3-pro-image',
+                    'label' => 'Nano Banana Pro',
+                    'default' => false,
+                    'pricing' => 'unpriced',
+                    'max_variations' => 1,
+                    'api_version' => 'v1',
+                    'shape' => 'image_config',
+                    'controls' => [
+                        'aspect_ratios' => ['9:16'],
+                        'default_aspect_ratio' => '9:16',
+                        'image_sizes' => ['1K'],
+                        'default_image_size' => '1K',
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_12.json',
+                        'image_config' => 'gemini_image_config_2026_09_13.json',
+                    ],
+                ],
+            ],
+        ],
+    ],
+
     'python_runner_enabled' => (bool) env('VIDEO_PYTHON_RUNNER', true),
 
     'planning_queue' => [

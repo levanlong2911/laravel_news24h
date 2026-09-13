@@ -101,12 +101,7 @@ class DesignImageStore
      */
     public function anchorCellsFor(string $projectId): array
     {
-        $spent = VideoCostEntry::query()
-            ->where('project_id', $projectId)
-            ->where('entity_type', 'design_image')
-            ->selectRaw('entity_id, SUM(cost_usd) as total')
-            ->groupBy('entity_id')
-            ->pluck('total', 'entity_id');
+        [$spent, $unpriced] = $this->spendByImage($projectId);
 
         return VideoDesignImage::query()
             ->where('project_id', $projectId)
@@ -114,19 +109,40 @@ class DesignImageStore
             ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
             ->latest('created_at')
             ->get()
-            ->map(fn (VideoDesignImage $image) => $this->cellView($image, (float) ($spent[$image->id] ?? 0)))
+            ->map(fn (VideoDesignImage $image) => $this->cellView(
+                $image, $spent[$image->id] ?? 0.0, isset($unpriced[$image->id]),
+            ))
             ->all();
+    }
+
+    /** @return array{0: array<string, float>, 1: array<string, true>} [$totals, $unpriced] */
+    private function spendByImage(string $projectId): array
+    {
+        $entries = VideoCostEntry::query()
+            ->where('project_id', $projectId)
+            ->where('entity_type', 'design_image');
+
+        $totals = (clone $entries)
+            ->selectRaw('entity_id, SUM(cost_usd) as total')
+            ->groupBy('entity_id')
+            ->pluck('total', 'entity_id')
+            ->map(static fn ($total): float => (float) $total)
+            ->all();
+
+        $unpriced = (clone $entries)
+            ->where('metadata_json->pricing', 'unpriced')
+            ->distinct()
+            ->pluck('entity_id')
+            ->mapWithKeys(static fn ($id): array => [(string) $id => true])
+            ->all();
+
+        return [$totals, $unpriced];
     }
 
     /** @return list<array<string, mixed>> */
     public function referenceCellsFor(string $projectId): array
     {
-        $spent = VideoCostEntry::query()
-            ->where('project_id', $projectId)
-            ->where('entity_type', 'design_image')
-            ->selectRaw('entity_id, SUM(cost_usd) as total')
-            ->groupBy('entity_id')
-            ->pluck('total', 'entity_id');
+        [$spent, $unpriced] = $this->spendByImage($projectId);
 
         return VideoDesignImage::query()
             ->where('project_id', $projectId)
@@ -134,7 +150,9 @@ class DesignImageStore
             ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
             ->orderBy('slot_index')
             ->get()
-            ->map(fn (VideoDesignImage $image) => $this->cellView($image, (float) ($spent[$image->id] ?? 0)))
+            ->map(fn (VideoDesignImage $image) => $this->cellView(
+                $image, $spent[$image->id] ?? 0.0, isset($unpriced[$image->id]),
+            ))
             ->all();
     }
 
@@ -211,7 +229,13 @@ class DesignImageStore
      */
     public function createEnvironment(string $projectId, string $creator, array $spec): array
     {
-        $sha = $this->identityHash($spec, ['operation', 'spec_version', 'environment_key']);
+        $extra = ['operation', 'spec_version', 'environment_key'];
+
+        if (($spec['provider'] ?? 'openai') !== 'openai') {
+            $extra[] = 'provider';
+        }
+
+        $sha = $this->identityHash($spec, $extra);
 
         try {
             return DB::transaction(function () use ($projectId, $creator, $spec, $sha) {
@@ -262,12 +286,7 @@ class DesignImageStore
     /** @return list<array<string, mixed>> */
     public function environmentCellsFor(string $projectId): array
     {
-        $spent = VideoCostEntry::query()
-            ->where('project_id', $projectId)
-            ->where('entity_type', 'design_image')
-            ->selectRaw('entity_id, SUM(cost_usd) as total')
-            ->groupBy('entity_id')
-            ->pluck('total', 'entity_id');
+        [$spent, $unpriced] = $this->spendByImage($projectId);
 
         return VideoDesignImage::query()
             ->where('project_id', $projectId)
@@ -275,8 +294,9 @@ class DesignImageStore
             ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
             ->orderBy('created_at')
             ->get()
-            ->map(fn (VideoDesignImage $image) => $this->cellView($image, (float) ($spent[$image->id] ?? 0))
-                + ['environment_key' => (string) $image->environment_key])
+            ->map(fn (VideoDesignImage $image) => $this->cellView(
+                $image, $spent[$image->id] ?? 0.0, isset($unpriced[$image->id]),
+            ) + ['environment_key' => (string) $image->environment_key])
             ->all();
     }
 
@@ -419,11 +439,14 @@ class DesignImageStore
     }
 
     /** @return array<string, mixed> */
-    private function cellView(VideoDesignImage $image, float $recorded): array
+    private function cellView(VideoDesignImage $image, float $recorded, bool $recordedUnpriced): array
     {
         $spec = $image->prompt_spec_json ?? [];
         $variations = max(1, (int) ($spec['variations'] ?? 1));
-        $unit = ImageQuality::fromSpecOrHigh($spec['quality'] ?? '')->estimatedCostUsd();
+        $pricing = (string) ($spec['pricing'] ?? 'estimated');
+        $unit = $pricing === 'unpriced'
+            ? null
+            : ImageQuality::fromSpecOrHigh($spec['quality'] ?? '')->estimatedCostUsd();
 
         return [
             'id' => $image->id,
@@ -455,9 +478,12 @@ class DesignImageStore
             'quality' => (string) ($spec['quality'] ?? ''),
             'size' => (string) ($spec['size'] ?? ''),
             'variations' => $variations,
+            'pricing' => $pricing,
+            'provider' => (string) ($spec['provider'] ?? 'openai'),
             'cost_unit' => $unit,
-            'cost_estimate' => $unit * $variations,
+            'cost_estimate' => $unit === null ? null : $unit * $variations,
             'cost_recorded' => $recorded,
+            'cost_recorded_unpriced' => $recordedUnpriced,
             'candidates' => $image->artifacts->map(fn (VideoArtifact $artifact) => [
                 'id' => $artifact->id,
                 'url' => $artifact->storage_disk === 'public'
