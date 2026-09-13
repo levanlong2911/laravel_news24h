@@ -1,0 +1,122 @@
+{
+    "probed_at": "2026-09-13T03:04:36+00:00",
+    "base_url": "https://generativelanguage.googleapis.com",
+    "probe_model": "gemini-3.1-flash-lite-image",
+    "sentinel": "__probe_unknown_field__",
+    "results": {
+        "v1": {
+            "responseFormat_flat": {
+                "status": 400,
+                "verdict": "field_rejected",
+                "unknown": [
+                    {
+                        "name": "aspectRatio",
+                        "at": "generation_config.response_format"
+                    },
+                    {
+                        "name": "imageSize",
+                        "at": "generation_config.response_format"
+                    },
+                    {
+                        "name": "__probe_unknown_field__",
+                        "at": "generation_config"
+                    }
+                ],
+                "invalid": [],
+                "message": "Invalid JSON payload received. Unknown name \"aspectRatio\" at 'generation_config.response_format': Cannot find field.\nInvalid JSON payload received. Unknown name \"imageSize\" at 'generation_config.response_format': Cannot find field.\nInvalid JSON payload received. Unknown name \"__probe_unknown_field__\" at 'generation_config': Cannot find field."
+            },
+            "responseFormat_image": {
+                "status": 400,
+                "verdict": "value_rejected",
+                "unknown": [
+                    {
+                        "name": "__probe_unknown_field__",
+                        "at": "generation_config"
+                    }
+                ],
+                "invalid": [
+                    {
+                        "at": "generation_config.response_format.image.aspect_ratio",
+                        "type": "type.googleapis.com/google.ai.generativelanguage.v1.ImageResponseFormat.AspectRatio",
+                        "value": "9:16"
+                    },
+                    {
+                        "at": "generation_config.response_format.image.image_size",
+                        "type": "type.googleapis.com/google.ai.generativelanguage.v1.ImageResponseFormat.ImageSize",
+                        "value": "1K"
+                    }
+                ],
+                "message": "Invalid value at 'generation_config.response_format.image.aspect_ratio' (type.googleapis.com/google.ai.generativelanguage.v1.ImageResponseFormat.AspectRatio), \"9:16\"\nInvalid value at 'generation_config.response_format.image.image_size' (type.googleapis.com/google.ai.generativelanguage.v1.ImageResponseFormat.ImageSize), \"1K\"\nInvalid JSON payload received. Unknown name \"__probe_unknown_field__\" at 'generation_config': Cannot find field."
+            },
+            "imageConfig": {
+                "status": 400,
+                "verdict": "field_accepted",
+                "unknown": [
+                    {
+                        "name": "__probe_unknown_field__",
+                        "at": "generation_config"
+                    }
+                ],
+                "invalid": [],
+                "message": "Invalid JSON payload received. Unknown name \"__probe_unknown_field__\" at 'generation_config': Cannot find field."
+            }
+        },
+        "v1beta": {
+            "responseFormat_flat": {
+                "status": 400,
+                "verdict": "field_rejected",
+                "unknown": [
+                    {
+                        "name": "aspectRatio",
+                        "at": "generation_config.response_format"
+                    },
+                    {
+                        "name": "imageSize",
+                        "at": "generation_config.response_format"
+                    },
+                    {
+                        "name": "__probe_unknown_field__",
+                        "at": "generation_config"
+                    }
+                ],
+                "invalid": [],
+                "message": "Invalid JSON payload received. Unknown name \"aspectRatio\" at 'generation_config.response_format': Cannot find field.\nInvalid JSON payload received. Unknown name \"imageSize\" at 'generation_config.response_format': Cannot find field.\nInvalid JSON payload received. Unknown name \"__probe_unknown_field__\" at 'generation_config': Cannot find field."
+            },
+            "responseFormat_image": {
+                "status": 400,
+                "verdict": "value_rejected",
+                "unknown": [
+                    {
+                        "name": "__probe_unknown_field__",
+                        "at": "generation_config"
+                    }
+                ],
+                "invalid": [
+                    {
+                        "at": "generation_config.response_format.image.aspect_ratio",
+                        "type": "type.googleapis.com/google.ai.generativelanguage.v1beta.ImageResponseFormat.AspectRatio",
+                        "value": "9:16"
+                    },
+                    {
+                        "at": "generation_config.response_format.image.image_size",
+                        "type": "type.googleapis.com/google.ai.generativelanguage.v1beta.ImageResponseFormat.ImageSize",
+                        "value": "1K"
+                    }
+                ],
+                "message": "Invalid value at 'generation_config.response_format.image.aspect_ratio' (type.googleapis.com/google.ai.generativelanguage.v1beta.ImageResponseFormat.AspectRatio), \"9:16\"\nInvalid value at 'generation_config.response_format.image.image_size' (type.googleapis.com/google.ai.generativelanguage.v1beta.ImageResponseFormat.ImageSize), \"1K\"\nInvalid JSON payload received. Unknown name \"__probe_unknown_field__\" at 'generation_config': Cannot find field."
+            },
+            "imageConfig": {
+                "status": 400,
+                "verdict": "field_accepted",
+                "unknown": [
+                    {
+                        "name": "__probe_unknown_field__",
+                        "at": "generation_config"
+                    }
+                ],
+                "invalid": [],
+                "message": "Invalid JSON payload received. Unknown name \"__probe_unknown_field__\" at 'generation_config': Cannot find field."
+            }
+        }
+    }
+}
