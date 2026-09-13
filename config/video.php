@@ -43,6 +43,8 @@ return [
         ))),
 
         'timeout' => (int) env('GEMINI_HTTP_TIMEOUT', 60),
+
+        'evidence_dir' => resource_path('ai/providers'),
     ],
 
     'python_runner_enabled' => (bool) env('VIDEO_PYTHON_RUNNER', true),

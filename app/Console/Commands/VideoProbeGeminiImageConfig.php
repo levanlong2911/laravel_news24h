@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Video\Gemini\GeminiErrorVerdict;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -10,8 +11,6 @@ use Illuminate\Support\Str;
 class VideoProbeGeminiImageConfig extends Command
 {
     private const PROBE_MODEL = 'gemini-3.1-flash-lite-image';
-
-    private const SENTINEL = '__probe_unknown_field__';
 
     /** @var list<string> */
     private const VERSIONS = ['v1', 'v1beta'];
@@ -30,7 +29,7 @@ class VideoProbeGeminiImageConfig extends Command
     ];
 
     protected $signature = 'video:probe-gemini-image-config
-        {--json= : Ghi ket qua ra path; bo trong thi dung resources/ai/providers}';
+        {--json= : Ghi ket qua ra path; bo trong thi dung video.gemini.evidence_dir}';
 
     protected $description = 'Ask Gemini which image config shape and API version it accepts, without generating an image';
 
@@ -102,7 +101,7 @@ class VideoProbeGeminiImageConfig extends Command
         }
 
         $message = (string) ($response->json('error.message') ?? $response->body());
-        [$verdict, $unknown, $invalid] = $this->verdict($message);
+        [$verdict, $unknown, $invalid] = GeminiErrorVerdict::classify($message);
 
         return [
             'status' => 400,
@@ -111,41 +110,6 @@ class VideoProbeGeminiImageConfig extends Command
             'invalid' => $invalid,
             'message' => Str::limit($message, 600),
         ];
-    }
-
-    /**
-     * Google liet ke MOI truong la VA moi gia tri sai trong mot lan. Truong
-     * dung ma gia tri sai (enum) la mot loai rieng: body co the dung duoc neu
-     * doi gia tri, nhung KHONG dung duoc voi gia tri dang gui.
-     *
-     * @return array{0: string, 1: list<array{name: string, at: string}>, 2: list<array{at: string, type: string, value: string}>}
-     */
-    private function verdict(string $message): array
-    {
-        preg_match_all("/Unknown name \"([^\"]+)\" at '([^']*)'/", $message, $u, PREG_SET_ORDER);
-        preg_match_all("/Invalid value at '([^']*)' \(([^)]*)\), (?:\"([^\"]*)\"|(\S+))/", $message, $i, PREG_SET_ORDER);
-
-        $unknown = array_map(
-            static fn (array $m): array => ['name' => $m[1], 'at' => $m[2]],
-            $u,
-        );
-
-        $invalid = array_map(static fn (array $m): array => [
-            'at' => $m[1],
-            'type' => $m[2],
-            'value' => ($m[3] ?? '') !== '' ? $m[3] : ($m[4] ?? ''),
-        ], $i);
-
-        $names = array_values(array_unique(array_column($unknown, 'name')));
-        $fieldUnknown = array_values(array_diff($names, [self::SENTINEL]));
-
-        return match (true) {
-            $unknown === [] && $invalid === [] => ['inconclusive', $unknown, $invalid],
-            $fieldUnknown !== [] => ['field_rejected', $unknown, $invalid],
-            $invalid !== [] => ['value_rejected', $unknown, $invalid],
-            $names === [self::SENTINEL] => ['field_accepted', $unknown, $invalid],
-            default => ['inconclusive', $unknown, $invalid],
-        };
     }
 
     /**
@@ -160,7 +124,7 @@ class VideoProbeGeminiImageConfig extends Command
             'contents' => [['parts' => [['text' => 'x']]]],
             'generationConfig' => ['responseModalities' => ['IMAGE']]
                 + self::VARIANTS[$variant]
-                + [self::SENTINEL => 1],
+                + [GeminiErrorVerdict::SENTINEL => 1],
         ];
     }
 
@@ -218,7 +182,7 @@ class VideoProbeGeminiImageConfig extends Command
         $path = trim((string) $this->option('json'));
 
         if ($path === '') {
-            $path = resource_path('ai/providers').DIRECTORY_SEPARATOR
+            $path = rtrim((string) config('video.gemini.evidence_dir'), '/\\').DIRECTORY_SEPARATOR
                 .'gemini_image_config_'.now()->format('Y_m_d').'.json';
         }
 
@@ -234,7 +198,7 @@ class VideoProbeGeminiImageConfig extends Command
             'probed_at' => now()->toIso8601String(),
             'base_url' => (string) config('video.gemini.base_url'),
             'probe_model' => self::PROBE_MODEL,
-            'sentinel' => self::SENTINEL,
+            'sentinel' => GeminiErrorVerdict::SENTINEL,
             'results' => $results,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 
