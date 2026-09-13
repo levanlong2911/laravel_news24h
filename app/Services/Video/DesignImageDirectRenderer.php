@@ -29,10 +29,18 @@ use Throwable;
  */
 class DesignImageDirectRenderer
 {
+    /** @var array<string, string> */
+    private const SOURCE_EXTENSIONS = [
+        'image/png' => 'png',
+        'image/jpeg' => 'jpg',
+        'image/webp' => 'webp',
+    ];
+
     public function __construct(
         private DesignImageQueue $queue,
         private OpenAiImageClient $client,
         private FilesystemFactory $storage,
+        private GeminiImageClient $gemini,
     ) {}
 
     /**
@@ -60,11 +68,19 @@ class DesignImageDirectRenderer
         try {
             $spec = $this->spec($image, $image->prompt_spec_json ?? [], $claimToken);
 
+            if (! in_array($spec['provider'], ['openai', 'gemini'], true)) {
+                throw new RuntimeException('Provider chua co client: '.$spec['provider']);
+            }
+
+            if ($spec['provider'] === 'gemini' && $spec['operation'] !== 'environment_plate') {
+                throw new RuntimeException('Gemini chi duoc dung cho environment_plate, khong cho '.$spec['operation']);
+            }
+
             $result = match ($spec['operation']) {
                 'mirror' => $this->mirror($image, $spec, $claimToken),
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
                 'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
-                'environment_plate' => $this->client->generate($spec, $budget),
+                'environment_plate' => $this->environmentPlate($spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),
                 default => throw new RuntimeException(
                     'Unknown render operation: '.$spec['operation'],
@@ -100,7 +116,10 @@ class DesignImageDirectRenderer
 
     private function budgetSeconds(): int
     {
-        return (int) config('video.openai_image.timeout', 300) + 60;
+        return max(
+            (int) config('video.openai_image.timeout', 300),
+            (int) config('video.gemini.image_timeout', 300),
+        ) + 60;
     }
 
     /**
@@ -109,8 +128,9 @@ class DesignImageDirectRenderer
      */
     private function spec(VideoDesignImage $image, array $spec, string $claimToken): array
     {
-        $quality = ImageQuality::fromSpecOrHigh($spec['quality'] ?? '');
+        $provider = (string) ($spec['provider'] ?? 'openai');
         $pricing = (string) ($spec['pricing'] ?? 'estimated');
+        $quality = $provider === 'openai' ? ImageQuality::fromSpecOrHigh($spec['quality'] ?? '') : null;
 
         return [
             'image_id' => $image->id,
@@ -118,12 +138,17 @@ class DesignImageDirectRenderer
             'claim_token' => $claimToken,
             'prompt' => (string) ($spec['prompt'] ?? ''),
             'operation' => (string) ($spec['operation'] ?? 'generate'),
+            'provider' => $provider,
             'model' => (string) ($spec['model'] ?? ''),
-            'quality' => $quality->value,
+            'quality' => $quality?->value,
             'size' => (string) ($spec['size'] ?? ''),
             'variations' => (int) ($spec['variations'] ?? 1),
             'pricing' => $pricing,
-            'cost_estimate' => $pricing === 'unpriced' ? null : $quality->estimatedCostUsd(),
+            'cost_estimate' => $pricing === 'unpriced' || $quality === null ? null : $quality->estimatedCostUsd(),
+            'api_version' => (string) ($spec['api_version'] ?? ''),
+            'shape' => (string) ($spec['shape'] ?? ''),
+            'aspect_ratio' => (string) ($spec['aspect_ratio'] ?? ''),
+            'image_size' => (string) ($spec['image_size'] ?? ''),
             'source_artifact_id' => $spec['source_artifact_id'] ?? null,
             'source_artifact_sha256' => (string) ($spec['source_artifact_sha256'] ?? ''),
             'derivation_version' => (string) ($spec['derivation_version'] ?? ''),
@@ -132,6 +157,17 @@ class DesignImageDirectRenderer
             'reference_manifest_hash' => (string) ($spec['reference_manifest_hash'] ?? ''),
             'sources' => is_array($spec['sources'] ?? null) ? $spec['sources'] : [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec
+     * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>}
+     */
+    private function environmentPlate(array $spec, int $budget): array
+    {
+        return $spec['provider'] === 'gemini'
+            ? $this->gemini->generate($spec, $budget)
+            : $this->client->generate($spec, $budget);
     }
 
     /**
@@ -186,11 +222,27 @@ class DesignImageDirectRenderer
                 'bytes' => $this->verifiedBytes($artifact, [
                     'source_artifact_sha256' => $entry['sha256'] ?? '',
                 ]),
-                'filename' => 'source_'.str_pad((string) $position, 2, '0', STR_PAD_LEFT).'.png',
+                'filename' => 'source_'.str_pad((string) $position, 2, '0', STR_PAD_LEFT)
+                    .'.'.$this->sourceExtension($artifact),
             ];
         }
 
         return $images;
+    }
+
+    /**
+     * Duoi tep quyet dinh Content-Type cua phan multipart, nen no phai theo mime
+     * that cua artifact: Gemini tra JPEG, OpenAI tra PNG.
+     */
+    private function sourceExtension(VideoArtifact $artifact): string
+    {
+        $mime = (string) $artifact->mime_type;
+
+        if (! array_key_exists($mime, self::SOURCE_EXTENSIONS)) {
+            throw new RuntimeException('Scene keyframe source carries an unsupported mime: '.$mime);
+        }
+
+        return self::SOURCE_EXTENSIONS[$mime];
     }
 
     /** @param array<string, mixed> $spec */

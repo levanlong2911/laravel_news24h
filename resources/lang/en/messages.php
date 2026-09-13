@@ -138,4 +138,8 @@ return [
     'scene_keyframe_environment_plate_missing' => 'Chưa duyệt tấm nền :name — sang Environment Library render và duyệt trước',
     'environment_no_profile' => 'Chuyên mục của bài này chưa có thư viện môi trường',
     'environment_unknown_key' => 'Profile không khai môi trường này',
+    'environment_media_models_broken' => 'Danh sách model của Environment Library đang lỗi cấu hình — chưa render được. Xem log.',
+    'environment_unknown_media_model' => 'Model không có trong danh sách của Environment Library',
+    'environment_media_setting_invalid' => 'Thiết lập không còn hợp lệ với danh sách model của Environment Library — tải lại trang rồi chọn lại.',
+    'environment_setting_not_allowed' => 'Trường :attribute không áp dụng cho model đã chọn',
 ];

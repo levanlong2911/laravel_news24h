@@ -4,22 +4,11 @@ declare(strict_types=1);
 
 namespace App\Video\Environment;
 
-use App\Enums\ImageModel;
-use App\Enums\ImageQuality;
-use App\Enums\ImageSize;
-use App\Enums\ImageVariations;
-
 final class EnvironmentPlatePrompt
 {
     public const VERSION = 'environment-plate-v1';
 
-    public const DEFAULT_SIZE = ImageSize::VERTICAL_2K;
-
-    public const DEFAULT_QUALITY = ImageQuality::LOW;
-
-    public const DEFAULT_MODEL = ImageModel::GPT_IMAGE_2;
-
-    public const DEFAULT_VARIATIONS = ImageVariations::ONE;
+    public const TASK = 'environment_plate';
 
     private const FRAME = 'An empty location plate. The place itself is the subject of this image. '
         .'Nothing is being built here and nothing is parked here. Eye-level camera, wide framing, '

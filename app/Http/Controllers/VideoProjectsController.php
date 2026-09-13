@@ -16,6 +16,8 @@ use App\Services\VideoProjectService;
 use App\Video\Concept\Viewpoint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 
 class VideoProjectsController extends Controller
 {
@@ -341,6 +343,9 @@ class VideoProjectsController extends Controller
             'scene_keyframe_needs_scene_flow' => __('messages.scene_keyframe_needs_scene_flow'),
             'no_environment_profile' => __('messages.environment_no_profile'),
             'unknown_environment_key' => __('messages.environment_unknown_key'),
+            'environment_media_models_broken' => __('messages.environment_media_models_broken'),
+            'environment_unknown_media_model' => __('messages.environment_unknown_media_model'),
+            'environment_media_setting_invalid' => __('messages.environment_media_setting_invalid'),
             default => $reason,
         };
     }
@@ -428,7 +433,13 @@ class VideoProjectsController extends Controller
 
     private function createEnvironment(Request $request, string $id)
     {
-        $data = $this->form->validate($request, 'EnvironmentImageForm');
+        try {
+            $data = $this->form->validate($request, 'EnvironmentImageForm');
+        } catch (InvalidArgumentException $e) {
+            Log::error('environment: registry model hong khi validate', ['error' => $e->getMessage()]);
+
+            return back()->with('error', $this->anchorMessage('environment_media_models_broken'));
+        }
 
         [$image, $reason] = $this->videoProjectService->renderEnvironmentDirect(
             $id, (string) auth()->user()?->name, $data,

@@ -10,6 +10,7 @@ use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Services\Video\DesignImageStore;
 use App\Video\Environment\EnvironmentPlatePrompt;
+use App\Video\Media\MediaModelRegistry;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -215,30 +216,50 @@ class EnvironmentPlateTest extends TestCase
 
     public function test_the_default_format_is_the_one_the_keyframe_chain_uses(): void
     {
-        $this->assertSame('1152x2048', EnvironmentPlatePrompt::DEFAULT_SIZE->value);
-        $this->assertSame('low', EnvironmentPlatePrompt::DEFAULT_QUALITY->value);
+        $default = app(MediaModelRegistry::class)->defaultFor(EnvironmentPlatePrompt::TASK);
+
+        $this->assertSame('openai:gpt-image-2', $default['id']);
+        $this->assertSame('1152x2048', $default['controls']['default_size']);
+        $this->assertSame('low', $default['controls']['default_quality']);
     }
 
-    public function test_every_row_offers_the_whole_enum_for_each_setting(): void
+    public function test_every_row_offers_every_choice_the_registry_declares(): void
     {
         $html = $this->get($this->url())->assertOk()->getContent();
 
         $rows = count($this->profile()->environmentKeys());
+        $offered = [];
 
-        foreach ([
-            \App\Enums\ImageSize::cases(),
-            \App\Enums\ImageQuality::cases(),
-            \App\Enums\ImageModel::cases(),
-            \App\Enums\ImageVariations::cases(),
-        ] as $cases) {
-            foreach ($cases as $case) {
-                $this->assertSame(
-                    $rows,
-                    substr_count($html, 'value="'.$case->value.'"'),
-                    'every row must offer '.$case->value,
-                );
+        foreach (app(MediaModelRegistry::class)->forTask(EnvironmentPlatePrompt::TASK) as $entry) {
+            $offered[$entry['id']] = ($offered[$entry['id']] ?? 0) + 1;
+
+            foreach (['sizes', 'qualities', 'aspect_ratios', 'image_sizes'] as $list) {
+                foreach ($entry['controls'][$list] ?? [] as $value) {
+                    $offered[$value] = ($offered[$value] ?? 0) + 1;
+                }
             }
         }
+
+        foreach ($offered as $value => $groups) {
+            $this->assertSame(
+                $rows * $groups,
+                substr_count($html, 'value="'.$value.'"'),
+                'every row must offer '.$value,
+            );
+        }
+    }
+
+    public function test_the_old_auto_quality_is_no_longer_offered_or_accepted(): void
+    {
+        Http::fake();
+
+        $this->get($this->url())->assertOk()->assertDontSee('value="auto"', false);
+
+        $this->post($this->url(), $this->settings(['quality' => 'auto']))
+            ->assertSessionHasErrors('quality');
+
+        $this->assertSame(0, $this->plates()->count());
+        Http::assertNothingSent();
     }
 
     public function test_every_setting_arrives_chosen_so_no_row_needs_a_placeholder(): void
@@ -250,16 +271,38 @@ class EnvironmentPlateTest extends TestCase
         $this->assertStringNotContainsString('<option value="">', $html);
 
         foreach ([
-            EnvironmentPlatePrompt::DEFAULT_MODEL,
-            EnvironmentPlatePrompt::DEFAULT_QUALITY,
-            EnvironmentPlatePrompt::DEFAULT_SIZE,
-            EnvironmentPlatePrompt::DEFAULT_VARIATIONS,
-        ] as $default) {
-            $this->assertSame($rows, preg_match_all(
-                '/value="'.preg_quote((string) $default->value, '/').'"[^>]*\sselected/',
+            'openai:gpt-image-2' => $rows,
+            'low' => $rows,
+            '1152x2048' => $rows,
+            '9:16' => $rows * 3,
+            '1K' => $rows * 3,
+        ] as $default => $expected) {
+            $this->assertSame($expected, preg_match_all(
+                '/value="'.preg_quote($default, '/').'"[^>]*\sselected/',
                 $html,
-            ), 'default not preselected: '.$default->value);
+            ), 'default not preselected: '.$default);
         }
+    }
+
+    public function test_only_the_default_model_group_is_visible_and_submittable(): void
+    {
+        $html = $this->get($this->url())->assertOk()->getContent();
+
+        preg_match_all('/<div class="ve-set" data-row="paint_shed" data-group="([^"]+)"[^>]*>/', $html, $groups);
+
+        $this->assertCount(4, $groups[0]);
+
+        foreach ($groups[0] as $index => $tag) {
+            $default = $groups[1][$index] === 'openai:gpt-image-2';
+
+            $this->assertSame(! $default, str_contains($tag, ' hidden'), 'group '.$groups[1][$index]);
+        }
+
+        $this->assertSame(
+            count($this->profile()->environmentKeys()) * 3 * 3,
+            substr_count($html, 'required disabled'),
+            'each hidden Gemini group ships three disabled selects',
+        );
     }
 
     public function test_each_row_carries_its_own_cost_box_wired_to_its_own_selects(): void
@@ -270,10 +313,11 @@ class EnvironmentPlateTest extends TestCase
 
         foreach ($keys as $key) {
             $this->assertStringContainsString('id="est_'.$key.'"', $html);
+            $this->assertSame(1, substr_count($html, 'data-row="'.$key.'" data-role="model"'));
             $this->assertSame(
                 4,
-                substr_count($html, 'data-row="'.$key.'"'),
-                'four settings must report to row '.$key,
+                substr_count($html, 'data-row="'.$key.'" data-group="'),
+                'one settings group per model must report to row '.$key,
             );
         }
 
@@ -303,23 +347,27 @@ class EnvironmentPlateTest extends TestCase
     {
         $this->fakeGenerateReturns();
 
+        $default = app(MediaModelRegistry::class)->defaultFor(EnvironmentPlatePrompt::TASK);
+
         $this->post($this->url(), [
             'environment_key' => 'paint_shed',
-            'model' => EnvironmentPlatePrompt::DEFAULT_MODEL->value,
-            'quality' => EnvironmentPlatePrompt::DEFAULT_QUALITY->value,
-            'size' => EnvironmentPlatePrompt::DEFAULT_SIZE->value,
-            'variations' => EnvironmentPlatePrompt::DEFAULT_VARIATIONS->value,
+            'provider_model' => $default['id'],
+            'quality' => $default['controls']['default_quality'],
+            'size' => $default['controls']['default_size'],
+            'variations' => 1,
         ])->assertRedirect($this->url());
 
         $spec = $this->plates()->sole()->prompt_spec_json;
 
+        $this->assertSame('openai', $spec['provider']);
         $this->assertSame('gpt-image-2', $spec['model']);
+        $this->assertSame('estimated', $spec['pricing']);
         $this->assertSame('1152x2048', $spec['size']);
         $this->assertSame('low', $spec['quality']);
         $this->assertSame(1, $spec['variations']);
     }
 
-    public function test_a_row_may_be_rendered_at_any_size_the_enum_allows(): void
+    public function test_a_row_may_be_rendered_at_any_size_the_registry_allows(): void
     {
         $this->fakeGenerateReturns();
 
@@ -333,7 +381,7 @@ class EnvironmentPlateTest extends TestCase
         $this->assertSame('high', $spec['quality']);
     }
 
-    public function test_a_size_outside_the_enum_is_still_refused(): void
+    public function test_a_size_outside_the_registry_is_refused(): void
     {
         Http::fake();
 
@@ -379,6 +427,90 @@ class EnvironmentPlateTest extends TestCase
 
         $this->assertSame(0, $this->plates()->count());
         Http::assertNothingSent();
+    }
+
+    public function test_an_openai_plate_hashes_exactly_as_it_did_before_providers_existed(): void
+    {
+        $store = app(DesignImageStore::class);
+        $legacy = $this->storeSpec();
+
+        [$first, $created] = $store->createEnvironment($this->project->id, 'tester', $legacy);
+        [$second, $reused] = $store->createEnvironment(
+            $this->project->id, 'tester', $legacy + ['provider' => 'openai'],
+        );
+
+        $this->assertSame('created', $created);
+        $this->assertSame('already_exists', $reused);
+        $this->assertSame($first->id, $second->id);
+        $this->assertSame(
+            $store->identityHash($legacy, ['operation', 'spec_version', 'environment_key']),
+            (string) $first->prompt_sha256,
+            'the nine plates already in the database must keep matching their own hash',
+        );
+    }
+
+    public function test_the_same_request_under_another_provider_is_a_new_row(): void
+    {
+        $store = app(DesignImageStore::class);
+        $openai = $this->storeSpec();
+        $gemini = $openai + ['provider' => 'gemini'];
+
+        [$first] = $store->createEnvironment($this->project->id, 'tester', $openai);
+        [$second, $reason] = $store->createEnvironment($this->project->id, 'tester', $gemini);
+
+        $this->assertSame('created', $reason);
+        $this->assertNotSame($first->id, $second->id);
+        $this->assertSame(
+            $store->identityHash($gemini, ['operation', 'spec_version', 'environment_key', 'provider']),
+            (string) $second->prompt_sha256,
+        );
+    }
+
+    public function test_an_unpriced_plate_never_shows_a_dollar_figure(): void
+    {
+        [$image] = $this->renderedPlate('paint_shed');
+
+        $image->forceFill(['prompt_spec_json' => array_replace(
+            $image->prompt_spec_json, ['pricing' => 'unpriced', 'provider' => 'gemini', 'quality' => null],
+        )])->save();
+
+        DB::table('video_cost_entries')->insert([
+            'id' => (string) Str::uuid(),
+            'project_id' => $this->project->id,
+            'entity_type' => 'design_image',
+            'entity_id' => $image->id,
+            'provider' => 'gemini',
+            'model' => 'gemini-3.1-flash-lite-image',
+            'usage_type' => 'environment_plate',
+            'quantity' => 1,
+            'unit' => 'render',
+            'cost_usd' => 0,
+            'metadata_json' => json_encode(['pricing' => 'unpriced']),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->get($this->url())
+            ->assertOk()
+            ->assertSee('chưa định giá', false)
+            ->assertSee('1 ảnh &middot; không áp dụng', false)
+            ->assertDontSee('$0.000', false);
+    }
+
+    /** @return array<string, mixed> */
+    private function storeSpec(): array
+    {
+        return [
+            'project_id' => $this->project->id,
+            'operation' => 'environment_plate',
+            'spec_version' => EnvironmentPlatePrompt::VERSION,
+            'environment_key' => 'paint_shed',
+            'prompt' => EnvironmentPlatePrompt::text('A sealed white paint shed.'),
+            'model' => 'gpt-image-2',
+            'quality' => 'low',
+            'size' => '1152x2048',
+            'variations' => 1,
+        ];
     }
 
     public function test_the_same_plate_asked_for_twice_reuses_the_row_instead_of_paying_again(): void
@@ -536,7 +668,7 @@ class EnvironmentPlateTest extends TestCase
     {
         return $override + [
             'environment_key' => 'paint_shed',
-            'model' => 'gpt-image-2',
+            'provider_model' => 'openai:gpt-image-2',
             'quality' => 'low',
             'size' => '1152x2048',
             'variations' => 1,

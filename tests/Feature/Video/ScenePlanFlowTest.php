@@ -2590,6 +2590,72 @@ class ScenePlanFlowTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_a_jpeg_plate_travels_under_its_own_extension(): void
+    {
+        Http::fake(['*' => Http::response([
+            'created' => 1, 'data' => [['b64_json' => self::PNG_3X5]],
+        ], 200)]);
+
+        $this->retypePlate('design_studio', 'image/jpeg');
+        $this->planOnce();
+        $scene = $this->sceneRow(1);
+        [$preview] = $this->previewOf($scene);
+
+        [$image, $reason] = $this->renderScene(
+            $scene, $preview['prompt_sha256'], $preview['anchor_confirm_artifact_id'],
+        );
+
+        $this->assertSame('rendered', $reason, (string) $image?->render_error);
+
+        Http::assertSent(function ($request): bool {
+            $files = array_values(array_filter(
+                $request->data(),
+                static fn (array $part): bool => isset($part['filename']),
+            ));
+
+            $this->assertSame(
+                ['source_00.png', 'source_01.jpg'],
+                array_column($files, 'filename'),
+                'the extension must follow the bytes, not the slot',
+            );
+
+            return true;
+        });
+    }
+
+    public function test_a_plate_in_a_format_the_endpoint_never_takes_fails_before_the_request(): void
+    {
+        Http::fake();
+
+        $this->retypePlate('design_studio', 'image/gif');
+        $this->planOnce();
+        $scene = $this->sceneRow(1);
+        [$preview] = $this->previewOf($scene);
+
+        [$image, $reason] = $this->renderScene(
+            $scene, $preview['prompt_sha256'], $preview['anchor_confirm_artifact_id'],
+        );
+
+        $this->assertSame('failed', $reason);
+        $this->assertStringContainsString('unsupported mime: image/gif', (string) $image->render_error);
+        Http::assertNothingSent();
+    }
+
+    private function retypePlate(string $environmentKey, string $mime): void
+    {
+        $plate = VideoDesignImage::query()
+            ->where('project_id', $this->project->id)
+            ->where('image_type', DesignImageStore::ENVIRONMENT_TYPE)
+            ->where('environment_key', $environmentKey)
+            ->firstOrFail();
+
+        VideoArtifact::query()
+            ->whereKey($plate->selected_artifact_id)
+            ->firstOrFail()
+            ->forceFill(['mime_type' => $mime])
+            ->save();
+    }
+
     public function test_the_first_keyframe_goes_out_on_the_single_image_field_and_lands_in_the_ledger(): void
     {
         Http::fake(['*' => Http::response([

@@ -37,6 +37,10 @@
     gap: 8px;
 }
 
+.ve-set[hidden] {
+    display: none;
+}
+
 .ve-set .va-field label {
     display: block;
     margin-bottom: 3px;
@@ -120,6 +124,10 @@
         </div>
     </div>
 
+    @if($mediaModelsError)
+        <div class="alert alert-danger">{{ $mediaModelsError }}</div>
+    @endif
+
     @if($environments === [])
         <div class="vp-panel">
             <div class="va-head">
@@ -160,69 +168,119 @@
                     </div>
 
                     <div class="vs-c">
-                        <form method="POST" action="{{ route('video-projects.environment', $id) }}"
-                              id="{{ $form }}" data-modal="{{ $modal }}"
-                              onsubmit="return vpLockForm(this)" hidden>
-                            @csrf
-                            <input type="hidden" name="environment_key" value="{{ $key }}">
-                        </form>
-
-                        <div class="ve-set">
-                            <div class="va-field">
-                                <label>Model</label>
-                                <select class="ctl" name="model" form="{{ $form }}" data-row="{{ $key }}" required>
-                                    @foreach(\App\Enums\ImageModel::cases() as $model)
-                                        <option value="{{ $model->value }}"
-                                                @selected($model === $defaultModel)>{{ $model->label() }}</option>
-                                    @endforeach
-                                </select>
+                        @if($mediaModelsError)
+                            <div class="ve-locked" style="color:var(--vp-red)">
+                                Render đang khoá — danh sách model lỗi cấu hình.
                             </div>
-                            <div class="va-field">
-                                <label>Quality</label>
-                                <select class="ctl" name="quality" form="{{ $form }}" data-row="{{ $key }}" required>
-                                    @foreach(\App\Enums\ImageQuality::cases() as $quality)
-                                        <option value="{{ $quality->value }}" title="{{ $quality->hint() }}"
-                                                @selected($quality === $defaultQuality)>{{ $quality->label() }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="va-field">
-                                <label>Size</label>
-                                <select class="ctl" name="size" form="{{ $form }}" data-row="{{ $key }}" required>
-                                    @foreach(\App\Enums\ImageSize::cases() as $size)
-                                        <option value="{{ $size->value }}"
-                                                @selected($size === $defaultSize)>{{ $size->label() }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="va-field">
-                                <label>Variations</label>
-                                <select class="ctl" name="variations" form="{{ $form }}" data-row="{{ $key }}" required>
-                                    @foreach(\App\Enums\ImageVariations::cases() as $variation)
-                                        <option value="{{ $variation->value }}"
-                                                @selected($variation === $defaultVariations)>{{ $variation->label() }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        </div>
+                        @else
+                            <form method="POST" action="{{ route('video-projects.environment', $id) }}"
+                                  id="{{ $form }}" data-modal="{{ $modal }}"
+                                  onsubmit="return vpLockForm(this)" hidden>
+                                @csrf
+                                <input type="hidden" name="environment_key" value="{{ $key }}">
+                            </form>
 
-                        <div class="va-foot" style="padding-left:0;padding-right:0">
-                            <button type="button" class="vp-btn pri" data-toggle="modal"
-                                    data-target="#{{ $modal }}" data-busy="Đang render…">Render Plate</button>
-                        </div>
+                            <div class="ve-set">
+                                <div class="va-field">
+                                    <label>Model</label>
+                                    <select class="ctl" name="provider_model" form="{{ $form }}"
+                                            data-row="{{ $key }}" data-role="model" required>
+                                        @foreach($mediaModels as $entry)
+                                            <option value="{{ $entry['id'] }}" data-pricing="{{ $entry['pricing'] }}"
+                                                    @selected($entry['id'] === $defaultMediaModel['id'])>{{ $entry['label'] }}{{ $entry['pricing'] === 'unpriced' ? ' · chưa định giá' : '' }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
 
-                        <div class="ve-locked">
-                            Mặc định {{ $defaultSize->label() }} · {{ $defaultQuality->label() }} — cùng khổ với keyframe.
-                            Ước lượng chi phí tính theo chất lượng và số ảnh, không theo khổ.
-                        </div>
+                                @foreach($mediaModels as $entry)
+                                    @php
+                                        $active = $entry['id'] === $defaultMediaModel['id'];
+                                        $controls = $entry['controls'];
+                                    @endphp
+                                    <div class="ve-set" data-row="{{ $key }}" data-group="{{ $entry['id'] }}"
+                                         data-provider="{{ $entry['provider'] }}" data-label="{{ $entry['label'] }}"
+                                         data-default-size="{{ $controls['default_size'] ?? '' }}"
+                                         data-default-quality="{{ $controls['default_quality'] ?? '' }}"
+                                         @unless($active) hidden @endunless>
+                                        @if($entry['provider'] === 'openai')
+                                            <div class="va-field">
+                                                <label>Quality</label>
+                                                <select class="ctl" name="quality" form="{{ $form }}" required @disabled(! $active)>
+                                                    @foreach($controls['qualities'] as $quality)
+                                                        <option value="{{ $quality }}"
+                                                                @selected($quality === $controls['default_quality'])>{{ $quality }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <div class="va-field">
+                                                <label>Size</label>
+                                                <select class="ctl" name="size" form="{{ $form }}" required @disabled(! $active)>
+                                                    @foreach($controls['sizes'] as $size)
+                                                        <option value="{{ $size }}"
+                                                                @selected($size === $controls['default_size'])>{{ $size }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                        @else
+                                            <div class="va-field">
+                                                <label>Quality</label>
+                                                <div class="ve-locked">không áp dụng</div>
+                                            </div>
+                                            <div class="va-field">
+                                                <label>Aspect ratio</label>
+                                                <select class="ctl" name="aspect_ratio" form="{{ $form }}" required @disabled(! $active)>
+                                                    @foreach($controls['aspect_ratios'] as $ratio)
+                                                        <option value="{{ $ratio }}"
+                                                                @selected($ratio === $controls['default_aspect_ratio'])>{{ $ratio }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <div class="va-field">
+                                                <label>Image size</label>
+                                                <select class="ctl" name="image_size" form="{{ $form }}" required @disabled(! $active)>
+                                                    @foreach($controls['image_sizes'] as $imageSize)
+                                                        <option value="{{ $imageSize }}"
+                                                                @selected($imageSize === $controls['default_image_size'])>{{ $imageSize }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                        @endif
+                                        <div class="va-field">
+                                            <label>Variations</label>
+                                            <select class="ctl" name="variations" form="{{ $form }}" required @disabled(! $active)>
+                                                @for($count = 1; $count <= $entry['max_variations']; $count++)
+                                                    <option value="{{ $count }}" @selected($count === 1)>{{ $count }}</option>
+                                                @endfor
+                                            </select>
+                                        </div>
+                                        @unless(in_array($entry['id'], $renderedModels, true))
+                                            <div class="ve-locked ve-unproven" style="color:var(--vp-amber-fg)">
+                                                Chưa có lần render Environment thật nào bằng model này.
+                                            </div>
+                                        @endunless
+                                    </div>
+                                @endforeach
+                            </div>
 
-                        @include('modal.confirm_action', [
-                            'id' => $modal,
-                            'form' => $form,
-                            'content' => 'Sinh tấm nền sạch cho "'.$environment['label'].'" — TÁC VỤ NÀY TÍNH TIỀN.',
-                            'detail' => 'Đang tính…',
-                            'detailId' => 'est_'.$key,
-                        ])
+                            <div class="va-foot" style="padding-left:0;padding-right:0">
+                                <button type="button" class="vp-btn pri" data-toggle="modal"
+                                        data-target="#{{ $modal }}" data-busy="Đang render…">Render Plate</button>
+                            </div>
+
+                            <div class="ve-locked">
+                                Mặc định {{ $defaultMediaModel['label'] }} · {{ $defaultMediaModel['controls']['default_size'] ?? '' }}
+                                · {{ $defaultMediaModel['controls']['default_quality'] ?? '' }} — cùng khổ với keyframe.
+                                Ước lượng chi phí tính theo chất lượng và số ảnh, không theo khổ.
+                            </div>
+
+                            @include('modal.confirm_action', [
+                                'id' => $modal,
+                                'form' => $form,
+                                'content' => 'Sinh tấm nền sạch cho "'.$environment['label'].'" — TÁC VỤ NÀY TÍNH TIỀN.',
+                                'detail' => 'Đang tính…',
+                                'detailId' => 'est_'.$key,
+                            ])
+                        @endif
                     </div>
 
                     <div class="vs-c">
@@ -272,8 +330,8 @@
                                         <div class="meta">
                                             <span>{{ $cell['image_code'] }}</span>
                                             <span>{{ $candidate['width'] }}×{{ $candidate['height'] }}</span>
-                                            <span>{{ $cell['variations'] }} ảnh &middot; {{ $cell['quality'] }}
-                                                &middot; ${{ number_format($cell['cost_recorded'], 3) }}</span>
+                                            <span>{{ $cell['variations'] }} ảnh &middot; {{ $cell['quality'] !== '' ? $cell['quality'] : 'không áp dụng' }}
+                                                &middot; {{ $cell['cost_recorded_unpriced'] ? 'chưa định giá' : '$'.number_format($cell['cost_recorded'], 3) }}</span>
                                             <span>Created: {{ $candidate['created_at']?->format('Y-m-d H:i:s') ?? '—' }}</span>
                                         </div>
                                     </div>
@@ -286,7 +344,7 @@
                                 <span class="code">{{ $cell['image_code'] }}</span>
                                 <span class="va-tag {{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</span>
                                 <span class="grow"></span>
-                                <span class="d">{{ $cell['variations'] }} ảnh &middot; {{ $cell['quality'] }}</span>
+                                <span class="d">{{ $cell['variations'] }} ảnh &middot; {{ $cell['quality'] !== '' ? $cell['quality'] : 'không áp dụng' }}</span>
                             </div>
 
                             @if($cell['render_error'])
@@ -297,7 +355,7 @@
                                 <div class="ve-locked" style="color:var(--vp-amber-fg)">
                                     Đang render — tải lại trang để xem tiến độ.
                                 </div>
-                            @elseif($cell['can_render'])
+                            @elseif($cell['can_render'] && ! $mediaModelsError)
                                 <form method="POST" id="renderEnv_{{ $cell['id'] }}"
                                       action="{{ route('video-projects.design-image-enqueue', [$id, $cell['id']]) }}"
                                       data-modal="confirmRenderEnv_{{ $cell['id'] }}" onsubmit="return vpLockForm(this)">
@@ -311,8 +369,8 @@
                                     'id' => 'confirmRenderEnv_'.$cell['id'],
                                     'form' => 'renderEnv_'.$cell['id'],
                                     'content' => 'Gửi ô này cho gpt-image-2 render — TÁC VỤ NÀY TÍNH TIỀN.',
-                                    'detail' => $cell['variations'].' ảnh · '.$cell['quality'].' · '.$cell['size']
-                                        .' — ước lượng $'.number_format($cell['cost_estimate'], 3),
+                                    'detail' => $cell['variations'].' ảnh · '.($cell['quality'] !== '' ? $cell['quality'] : 'không áp dụng').' · '.$cell['size']
+                                        .' — '.($cell['cost_estimate'] === null ? 'chưa định giá' : 'ước lượng $'.number_format($cell['cost_estimate'], 3)),
                                 ])
                             @endif
                         @endforeach
@@ -336,34 +394,56 @@
 (function () {
     var costs = @json($qualityCosts ?? []);
     var keys = @json(collect($environments)->pluck('key'));
-    var fallback = @json($defaultQuality->value ?? '');
-    var defaults = {
-        quality: @json($defaultQuality->value ?? ''),
-        size: @json($defaultSize->value ?? '')
-    };
 
     keys.forEach(function (key) {
         var box = document.getElementById('est_' + key);
-        if (!box) { return; }
+        var picker = document.querySelector('[data-row="' + key + '"][data-role="model"]');
+        if (!box || !picker) { return; }
 
-        var fields = {};
-        Array.prototype.forEach.call(
-            document.querySelectorAll('[data-row="' + key + '"]'),
-            function (el) { fields[el.name] = el; }
-        );
+        var groups = document.querySelectorAll('[data-row="' + key + '"][data-group]');
+
+        function field(group, name) {
+            return group.querySelector('[name="' + name + '"]');
+        }
+
+        function activeGroup() {
+            var found = null;
+            Array.prototype.forEach.call(groups, function (group) {
+                var on = group.getAttribute('data-group') === picker.value;
+                group.hidden = !on;
+                Array.prototype.forEach.call(group.querySelectorAll('select'), function (el) {
+                    el.disabled = !on;
+                });
+                if (on) { found = group; }
+            });
+            return found;
+        }
 
         function sync() {
-            var quality = fields.quality ? fields.quality.value : fallback;
-            var size = fields.size ? fields.size.value : defaults.size;
-            var count = fields.variations ? parseInt(fields.variations.value, 10) : 1;
-            if (!count || count < 1) { count = 1; }
+            var group = activeGroup();
+            if (!group) { box.textContent = 'Model không có thiết lập.'; return; }
 
+            var count = parseInt(field(group, 'variations').value, 10) || 1;
+            var pricing = picker.options[picker.selectedIndex].getAttribute('data-pricing');
+            var label = group.getAttribute('data-label');
+
+            if (group.getAttribute('data-provider') !== 'openai') {
+                box.textContent = label + ' · ' + field(group, 'aspect_ratio').value + ' · '
+                    + field(group, 'image_size').value + ' · ' + count + ' ảnh — '
+                    + (pricing === 'unpriced' ? 'chưa định giá' : 'không rõ giá');
+                box.classList.remove('text-danger');
+                box.classList.add('text-muted');
+                return;
+            }
+
+            var quality = field(group, 'quality').value;
+            var size = field(group, 'size').value;
             var unit = costs[quality];
             var off = [];
-            if (quality !== defaults.quality) { off.push('chất lượng'); }
-            if (size !== defaults.size) { off.push('khổ'); }
+            if (quality !== group.getAttribute('data-default-quality')) { off.push('chất lượng'); }
+            if (size !== group.getAttribute('data-default-size')) { off.push('khổ'); }
 
-            var text = size + ' · ' + quality + ' · ' + count + ' ảnh — ước lượng '
+            var text = label + ' · ' + size + ' · ' + quality + ' · ' + count + ' ảnh — ước lượng '
                 + (unit === undefined ? 'không rõ' : '$' + (unit * count).toFixed(3));
 
             if (off.length) {
@@ -376,8 +456,11 @@
             box.classList.toggle('text-muted', off.length === 0);
         }
 
-        Object.keys(fields).forEach(function (name) {
-            fields[name].addEventListener('change', sync);
+        picker.addEventListener('change', sync);
+        Array.prototype.forEach.call(groups, function (group) {
+            Array.prototype.forEach.call(group.querySelectorAll('select'), function (el) {
+                el.addEventListener('change', sync);
+            });
         });
 
         sync();

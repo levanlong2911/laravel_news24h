@@ -39,6 +39,7 @@ use App\Video\Concept\Canonical\Enums\ProvenanceOrigin;
 use App\Video\Concept\Persistence\CanonicalConceptExecutionService;
 use App\Video\Concept\Viewpoint;
 use App\Video\Environment\EnvironmentPlatePrompt;
+use App\Video\Media\MediaModelRegistry;
 use App\Video\Profiles\CategoryCreativeProfileResolver as CanonicalProfileResolver;
 use App\Video\Reference\IdentityPreservationPrompt;
 use App\Video\Reference\ReferenceEnvironment;
@@ -56,6 +57,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class VideoProjectService
 {
@@ -1371,6 +1373,19 @@ class VideoProjectService
             ];
         }
 
+        try {
+            $registry = app(MediaModelRegistry::class);
+            $mediaModels = $registry->forTask(EnvironmentPlatePrompt::TASK);
+            $defaultMediaModel = $registry->defaultFor(EnvironmentPlatePrompt::TASK);
+            $mediaModelsError = null;
+        } catch (InvalidArgumentException $e) {
+            Log::error('environment: registry model hong', ['error' => $e->getMessage()]);
+
+            $mediaModels = [];
+            $defaultMediaModel = null;
+            $mediaModelsError = __('messages.environment_media_models_broken');
+        }
+
         return [
             'id' => $projectId,
             'project' => $project,
@@ -1378,10 +1393,10 @@ class VideoProjectService
             'environments' => $environments,
             'environmentCells' => $this->designImageStore->environmentCellsFor($projectId),
             'plateVersion' => EnvironmentPlatePrompt::VERSION,
-            'defaultSize' => EnvironmentPlatePrompt::DEFAULT_SIZE,
-            'defaultQuality' => EnvironmentPlatePrompt::DEFAULT_QUALITY,
-            'defaultModel' => EnvironmentPlatePrompt::DEFAULT_MODEL,
-            'defaultVariations' => EnvironmentPlatePrompt::DEFAULT_VARIATIONS,
+            'mediaModels' => $mediaModels,
+            'defaultMediaModel' => $defaultMediaModel,
+            'mediaModelsError' => $mediaModelsError,
+            'renderedModels' => $this->modelsWithAnEnvironmentRender(),
             'qualityCosts' => collect(ImageQuality::cases())
                 ->mapWithKeys(fn (ImageQuality $quality) => [
                     $quality->value => $quality->estimatedCostUsd(),
@@ -1415,20 +1430,19 @@ class VideoProjectService
             return [null, 'unknown_environment_key'];
         }
 
-        [$image, $reason] = $this->designImageStore->createEnvironment($projectId, $creator, [
-            'project_id' => $projectId,
-            'operation' => 'environment_plate',
-            'spec_version' => EnvironmentPlatePrompt::VERSION,
-            'environment_key' => $key,
-            'profile_version' => $profile->version,
-            'profile_sha256' => $profile->sha256,
-            'prompt' => EnvironmentPlatePrompt::text($place),
-            'model' => (string) $data['model'],
-            'quality' => (string) $data['quality'],
-            'size' => (string) $data['size'],
-            'variations' => (int) $data['variations'],
-            'pricing' => 'estimated',
-        ]);
+        [$entry, $reason] = $this->environmentMediaModel((string) ($data['provider_model'] ?? ''));
+
+        if ($entry === null) {
+            return [null, $reason];
+        }
+
+        [$spec, $reason] = $this->environmentSpec($projectId, $key, $profile, $place, $entry, $data);
+
+        if ($spec === null) {
+            return [null, $reason];
+        }
+
+        [$image, $reason] = $this->designImageStore->createEnvironment($projectId, $creator, $spec);
 
         if ($image === null) {
             return [null, $reason];
@@ -1442,6 +1456,116 @@ class VideoProjectService
         }
 
         return $this->designImageDirectRenderer->renderNow($image->id);
+    }
+
+    /**
+     * @return array{0: ?array<string, mixed>, 1: string} [$entry, $reason]
+     */
+    private function environmentMediaModel(string $id): array
+    {
+        try {
+            $entry = app(MediaModelRegistry::class)->find(EnvironmentPlatePrompt::TASK, $id);
+        } catch (InvalidArgumentException $e) {
+            Log::error('environment: registry model hong khi render', ['error' => $e->getMessage()]);
+
+            return [null, 'environment_media_models_broken'];
+        }
+
+        return $entry === null
+            ? [null, 'environment_unknown_media_model']
+            : [$entry, 'ok'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @param  array<string, mixed>  $data
+     * @return array{0: ?array<string, mixed>, 1: string} [$spec, $reason]
+     */
+    private function environmentSpec(
+        string $projectId,
+        string $key,
+        SceneProfile $profile,
+        string $place,
+        array $entry,
+        array $data,
+    ): array {
+        $invalid = [null, 'environment_media_setting_invalid'];
+        $controls = $entry['controls'];
+        $variations = $this->positiveInt($data['variations'] ?? null);
+
+        if ($variations === null || $variations > $entry['max_variations']) {
+            return $invalid;
+        }
+
+        $common = [
+            'project_id' => $projectId,
+            'operation' => 'environment_plate',
+            'spec_version' => EnvironmentPlatePrompt::VERSION,
+            'environment_key' => $key,
+            'profile_version' => $profile->version,
+            'profile_sha256' => $profile->sha256,
+            'prompt' => EnvironmentPlatePrompt::text($place),
+            'provider' => $entry['provider'],
+            'model' => $entry['model'],
+            'pricing' => $entry['pricing'],
+            'variations' => $variations,
+        ];
+
+        if ($entry['provider'] === 'openai') {
+            $size = $this->choice($data, 'size', $controls['sizes']);
+            $quality = $this->choice($data, 'quality', $controls['qualities']);
+
+            return $size === null || $quality === null
+                ? $invalid
+                : [$common + ['size' => $size, 'quality' => $quality], 'ok'];
+        }
+
+        $aspect = $this->choice($data, 'aspect_ratio', $controls['aspect_ratios']);
+        $imageSize = $this->choice($data, 'image_size', $controls['image_sizes']);
+
+        return $aspect === null || $imageSize === null
+            ? $invalid
+            : [$common + [
+                'api_version' => $entry['api_version'],
+                'shape' => $entry['shape'],
+                'aspect_ratio' => $aspect,
+                'image_size' => $imageSize,
+                'size' => $aspect.'@'.$imageSize,
+                'quality' => null,
+            ], 'ok'];
+    }
+
+    private function positiveInt(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value >= 1 ? $value : null;
+        }
+
+        return is_string($value) && preg_match('/^[1-9][0-9]{0,2}$/', $value) === 1 ? (int) $value : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<string>  $allowed
+     */
+    private function choice(array $data, string $field, array $allowed): ?string
+    {
+        $value = $data[$field] ?? null;
+
+        return is_string($value) && in_array($value, $allowed, true) ? $value : null;
+    }
+
+    /** @return list<string> */
+    private function modelsWithAnEnvironmentRender(): array
+    {
+        return DB::table('video_renders')
+            ->where('render_kind', EnvironmentPlatePrompt::TASK)
+            ->where('status', 'succeeded')
+            ->distinct()
+            ->get(['provider', 'model'])
+            ->map(fn (object $row): string => $row->provider.':'.$row->model)
+            ->values()
+            ->all();
     }
 
     private function environmentProfile(VideoProject $project): ?SceneProfile
