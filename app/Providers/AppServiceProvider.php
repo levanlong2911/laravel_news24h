@@ -5,7 +5,9 @@ namespace App\Providers;
 use App\Models\PromptFramework;
 use App\Observers\PromptFrameworkObserver;
 use App\Services\ImageProxyService;
+use App\Services\Video\GeminiImageClient;
 use App\Services\Video\OpenAiImageClient;
+use App\Video\Media\MediaModelRegistry;
 use App\Video\Prompt\AnthropicTextClient;
 use App\Video\Prompt\OpenAiTextClient;
 use App\Video\Prompt\GeometryPromptAuthor;
@@ -37,6 +39,20 @@ class AppServiceProvider extends ServiceProvider
                 disk: (string) config('video.openai_image.disk'),
                 memoryLimit: (string) config('video.openai_image.memory_limit'),
                 timeoutSeconds: (int) config('video.openai_image.timeout'),
+            ),
+        );
+
+        $this->app->singleton(
+            GeminiImageClient::class,
+            static fn (Application $app): GeminiImageClient => new GeminiImageClient(
+                http: $app->make(HttpFactory::class),
+                storage: $app->make(FilesystemFactory::class),
+                registry: $app->make(MediaModelRegistry::class),
+                apiKey: (string) config('video.gemini.api_key'),
+                baseUrl: (string) config('video.gemini.base_url'),
+                disk: (string) config('video.gemini.disk'),
+                memoryLimit: (string) config('video.openai_image.memory_limit'),
+                timeoutSeconds: (int) config('video.gemini.image_timeout'),
             ),
         );
 

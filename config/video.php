@@ -45,6 +45,10 @@ return [
         'timeout' => (int) env('GEMINI_HTTP_TIMEOUT', 60),
 
         'evidence_dir' => resource_path('ai/providers'),
+
+        'disk' => env('VIDEO_IMAGE_DISK', 'video_artifacts'),
+
+        'image_timeout' => (int) env('GEMINI_IMAGE_TIMEOUT', 300),
     ],
 
     'media_models' => [
