@@ -54,7 +54,7 @@ final class MediaModelRegistry
 
         foreach ($entries as $index => $entry) {
             if ($entry['provider'] === 'gemini') {
-                $this->assertEvidence("Task {$task}, entry {$index}", $entry);
+                $entries[$index] = $this->assertEvidence("Task {$task}, entry {$index}", $entry);
             }
         }
 
@@ -166,15 +166,18 @@ final class MediaModelRegistry
             throw new InvalidArgumentException("{$at}: evidence phai la mang.");
         }
 
-        foreach (['models', 'image_config'] as $kind) {
+        foreach (['models', 'image_config', 'capabilities'] as $kind) {
             if (! is_string($entry['evidence'][$kind] ?? null) || $entry['evidence'][$kind] === '') {
                 throw new InvalidArgumentException("{$at}: thieu evidence.{$kind}.");
             }
         }
     }
 
-    /** @param array<string, mixed> $entry */
-    private function assertEvidence(string $at, array $entry): void
+    /**
+     * @param  array<string, mixed>  $entry
+     * @return array<string, mixed> entry kem danh sach gia tri da co render canary
+     */
+    private function assertEvidence(string $at, array $entry): array
     {
         $models = $this->evidenceFile($at, $entry['evidence']['models']);
         $listed = $models['versions'][$entry['api_version']] ?? [];
@@ -199,6 +202,66 @@ final class MediaModelRegistry
                 .var_export($verdict, true).', khong phai field_accepted.',
             );
         }
+
+        $manifest = $this->evidenceFile($at, $entry['evidence']['capabilities']);
+        $capability = $manifest['models'][$entry['model']] ?? null;
+
+        if (! is_array($capability)) {
+            throw new InvalidArgumentException(
+                "{$at}: {$entry['evidence']['capabilities']} khong khai {$entry['model']}.",
+            );
+        }
+
+        $this->assertReviewed($at, $entry['controls']['aspect_ratios'], $capability, 'aspect_ratios');
+        $this->assertReviewed($at, $entry['controls']['image_sizes'], $capability, 'image_sizes');
+
+        return $this->withCanary($entry, $capability);
+    }
+
+    /**
+     * Duoc chao cho nguoi dung = co nguoi doc tai lieu va ky ten. Chung minh model
+     * ve duoc that = co canary_render_id. Hai chuyen khac nhau, nen dropdown chao
+     * ca hai loai nhung phai noi ro loai nao chua render bao gio.
+     *
+     * @param  list<string>  $declared
+     * @param  array<string, mixed>  $capability
+     */
+    private function assertReviewed(string $at, array $declared, array $capability, string $list): void
+    {
+        foreach ($declared as $value) {
+            $record = $capability[$list][$value] ?? null;
+
+            if (! is_array($record)) {
+                throw new InvalidArgumentException("{$at}: manifest khong khai {$list}.{$value}.");
+            }
+
+            foreach (['source', 'reviewed_by', 'reviewed_at'] as $field) {
+                if (! is_string($record[$field] ?? null) || trim($record[$field]) === '') {
+                    throw new InvalidArgumentException("{$at}: {$list}.{$value} thieu {$field} trong manifest.");
+                }
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @param  array<string, mixed>  $capability
+     * @return array<string, mixed>
+     */
+    private function withCanary(array $entry, array $capability): array
+    {
+        foreach (['aspect_ratios', 'image_sizes'] as $list) {
+            $entry['controls']['proven_'.$list] = array_values(array_filter(
+                $entry['controls'][$list],
+                static function (string $value) use ($capability, $list): bool {
+                    $id = $capability[$list][$value]['canary_render_id'] ?? null;
+
+                    return is_string($id) && trim($id) !== '';
+                },
+            ));
+        }
+
+        return $entry;
     }
 
     /** @return array<string, mixed> */

@@ -231,7 +231,7 @@
                                                 <select class="ctl" name="aspect_ratio" form="{{ $form }}" required @disabled(! $active)>
                                                     @foreach($controls['aspect_ratios'] as $ratio)
                                                         <option value="{{ $ratio }}"
-                                                                @selected($ratio === $controls['default_aspect_ratio'])>{{ $ratio }}</option>
+                                                                @selected($ratio === $controls['default_aspect_ratio'])>{{ $ratio }}{{ $ratio === $controls['default_aspect_ratio'] ? ' · khớp keyframe' : '' }}{{ in_array($ratio, $controls['proven_aspect_ratios'], true) ? '' : ' · chưa render thử' }}</option>
                                                     @endforeach
                                                 </select>
                                             </div>
@@ -240,7 +240,7 @@
                                                 <select class="ctl" name="image_size" form="{{ $form }}" required @disabled(! $active)>
                                                     @foreach($controls['image_sizes'] as $imageSize)
                                                         <option value="{{ $imageSize }}"
-                                                                @selected($imageSize === $controls['default_image_size'])>{{ $imageSize }}</option>
+                                                                @selected($imageSize === $controls['default_image_size'])>{{ $imageSize }}{{ in_array($imageSize, $controls['proven_image_sizes'], true) ? '' : ' · chưa render thử' }}</option>
                                                     @endforeach
                                                 </select>
                                             </div>
@@ -271,6 +271,8 @@
                                 Mặc định {{ $defaultMediaModel['label'] }} · {{ $defaultMediaModel['controls']['default_size'] ?? '' }}
                                 · {{ $defaultMediaModel['controls']['default_quality'] ?? '' }} — cùng khổ với keyframe.
                                 Ước lượng chi phí tính theo chất lượng và số ảnh, không theo khổ.
+                                Khổ khác 9:16 sẽ bị ép lại khi tấm nền vào scene keyframe, và
+                                "chưa render thử" nghĩa là chưa có lần render thật nào ở giá trị đó.
                             </div>
 
                             @include('modal.confirm_action', [

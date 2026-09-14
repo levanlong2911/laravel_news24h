@@ -88,7 +88,7 @@ class GeminiImageClientTest extends TestCase
     {
         yield 'shape' => [['shape' => 'response_format_image'], 'shape'];
         yield 'api version' => [['api_version' => 'v1beta'], 'api_version'];
-        yield 'aspect ratio' => [['aspect_ratio' => '16:9'], 'aspect_ratio'];
+        yield 'aspect ratio' => [['aspect_ratio' => '7:9'], 'aspect_ratio'];
         yield 'image size' => [['image_size' => '2K'], 'image_size'];
         yield 'variations' => [['variations' => 2], '1 anh moi luot'];
         yield 'empty prompt' => [['prompt' => '  '], 'prompt rong'];

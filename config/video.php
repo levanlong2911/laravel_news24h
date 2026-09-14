@@ -83,7 +83,10 @@ return [
                     'api_version' => 'v1',
                     'shape' => 'image_config',
                     'controls' => [
-                        'aspect_ratios' => ['9:16'],
+                        'aspect_ratios' => [
+                            '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4',
+                            '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1',
+                        ],
                         'default_aspect_ratio' => '9:16',
                         'image_sizes' => ['1K'],
                         'default_image_size' => '1K',
@@ -91,6 +94,7 @@ return [
                     'evidence' => [
                         'models' => 'gemini_models_2026_09_12.json',
                         'image_config' => 'gemini_image_config_2026_09_13.json',
+                        'capabilities' => 'gemini_image_capabilities.json',
                     ],
                 ],
                 [
@@ -104,14 +108,18 @@ return [
                     'api_version' => 'v1',
                     'shape' => 'image_config',
                     'controls' => [
-                        'aspect_ratios' => ['9:16'],
+                        'aspect_ratios' => [
+                            '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4',
+                            '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1',
+                        ],
                         'default_aspect_ratio' => '9:16',
-                        'image_sizes' => ['1K'],
+                        'image_sizes' => ['0.5K', '1K', '2K', '4K'],
                         'default_image_size' => '1K',
                     ],
                     'evidence' => [
                         'models' => 'gemini_models_2026_09_12.json',
                         'image_config' => 'gemini_image_config_2026_09_13.json',
+                        'capabilities' => 'gemini_image_capabilities.json',
                     ],
                 ],
                 [
@@ -125,14 +133,17 @@ return [
                     'api_version' => 'v1',
                     'shape' => 'image_config',
                     'controls' => [
-                        'aspect_ratios' => ['9:16'],
+                        'aspect_ratios' => [
+                            '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
+                        ],
                         'default_aspect_ratio' => '9:16',
-                        'image_sizes' => ['1K'],
+                        'image_sizes' => ['1K', '2K', '4K'],
                         'default_image_size' => '1K',
                     ],
                     'evidence' => [
                         'models' => 'gemini_models_2026_09_12.json',
                         'image_config' => 'gemini_image_config_2026_09_13.json',
+                        'capabilities' => 'gemini_image_capabilities.json',
                     ],
                 ],
             ],

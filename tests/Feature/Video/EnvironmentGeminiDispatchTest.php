@@ -319,7 +319,7 @@ class EnvironmentGeminiDispatchTest extends TestCase
         yield 'openai missing size' => ['openai', ['size' => null]];
         yield 'openai three variations' => ['openai', ['variations' => '3']];
         yield 'gemini image size' => ['gemini', ['image_size' => '2K']];
-        yield 'gemini aspect ratio' => ['gemini', ['aspect_ratio' => '16:9']];
+        yield 'gemini aspect ratio' => ['gemini', ['aspect_ratio' => '7:9']];
         yield 'gemini two variations' => ['gemini', ['variations' => '2']];
         yield 'zero variations' => ['openai', ['variations' => '0']];
         yield 'fractional variations' => ['openai', ['variations' => '1.5']];

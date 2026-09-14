@@ -305,6 +305,67 @@ class EnvironmentPlateTest extends TestCase
         );
     }
 
+    public function test_each_model_group_offers_only_the_choices_its_own_model_declares(): void
+    {
+        $html = $this->get($this->url())->assertOk()->getContent();
+
+        foreach (app(MediaModelRegistry::class)->forTask(EnvironmentPlatePrompt::TASK) as $entry) {
+            if ($entry['provider'] !== 'gemini') {
+                continue;
+            }
+
+            $group = $this->groupHtml($html, $entry['id']);
+
+            foreach (['aspect_ratios', 'image_sizes'] as $list) {
+                foreach ($entry['controls'][$list] as $value) {
+                    $this->assertStringContainsString('value="'.$value.'"', $group, $entry['id'].' thieu '.$value);
+                }
+            }
+
+            foreach (['7:9', '99:1'] as $never) {
+                $this->assertStringNotContainsString('value="'.$never.'"', $group);
+            }
+        }
+
+        $lite = $this->groupHtml($html, 'gemini:gemini-3.1-flash-lite-image');
+        $pro = $this->groupHtml($html, 'gemini:gemini-3-pro-image');
+
+        $this->assertStringNotContainsString('value="1:8"', $pro, 'Pro khong khai ti le cua Flash');
+        $this->assertStringNotContainsString('value="2K"', $lite, 'Lite chi co 1K');
+        $this->assertStringContainsString('value="4K"', $pro);
+    }
+
+    public function test_a_choice_without_a_real_render_behind_it_says_so(): void
+    {
+        $html = $this->get($this->url())->assertOk()->getContent();
+
+        $lite = $this->groupHtml($html, 'gemini:gemini-3.1-flash-lite-image');
+        $pro = $this->groupHtml($html, 'gemini:gemini-3-pro-image');
+
+        $this->assertMatchesRegularExpression(
+            '/value="9:16"[^>]*>9:16 · khớp keyframe</u', $lite,
+            'ti le mac dinh cua Lite da co canary nen khong duoc dan nhan chua render thu',
+        );
+        $this->assertMatchesRegularExpression('/value="21:9"[^>]*>21:9 · chưa render thử</u', $lite);
+        $this->assertMatchesRegularExpression('/value="1K"[^>]*>1K</u', $lite);
+        $this->assertMatchesRegularExpression(
+            '/value="9:16"[^>]*>9:16 · khớp keyframe · chưa render thử</u', $pro,
+            'Pro chua render that lan nao, ke ca o kho mac dinh',
+        );
+        $this->assertMatchesRegularExpression('/value="4K"[^>]*>4K · chưa render thử</u', $pro);
+    }
+
+    private function groupHtml(string $html, string $id): string
+    {
+        $start = strpos($html, 'data-group="'.$id.'"');
+
+        $this->assertNotFalse($start, 'khong thay nhom '.$id);
+
+        $end = strpos($html, 'data-group="', $start + 1);
+
+        return substr($html, $start, $end === false ? null : $end - $start);
+    }
+
     public function test_each_row_carries_its_own_cost_box_wired_to_its_own_selects(): void
     {
         $html = $this->get($this->url())->assertOk()->getContent();

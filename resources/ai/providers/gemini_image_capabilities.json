@@ -1,0 +1,303 @@
+{
+    "reviewed_at": "2026-09-14",
+    "reviewed_by": "levanlong2911",
+    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+    "proves": "danh sach da duoc nguoi duyet doc tu tai lieu chinh thuc",
+    "does_not_prove": "model ve duoc anh o gia tri do \u2014 chi canary_render_id moi noi dieu ay",
+    "models": {
+        "gemini-3.1-flash-lite-image": {
+            "aspect_ratios": {
+                "1:1": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "2:3": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "3:2": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "3:4": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "4:3": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "4:5": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "5:4": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "9:16": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": "a2bca5f4-1e8e-4cfa-bc03-3ddd9546d586"
+                },
+                "16:9": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "21:9": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "1:4": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "4:1": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "1:8": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "8:1": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                }
+            },
+            "image_sizes": {
+                "1K": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": "a2bca5f4-1e8e-4cfa-bc03-3ddd9546d586"
+                }
+            }
+        },
+        "gemini-3.1-flash-image": {
+            "aspect_ratios": {
+                "1:1": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "2:3": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "3:2": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "3:4": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "4:3": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "4:5": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "5:4": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "9:16": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": "a2bca62f-cd70-4b6f-b630-a793c271e0b1"
+                },
+                "16:9": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "21:9": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "1:4": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "4:1": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "1:8": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "8:1": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                }
+            },
+            "image_sizes": {
+                "0.5K": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "1K": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": "a2bca62f-cd70-4b6f-b630-a793c271e0b1"
+                },
+                "2K": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": "bcf89145-8cb8-4f15-af8e-9cf31151aaee"
+                },
+                "4K": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                }
+            }
+        },
+        "gemini-3-pro-image": {
+            "aspect_ratios": {
+                "1:1": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "2:3": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "3:2": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "3:4": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "4:3": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "4:5": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "5:4": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "9:16": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "16:9": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "21:9": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                }
+            },
+            "image_sizes": {
+                "1K": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "2K": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                },
+                "4K": {
+                    "source": "https://ai.google.dev/gemini-api/docs/image-generation",
+                    "reviewed_by": "levanlong2911",
+                    "reviewed_at": "2026-09-14",
+                    "canary_render_id": null
+                }
+            }
+        }
+    }
+}

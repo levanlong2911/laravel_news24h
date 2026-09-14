@@ -125,6 +125,103 @@ class MediaModelRegistryTest extends TestCase
         $this->registry->forTask(EnvironmentPlatePrompt::TASK);
     }
 
+    public function test_a_choice_the_manifest_never_reviewed_is_refused(): void
+    {
+        $this->withManifest(
+            static function (array $manifest): array {
+                unset($manifest['models']['gemini-3.1-flash-lite-image']['aspect_ratios']['21:9']);
+
+                return $manifest;
+            },
+            'manifest khong khai aspect_ratios.21:9',
+        );
+    }
+
+    /** @return iterable<string, array{0: string}> */
+    public static function reviewFields(): iterable
+    {
+        yield 'source' => ['source'];
+        yield 'reviewed_by' => ['reviewed_by'];
+        yield 'reviewed_at' => ['reviewed_at'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('reviewFields')]
+    public function test_a_choice_without_a_signed_review_is_refused(string $field): void
+    {
+        $this->withManifest(
+            static function (array $manifest) use ($field): array {
+                $manifest['models']['gemini-3.1-flash-lite-image']['aspect_ratios']['9:16'][$field] = '  ';
+
+                return $manifest;
+            },
+            "aspect_ratios.9:16 thieu {$field} trong manifest",
+        );
+    }
+
+    public function test_a_model_the_manifest_never_mentions_is_refused(): void
+    {
+        $this->withManifest(
+            static function (array $manifest): array {
+                unset($manifest['models']['gemini-3-pro-image']);
+
+                return $manifest;
+            },
+            'khong khai gemini-3-pro-image',
+        );
+    }
+
+    public function test_a_gemini_entry_without_a_capability_manifest_is_refused(): void
+    {
+        $entries = config('video.media_models.image.environment_plate');
+        unset($entries[1]['evidence']['capabilities']);
+        config(['video.media_models.image.environment_plate' => $entries]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('thieu evidence.capabilities');
+
+        $this->registry->forTask(EnvironmentPlatePrompt::TASK);
+    }
+
+    public function test_only_a_value_with_a_canary_render_counts_as_proven(): void
+    {
+        $entries = $this->geminiEntries();
+
+        $this->assertSame(['9:16'], $entries[0]['controls']['proven_aspect_ratios']);
+        $this->assertSame(['1K'], $entries[0]['controls']['proven_image_sizes']);
+        $this->assertSame(['9:16'], $entries[1]['controls']['proven_aspect_ratios']);
+        $this->assertSame([], $entries[2]['controls']['proven_aspect_ratios'], 'Pro chua render that lan nao');
+        $this->assertSame([], $entries[2]['controls']['proven_image_sizes']);
+    }
+
+    public function test_a_canary_render_id_that_is_blank_proves_nothing(): void
+    {
+        $dir = $this->scratchEvidence();
+        $manifest = json_decode((string) file_get_contents($dir.'/gemini_image_capabilities.json'), true);
+        $manifest['models']['gemini-3.1-flash-lite-image']['aspect_ratios']['9:16']['canary_render_id'] = '   ';
+        file_put_contents($dir.'/gemini_image_capabilities.json', json_encode($manifest));
+
+        $this->assertSame(
+            [],
+            (new MediaModelRegistry)->find(EnvironmentPlatePrompt::TASK, 'gemini:gemini-3.1-flash-lite-image')['controls']['proven_aspect_ratios'],
+        );
+    }
+
+    /** @param callable(array<string, mixed>): array<string, mixed> $mutate */
+    private function withManifest(callable $mutate, string $message): void
+    {
+        $dir = $this->scratchEvidence();
+        $path = $dir.'/gemini_image_capabilities.json';
+
+        file_put_contents($path, json_encode($mutate(
+            json_decode((string) file_get_contents($path), true),
+        )));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage($message);
+
+        $this->registry->forTask(EnvironmentPlatePrompt::TASK);
+    }
+
     public function test_an_evidence_file_that_is_not_json_is_refused(): void
     {
         $dir = $this->scratchEvidence();
@@ -205,7 +302,7 @@ class MediaModelRegistryTest extends TestCase
         $this->scratch = storage_path('framework/testing/registry_evidence_'.uniqid());
         mkdir($this->scratch, 0775, true);
 
-        foreach (['gemini_models_2026_09_12.json', 'gemini_image_config_2026_09_13.json'] as $file) {
+        foreach (['gemini_models_2026_09_12.json', 'gemini_image_config_2026_09_13.json', 'gemini_image_capabilities.json'] as $file) {
             copy(resource_path('ai/providers/'.$file), $this->scratch.'/'.$file);
         }
 
