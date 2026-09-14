@@ -83,7 +83,17 @@
                 <td class="vs-num">{{ $p->sessions_count }}</td>
                 <td class="vs-num">{{ $p->approved_assets_count }}</td>
                 <td class="vs-num">
-                    ${{ number_format((float) $p->cost_actual_sum, 2) }}@if(($p->unpriced_cost_count ?? 0) > 0)<span class="vs-pill vs-draft" title="{{ $p->unpriced_cost_count }} render(s) have no price yet — this total is incomplete">+?</span>@endif
+                    @php($estimated = (float) ($p->estimated_cost_sum ?? 0))
+                    <span title="Reconciled or provider-reported spend only">${{ number_format((float) $p->cost_actual_sum, 2) }}</span>
+                    @if($estimated > 0)
+                        <span class="vs-pill vs-draft"
+                              title="Estimated {{ number_format($estimated, 3) }} USD from the frozen price snapshot — not reconciled with an invoice">~${{ number_format($estimated, 2) }}</span>
+                    @endif
+                    @php($unclear = (int) ($p->unpriced_cost_count ?? 0) + (int) ($p->unclassified_cost_count ?? 0))
+                    @if($unclear > 0)
+                        <span class="vs-pill vs-draft"
+                              title="{{ $p->unpriced_cost_count }} render(s) have no price yet and {{ $p->unclassified_cost_count }} older row(s) were never classified — this total is incomplete">+?</span>
+                    @endif
                 </td>
                 <td><a class="btn btn-sm btn-primary" href="{{ route('video-projects.anchor', $p->id) }}">Open</a></td>
             </tr>

@@ -21,6 +21,10 @@ final class MediaModelRegistry
     /** @var array<string, array<string, mixed>> */
     private array $evidence = [];
 
+    public function __construct(
+        private readonly GeminiImagePricing $pricing = new GeminiImagePricing,
+    ) {}
+
     /** @return list<array<string, mixed>> */
     public function forTask(string $task): array
     {
@@ -154,8 +158,8 @@ final class MediaModelRegistry
             throw new InvalidArgumentException("{$at}: Gemini chi sinh 1 anh moi luot.");
         }
 
-        if ($entry['pricing'] !== 'unpriced') {
-            throw new InvalidArgumentException("{$at}: Gemini chua co bang gia da xac minh.");
+        if (! in_array($entry['pricing'], ['unpriced', 'estimated'], true)) {
+            throw new InvalidArgumentException("{$at}: Gemini chi nhan unpriced hoac estimated.");
         }
 
 
@@ -166,7 +170,13 @@ final class MediaModelRegistry
             throw new InvalidArgumentException("{$at}: evidence phai la mang.");
         }
 
-        foreach (['models', 'image_config', 'capabilities'] as $kind) {
+        $needed = ['models', 'image_config', 'capabilities'];
+
+        if ($entry['pricing'] === 'estimated') {
+            $needed[] = 'pricing';
+        }
+
+        foreach ($needed as $kind) {
             if (! is_string($entry['evidence'][$kind] ?? null) || $entry['evidence'][$kind] === '') {
                 throw new InvalidArgumentException("{$at}: thieu evidence.{$kind}.");
             }
@@ -215,7 +225,40 @@ final class MediaModelRegistry
         $this->assertReviewed($at, $entry['controls']['aspect_ratios'], $capability, 'aspect_ratios');
         $this->assertReviewed($at, $entry['controls']['image_sizes'], $capability, 'image_sizes');
 
-        return $this->withCanary($entry, $capability);
+        return $this->withPrices($at, $this->withCanary($entry, $capability));
+    }
+
+    /**
+     * Gia di kem entry de man hinh khong phai tra bang luc ve, va de spec dong bang
+     * duoc gia NGAY LUC TAO O — hom sau Google doi gia thi o cu van giu gia cu.
+     *
+     * @param  array<string, mixed>  $entry
+     * @return array<string, mixed>
+     */
+    private function withPrices(string $at, array $entry): array
+    {
+        if ($entry['pricing'] !== 'estimated') {
+            $entry['controls']['prices'] = [];
+            $entry['pricing_version'] = null;
+
+            return $entry;
+        }
+
+        $file = $entry['evidence']['pricing'];
+        $missing = $this->pricing->missingSizes($file, $entry['model'], $entry['controls']['image_sizes']);
+
+        if ($missing !== []) {
+            throw new InvalidArgumentException(
+                "{$at}: khai estimated nhung {$file} thieu gia cho ".implode(', ', $missing).'.',
+            );
+        }
+
+        $entry['controls']['prices'] = $this->pricing->pricesFor(
+            $file, $entry['model'], $entry['controls']['image_sizes'],
+        );
+        $entry['pricing_version'] = $this->pricing->versionOf($file);
+
+        return $entry;
     }
 
     /**

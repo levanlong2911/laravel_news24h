@@ -40,6 +40,9 @@ class DesignImageQueueTest extends TestCase
             'project_id' => $this->project->id,
             'image_code' => 'test_queue_'.uniqid(),
             'image_type' => 'identity_anchor',
+            // O that luon mang model + quality; thieu chung thi khong dinh gia duoc
+            // va claim se bi tu choi tu Pha 3C.
+            'prompt_spec_json' => ['prompt' => 'unused', 'model' => 'gpt-image-2', 'quality' => 'low'],
             'status' => $status,
             'revision' => 1,
         ]);
@@ -67,6 +70,8 @@ class DesignImageQueueTest extends TestCase
             'width' => 1024,
             'height' => 1536,
             'cost' => 0.015,
+            // Worker bao mot con so tien that: hop dong moi doi khai ro dieu do.
+            'pricing' => 'reported',
             'render' => [
                 'render_kind' => 'image',
                 'provider' => 'openai',

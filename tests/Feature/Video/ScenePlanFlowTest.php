@@ -2590,6 +2590,108 @@ class ScenePlanFlowTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_an_approved_keyframe_keeps_saying_it_was_never_priced(): void
+    {
+        $this->planOnce();
+        $scene = $this->sceneRow(1);
+        $artifact = $this->approvedKeyframeFor($scene);
+
+        $this->ledgerRow((string) $artifact->design_image_id, 'unpriced');
+
+        $cell = $this->sceneCellHtml($scene);
+
+        $this->assertStringContainsString('ĐÃ DUYỆT', $cell);
+        $this->assertStringContainsString('chưa định giá', $cell);
+        $this->assertStringNotContainsString('$0.000', $cell);
+    }
+
+    public function test_a_keyframe_that_mixes_a_priced_and_an_unpriced_render_says_both(): void
+    {
+        $this->planOnce();
+        $scene = $this->sceneRow(1);
+        $artifact = $this->approvedKeyframeFor($scene);
+
+        $this->ledgerRow((string) $artifact->design_image_id, 'estimated', 0.015);
+        $this->ledgerRow((string) $artifact->design_image_id, 'unpriced');
+
+        $this->assertStringContainsString(
+            'ước tính $0.015 · chưa có chi phí đã đối soát · còn lượt chưa định giá',
+            $this->sceneCellHtml($scene),
+        );
+    }
+
+    public function test_a_keyframe_with_no_ledger_row_says_nothing_about_money(): void
+    {
+        $this->planOnce();
+        $scene = $this->sceneRow(1);
+        $this->approvedKeyframeFor($scene);
+
+        $cell = $this->sceneCellHtml($scene);
+
+        $this->assertStringContainsString('ĐÃ DUYỆT', $cell);
+        $this->assertStringNotContainsString('$', $cell);
+        $this->assertStringNotContainsString('chưa định giá', $cell);
+    }
+
+    public function test_a_candidate_keyframe_carries_its_own_cost_line(): void
+    {
+        $this->planOnce();
+        $scene = $this->sceneRow(1);
+
+        $candidate = VideoDesignImage::create([
+            'project_id' => $this->project->id,
+            'render_scene_id' => $scene->id,
+            'image_code' => 'keyframe_'.uniqid(),
+            'image_type' => DesignImageStore::SCENE_KEYFRAME_TYPE,
+            'prompt_spec_json' => ['prompt' => 'x', 'pricing' => 'unpriced'],
+            'prompt_sha256' => hash('sha256', uniqid('', true)),
+            'status' => DesignImageStatus::FAILED->value,
+            'revision' => 1,
+        ]);
+
+        $this->assertStringNotContainsString(
+            'chưa định giá', $this->sceneCellHtml($scene), 'hong truoc khi goi provider thi khong co gi de noi',
+        );
+
+        $this->ledgerRow((string) $candidate->id, 'unpriced');
+
+        $this->assertStringContainsString('chưa định giá', $this->sceneCellHtml($scene));
+    }
+
+    private function sceneCellHtml(VideoRenderScene $scene): string
+    {
+        $html = $this->get(route('video-projects.scene', $this->project->id))->assertOk()->getContent();
+        $start = strpos($html, 'data-scene="'.$scene->id.'"');
+
+        $this->assertNotFalse($start, 'khong thay o cua scene '.$scene->scene_code);
+
+        $end = strpos($html, 'data-scene="', $start + 1);
+
+        return substr($html, $start, $end === false ? null : $end - $start);
+    }
+
+    private function ledgerRow(string $imageId, string $pricing, float $cost = 0.0): void
+    {
+        $id = (string) Str::uuid();
+
+        DB::table('video_cost_entries')->insert([
+            'id' => $id,
+            'project_id' => $this->project->id,
+            'entity_type' => 'design_image',
+            'entity_id' => $imageId,
+            'provider' => 'test',
+            'model' => 'test-model',
+            'usage_type' => 'scene_keyframe',
+            'quantity' => 1,
+            'unit' => 'render',
+            'cost_usd' => $cost,
+            'metadata_json' => json_encode(['pricing' => $pricing]),
+            'cost_idempotency_key' => 'test_'.$id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
     public function test_a_jpeg_plate_travels_under_its_own_extension(): void
     {
         Http::fake(['*' => Http::response([

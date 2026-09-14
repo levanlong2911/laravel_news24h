@@ -860,6 +860,10 @@ class VideoProjectService
             ->orderBy('id')
             ->get();
 
+        $cost = $this->designImageStore->costSummaryByImage(
+            $projectId, $rows->pluck('id')->map('strval')->all(),
+        );
+
         $cells = [];
 
         foreach ($rows as $row) {
@@ -868,24 +872,44 @@ class VideoProjectService
             $cells[$key] ??= ['approved' => null, 'candidate' => null];
 
             if ($status === DesignImageStatus::APPROVED->value) {
-                $cells[$key]['approved'] = $this->keyframeCellView($row);
+                $cells[$key]['approved'] = $this->keyframeCellView($row, $cost);
 
                 continue;
             }
 
             if (in_array($status, self::CURRENT_CANDIDATE_STATUSES, true)) {
-                $cells[$key]['candidate'] = $this->keyframeCellView($row);
+                $cells[$key]['candidate'] = $this->keyframeCellView($row, $cost);
             }
         }
 
         return $cells;
     }
 
-    /** @return array<string, mixed> */
-    private function keyframeCellView(VideoDesignImage $row): array
+    /**
+     * @param  array<string, array{recorded: float, has_ledger: bool, has_unpriced: bool}>  $cost
+     * @return array<string, mixed>
+     */
+    private function keyframeCellView(VideoDesignImage $row, array $cost): array
     {
+        $spend = $cost[(string) $row->id] ?? [
+            'recorded' => 0.0,
+            'has_ledger' => false,
+            'has_unpriced' => false,
+            'estimated' => 0.0,
+            'has_estimate' => false,
+            'unclassified' => 0.0,
+            'has_unclassified' => false,
+        ];
+
         return [
             'id' => (string) $row->id,
+            'cost_recorded' => $spend['recorded'],
+            'cost_recorded_has_ledger' => $spend['has_ledger'],
+            'cost_recorded_unpriced' => $spend['has_unpriced'],
+            'cost_recorded_estimated' => $spend['estimated'],
+            'cost_recorded_has_estimate' => $spend['has_estimate'],
+            'cost_recorded_unclassified' => $spend['unclassified'],
+            'cost_recorded_has_unclassified' => $spend['has_unclassified'],
             'status' => (string) $row->status,
             'status_label' => DesignImageStatus::tryFrom((string) $row->status)?->label()
                 ?? (string) $row->status,
@@ -1316,6 +1340,9 @@ class VideoProjectService
             ]
             : [
                 'operation' => 'mirror',
+                // Lat anh bang GD ngay tren may: khong co dong nao chay, nen o nay
+                // khong duoc mang uoc tinh nao ca.
+                'pricing' => 'free',
                 'derivation' => 'horizontal_flip',
                 'source_image_id' => $mirrorSource->design_image_id,
                 'source_artifact_id' => $mirrorSource->id,
@@ -1532,6 +1559,8 @@ class VideoProjectService
                 'image_size' => $imageSize,
                 'size' => $aspect.'@'.$imageSize,
                 'quality' => null,
+                'unit_cost_usd' => $entry['controls']['prices'][$imageSize] ?? null,
+                'pricing_version' => $entry['pricing_version'] ?? null,
             ], 'ok'];
     }
 

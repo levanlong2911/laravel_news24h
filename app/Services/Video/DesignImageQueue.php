@@ -8,11 +8,13 @@ use App\Models\VideoCostEntry;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
+use App\Video\Media\RenderPriceBackfill;
 use App\Video\Render\Enums\RenderStatus;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 /**
  * Hang doi render cho o thiet ke anh — song song voi hang doi shot, khong dung
@@ -27,6 +29,10 @@ use Illuminate\Support\Str;
  */
 class DesignImageQueue
 {
+    public function __construct(
+        private readonly RenderPriceBackfill $backfill = new RenderPriceBackfill,
+    ) {}
+
     private const CLAIM_MAX = 100;
 
     public const COLLECTION = 'design-images';
@@ -110,11 +116,29 @@ class DesignImageQueue
             $bindings,
         );
 
-        return VideoDesignImage::query()
+        $claimed = VideoDesignImage::query()
             ->where('claim_token', $claimToken)
             ->orderBy('queued_at')
             ->orderBy('id')
             ->get();
+
+        // Worker khong duoc nhin thay mot spec thieu gia: bo sung ngay tai day, va o
+        // nao khong co gia thi roi khoi lo truoc khi ai do gui request cho no.
+        $usable = [];
+
+        foreach ($claimed as $image) {
+            [$priced, $why] = $this->backfill->apply($image, $workerId, $claimToken);
+
+            if (! $priced) {
+                $this->releaseWithError($image, $workerId, $claimToken, $why);
+
+                continue;
+            }
+
+            $usable[] = $image;
+        }
+
+        return $usable;
     }
 
     public function heartbeat(
@@ -215,6 +239,10 @@ class DesignImageQueue
                 }
 
                 foreach ($renders as $item) {
+                    $this->assertConfirmedMoney($item);
+                }
+
+                foreach ($renders as $item) {
                     $this->record($image, $projectId, $item);
                 }
 
@@ -266,7 +294,7 @@ class DesignImageQueue
         $claimToken = (string) Str::uuid();
 
         try {
-            return DB::transaction(function () use ($imageId, $leaseSeconds, $claimToken, $accept, $enqueueable) {
+            [$image, $token, $reason] = DB::transaction(function () use ($imageId, $leaseSeconds, $claimToken, $accept, $enqueueable) {
                 $projectId = VideoDesignImage::query()->whereKey($imageId)->value('project_id');
 
                 if ($projectId === null) {
@@ -298,6 +326,51 @@ class DesignImageQueue
         } catch (ModelNotFoundException) {
             return [null, null, 'image_not_found'];
         }
+
+        if ($token === null) {
+            return [$image, null, $reason];
+        }
+
+        // Da cam claim, chua goi provider: day la cho duy nhat bo sung duoc gia cho o
+        // tao truoc hop dong snapshot.
+        [$priced, $why] = $this->backfill->apply($image, self::DIRECT_WORKER, $token);
+
+        if (! $priced) {
+            $released = $this->releaseWithError($image, self::DIRECT_WORKER, $token, $why);
+
+            return [$image->refresh(), null, $released ? $why : 'claim_lost_before_pricing'];
+        }
+
+        return [$image, $token, $reason];
+    }
+
+    /**
+     * Nha claim va danh that bai, nhung CHI khi o van con thuoc ve chinh claim nay VA
+     * lease chua het han. Lease roi sang worker khac hoac het gio thi quyen danh that
+     * bai cung mat theo — hang do khong duoc dung toi nua.
+     *
+     * @return bool ghi duoc hay khong; `false` nghia la claim khong con la cua minh
+     */
+    private function releaseWithError(
+        VideoDesignImage $image,
+        string $workerId,
+        string $claimToken,
+        string $reason,
+    ): bool {
+        return VideoDesignImage::query()
+            ->whereKey($image->id)
+            ->where('worker_id', $workerId)
+            ->where('claim_token', $claimToken)
+            ->whereIn('status', DesignImageStatus::leasedValues())
+            ->where('lease_expires_at', '>', now())
+            ->update([
+                'status' => DesignImageStatus::FAILED->value,
+                'render_error' => $reason,
+                'worker_id' => null,
+                'claim_token' => null,
+                'claimed_at' => null,
+                'lease_expires_at' => null,
+            ]) === 1;
     }
 
     /**
@@ -351,6 +424,10 @@ class DesignImageQueue
 
                 if (! $this->ownsTheClaim($image, self::DIRECT_WORKER, $claimToken)) {
                     return [null, 'claim_not_owned_or_expired'];
+                }
+
+                foreach ($renders as $item) {
+                    $this->assertConfirmedMoney($item);
                 }
 
                 foreach ($renders as $item) {
@@ -524,6 +601,44 @@ class DesignImageQueue
             && $image->lease_expires_at->isFuture();
     }
 
+    /**
+     * `cost_usd` chi duoc mang tien DA XAC NHAN: provider bao so, hoac da doi soat.
+     * Uoc tinh di duong `metadata_json.estimated_cost_usd`. Chot nay nam trong
+     * transaction, nen vi pham thi ca luot ghi bi rollback chu khong de lai nua so.
+     *
+     * Ap cho CA HAI duong bao ket qua. Duong callback muon ghi tien that thi phai khai
+     * `pricing: reported` — khong co cua sau nao cho mot con so khong ai xac nhan.
+     *
+     * Khong ep kieu truoc khi kiem: chuoi 'abc' ep thanh 0.0 va se lot qua.
+     *
+     * @param  array<string, mixed>  $item
+     */
+    private function assertConfirmedMoney(array $item): void
+    {
+        $cost = $item['cost'] ?? null;
+
+        // Khai `reported` khong phai la mot tam ve: con so di kem van phai la mot so
+        // tien doc duoc. Chuoi 'abc' ep thanh 0.0 va se lot qua neu kiem sau khi ep.
+        if (in_array($item['pricing'] ?? null, ['reported', 'reconciled'], true)) {
+            if ((is_int($cost) || is_float($cost)) && is_finite((float) $cost) && (float) $cost >= 0) {
+                return;
+            }
+
+            throw new RuntimeException(
+                'pricing reported/reconciled phai di kem mot so tien doc duoc, nhan duoc: '
+                .var_export($cost, true),
+            );
+        }
+
+        if ($cost === null || $cost === 0 || $cost === 0.0) {
+            return;
+        }
+
+        throw new RuntimeException(
+            'cost_usd cua design image chi duoc mang tien da xac nhan — uoc tinh nam trong metadata.',
+        );
+    }
+
     /** @param array<string, mixed> $item */
     private function record(VideoDesignImage $image, string $projectId, array $item): void
     {
@@ -604,7 +719,17 @@ class DesignImageQueue
             // Cot NOT NULL, nen `unpriced` van phai ghi 0. `metadata_json` la cho
             // duy nhat phan biet duoc "chua dinh gia" voi "mien phi".
             'cost_usd' => (float) ($item['cost'] ?? 0),
-            'metadata_json' => ['pricing' => (string) ($item['pricing'] ?? 'estimated')],
+            // So cai chi duoc THEM, nen no phai tu du de doi soat sau nay: gia don vi,
+            // uoc tinh CUA RIENG DONG NAY, phien ban bang gia, va usage nguyen van.
+            // Giu lai o `prompt_spec_json` thoi la khong du — o co the bi ghi de.
+            'metadata_json' => array_filter([
+                'pricing' => (string) ($item['pricing'] ?? 'estimated'),
+                'unit_cost_usd' => $item['unit_cost_usd'] ?? null,
+                'estimated_cost_usd' => $item['estimated_cost_usd'] ?? null,
+                'pricing_version' => $item['pricing_version'] ?? null,
+                'pricing_backfilled_at' => $item['pricing_backfilled_at'] ?? null,
+                'provider_usage' => $item['provider_usage'] ?? null,
+            ], static fn ($value): bool => $value !== null),
         ]);
     }
 }

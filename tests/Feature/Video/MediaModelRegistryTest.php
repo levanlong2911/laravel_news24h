@@ -302,7 +302,12 @@ class MediaModelRegistryTest extends TestCase
         $this->scratch = storage_path('framework/testing/registry_evidence_'.uniqid());
         mkdir($this->scratch, 0775, true);
 
-        foreach (['gemini_models_2026_09_12.json', 'gemini_image_config_2026_09_13.json', 'gemini_image_capabilities.json'] as $file) {
+        foreach ([
+            'gemini_models_2026_09_12.json',
+            'gemini_image_config_2026_09_13.json',
+            'gemini_image_capabilities.json',
+            'gemini_image_pricing_2026_09_14.json',
+        ] as $file) {
             copy(resource_path('ai/providers/'.$file), $this->scratch.'/'.$file);
         }
 
@@ -385,9 +390,95 @@ class MediaModelRegistryTest extends TestCase
         $this->withControls(0, ['qualities' => ['low', 'low']], 'gia tri lap');
     }
 
-    public function test_gemini_may_not_claim_an_estimated_price(): void
+    public function test_gemini_may_not_claim_a_price_the_catalog_does_not_carry(): void
     {
-        $this->withEntry(1, ['pricing' => 'estimated'], 'chua co bang gia');
+        $dir = $this->scratchEvidence();
+        $catalog = json_decode((string) file_get_contents($dir.'/gemini_image_pricing_2026_09_14.json'), true);
+        unset($catalog['models']['gemini-3.1-flash-image']['image_sizes']['2K']);
+        file_put_contents($dir.'/gemini_image_pricing_2026_09_14.json', json_encode($catalog));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('thieu gia cho 2K');
+
+        $this->registry->forTask(EnvironmentPlatePrompt::TASK);
+    }
+
+    public function test_a_gemini_entry_claiming_estimated_without_a_catalog_is_refused(): void
+    {
+        $entries = config('video.media_models.image.environment_plate');
+        unset($entries[1]['evidence']['pricing']);
+        config(['video.media_models.image.environment_plate' => $entries]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('thieu evidence.pricing');
+
+        $this->registry->forTask(EnvironmentPlatePrompt::TASK);
+    }
+
+    public function test_an_unpriced_gemini_model_needs_no_catalog_at_all(): void
+    {
+        $entries = config('video.media_models.image.environment_plate');
+        $entries[1]['pricing'] = 'unpriced';
+        unset($entries[1]['evidence']['pricing']);
+        config(['video.media_models.image.environment_plate' => $entries]);
+
+        $entry = (new MediaModelRegistry)->find(EnvironmentPlatePrompt::TASK, $entries[1]['id']);
+
+        $this->assertSame([], $entry['controls']['prices']);
+        $this->assertNull($entry['pricing_version']);
+    }
+
+    public function test_a_priced_model_carries_the_catalog_number_and_its_version(): void
+    {
+        $entries = $this->geminiEntries();
+
+        $this->assertSame(['1K' => 0.0336], $entries[0]['controls']['prices']);
+        $this->assertSame(
+            ['0.5K' => 0.045, '1K' => 0.067, '2K' => 0.101, '4K' => 0.151],
+            $entries[1]['controls']['prices'],
+        );
+        $this->assertSame('gemini-image-2026-09-14', $entries[0]['pricing_version']);
+    }
+
+    /** @return iterable<string, array{0: mixed}> */
+    public static function pricesThatAreNotPrices(): iterable
+    {
+        yield 'chuoi' => ['0.0336'];
+        yield 'khong' => [0];
+        yield 'am' => [-0.5];
+        yield 'null' => [null];
+        yield 'mang' => [['usd' => 0.0336]];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('pricesThatAreNotPrices')]
+    public function test_a_value_that_is_not_a_real_price_is_refused(mixed $price): void
+    {
+        $dir = $this->scratchEvidence();
+        $catalog = json_decode((string) file_get_contents($dir.'/gemini_image_pricing_2026_09_14.json'), true);
+        $catalog['models']['gemini-3.1-flash-lite-image']['image_sizes']['1K']['usd_per_image'] = $price;
+        file_put_contents($dir.'/gemini_image_pricing_2026_09_14.json', json_encode($catalog));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('thieu gia cho 1K');
+
+        $this->registry->forTask(EnvironmentPlatePrompt::TASK);
+    }
+
+    public function test_a_broken_catalog_file_never_throws_on_its_own(): void
+    {
+        $dir = $this->scratchEvidence();
+        file_put_contents($dir.'/gemini_image_pricing_2026_09_14.json', 'not json');
+
+        $pricing = new \App\Video\Media\GeminiImagePricing;
+
+        $this->assertNull($pricing->unitFor('gemini_image_pricing_2026_09_14.json', 'gemini-3.1-flash-image', '1K'));
+        $this->assertNull($pricing->versionOf('gemini_image_pricing_2026_09_14.json'));
+        $this->assertNull($pricing->unitFor('../escape.json', 'gemini-3.1-flash-image', '1K'));
+    }
+
+    public function test_a_pricing_value_outside_the_two_the_ledger_knows_is_refused(): void
+    {
+        $this->withEntry(1, ['pricing' => 'free'], 'pricing la free');
     }
 
     public function test_gemini_may_not_offer_more_than_one_variation(): void

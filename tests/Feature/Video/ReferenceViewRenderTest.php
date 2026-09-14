@@ -180,6 +180,8 @@ class ReferenceViewRenderTest extends TestCase
                 'variations' => 1,
                 'source_artifact_id' => $artifact->id,
                 'source_artifact_sha256' => (string) $artifact->sha256,
+                'unit_cost_usd' => 0.015,
+                'pricing_version' => 'openai-image-inherited-2026-09-14',
             ],
             'prompt_sha256' => hash('sha256', uniqid('', true)),
             'status' => $status,

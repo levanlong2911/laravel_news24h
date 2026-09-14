@@ -306,9 +306,10 @@ final class OpenAiImageClient
                 'width' => $dimensions[0] ?? null,
                 'height' => $dimensions[1] ?? null,
                 'bytes' => strlen($bytes),
-                'cost' => ($spec['cost_estimate'] ?? null) === null
-                    ? null
-                    : (float) $spec['cost_estimate'],
+                // KHONG dat uoc tinh vao day: `cost_usd` chi mang tien da xac nhan,
+                // va OpenAI khong bao chi phi cho images API. Uoc tinh di duong
+                // metadata (`estimated_cost_usd`).
+                'cost' => null,
                 'pricing' => (string) ($spec['pricing'] ?? 'estimated'),
                 'provider_request_id' => $requestId,
                 'provider_usage' => $provider,

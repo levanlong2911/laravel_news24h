@@ -9,6 +9,7 @@ use App\Models\VideoCostEntry;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Models\VideoRenderScene;
+use App\Video\Media\OpenAiImagePricing;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -33,6 +34,49 @@ class DesignImageStore
 
     public const ENVIRONMENT_TYPE = 'environment_plate';
 
+    public function __construct(
+        private readonly OpenAiImagePricing $openAiPricing = new OpenAiImagePricing,
+    ) {}
+
+    /**
+     * Gia duoc dong bang NGAY LUC TAO O, mot lan, cho moi loai anh — sau nay bang gia
+     * doi thi o cu van giu con so no da duoc bao truoc khi bam.
+     *
+     * Provider tu mang gia san (Gemini di qua registry) thi giu nguyen, nhung chi khi
+     * mang DU CA HAI: don gia hop le va phien ban bang gia. Nua voi thi coi nhu chua co.
+     *
+     * @param  array<string, mixed>  $spec
+     * @return array<string, mixed>
+     */
+    private function withPriceSnapshot(array $spec): array
+    {
+        if (in_array((string) ($spec['pricing'] ?? 'estimated'), ['unpriced', 'free'], true)) {
+            return $spec;
+        }
+
+        $unit = $spec['unit_cost_usd'] ?? null;
+        $version = $spec['pricing_version'] ?? null;
+
+        $carried = (is_int($unit) || is_float($unit))
+            && (float) $unit > 0
+            && is_finite((float) $unit)
+            && is_string($version)
+            && trim($version) !== '';
+
+        if ($carried) {
+            return $spec;
+        }
+
+        $priced = $this->openAiPricing->unitFor(
+            (string) ($spec['model'] ?? ''), (string) ($spec['quality'] ?? ''),
+        );
+
+        return array_replace($spec, [
+            'unit_cost_usd' => $priced['usd'] ?? null,
+            'pricing_version' => $priced['version'] ?? null,
+        ]);
+    }
+
     /**
      * @param  array<string, mixed>  $spec
      * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
@@ -40,6 +84,7 @@ class DesignImageStore
      */
     public function createCandidate(string $projectId, string $creator, array $spec): array
     {
+        $spec = $this->withPriceSnapshot($spec);
         $sha = $this->identityHash($spec);
 
         try {
@@ -101,58 +146,117 @@ class DesignImageStore
      */
     public function anchorCellsFor(string $projectId): array
     {
-        [$spent, $unpriced] = $this->spendByImage($projectId);
-
-        return VideoDesignImage::query()
+        $images = VideoDesignImage::query()
             ->where('project_id', $projectId)
             ->where('image_type', self::ANCHOR_TYPE)
             ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
             ->latest('created_at')
-            ->get()
-            ->map(fn (VideoDesignImage $image) => $this->cellView(
-                $image, $spent[$image->id] ?? 0.0, isset($unpriced[$image->id]),
-            ))
+            ->get();
+
+        $cost = $this->costSummaryByImage($projectId, $images->pluck('id')->map('strval')->all());
+
+        return $images
+            ->map(fn (VideoDesignImage $image) => $this->cellView($image, $cost[(string) $image->id]))
             ->all();
     }
 
-    /** @return array{0: array<string, float>, 1: array<string, true>} [$totals, $unpriced] */
-    private function spendByImage(string $projectId): array
+    /**
+     * Ba trang thai khac nhau, khong duoc gop:
+     *   khong co dong nao       → he thong chua co dong so cai nao cho o nay
+     *   co dong, khong unpriced → so tien la day du
+     *   co dong unpriced        → da tieu ma khong biet bao nhieu, KE CA khi mot
+     *                             dong khac trong cung o da co gia
+     *
+     * `has_ledger` doc tu chinh phep SUM chu khong suy tu `recorded > 0`: mot lan
+     * lat anh ton dung 0 dong van la mot lan da xay ra.
+     *
+     * `estimated` doc tu so cai chu khong tra lai bang gia: no la con so DA DONG BANG
+     * luc render, nen doi bang gia hom nay khong viet lai lich su.
+     *
+     * @param  list<string>  $imageIds
+     * @return array<string, array{recorded: float, has_ledger: bool, has_unpriced: bool, estimated: float, has_estimate: bool}>
+     */
+    public function costSummaryByImage(string $projectId, array $imageIds): array
     {
+        $summary = array_fill_keys(
+            array_map('strval', $imageIds),
+            [
+                'recorded' => 0.0,
+                'has_ledger' => false,
+                'has_unpriced' => false,
+                'estimated' => 0.0,
+                'has_estimate' => false,
+                'unclassified' => 0.0,
+                'has_unclassified' => false,
+            ],
+        );
+
+        if ($summary === []) {
+            return [];
+        }
+
         $entries = VideoCostEntry::query()
             ->where('project_id', $projectId)
-            ->where('entity_type', 'design_image');
+            ->where('entity_type', 'design_image')
+            ->whereIn('entity_id', array_keys($summary));
 
+        // `recorded` chi cong tien DA XAC NHAN. Hang cu mang uoc tinh trong cot tien
+        // (pricing=estimated, chua co metadata estimate) thi doc bang COALESCE va
+        // xep sang cot uoc tinh — khong migration, chi doi cach doc.
         $totals = (clone $entries)
-            ->selectRaw('entity_id, SUM(cost_usd) as total')
+            ->selectRaw(
+                'entity_id,'
+                ."SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.pricing')) "
+                ."IN ('reported', 'reconciled', 'free') THEN cost_usd ELSE 0 END) as confirmed,"
+                ."SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.pricing')) = 'estimated' "
+                ."THEN COALESCE(JSON_EXTRACT(metadata_json, '$.estimated_cost_usd'), cost_usd) ELSE 0 END) as estimated,"
+                ."SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.pricing')) = 'estimated' "
+                ."THEN 1 ELSE 0 END) as estimates,"
+                // Hang cu khong mang khoa `pricing` nao: khong ai biet con so do la
+                // uoc tinh hay tien that, nen no khong duoc dung o ca hai cot tren.
+                ."SUM(CASE WHEN JSON_EXTRACT(metadata_json, '$.pricing') IS NULL THEN cost_usd ELSE 0 END) as unclassified,"
+                ."SUM(CASE WHEN JSON_EXTRACT(metadata_json, '$.pricing') IS NULL THEN 1 ELSE 0 END) as unclassifieds",
+            )
             ->groupBy('entity_id')
-            ->pluck('total', 'entity_id')
-            ->map(static fn ($total): float => (float) $total)
-            ->all();
+            ->get();
+
+        foreach ($totals as $row) {
+            $id = (string) $row->entity_id;
+
+            $summary[$id]['recorded'] = (float) $row->confirmed;
+            $summary[$id]['has_ledger'] = true;
+            $summary[$id]['estimated'] = (float) $row->estimated;
+            $summary[$id]['has_estimate'] = (int) $row->estimates > 0;
+            $summary[$id]['unclassified'] = (float) $row->unclassified;
+            $summary[$id]['has_unclassified'] = (int) $row->unclassifieds > 0;
+        }
 
         $unpriced = (clone $entries)
             ->where('metadata_json->pricing', 'unpriced')
             ->distinct()
-            ->pluck('entity_id')
-            ->mapWithKeys(static fn ($id): array => [(string) $id => true])
-            ->all();
+            ->pluck('entity_id');
 
-        return [$totals, $unpriced];
+        foreach ($unpriced as $id) {
+            $summary[(string) $id]['has_unpriced'] = true;
+        }
+
+        return $summary;
     }
 
     /** @return list<array<string, mixed>> */
     public function referenceCellsFor(string $projectId): array
     {
-        [$spent, $unpriced] = $this->spendByImage($projectId);
-
-        return VideoDesignImage::query()
+        $images = VideoDesignImage::query()
             ->where('project_id', $projectId)
             ->where('image_type', self::REFERENCE_TYPE)
             ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
             ->orderBy('slot_index')
-            ->get()
-            ->map(fn (VideoDesignImage $image) => $this->cellView(
-                $image, $spent[$image->id] ?? 0.0, isset($unpriced[$image->id]),
-            ))
+            ->get();
+
+        $cost = $this->costSummaryByImage($projectId, $images->pluck('id')->map('strval')->all());
+
+        return $images
+            ->map(fn (VideoDesignImage $image) => $this->cellView($image, $cost[(string) $image->id]))
             ->all();
     }
 
@@ -175,6 +279,7 @@ class DesignImageStore
      */
     public function createReference(string $projectId, string $creator, array $spec): array
     {
+        $spec = $this->withPriceSnapshot($spec);
         $sha = $this->identityHash($spec, [
             'source_artifact_sha256',
             'view_key',
@@ -229,6 +334,7 @@ class DesignImageStore
      */
     public function createEnvironment(string $projectId, string $creator, array $spec): array
     {
+        $spec = $this->withPriceSnapshot($spec);
         $extra = ['operation', 'spec_version', 'environment_key'];
 
         if (($spec['provider'] ?? 'openai') !== 'openai') {
@@ -286,17 +392,18 @@ class DesignImageStore
     /** @return list<array<string, mixed>> */
     public function environmentCellsFor(string $projectId): array
     {
-        [$spent, $unpriced] = $this->spendByImage($projectId);
-
-        return VideoDesignImage::query()
+        $images = VideoDesignImage::query()
             ->where('project_id', $projectId)
             ->where('image_type', self::ENVIRONMENT_TYPE)
             ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
             ->orderBy('created_at')
-            ->get()
-            ->map(fn (VideoDesignImage $image) => $this->cellView(
-                $image, $spent[$image->id] ?? 0.0, isset($unpriced[$image->id]),
-            ) + ['environment_key' => (string) $image->environment_key])
+            ->get();
+
+        $cost = $this->costSummaryByImage($projectId, $images->pluck('id')->map('strval')->all());
+
+        return $images
+            ->map(fn (VideoDesignImage $image) => $this->cellView($image, $cost[(string) $image->id])
+                + ['environment_key' => (string) $image->environment_key])
             ->all();
     }
 
@@ -306,6 +413,8 @@ class DesignImageStore
         array $spec,
         string $sha,
     ): VideoDesignImage {
+        $spec = $this->withPriceSnapshot($spec);
+
         return VideoDesignImage::create([
             'project_id' => $scene->project_id,
             'render_scene_id' => $scene->id,
@@ -438,15 +547,24 @@ class DesignImageStore
         return $query;
     }
 
-    /** @return array<string, mixed> */
-    private function cellView(VideoDesignImage $image, float $recorded, bool $recordedUnpriced): array
+    /**
+     * @param  array{recorded: float, has_ledger: bool, has_unpriced: bool}  $cost
+     * @return array<string, mixed>
+     */
+    private function cellView(VideoDesignImage $image, array $cost): array
     {
         $spec = $image->prompt_spec_json ?? [];
         $variations = max(1, (int) ($spec['variations'] ?? 1));
         $pricing = (string) ($spec['pricing'] ?? 'estimated');
-        $unit = $pricing === 'unpriced'
-            ? null
-            : ImageQuality::fromSpecOrHigh($spec['quality'] ?? '')->estimatedCostUsd();
+        $frozen = $spec['unit_cost_usd'] ?? null;
+        // Doc gia DA DONG BANG trong spec; chi hang OpenAI cu (chua co khoa nay) moi
+        // lui ve bang gia theo quality. Gemini khong bao gio dung bang cua OpenAI.
+        $unit = match (true) {
+            $pricing === 'unpriced' => null,
+            is_int($frozen) || is_float($frozen) => (float) $frozen > 0 ? (float) $frozen : null,
+            (string) ($spec['provider'] ?? 'openai') === 'openai' => ImageQuality::fromSpecOrHigh($spec['quality'] ?? '')->estimatedCostUsd(),
+            default => null,
+        };
 
         return [
             'id' => $image->id,
@@ -482,8 +600,13 @@ class DesignImageStore
             'provider' => (string) ($spec['provider'] ?? 'openai'),
             'cost_unit' => $unit,
             'cost_estimate' => $unit === null ? null : $unit * $variations,
-            'cost_recorded' => $recorded,
-            'cost_recorded_unpriced' => $recordedUnpriced,
+            'cost_recorded' => $cost['recorded'],
+            'cost_recorded_has_ledger' => $cost['has_ledger'],
+            'cost_recorded_unpriced' => $cost['has_unpriced'],
+            'cost_recorded_estimated' => $cost['estimated'],
+            'cost_recorded_has_estimate' => $cost['has_estimate'],
+            'cost_recorded_unclassified' => $cost['unclassified'],
+            'cost_recorded_has_unclassified' => $cost['has_unclassified'],
             'candidates' => $image->artifacts->map(fn (VideoArtifact $artifact) => [
                 'id' => $artifact->id,
                 'url' => $artifact->storage_disk === 'public'

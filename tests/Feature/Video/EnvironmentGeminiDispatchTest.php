@@ -10,6 +10,7 @@ use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Services\Video\DesignImageDirectRenderer;
+use App\Services\Video\DesignImageQueue;
 use App\Services\Video\DesignImageStore;
 use App\Services\VideoProjectService;
 use App\Video\Environment\EnvironmentPlatePrompt;
@@ -31,6 +32,9 @@ class EnvironmentGeminiDispatchTest extends TestCase
     private const GEMINI_ENDPOINT = 'https://gemini.test/v1/models/gemini-3.1-flash-lite-image:generateContent';
 
     private const UNPROVEN = 'Chưa có lần render Environment thật nào bằng model này.';
+
+    /** @var list<string> */
+    private array $scratchCatalogs = [];
 
     private VideoProject $project;
 
@@ -66,6 +70,21 @@ class EnvironmentGeminiDispatchTest extends TestCase
         $this->actingAs($this->owner);
     }
 
+    protected function tearDown(): void
+    {
+        foreach ($this->scratchCatalogs as $dir) {
+            foreach (glob($dir.'/*') ?: [] as $file) {
+                unlink($file);
+            }
+
+            if (is_dir($dir)) {
+                rmdir($dir);
+            }
+        }
+
+        parent::tearDown();
+    }
+
     public function test_a_gemini_post_travels_the_whole_route_to_gemini_and_never_to_openai(): void
     {
         $this->fakeProviders();
@@ -84,7 +103,18 @@ class EnvironmentGeminiDispatchTest extends TestCase
 
         $this->assertCount(1, $ledger);
         $this->assertSame('gemini', $ledger[0]->provider);
-        $this->assertSame('unpriced', json_decode((string) $ledger[0]->metadata_json, true)['pricing']);
+
+        $meta = json_decode((string) $ledger[0]->metadata_json, true);
+
+        $this->assertSame(
+            0.0, (float) $ledger[0]->cost_usd,
+            'uoc tinh KHONG duoc vao cot tien: Gemini chua bao chi phi that, va nghia cua cot do la viec cua Pha 3C',
+        );
+        $this->assertSame('estimated', $meta['pricing']);
+        $this->assertSame(0.0336, $meta['unit_cost_usd']);
+        $this->assertSame(0.0336, $meta['estimated_cost_usd'], 'moi dong so cai la mot anh, khong phai ca o');
+        $this->assertSame('gemini-image-2026-09-14', $meta['pricing_version']);
+        $this->assertSame(1120, $meta['provider_usage']['candidatesTokensDetails'][0]['tokenCount'] ?? null);
     }
 
     public function test_the_spec_a_gemini_post_persists_comes_from_the_registry(): void
@@ -97,7 +127,9 @@ class EnvironmentGeminiDispatchTest extends TestCase
 
         $this->assertSame('gemini', $spec['provider']);
         $this->assertSame('gemini-3.1-flash-lite-image', $spec['model']);
-        $this->assertSame('unpriced', $spec['pricing']);
+        $this->assertSame('estimated', $spec['pricing']);
+        $this->assertSame(0.0336, $spec['unit_cost_usd'], 'gia phai dong bang luc tao o');
+        $this->assertSame('gemini-image-2026-09-14', $spec['pricing_version']);
         $this->assertSame('v1', $spec['api_version']);
         $this->assertSame('image_config', $spec['shape']);
         $this->assertSame('9:16', $spec['aspect_ratio']);
@@ -105,6 +137,157 @@ class EnvironmentGeminiDispatchTest extends TestCase
         $this->assertSame('9:16@1K', $spec['size']);
         $this->assertArrayHasKey('quality', $spec);
         $this->assertNull($spec['quality']);
+    }
+
+    public function test_two_openai_images_are_two_ledger_rows_of_one_image_each(): void
+    {
+        Http::fake(['*/v1/images/generations' => Http::response([
+            'created' => 1,
+            'data' => [
+                ['b64_json' => base64_encode($this->png(9, 16))],
+                ['b64_json' => base64_encode($this->png(9, 16))],
+            ],
+        ], 200)]);
+
+        $this->post($this->url(), $this->openaiSettings(['variations' => '2']))->assertRedirect($this->url());
+
+        $image = $this->plates()->sole();
+        $rows = DB::table('video_cost_entries')->where('entity_id', $image->id)->get();
+
+        $this->assertCount(2, $rows);
+        $this->assertSame(
+            [0.0, 0.0],
+            $rows->map(fn ($row) => (float) $row->cost_usd)->all(),
+            'uoc tinh khong duoc nam trong cot tien da xac nhan',
+        );
+
+        foreach ($rows as $row) {
+            $meta = json_decode((string) $row->metadata_json, true);
+
+            $this->assertSame(0.015, $meta['estimated_cost_usd'], 'moi dong la mot anh');
+            $this->assertSame('openai-image-inherited-2026-09-14', $meta['pricing_version']);
+        }
+
+        $cell = collect(app(DesignImageStore::class)->environmentCellsFor($this->project->id))->sole();
+
+        $this->assertSame(0.015, $cell['cost_unit']);
+        $this->assertSame(0.03, $cell['cost_estimate'], 'tong cua o la don gia nhan so anh, tinh luc hien thi');
+    }
+
+    public function test_a_rendered_gemini_plate_shows_its_estimate_instead_of_a_hollow_zero(): void
+    {
+        $this->fakeProviders();
+
+        $this->post($this->url(), $this->geminiSettings())->assertRedirect($this->url());
+
+        $cell = collect(app(DesignImageStore::class)->environmentCellsFor($this->project->id))->sole();
+
+        $this->assertTrue($cell['cost_recorded_has_estimate']);
+        $this->assertSame(0.0336, $cell['cost_recorded_estimated'], 'doc tu so cai, khong tra lai bang gia');
+        $this->assertSame(0.0, $cell['cost_recorded']);
+
+        $this->get($this->url())
+            ->assertOk()
+            ->assertSee('ước tính $0.034 · chưa có chi phí đã đối soát', false)
+            ->assertDontSee('đã ghi nhận $0.000', false);
+    }
+
+    public function test_an_anchor_render_also_carries_its_frozen_price_snapshot(): void
+    {
+        $this->fakeProviders();
+
+        [$anchor] = app(DesignImageStore::class)->createCandidate($this->project->id, 'tester', [
+            'operation' => 'generate',
+            'prompt' => 'CAMERA: front three-quarter. SUBJECT: a hull.',
+            'model' => 'gpt-image-2',
+            'quality' => 'low',
+            'size' => '1152x2048',
+            'variations' => 1,
+        ]);
+
+        [, $reason] = app(DesignImageDirectRenderer::class)->renderNow($anchor->id);
+
+        $this->assertSame('rendered', $reason);
+
+        $meta = json_decode((string) DB::table('video_cost_entries')
+            ->where('entity_id', $anchor->id)
+            ->value('metadata_json'), true);
+
+        $this->assertSame('estimated', $meta['pricing']);
+        $this->assertArrayHasKey('provider_usage', $meta, 'usage van duoc ghi cho moi lan render');
+        $this->assertSame(0.015, $meta['unit_cost_usd']);
+        $this->assertSame(0.015, $meta['estimated_cost_usd']);
+        $this->assertSame('openai-image-inherited-2026-09-14', $meta['pricing_version']);
+        $this->assertSame(
+            0.0,
+            (float) DB::table('video_cost_entries')->where('entity_id', $anchor->id)->value('cost_usd'),
+            'anchor cung khong duoc de uoc tinh vao cot tien',
+        );
+    }
+
+    public function test_the_price_is_frozen_when_the_cell_is_made_not_when_it_is_drawn(): void
+    {
+        $this->fakeProviders();
+
+        $this->post($this->url(), $this->geminiSettings())->assertRedirect($this->url());
+
+        $scratch = storage_path('framework/testing/pricing_'.uniqid());
+        mkdir($scratch, 0775, true);
+
+        foreach (glob(resource_path('ai/providers').'/*.json') ?: [] as $file) {
+            copy($file, $scratch.'/'.basename($file));
+        }
+
+        $catalog = json_decode((string) file_get_contents($scratch.'/gemini_image_pricing_2026_09_14.json'), true);
+        $catalog['models']['gemini-3.1-flash-lite-image']['image_sizes']['1K']['usd_per_image'] = 9.99;
+        file_put_contents($scratch.'/gemini_image_pricing_2026_09_14.json', json_encode($catalog));
+        config(['video.gemini.evidence_dir' => $scratch]);
+
+        $cell = collect(app(DesignImageStore::class)->environmentCellsFor($this->project->id))->sole();
+
+        $this->assertSame(0.0336, $cell['cost_unit'], 'gia hom nay khong duoc viet lai o render hom qua');
+
+        foreach (glob($scratch.'/*') ?: [] as $file) {
+            unlink($file);
+        }
+
+        rmdir($scratch);
+    }
+
+    public function test_a_model_without_a_catalog_price_stays_unpriced_end_to_end(): void
+    {
+        $entries = config('video.media_models.image.environment_plate');
+        $entries[1]['pricing'] = 'unpriced';
+        unset($entries[1]['evidence']['pricing']);
+        config(['video.media_models.image.environment_plate' => $entries]);
+
+        $this->fakeProviders();
+        $this->post($this->url(), $this->geminiSettings())->assertRedirect($this->url());
+
+        $spec = $this->plates()->sole()->prompt_spec_json;
+        $cell = collect(app(DesignImageStore::class)->environmentCellsFor($this->project->id))->sole();
+
+        $this->assertSame('unpriced', $spec['pricing']);
+        $this->assertNull($spec['unit_cost_usd']);
+        $this->assertNull($cell['cost_unit']);
+        $this->assertNull($cell['cost_estimate']);
+        $meta = json_decode((string) DB::table('video_cost_entries')
+            ->where('entity_id', $this->plates()->sole()->id)
+            ->value('metadata_json'), true);
+
+        $this->assertSame('unpriced', $meta['pricing']);
+        $this->assertArrayNotHasKey('unit_cost_usd', $meta);
+    }
+
+    public function test_a_gemini_cell_never_borrows_the_openai_quality_table(): void
+    {
+        $this->fakeProviders();
+        $this->post($this->url(), $this->geminiSettings());
+
+        $cell = collect(app(DesignImageStore::class)->environmentCellsFor($this->project->id))->sole();
+
+        $this->assertSame(0.0336, $cell['cost_unit']);
+        $this->assertNotSame(0.19, $cell['cost_unit'], 'day la gia high cua OpenAI, khong phai cua Gemini');
     }
 
     public function test_the_gemini_request_carries_the_image_config_the_spec_kept(): void
@@ -175,7 +358,7 @@ class EnvironmentGeminiDispatchTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_a_legacy_openai_cell_without_a_provider_still_goes_to_openai(): void
+    public function test_a_cell_without_a_provider_still_goes_to_openai(): void
     {
         $this->fakeProviders();
 
@@ -185,6 +368,8 @@ class EnvironmentGeminiDispatchTest extends TestCase
             'quality' => 'low',
             'size' => '1152x2048',
             'variations' => 1,
+            'unit_cost_usd' => 0.015,
+            'pricing_version' => 'openai-image-inherited-2026-09-14',
         ]);
 
         [$done, $reason] = app(DesignImageDirectRenderer::class)->renderNow($image->id);
@@ -209,8 +394,8 @@ class EnvironmentGeminiDispatchTest extends TestCase
 
         [$done, $reason] = app(DesignImageDirectRenderer::class)->renderNow($image->id);
 
-        $this->assertSame('failed', $reason);
-        $this->assertStringContainsString('Provider chua co client', (string) $done->render_error);
+        $this->assertSame('provider_has_no_client', $reason);
+        $this->assertSame(DesignImageStatus::FAILED->value, $done->status);
         Http::assertNothingSent();
     }
 
@@ -225,6 +410,350 @@ class EnvironmentGeminiDispatchTest extends TestCase
         $this->assertSame('failed', $reason);
         $this->assertStringContainsString('chi duoc dung cho environment_plate', (string) $done->render_error);
         Http::assertNothingSent();
+    }
+
+    /** @return iterable<string, array{0: array<string, mixed>}> */
+    public static function brokenPriceSnapshots(): iterable
+    {
+        yield 'mat don gia' => [['unit_cost_usd' => null]];
+        yield 'don gia sai kieu' => [['unit_cost_usd' => '0.0336']];
+        yield 'mat phien ban bang gia' => [['pricing_version' => null]];
+        yield 'thieu han pricing' => [['pricing' => null, 'unit_cost_usd' => null, 'pricing_version' => null]];
+    }
+
+    /** @param array<string, mixed> $broken */
+    #[\PHPUnit\Framework\Attributes\DataProvider('brokenPriceSnapshots')]
+    public function test_a_cell_whose_snapshot_is_half_written_is_repaired_before_the_request(array $broken): void
+    {
+        $this->fakeProviders();
+
+        $image = $this->cell(array_replace($this->geminiSpec([
+            'pricing' => 'estimated',
+            'unit_cost_usd' => 0.0336,
+            'pricing_version' => 'gemini-image-2026-09-14',
+        ]), $broken));
+
+        [$done, $reason] = app(DesignImageDirectRenderer::class)->renderNow($image->id);
+
+        $this->assertSame('rendered', $reason, (string) $done?->render_error);
+
+        $spec = $done->prompt_spec_json;
+
+        $this->assertSame('estimated', $spec['pricing']);
+        $this->assertSame(0.0336, $spec['unit_cost_usd']);
+        $this->assertSame('gemini-image-2026-09-14', $spec['pricing_version']);
+        $this->assertNotEmpty($spec['pricing_backfilled_at'], 'phai noi ro day la gia bo sung muon');
+
+        $meta = json_decode((string) DB::table('video_cost_entries')
+            ->where('entity_id', $image->id)->value('metadata_json'), true);
+
+        $this->assertSame($spec['pricing_backfilled_at'], $meta['pricing_backfilled_at']);
+    }
+
+    public function test_a_size_the_catalog_never_priced_is_still_refused_before_the_request(): void
+    {
+        Http::fake();
+
+        $image = $this->cell($this->geminiSpec([
+            'image_size' => '2K',
+            'pricing' => 'estimated',
+            'unit_cost_usd' => null,
+            'pricing_version' => null,
+        ]));
+
+        [$done, $reason] = app(DesignImageDirectRenderer::class)->renderNow($image->id);
+
+        $this->assertSame('pricing_unavailable', $reason, 'Lite chi co gia o 1K');
+        $this->assertSame(DesignImageStatus::FAILED->value, $done->status);
+        Http::assertNothingSent();
+    }
+
+    /** @return iterable<string, array{0: string}> */
+    public static function pricingStatesNobodyMayRewrite(): iterable
+    {
+        yield 'reported' => ['reported'];
+        yield 'reconciled' => ['reconciled'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('pricingStatesNobodyMayRewrite')]
+    public function test_money_someone_already_confirmed_is_never_rewritten_as_an_estimate(string $pricing): void
+    {
+        $image = $this->cell($this->geminiSpec([
+            'pricing' => $pricing,
+            'unit_cost_usd' => null,
+            'pricing_version' => null,
+        ]));
+
+        [, $token, $reason] = app(DesignImageQueue::class)->claimForDirectRender($image->id, 90);
+
+        $this->assertNotNull($token, $reason);
+
+        $spec = $image->refresh()->prompt_spec_json;
+
+        $this->assertSame($pricing, $spec['pricing'], 'ket luan cua nguoi khac khong duoc dich lai');
+        $this->assertNull($spec['unit_cost_usd']);
+        $this->assertArrayNotHasKey('pricing_backfilled_at', $spec);
+    }
+
+    public function test_a_cell_whose_claim_moved_on_is_never_written_to(): void
+    {
+        Http::fake();
+
+        $image = $this->cell($this->geminiSpec([
+            'pricing' => 'estimated',
+            'unit_cost_usd' => null,
+            'pricing_version' => null,
+        ]));
+
+        [$ok, $reason] = app(\App\Video\Media\RenderPriceBackfill::class)
+            ->apply($image, 'laravel:direct', (string) Str::uuid());
+
+        $this->assertFalse($ok);
+        $this->assertSame('claim_lost_before_pricing', $reason);
+        $this->assertNull($image->refresh()->prompt_spec_json['unit_cost_usd']);
+        $this->assertArrayNotHasKey('pricing_backfilled_at', $image->prompt_spec_json);
+        Http::assertNothingSent();
+    }
+
+    public function test_a_mirror_render_is_free_and_never_dressed_as_an_estimate(): void
+    {
+        $this->fakeProviders();
+
+        [$source] = app(DesignImageStore::class)->createCandidate($this->project->id, 'tester', [
+            'operation' => 'generate',
+            'prompt' => 'CAMERA: front three-quarter. SUBJECT: a hull.',
+            'model' => 'gpt-image-2',
+            'quality' => 'low',
+            'size' => '1152x2048',
+            'variations' => 1,
+        ]);
+
+        app(DesignImageDirectRenderer::class)->renderNow($source->id);
+
+        $artifact = VideoArtifact::query()->where('design_image_id', $source->id)->sole();
+
+        $mirror = $this->cell([
+            'operation' => 'mirror',
+            'pricing' => 'free',
+            'model' => 'gpt-image-2',
+            'quality' => 'low',
+            'size' => '1152x2048',
+            'variations' => 1,
+            'source_artifact_id' => (string) $artifact->id,
+            'source_artifact_sha256' => (string) $artifact->sha256,
+            'derivation_version' => 'flip-v1',
+        ]);
+
+        [$done, $reason] = app(DesignImageDirectRenderer::class)->renderNow($mirror->id);
+
+        $this->assertSame('rendered', $reason, (string) $done?->render_error);
+
+        $row = DB::table('video_cost_entries')->where('entity_id', $mirror->id)->sole();
+        $meta = json_decode((string) $row->metadata_json, true);
+
+        $this->assertSame('free', $meta['pricing'], 'anh lat khong ton dong nao, va do la su that client biet');
+        $this->assertSame(0.0, (float) $row->cost_usd);
+        $this->assertArrayNotHasKey('estimated_cost_usd', $meta, 'mien phi khong duoc mang uoc tinh');
+        $this->assertArrayNotHasKey('unit_cost_usd', $meta);
+        $this->assertArrayNotHasKey('pricing_version', $meta);
+    }
+
+    /** @return iterable<string, array{0: mixed}> */
+    public static function moneyThatIsNotConfirmed(): iterable
+    {
+        yield 'uoc tinh' => [0.015];
+        yield 'chuoi' => ['abc'];
+        yield 'chuoi so' => ['0.015'];
+    }
+
+    /** @return iterable<string, array{0: mixed}> */
+    public static function reportedMoneyThatIsNotReadable(): iterable
+    {
+        yield 'chuoi' => ['abc'];
+        yield 'chuoi so' => ['0.02'];
+        yield 'vo cuc' => [INF];
+        yield 'so am' => [-0.02];
+        yield 'thieu han' => [null];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('reportedMoneyThatIsNotReadable')]
+    public function test_claiming_reported_is_not_a_free_pass_for_any_value(mixed $cost): void
+    {
+        $image = $this->cell($this->geminiSpec());
+        $queue = app(DesignImageQueue::class);
+
+        [, $token] = $queue->claimForDirectRender($image->id, 90);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('so tien doc duoc');
+
+        try {
+            $queue->recordDirectResult(
+                $image->id, (string) $token, true, null,
+                [$this->ledgerItem(['cost' => $cost, 'pricing' => 'reported'])],
+            );
+        } finally {
+            $this->assertSame(0, DB::table('video_cost_entries')->where('entity_id', $image->id)->count());
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('moneyThatIsNotConfirmed')]
+    public function test_the_ledger_refuses_money_nobody_confirmed(mixed $cost): void
+    {
+        $image = $this->cell($this->geminiSpec());
+        $queue = app(DesignImageQueue::class);
+
+        [, $token] = $queue->claimForDirectRender($image->id, 90);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('tien da xac nhan');
+
+        try {
+            $queue->recordDirectResult(
+                $image->id, (string) $token, true, null,
+                [$this->ledgerItem(['cost' => $cost, 'pricing' => 'estimated'])],
+            );
+        } finally {
+            // Chot nam trong transaction, nen khong duoc de lai nua so cai.
+            $this->assertSame(0, DB::table('video_cost_entries')->where('entity_id', $image->id)->count());
+            $this->assertSame(0, DB::table('video_renders')->where('design_image_id', $image->id)->count());
+        }
+    }
+
+    public function test_money_the_provider_really_reported_goes_into_the_money_column(): void
+    {
+        $image = $this->cell($this->geminiSpec());
+        $queue = app(DesignImageQueue::class);
+
+        [, $token] = $queue->claimForDirectRender($image->id, 90);
+
+        [$done, $reason] = $queue->recordDirectResult(
+            $image->id, (string) $token, true, null,
+            [$this->ledgerItem(['cost' => 0.02, 'pricing' => 'reported'])],
+        );
+
+        $this->assertNotNull($done, $reason);
+
+        $row = DB::table('video_cost_entries')->where('entity_id', $image->id)->sole();
+
+        $this->assertSame(0.02, (float) $row->cost_usd);
+        $this->assertSame('reported', json_decode((string) $row->metadata_json, true)['pricing']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $override
+     * @return array<string, mixed>
+     */
+    private function ledgerItem(array $override): array
+    {
+        $bytes = $this->png(9, 16);
+        $path = 'ledger/'.uniqid().'.png';
+
+        Storage::disk('video_artifacts')->put($path, $bytes);
+
+        return $override + [
+            'idempotency_key' => 'claim:'.uniqid(),
+            'storage_disk' => 'video_artifacts',
+            'storage_path' => $path,
+            'artifact_sha256' => hash('sha256', $bytes),
+            'mime_type' => 'image/png',
+            'width' => 9,
+            'height' => 16,
+            'bytes' => strlen($bytes),
+            'provider_request_id' => null,
+            'provider_usage' => null,
+            'render' => [
+                'provider' => 'gemini',
+                'model' => 'gemini-3.1-flash-lite-image',
+                'render_kind' => 'environment_plate',
+                'sent_prompt' => 'unused in this test',
+                'source_kind' => 'text',
+                'artifact_dir' => 'ledger',
+                'provider_ms' => 10,
+                'request_sha256' => hash('sha256', 'req'),
+            ],
+        ];
+    }
+
+    public function test_a_legacy_shot_row_keeps_counting_as_confirmed_money(): void
+    {
+        $plate = $this->cell($this->geminiSpec());
+
+        // Hang design_image cu: uoc tinh nam trong cot tien, khong co metadata estimate.
+        $this->legacyLedgerRow('design_image', $plate->id, 0.015, ['pricing' => 'estimated']);
+
+        // Hang shot cu: khong co khoa pricing nao ca — phai giu nguyen cach tinh cu.
+        $this->legacyLedgerRow('shot', (string) Str::uuid(), 0.28, null);
+
+        // Va mot hang shot co mang pricing: van la cach tinh cu, vi Pha 3C CHI phan
+        // loai lai design_image.
+        $this->legacyLedgerRow('shot', (string) Str::uuid(), 0.12, ['pricing' => 'estimated']);
+
+        $row = collect(app(\App\Repositories\Eloquent\VideoProjectRepository::class)
+            ->listAllWithCounts($this->owner))
+            ->firstWhere('id', $this->project->id);
+
+        $this->assertSame(0.40, round((float) $row->cost_actual_sum, 4), 'moi dong shot cu deu phai con trong tong');
+        $this->assertSame(0, (int) $row->unclassified_cost_count, 'hang design_image o day deu co khoa pricing');
+        $this->assertSame(0.015, round((float) $row->estimated_cost_sum, 4), 'anh cu la uoc tinh, khong phai tien that');
+    }
+
+    public function test_an_old_design_image_row_nobody_classified_is_not_called_confirmed(): void
+    {
+        $plate = $this->cell($this->geminiSpec());
+
+        // Hang truoc khi so cai co khoa `pricing`: khong ai biet 0.015 la uoc tinh
+        // hay tien that.
+        $this->legacyLedgerRow('design_image', $plate->id, 0.015, null);
+
+        $row = collect(app(\App\Repositories\Eloquent\VideoProjectRepository::class)
+            ->listAllWithCounts($this->owner))
+            ->firstWhere('id', $this->project->id);
+
+        $this->assertSame(0.0, round((float) $row->cost_actual_sum, 4), 'chua phan loai thi chua la da doi soat');
+        $this->assertSame(0.0, round((float) $row->estimated_cost_sum, 4));
+        $this->assertSame(1, (int) $row->unclassified_cost_count);
+
+        $this->get(route('video-projects.index'))
+            ->assertOk()
+            ->assertSee('+?', false)
+            ->assertSee('never classified', false);
+    }
+
+    /** @param array<string, mixed>|null $metadata */
+    private function legacyLedgerRow(string $type, string $entityId, float $cost, ?array $metadata): void
+    {
+        $id = (string) Str::uuid();
+
+        DB::table('video_cost_entries')->insert([
+            'id' => $id,
+            'project_id' => $this->project->id,
+            'entity_type' => $type,
+            'entity_id' => $entityId,
+            'stage' => 'render',
+            'provider' => 'legacy',
+            'model' => 'legacy',
+            'usage_type' => 'render',
+            'quantity' => 1,
+            'unit' => 'render',
+            'cost_usd' => $cost,
+            'metadata_json' => $metadata === null ? null : json_encode($metadata),
+            'cost_idempotency_key' => 'legacy_'.$id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    public function test_a_project_with_only_an_estimate_still_shows_it_on_the_project_list(): void
+    {
+        $this->fakeProviders();
+
+        $this->post($this->url(), $this->geminiSettings())->assertRedirect($this->url());
+
+        $this->get(route('video-projects.index'))
+            ->assertOk()
+            ->assertSee('~$0.03', false)
+            ->assertSee('not reconciled with an invoice', false);
     }
 
     public function test_a_broken_registry_keeps_the_page_readable_but_offers_no_render(): void
@@ -272,6 +801,8 @@ class EnvironmentGeminiDispatchTest extends TestCase
                 'quality' => 'low',
                 'size' => '1152x2048',
                 'variations' => 1,
+                'unit_cost_usd' => 0.015,
+                'pricing_version' => 'openai-image-inherited-2026-09-14',
             ],
             'prompt_sha256' => hash('sha256', uniqid('', true)),
             'status' => DesignImageStatus::CANDIDATE->value,
@@ -461,12 +992,34 @@ class EnvironmentGeminiDispatchTest extends TestCase
     {
         $model = 'gpt-image-test-'.uniqid();
 
+        $this->catalogWithModel($model);
+
         config([
             'video.media_models.image.environment_plate.0.model' => $model,
             'video.media_models.image.environment_plate.0.id' => 'openai:'.$model,
         ]);
 
         return 'openai:'.$model;
+    }
+
+    /** Them mot model vao BAN SAO catalog gia, de o cua test render duoc nhu that. */
+    private function catalogWithModel(string $model): void
+    {
+        $dir = storage_path('framework/testing/pricing_'.uniqid());
+        mkdir($dir, 0775, true);
+
+        foreach (glob(resource_path('ai/providers').'/*.json') ?: [] as $file) {
+            copy($file, $dir.'/'.basename($file));
+        }
+
+        $path = $dir.'/openai_image_pricing_2026_09_14.json';
+        $catalog = json_decode((string) file_get_contents($path), true);
+        $catalog['models'][$model] = $catalog['models']['gpt-image-2'];
+        file_put_contents($path, json_encode($catalog));
+
+        $this->scratchCatalogs[] = $dir;
+
+        config(['video.provider_evidence_dir' => $dir, 'video.gemini.evidence_dir' => $dir]);
     }
 
     private function groupHtml(string $id): string
@@ -572,7 +1125,10 @@ class EnvironmentGeminiDispatchTest extends TestCase
         Http::fake([
             'gemini.test/*' => Http::response([
                 'responseId' => 'resp-1',
-                'usageMetadata' => ['totalTokenCount' => 10],
+                'usageMetadata' => [
+                    'totalTokenCount' => 1274,
+                    'candidatesTokensDetails' => [['modality' => 'IMAGE', 'tokenCount' => 1120]],
+                ],
                 'candidates' => [[
                     'content' => ['parts' => [[
                         'inlineData' => ['mimeType' => 'image/png', 'data' => base64_encode($this->png(9, 16))],

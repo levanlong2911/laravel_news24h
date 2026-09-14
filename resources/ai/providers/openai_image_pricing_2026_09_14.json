@@ -1,0 +1,33 @@
+{
+    "pricing_version": "openai-image-inherited-2026-09-14",
+    "source": "https://developers.openai.com/api/docs/pricing",
+    "reviewed_by": "levanlong2911",
+    "reviewed_at": "2026-09-14",
+    "currency": "USD",
+    "tier": "standard",
+    "verified": false,
+    "proves": "day la nhung con so ung dung VAN DANG dung tu truoc (App\\Enums\\ImageQuality)",
+    "does_not_prove": "gia niem yet cua OpenAI: trang gia khong cong bo gia moi anh cho gpt-image-2, chi co $30/1M output token va mot calculator",
+    "notes": [
+        "Muon co so da doi chieu: lay tu calculator trong image generation guide, hoac tu hoa don that.",
+        "Khi co so that, doi usd_per_image va DOI LUON pricing_version \u2014 moi o da render giu nguyen gia cu cua no."
+    ],
+    "models": {
+        "gpt-image-2": {
+            "qualities": {
+                "low": {
+                    "usd_per_image": 0.015
+                },
+                "medium": {
+                    "usd_per_image": 0.041
+                },
+                "high": {
+                    "usd_per_image": 0.11
+                },
+                "auto": {
+                    "usd_per_image": 0.11
+                }
+            }
+        }
+    }
+}

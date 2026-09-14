@@ -7,6 +7,7 @@ use App\Enums\ImageQuality;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoRender;
+use App\Video\Media\RenderPriceSnapshot;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -41,6 +42,7 @@ class DesignImageDirectRenderer
         private OpenAiImageClient $client,
         private FilesystemFactory $storage,
         private GeminiImageClient $gemini,
+        private RenderPriceSnapshot $prices = new RenderPriceSnapshot,
     ) {}
 
     /**
@@ -76,6 +78,19 @@ class DesignImageDirectRenderer
                 throw new RuntimeException('Gemini chi duoc dung cho environment_plate, khong cho '.$spec['operation']);
             }
 
+            // O khai co gia ma khong mang duoc DU snapshot thi day la hang hong: mot
+            // lan goi co tra tien khong duoc phep di ma sau nay khong doi soat duoc.
+            //
+            // Ap cho MOI provider, ke ca o tao truoc Pha 3C: hang cu van doc duoc va
+            // van hien dung tren man hinh, nhung khong duoc dung de mua them mot luot
+            // render nua.
+            if ($spec['pricing'] === 'estimated'
+                && ($spec['unit_cost_usd'] === null || $spec['pricing_version'] === '')) {
+                throw new RuntimeException(
+                    'O khai estimated nhung snapshot gia khong day du — khong gui request.',
+                );
+            }
+
             $result = match ($spec['operation']) {
                 'mirror' => $this->mirror($image, $spec, $claimToken),
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
@@ -86,6 +101,8 @@ class DesignImageDirectRenderer
                     'Unknown render operation: '.$spec['operation'],
                 ),
             };
+
+            $result['renders'] = $this->prices->applyTo($spec, $result['renders']);
         } catch (Throwable $e) {
             Log::error('DesignImageDirectRenderer: client nem, nha claim', [
                 'image_id' => $imageId,
@@ -131,6 +148,7 @@ class DesignImageDirectRenderer
         $provider = (string) ($spec['provider'] ?? 'openai');
         $pricing = (string) ($spec['pricing'] ?? 'estimated');
         $quality = $provider === 'openai' ? ImageQuality::fromSpecOrHigh($spec['quality'] ?? '') : null;
+        $unit = $this->unitCost($spec, $pricing, $provider, $quality);
 
         return [
             'image_id' => $image->id,
@@ -144,7 +162,13 @@ class DesignImageDirectRenderer
             'size' => (string) ($spec['size'] ?? ''),
             'variations' => (int) ($spec['variations'] ?? 1),
             'pricing' => $pricing,
-            'cost_estimate' => $pricing === 'unpriced' || $quality === null ? null : $quality->estimatedCostUsd(),
+            'unit_cost_usd' => $unit,
+            // MOI ANH, khong phai ca o: client gan so nay vao tung render item, va
+            // queue ghi mot dong so cai cho moi item. Nhan voi variations o day la
+            // dem tien hai lan.
+            'cost_estimate' => $unit,
+            'pricing_version' => (string) ($spec['pricing_version'] ?? ''),
+            'pricing_backfilled_at' => (string) ($spec['pricing_backfilled_at'] ?? ''),
             'api_version' => (string) ($spec['api_version'] ?? ''),
             'shape' => (string) ($spec['shape'] ?? ''),
             'aspect_ratio' => (string) ($spec['aspect_ratio'] ?? ''),
@@ -157,6 +181,31 @@ class DesignImageDirectRenderer
             'reference_manifest_hash' => (string) ($spec['reference_manifest_hash'] ?? ''),
             'sources' => is_array($spec['sources'] ?? null) ? $spec['sources'] : [],
         ];
+    }
+
+
+    /**
+     * Gia da dong bang luc tao o, khong phai gia hom nay: mot o render thang truoc
+     * phai giu nguyen con so no da duoc bao truoc khi bam.
+     *
+     * @param  array<string, mixed>  $spec
+     */
+    private function unitCost(array $spec, string $pricing, string $provider, ?ImageQuality $quality): ?float
+    {
+        if ($pricing === 'unpriced') {
+            return null;
+        }
+
+        $frozen = $spec['unit_cost_usd'] ?? null;
+
+        if (is_int($frozen) || is_float($frozen)) {
+            $frozen = (float) $frozen;
+
+            return $frozen > 0 && is_finite($frozen) ? $frozen : null;
+        }
+
+        // Hang OpenAI cu chua co gia dong bang — bang gia theo quality van dung.
+        return $provider === 'openai' && $quality !== null ? $quality->estimatedCostUsd() : null;
     }
 
     /**

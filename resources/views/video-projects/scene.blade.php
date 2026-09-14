@@ -319,6 +319,9 @@
                         @php($chosen = collect($cell['approved']['artifacts'])
                             ->firstWhere('id', $cell['approved']['selected_artifact_id']))
                         <div class="vs-lbl">ĐÃ DUYỆT</div>
+                        @if($cell['approved']['cost_recorded_has_ledger'])
+                            <div class="m">@include('video-projects.partials.cost-recorded', ['cell' => $cell['approved']])</div>
+                        @endif
                         @if($chosen)
                             <a class="frame" href="{{ $chosen['url'] }}" target="_blank">
                                 <img src="{{ $chosen['url'] }}" alt="">
@@ -330,6 +333,10 @@
                     @if($cell['candidate'])
                         @php($c = $cell['candidate'])
                         <div class="vs-lbl">ỨNG VIÊN · {{ $c['status_label'] }}</div>
+
+                        @if($c['cost_recorded_has_ledger'])
+                            <div class="m">@include('video-projects.partials.cost-recorded', ['cell' => $c])</div>
+                        @endif
 
                         @if($c['render_error'])
                             <div class="m" style="color:var(--vp-amber-fg)">{{ $c['render_error'] }}</div>

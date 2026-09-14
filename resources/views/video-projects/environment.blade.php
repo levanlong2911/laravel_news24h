@@ -240,6 +240,7 @@
                                                 <select class="ctl" name="image_size" form="{{ $form }}" required @disabled(! $active)>
                                                     @foreach($controls['image_sizes'] as $imageSize)
                                                         <option value="{{ $imageSize }}"
+                                                                @isset($controls['prices'][$imageSize]) data-usd="{{ $controls['prices'][$imageSize] }}" @endisset
                                                                 @selected($imageSize === $controls['default_image_size'])>{{ $imageSize }}{{ in_array($imageSize, $controls['proven_image_sizes'], true) ? '' : ' · chưa render thử' }}</option>
                                                     @endforeach
                                                 </select>
@@ -333,7 +334,9 @@
                                             <span>{{ $cell['image_code'] }}</span>
                                             <span>{{ $candidate['width'] }}×{{ $candidate['height'] }}</span>
                                             <span>{{ $cell['variations'] }} ảnh &middot; {{ $cell['quality'] !== '' ? $cell['quality'] : 'không áp dụng' }}
-                                                &middot; {{ $cell['cost_recorded_unpriced'] ? 'chưa định giá' : '$'.number_format($cell['cost_recorded'], 3) }}</span>
+                                                @if($cell['cost_recorded_has_ledger'])
+                                                    &middot; @include('video-projects.partials.cost-recorded', ['cell' => $cell])
+                                                @endif</span>
                                             <span>Created: {{ $candidate['created_at']?->format('Y-m-d H:i:s') ?? '—' }}</span>
                                         </div>
                                     </div>
@@ -430,9 +433,12 @@
             var label = group.getAttribute('data-label');
 
             if (group.getAttribute('data-provider') !== 'openai') {
+                var sizeField = field(group, 'image_size');
+                var usd = sizeField.options[sizeField.selectedIndex].getAttribute('data-usd');
+
                 box.textContent = label + ' · ' + field(group, 'aspect_ratio').value + ' · '
-                    + field(group, 'image_size').value + ' · ' + count + ' ảnh — '
-                    + (pricing === 'unpriced' ? 'chưa định giá' : 'không rõ giá');
+                    + sizeField.value + ' · ' + count + ' ảnh — '
+                    + (usd === null ? 'chưa định giá' : 'ước tính $' + (parseFloat(usd) * count).toFixed(3));
                 box.classList.remove('text-danger');
                 box.classList.add('text-muted');
                 return;

@@ -270,7 +270,7 @@ class OpenAiImageClientTest extends TestCase
         $this->assertSame('image', $result['renders'][0]['render']['source_kind']);
     }
 
-    public function test_a_priced_render_still_carries_its_estimate(): void
+    public function test_a_render_never_puts_an_estimate_in_the_money_column(): void
     {
         Storage::fake('local');
 
@@ -286,7 +286,10 @@ class OpenAiImageClientTest extends TestCase
             'claim_token' => 'claim-1',
         ]), 'anchor-bytes', 'anchor.png', 30);
 
-        $this->assertSame(0.015, $result['renders'][0]['cost']);
+        $this->assertNull(
+            $result['renders'][0]['cost'],
+            'OpenAI khong bao chi phi cho images API — uoc tinh di duong metadata',
+        );
         $this->assertSame('estimated', $result['renders'][0]['pricing']);
     }
 

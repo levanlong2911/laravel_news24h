@@ -317,7 +317,220 @@ class DesignImageStoreTest extends TestCase
         ]);
     }
 
-    private function ledgerRow(string $entityId, string $pricing): void
+    /** @return iterable<string, array{0: array<string, mixed>, 1: string}> */
+    public static function estimateLines(): iterable
+    {
+        yield 'uoc tinh, chua doi soat' => [
+            ['estimated' => 0.0336, 'recorded' => 0.0],
+            'ước tính $0.034 · chưa có chi phí đã đối soát',
+        ];
+        yield 'uoc tinh, cot tien da co so' => [
+            ['estimated' => 0.015, 'recorded' => 0.015],
+            'ước tính $0.015',
+        ];
+        yield 'uoc tinh cong luot chua dinh gia' => [
+            ['estimated' => 0.0336, 'recorded' => 0.0, 'has_unpriced' => true],
+            'ước tính $0.034 · chưa có chi phí đã đối soát · còn lượt chưa định giá',
+        ];
+    }
+
+    /** @param array<string, mixed> $cost */
+    #[\PHPUnit\Framework\Attributes\DataProvider('estimateLines')]
+    public function test_an_estimate_is_called_an_estimate_not_a_payment(array $cost, string $expected): void
+    {
+        $this->assertSame($expected, $this->costLine($cost + [
+            'has_ledger' => true, 'has_unpriced' => false, 'has_estimate' => true,
+        ]));
+    }
+
+    /** @return iterable<string, array{0: array<string, mixed>, 1: string}> */
+    public static function costLines(): iterable
+    {
+        yield 'chua co dong so cai' => [
+            ['has_ledger' => false, 'has_unpriced' => false, 'recorded' => 0.0], '',
+        ];
+        yield 'chua dinh gia' => [
+            ['has_ledger' => true, 'has_unpriced' => true, 'recorded' => 0.0], 'chưa định giá',
+        ];
+        yield 'vua co gia vua co luot chua dinh gia' => [
+            ['has_ledger' => true, 'has_unpriced' => true, 'recorded' => 0.015],
+            'đã ghi nhận $0.015 · còn lượt chưa định giá',
+        ];
+        yield 'du gia' => [
+            ['has_ledger' => true, 'has_unpriced' => false, 'recorded' => 0.015], 'đã ghi nhận $0.015',
+        ];
+        yield 'mien phi' => [
+            ['has_ledger' => true, 'has_unpriced' => false, 'recorded' => 0.0], 'đã ghi nhận $0.000',
+        ];
+    }
+
+    /** @param array<string, mixed> $cost */
+    #[\PHPUnit\Framework\Attributes\DataProvider('costLines')]
+    public function test_the_cost_line_says_exactly_what_the_ledger_knows(array $cost, string $expected): void
+    {
+        $this->assertSame($expected, $this->costLine($cost));
+    }
+
+    /** @param array<string, mixed> $cost */
+    private function costLine(array $cost): string
+    {
+        return trim(view('video-projects.partials.cost-recorded', ['cell' => [
+            'cost_recorded' => $cost['recorded'],
+            'cost_recorded_has_ledger' => $cost['has_ledger'],
+            'cost_recorded_unpriced' => $cost['has_unpriced'],
+            'cost_recorded_estimated' => $cost['estimated'] ?? 0.0,
+            'cost_recorded_has_estimate' => $cost['has_estimate'] ?? false,
+            'cost_recorded_unclassified' => $cost['unclassified'] ?? 0.0,
+            'cost_recorded_has_unclassified' => $cost['has_unclassified'] ?? false,
+        ]])->render());
+    }
+
+    /** @return iterable<string, array{0: string}> */
+    public static function pricingsThatNeverGetAPrice(): iterable
+    {
+        yield 'mien phi' => ['free'];
+        yield 'chua dinh gia' => ['unpriced'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('pricingsThatNeverGetAPrice')]
+    public function test_a_cell_that_costs_nothing_is_never_stamped_with_a_price(string $pricing): void
+    {
+        [$image] = $this->store->createCandidate($this->project->id, 'Van Long', $this->spec([
+            'pricing' => $pricing,
+        ]));
+
+        $this->assertArrayNotHasKey('unit_cost_usd', $image->prompt_spec_json);
+        $this->assertArrayNotHasKey('pricing_version', $image->prompt_spec_json);
+    }
+
+    public function test_a_ledger_row_from_before_the_pricing_contract_is_called_unclassified(): void
+    {
+        $image = $this->pricedCell(DesignImageStore::ENVIRONMENT_TYPE);
+
+        DB::table('video_cost_entries')->insert([
+            'id' => $id = (string) Str::uuid(),
+            'project_id' => $this->project->id,
+            'entity_type' => 'design_image',
+            'entity_id' => $image->id,
+            'provider' => 'openai',
+            'model' => 'gpt-image-2',
+            'usage_type' => 'render',
+            'quantity' => 1,
+            'unit' => 'render',
+            'cost_usd' => 0.015,
+            'metadata_json' => null,
+            'cost_idempotency_key' => 'legacy_'.$id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $cell = $this->store->environmentCellsFor($this->project->id)[0];
+
+        $this->assertTrue($cell['cost_recorded_has_unclassified']);
+        $this->assertSame(0.015, $cell['cost_recorded_unclassified']);
+        $this->assertSame(0.0, $cell['cost_recorded'], 'chua phan loai thi chua duoc goi la da ghi nhan');
+        $this->assertFalse($cell['cost_recorded_has_estimate']);
+
+        $this->assertSame('$0.015 · chưa phân loại', $this->costLine([
+            'recorded' => $cell['cost_recorded'],
+            'has_ledger' => true,
+            'has_unpriced' => false,
+            'unclassified' => $cell['cost_recorded_unclassified'],
+            'has_unclassified' => true,
+        ]));
+    }
+
+    public function test_a_cell_with_no_ledger_row_is_not_reported_as_spending(): void
+    {
+        $image = $this->pricedCell(DesignImageStore::ENVIRONMENT_TYPE);
+
+        $cell = $this->store->environmentCellsFor($this->project->id)[0];
+
+        $this->assertFalse($cell['cost_recorded_has_ledger']);
+        $this->assertFalse($cell['cost_recorded_unpriced']);
+        $this->assertSame(0.0, $cell['cost_recorded']);
+        $this->assertSame(
+            [
+                'recorded' => 0.0,
+                'has_ledger' => false,
+                'has_unpriced' => false,
+                'estimated' => 0.0,
+                'has_estimate' => false,
+                'unclassified' => 0.0,
+                'has_unclassified' => false,
+            ],
+            $this->store->costSummaryByImage($this->project->id, [$image->id])[$image->id],
+        );
+    }
+
+    public function test_a_free_render_is_a_render_that_happened_not_a_missing_one(): void
+    {
+        $image = $this->pricedCell(DesignImageStore::REFERENCE_TYPE);
+        $this->ledgerRow($image->id, 'free');
+
+        $summary = $this->store->costSummaryByImage($this->project->id, [$image->id])[$image->id];
+
+        $this->assertTrue($summary['has_ledger'], 'mot lan lat anh ton 0 dong van la mot lan da xay ra');
+        $this->assertFalse($summary['has_unpriced']);
+        $this->assertSame(0.0, $summary['recorded']);
+    }
+
+    public function test_a_cell_that_mixes_a_priced_and_an_unpriced_render_reports_both(): void
+    {
+        $image = $this->pricedCell(DesignImageStore::ENVIRONMENT_TYPE);
+        $this->ledgerRow($image->id, 'estimated', 0.015);
+        $this->ledgerRow($image->id, 'unpriced');
+
+        $summary = $this->store->costSummaryByImage($this->project->id, [$image->id])[$image->id];
+
+        $this->assertSame(
+            0.0, $summary['recorded'],
+            'uoc tinh khong phai tien da xac nhan, du no dang nam trong cot cost_usd',
+        );
+        $this->assertSame(0.015, $summary['estimated']);
+        $this->assertTrue($summary['has_estimate']);
+        $this->assertTrue($summary['has_ledger']);
+        $this->assertTrue($summary['has_unpriced']);
+    }
+
+    public function test_the_cost_summary_answers_for_every_id_it_was_asked_about(): void
+    {
+        $unknown = (string) Str::uuid();
+
+        $this->assertSame(
+            [
+                'recorded' => 0.0,
+                'has_ledger' => false,
+                'has_unpriced' => false,
+                'estimated' => 0.0,
+                'has_estimate' => false,
+                'unclassified' => 0.0,
+                'has_unclassified' => false,
+            ],
+            $this->store->costSummaryByImage($this->project->id, [$unknown])[$unknown],
+        );
+
+        $this->assertSame([], $this->store->costSummaryByImage($this->project->id, []));
+    }
+
+    public function test_the_cost_summary_never_reaches_into_another_project(): void
+    {
+        $image = $this->pricedCell(DesignImageStore::ENVIRONMENT_TYPE);
+        $this->ledgerRow($image->id, 'estimated', 0.015);
+
+        $other = VideoProject::create([
+            'title' => 'TEST store other '.uniqid(),
+            'article_id' => $this->project->article_id,
+            'admin_id' => $this->project->admin_id,
+        ]);
+
+        $summary = $this->store->costSummaryByImage($other->id, [$image->id])[$image->id];
+
+        $this->assertFalse($summary['has_ledger']);
+        $this->assertSame(0.0, $summary['recorded']);
+    }
+
+    private function ledgerRow(string $entityId, string $pricing, float $cost = 0.0): void
     {
         $id = (string) Str::uuid();
 
@@ -331,7 +544,7 @@ class DesignImageStoreTest extends TestCase
             'usage_type' => 'render',
             'quantity' => 1,
             'unit' => 'render',
-            'cost_usd' => 0,
+            'cost_usd' => $cost,
             'metadata_json' => json_encode(['pricing' => $pricing]),
             'cost_idempotency_key' => 'test_'.$id,
             'created_at' => now(),
@@ -357,7 +570,11 @@ class DesignImageStoreTest extends TestCase
         $this->assertSame('created', $reason);
         $this->assertSame('candidate', $image->status);
         $this->assertSame('identity_anchor', $image->image_type);
-        $this->assertSame($this->spec(), $image->prompt_spec_json);
+        $this->assertSame(
+            $this->spec() + ['unit_cost_usd' => 0.041, 'pricing_version' => 'openai-image-inherited-2026-09-14'],
+            $image->prompt_spec_json,
+            'gia duoc dong bang ngay luc tao o, ke ca anh neo',
+        );
         $this->assertStringStartsWith('master_vessel_van_long_', $image->image_code);
         $this->assertLessThanOrEqual(100, strlen($image->image_code));
     }

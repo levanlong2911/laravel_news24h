@@ -1,6 +1,11 @@
 <?php
 
+// Thu muc dung chung cho moi bang chung va bang gia cua provider anh.
+$providerEvidenceDir = resource_path('ai/providers');
+
 return [
+    'provider_evidence_dir' => $providerEvidenceDir,
+
     'pipeline_version' => '2026.07.22',
 
     'llm_cost_ceiling_usd' => (float) env('VIDEO_LLM_COST_CEILING_USD', 0.05),
@@ -44,7 +49,7 @@ return [
 
         'timeout' => (int) env('GEMINI_HTTP_TIMEOUT', 60),
 
-        'evidence_dir' => resource_path('ai/providers'),
+        'evidence_dir' => $providerEvidenceDir,
 
         'disk' => env('VIDEO_IMAGE_DISK', 'video_artifacts'),
 
@@ -78,7 +83,7 @@ return [
                     'model' => 'gemini-3.1-flash-lite-image',
                     'label' => 'Nano Banana 2 Lite',
                     'default' => false,
-                    'pricing' => 'unpriced',
+                    'pricing' => 'estimated',
                     'max_variations' => 1,
                     'api_version' => 'v1',
                     'shape' => 'image_config',
@@ -95,6 +100,7 @@ return [
                         'models' => 'gemini_models_2026_09_12.json',
                         'image_config' => 'gemini_image_config_2026_09_13.json',
                         'capabilities' => 'gemini_image_capabilities.json',
+                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
                     ],
                 ],
                 [
@@ -103,7 +109,7 @@ return [
                     'model' => 'gemini-3.1-flash-image',
                     'label' => 'Nano Banana 2',
                     'default' => false,
-                    'pricing' => 'unpriced',
+                    'pricing' => 'estimated',
                     'max_variations' => 1,
                     'api_version' => 'v1',
                     'shape' => 'image_config',
@@ -120,6 +126,7 @@ return [
                         'models' => 'gemini_models_2026_09_12.json',
                         'image_config' => 'gemini_image_config_2026_09_13.json',
                         'capabilities' => 'gemini_image_capabilities.json',
+                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
                     ],
                 ],
                 [
@@ -128,7 +135,7 @@ return [
                     'model' => 'gemini-3-pro-image',
                     'label' => 'Nano Banana Pro',
                     'default' => false,
-                    'pricing' => 'unpriced',
+                    'pricing' => 'estimated',
                     'max_variations' => 1,
                     'api_version' => 'v1',
                     'shape' => 'image_config',
@@ -144,6 +151,7 @@ return [
                         'models' => 'gemini_models_2026_09_12.json',
                         'image_config' => 'gemini_image_config_2026_09_13.json',
                         'capabilities' => 'gemini_image_capabilities.json',
+                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
                     ],
                 ],
             ],

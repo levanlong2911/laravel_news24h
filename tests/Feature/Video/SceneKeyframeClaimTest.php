@@ -76,7 +76,7 @@ class SceneKeyframeClaimTest extends TestCase
             'project_id' => $this->project->id,
             'image_code' => 'anchor_'.uniqid(),
             'image_type' => DesignImageStore::ANCHOR_TYPE,
-            'prompt_spec_json' => ['prompt' => 'unused', 'quality' => 'low'],
+            'prompt_spec_json' => ['prompt' => 'unused', 'model' => 'gpt-image-2', 'quality' => 'low'],
             'prompt_sha256' => hash('sha256', uniqid('', true)),
             'status' => DesignImageStatus::RENDERED->value,
             'revision' => 1,
@@ -274,9 +274,9 @@ class SceneKeyframeClaimTest extends TestCase
     public static function ledgerPricingProvider(): iterable
     {
         yield 'chua dinh gia' => [null, 'unpriced', 0.0, 'unpriced'];
-        yield 'co uoc luong' => [0.015, 'estimated', 0.015, 'estimated'];
+        yield 'co uoc luong' => [null, 'estimated', 0.0, 'estimated'];
         yield 'mien phi' => [0.0, 'free', 0.0, 'free'];
-        yield 'khong khai bao' => [0.041, null, 0.041, 'estimated'];
+        yield 'khong khai bao' => [null, null, 0.0, 'estimated'];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('ledgerPricingProvider')]
@@ -349,7 +349,7 @@ class SceneKeyframeClaimTest extends TestCase
 
     public function test_the_index_page_stays_quiet_when_every_render_has_a_price(): void
     {
-        $this->recordOneRender(0.015, 'estimated');
+        $this->recordOneRender(null, 'estimated');
 
         $this->actingAs($this->owner)
             ->get(route('video-projects.index'))
@@ -376,13 +376,15 @@ class SceneKeyframeClaimTest extends TestCase
 
         [, $token] = $this->queue()->claimForDirectRender($cell->id, 90);
         $this->queue()->recordDirectResult(
-            $cell->id, (string) $token, true, null, [$this->renderItem(0.015, 'estimated')],
+            $cell->id, (string) $token, true, null,
+            [$this->renderItem(null, 'estimated') + ['estimated_cost_usd' => 0.015]],
         );
 
         $row = collect(app(VideoProjectRepository::class)->listAllWithCounts($this->owner))
             ->firstWhere('id', $this->project->id);
 
-        $this->assertSame(0.015, (float) $row->cost_actual_sum);
+        $this->assertSame(0.0, (float) $row->cost_actual_sum, 'uoc tinh khong phai tien da xac nhan');
+        $this->assertSame(0.015, (float) $row->estimated_cost_sum);
         $this->assertSame(0, (int) $row->unpriced_cost_count);
     }
 
@@ -443,7 +445,7 @@ class SceneKeyframeClaimTest extends TestCase
             'project_id' => $this->project->id,
             'image_code' => 'keyframe_'.uniqid(),
             'image_type' => DesignImageStore::SCENE_KEYFRAME_TYPE,
-            'prompt_spec_json' => ['prompt' => 'unused in this test'],
+            'prompt_spec_json' => ['prompt' => 'unused in this test', 'model' => 'gpt-image-2', 'quality' => 'low'],
             'prompt_sha256' => hash('sha256', uniqid('', true)),
             'status' => $status->value,
             'revision' => 1,

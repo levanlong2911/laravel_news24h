@@ -221,7 +221,9 @@
                                     <span>{{ $cell['image_code'] }}</span>
                                     <span>{{ $candidate['width'] }}×{{ $candidate['height'] }}</span>
                                     <span>{{ $cell['variations'] }} ảnh &middot; {{ $cell['quality'] }}
-                                        &middot; ${{ number_format($cell['cost_recorded'], 3) }}</span>
+                                        @if($cell['cost_recorded_has_ledger'])
+                                            &middot; @include('video-projects.partials.cost-recorded', ['cell' => $cell])
+                                        @endif</span>
                                     <span>Created: {{ $candidate['created_at']?->format('Y-m-d H:i:s') ?? '—' }}</span>
                                 </div>
 

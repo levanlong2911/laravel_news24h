@@ -1,0 +1,61 @@
+{
+    "pricing_version": "gemini-image-2026-09-14",
+    "source": "https://ai.google.dev/gemini-api/docs/pricing",
+    "reviewed_by": "levanlong2911",
+    "reviewed_at": "2026-09-14",
+    "currency": "USD",
+    "tier": "paid-standard",
+    "proves": "gia niem yet Google, da co nguoi doc va ky ten",
+    "does_not_prove": "hoa don that \u2014 chi doi soat voi billing moi biet",
+    "notes": [
+        "Token/anh cua Google trung khop voi usageMetadata da do: Lite 1K va Flash 1K deu 1120, Flash 2K la 1680.",
+        "Google ghi Pro 2K cung 1120 token nhu 1K. Chua co lan render Pro nao de kiem \u2014 lan dau chay phai doi chieu lai.",
+        "Lite chi duoc niem yet o 1K; cac co khac khong co gia nen khong duoc mo."
+    ],
+    "models": {
+        "gemini-3.1-flash-lite-image": {
+            "image_sizes": {
+                "1K": {
+                    "usd_per_image": 0.0336,
+                    "output_tokens": 1120
+                }
+            }
+        },
+        "gemini-3.1-flash-image": {
+            "image_sizes": {
+                "0.5K": {
+                    "usd_per_image": 0.045,
+                    "output_tokens": 747
+                },
+                "1K": {
+                    "usd_per_image": 0.067,
+                    "output_tokens": 1120
+                },
+                "2K": {
+                    "usd_per_image": 0.101,
+                    "output_tokens": 1680
+                },
+                "4K": {
+                    "usd_per_image": 0.151,
+                    "output_tokens": 2520
+                }
+            }
+        },
+        "gemini-3-pro-image": {
+            "image_sizes": {
+                "1K": {
+                    "usd_per_image": 0.134,
+                    "output_tokens": 1120
+                },
+                "2K": {
+                    "usd_per_image": 0.134,
+                    "output_tokens": 1120
+                },
+                "4K": {
+                    "usd_per_image": 0.24,
+                    "output_tokens": 2000
+                }
+            }
+        }
+    }
+}

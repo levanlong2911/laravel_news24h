@@ -240,6 +240,7 @@ class DesignImageApiQueueTest extends TestCase
             'width' => 1024,
             'height' => 1536,
             'cost' => 0.015,
+            'pricing' => 'reported',
             'render' => [
                 'render_kind' => 'image',
                 'provider' => 'openai',
