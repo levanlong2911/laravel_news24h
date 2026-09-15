@@ -11,7 +11,6 @@ use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Services\PythonRunner;
-use App\Services\Video\PythonPromptCompiler;
 use App\Services\VideoProjectService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
@@ -77,14 +76,6 @@ class AnchorImageRequestTest extends TestCase
             ->post($this->url(), $this->settings(['variations' => 5]));
 
         $response->assertSessionHasErrors('variations');
-    }
-
-    private function compilerReturns(string $prompt): void
-    {
-        $compiler = Mockery::mock(PythonPromptCompiler::class);
-        $compiler->shouldReceive('compile')->andReturn([$prompt, '']);
-        $this->instance(PythonPromptCompiler::class, $compiler);
-        $this->forgetService();
     }
 
     /** @param array<string, mixed> $payload */
@@ -327,64 +318,6 @@ class AnchorImageRequestTest extends TestCase
         $this->forgetService();
     }
 
-    /** @return array{0: list<string>, 1: string} [$compileArgs, $storedSize] */
-    private function submitAt(string $size): array
-    {
-        $project = $this->projectWithConcept();
-        $calls = [];
-        $this->recordingRunner($calls);
-
-        $this->post(
-            route('video-projects.anchor-compile', $project->id),
-            [
-                'stage' => 'fabrication_geometry_anchor',
-                'viewpoint' => 'front_three_quarter',
-                'size' => $size,
-                'model' => 'gpt-image-2',
-            ],
-        );
-
-        $compile = array_values(array_filter(
-            $calls, fn (array $c) => $c['script'] === 'compile_image_prompt.py',
-        ));
-
-        $this->assertCount(1, $compile, 'Prompt phai duoc bien dich dung mot lan');
-
-        return [
-            $compile[0]['args'],
-            (string) $project->refresh()->metadata_json['anchor_prompt_preview']['size'],
-        ];
-    }
-
-    public function test_the_prompt_is_compiled_for_the_canvas_the_render_will_use(): void
-    {
-        // Prompt mang mot khoi `OUTPUT CANVAS` ghi ro kich thuoc. Truoc ban va nay
-        // khoi do LUON noi 1024x1536 vi compile() viet cung, con request thi gui
-        // cai nguoi dung bam — nen chon Landscape la prompt mo ta sai chinh khung
-        // no dang duoc ve vao.
-        [$args, $size] = $this->submitAt('1536x1024');
-
-        $this->assertContains('--width=1536', $args);
-        $this->assertContains('--height=1024', $args);
-        $this->assertSame('1536x1024', $size);
-    }
-
-    /**
-     * Bay lua chon trong enum, khong phai hai. Mot bang anh xa viet tay o dau do
-     * se quen dung cai it dung nhat.
-     *
-     * @dataProvider offeredsizes
-     */
-    public function test_every_offered_canvas_reaches_the_compiler_unchanged(
-        string $value, int $width, int $height,
-    ): void {
-        [$args, $size] = $this->submitAt($value);
-
-        $this->assertContains('--width='.$width, $args);
-        $this->assertContains('--height='.$height, $args);
-        $this->assertSame($value, $size);
-    }
-
     /** @return array<string, array{string, int, int}> */
     public static function offeredsizes(): array
     {
@@ -414,40 +347,6 @@ class AnchorImageRequestTest extends TestCase
         $this->assertSame('fabrication_geometry_anchor', $spec['stage']);
     }
 
-    public function test_the_selected_stage_reaches_the_python_command(): void
-    {
-        [$args] = $this->submitAt('1024x1536');
-
-        $this->assertContains('--stage=fabrication_geometry_anchor', $args);
-    }
-
-    public function test_the_render_plan_file_carries_the_image_prompt_request_contract(): void
-    {
-        $project = $this->projectWithConcept();
-        $calls = [];
-        $this->recordingRunner($calls);
-
-        $this->post(
-            route('video-projects.anchor-compile', $project->id),
-            [
-                'stage' => 'fabrication_geometry_anchor',
-                'viewpoint' => 'front_three_quarter',
-                'size' => '1536x1024',
-                'model' => 'gpt-image-2',
-            ],
-        );
-
-        $compile = array_values(array_filter(
-            $calls, fn (array $c) => $c['script'] === 'compile_image_prompt.py',
-        ));
-
-        $this->assertSame([
-            'viewpoint' => 'front_three_quarter',
-            'output_size' => ['width' => 1536, 'height' => 1024],
-            'stage' => 'fabrication_geometry_anchor',
-        ], $compile[0]['plan']['image_prompt_request']);
-    }
-
     public function test_nothing_is_compiled_until_the_prompt_settings_are_chosen(): void
     {
         $project = $this->projectWithConcept();
@@ -466,85 +365,6 @@ class AnchorImageRequestTest extends TestCase
                 $field,
             );
         }
-    }
-
-    public function test_the_prompt_compiles_once_stage_viewpoint_and_size_are_chosen(): void
-    {
-        // Bien dich CHI xay ra o nut Compile. Man hinh khong tu goi Python nua:
-        // prompt no bay ra phai la ban da luu, neu khong thi hash gui len khong
-        // co doi chung trong DB va moi luot Generate se bi tu choi `stale`.
-        $project = $this->projectWithConcept();
-        $calls = [];
-        $this->recordingRunner($calls);
-
-        $this->from(route('video-projects.anchor', $project->id))
-            ->post(route('video-projects.anchor-compile', $project->id), [
-                'stage' => 'finished_identity_anchor',
-                'viewpoint' => 'side',
-                'size' => '1536x1024',
-                'model' => 'gpt-image-2',
-            ]);
-
-        $this->assertCount(1, $calls);
-        $this->assertContains('--stage=finished_identity_anchor', $calls[0]['args']);
-        $this->assertContains('--viewpoint=side', $calls[0]['args']);
-        $this->assertContains('--width=1536', $calls[0]['args']);
-        $this->assertContains('--height=1024', $calls[0]['args']);
-    }
-
-    public function test_a_compiled_prompt_survives_a_page_reload(): void
-    {
-        $project = $this->projectWithConcept();
-        $calls = [];
-        $this->recordingRunner($calls);
-
-        $this->from(route('video-projects.anchor', $project->id))
-            ->post(route('video-projects.anchor-compile', $project->id), [
-                'stage' => 'finished_identity_anchor',
-                'viewpoint' => 'side',
-                'size' => '1536x1024',
-                'model' => 'gpt-image-2',
-            ])->assertRedirect(route('video-projects.anchor', $project->id));
-
-        $project->refresh();
-        $preview = $project->metadata_json['anchor_prompt_preview'] ?? [];
-
-        $this->assertCount(1, $calls);
-        $this->assertSame('finished_identity_anchor', $preview['stage'] ?? null);
-        $this->assertSame('side', $preview['viewpoint'] ?? null);
-        $this->assertSame('1536x1024', $preview['size'] ?? null);
-        $this->assertStringContainsString('COMPILED', $preview['prompt'] ?? '');
-
-        $calls = [];
-        $html = $this->get(route('video-projects.anchor', $project->id))
-            ->assertOk()
-            ->getContent();
-
-        $this->assertSame([], $calls, 'Reload must read the stored preview instead of compiling again.');
-        $this->assertStringContainsString('COMPILED', $html);
-        $this->assertStringContainsString('Saved compiled preview', $html);
-    }
-
-    public function test_generate_anchor_stays_locked_until_render_settings_are_chosen(): void
-    {
-        $project = $this->projectWithConcept();
-        $calls = [];
-        $this->recordingRunner($calls);
-
-        $this->from(route('video-projects.anchor', $project->id))
-            ->post(route('video-projects.anchor-compile', $project->id), [
-                'stage' => 'finished_identity_anchor',
-                'viewpoint' => 'front_three_quarter',
-                'size' => '1536x1024',
-                'model' => 'gpt-image-2',
-            ])->assertRedirect(route('video-projects.anchor', $project->id));
-
-        $html = $this->get(route('video-projects.anchor', $project->id))
-            ->assertOk()
-            ->getContent();
-
-        $this->assertStringContainsString('id="generateAnchorButton"', $html);
-        $this->assertMatchesRegularExpression('/id="generateAnchorButton"[^>]*disabled/', $html);
     }
 
     public function test_two_viewpoints_of_one_concept_are_two_different_candidates(): void
@@ -574,19 +394,6 @@ class AnchorImageRequestTest extends TestCase
             ['front_three_quarter', 'side'],
             $images->pluck('prompt_spec_json.viewpoint')->sort()->values()->all(),
         );
-    }
-
-    public function test_a_submit_without_a_viewpoint_never_reaches_the_store(): void
-    {
-        $project = $this->projectWithConcept();
-        $settings = $this->settings();
-        unset($settings['viewpoint']);
-
-        $this->from(route('video-projects.anchor', $project->id))
-            ->post(route('video-projects.anchor-compile', $project->id), $settings)
-            ->assertSessionHasErrors('viewpoint');
-
-        $this->assertSame(0, VideoDesignImage::where('project_id', $project->id)->count());
     }
 
     public function test_a_junk_viewpoint_in_old_input_compiles_nothing(): void
@@ -639,54 +446,6 @@ class AnchorImageRequestTest extends TestCase
         );
     }
 
-    public function test_the_geometry_stage_is_still_reachable_and_still_opens_landscape(): void
-    {
-        // Stage nay khong con la mac dinh, nhung no van phai chay duoc: no la o
-        // kiem khoi luong than khi can, va khung ngang la ly do no ton tai.
-        $project = $this->projectWithConcept();
-        $calls = [];
-        $this->recordingRunner($calls);
-
-        $this->from(route('video-projects.anchor', $project->id))
-            ->post(route('video-projects.anchor-compile', $project->id), [
-                'stage' => 'fabrication_geometry_anchor',
-                'viewpoint' => 'front_three_quarter',
-                'size' => '1536x1024',
-                'model' => 'gpt-image-2',
-            ]);
-
-        $compile = array_values(array_filter(
-            $calls, fn (array $c) => $c['script'] === 'compile_image_prompt.py',
-        ));
-
-        $this->assertContains('--stage=fabrication_geometry_anchor', $compile[0]['args']);
-        $this->assertContains('--width=1536', $compile[0]['args']);
-        $this->assertContains('--height=1024', $compile[0]['args']);
-    }
-
-    public function test_old_size_wins_over_the_stage_default_canvas(): void
-    {
-        $project = $this->projectWithConcept();
-        $calls = [];
-        $this->recordingRunner($calls);
-
-        $this->from(route('video-projects.anchor', $project->id))
-            ->post(route('video-projects.anchor-compile', $project->id), [
-                'stage' => 'fabrication_geometry_anchor',
-                'viewpoint' => 'front_three_quarter',
-                'size' => '1024x1536',
-                'model' => 'gpt-image-2',
-            ]);
-
-        $compile = array_values(array_filter(
-            $calls, fn (array $c) => $c['script'] === 'compile_image_prompt.py',
-        ));
-
-        $this->assertContains('--stage=fabrication_geometry_anchor', $compile[0]['args']);
-        $this->assertContains('--width=1024', $compile[0]['args']);
-        $this->assertContains('--height=1536', $compile[0]['args']);
-    }
-
     public function test_a_junk_size_in_old_input_never_reaches_the_python_command(): void
     {
         // `old()` la dau vao nguoi dung. Ep kieu thang se day chuoi rac xuong tan
@@ -702,18 +461,5 @@ class AnchorImageRequestTest extends TestCase
         ]])->get(route('video-projects.anchor', $project->id))->assertOk();
 
         $this->assertSame([], $calls);
-    }
-
-    public function test_a_stage_outside_the_enum_is_refused(): void
-    {
-        $project = $this->projectWithConcept();
-
-        $response = $this->from(route('video-projects.anchor', $project->id))
-            ->post(route('video-projects.anchor-compile', $project->id), $this->settings([
-                'stage' => 'fabrication_anchor',
-            ]));
-
-        $response->assertSessionHasErrors('stage');
-        $this->assertSame(0, VideoDesignImage::where('project_id', $project->id)->count());
     }
 }

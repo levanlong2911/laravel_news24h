@@ -200,23 +200,6 @@ class VideoProjectsController extends Controller
             : 'Đã viết prompt bằng gpt-5.6-terra.');
     }
 
-    /**
-     * Nut RIENG chu khong phai mot co trong body: mot duong dan tieu tien phai
-     * nhin thay duoc tu bang route, khong an trong tham so.
-     */
-    public function rerunConcept(string $id)
-    {
-        $this->ownedProject($id);
-
-        [$concept, $reason] = $this->videoProjectService->runConcept($id, true);
-
-        if ($concept === null) {
-            return back()->with('error', $reason);
-        }
-
-        return back()->with('success', __('messages.concept_rebuilt'));
-    }
-
     public function resetConcept(string $id)
     {
         $this->ownedProject($id);
@@ -226,31 +209,6 @@ class VideoProjectsController extends Controller
         return $done
             ? back()->with('success', 'Đã reset — bấm Creat Prompt để chạy lại.')
             : back()->with('error', $reason);
-    }
-
-    public function compileAnchorPrompt(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $this->form->validate($request, 'AnchorPromptForm');
-
-        $stage = AnchorStage::FABRICATION_GEOMETRY_ANCHOR;
-        $viewpoint = Viewpoint::from($data['viewpoint']);
-        $size = ImageSize::from($data['size']);
-        $model = ImageModel::from($data['model']);
-        $producer = PromptProducer::from($data['producer']);
-
-        [$compiled, $reason, $concept] = $this->videoProjectService->compiledAnchorPrompt(
-            $id, $stage, $viewpoint, $size, $model, $producer,
-        );
-
-        if ($compiled === null || $concept === null) {
-            return back()->withInput()->with('error', $this->anchorMessage($reason));
-        }
-
-        $this->videoProjectService->storeAnchorPromptPreview($id, $stage, $viewpoint, $size, $compiled, $concept);
-
-        return back();
     }
 
     public function createAnchorImage(Request $request, string $id)
@@ -588,17 +546,6 @@ class VideoProjectsController extends Controller
 
         [$preview, $reason] = $this->videoProjectService->sceneImagePreview(
             $id, $this->actorId(), $sceneId,
-        );
-
-        return $this->keyframeJson($preview, $reason);
-    }
-
-    public function sceneKeyframeState(string $id, string $image)
-    {
-        $this->ownedProject($id);
-
-        [$preview, $reason] = $this->videoProjectService->previewFromCandidate(
-            $id, $this->actorId(), $image,
         );
 
         return $this->keyframeJson($preview, $reason);

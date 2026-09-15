@@ -3518,29 +3518,6 @@ class ScenePlanFlowTest extends TestCase
         $this->assertStringContainsString('ĐÃ DUYỆT', $html);
     }
 
-    public function test_a_stranger_reaches_none_of_the_five_keyframe_routes(): void
-    {
-        Http::fake();
-        $this->planOnce();
-        $scene = $this->sceneRow(1);
-        $image = (string) Str::uuid();
-
-        $this->actingAs($this->admin());
-
-        foreach ([
-            ['get', route('video-projects.scene-keyframe-preview', [$this->project->id, $scene->id])],
-            ['post', route('video-projects.scene-keyframe-render', [$this->project->id, $scene->id])],
-            ['get', route('video-projects.scene-keyframe-state', [$this->project->id, $image])],
-            ['post', route('video-projects.scene-keyframe-retry', [$this->project->id, $image])],
-            ['post', route('video-projects.scene-keyframe-approve', [$this->project->id, $image])],
-        ] as [$verb, $url]) {
-            $this->{$verb}($url)->assertForbidden();
-        }
-
-        $this->assertSame(0, $this->keyframeCount());
-        Http::assertNothingSent();
-    }
-
     public function test_the_preview_endpoint_hands_back_what_the_modal_needs(): void
     {
         $this->planOnce();
@@ -3575,21 +3552,6 @@ class ScenePlanFlowTest extends TestCase
         $this->assertSame('scene_plan_changed_since_review', $body['reason']);
         $this->assertSame(
             __('messages.scene_keyframe_scene_plan_changed_since_review'),
-            $body['message'],
-        );
-    }
-
-    public function test_the_state_endpoint_refuses_a_cell_outside_the_project(): void
-    {
-        $this->planOnce();
-
-        $body = $this->getJson(route('video-projects.scene-keyframe-state', [
-            $this->project->id, Str::uuid(),
-        ]))->assertStatus(422)->json();
-
-        $this->assertSame('candidate_outside_scene', $body['reason']);
-        $this->assertSame(
-            __('messages.scene_keyframe_candidate_outside_scene'),
             $body['message'],
         );
     }

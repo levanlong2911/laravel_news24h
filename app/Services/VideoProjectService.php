@@ -19,7 +19,6 @@ use App\Models\VideoRenderScene;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\CreativeProfileResolver;
-use App\Services\Video\CanonicalImageRenderer;
 use App\Services\Video\DesignImageDirectRenderer;
 use App\Services\Video\DesignImageQueue;
 use App\Services\Video\DesignImageRenderer;
@@ -31,7 +30,6 @@ use App\Services\Video\CanonicalPromptCompiler;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
 use App\Video\Concept\Persistence\Models\CanonicalConceptRevision;
 use App\Video\Concept\Persistence\Enums\CanonicalConceptStatus;
-use App\Services\Video\PythonPromptCompiler;
 use App\Services\Video\VisualIdentityStore;
 use App\Video\Article\RawArticle;
 use App\Video\Concept\Orchestration\CanonicalConceptInputBuilder;
@@ -124,8 +122,6 @@ class VideoProjectService
 
     private InspirationStageRunner $inspirationRunner;
 
-    private PythonPromptCompiler $promptCompiler;
-
     private CanonicalPromptCompiler $canonicalPromptCompiler;
 
     private DesignImageStore $designImageStore;
@@ -135,8 +131,6 @@ class VideoProjectService
     private DesignImageRenderer $designImageRenderer;
 
     private DesignImageDirectRenderer $designImageDirectRenderer;
-
-    private CanonicalImageRenderer $canonicalImageRenderer;
 
     private VideoRenderPlanService $renderPlanService;
 
@@ -156,13 +150,11 @@ class VideoProjectService
         PlanningStageStore $stageStore,
         InspirationStageRunner $inspirationRunner,
         VideoRenderPlanService $renderPlanService,
-        PythonPromptCompiler $promptCompiler,
         CanonicalPromptCompiler $canonicalPromptCompiler,
         DesignImageStore $designImageStore,
         DesignImageQueue $designImageQueue,
         DesignImageRenderer $designImageRenderer,
         DesignImageDirectRenderer $designImageDirectRenderer,
-        CanonicalImageRenderer $canonicalImageRenderer,
         VisualIdentityStore $identityStore,
         CanonicalConceptInputBuilder $canonicalConceptInputBuilder,
         CreativeProfileResolver $creativeProfileResolver,
@@ -174,13 +166,11 @@ class VideoProjectService
         $this->stageStore = $stageStore;
         $this->inspirationRunner = $inspirationRunner;
         $this->renderPlanService = $renderPlanService;
-        $this->promptCompiler = $promptCompiler;
         $this->canonicalPromptCompiler = $canonicalPromptCompiler;
         $this->designImageStore = $designImageStore;
         $this->designImageQueue = $designImageQueue;
         $this->designImageRenderer = $designImageRenderer;
         $this->designImageDirectRenderer = $designImageDirectRenderer;
-        $this->canonicalImageRenderer = $canonicalImageRenderer;
         $this->identityStore = $identityStore;
         $this->canonicalConceptInputBuilder = $canonicalConceptInputBuilder;
         $this->creativeProfileResolver = $creativeProfileResolver;
@@ -662,10 +652,9 @@ class VideoProjectService
      * Ca hai deu di qua `DesignImageQueue::record()` khi ghi so cai: so cai chi
      * duoc phep co MOT noi ghi.
      */
-    private function renderer(): DesignImageRenderer|DesignImageDirectRenderer|CanonicalImageRenderer
+    private function renderer(): DesignImageRenderer|DesignImageDirectRenderer
     {
         return match ((string) config('video.render_mode')) {
-            'canonical' => $this->canonicalImageRenderer,
             'direct' => $this->designImageDirectRenderer,
             default => $this->designImageRenderer,
         };
@@ -674,13 +663,6 @@ class VideoProjectService
     /** @return list<array<string, mixed>> */
     public function anchorCells(string $projectId): array
     {
-        // Mo trang la doi chieu voi dia: mot luot render da tra tien nhung
-        // request chet giua chung se duoc dong so ngay tai day, khong can ai
-        // bam gi hay chay lenh gi.
-        if ((string) config('video.render_mode') === 'canonical') {
-            $this->canonicalImageRenderer->reconcile($projectId);
-        }
-
         return $this->designImageStore->anchorCellsFor($projectId);
     }
 
