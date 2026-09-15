@@ -94,11 +94,23 @@ final class VideoRenderExecutionService
                 RenderFailureClass::INVALID_REQUEST, 'precondition_failed', $blocked);
         }
 
-        $source = $this->sourceImage($spec);
+        $source = $this->frame($spec, 'source_artifact');
 
         if (! $source['ok']) {
             return $this->failOrLose($renderId, $claim->claimToken,
                 RenderFailureClass::ARTIFACT_INTEGRITY, 'source_artifact_invalid', (string) $source['error']);
+        }
+
+        // `end_frame` la tuy chon trong hop dong v5, nhung neu spec co khai thi no
+        // phai doc lai duoc y nguyen. Mot anh cuoi hong ma van gui di se tra tien
+        // cho mot clip khong bao gio ket thuc dung cho.
+        $end = ($spec['end_frame'] ?? null) === null
+            ? null
+            : $this->frame($spec, 'end_frame');
+
+        if ($end !== null && ! $end['ok']) {
+            return $this->failOrLose($renderId, $claim->claimToken,
+                RenderFailureClass::ARTIFACT_INTEGRITY, 'end_frame_invalid', (string) $end['error']);
         }
 
         try {
@@ -108,7 +120,7 @@ final class VideoRenderExecutionService
             return [false, 'lease_lost_before_submit'];
         }
 
-        $result = $this->veo->submit($this->target($spec), $this->payload($spec, $source));
+        $result = $this->veo->submit($this->target($spec), $this->payload($spec, $source, $end));
 
         if ($result['ambiguous']) {
             try {
@@ -465,15 +477,20 @@ final class VideoRenderExecutionService
     }
 
     /**
+     * Doc lai mot khung hinh DA DONG BANG trong spec va kiem no chua doi.
+     *
+     * Dung chung cho ca anh dau lan anh cuoi: hai khung di cung mot request thi phai
+     * chiu cung mot muc kiem, khong duoc mot cai nghiem mot cai long.
+     *
      * @param  array<string, mixed>  $spec
      * @return array{ok: bool, mime: ?string, data: ?string, error: ?string}
      */
-    private function sourceImage(array $spec): array
+    private function frame(array $spec, string $key): array
     {
-        $source = $spec['source_artifact'] ?? null;
+        $source = $spec[$key] ?? null;
 
         if (! is_array($source)) {
-            return $this->noSource('spec khong co source_artifact da dong bang');
+            return $this->noSource('spec khong co '.$key.' da dong bang');
         }
 
         $disk = (string) ($source['disk'] ?? '');
@@ -508,6 +525,16 @@ final class VideoRenderExecutionService
             return $this->noSource('mime nguon khac luc dong bang: '.($mime !== '' ? $mime : 'khong doc duoc'));
         }
 
+        $width = is_array($info) ? (int) ($info[0] ?? 0) : 0;
+        $height = is_array($info) ? (int) ($info[1] ?? 0) : 0;
+
+        if ($width !== (int) ($source['width'] ?? 0) || $height !== (int) ($source['height'] ?? 0)) {
+            return $this->noSource(sprintf(
+                'kich thuoc khac luc dong bang: %dx%d, spec ghi %dx%d',
+                $width, $height, (int) ($source['width'] ?? 0), (int) ($source['height'] ?? 0),
+            ));
+        }
+
         return ['ok' => true, 'mime' => $mime, 'data' => base64_encode($bytes), 'error' => null];
     }
 
@@ -536,9 +563,10 @@ final class VideoRenderExecutionService
     /**
      * @param  array<string, mixed>  $spec
      * @param  array{ok: bool, mime: ?string, data: ?string, error: ?string}  $source
+     * @param  array{ok: bool, mime: ?string, data: ?string, error: ?string}|null  $end
      * @return array<string, mixed>
      */
-    private function payload(array $spec, array $source): array
+    private function payload(array $spec, array $source, ?array $end = null): array
     {
         // Canary that bi Veo tu choi da chung minh `inlineData` khong duoc nhan
         // o predictLongRunning. Endpoint nay nhan image Vertex-style.
@@ -546,14 +574,29 @@ final class VideoRenderExecutionService
         //   - `durationSeconds` la so nguyen; canary thu hai da bi tu choi khi gui chuoi
         //   - khong co `sampleCount`: moi request tra ve dung mot video
         //   - image-to-video chi nhan `personGeneration = allow_adult`
+        $instance = [
+            'prompt' => (string) $spec['compiled_prompt']['prompt'],
+            'image' => [
+                'bytesBase64Encoded' => $source['data'],
+                'mimeType' => $source['mime'],
+            ],
+        ];
+
+        // `lastFrame` di CUNG CHO voi `image`, trong instances[0].
+        //
+        // Tai lieu Veo minh hoa `lastFrame.inlineData` — dung cai hinh dang ma chinh
+        // endpoint nay DA TU CHOI cho `image` hom 2026-09-15. Nen o day dung lai hinh
+        // dang da co bang chung (`bytesBase64Encoded`), va canary la thu quyet dinh no
+        // dung hay sai — khong phai tai lieu.
+        if ($end !== null) {
+            $instance['lastFrame'] = [
+                'bytesBase64Encoded' => $end['data'],
+                'mimeType' => $end['mime'],
+            ];
+        }
+
         return [
-            'instances' => [[
-                'prompt' => (string) $spec['compiled_prompt']['prompt'],
-                'image' => [
-                    'bytesBase64Encoded' => $source['data'],
-                    'mimeType' => $source['mime'],
-                ],
-            ]],
+            'instances' => [$instance],
             'parameters' => [
                 'aspectRatio' => (string) $spec['aspect_ratio'],
                 'resolution' => (string) $spec['resolution'],

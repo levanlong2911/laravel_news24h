@@ -32,6 +32,7 @@ final class RenderDispatchService
         ?string $renderId = null,
         string $renderKind = 'image',
         ?string $shotId = null,
+        string $executionPurpose = 'production',
     ): VideoRender {
         if (! preg_match('/^[a-f0-9]{64}$/', $requestHash)) {
             throw new RuntimeException('Invalid request hash.');
@@ -65,6 +66,7 @@ final class RenderDispatchService
             $renderId,
             $renderKind,
             $shotId,
+            $executionPurpose,
             $sentPrompt,
             $legacyPromptHash,
         ): VideoRender {
@@ -138,6 +140,7 @@ final class RenderDispatchService
                 'max_attempts' => $maxAttempts,
                 'execution_version' => 0,
                 'render_kind' => $renderKind,
+                'execution_purpose' => $executionPurpose,
                 'shot_id' => $shotId,
                 'sent_prompt' => $sentPrompt,
                 'prompt_sha256' => $legacyPromptHash,

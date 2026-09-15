@@ -186,6 +186,16 @@ return [
                         // nguon — hai ban sao bang hai ngon ngu thi som muon cung lech.
                         'long_resolutions' => ['1080p'],
                         'long_resolution_duration' => 8,
+
+                        // Canary that ngay 2026-09-15 (render 8d7e3a5b) da chung minh endpoint
+                        // nay NHAN `lastFrame` o hinh dang `bytesBase64Encoded`. Tai lieu minh
+                        // hoa `inlineData`, nhung hinh dang do CHUA duoc thu — nen day khong
+                        // phai bang chung rang tai lieu sai.
+                        //
+                        // Khung cuoi clip HOI TU ve anh cuoi (PSNR 28.98 dB) chu khong ve anh
+                        // dau (16.68 dB). Do la hoi tu DO DUOC, chua phai nhan qua da chung
+                        // minh: xem veo_last_frame_canary_2026_09_15.json.
+                        'last_frame' => true,
                     ],
                     'evidence' => ['models' => 'gemini_models_2026_09_15.json'],
                 ],
@@ -207,6 +217,11 @@ return [
                         'default_resolution' => '720p',
                         'long_resolutions' => ['1080p', '4k'],
                         'long_resolution_duration' => 8,
+
+                        // Canary moi chay tren Lite. Cung mot endpoint KHONG phai la da thu —
+                        // bat co nay truoc khi co canary rieng cho model nay la doan, khong phai
+                        // bang chung. Chay `video:canary-last-frame --model=` voi model nay truoc.
+                        'last_frame' => false,
                     ],
                     'evidence' => ['models' => 'gemini_models_2026_09_15.json'],
                 ],
@@ -228,6 +243,11 @@ return [
                         'default_resolution' => '720p',
                         'long_resolutions' => ['1080p', '4k'],
                         'long_resolution_duration' => 8,
+
+                        // Canary moi chay tren Lite. Cung mot endpoint KHONG phai la da thu —
+                        // bat co nay truoc khi co canary rieng cho model nay la doan, khong phai
+                        // bang chung. Chay `video:canary-last-frame --model=` voi model nay truoc.
+                        'last_frame' => false,
                     ],
                     'evidence' => ['models' => 'gemini_models_2026_09_15.json'],
                 ],

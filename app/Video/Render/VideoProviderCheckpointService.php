@@ -227,6 +227,31 @@ final class VideoProviderCheckpointService
     }
 
     /**
+     * Job id ma ta BIET la provider dang giu, doc theo dung thu tu ma `adoptKnownJob()`
+     * dung — va vi the la cau tra loi duy nhat cho "co gi de poll khong".
+     *
+     * Cot tren `video_renders` chi duoc dat khi CAS chinh thanh cong. Khi no that bai
+     * (`ownership_lost_after_submit`), job VAN o do: no nam tren attempt, va truoc ca
+     * attempt la bien lai append-only. Chi doc cot tren render se ket luan "khong co
+     * job" cho mot luot DA TRA TIEN.
+     *
+     * Khong lock, khong ghi: day la duong CHI DOC cho nguoi van hanh hoi.
+     */
+    public function knownJobId(VideoRender $render): ?string
+    {
+        if (is_string($render->provider_job_id) && $render->provider_job_id !== '') {
+            return $render->provider_job_id;
+        }
+
+        $attempt = VideoRenderAttempt::query()
+            ->where('render_id', $render->id)
+            ->where('attempt_no', $render->attempt_count)
+            ->first();
+
+        return $attempt === null ? null : $this->jobFromReceipts($render, $attempt);
+    }
+
+    /**
      * Mot generation chi duoc co dung MOT job. Nhieu job mau thuan nghia la co hai
      * khoan tien da tieu ma ta khong biet chon cai nao — khong duoc doan, phai de
      * nguoi doi soat.

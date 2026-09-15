@@ -23,6 +23,7 @@ use App\Services\Video\DesignImageDirectRenderer;
 use App\Services\Video\DesignImageQueue;
 use App\Services\Video\DesignImageRenderer;
 use App\Services\Video\DesignImageStore;
+use App\Video\Render\Video\SceneClipDispatchService;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\OpenAiImageClient;
 use App\Services\Video\PlanningStageStore;
@@ -890,6 +891,10 @@ class VideoProjectService
         $latest = \App\Models\VideoRender::query()
             ->whereIn('shot_id', $shots->pluck('id'))
             ->where('render_kind', 'video')
+            // Luot canary dung chung shot voi clip that va co attempt_no lon hon, ma
+            // `keyBy` giu phan tu CUOI — bo dong nay thi mot luot thu hop dong se
+            // CHIEM o cua clip that, ke ca khi clip that da xong.
+            ->where('execution_purpose', SceneClipDispatchService::PURPOSE_PRODUCTION)
             ->orderBy('attempt_no')
             ->get()
             ->keyBy('shot_id');

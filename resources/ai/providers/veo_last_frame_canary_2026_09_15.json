@@ -1,0 +1,82 @@
+{
+    "fetched_at": "2026-09-15",
+    "source": "canary that — render 8d7e3a5b-483f-43ee-bcec-534798680720",
+    "verified_by_render": true,
+    "note": "Tai lieu Google minh hoa `lastFrame.inlineData`. Canary nay CHI chung minh endpoint NHAN `bytesBase64Encoded` cho dung to hop duoi day. No KHONG chung minh `inlineData` bi tu choi: hinh dang do chua he duoc thu, nen day khong phai bang chung rang tai lieu sai.",
+
+    "method": "predictLongRunning",
+    "api_version": "v1beta",
+    "model": "veo-3.1-lite-generate-preview",
+
+    "request_shape": {
+        "instances": [
+            {
+                "prompt": "string",
+                "image": {
+                    "mimeType": "image/png",
+                    "bytesBase64Encoded": "base64"
+                },
+                "lastFrame": {
+                    "mimeType": "image/png",
+                    "bytesBase64Encoded": "base64"
+                }
+            }
+        ],
+        "parameters": {
+            "aspectRatio": "9:16",
+            "resolution": "720p",
+            "durationSeconds": 8,
+            "personGeneration": "allow_adult"
+        }
+    },
+
+    "observed": {
+        "provider_job_id": "models/veo-3.1-lite-generate-preview/operations/6bpod8jyqbey",
+        "poll_count": 3,
+        "output": {
+            "width": 720,
+            "height": 1280,
+            "duration_ms": 8000,
+            "bytes": 4841239
+        },
+        "proof_method": "ffprobe_sha256",
+        "source_frame_sha256": "5ee9765094b97fe91108c5d7c7453ae1e9572e5402d66670727d068e94f8332c",
+        "end_frame_sha256": "907b21fc76df7b83c688dd59bd7c59f1e194ee1e77ce8ebcf4fd9a2eb9c03245",
+        "receipts": 1
+    },
+
+    "convergence_psnr_db": {
+        "clip_first_vs_sent_start": 29.76,
+        "clip_last_vs_sent_end": 28.98,
+        "clip_last_vs_sent_start": 16.68,
+        "clip_first_vs_sent_end": 16.96,
+        "clip_first_vs_clip_last": 16.59,
+        "sent_start_vs_sent_end": 17.17,
+        "reading": "Phep so CHEO la thu duy nhat co nghia: moi dau clip bam dung anh cua no va khong bam anh kia, cach nhau ~12 dB. Hai dong cuoi gan bang nhau nghia la clip di het quang duong giua hai trang thai.",
+        "limit": "Day la HOI TU DO DUOC, KHONG phai nhan qua da chung minh. Dong ACTION trong prompt van mo ta chinh cai thay doi ('join one additional longitudinal bottom girder'), nen chua loai tru duoc kha nang mot minh no cung ra ket qua nay. Muon chung minh nhan qua can A/B: cung anh dau, cung prompt, cung model, cung controls, chi bo `lastFrame` o mau doi chung."
+    },
+
+    "prompt_sent": {
+        "action": "Two welders join one additional longitudinal bottom girder to the central grid.",
+        "camera": "The camera stays exactly where the supplied frame was taken from: same position, same lens, same framing, for the whole shot.",
+        "preserve": "Keep the keel, installed floors, berth blocks, hall, camera, and lighting unchanged.",
+        "end_state": "bottom_grid_extended"
+    },
+
+    "not_verified": [
+        "veo-3.1-fast-generate-preview va veo-3.1-generate-preview: chua co canary rieng. Cung mot endpoint KHONG phai la da thu.",
+        "thoi luong 4s va 6s kem lastFrame: canary chi chay 8s.",
+        "1080p kem lastFrame.",
+        "`lastFrame.inlineData`: chua thu, nen khong biet no duoc nhan hay bi tu choi."
+    ],
+
+    "observed_quality_limitations": [
+        "Prompt noi 'Two welders' nhung khung giua co BON nguoi. Veo dien giai CANH chu khong DEM — dung coi so luong nguoi la rang buoc duoc giu."
+    ],
+
+    "local_accounting_notes": [
+        "Veo khong tra gia trong response, nen `render_attempts.provider_cost_usd` la NULL.",
+        "RenderCostAccountingService thoat truoc khi tao ledger entry khi providerCostUsd la null, nen luot canary nay KHONG co hang trong `video_cost_entries`.",
+        "`video_renders.cost_usd` la decimal(8,4) NOT NULL DEFAULT '0.0000'. So `0` tren hang canary la MAC DINH CUA SCHEMA, khong phai mot phep do — khong duoc doc thanh chi phi."
+    ]
+}

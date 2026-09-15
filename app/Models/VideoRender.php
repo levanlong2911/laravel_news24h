@@ -25,7 +25,7 @@ class VideoRender extends Model
 
     protected $fillable = [
         'shot_id', 'design_image_id', 'video_session_id', 'asset_id',
-        'attempt_no', 'idempotency_key', 'render_kind', 'provider', 'model',
+        'attempt_no', 'idempotency_key', 'render_kind', 'execution_purpose', 'provider', 'model',
         'sent_prompt', 'prompt_sha256', 'request_sha256', 'negative_prompt',
         'source_render_id', 'source_kind', 'requires_state', 'proves_state',
         'artifact_path', 'artifact_dir', 'width', 'height', 'duration_ms', 'bytes',
