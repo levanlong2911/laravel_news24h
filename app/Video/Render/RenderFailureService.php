@@ -10,6 +10,7 @@ use App\Video\Concept\Support\Clock;
 use App\Video\Render\Enums\RenderAttemptStatus;
 use App\Video\Render\Enums\RenderFailureClass;
 use App\Video\Render\Enums\RenderStatus;
+use App\Video\Render\StateMachine\RenderStateMachine;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -17,6 +18,7 @@ final class RenderFailureService
 {
     public function __construct(
         private readonly Clock $clock,
+        private readonly RenderStateMachine $states = new RenderStateMachine,
     ) {
     }
 
@@ -26,8 +28,9 @@ final class RenderFailureService
         RenderFailureClass $failureClass,
         string $errorCode,
         string $message,
+        ?string $workerId = null,
     ): void {
-        DB::transaction(function () use ($renderId, $claimToken, $failureClass, $errorCode, $message): void {
+        DB::transaction(function () use ($renderId, $claimToken, $failureClass, $errorCode, $message, $workerId): void {
             $render = VideoRender::query()->whereKey($renderId)->lockForUpdate()->firstOrFail();
 
             if ($render->isTerminal()) {
@@ -38,7 +41,19 @@ final class RenderFailureService
                 throw new RuntimeException('Claim token mismatch.');
             }
 
+            if ($workerId !== null && $render->claimed_by !== $workerId) {
+                throw new RuntimeException('Render worker ownership mismatch.');
+            }
+
             $now = $this->clock->now();
+
+            // Danh that bai cung la mot quyen ghi. Lease chet thi mat quyen do, va o
+            // co the da sang tay nguoi khac.
+            if ($render->lease_expires_at === null || $render->lease_expires_at->lessThanOrEqualTo($now)) {
+                throw new RuntimeException('Render claim lease expired.');
+            }
+
+            $this->states->assert($render->execution_status, RenderStatus::FAILED);
             $attempt = VideoRenderAttempt::query()
                 ->where('render_id', $render->id)
                 ->where('attempt_no', $render->attempt_count)

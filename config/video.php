@@ -156,6 +156,25 @@ return [
                 ],
             ],
         ],
+
+        // Bo trong CO CHU DICH. Model clip chi duoc dien sau khi
+        // `video:list-gemini-models --json` chung minh key nay nhin thay no va no
+        // ho tro predictLongRunning. Doan ten model la doan tien.
+        'video' => [
+            'scene_clip' => [],
+        ],
+    ],
+
+    'veo' => [
+        'disk' => env('VIDEO_VIDEO_DISK', 'video_artifacts'),
+        'source_disks' => ['video_artifacts'],
+        'timeout' => (int) env('VIDEO_VEO_HTTP_TIMEOUT', 120),
+        'max_bytes' => (int) env('VIDEO_VEO_MAX_BYTES', 209715200),
+        'max_source_bytes' => (int) env('VIDEO_VEO_MAX_SOURCE_BYTES', 33554432),
+        'download_hosts' => ['generativelanguage.googleapis.com'],
+        'ffprobe_bin' => env('VIDEO_FFPROBE_BIN', 'ffprobe'),
+        'ffprobe_timeout' => (int) env('VIDEO_FFPROBE_TIMEOUT', 20),
+        'duration_tolerance_ms' => (int) env('VIDEO_VEO_DURATION_TOLERANCE_MS', 1500),
     ],
 
     'python_runner_enabled' => (bool) env('VIDEO_PYTHON_RUNNER', true),

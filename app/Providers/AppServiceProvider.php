@@ -7,7 +7,9 @@ use App\Observers\PromptFrameworkObserver;
 use App\Services\ImageProxyService;
 use App\Services\Video\GeminiImageClient;
 use App\Services\Video\OpenAiImageClient;
+use App\Video\Media\GeminiVeoVideoClient;
 use App\Video\Media\MediaModelRegistry;
+use App\Video\Media\Mp4Probe;
 use App\Video\Prompt\AnthropicTextClient;
 use App\Video\Prompt\OpenAiTextClient;
 use App\Video\Prompt\GeometryPromptAuthor;
@@ -53,6 +55,28 @@ class AppServiceProvider extends ServiceProvider
                 disk: (string) config('video.gemini.disk'),
                 memoryLimit: (string) config('video.openai_image.memory_limit'),
                 timeoutSeconds: (int) config('video.gemini.image_timeout'),
+            ),
+        );
+
+        $this->app->singleton(
+            Mp4Probe::class,
+            static fn (): Mp4Probe => new Mp4Probe(
+                binary: (string) config('video.veo.ffprobe_bin'),
+                timeoutSeconds: (int) config('video.veo.ffprobe_timeout'),
+            ),
+        );
+
+        $this->app->singleton(
+            GeminiVeoVideoClient::class,
+            static fn (Application $app): GeminiVeoVideoClient => new GeminiVeoVideoClient(
+                http: $app->make(HttpFactory::class),
+                storage: $app->make(FilesystemFactory::class),
+                apiKey: (string) config('video.gemini.api_key'),
+                baseUrl: (string) config('video.gemini.base_url'),
+                disk: (string) config('video.veo.disk'),
+                timeoutSeconds: (int) config('video.veo.timeout'),
+                maxBytes: (int) config('video.veo.max_bytes'),
+                downloadHosts: (array) config('video.veo.download_hosts'),
             ),
         );
 

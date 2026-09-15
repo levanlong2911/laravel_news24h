@@ -30,6 +30,12 @@ final class RenderLeaseService
 
             $now = $this->clock->now();
 
+            // Lease da chet thi khong duoc hoi sinh: o co the da sang tay nguoi khac
+            // qua lenh thu hoi, va gia han o day la cuop lai mot cach im lang.
+            if ($render->lease_expires_at === null || $render->lease_expires_at->lessThanOrEqualTo($now)) {
+                throw new RuntimeException('Render claim lease expired.');
+            }
+
             $render->forceFill([
                 'heartbeat_at' => $now,
                 'lease_expires_at' => $now->add(new DateInterval('PT'.$this->leaseSeconds.'S')),

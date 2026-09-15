@@ -109,6 +109,13 @@ final class RenderAttemptService
             throw new RuntimeException('Claim token mismatch.');
         }
 
+        // Doi trang thai attempt cung la mot quyen ghi: lease chet la mat quyen do.
+        $now = $this->clock->now();
+
+        if ($render->lease_expires_at === null || $render->lease_expires_at->lessThanOrEqualTo($now)) {
+            throw new RuntimeException('Render claim lease expired.');
+        }
+
         $attempt = VideoRenderAttempt::query()
             ->where('render_id', $render->id)
             ->where('attempt_no', $render->attempt_count)

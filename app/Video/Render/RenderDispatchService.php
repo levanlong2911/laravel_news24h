@@ -30,6 +30,8 @@ final class RenderDispatchService
         int $maxAttempts = 3,
         ?string $designImageId = null,
         ?string $renderId = null,
+        string $renderKind = 'image',
+        ?string $shotId = null,
     ): VideoRender {
         if (! preg_match('/^[a-f0-9]{64}$/', $requestHash)) {
             throw new RuntimeException('Invalid request hash.');
@@ -61,6 +63,8 @@ final class RenderDispatchService
             $promptHash,
             $maxAttempts,
             $renderId,
+            $renderKind,
+            $shotId,
             $sentPrompt,
             $legacyPromptHash,
         ): VideoRender {
@@ -74,6 +78,9 @@ final class RenderDispatchService
                 ->where(fn ($query) => $designImageId === null
                     ? $query->whereNull('design_image_id')
                     : $query->where('design_image_id', $designImageId))
+                ->where(fn ($query) => $shotId === null
+                    ? $query->whereNull('shot_id')
+                    : $query->where('shot_id', $shotId))
                 ->where('idempotency_key', $idempotencyKey)
                 ->lockForUpdate()
                 ->first();
@@ -90,9 +97,18 @@ final class RenderDispatchService
             // duoc unique (design_image_id, attempt_no) bao ve. Lan Phan 14 truoc
             // day khong co design_image_id nen chua bao gio phai dat cot nay. Dung
             // dung mot cong thuc voi duong cu de hai lan khong danh so lech nhau.
-            $attemptNo = $designImageId === null
+            // Unique (shot_id, attempt_no) va (design_image_id, attempt_no) deu ton tai,
+            // nen so thu tu phai dem theo DUNG chu so huu cua hang. De nguyen 1 thi
+            // lan render thu hai cua cung mot shot khong bao gio vao duoc bang.
+            $owner = match (true) {
+                $designImageId !== null => ['design_image_id', $designImageId],
+                $shotId !== null => ['shot_id', $shotId],
+                default => null,
+            };
+
+            $attemptNo = $owner === null
                 ? 1
-                : ((int) VideoRender::query()->where('design_image_id', $designImageId)->max('attempt_no')) + 1;
+                : ((int) VideoRender::query()->where($owner[0], $owner[1])->max('attempt_no')) + 1;
 
             // `id` khong nam trong $fillable, ma `verifyManifest()` lai doi
             // `manifest.render_id === $render->id`. De model tu sinh uuid thi hai
@@ -121,7 +137,8 @@ final class RenderDispatchService
                 'attempt_count' => 0,
                 'max_attempts' => $maxAttempts,
                 'execution_version' => 0,
-                'render_kind' => 'image',
+                'render_kind' => $renderKind,
+                'shot_id' => $shotId,
                 'sent_prompt' => $sentPrompt,
                 'prompt_sha256' => $legacyPromptHash,
                 'request_sha256' => $requestHash,

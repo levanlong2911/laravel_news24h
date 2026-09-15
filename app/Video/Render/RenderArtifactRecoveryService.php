@@ -10,6 +10,7 @@ use App\Video\Concept\Support\Clock;
 use App\Video\Render\DTO\RenderRecoveryClaim;
 use App\Video\Render\Enums\RenderAttemptStatus;
 use App\Video\Render\Enums\RenderStatus;
+use App\Video\Render\StateMachine\RenderStateMachine;
 use DateInterval;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -20,6 +21,7 @@ final class RenderArtifactRecoveryService
     public function __construct(
         private readonly Clock $clock,
         private readonly int $leaseSeconds = 120,
+        private readonly RenderStateMachine $states = new RenderStateMachine,
     ) {
     }
 
@@ -39,6 +41,13 @@ final class RenderArtifactRecoveryService
             if (! hash_equals((string) $render->request_hash, $requestHash)) {
                 throw new RuntimeException('Recovery request hash mismatch.');
             }
+
+            // Lease con song nghia la co tien trinh khac dang lam viec tren o nay.
+            if ($render->lease_expires_at !== null && $render->lease_expires_at > $this->clock->now()) {
+                throw new RuntimeException('Render dang co nguoi giu lease.');
+            }
+
+            $this->states->assert($render->execution_status, RenderStatus::CHECKPOINTING);
 
             $attempt = VideoRenderAttempt::query()
                 ->where('render_id', $render->id)

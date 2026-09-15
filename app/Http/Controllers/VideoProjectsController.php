@@ -12,12 +12,18 @@ use App\Enums\SceneStep;
 use App\Form\AdminCustomValidator;
 use App\Models\Admin;
 use App\Models\VideoProject;
+use App\Models\VideoRender;
+use App\Models\VideoShot;
 use App\Services\VideoProjectService;
 use App\Video\Concept\Viewpoint;
+use App\Video\Render\Video\SceneClipDispatchService;
+use App\Video\Render\Video\VideoRenderExecutionService;
+use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use Throwable;
 
 class VideoProjectsController extends Controller
 {
@@ -25,10 +31,20 @@ class VideoProjectsController extends Controller
 
     private AdminCustomValidator $form;
 
-    public function __construct(VideoProjectService $videoProjectService, AdminCustomValidator $form)
-    {
+    private SceneClipDispatchService $clips;
+
+    private VideoRenderExecutionService $clipExecution;
+
+    public function __construct(
+        VideoProjectService $videoProjectService,
+        AdminCustomValidator $form,
+        SceneClipDispatchService $clips,
+        VideoRenderExecutionService $clipExecution,
+    ) {
         $this->videoProjectService = $videoProjectService;
         $this->form = $form;
+        $this->clips = $clips;
+        $this->clipExecution = $clipExecution;
     }
 
     public function store(string $articleId)
@@ -579,6 +595,51 @@ class VideoProjectsController extends Controller
         );
 
         return $this->keyframeJson($preview, $reason);
+    }
+
+    /**
+     * Tao ban ghi clip roi submit ngay trong mot luot. Khong cho san hang render
+     * chua ai dinh gui: mot o `queued` khong bao gio duoc gui la mot o treo.
+     */
+    public function renderSceneClip(Request $request, string $id, string $shotId)
+    {
+        $this->ownedProject($id);
+
+        $data = $this->form->validate($request, 'SceneClipRenderForm');
+
+        $shot = VideoShot::query()
+            ->whereKey($shotId)
+            ->whereHas('session', fn ($query) => $query->where('project_id', $id))
+            ->firstOrFail();
+
+        try {
+            $render = $this->clips->create($shot, (string) $data['model_id'], Arr::except($data, 'model_id'));
+        } catch (Throwable $e) {
+            return back()->with('error', 'Clip: '.$e->getMessage());
+        }
+
+        [$ok, $reason] = $this->clipExecution->submit($render->id);
+
+        return back()->with($ok ? 'status' : 'error', 'Clip: '.$reason);
+    }
+
+    public function pollSceneClip(string $id, string $render)
+    {
+        $this->ownedProject($id);
+
+        // Clip thuoc ve shot (CHECK video_renders_one_owner cho dung mot chu), nen
+        // duong so huu di qua shot. Nhanh `session` giu cho hang cu.
+        $owned = VideoRender::query()
+            ->whereKey($render)
+            ->where('render_kind', 'video')
+            ->where(fn ($query) => $query
+                ->whereHas('shot.session', fn ($scope) => $scope->where('project_id', $id))
+                ->orWhereHas('session', fn ($scope) => $scope->where('project_id', $id)))
+            ->firstOrFail();
+
+        [$ok, $reason] = $this->clipExecution->poll($owned->id);
+
+        return back()->with($ok ? 'status' : 'error', 'Clip: '.$reason);
     }
 
     public function renderSceneKeyframe(Request $request, string $id, string $sceneId)
