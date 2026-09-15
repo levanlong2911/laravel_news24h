@@ -17,6 +17,8 @@
         <a href="{{ route('video-projects.reference', $id) }}">Reference Views</a>
         <span class="sep">·</span>
         <b>Scenes</b>
+        <span class="sep">·</span>
+        <a href="{{ route('video-projects.render-video', $id) }}"><b>Render video →</b></a>
         <span class="grow"></span>
         <span class="m">{{ count($scenes) }} scene</span><span class="sep">·</span>
         <span class="m">Đã render <b>{{ $summary['approved'] }}</b>/{{ count($scenes) }}</span>
@@ -273,10 +275,10 @@
                         <div class="body">{{ $s['image_prompt'] }}</div>
                     @endif
 
-                    @if($s['video_prompt'])
+                    {{-- @if($s['video_prompt'])
                         <div class="vs-lbl">CLIP — bản nháp, xác nhận lại sau khi duyệt ảnh</div>
                         <div class="body">{{ $s['video_prompt'] }}</div>
-                    @endif
+                    @endif --}}
                 </div>
 
                 @php($refs = $sources[$s['scene_id']] ?? ['slots' => [], 'blocked_reason' => null, 'blocked_code' => null])
@@ -318,15 +320,15 @@
                     @if($cell['approved'])
                         @php($chosen = collect($cell['approved']['artifacts'])
                             ->firstWhere('id', $cell['approved']['selected_artifact_id']))
-                        <div class="vs-lbl">ĐÃ DUYỆT</div>
+                        {{-- <div class="vs-lbl">ĐÃ DUYỆT</div>
                         @if($cell['approved']['cost_recorded_has_ledger'])
                             <div class="m">@include('video-projects.partials.cost-recorded', ['cell' => $cell['approved']])</div>
-                        @endif
+                        @endif --}}
                         @if($chosen)
                             <a class="frame" href="{{ $chosen['url'] }}" target="_blank">
                                 <img src="{{ $chosen['url'] }}" alt="">
                             </a>
-                            <div class="m vp-mono">{{ $chosen['sha'] }}</div>
+                            {{-- <div class="m vp-mono">{{ $chosen['sha'] }}</div> --}}
                         @endif
                     @endif
 

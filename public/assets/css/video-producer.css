@@ -1301,12 +1301,12 @@ a.vp-btn[disabled] {
 }
 
 .vs-prompt .body {
-    max-height: 108px;
+    max-height: 400px;
     padding: 8px 9px;
     overflow: auto;
     color: var(--vp-ink);
     font-family: var(--vp-mono);
-    font-size: .66rem;
+    font-size: .8rem;
     line-height: 1.5;
     white-space: pre-wrap;
     background: #f8fafc;
@@ -1505,4 +1505,123 @@ a.vp-btn[disabled] {
     font-size: .56rem;
     background: #fff;
     border-radius: 3px;
+}
+
+/* ---------------------------------------------------------------------------
+   Man hinh Render video — cung luoi .vs-grid cua Scenes, bon cot khac do rong.
+   --------------------------------------------------------------------------- */
+
+.vs-grid.vs-clip {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, .9fr) 240px minmax(0, 1.2fr);
+}
+
+/* Anh phai lap day o va tu co lai theo be ngang cot, khong tran ra ngoai. */
+.vs-clip .vs-shot {
+    display: block;
+    width: 100%;
+    aspect-ratio: 9 / 16;
+    max-height: 320px;
+    overflow: hidden;
+    background: #f1f5f9;
+    border: 1px solid var(--vp-line);
+    border-radius: 6px;
+}
+
+.vs-clip .vs-shot img {
+    width: 100%;
+    height: 100%;
+}
+
+.vs-clip .vs-shot.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--vp-dim);
+    font-size: .78rem;
+}
+
+.vs-clip .vs-ctrl {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.vs-clip .vs-ctrl label {
+    margin: 0;
+    color: var(--vp-dim);
+    font-size: .66rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.vs-clip .vs-ctrl select {
+    width: 100%;
+    padding: 5px 7px;
+    font-size: .8rem;
+    background: #fff;
+    border: 1px solid var(--vp-line);
+    border-radius: 5px;
+}
+
+.vs-clip .vs-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    color: #cbd5e1;
+    font-size: .8rem;
+    text-align: center;
+    background: #0f172a;
+    border: 1px solid var(--vp-line);
+    border-radius: 6px;
+}
+
+.vs-clip .vs-stage.idle {
+    color: var(--vp-dim);
+    background: #f8fafc;
+    border-style: dashed;
+}
+
+.vs-clip .vs-stage.broken {
+    color: #fecaca;
+    background: #7f1d1d;
+}
+
+.vs-clip .vs-stage video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+    cursor: zoom-in;
+}
+
+.vs-clip .vs-stage .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    background: #f59e0b;
+    border-radius: 50%;
+    animation: vsPulse 1s infinite ease-in-out;
+}
+
+@keyframes vsPulse {
+    0%, 100% { opacity: .25 }
+    50% { opacity: 1 }
+}
+
+#clipModal .modal-dialog { max-width: 96vw; }
+
+#clipModal .modal-content {
+    background: #000;
+    border: 0;
+}
+
+#clipModal video {
+    width: 100%;
+    max-height: 88vh;
+    background: #000;
 }

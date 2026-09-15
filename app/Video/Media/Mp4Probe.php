@@ -21,16 +21,48 @@ final class Mp4Probe
 
     public function available(): bool
     {
+        return $this->problem() === null;
+    }
+
+    /**
+     * Ly do KHONG chay duoc, hoac `null` neu chay duoc.
+     *
+     * Tra ve ly do chu khong chi true/false, vi loi hay gap nhat khong phai "may
+     * thieu ffmpeg" ma la "tien trinh web co PATH khac shell": go `ffprobe` trong
+     * terminal thi thay, ma PHP thi khong. Mot cau "khong chay duoc" khong du de
+     * ai do biet phai lam gi tiep.
+     */
+    public function problem(): ?string
+    {
         $process = new Process([$this->binary, '-version']);
         $process->setTimeout($this->timeoutSeconds);
 
         try {
             $process->run();
-        } catch (ExceptionInterface) {
-            return false;
+        } catch (ExceptionInterface $e) {
+            return $this->hint(Str::limit($e->getMessage(), 160));
         }
 
-        return $process->isSuccessful();
+        if (! $process->isSuccessful()) {
+            return $this->hint(Str::limit($process->getErrorOutput(), 160));
+        }
+
+        return null;
+    }
+
+    private function hint(string $detail): string
+    {
+        $named = str_contains($this->binary, DIRECTORY_SEPARATOR) || str_contains($this->binary, '/');
+
+        return sprintf(
+            'khong chay duoc "%s" (%s).%s',
+            $this->binary,
+            $detail !== '' ? $detail : 'khong ro nguyen nhan',
+            $named
+                ? ' Kiem lai duong dan trong VIDEO_FFPROBE_BIN.'
+                : ' Tien trinh web co the co PATH khac terminal — dat VIDEO_FFPROBE_BIN'
+                    .' bang duong dan tuyet doi toi ffprobe roi khoi dong lai may chu.',
+        );
     }
 
     /** @return array{ok: bool, duration_ms: ?int, width: ?int, height: ?int, error: ?string} */

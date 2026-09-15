@@ -95,7 +95,11 @@
                               title="{{ $p->unpriced_cost_count }} render(s) have no price yet and {{ $p->unclassified_cost_count }} older row(s) were never classified — this total is incomplete">+?</span>
                     @endif
                 </td>
-                <td><a class="btn btn-sm btn-primary" href="{{ route('video-projects.anchor', $p->id) }}">Open</a></td>
+                <td>
+                    <a class="btn btn-sm btn-primary" href="{{ route('video-projects.anchor', $p->id) }}">Open</a>
+                    <a class="btn btn-sm btn-secondary" href="{{ route('video-projects.scene', $p->id) }}">Scenes</a>
+                    <a class="btn btn-sm btn-dark" href="{{ route('video-projects.render-video', $p->id) }}">Video</a>
+                </td>
             </tr>
         @empty
             <tr><td colspan="8" class="vs-empty">No projects yet — click 🎬 on an article to open one.</td></tr>

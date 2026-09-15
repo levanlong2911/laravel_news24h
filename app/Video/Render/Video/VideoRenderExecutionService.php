@@ -83,6 +83,8 @@ final class VideoRenderExecutionService
         $blocked = match (true) {
             $render->render_kind !== 'video' => 'render nay khong phai video',
             $entry === null => 'model ngoai registry',
+            ($spec['provider_payload_version'] ?? null) !== SceneClipDispatchService::PROVIDER_PAYLOAD_VERSION
+                => 'provider payload contract khong duoc ho tro',
             ! hash_equals($claim->requestHash, hash('sha256', $claim->renderRequestJson)) => 'request hash lech',
             default => null,
         };
@@ -106,7 +108,7 @@ final class VideoRenderExecutionService
             return [false, 'lease_lost_before_submit'];
         }
 
-        $result = $this->veo->submit($entry, $this->payload($spec, $source));
+        $result = $this->veo->submit($this->target($spec), $this->payload($spec, $source));
 
         if ($result['ambiguous']) {
             try {
@@ -170,7 +172,7 @@ final class VideoRenderExecutionService
         $token = (string) Str::uuid();
         $render = $this->provider->claimPoll($render, $token, self::WORKER);
 
-        $poll = $this->veo->poll($entry, (string) $render->provider_job_id);
+        $poll = $this->veo->poll($this->target($spec), (string) $render->provider_job_id);
 
         if (! $poll['ok'] && $poll['failure'] === RenderFailureClass::TRANSIENT_NETWORK) {
             $this->provider->markStillRunning($render, $token, $poll['response']);
@@ -516,12 +518,34 @@ final class VideoRenderExecutionService
     }
 
     /**
+     * Dia chi goi lay tu spec DA DONG BANG chu khong phai entry registry hom nay:
+     * registry la cai CHO PHEP, con spec la cai DA CHOT. Hai thu lech nhau thi
+     * request_hash khong con phu duoc len thu that su duoc gui.
+     *
+     * @param  array<string, mixed>  $spec
+     * @return array<string, mixed>
+     */
+    private function target(array $spec): array
+    {
+        return [
+            'api_version' => (string) $spec['api_version'],
+            'model' => (string) $spec['model'],
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $spec
      * @param  array{ok: bool, mime: ?string, data: ?string, error: ?string}  $source
      * @return array<string, mixed>
      */
     private function payload(array $spec, array $source): array
     {
+        // Canary that bi Veo tu choi da chung minh `inlineData` khong duoc nhan
+        // o predictLongRunning. Endpoint nay nhan image Vertex-style.
+        //   - anh di trong `image.bytesBase64Encoded`, kem `mimeType`
+        //   - `durationSeconds` la so nguyen; canary thu hai da bi tu choi khi gui chuoi
+        //   - khong co `sampleCount`: moi request tra ve dung mot video
+        //   - image-to-video chi nhan `personGeneration = allow_adult`
         return [
             'instances' => [[
                 'prompt' => (string) $spec['compiled_prompt']['prompt'],
@@ -532,9 +556,9 @@ final class VideoRenderExecutionService
             ]],
             'parameters' => [
                 'aspectRatio' => (string) $spec['aspect_ratio'],
-                'durationSeconds' => (int) $spec['duration_seconds'],
                 'resolution' => (string) $spec['resolution'],
-                'sampleCount' => 1,
+                'durationSeconds' => (int) $spec['duration_seconds'],
+                'personGeneration' => (string) $spec['person_generation'],
             ],
         ];
     }

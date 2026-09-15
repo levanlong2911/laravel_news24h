@@ -66,6 +66,7 @@ final class GeminiVeoVideoClient
         try {
             $response = $this->http
                 ->withHeaders(['x-goog-api-key' => $this->apiKey])
+                ->asJson()
                 ->timeout($this->timeoutSeconds)
                 ->post($url, $payload);
         } catch (ConnectionException $e) {

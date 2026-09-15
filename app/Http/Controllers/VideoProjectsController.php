@@ -17,12 +17,15 @@ use App\Models\VideoShot;
 use App\Services\VideoProjectService;
 use App\Video\Concept\Viewpoint;
 use App\Video\Render\Video\SceneClipDispatchService;
+use App\Video\Render\Video\SceneShotFactory;
 use App\Video\Render\Video\VideoRenderExecutionService;
 use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use RuntimeException;
 use Throwable;
 
 class VideoProjectsController extends Controller
@@ -35,16 +38,20 @@ class VideoProjectsController extends Controller
 
     private VideoRenderExecutionService $clipExecution;
 
+    private SceneShotFactory $shots;
+
     public function __construct(
         VideoProjectService $videoProjectService,
         AdminCustomValidator $form,
         SceneClipDispatchService $clips,
         VideoRenderExecutionService $clipExecution,
+        SceneShotFactory $shots,
     ) {
         $this->videoProjectService = $videoProjectService;
         $this->form = $form;
         $this->clips = $clips;
         $this->clipExecution = $clipExecution;
+        $this->shots = $shots;
     }
 
     public function store(string $articleId)
@@ -598,29 +605,216 @@ class VideoProjectsController extends Controller
     }
 
     /**
-     * Tao ban ghi clip roi submit ngay trong mot luot. Khong cho san hang render
-     * chua ai dinh gui: mot o `queued` khong bao gio duoc gui la mot o treo.
+     * Man hinh render video: mot hang moi scene, khong lan voi luoi anh cua trang
+     * Scenes. Kem mot khoi xem truoc DAN NHAN dung la du lieu gia, de nhin duoc bo
+     * cuc khi DB chua co shot nao.
      */
-    public function renderSceneClip(Request $request, string $id, string $shotId)
+    public function clips(string $id)
+    {
+        $project = $this->ownedProject($id);
+
+        $plan = $this->videoProjectService->latestScenePlan($id);
+        $revision = (int) $plan['revision'];
+        $scenes = $plan['scenes'] ?? [];
+        $clips = $this->videoProjectService->sceneClipCells($id, $revision);
+        $keyframes = $this->videoProjectService->sceneKeyframeCells($id, $revision);
+
+        return view('video-projects.show', $this->chrome() + [
+            'id' => $id,
+            'project' => $project,
+            'scenes' => $scenes,
+            'clips' => $clips,
+            'keyframes' => $keyframes,
+            'clipModels' => $this->clipModels(),
+            'summary' => $this->clipSummary($scenes, $clips, $keyframes),
+        ]);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $scenes
+     * @param  array<string, array<string, mixed>>  $clips
+     * @param  array<string, array<string, mixed>>  $keyframes
+     * @return array{with_keyframe: int, running: int, done: int, failed: int}
+     */
+    private function clipSummary(array $scenes, array $clips, array $keyframes): array
+    {
+        $summary = ['with_keyframe' => 0, 'running' => 0, 'done' => 0, 'failed' => 0];
+
+        foreach ($scenes as $scene) {
+            $key = (string) ($scene['scene_id'] ?? '');
+
+            if (($keyframes[$key]['approved'] ?? null) !== null) {
+                $summary['with_keyframe']++;
+            }
+
+            $status = $clips[$key]['status'] ?? null;
+
+            $summary['running'] += in_array($status, ['submitting', 'submitted', 'provider_running', 'polling'], true) ? 1 : 0;
+            $summary['done'] += $status === 'succeeded' ? 1 : 0;
+            $summary['failed'] += $status === 'failed' ? 1 : 0;
+        }
+
+        return $summary;
+    }
+
+
+    /**
+     * Mot luot: sinh shot cho scene (neu chua co), dong bang anh da duyet lam nguon,
+     * tao hang render roi submit ngay.
+     *
+     * Khong cho san hang `queued` chua ai dinh gui: mot o nhu the la mot o treo.
+     */
+    public function renderSceneClip(Request $request, string $id, string $sceneId)
     {
         $this->ownedProject($id);
 
-        $data = $this->form->validate($request, 'SceneClipRenderForm');
-
-        $shot = VideoShot::query()
-            ->whereKey($shotId)
-            ->whereHas('session', fn ($query) => $query->where('project_id', $id))
-            ->firstOrFail();
-
+        // MOI thu nam trong try, ke ca validate va tra cuu scene. Mot ngoai le lot ra
+        // ngoai se thanh trang loi HTML, ma man hinh lai doc JSON — luc do no that bai
+        // IM LANG: hang tu reset, khong ai biet vi sao.
         try {
-            $render = $this->clips->create($shot, (string) $data['model_id'], Arr::except($data, 'model_id'));
+            $data = $this->form->validate($request, 'SceneClipRenderForm');
+
+            $plan = $this->videoProjectService->latestScenePlan($id);
+            $revision = (int) $plan['revision'];
+
+            $scene = \App\Models\VideoRenderScene::query()
+                ->whereKey($sceneId)
+                ->where('project_id', $id)
+                ->where('revision', $revision)
+                ->first();
+
+            if ($scene === null) {
+                throw new RuntimeException('Scene khong thuoc ban ke hoach dang hien cua du an nay.');
+            }
+
+            $row = collect($plan['scenes'] ?? [])->firstWhere('scene_id', $sceneId);
+            $approved = $this->videoProjectService->sceneKeyframeCells($id, $revision)[$sceneId]['approved'] ?? null;
+
+            if ($row === null) {
+                throw new RuntimeException('Scene nay khong nam trong ban ke hoach dang hien.');
+            }
+
+            if ($approved === null) {
+                throw new RuntimeException('Scene chua co anh duyet — duyet o man hinh Scenes truoc.');
+            }
+
+            $source = \App\Models\VideoArtifact::query()
+                ->whereKey($approved['selected_artifact_id'])
+                ->where('design_image_id', $approved['id'])
+                ->first();
+
+            if ($source === null) {
+                throw new RuntimeException('Khong tim thay file anh da duyet cua scene nay.');
+            }
+
+            $shot = $this->shots->forScene($scene, $row);
+            $render = $this->clips->create($shot, $source, (string) $data['model_id'], Arr::except($data, 'model_id'));
+        } catch (ValidationException $e) {
+            return $this->clipRefused($request, implode(' ', $e->validator->errors()->all()), $id, $sceneId);
         } catch (Throwable $e) {
-            return back()->with('error', 'Clip: '.$e->getMessage());
+            return $this->clipRefused($request, $e->getMessage(), $id, $sceneId);
         }
 
         [$ok, $reason] = $this->clipExecution->submit($render->id);
 
+        if ($request->expectsJson()) {
+            return response()->json($this->clipState($id, $render->refresh(), $reason));
+        }
+
         return back()->with($ok ? 'status' : 'error', 'Clip: '.$reason);
+    }
+
+    /**
+     * Mot lan bam bi tu choi van phai NOI RA ly do — va de lai dau vet doc duoc.
+     * Khong co dong log nay thi lan hong nao cung chi con mot o tu reset.
+     */
+    private function clipRefused(Request $request, string $reason, string $id, string $sceneId)
+    {
+        Log::warning('Clip bi tu choi truoc khi goi provider', [
+            'project_id' => $id,
+            'scene_id' => $sceneId,
+            'reason' => $reason,
+        ]);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'state' => 'idle',
+                'reason' => $reason,
+                'note' => $reason,
+                'poll_url' => null,
+                'file_url' => null,
+                'meta' => '',
+            ], 422);
+        }
+
+        return back()->with('error', 'Clip: '.$reason);
+    }
+
+    /**
+     * Mot dong trang thai du de man hinh ve lai dung o do, khong phai tai lai trang.
+     *
+     * @return array<string, mixed>
+     */
+    private function clipState(string $id, VideoRender $render, string $reason): array
+    {
+        $status = $render->execution_status?->value;
+        $running = in_array($status, ['submitting', 'submitted', 'provider_running', 'polling'], true);
+
+        $state = match (true) {
+            $status === 'succeeded' => 'succeeded',
+            $running => 'running',
+            $status === 'failed' => 'failed',
+            default => 'idle',
+        };
+
+        $note = match ($state) {
+            'running' => 'đang dựng · đã hỏi '.$render->provider_poll_count.' lần',
+            'failed' => (string) ($render->failure_message ?? $reason),
+            'succeeded' => '',
+            default => $reason,
+        };
+
+        return [
+            'state' => $state,
+            'reason' => $reason,
+            'note' => $note,
+            'poll_url' => route('video-projects.scene-clip-poll', [$id, $render->id]),
+            'file_url' => $state === 'succeeded'
+                ? route('video-projects.scene-clip-file', [$id, $render->id])
+                : null,
+            'meta' => $render->width && $render->height
+                ? $render->width.'×'.$render->height
+                    .($render->duration_ms ? ' · '.round($render->duration_ms / 1000, 1).'s' : '')
+                : '',
+        ];
+    }
+    /**
+     * Clip nam tren disk rieng chu khong phai public, nen no chi ra khoi may qua
+     * day — sau khi da kiem du an va kiem hang render thuoc du an do.
+     */
+    public function sceneClipFile(string $id, string $render)
+    {
+        $this->ownedProject($id);
+
+        $owned = VideoRender::query()
+            ->whereKey($render)
+            ->where('render_kind', 'video')
+            ->where(fn ($query) => $query
+                ->whereHas('shot.session', fn ($scope) => $scope->where('project_id', $id))
+                ->orWhereHas('session', fn ($scope) => $scope->where('project_id', $id)))
+            ->firstOrFail();
+
+        $disk = app(\Illuminate\Contracts\Filesystem\Factory::class)->disk((string) config('video.veo.disk'));
+        $path = (string) $owned->artifact_path;
+
+        abort_if($path === '' || ! $disk->exists($path), 404);
+
+        return $disk->response($path, basename($path), [
+            'Content-Type' => 'video/mp4',
+            // Trinh duyet doi seek duoc moi ve duoc khung hinh dau; khong noi minh
+            // chap nhan range thi the <video> chi hien mot o den.
+            'Accept-Ranges' => 'bytes',
+        ]);
     }
 
     public function pollSceneClip(string $id, string $render)
@@ -638,6 +832,10 @@ class VideoProjectsController extends Controller
             ->firstOrFail();
 
         [$ok, $reason] = $this->clipExecution->poll($owned->id);
+
+        if (request()->expectsJson()) {
+            return response()->json($this->clipState($id, $owned->refresh(), $reason));
+        }
 
         return back()->with($ok ? 'status' : 'error', 'Clip: '.$reason);
     }
@@ -729,6 +927,37 @@ class VideoProjectsController extends Controller
         $text = __($key, $detail === null ? [] : ['name' => $detail]);
 
         return $text === $key ? $reason : $text;
+    }
+
+    /**
+     * Danh sach model clip duoc phep chon. Rong nghia la chua model nao duoc chung
+     * minh bang `video:list-gemini-models` — man hinh phai noi that, khong duoc bay
+     * ra mot nut bam vao thi hong.
+     *
+     * @return list<array{id: string, label: string, default: bool}>
+     */
+    private function clipModels(): array
+    {
+        $registry = app(\App\Video\Media\VideoModelRegistry::class);
+
+        if (! $registry->available(SceneClipDispatchService::TASK)) {
+            return [];
+        }
+
+        try {
+            $entries = $registry->forTask(SceneClipDispatchService::TASK);
+        } catch (InvalidArgumentException $e) {
+            Log::warning('Registry clip hong: '.$e->getMessage());
+
+            return [];
+        }
+
+        return array_map(static fn (array $entry): array => [
+            'id' => (string) $entry['id'],
+            'label' => (string) $entry['label'],
+            'default' => $entry['default'] === true,
+            'controls' => $entry['controls'],
+        ], $entries);
     }
 
     private function ownedProject(string $id): VideoProject

@@ -1,0 +1,62 @@
+{
+    "fetched_at": "2026-09-15",
+    "source": "https://ai.google.dev/gemini-api/docs/veo",
+    "verified_by_render": false,
+    "note": "Tai lieu Google mo ta inlineData, nhung canary predictLongRunning ngay 2026-09-15 bi Veo tu choi no. Canary ke tiep xac nhan durationSeconds phai la JSON number. Wire shape duoi day la ket qua provider yeu cau; van chua co canary thanh cong.",
+    "provider_observation": {
+        "observed_at": "2026-09-15",
+        "model": "veo-3.1-lite-generate-preview",
+        "rejected_field": "image.inlineData",
+        "required_image_shape": "image.bytesBase64Encoded + image.mimeType",
+        "durationSeconds": "number"
+    },
+    "method": "predictLongRunning",
+    "api_version": "v1beta",
+    "request_shape": {
+        "instances": [
+            {
+                "prompt": "string",
+                "image": {
+                    "mimeType": "image/png",
+                    "bytesBase64Encoded": "base64"
+                }
+            }
+        ],
+        "parameters": {
+            "aspectRatio": "16:9",
+            "resolution": "720p",
+            "durationSeconds": 8,
+            "personGeneration": "allow_adult"
+        }
+    },
+    "video_uri_path": "response.generateVideoResponse.generatedSamples[0].video.uri",
+    "parameters": {
+        "aspectRatio": ["16:9", "9:16"],
+        "durationSeconds": [4, 6, 8],
+        "personGeneration": {
+            "text_to_video": ["allow_all"],
+            "image_to_video": ["allow_adult"],
+            "note": "EU/UK/CH/MENA chi nhan allow_adult"
+        },
+        "sampleCount": "khong co trong tai lieu; moi request tra ve dung 1 video"
+    },
+    "models": {
+        "veo-3.1-generate-preview": {
+            "resolution": ["720p", "1080p", "4k"],
+            "default_resolution": "720p"
+        },
+        "veo-3.1-fast-generate-preview": {
+            "resolution": ["720p", "1080p", "4k"],
+            "default_resolution": "720p"
+        },
+        "veo-3.1-lite-generate-preview": {
+            "resolution": ["720p", "1080p"],
+            "default_resolution": "720p"
+        }
+    },
+    "constraints": [
+        "1080p va 4k doi durationSeconds = 8",
+        "4k khi extension chi con 720p",
+        "reference images doi durationSeconds = 8"
+    ]
+}

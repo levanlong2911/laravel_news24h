@@ -2,6 +2,8 @@
 
 namespace App\Video\Render\Video;
 
+use App\Models\VideoArtifact;
+use App\Models\VideoProviderSubmissionReceipt;
 use App\Models\VideoRender;
 use App\Models\VideoShot;
 use App\Video\Media\Mp4Probe;
@@ -24,6 +26,10 @@ final class SceneClipDispatchService
 {
     public const TASK = 'scene_clip';
 
+    // v4 doi `durationSeconds` tu chuoi sang JSON number. Phai doi version de
+    // request_hash khong the tro lai hang da tao theo wire contract cu.
+    public const PROVIDER_PAYLOAD_VERSION = 'veo-image-to-video-v4';
+
     public function __construct(
         private readonly RenderDispatchService $dispatch,
         private readonly VideoModelRegistry $registry,
@@ -31,13 +37,21 @@ final class SceneClipDispatchService
         private readonly Mp4Probe $probe,
     ) {}
 
-    /** @param array<string, mixed> $controls */
-    public function create(VideoShot $shot, string $modelId, array $controls = []): VideoRender
+    /**
+     * @param  VideoArtifact  $source  anh DA DUYET cua chinh scene nay
+     * @param  array<string, mixed>  $controls
+     */
+    public function create(VideoShot $shot, VideoArtifact $source, string $modelId, array $controls = []): VideoRender
     {
         // Thieu ffprobe la loi cau hinh may, khong phai loi cua render: chan o day
         // thi khong o nao bi tao ra roi danh that bai vinh vien.
-        if (! $this->probe->available()) {
-            throw new RuntimeException('Khong chay duoc ffprobe — khong tao clip de khoi tra tien cho file khong xac minh duoc.');
+        $missing = $this->probe->problem();
+
+        if ($missing !== null) {
+            throw new RuntimeException(
+                'Khong do duoc video vi '.$missing
+                .' Chua sua duoc thi khong tao clip, de khoi tra tien cho mot file khong xac minh duoc.',
+            );
         }
 
         $entry = $this->registry->find(self::TASK, $modelId);
@@ -46,12 +60,17 @@ final class SceneClipDispatchService
             throw new RuntimeException('Model clip ngoai registry: '.$modelId);
         }
 
-        $keyframe = $shot->scene_image_render_id === null
+        // Anh nguon la ARTIFACT DA DUYET, khong phai trang thai cua hang render:
+        // duyet la hanh dong cua nguoi, va file kem sha256 moi la bang chung.
+        //
+        // Hang render cua no van duoc doc — nhung chi de thua lai bo hash canonical,
+        // de hai lan render cung mot scene khong khai hai canonical khac nhau.
+        $keyframe = $source->render_id === null
             ? null
-            : VideoRender::query()->whereKey($shot->scene_image_render_id)->first();
+            : VideoRender::query()->whereKey($source->render_id)->first();
 
-        if ($keyframe === null || $keyframe->execution_status !== RenderStatus::SUCCEEDED) {
-            throw new RuntimeException('Scene chua co khung hinh da render thanh cong.');
+        if ($keyframe === null) {
+            throw new RuntimeException('Anh da duyet khong gan voi lan render nao — khong truy duoc canonical.');
         }
 
         $prompt = trim((string) $shot->compiled_prompt);
@@ -62,6 +81,9 @@ final class SceneClipDispatchService
 
         $request = [
             'kind' => self::TASK,
+            // Provider tu choi `inlineData` trong canary dau tien. Wire shape la
+            // mot phan cua request da dong bang, de retry khong am tham doi bytes.
+            'provider_payload_version' => self::PROVIDER_PAYLOAD_VERSION,
             'provider' => $entry['provider'],
             'model' => $entry['model'],
             'api_version' => $entry['api_version'],
@@ -69,10 +91,18 @@ final class SceneClipDispatchService
             'duration_seconds' => $this->choice($entry, $controls, 'durations', 'default_duration', 'duration_seconds'),
             'aspect_ratio' => $this->choice($entry, $controls, 'aspect_ratios', 'default_aspect_ratio', 'aspect_ratio'),
             'resolution' => $this->choice($entry, $controls, 'resolutions', 'default_resolution', 'resolution'),
+            // Hop dong: image-to-video CHI nhan `allow_adult`
+            // (veo_video_contract_2026_09_15.json). No la hang so cua hop dong, nhung
+            // van phai nam trong spec — thu gi da gui di thi phai doc lai duoc tu day,
+            // va request_hash phai phu duoc len no.
+            'person_generation' => 'allow_adult',
             'source_render_id' => $keyframe->id,
-            'source_artifact' => $this->freezeSource($keyframe),
+            'source_artifact_id' => (string) $source->id,
+            'source_artifact' => $this->freezeSource($source),
             'motion_spec_hash' => $this->motionSpecHash($shot),
         ];
+
+        $this->assertCombination($entry, $request);
 
         $requestJson = json_encode($request, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $requestHash = hash('sha256', $requestJson);
@@ -84,7 +114,7 @@ final class SceneClipDispatchService
             assetId: (string) ($shot->scene_id ?? $shot->shot_code),
             provider: (string) $entry['provider'],
             model: (string) $entry['model'],
-            idempotencyKey: 'scene-clip:'.$shot->id.':'.$requestHash,
+            idempotencyKey: $this->idempotencyKey($shot, $requestHash),
             requestJson: $requestJson,
             requestHash: $requestHash,
             canonicalRevisionId: (string) $keyframe->canonical_concept_revision_id,
@@ -99,47 +129,121 @@ final class SceneClipDispatchService
         );
     }
 
-    /** @return array{disk: string, path: string, sha256: string, mime: string, bytes: int} */
-    private function freezeSource(VideoRender $keyframe): array
+    /**
+     * Lam lai mot luot DA HONG phai la mot HANG MOI, khong phai hoi sinh hang cu:
+     * `VideoRender` la su kien da xay ra, bat bien.
+     *
+     * Nhung chi duoc lam lai khi KHONG con bien lai nao: co bien lai nghia la
+     * provider da nhan job va tien da di. Luc do gui lai la tra tien lan hai cho
+     * cung mot canh — phai de nguoi doi soat quyet, khong phai mot cu bam.
+     */
+    private function idempotencyKey(VideoShot $shot, string $requestHash): string
     {
-        $path = (string) $keyframe->artifact_path;
+        $base = 'scene-clip:'.$shot->id.':'.$requestHash;
+
+        $existing = VideoRender::query()
+            ->where('shot_id', $shot->id)
+            ->where('idempotency_key', 'like', $base.'%')
+            ->get(['id', 'execution_status', 'idempotency_key']);
+
+        if ($existing->isEmpty()) {
+            return $base;
+        }
+
+        // Luot chua ket thuc thi dung lai chinh no — day moi la idempotency that.
+        $live = $existing->first(static fn (VideoRender $render): bool => ! in_array(
+            $render->execution_status,
+            [RenderStatus::FAILED, RenderStatus::CANCELLED],
+            true,
+        ));
+
+        if ($live !== null) {
+            return (string) $live->idempotency_key;
+        }
+
+        $paid = VideoProviderSubmissionReceipt::query()
+            ->whereIn('render_id', $existing->pluck('id'))
+            ->exists();
+
+        if ($paid) {
+            throw new RuntimeException(
+                'Luot truoc da duoc provider nhan job — khong tu dung lai, de khoi tra tien hai lan cho cung mot canh.',
+            );
+        }
+
+        return $base.':r'.$existing->count();
+    }
+
+    /** @return array{disk: string, path: string, sha256: string, mime: string, bytes: int} */
+    private function freezeSource(VideoArtifact $source): array
+    {
+        $disk = (string) $source->storage_disk;
+        $path = (string) $source->storage_path;
         $maxBytes = (int) config('video.veo.max_source_bytes', 33554432);
 
         if ($path === '') {
-            throw new RuntimeException('Khung hinh nguon khong co artifact_path.');
+            throw new RuntimeException('Anh da duyet khong co storage_path.');
         }
 
-        foreach ((array) config('video.veo.source_disks', ['video_artifacts']) as $disk) {
-            $filesystem = $this->storage->disk($disk);
-
-            if (! $filesystem->exists($path)) {
-                continue;
-            }
-
-            $size = (int) $filesystem->size($path);
-
-            if ($size <= 0 || $size > $maxBytes) {
-                throw new RuntimeException('Khung hinh nguon co kich thuoc khong hop le: '.$size);
-            }
-
-            $bytes = (string) $filesystem->get($path);
-
-            if (! hash_equals((string) $keyframe->primary_artifact_hash, hash('sha256', $bytes))) {
-                throw new RuntimeException('Khung hinh nguon khac hash da ghi trong render.');
-            }
-
-            $info = @getimagesizefromstring($bytes);
-            $mime = is_array($info) ? (string) ($info['mime'] ?? '') : '';
-
-            if (! in_array($mime, ['image/png', 'image/jpeg'], true)) {
-                throw new RuntimeException('Khung hinh nguon khong phai PNG/JPEG: '.($mime !== '' ? $mime : 'khong doc duoc'));
-            }
-
-            return ['disk' => (string) $disk, 'path' => $path, 'sha256' => hash('sha256', $bytes),
-                'mime' => $mime, 'bytes' => $size];
+        if (! in_array($disk, (array) config('video.veo.source_disks', ['video_artifacts']), true)) {
+            throw new RuntimeException('Anh da duyet nam tren disk khong duoc phep: '.$disk);
         }
 
-        throw new RuntimeException('Khong thay khung hinh nguon tren disk nao da khai bao: '.$path);
+        $filesystem = $this->storage->disk($disk);
+
+        if (! $filesystem->exists($path)) {
+            throw new RuntimeException('Khong thay file anh da duyet tren disk '.$disk.': '.$path);
+        }
+
+        $size = (int) $filesystem->size($path);
+
+        if ($size <= 0 || $size > $maxBytes) {
+            throw new RuntimeException('Anh da duyet co kich thuoc khong hop le: '.$size);
+        }
+
+        $bytes = (string) $filesystem->get($path);
+
+        if (! hash_equals((string) $source->sha256, hash('sha256', $bytes))) {
+            throw new RuntimeException('File anh da duyet khac sha256 da ghi trong artifact.');
+        }
+
+        $info = @getimagesizefromstring($bytes);
+        $mime = is_array($info) ? (string) ($info['mime'] ?? '') : '';
+
+        if (! in_array($mime, ['image/png', 'image/jpeg'], true)) {
+            throw new RuntimeException('Anh da duyet khong phai PNG/JPEG: '.($mime !== '' ? $mime : 'khong doc duoc'));
+        }
+
+        return ['disk' => $disk, 'path' => $path, 'sha256' => hash('sha256', $bytes),
+            'mime' => $mime, 'bytes' => $size];
+    }
+
+    /**
+     * Registry noi tung o duoc chon gi, nhung khong noi hai o co di duoc voi nhau
+     * khong. Rang buoc cheo nam o day, va chan TRUOC khi request roi khoi may.
+     *
+     * @param  array<string, mixed>  $request
+     */
+    private function assertCombination(array $entry, array $request): void
+    {
+        $long = (array) ($entry['controls']['long_resolutions'] ?? []);
+        $required = $entry['controls']['long_resolution_duration'] ?? null;
+
+        if ($long === [] || $required === null) {
+            return;
+        }
+
+        $resolution = (string) $request['resolution'];
+        $duration = (int) $request['duration_seconds'];
+
+        if (in_array($resolution, $long, true) && $duration !== (int) $required) {
+            throw new RuntimeException(sprintf(
+                '%s chi nhan thoi luong %ds, dang chon %ds.',
+                $resolution,
+                (int) $required,
+                $duration,
+            ));
+        }
     }
 
     /**

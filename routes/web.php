@@ -165,8 +165,10 @@ Route::group(
         Route::get('/{id}/scenes/{sceneId}/keyframe/preview', [VideoProjectsController::class, 'sceneKeyframePreview'])->name('video-projects.scene-keyframe-preview');
         Route::post('/{id}/scenes/{sceneId}/keyframe',        [VideoProjectsController::class, 'renderSceneKeyframe'])->name('video-projects.scene-keyframe-render');
         Route::get('/{id}/scene-keyframes/{image}/state',     [VideoProjectsController::class, 'sceneKeyframeState'])->name('video-projects.scene-keyframe-state');
-        Route::post('/{id}/scene-shots/{shotId}/clip',        [VideoProjectsController::class, 'renderSceneClip'])->name('video-projects.scene-clip-render');
+        Route::get('/{id}/render-video',                      [VideoProjectsController::class, 'clips'])->name('video-projects.render-video');
+        Route::post('/{id}/scenes/{sceneId}/clip',        [VideoProjectsController::class, 'renderSceneClip'])->name('video-projects.scene-clip-render');
         Route::post('/{id}/scene-clips/{render}/poll',        [VideoProjectsController::class, 'pollSceneClip'])->name('video-projects.scene-clip-poll');
+        Route::get('/{id}/scene-clips/{render}/file',          [VideoProjectsController::class, 'sceneClipFile'])->name('video-projects.scene-clip-file');
         Route::post('/{id}/scene-keyframes/{image}/retry',    [VideoProjectsController::class, 'retrySceneKeyframe'])->name('video-projects.scene-keyframe-retry');
         Route::post('/{id}/scene-keyframes/{image}/approve',  [VideoProjectsController::class, 'approveSceneKeyframe'])->name('video-projects.scene-keyframe-approve');
     });

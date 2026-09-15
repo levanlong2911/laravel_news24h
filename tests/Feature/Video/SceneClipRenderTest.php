@@ -36,6 +36,8 @@ class SceneClipRenderTest extends TestCase
 
     private VideoSession $session;
 
+    private \App\Models\VideoArtifact $source;
+
     private string $evidenceDir;
 
     protected function setUp(): void
@@ -107,7 +109,7 @@ class SceneClipRenderTest extends TestCase
         $this->expectException(RuntimeException::class);
 
         try {
-            app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+            app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
         } finally {
             $this->assertSame($before, VideoRender::query()->count(), 'khong duoc tao render vi may thieu binary');
             Http::assertNothingSent();
@@ -121,7 +123,7 @@ class SceneClipRenderTest extends TestCase
         ]);
 
         $shot = $this->shotWithKeyframe();
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
 
         [$ok, $reason] = app(VideoRenderExecutionService::class)->submit($render->id);
 
@@ -131,8 +133,14 @@ class SceneClipRenderTest extends TestCase
         Http::assertSent(function ($request): bool {
             $instance = $request->data()['instances'][0] ?? [];
 
-            return base64_decode((string) ($instance['image']['bytesBase64Encoded'] ?? ''), true) === $this->pngBytes()
-                && ($instance['image']['mimeType'] ?? null) === 'image/png';
+            $image = $instance['image'] ?? [];
+            $params = $request->data()['parameters'] ?? [];
+
+            return base64_decode((string) ($image['bytesBase64Encoded'] ?? ''), true) === $this->pngBytes()
+                && ($image['mimeType'] ?? null) === 'image/png'
+                && ($params['durationSeconds'] ?? null) === 2
+                && ($params['personGeneration'] ?? null) === 'allow_adult'
+                && ! array_key_exists('sampleCount', $params);
         });
 
         $render->refresh();
@@ -143,10 +151,57 @@ class SceneClipRenderTest extends TestCase
         $this->assertSame('submitted', $render->attempts()->first()->status->value);
     }
 
+    public function test_a_duration_that_arrives_as_a_string_is_still_accepted(): void
+    {
+        // Form HTTP gui chuoi; registry khai so nguyen va so sanh nghiem ngat.
+        // Kieu phai duoc dua ve dung o bien, neu khong nut Render luon hong.
+        $form = new \App\Form\SceneClipRenderForm;
+
+        $data = $form->validate(\Illuminate\Http\Request::create("/x", "POST", [
+            "model_id" => "gemini:".self::MODEL,
+            "duration_seconds" => "8",
+        ]));
+
+        $this->assertSame(8, $data["duration_seconds"]);
+
+        Http::fake(["*:predictLongRunning" => Http::response(["name" => self::OPERATION])]);
+
+        $shot = $this->shotWithKeyframe();
+        $render = app(SceneClipDispatchService::class)->create(
+            $shot, $this->source, "gemini:".self::MODEL,
+            ["duration_seconds" => $data["duration_seconds"]],
+        );
+
+        $this->assertSame(8, json_decode($render->render_request_json, true)["duration_seconds"]);
+    }
+
+    public function test_a_long_resolution_with_a_short_duration_is_refused(): void
+    {
+        config([
+            "video.media_models.video.scene_clip.0.controls.resolutions" => ["720p", "1080p"],
+            "video.media_models.video.scene_clip.0.controls.long_resolutions" => ["1080p"],
+            "video.media_models.video.scene_clip.0.controls.long_resolution_duration" => 8,
+        ]);
+        app()->forgetInstance(\App\Video\Media\VideoModelRegistry::class);
+
+        $shot = $this->shotWithKeyframe();
+
+        $this->expectExceptionMessageMatches("/1080p chi nhan thoi luong 8s/");
+
+        try {
+            app(SceneClipDispatchService::class)->create(
+                $shot, $this->source, "gemini:".self::MODEL,
+                ["resolution" => "1080p", "duration_seconds" => 2],
+            );
+        } finally {
+            Http::assertNothingSent();
+        }
+    }
+
     public function test_a_source_file_that_changed_since_freezing_sends_nothing(): void
     {
         $shot = $this->shotWithKeyframe();
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
 
         Storage::disk('video_artifacts')->put('scene/keyframe.png', 'khac han truoc do');
 
@@ -165,7 +220,7 @@ class SceneClipRenderTest extends TestCase
         });
 
         $shot = $this->shotWithKeyframe();
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
 
         [$ok, $reason] = app(VideoRenderExecutionService::class)->submit($render->id);
 
@@ -291,12 +346,53 @@ class SceneClipRenderTest extends TestCase
         $shot = $this->shotWithKeyframe();
         $dispatch = app(SceneClipDispatchService::class);
 
-        $first = $dispatch->create($shot, 'gemini:'.self::MODEL, ['duration_seconds' => 2]);
-        $second = $dispatch->create($shot, 'gemini:'.self::MODEL, ['duration_seconds' => 8]);
+        $first = $dispatch->create($shot, $this->source, 'gemini:'.self::MODEL, ['duration_seconds' => 2]);
+        $second = $dispatch->create($shot, $this->source, 'gemini:'.self::MODEL, ['duration_seconds' => 8]);
 
         $this->assertNotSame($first->id, $second->id);
         $this->assertSame(1, $first->attempt_no);
         $this->assertSame(2, $second->attempt_no, 'unique (shot_id, attempt_no) phai dem theo shot');
+    }
+
+    public function test_a_failed_clip_that_never_reached_the_provider_can_be_retried(): void
+    {
+        Http::fake(["*:predictLongRunning" => Http::response(["error" => ["message" => "khong nhan"]], 400)]);
+
+        $shot = $this->shotWithKeyframe();
+        $dispatch = app(SceneClipDispatchService::class);
+
+        $first = $dispatch->create($shot, $this->source, "gemini:".self::MODEL);
+        app(VideoRenderExecutionService::class)->submit($first->id);
+
+        $this->assertSame(RenderStatus::FAILED, $first->refresh()->execution_status);
+        $this->assertSame(0, VideoProviderSubmissionReceipt::query()->where("render_id", $first->id)->count());
+
+        // Cung yeu cau, nhung luot truoc da hong va KHONG co bien lai — phai la hang MOI.
+        $second = $dispatch->create($shot, $this->source, "gemini:".self::MODEL);
+
+        $this->assertNotSame($first->id, $second->id, "lam lai phai la mot hang render moi");
+        $this->assertSame(RenderStatus::QUEUED, $second->execution_status);
+        $this->assertNull($second->failure_message, "hang moi khong duoc mang loi cua luot truoc");
+    }
+
+    public function test_a_clip_the_provider_already_took_is_never_silently_resent(): void
+    {
+        Http::fake(["*:predictLongRunning" => Http::response(["name" => self::OPERATION])]);
+
+        $shot = $this->shotWithKeyframe();
+        $dispatch = app(SceneClipDispatchService::class);
+
+        $first = $dispatch->create($shot, $this->source, "gemini:".self::MODEL);
+        app(VideoRenderExecutionService::class)->submit($first->id);
+
+        $this->assertSame(1, VideoProviderSubmissionReceipt::query()->where("render_id", $first->id)->count());
+
+        // Ep hang do thanh failed nhung bien lai van con: tien da di.
+        VideoRender::query()->whereKey($first->id)->update(["execution_status" => RenderStatus::FAILED->value]);
+
+        $this->expectExceptionMessageMatches("/tra tien hai lan/");
+
+        $dispatch->create($shot, $this->source, "gemini:".self::MODEL);
     }
 
     public function test_the_same_clip_request_twice_reuses_one_render(): void
@@ -306,8 +402,8 @@ class SceneClipRenderTest extends TestCase
         $shot = $this->shotWithKeyframe();
         $dispatch = app(SceneClipDispatchService::class);
 
-        $first = $dispatch->create($shot, 'gemini:'.self::MODEL);
-        $second = $dispatch->create($shot, 'gemini:'.self::MODEL);
+        $first = $dispatch->create($shot, $this->source, 'gemini:'.self::MODEL);
+        $second = $dispatch->create($shot, $this->source, 'gemini:'.self::MODEL);
 
         $this->assertSame($first->id, $second->id, 'bam hai lan cung mot yeu cau khong duoc tra tien hai lan');
     }
@@ -385,7 +481,7 @@ class SceneClipRenderTest extends TestCase
             return Http::response(['name' => self::OPERATION]);
         }]);
 
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
 
         [$ok, $reason] = app(VideoRenderExecutionService::class)->submit($render->id);
 
@@ -436,7 +532,7 @@ class SceneClipRenderTest extends TestCase
             return Http::response(['name' => self::OPERATION]);
         }]);
 
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
 
         [$ok, $reason] = app(VideoRenderExecutionService::class)->submit($render->id);
 
@@ -468,7 +564,7 @@ class SceneClipRenderTest extends TestCase
             '*'.self::OPERATION => Http::response(['name' => self::OPERATION, 'done' => false]),
         ]);
 
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
         $execution = app(VideoRenderExecutionService::class);
 
         $this->assertSame([false, 'ownership_lost_after_submit'], $execution->submit($render->id));
@@ -565,7 +661,7 @@ class SceneClipRenderTest extends TestCase
             return Http::response(['name' => self::OPERATION]);
         }]);
 
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
 
         $this->assertSame(
             [false, 'ownership_lost_after_submit'],
@@ -632,6 +728,31 @@ class SceneClipRenderTest extends TestCase
         $this->assertSame(self::OPERATION, $receipt->fresh()->provider_job_id);
     }
 
+    public function test_even_a_raw_query_cannot_touch_a_receipt(): void
+    {
+        // Chan o tang model chi chan duong Eloquent. Day la duong ma mot doan code
+        // voi va se dung, nen no phai bi chan o ngay tang DB.
+        $render = $this->runningRender();
+        $receipt = VideoProviderSubmissionReceipt::query()->where("render_id", $render->id)->firstOrFail();
+
+        try {
+            DB::table("video_provider_submission_receipts")->where("id", $receipt->id)
+                ->update(["provider_job_id" => "sua-trom"]);
+            $this->fail("query builder khong duoc sua bien lai");
+        } catch (\Illuminate\Database\QueryException $e) {
+            $this->assertStringContainsString("append-only", $e->getMessage());
+        }
+
+        try {
+            DB::table("video_provider_submission_receipts")->where("id", $receipt->id)->delete();
+            $this->fail("query builder khong duoc xoa bien lai");
+        } catch (\Illuminate\Database\QueryException $e) {
+            $this->assertStringContainsString("append-only", $e->getMessage());
+        }
+
+        $this->assertSame(self::OPERATION, $receipt->fresh()->provider_job_id);
+    }
+
     public function test_a_receipt_from_another_claim_is_not_accepted_as_evidence(): void
     {
         $shot = $this->shotWithKeyframe();
@@ -658,7 +779,7 @@ class SceneClipRenderTest extends TestCase
             return Http::response(['name' => self::OPERATION]);
         }]);
 
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
 
         [$ok, $reason] = app(VideoRenderExecutionService::class)->submit($render->id);
 
@@ -683,7 +804,7 @@ class SceneClipRenderTest extends TestCase
             '*'.self::OPERATION => Http::response(['name' => self::OPERATION, 'done' => false]),
         ]);
 
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
         $execution = app(VideoRenderExecutionService::class);
         $execution->submit($render->id);
 
@@ -706,7 +827,7 @@ class SceneClipRenderTest extends TestCase
             return Http::response(['name' => self::OPERATION]);
         }]);
 
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
         app(VideoRenderExecutionService::class)->submit($render->id);
 
         $render->attempts()->update(['provider_job_id' => null]);
@@ -738,7 +859,7 @@ class SceneClipRenderTest extends TestCase
     public function test_a_lease_that_dies_before_the_request_stops_the_submit(): void
     {
         $shot = $this->shotWithKeyframe();
-        $render = app(SceneClipDispatchService::class)->create($shot, 'gemini:'.self::MODEL);
+        $render = app(SceneClipDispatchService::class)->create($shot, $this->source, 'gemini:'.self::MODEL);
 
         app(\App\Video\Render\Claims\RenderClaimService::class)
             ->claimById($render->id, VideoRenderExecutionService::WORKER);
@@ -1026,6 +1147,35 @@ class SceneClipRenderTest extends TestCase
         return app(\App\Video\Render\VideoProviderCheckpointService::class);
     }
 
+    public function test_the_screen_sees_a_clip_that_is_still_running(): void
+    {
+        $scene = \App\Models\VideoRenderScene::create([
+            'project_id' => $this->project->id,
+            'revision' => 1,
+            'scene_code' => 'scene_a',
+            'scene_index' => 1,
+            // CHECK `video_render_scenes_project_payload_ck`: scene cua mot project
+            // phai mang du payload, khong duoc de trong.
+            'delta_prompt' => 'x',
+            'prompt_version' => 'test-v1',
+            'transition_mode' => 'hard_cut_edit',
+        ]);
+
+        $render = $this->runningRender();
+        $render->shot->forceFill(['scene_id' => $scene->id])->save();
+
+        $cells = app(\App\Services\VideoProjectService::class)->sceneClipCells($this->project->id, 1);
+
+        $this->assertArrayHasKey($scene->id, $cells);
+        $this->assertSame($render->shot->id, $cells[$scene->id]['shot_id']);
+        $this->assertSame(
+            $render->id,
+            $cells[$scene->id]['render_id'],
+            'clip dang chay chua set video_render_id, man hinh van phai thay no',
+        );
+        $this->assertSame('provider_running', $cells[$scene->id]['status']);
+    }
+
     public function test_money_that_is_not_a_number_never_reaches_the_ledger(): void
     {
         $this->expectException(InvalidArgumentException::class);
@@ -1043,6 +1193,7 @@ class SceneClipRenderTest extends TestCase
     private function shotWithKeyframe(): VideoShot
     {
         Storage::disk('video_artifacts')->put('scene/keyframe.png', $this->pngBytes());
+
 
         $keyframe = VideoRender::create([
             'video_session_id' => $this->session->id,
@@ -1068,10 +1219,22 @@ class SceneClipRenderTest extends TestCase
             'prompt_hash' => str_repeat('1', 64),
         ]);
 
+        $this->source = \App\Models\VideoArtifact::create([
+            'project_id' => $this->project->id,
+            'render_id' => $keyframe->id,
+            'artifact_type' => 'image',
+            'role' => 'scene_keyframe',
+            'storage_disk' => 'video_artifacts',
+            'storage_path' => 'scene/keyframe.png',
+            'mime_type' => 'image/png',
+            'file_size' => strlen($this->pngBytes()),
+            'sha256' => hash('sha256', $this->pngBytes()),
+        ]);
+
         return VideoShot::create([
             'session_id' => $this->session->id,
             'beat' => 'scene_a',
-            'shot_code' => 'scene_a',
+            'shot_code' => 'scene_a_'.uniqid(),
             'shot_type' => 'establish',
             'kind' => 'motion',
             'spec_json' => ['duration_seconds' => 2, 'motion' => ['x'], 'camera' => []],
@@ -1089,12 +1252,15 @@ class SceneClipRenderTest extends TestCase
 
         $shot = $this->shotWithKeyframe();
         $render = app(SceneClipDispatchService::class)->create(
-            $shot, 'gemini:'.self::MODEL, ['duration_seconds' => $durationSeconds],
+            $shot, $this->source, 'gemini:'.self::MODEL, ['duration_seconds' => $durationSeconds],
         );
 
         app(VideoRenderExecutionService::class)->submit($render->id);
 
-        return $render->refresh();
+        $render = $render->refresh();
+        $this->assertSame(RenderStatus::PROVIDER_RUNNING, $render->execution_status, (string) $render->failure_message);
+
+        return $render;
     }
 
     /** @return array<string, mixed> */

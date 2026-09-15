@@ -41,6 +41,12 @@ class VideoShot extends Model
         return $this->hasMany(VideoRender::class, 'shot_id')->orderBy('attempt_no');
     }
 
+    // Clip dang duoc tinh la cua shot nay. `renders()` la lich su, cai nay la con tro.
+    public function videoRender()
+    {
+        return $this->belongsTo(VideoRender::class, 'video_render_id');
+    }
+
     public function latestRender()
     {
         return $this->hasOne(VideoRender::class, 'shot_id')->latestOfMany('attempt_no');

@@ -20,6 +20,15 @@ class SceneClipRenderForm
                 'resolution' => ['nullable', 'string', 'max:16'],
             ]);
 
-        return $validator->validate();
+        $data = $validator->validate();
+
+        // Form HTTP luon gui chuoi, con registry khai so nguyen. Registry so sanh
+        // NGHIEM NGAT va nen giu nguyen nhu vay — cho nen kieu phai duoc dua ve
+        // dung ngay tai bien, khong phai noi long phep so sanh o duoi.
+        if (isset($data['duration_seconds'])) {
+            $data['duration_seconds'] = (int) $data['duration_seconds'];
+        }
+
+        return $data;
     }
 }

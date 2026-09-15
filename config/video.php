@@ -157,11 +157,81 @@ return [
             ],
         ],
 
-        // Bo trong CO CHU DICH. Model clip chi duoc dien sau khi
-        // `video:list-gemini-models --json` chung minh key nay nhin thay no va no
-        // ho tro predictLongRunning. Doan ten model la doan tien.
+        // Ten model va `predictLongRunning` DA duoc chung minh bang
+        // gemini_models_2026_09_15.json (key nay nhin thay, v1beta).
+        //
+        // `controls` lay tu tai lieu — veo_video_contract_2026_09_15.json — chu chua
+        // co canary nao di qua. Rang buoc "1080p/4k doi 8 giay" duoc kiem o
+        // SceneClipDispatchService, khong phai o day.
         'video' => [
-            'scene_clip' => [],
+            'scene_clip' => [
+                [
+                    'id' => 'gemini:veo-3.1-lite-generate-preview',
+                    'provider' => 'gemini',
+                    'model' => 'veo-3.1-lite-generate-preview',
+                    'label' => 'Veo 3.1 Lite',
+                    'default' => true,
+                    'api_version' => 'v1beta',
+                    'mode' => 'async',
+                    'method' => 'predictLongRunning',
+                    'controls' => [
+                        'durations' => [4, 6, 8],
+                        'default_duration' => 8,
+                        'aspect_ratios' => ['9:16', '16:9'],
+                        'default_aspect_ratio' => '9:16',
+                        'resolutions' => ['720p', '1080p'],
+                        'default_resolution' => '720p',
+                        // Tai lieu: 1080p va 4k chi chay o 8 giay. De luat nay o DAY chu
+                        // khong cam trong code, vi man hinh va server phai doc cung mot
+                        // nguon — hai ban sao bang hai ngon ngu thi som muon cung lech.
+                        'long_resolutions' => ['1080p'],
+                        'long_resolution_duration' => 8,
+                    ],
+                    'evidence' => ['models' => 'gemini_models_2026_09_15.json'],
+                ],
+                [
+                    'id' => 'gemini:veo-3.1-fast-generate-preview',
+                    'provider' => 'gemini',
+                    'model' => 'veo-3.1-fast-generate-preview',
+                    'label' => 'Veo 3.1 Fast',
+                    'default' => false,
+                    'api_version' => 'v1beta',
+                    'mode' => 'async',
+                    'method' => 'predictLongRunning',
+                    'controls' => [
+                        'durations' => [4, 6, 8],
+                        'default_duration' => 8,
+                        'aspect_ratios' => ['9:16', '16:9'],
+                        'default_aspect_ratio' => '9:16',
+                        'resolutions' => ['720p', '1080p', '4k'],
+                        'default_resolution' => '720p',
+                        'long_resolutions' => ['1080p', '4k'],
+                        'long_resolution_duration' => 8,
+                    ],
+                    'evidence' => ['models' => 'gemini_models_2026_09_15.json'],
+                ],
+                [
+                    'id' => 'gemini:veo-3.1-generate-preview',
+                    'provider' => 'gemini',
+                    'model' => 'veo-3.1-generate-preview',
+                    'label' => 'Veo 3.1',
+                    'default' => false,
+                    'api_version' => 'v1beta',
+                    'mode' => 'async',
+                    'method' => 'predictLongRunning',
+                    'controls' => [
+                        'durations' => [4, 6, 8],
+                        'default_duration' => 8,
+                        'aspect_ratios' => ['9:16', '16:9'],
+                        'default_aspect_ratio' => '9:16',
+                        'resolutions' => ['720p', '1080p', '4k'],
+                        'default_resolution' => '720p',
+                        'long_resolutions' => ['1080p', '4k'],
+                        'long_resolution_duration' => 8,
+                    ],
+                    'evidence' => ['models' => 'gemini_models_2026_09_15.json'],
+                ],
+            ],
         ],
     ],
 

@@ -886,6 +886,55 @@ class VideoProjectService
     }
 
     /**
+     * Trang thai clip cua tung scene, khoa theo render_scene_id giong keyframe.
+     *
+     * Clip thuoc ve SHOT chu khong thuoc scene, nen day la cho noi hai the gioi do
+     * lai voi nhau cho man hinh doc duoc.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function sceneClipCells(string $projectId, int $revision): array
+    {
+        $shots = \App\Models\VideoShot::query()
+            ->whereNotNull('scene_id')
+            ->whereIn('scene_id', VideoRenderScene::query()
+                ->where('project_id', $projectId)
+                ->where('revision', $revision)
+                ->select('id'))
+            ->get();
+
+        // `video_render_id` chi duoc dat khi clip DA thanh cong, nen no khong thay
+        // duoc luot dang chay. Man hinh can luot moi nhat, du no dang o dau.
+        $latest = \App\Models\VideoRender::query()
+            ->whereIn('shot_id', $shots->pluck('id'))
+            ->where('render_kind', 'video')
+            ->orderBy('attempt_no')
+            ->get()
+            ->keyBy('shot_id');
+
+        $cells = [];
+
+        foreach ($shots as $shot) {
+            $render = $latest->get((string) $shot->id);
+
+            $cells[(string) $shot->scene_id] = [
+                'shot_id' => (string) $shot->id,
+                'scene_status' => $shot->scene_status,
+                'render_id' => $render?->id,
+                'status' => $render?->execution_status?->value,
+                'poll_count' => (int) ($render?->provider_poll_count ?? 0),
+                'error' => $render?->failure_message,
+                'duration_ms' => $render?->duration_ms,
+                'width' => $render?->width,
+                'height' => $render?->height,
+                'artifact_path' => $render?->artifact_path,
+            ];
+        }
+
+        return $cells;
+    }
+
+    /**
      * @param  array<string, array{recorded: float, has_ledger: bool, has_unpriced: bool}>  $cost
      * @return array<string, mixed>
      */

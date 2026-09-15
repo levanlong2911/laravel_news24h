@@ -26,6 +26,7 @@
         <div style="display:flex;gap:8px">
             <a class="vp-btn" href="{{ route('video-projects.anchor', $id) }}">← Ảnh neo</a>
             <a class="vp-btn" href="{{ route('video-projects.environment', $id) }}">Environment Library →</a>
+            <a class="vp-btn" href="{{ route('video-projects.scene', $id) }}">Scenes → Clip</a>
         </div>
     </div>
 
