@@ -24,6 +24,10 @@
             <span class="sep">·</span>
             <span class="m" style="color:var(--vp-amber-fg)">Hỏng <b>{{ $summary['failed'] }}</b></span>
         @endif
+        <a class="vp-btn sm" href="{{ route('video-projects.final-composition-preview', $id) }}"
+           title="Mở giao diện Final Composition tĩnh">
+            <i class="fas fa-film"></i> Final Composition
+        </a>
     </div>
 
     @if($clipModels === [])

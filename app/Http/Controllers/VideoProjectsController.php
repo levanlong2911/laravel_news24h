@@ -578,6 +578,20 @@ class VideoProjectsController extends Controller
     }
 
     /**
+     * Static composition-screen prototype. It intentionally has no render or
+     * persistence action while the final-composition contract is being built.
+     */
+    public function finalCompositionPreview(string $id)
+    {
+        $project = $this->ownedProject($id);
+
+        return view('video-projects.final-composition-preview', $this->chrome() + [
+            'id' => $id,
+            'project' => $project,
+        ]);
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $scenes
      * @param  array<string, array<string, mixed>>  $clips
      * @param  array<string, array<string, mixed>>  $keyframes
