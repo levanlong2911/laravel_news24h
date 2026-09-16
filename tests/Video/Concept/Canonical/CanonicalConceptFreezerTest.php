@@ -28,7 +28,7 @@ class CanonicalConceptFreezerTest extends TestCase
             'schema_version' => '1.0',
             'object_type' => 'yacht',
             'design_thesis' => ['text' => 'One shell tapers aft.', 'role' => 'soft_design_guidance'],
-            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['opening_layout']],
+            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['opening_layout'], 'finish_identity_basis' => []],
             'dimensions' => ['length_m' => 120.0, 'beam_m' => 17.5],
             'permanent_geometry' => ['superstructure' => ['enclosed_deck_levels' => 4]],
             'relationships' => [[

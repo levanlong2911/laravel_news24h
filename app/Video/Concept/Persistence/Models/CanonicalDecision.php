@@ -25,6 +25,12 @@ final class CanonicalDecision extends Model
         'invariant_ids',
         'relationship_ids',
         'origin',
+        // Thu tu extractor da sap. Thieu no o day thi `create()` LANG LE vut di va DB
+        // ap default 0 cho moi hang — so cai mat thu tu ma khong mot loi nao duoc nem.
+        'ordinal',
+        // Cung ly do: van tay cua tung quyet dinh. Cot la char(64) NOT NULL DEFAULT '',
+        // nen thieu o day thi moi hang mang van tay RONG ma khong ai bao.
+        'value_hash',
     ];
 
     protected $casts = [

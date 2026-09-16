@@ -54,7 +54,7 @@ class CanonicalPersistenceContractTest extends TestCase
 
         $service = app(CanonicalRepairClaimService::class);
 
-        $service->claim($revision->id);
+        $service->claimRepair($revision->id);
 
         $this->assertDatabaseHas('canonical_concept_revisions', [
             'id' => $revision->id,
@@ -63,7 +63,7 @@ class CanonicalPersistenceContractTest extends TestCase
 
         $this->expectException(RuntimeException::class);
 
-        $service->claim($revision->id);
+        $service->claimRepair($revision->id);
     }
 
     public function test_frozen_canonical_json_cannot_be_changed(): void
@@ -76,6 +76,66 @@ class CanonicalPersistenceContractTest extends TestCase
         $revision->save();
     }
 
+    /**
+     * Guard chi duoc thu qua DUNG MOT cot truoc day (`canonical_json`), nen 15 cot con
+     * lai co the hong ma test van xanh. Va guard ay DA tung chet lang le: no so
+     * `getOriginal('status')` — mot enum da cast — voi `FROZEN->value` la string, nen
+     * dieu kien luon false.
+     *
+     * @dataProvider protectedColumns
+     */
+    public function test_every_protected_column_of_a_frozen_revision_is_immutable(
+        string $column,
+        mixed $value,
+    ): void {
+        $revision = $this->frozenRevision();
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessageMatches('/'.preg_quote($column, '/').'/');
+
+        $revision->{$column} = $value;
+        $revision->save();
+    }
+
+    /** @return array<string, array{0: string, 1: mixed}> */
+    public static function protectedColumns(): array
+    {
+        return [
+            'canonical_json' => ['canonical_json', '{"tampered":true}'],
+            'canonical_hash' => ['canonical_hash', str_repeat('9', 64)],
+            'revision' => ['revision', 99],
+            'video_project_id' => ['video_project_id', 'a0000000-0000-4000-8000-000000000000'],
+            'object_type' => ['object_type', 'tampered'],
+            'profile_key' => ['profile_key', 'tampered'],
+            'profile_version' => ['profile_version', '9.9'],
+            'canonical_schema_version' => ['canonical_schema_version', '9.9'],
+            'effective_schema_hash' => ['effective_schema_hash', str_repeat('8', 64)],
+            'semantic_validator_version' => ['semantic_validator_version', 'tampered'],
+            'normalizer_version' => ['normalizer_version', 'tampered'],
+            'canonicalizer_version' => ['canonicalizer_version', 'tampered'],
+            'concept_model' => ['concept_model', 'tampered'],
+            'concept_prompt_version' => ['concept_prompt_version', 'tampered'],
+            'frozen_at' => ['frozen_at', '2030-01-01 00:00:00'],
+            'parent_revision_id' => ['parent_revision_id', 'a0000000-0000-4000-8000-000000000001'],
+        ];
+    }
+
+    /**
+     * Guard siet qua tay cung la hong: mot ban da dong bang van phai ghi duoc nhung cot
+     * KHONG thuoc danh sach bat bien, neu khong thi khong con cach nao danh dau no.
+     */
+    public function test_a_column_outside_the_protected_list_can_still_be_written(): void
+    {
+        $revision = $this->frozenRevision();
+
+        $revision->lock_version = (int) $revision->lock_version + 1;
+        $revision->save();
+
+        $this->assertSame(
+            (int) $revision->lock_version,
+            (int) $revision->fresh()->lock_version,
+        );
+    }
     public function test_frozen_revision_cannot_be_deleted(): void
     {
         $revision = $this->frozenRevision();

@@ -2,7 +2,7 @@
 
 namespace Tests\Video\Concept\Canonical;
 
-use App\Services\Video\Concept\CanonicalDesignSchema;
+use App\Video\Concept\Claude\CanonicalSchemaProvider;
 use App\Video\Concept\Canonical\CanonicalDesignSpec;
 use App\Video\Concept\Canonical\Relationships\CountRelationship;
 use App\Video\Concept\Canonical\Relationships\OneToOneRelationship;
@@ -23,7 +23,7 @@ class CanonicalDesignSpecTest extends TestCase
             'schema_version' => '1.0',
             'object_type' => 'yacht',
             'design_thesis' => ['text' => 'One shell tapers aft.', 'role' => 'soft_design_guidance'],
-            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['bow_geometry', 'opening_layout']],
+            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['bow_geometry', 'opening_layout'], 'finish_identity_basis' => []],
             'dimensions' => ['length_m' => 120.0, 'beam_m' => 17.5, 'length_to_beam_ratio' => 6.857],
             'permanent_geometry' => [
                 'superstructure' => ['enclosed_deck_levels' => 4],
@@ -53,11 +53,23 @@ class CanonicalDesignSpecTest extends TestCase
         ];
     }
 
+    /**
+     * Doc dung ban ma production doc, qua dung lop production dung.
+     *
+     * @return array<string, mixed>
+     */
+    private function productionSchema(): array
+    {
+        return (new CanonicalSchemaProvider(
+            (string) config('canonical_concept.schema.path'),
+        ))->schema();
+    }
+
     public function test_the_payload_this_suite_is_built_on_satisfies_the_frozen_schema(): void
     {
         $result = (new Validator)->validate(
             json_decode(json_encode($this->payload(), JSON_THROW_ON_ERROR)),
-            json_decode(json_encode((new CanonicalDesignSchema)->load(), JSON_THROW_ON_ERROR)),
+            json_decode(json_encode($this->productionSchema(), JSON_THROW_ON_ERROR)),
         );
 
         if ($result->hasError()) {

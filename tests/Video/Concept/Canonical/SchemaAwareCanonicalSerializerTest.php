@@ -20,7 +20,19 @@ use Tests\TestCase;
 
 class SchemaAwareCanonicalSerializerTest extends TestCase
 {
-    private const SCHEMA = 'contracts/renderplan/v1.0/ai/schemas/canonical_design_spec_v1.json';
+    /**
+     * Lay dung duong ma production lay, khong hard-code lai.
+     *
+     * Hard-code `resources/...` chi la doi mot ban sao lay mot ban sao khac: khi
+     * `config('canonical_concept.schema.path')` doi, test se lai doc mot file khac
+     * voi production ma khong ai biet.
+     */
+    private function schemaProvider(): CanonicalSchemaProvider
+    {
+        return new CanonicalSchemaProvider(
+            (string) config('canonical_concept.schema.path'),
+        );
+    }
 
     private function serializer(): SchemaAwareCanonicalSerializer
     {
@@ -42,7 +54,7 @@ class SchemaAwareCanonicalSerializerTest extends TestCase
     private function effectiveSchema(): EffectiveConceptSchema
     {
         return (new EffectiveConceptSchemaBuilder(
-            new CanonicalSchemaProvider(base_path(self::SCHEMA)),
+            $this->schemaProvider(),
             new CategoryProfileSchemaProvider,
         ))->build(
             new CategoryCreativeProfile(
@@ -61,7 +73,7 @@ class SchemaAwareCanonicalSerializerTest extends TestCase
             'schema_version' => '1.0',
             'object_type' => 'yacht',
             'design_thesis' => ['text' => 'One shell tapers aft.', 'role' => 'soft_design_guidance'],
-            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['opening_layout']],
+            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['opening_layout'], 'finish_identity_basis' => []],
             'dimensions' => ['length_m' => 120, 'beam_m' => 20, 'length_to_beam_ratio' => 6],
             'permanent_geometry' => [
                 'hull' => ['type' => 'displacement', 'sheer' => 'continuous'],

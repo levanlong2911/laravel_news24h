@@ -128,7 +128,10 @@ final class CanonicalConceptRevision extends Model
     protected static function booted(): void
     {
         static::updating(function (CanonicalConceptRevision $model): void {
-            $originalStatus = $model->getOriginal('status');
+            // getRawOriginal, KHONG phai getOriginal: `status` co cast enum, nen
+            // getOriginal() tra ve mot CanonicalConceptStatus con FROZEN->value la string.
+            // Phep so === giua hai kieu do LUON false, va ca than guard nay chet lang le.
+            $originalStatus = $model->getRawOriginal('status');
 
             if ($originalStatus === CanonicalConceptStatus::FROZEN->value) {
                 $protected = [

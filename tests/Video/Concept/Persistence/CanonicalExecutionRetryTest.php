@@ -49,6 +49,8 @@ use App\Video\Profiles\Validation\ProfileCompatibilityValidator;
 use DateTimeImmutable;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use App\Services\PythonRunner;
+use Mockery;
 use Tests\TestCase;
 use Throwable;
 
@@ -56,7 +58,34 @@ class CanonicalExecutionRetryTest extends TestCase
 {
     use DatabaseTransactions;
 
-    private const SCHEMA = 'contracts/renderplan/v1.0/ai/schemas/canonical_design_spec_v1.json';
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Cong compilability chay `compile_canonical_prompt.py`, ma phpunit.xml tat
+        // `VIDEO_PYTHON_RUNNER` — nen `freeze()` luon nem va test nay khong bao gio toi
+        // duoc phan no dang kiem. Bat co len va dua runner mot cai gia: cai dang duoc
+        // kiem o day la RETRY co bien thanh semantic repair khong, khong phai Python.
+        config(['video.python_runner_enabled' => true]);
+
+        $runner = Mockery::mock(PythonRunner::class);
+        $runner->shouldReceive('runAndWait')->andReturn([true, '{"ok":true}']);
+        $this->instance(PythonRunner::class, $runner);
+    }
+
+    /**
+     * Lay dung duong ma production lay, khong hard-code lai.
+     *
+     * Hard-code `resources/...` chi la doi mot ban sao lay mot ban sao khac: khi
+     * `config('canonical_concept.schema.path')` doi, test se lai doc mot file khac
+     * voi production ma khong ai biet.
+     */
+    private function schemaProvider(): CanonicalSchemaProvider
+    {
+        return new CanonicalSchemaProvider(
+            (string) config('canonical_concept.schema.path'),
+        );
+    }
 
     public function test_provider_retry_does_not_become_a_semantic_repair(): void
     {
@@ -221,7 +250,7 @@ class CanonicalExecutionRetryTest extends TestCase
     private function processor(): CanonicalConceptProcessor
     {
         return new CanonicalConceptProcessor(
-            new CanonicalSchemaValidator(new CanonicalSchemaProvider(base_path(self::SCHEMA))),
+            new CanonicalSchemaValidator($this->schemaProvider()),
             new EffectiveSchemaValidator,
             $this->schemaBuilder(),
             new CanonicalDesignSpecValidator(
@@ -246,7 +275,7 @@ class CanonicalExecutionRetryTest extends TestCase
     private function schemaBuilder(): EffectiveConceptSchemaBuilder
     {
         return new EffectiveConceptSchemaBuilder(
-            new CanonicalSchemaProvider(base_path(self::SCHEMA)),
+            $this->schemaProvider(),
             new CategoryProfileSchemaProvider,
         );
     }
@@ -340,7 +369,7 @@ class CanonicalExecutionRetryTest extends TestCase
             'schema_version' => '1.0',
             'object_type' => 'yacht',
             'design_thesis' => ['text' => 'One shell tapers aft.', 'role' => 'soft_design_guidance'],
-            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['opening_layout']],
+            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['opening_layout'], 'finish_identity_basis' => []],
             'dimensions' => ['length_m' => 120.0, 'beam_m' => 17.5],
             'permanent_geometry' => [
                 'hull' => ['type' => 'displacement', 'sheer' => 'continuous'],

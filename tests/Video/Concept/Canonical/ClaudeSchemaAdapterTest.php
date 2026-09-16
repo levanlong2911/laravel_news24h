@@ -41,7 +41,7 @@ class ClaudeSchemaAdapterTest extends TestCase
             'schema_version' => '1.0',
             'object_type' => 'yacht',
             'design_thesis' => ['text' => 'x', 'role' => 'soft_design_guidance'],
-            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['x']],
+            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['x'], 'finish_identity_basis' => []],
             'dimensions' => new \stdClass,
             'permanent_geometry' => new \stdClass,
             'relationships' => [[
@@ -95,7 +95,7 @@ class ClaudeSchemaAdapterTest extends TestCase
             'schema_version' => '1.0',
             'object_type' => 'yacht',
             'design_thesis' => ['text' => 'x', 'role' => 'soft_design_guidance'],
-            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['x']],
+            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['x'], 'finish_identity_basis' => []],
             'dimensions' => new \stdClass,
             'permanent_geometry' => new \stdClass,
             'relationships' => [],

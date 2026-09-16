@@ -48,7 +48,19 @@ use Tests\TestCase;
 
 final class CanonicalConceptLifecycleIntegrationTest extends TestCase
 {
-    private const SCHEMA = 'contracts/renderplan/v1.0/ai/schemas/canonical_design_spec_v1.json';
+    /**
+     * Lay dung duong ma production lay, khong hard-code lai.
+     *
+     * Hard-code `resources/...` chi la doi mot ban sao lay mot ban sao khac: khi
+     * `config('canonical_concept.schema.path')` doi, test se lai doc mot file khac
+     * voi production ma khong ai biet.
+     */
+    private function schemaProvider(): CanonicalSchemaProvider
+    {
+        return new CanonicalSchemaProvider(
+            (string) config('canonical_concept.schema.path'),
+        );
+    }
 
     public function test_10_80_generation_lifecycle_wraps_the_designer_provider_call(): void
     {
@@ -94,6 +106,7 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
             'validation_started',
             'normalization_started',
             'normalization_completed',
+            'validation_completed',
         ], $lifecycle->events);
     }
 
@@ -110,6 +123,10 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
         } catch (CanonicalValidationException) {
             $this->assertSame([
                 'validation_started',
+                // `validationCompleted` GHI BAO CAO validation, ke ca bao cao that bai; no
+                // khong phai "da dau". `validationFailed` moi la cho doi state. Day la
+                // callback cua fixture test, khong phai CanonicalEventType duoc luu.
+                'validation_completed',
                 'validation_failed',
             ], $lifecycle->events);
             $this->assertSame('not json', $lifecycle->failedRawJson);
@@ -130,6 +147,10 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
         } catch (CanonicalValidationException) {
             $this->assertSame([
                 'validation_started',
+                // `validationCompleted` GHI BAO CAO validation, ke ca bao cao that bai; no
+                // khong phai "da dau". `validationFailed` moi la cho doi state. Day la
+                // callback cua fixture test, khong phai CanonicalEventType duoc luu.
+                'validation_completed',
                 'validation_failed',
             ], $lifecycle->events);
         }
@@ -150,6 +171,10 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
         } catch (CanonicalValidationException) {
             $this->assertSame([
                 'validation_started',
+                // `validationCompleted` GHI BAO CAO validation, ke ca bao cao that bai; no
+                // khong phai "da dau". `validationFailed` moi la cho doi state. Day la
+                // callback cua fixture test, khong phai CanonicalEventType duoc luu.
+                'validation_completed',
                 'validation_failed',
             ], $lifecycle->events);
             $this->assertContains(
@@ -185,6 +210,7 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
             'validation_started',
             'normalization_started',
             'normalization_completed',
+            'validation_completed',
             'freezing_started',
         ], $lifecycle->events);
     }
@@ -204,12 +230,14 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
             'generation_started',
             'generation_completed',
             'validation_started',
+            'validation_completed',
             'validation_failed',
             'repair_started',
             'repair_completed',
             'validation_started',
             'normalization_started',
             'normalization_completed',
+            'validation_completed',
             'freezing_started',
         ], $lifecycle->events);
     }
@@ -274,6 +302,7 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
             'validation_started',
             'normalization_started',
             'normalization_completed',
+            'validation_completed',
         ], $first->events);
         $this->assertSame($first->events, $second->events);
     }
@@ -348,7 +377,7 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
     private function processor(): CanonicalConceptProcessor
     {
         return new CanonicalConceptProcessor(
-            new CanonicalSchemaValidator(new CanonicalSchemaProvider(base_path(self::SCHEMA))),
+            new CanonicalSchemaValidator($this->schemaProvider()),
             new EffectiveSchemaValidator,
             $this->schemaBuilder(),
             new CanonicalDesignSpecValidator(
@@ -373,7 +402,7 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
     private function schemaBuilder(): EffectiveConceptSchemaBuilder
     {
         return new EffectiveConceptSchemaBuilder(
-            new CanonicalSchemaProvider(base_path(self::SCHEMA)),
+            $this->schemaProvider(),
             new CategoryProfileSchemaProvider,
         );
     }
@@ -445,7 +474,7 @@ final class CanonicalConceptLifecycleIntegrationTest extends TestCase
             'schema_version' => '1.0',
             'object_type' => 'yacht',
             'design_thesis' => ['text' => 'One shell tapers aft.', 'role' => 'soft_design_guidance'],
-            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['opening_layout']],
+            'identity' => ['subject_class' => 'marine_vessel', 'identity_basis' => ['opening_layout'], 'finish_identity_basis' => []],
             'dimensions' => ['length_m' => 120.0, 'beam_m' => 17.5],
             'permanent_geometry' => [
                 'hull' => ['type' => 'displacement', 'sheer' => 'continuous'],
