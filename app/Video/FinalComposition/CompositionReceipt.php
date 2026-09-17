@@ -63,8 +63,9 @@ final class CompositionReceipt
     /**
      * @param  array<string, mixed>  $payload
      *
-     * @throws CompositionRefused khi khong ghi duoc — luot chay KHONG duoc bao thanh
-     *                            cong ma khong de lai bang chung
+     * @throws CompositionRefused khi khong ghi duoc, hoac khi receipt da ton tai —
+     *                            luot chay KHONG duoc bao thanh cong ma khong de lai
+     *                            bang chung, va cung khong duoc de len bang chung cu
      */
     public static function write(string $path, array $payload): void
     {
@@ -72,6 +73,17 @@ final class CompositionReceipt
 
         if ($json === false) {
             throw new CompositionRefused('khong dung duoc noi dung receipt');
+        }
+
+        // GHI MOT LAN. Receipt da co thi tu choi, khong xoa di de ghi lai: xoa truoc
+        // roi `rename()` hong la mat mot bang chung hop le ma khong lay lai duoc. Voi
+        // mot artefact ghi-mot-lan thi "ghi de duoc" khong phai la mot tinh chat tot.
+        //
+        // Duong chay that khong bao gio gap nhanh nay — thu muc mang ten final ID va
+        // duoc tao doc quyen, `write()` goi dung mot lan. Gap nghia la co gia dinh nao
+        // do da sai, va dung lai la phan ung dung.
+        if (is_file($path)) {
+            throw new CompositionRefused('receipt da ton tai, khong ghi de: '.$path);
         }
 
         $temporary = $path.'.tmp';
@@ -82,11 +94,8 @@ final class CompositionReceipt
             throw new CompositionRefused('khong ghi duoc receipt tam: '.$temporary);
         }
 
-        // `rename()` de len file dang co tren Windows se that bai, nen xoa truoc. Mot
-        // receipt cu o day chi co the la rac: thu muc mang ten final ID va duoc tao
-        // doc quyen, nen khong luot nao khac tung ghi vao day.
-        @unlink($path);
-
+        // `rename()` de len file dang co tren Windows se that bai — day la huong hong
+        // AN TOAN: no giu lai ban cu thay vi de mat.
         if (! @rename($temporary, $path)) {
             @unlink($temporary);
 

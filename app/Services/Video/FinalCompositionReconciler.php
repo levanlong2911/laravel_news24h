@@ -27,6 +27,20 @@ use Throwable;
  * Va lop nay KHONG XOA GI. Doc file that bai, het gio, hay ffprobe khong chay duoc
  * deu khong chung minh output la rac; hash lech cung khong noi duoc ben nao hong.
  * Xoa la mot thao tac rieng, do nguoi quyet dinh sau khi doc ly do.
+ *
+ * CHUA DUOC KIEM BANG CHAY THAT, tinh den 2026-09-17:
+ *
+ *   - `reconcile()` voi `$apply = true` — tuc la duong phuc hoi GHI vao DB. Cac phep
+ *     kiem deu chay o che do khong ghi. Nhanh thanh cong cua `complete()` thi da chay
+ *     that (duong render binh thuong), va cuts dung tu manifest da duoc doi chieu,
+ *     nen cho chua kiem la buoc noi giua hai thu do.
+ *   - Nhanh thua CAS (`$claimed !== 1`).
+ *   - Rollback khi loi xay ra SAU khi da ghi mot cut.
+ *   - Hai request cung cap luot mot luc, duoi khoa hang session.
+ *
+ * Ba cai sau deu hong ve phia an toan: giu file, giu hang, khong ghi gi. Muon kiem
+ * thi phai co database kiem thu rieng cung loai production — `DatabaseTransactions`
+ * cua bo test hien tai khong cho hai tien trinh nhin thay du lieu cua nhau.
  */
 final class FinalCompositionReconciler
 {
