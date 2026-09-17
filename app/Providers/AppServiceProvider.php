@@ -9,7 +9,13 @@ use App\Services\Video\GeminiImageClient;
 use App\Services\Video\OpenAiImageClient;
 use App\Video\Media\GeminiVeoVideoClient;
 use App\Video\Media\MediaModelRegistry;
+use App\Video\Media\ClipConcatenator;
+use App\Video\Media\FfmpegBinary;
+use App\Video\Media\FfmpegRunner;
+use App\Video\Media\MediaProbe;
 use App\Video\Media\Mp4Probe;
+use App\Video\Media\StreamCompatibility;
+use App\Video\Media\VideoFrameCounter;
 use App\Video\Prompt\AnthropicTextClient;
 use App\Video\Prompt\OpenAiTextClient;
 use App\Video\Prompt\GeometryPromptAuthor;
@@ -64,6 +70,46 @@ class AppServiceProvider extends ServiceProvider
                 binary: (string) config('video.veo.ffprobe_bin'),
                 timeoutSeconds: (int) config('video.veo.ffprobe_timeout'),
             ),
+        );
+
+        $this->app->singleton(
+            FfmpegBinary::class,
+            static function (): FfmpegBinary {
+                [$binary, $source] = FfmpegBinary::resolve(
+                    config('video.veo.ffmpeg_bin'),
+                    (string) config('video.veo.ffprobe_bin'),
+                );
+
+                return new FfmpegBinary($binary, $source, (int) config('video.veo.ffmpeg_timeout'));
+            },
+        );
+
+        $this->app->bind(MediaProbe::class, Mp4Probe::class);
+
+        $this->app->singleton(
+            VideoFrameCounter::class,
+            static fn (): VideoFrameCounter => new VideoFrameCounter(
+                binary: (string) config('video.veo.ffprobe_bin'),
+            ),
+        );
+
+        $this->app->singleton(
+            ClipConcatenator::class,
+            static fn (Application $app): ClipConcatenator => new ClipConcatenator(
+                probe: $app->make(Mp4Probe::class),
+                ffmpeg: $app->make(FfmpegBinary::class),
+                compatibility: $app->make(StreamCompatibility::class),
+                frames: $app->make(VideoFrameCounter::class),
+                tempRoot: (string) config('video.veo.compose_tmp_dir'),
+                durationToleranceMs: (int) config('video.veo.concat_duration_tolerance_ms'),
+            ),
+        );
+        $this->app->bind(FfmpegRunner::class, FfmpegBinary::class);
+        $this->app->bind(\App\Video\Media\FrameCounter::class, VideoFrameCounter::class);
+
+        $this->app->singleton(
+            \App\Video\Media\FfmpegCapabilities::class,
+            static fn (Application $app) => new \App\Video\Media\FfmpegCapabilities($app->make(FfmpegRunner::class)),
         );
 
         $this->app->singleton(

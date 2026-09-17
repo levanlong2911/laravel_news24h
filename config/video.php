@@ -263,6 +263,23 @@ return [
         'max_source_bytes' => (int) env('VIDEO_VEO_MAX_SOURCE_BYTES', 33554432),
         'download_hosts' => ['generativelanguage.googleapis.com'],
         'ffprobe_bin' => env('VIDEO_FFPROBE_BIN', 'ffprobe'),
+
+        // De TRONG thi suy ra tu `ffprobe_bin` — hai binary luon ship cung nhau, va
+        // hai bien moi truong la hai co hoi lech nhau. Xem FfmpegBinary::resolve().
+        'ffmpeg_bin' => env('VIDEO_FFMPEG_BIN'),
+        'ffmpeg_timeout' => (int) env('VIDEO_FFMPEG_TIMEOUT', 600),
+
+        // Do that: ghep 2/5/10/20 clip deu troi DUNG 21ms — HANG SO, khong cong don.
+        // 21,33ms la mot khung AAC (1024 mau o 48kHz): duoi audio dai hon video mot
+        // khung, va chi co MOT cai duoi cho ca chuoi.
+        //
+        // Nguong nay CHI kiem troi do dai. No KHONG phat hien duoc mat khung hinh:
+        // `format.duration` bam theo AUDIO (do that: video 20.000000s / audio
+        // 20.021333s / format 20.021333s), nen bo mot khung video khong doi duration.
+        // Viec do thuoc ve VideoFrameCounter.
+        'concat_duration_tolerance_ms' => (int) env('VIDEO_FFMPEG_CONCAT_TOLERANCE_MS', 250),
+        'preview_dir' => storage_path('app/video-compose-previews'),
+        'compose_tmp_dir' => storage_path('app/video-compose-tmp'),
         'ffprobe_timeout' => (int) env('VIDEO_FFPROBE_TIMEOUT', 20),
         'duration_tolerance_ms' => (int) env('VIDEO_VEO_DURATION_TOLERANCE_MS', 1500),
     ],

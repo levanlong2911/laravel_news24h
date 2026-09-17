@@ -1286,6 +1286,6 @@ class SceneClipRenderTest extends TestCase
 
     private function mp4Bytes(): string
     {
-        return (string) file_get_contents(base_path('tests/Fixtures/video/clip_2s.mp4'));
+        return (string) file_get_contents(base_path('tests/Fixtures/Video/clip_2s.mp4'));
     }
 }
