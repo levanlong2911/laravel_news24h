@@ -7,81 +7,295 @@
 
 @section('content')
 @php
-    $shots = [
-        ['Factory', '00:18', 'https://images.unsplash.com/photo-1565793298595-6a879b1d9492?auto=format&fit=crop&w=180&q=80'],
-        ['Frames', '00:15', 'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=180&q=80'],
-        ['Hull Assembly', '00:20', 'https://images.unsplash.com/photo-1566847438217-76e82d383f84?auto=format&fit=crop&w=180&q=80'],
-        ['Superstructure', '00:18', 'https://images.unsplash.com/photo-1544550285-f813152fb2fd?auto=format&fit=crop&w=180&q=80'],
-        ['Launch', '00:15', 'https://images.unsplash.com/photo-1562281302-809108fd533c?auto=format&fit=crop&w=180&q=80'],
-        ['Outfitting Dock', '00:22', 'https://images.unsplash.com/photo-1540946485063-a40da27545f8?auto=format&fit=crop&w=180&q=80'],
-        ['Sea Trial', '00:28', 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=180&q=80'],
-        ['Operation', '00:18', 'https://images.unsplash.com/photo-1494783367193-149034c05e8f?auto=format&fit=crop&w=180&q=80'],
+    $clips = $composition['clips'];
+    $finals = $composition['finals'];
+    $latestFinal = $composition['latest_final'];
+    $totalMs = (int) $composition['total_duration_ms'];
+
+    $clock = static function (int $ms): string {
+        $seconds = (int) round($ms / 1000);
+
+        return sprintf('%02d:%02d', intdiv($seconds, 60), $seconds % 60);
+    };
+
+    $sequence = static fn (int $ordinal): string => 'S'.str_pad((string) $ordinal, 2, '0', STR_PAD_LEFT);
+
+    $ticks = [];
+
+    for ($i = 0; $i <= 5; $i++) {
+        $ticks[] = $clock((int) round($totalMs * $i / 5));
+    }
+
+    $sizes = $composition['sizes'];
+    $uniformSize = $composition['uniform_size'];
+
+    $sizeLabel = match (true) {
+        $uniformSize !== null => $uniformSize,
+        $sizes !== [] => 'lệch nhau — '.implode(', ', $sizes),
+        default => '—',
+    };
+
+    $steps = [
+        ['Ảnh neo', 'done'],
+        ['Environment Library', 'done'],
+        ['Scenes', 'done'],
+        ['Clips', 'complete'],
+        ['Final Composition', 'active'],
+        ['Exports', ''],
+    ];
+
+    $exportFields = [
+        ['Độ phân giải', array_values(array_filter([
+            $uniformSize === null ? null : $uniformSize.' (theo clip nguồn)',
+            '1920 × 1080 (Full HD)',
+            '1280 × 720 (HD)',
+            '1080 × 1920 (Vertical)',
+        ]))],
+        ['Tỉ lệ khung hình', ['16:9 (Landscape)', '9:16 (Portrait)', '1:1 (Square)']],
+        ['Frame rate (FPS)', ['24 fps', '25 fps', '30 fps']],
+        ['Video codec', ['H.264 (libx264)', 'H.265 (libx265)']],
+        ['Audio codec', ['AAC', 'MP3']],
+    ];
+
+    $playlist = array_map(static fn (array $clip) => [
+        'src' => $clip['file_url'],
+        'ms' => $clip['duration_ms'],
+        'poster' => $clip['thumbnail_url'],
+        'label' => $sequence($clip['ordinal']).' · '.$clip['title'],
+    ], $clips);
+
+    $advancedOptions = [
+        ['Tự động cân chỉnh âm lượng', true],
+        ['Thêm chuyển cảnh mặc định (Crossfade 0.5s)', true],
+        ['Tối ưu hóa kích thước file', false],
+        ['Lưu file log FFmpeg', false],
+        ['Tạo thumbnail sau khi render', false],
     ];
 @endphp
-<div class="container-fluid fc">
-    <header class="fc-head">
-        <div>
-            <div class="fc-crumb"><a href="{{ route('video-projects.index') }}">Video Projects</a><span>/</span><a href="{{ route('video-projects.render-video', $id) }}">Clips</a><span>/</span><b>Final Composition</b></div>
+<div class="container-fluid fcomp">
+    <header class="fcomp-head">
+        <div class="fcomp-head-text">
+            <nav class="fcomp-crumb" aria-label="Breadcrumb">
+                <a href="{{ route('admin.index') }}"><i class="fas fa-home"></i></a>
+                <span>/</span>
+                <a href="{{ route('video-projects.index') }}">Video Projects</a>
+                <span>/</span>
+                <a href="{{ route('video-projects.render-video', $id) }}">{{ $id }}</a>
+                <span>/</span>
+                <b>Final Composition</b>
+            </nav>
             <h2><i class="fas fa-film"></i> Final Composition</h2>
-            <p>Dựng các clip đã duyệt, thêm chuyển cảnh, nhạc và xuất video bằng FFmpeg.</p>
+            <p>Dựng các clip đã dựng xong, thêm chuyển cảnh, nhạc và xuất video bằng FFmpeg.</p>
         </div>
-        <div class="fc-head-actions">
-            <a class="fc-button ghost" href="{{ route('video-projects.render-video', $id) }}"><i class="fas fa-arrow-left"></i> Quay lại Clips</a>
-            <button class="fc-button primary" type="button"><i class="far fa-save"></i> Lưu bản nháp</button>
-            <button class="fc-button success" type="button"><i class="fas fa-cog"></i> Render Final Video</button>
+        <div class="fcomp-head-actions">
+            <a class="fcomp-button" href="{{ route('video-projects.render-video', $id) }}"><i class="fas fa-arrow-left"></i> Quay lại Clips</a>
+            <button class="fcomp-button primary" type="button" disabled><i class="far fa-save"></i> Lưu bản nháp</button>
+            <button class="fcomp-button success" type="button" disabled><i class="fas fa-cog"></i> Render Final Video</button>
         </div>
     </header>
 
-    <nav class="fc-steps" aria-label="Video workflow">
-        @foreach(['Ảnh neo', 'Environment Library', 'Scenes', 'Clips', 'Final Composition', 'Exports'] as $step)
-            <div class="{{ $step === 'Final Composition' ? 'active' : ($step === 'Clips' ? 'complete' : '') }}"><span>{{ $step === 'Clips' ? '✓' : $loop->iteration }}</span>{{ $step }}</div>
+    <nav class="fcomp-steps" aria-label="Video workflow">
+        @foreach($steps as $step)
+            <div class="{{ $step[1] }}">
+                <span>@if($step[1] === 'complete')<i class="fas fa-check"></i>@else{{ $loop->iteration }}@endif</span>{{ $step[0] }}
+            </div>
         @endforeach
     </nav>
 
-    <main class="fc-grid">
-        <aside class="fc-card fc-clips">
-            <div class="fc-card-title">Danh sách clip đã duyệt <span>8 clips</span></div>
-            @foreach($shots as $shot)
-                <div class="fc-clip-item">
-                    <i class="fas fa-grip-vertical"></i><img src="{{ $shot[2] }}" alt="{{ $shot[0] }}"><div><b>S{{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }} · {{ $shot[0] }}</b><small>{{ $shot[1] }}</small></div><i class="fas fa-check-circle"></i>
+    <main class="fcomp-grid">
+        <aside class="fcomp-card fcomp-clips">
+            <div class="fcomp-card-title">List clip đã dựng xong <span>{{ count($clips) }} clips</span></div>
+            @forelse($clips as $clip)
+                <div class="fcomp-clip-item" data-fcomp-seek="{{ $loop->index }}">
+                    <i class="fas fa-grip-vertical"></i>
+                    @if($clip['thumbnail_url'])
+                        <img src="{{ $clip['thumbnail_url'] }}" alt="{{ $clip['title'] }}">
+                    @else
+                        <span class="fcomp-thumb-blank"><i class="fas fa-image"></i></span>
+                    @endif
+                    <div>
+                        <b>{{ $sequence($clip['ordinal']) }} - {{ $clip['title'] }}</b>
+                        <small>{{ $clock($clip['duration_ms']) }}</small>
+                    </div>
+                    <i class="fas fa-check-circle"></i>
                 </div>
-            @endforeach
-            <div class="fc-note"><i class="fas fa-info-circle"></i> Chỉ hiển thị các clip đã duyệt. Kéo thả vào timeline để thêm.</div>
+            @empty
+                <div class="fcomp-empty">Chưa có clip nào dựng xong. Dựng clip ở màn <a href="{{ route('video-projects.render-video', $id) }}">Clips</a> trước.</div>
+            @endforelse
+            <div class="fcomp-note"><i class="fas fa-info-circle"></i> Chỉ hiển thị clip đã dựng xong. Thứ tự lấy theo thứ tự scene của bản kế hoạch mới nhất.</div>
         </aside>
 
-        <section class="fc-center">
-            <div class="fc-card fc-preview">
-                <div class="fc-card-title">Xem trước Final Video <span class="fc-draft">Draft preview</span></div>
-                <div class="fc-player">
-                    <img src="https://images.unsplash.com/photo-1566847438217-76e82d383f84?auto=format&fit=crop&w=1400&q=85" alt="Superyacht at sea">
-                    <div class="fc-player-bar"><i class="fas fa-play"></i><b>00:28 / 02:15</b><span></span><i class="fas fa-volume-up"></i><em>16:9</em><i class="fas fa-expand"></i><i class="fas fa-download"></i></div>
+        <section class="fcomp-center">
+            <div class="fcomp-card fcomp-preview">
+                <div class="fcomp-card-title">Xem trước Final Video</div>
+                <div class="fcomp-player">
+                    @if($latestFinal && $latestFinal['video_url'])
+                        <video src="{{ $latestFinal['video_url'] }}" controls preload="metadata" playsinline></video>
+                        <span class="fcomp-draft">{{ $latestFinal['status'] }}</span>
+                    @elseif($clips !== [])
+                        {{-- Chua co ban final thi phat CHINH cac clip, noi duoi nhau theo
+                             thu tu timeline.
+
+                             HAI the video luan phien chu khong phai mot: doi `src` tren
+                             mot the buoc trinh duyet tai lai tu dau, va do la khoang den
+                             giua hai canh. The con lai nap san clip ke trong luc the kia
+                             dang chay. --}}
+                        <video class="fcomp-deck on" data-fcomp-deck="0"
+                            src="{{ $clips[0]['file_url'] }}" data-clip="0"
+                            @if($clips[0]['thumbnail_url']) poster="{{ $clips[0]['thumbnail_url'] }}" @endif
+                            preload="auto" playsinline></video>
+                        <video class="fcomp-deck" data-fcomp-deck="1" preload="auto" playsinline></video>
+
+                        <span class="fcomp-draft" data-fcomp-now>{{ $sequence(1) }} · {{ $clips[0]['title'] }}</span>
+
+                        <div class="fcomp-transport" data-fcomp-transport>
+                            <button type="button" data-fcomp-toggle aria-label="Phát"><i class="fas fa-play"></i></button>
+                            <b data-fcomp-time>00:00 / {{ $clock($totalMs) }}</b>
+                            <div class="fcomp-scrub" data-fcomp-scrub><i></i></div>
+                            <button type="button" data-fcomp-full aria-label="Toàn màn hình"><i class="fas fa-expand"></i></button>
+                        </div>
+
+                        <script type="application/json" data-fcomp-playlist>@json($playlist, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)</script>
+                    @else
+                        <div class="fcomp-player-empty">
+                            <i class="fas fa-film"></i>
+                            <b>Chưa có clip nào dựng xong</b>
+                        </div>
+                    @endif
                 </div>
             </div>
-            <div class="fc-card fc-timeline-panel">
-                <div class="fc-card-title">Timeline</div>
-                <div class="fc-tools"><button><i class="fas fa-plus"></i> Thêm clip</button><button><i class="fas fa-music"></i> Thêm nhạc</button><button><i class="fas fa-microphone"></i> Thêm thuyết minh</button><button><i class="fas fa-wave-square"></i> Thêm SFX</button><span></span><label>Zoom <input type="range" value="65"></label><button>Fit</button></div>
-                <div class="fc-ruler"><span>00:00</span><span>00:30</span><span>01:00</span><span>01:30</span><span>02:00</span><span>02:15</span></div>
-                <div class="fc-tracks">
-                    <div class="fc-track-label"><i class="fas fa-film"></i> Video</div><div class="fc-track video-track">@foreach($shots as $shot)<div class="fc-shot" style="background-image:url('{{ $shot[2] }}')"><b>S{{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }}</b><small>{{ $shot[1] }}</small></div>@endforeach)</div>
-                    <div class="fc-track-label"><i class="fas fa-music"></i> BGM</div><div class="fc-track bgm">background_music.mp3</div>
-                    <div class="fc-track-label"><i class="fas fa-microphone"></i> Voiceover</div><div class="fc-track voice"><span>narration.mp3</span><span>narration.mp3</span></div>
-                    <div class="fc-track-label"><i class="fas fa-wave-square"></i> SFX</div><div class="fc-track sfx"><span>waves.mp3</span><span>waves.mp3</span></div>
+
+            <div class="fcomp-card fcomp-timeline-panel">
+                <div class="fcomp-card-title">Timeline <span>{{ $clock($totalMs) }}</span></div>
+                <div class="fcomp-tools">
+                    <button type="button" disabled><i class="fas fa-plus"></i> Thêm clip</button>
+                    <button type="button" disabled><i class="fas fa-plus"></i> Thêm nhạc</button>
+                    <button type="button" disabled><i class="fas fa-plus"></i> Thêm thuyết minh</button>
+                    <button type="button" disabled><i class="fas fa-plus"></i> Thêm SFX</button>
+                    <span class="fcomp-tools-gap"></span>
+                    <label><i class="fas fa-search"></i> Zoom <input type="range" value="65" disabled></label>
+                    <button type="button" disabled>Fit</button>
+                    <button class="fcomp-icon-button" type="button" aria-label="Mở rộng timeline" disabled><i class="fas fa-expand-arrows-alt"></i></button>
                 </div>
-            </div>
-            <div class="fc-card fc-history">
-                <div class="fc-card-title">Lịch sử render</div><table><thead><tr><th>#</th><th>Thời gian</th><th>Tên file</th><th>Độ phân giải</th><th>Thời lượng</th><th>Trạng thái</th><th></th></tr></thead><tbody><tr><td>1</td><td>2026-09-07 07:31</td><td>superyacht_journey_final.mp4</td><td>1920 × 1080</td><td>02:15</td><td><span class="fc-status">Hoàn thành</span></td><td><button class="fc-download"><i class="fas fa-download"></i> Tải xuống</button></td></tr></tbody></table>
+                <div class="fcomp-timeline">
+                    <div class="fcomp-track-labels">
+                        <span></span>
+                        <span><i class="fas fa-film"></i> Video</span>
+                        <span><i class="fas fa-music"></i> BGM</span>
+                        <span><i class="fas fa-microphone"></i> Voiceover</span>
+                        <span><i class="fas fa-wave-square"></i> SFX</span>
+                    </div>
+                    <div class="fcomp-lanes">
+                        <div class="fcomp-ruler">
+                            @foreach($ticks as $tick)
+                                <span>{{ $tick }}</span>
+                            @endforeach
+                        </div>
+                        <div class="fcomp-track fcomp-video-track">
+                            @forelse($clips as $clip)
+                                <div class="fcomp-shot" data-fcomp-seek="{{ $loop->index }}" style="flex:{{ $clip['duration_ms'] }}@if($clip['thumbnail_url']);background-image:url('{{ $clip['thumbnail_url'] }}')@endif" title="{{ $clip['title'] }}">
+                                    <b>{{ $sequence($clip['ordinal']) }}</b>
+                                    <small>{{ $clock($clip['duration_ms']) }}</small>
+                                </div>
+                            @empty
+                                <div class="fcomp-lane-empty">chưa có clip</div>
+                            @endforelse
+                        </div>
+                        <div class="fcomp-track fcomp-bgm"><em class="fcomp-lane-empty">chưa nối nhạc nền</em></div>
+                        <div class="fcomp-track fcomp-voice"><em class="fcomp-lane-empty">chưa nối thuyết minh</em></div>
+                        <div class="fcomp-track fcomp-sfx"><em class="fcomp-lane-empty">chưa nối SFX</em></div>
+                        <div class="fcomp-playhead" style="left:0"><b>00:00</b></div>
+                    </div>
+                </div>
             </div>
         </section>
 
-        <aside class="fc-right">
-            <section class="fc-card fc-project"><div class="fc-card-title">Thông tin dự án</div><dl><dt>Project</dt><dd>{{ $id }}</dd><dt>Title</dt><dd>{{ $project->title ?? 'Superyacht Journey' }}</dd><dt>Duration (ước tính)</dt><dd>02:15</dd><dt>Số clip</dt><dd>8</dd><dt>Trạng thái</dt><dd><span class="fc-draft-light">Draft</span></dd></dl></section>
-            <section class="fc-card fc-settings"><div class="fc-card-title">Thiết lập xuất video</div>
-                @foreach([['Độ phân giải','1920 × 1080 (Full HD)'],['Tỉ lệ khung hình','16:9 (Landscape)'],['Frame rate (FPS)','24 fps'],['Video codec','H.264 (libx264)'],['Audio codec','AAC']] as $field)<label>{{ $field[0] }}<select><option>{{ $field[1] }}</option></select></label>@endforeach
-                <label>Chất lượng (CRF)<div class="fc-crf"><input type="range" value="74"><b>18</b></div></label><small>Giá trị thấp hơn = chất lượng cao hơn (khuyến nghị: 16-20)</small>
-                <details open><summary>Tùy chọn nâng cao <i class="fas fa-chevron-up"></i></summary><label><input checked type="checkbox"> Tự động cân chỉnh âm lượng</label><label><input checked type="checkbox"> Thêm chuyển cảnh mặc định (Crossfade 0.5s)</label><label><input type="checkbox"> Tối ưu hóa kích thước file</label><label><input type="checkbox"> Lưu file log FFmpeg</label><label><input type="checkbox"> Tạo thumbnail sau khi render</label></details>
-                <button class="fc-render" type="button"><i class="fas fa-cog"></i> Render Final Video</button><p>Hệ thống sẽ dựng video bằng FFmpeg trên server. Thời gian xử lý tùy thuộc độ dài và chất lượng.</p>
+        <aside class="fcomp-right">
+            <section class="fcomp-card fcomp-project">
+                <div class="fcomp-card-title">Thông tin dự án</div>
+                <dl>
+                    <dt>Project</dt><dd title="{{ $id }}">{{ $id }}</dd>
+                    <dt>Title</dt><dd title="{{ $project->title }}">{{ $project->title }}</dd>
+                    <dt>Duration (ước tính)</dt><dd>{{ $clock($totalMs) }}</dd>
+                    <dt>Số clip</dt><dd>{{ count($clips) }}</dd>
+                    <dt>Khung hình</dt><dd title="{{ $sizeLabel }}">{{ $sizeLabel }}</dd>
+                    <dt>Trạng thái</dt><dd><span class="fcomp-badge"><i class="far fa-file"></i> {{ $latestFinal['status'] ?? 'Draft' }}</span></dd>
+                </dl>
+            </section>
+
+            <section class="fcomp-card fcomp-settings">
+                <div class="fcomp-card-title">Thiết lập xuất video</div>
+                @foreach($exportFields as $field)
+                    <label>
+                        <span>{{ $field[0] }}</span>
+                        <select disabled>
+                            @foreach($field[1] as $option)
+                                <option>{{ $option }}</option>
+                            @endforeach
+                        </select>
+                    </label>
+                @endforeach
+                <label>
+                    <span>Chất lượng (CRF)</span>
+                    <span class="fcomp-crf"><input type="range" min="12" max="32" value="18" disabled><b>18</b></span>
+                </label>
+                <small>Giá trị thấp hơn = chất lượng cao hơn (khuyến nghị: 16-20)</small>
+
+                <details open>
+                    <summary>Tùy chọn nâng cao <i class="fas fa-chevron-up"></i></summary>
+                    @foreach($advancedOptions as $option)
+                        <label><input type="checkbox" disabled @checked($option[1])> {{ $option[0] }}</label>
+                    @endforeach
+                </details>
+
+                <button class="fcomp-render" type="button" disabled><i class="fas fa-cog"></i> Render Final Video</button>
+                <p>Chưa nối đường render. Các ô trên là thiết lập dự kiến, chưa lưu được.</p>
             </section>
         </aside>
+
+        <section class="fcomp-card fcomp-history">
+            <div class="fcomp-card-title">Lịch sử render</div>
+            <div class="fcomp-history-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Thời gian</th>
+                            <th>Tên file</th>
+                            <th>Độ phân giải</th>
+                            <th>Thời lượng</th>
+                            <th>Trạng thái</th>
+                            <th>Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($finals as $final)
+                            <tr>
+                                <td>{{ $loop->iteration }}</td>
+                                <td>{{ $final['created_at'] ?? '—' }}</td>
+                                <td>{{ $final['file_name'] ?? '—' }}</td>
+                                <td>{{ $final['width'] && $final['height'] ? $final['width'].' × '.$final['height'] : '—' }}</td>
+                                <td>{{ $clock($final['duration_seconds'] * 1000) }}</td>
+                                <td><span class="fcomp-status">{{ $final['status'] }}</span></td>
+                                <td class="fcomp-actions">
+                                    @if($final['video_url'])
+                                        <a class="fcomp-download" href="{{ $final['video_url'] }}" download><i class="fas fa-download"></i> Tải xuống</a>
+                                    @else
+                                        <span class="fcomp-empty-cell">không có file</span>
+                                    @endif
+                                </td>
+                            </tr>
+                        @empty
+                            <tr><td class="fcomp-empty-cell" colspan="7">Chưa có lần render nào.</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </main>
 </div>
+@endsection
+
+@section('script')
+<script src="{{ asset('assets/js/final-composition.js') }}?v={{ filemtime(public_path('assets/js/final-composition.js')) }}"></script>
 @endsection

@@ -12,6 +12,14 @@
             <directory>tests/Video</directory>
         </testsuite>
     </testsuites>
+    <!-- Nhom `smoke` doc DU LIEU THAT tren may dang chay, nen ket qua khac nhau giua
+         cac may. De chung voi cac test fixture thi mot suite xanh khong con noi len
+         dieu gi chung. Chay rieng bang: php artisan test (group=smoke) -->
+    <groups>
+        <exclude>
+            <group>smoke</group>
+        </exclude>
+    </groups>
     <source>
         <include>
             <directory>app</directory>

@@ -13,9 +13,11 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoArtifact;
 use App\Models\Admin;
 use App\Models\VideoDesignImage;
+use App\Models\VideoFinal;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoRenderScene;
+use App\Models\VideoSession;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\CreativeProfileResolver;
@@ -919,6 +921,101 @@ class VideoProjectService
         }
 
         return $cells;
+    }
+
+    /**
+     * Moi thu man Final Composition can, ghep tu CHINH cac o ma man Clips dang dung.
+     *
+     * Khong co truy van rieng cho man nay: lech giua hai man la thu chi lo ra khi
+     * co nguoi so hai ben, va luc do thi da muon.
+     *
+     * @return array<string, mixed>
+     */
+    public function finalCompositionCells(string $projectId): array
+    {
+        $plan = $this->latestScenePlan($projectId);
+        $revision = (int) $plan['revision'];
+        $scenes = $revision === 0 ? [] : ($plan['scenes'] ?? []);
+
+        $clipCells = $revision === 0 ? [] : $this->sceneClipCells($projectId, $revision);
+        $keyframeCells = $revision === 0 ? [] : $this->sceneKeyframeCells($projectId, $revision);
+
+        $clips = [];
+
+        foreach ($scenes as $scene) {
+            $key = (string) ($scene['scene_id'] ?? '');
+            $cell = $clipCells[$key] ?? null;
+
+            // CHI clip da dung xong moi vao duoc final. Luot dang chay hay that bai
+            // khong co file de ghep, nen no khong phai "da duyet" theo nghia nao ca.
+            if (($cell['status'] ?? null) !== 'succeeded' || ($cell['render_id'] ?? null) === null) {
+                continue;
+            }
+
+            $artifact = $keyframeCells[$key]['approved']['artifacts'][0] ?? null;
+
+            $clips[] = [
+                'ordinal' => count($clips) + 1,
+                'scene_code' => (string) ($scene['id'] ?? ''),
+                'title' => (string) ($scene['title'] ?? ''),
+                'render_id' => (string) $cell['render_id'],
+                'duration_ms' => (int) ($cell['duration_ms'] ?? 0),
+                'width' => (int) ($cell['width'] ?? 0),
+                'height' => (int) ($cell['height'] ?? 0),
+                'thumbnail_url' => $artifact['url'] ?? null,
+                'file_url' => route('video-projects.scene-clip-file', [$projectId, $cell['render_id']]),
+            ];
+        }
+
+        $finals = VideoFinal::query()
+            ->whereIn('session_id', VideoSession::query()
+                ->where('project_id', $projectId)
+                ->select('id'))
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(fn (VideoFinal $row) => $this->finalRowView($row))
+            ->all();
+
+        // Cac clip KHONG bat buoc cung mot co: cung mot du an van co clip 720x1280
+        // lan 1080x1920. Lay co cua clip dau roi goi do la "co nguon" la noi sai —
+        // man hinh phai noi ra rang chung lech nhau.
+        $sizes = array_values(array_unique(array_map(
+            static fn (array $clip) => $clip['width'].' × '.$clip['height'],
+            array_filter($clips, static fn (array $clip) => $clip['width'] > 0 && $clip['height'] > 0),
+        )));
+
+        return [
+            'revision' => $revision,
+            'clips' => $clips,
+            'total_duration_ms' => array_sum(array_column($clips, 'duration_ms')),
+            'sizes' => $sizes,
+            'uniform_size' => count($sizes) === 1 ? $sizes[0] : null,
+            'finals' => $finals,
+            'latest_final' => $finals[0] ?? null,
+        ];
+    }
+
+    /**
+     * `video_path` tro vao thu muc public ma Python ghi ra. File co the chua ton tai
+     * (ban final that bai, hoac da bi don), nen duong dan chi thanh URL khi doc duoc.
+     *
+     * @return array<string, mixed>
+     */
+    private function finalRowView(VideoFinal $row): array
+    {
+        $path = trim((string) $row->video_path);
+        $playable = $path !== '' && is_file(public_path(ltrim($path, '/')));
+
+        return [
+            'id' => (string) $row->id,
+            'status' => (string) $row->status,
+            'file_name' => $path === '' ? null : basename($path),
+            'video_url' => $playable ? asset(ltrim($path, '/')) : null,
+            'duration_seconds' => (int) $row->duration_seconds,
+            'width' => (int) data_get($row->plan_json, 'width', 0),
+            'height' => (int) data_get($row->plan_json, 'height', 0),
+            'created_at' => $row->created_at?->format('Y-m-d H:i'),
+        ];
     }
 
     /**

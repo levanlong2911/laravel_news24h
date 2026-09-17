@@ -578,8 +578,9 @@ class VideoProjectsController extends Controller
     }
 
     /**
-     * Static composition-screen prototype. It intentionally has no render or
-     * persistence action while the final-composition contract is being built.
+     * Composition screen. It reads real clips and real finals, but still has no
+     * render or persistence action while the final-composition contract is being
+     * built — every control on it is inert on purpose.
      */
     public function finalCompositionPreview(string $id)
     {
@@ -588,6 +589,7 @@ class VideoProjectsController extends Controller
         return view('video-projects.final-composition-preview', $this->chrome() + [
             'id' => $id,
             'project' => $project,
+            'composition' => $this->videoProjectService->finalCompositionCells($id),
         ]);
     }
 
