@@ -285,7 +285,13 @@ return [
         // Ghep ban final (muc 2): chua noi vao DB, chua noi vao man hinh.
         'compose_final_dir' => storage_path('app/video-compose-final'),
         'compose_input_root' => base_path(),
+        // Ngan sach MONG MUON. `AppServiceProvider` con chan no duoi
+        // `max_execution_time` cua PHP: dat 900 trong khi PHP giet request o 120
+        // khong cho them thoi gian nao, chi khien ta khong biet minh da bi giet.
         'compose_budget_seconds' => (int) env('VIDEO_COMPOSE_BUDGET_SECONDS', 900),
+        // So ban final giu FILE lai cho moi session. Hang trong lich su van con,
+        // chi file bi xoa — man hinh da biet hien "khong co file".
+        'compose_keep_finals' => (int) env('VIDEO_COMPOSE_KEEP_FINALS', 5),
         'compose_max_input_bytes' => (int) env('VIDEO_COMPOSE_MAX_INPUT_BYTES', 2_000_000_000),
         // Dung sai tieng: MAC DINH 0.
         //

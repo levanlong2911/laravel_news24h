@@ -14,8 +14,10 @@ use App\Models\VideoArtifact;
 use App\Models\Admin;
 use App\Models\VideoDesignImage;
 use App\Models\VideoFinal;
+use App\Models\VideoFinalRender;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Models\VideoRender;
 use App\Models\VideoRenderScene;
 use App\Models\VideoSession;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
@@ -39,6 +41,8 @@ use App\Video\Concept\Orchestration\CanonicalConceptInputBuilder;
 use App\Video\Concept\Canonical\Enums\ProvenanceOrigin;
 use App\Video\Concept\Persistence\CanonicalConceptExecutionService;
 use App\Video\Concept\Viewpoint;
+use App\Video\FinalComposition\CompositionExecutor;
+use App\Video\FinalComposition\CompositionResult;
 use App\Video\Environment\EnvironmentPlatePrompt;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\Profiles\CategoryCreativeProfileResolver as CanonicalProfileResolver;
@@ -971,6 +975,7 @@ class VideoProjectService
             ->whereIn('session_id', VideoSession::query()
                 ->where('project_id', $projectId)
                 ->select('id'))
+            ->with(['session', 'cuts'])
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (VideoFinal $row) => $this->finalRowView($row))
@@ -996,25 +1001,323 @@ class VideoProjectService
     }
 
     /**
-     * `video_path` tro vao thu muc public ma Python ghi ra. File co the chua ton tai
-     * (ban final that bai, hoac da bi don), nen duong dan chi thanh URL khi doc duoc.
+     * Ghep ban final cho mot du an, bang duong FFmpeg cua Laravel.
+     *
+     * Chay DONG BO trong request. Ngan sach thoi gian bi CHAN TREN boi
+     * `max_execution_time` cua PHP (xem `AppServiceProvider`): dat 900 giay trong khi
+     * PHP giet request o 120 khong cho ta them thoi gian nao, no chi khien ta khong
+     * biet minh da bi giet.
+     *
+     * @param  array<string, mixed>  $options  width/height/fps/crf/crossfade_frames
+     * @return array{ok: bool, error?: string, final?: VideoFinal, reasons?: list<string>}
+     */
+    public function renderFinalComposition(string $projectId, array $options): array
+    {
+        $cells = $this->finalCompositionCells($projectId);
+
+        if ($cells['clips'] === []) {
+            return ['ok' => false, 'error' => 'chua co clip nao dung xong de ghep'];
+        }
+
+        // Nap mot lo: `find()` trong vong lap la mot truy van moi clip, va
+        // `finalCompositionCells()` vua doc dung nhung hang nay xong.
+        $renders = VideoRender::query()
+            ->whereIn('id', array_column($cells['clips'], 'render_id'))
+            ->with('shot')
+            ->get()
+            ->keyBy(fn (VideoRender $render) => (string) $render->id);
+
+        // Session lay QUA SHOT chu khong qua du an: `SceneClipDispatchService` tao
+        // render voi `sessionId: null`, nen render khong tu noi no thuoc session nao.
+        $sessions = $renders
+            ->map(fn (VideoRender $render) => (string) optional($render->shot)->session_id)
+            ->unique()
+            ->filter()
+            ->values();
+
+        if ($sessions->count() !== 1) {
+            // KHONG tu chon mot session hay tu tao mot cai moi: `video_finals` khoa
+            // theo session, va doan sai o day la gan ban final vao nham cho.
+            return ['ok' => false, 'error' => sprintf(
+                'cac clip thuoc %d session khac nhau — muc nay chi ghep duoc trong mot session',
+                $sessions->count(),
+            )];
+        }
+
+        $sessionId = (string) $sessions->first();
+        $blocked = $this->blockingComposition($sessionId);
+
+        if ($blocked !== null) {
+            return ['ok' => false, 'error' => $blocked];
+        }
+
+        $disk = app(\Illuminate\Contracts\Filesystem\Factory::class)->disk((string) config('video.veo.disk'));
+        $sources = [];
+        $clipRows = [];
+
+        foreach ($cells['clips'] as $clip) {
+            $render = $renders->get((string) $clip['render_id']);
+            $relative = (string) optional($render)->artifact_path;
+            $path = $disk->path($relative);
+
+            if ($relative === '' || ! is_file($path)) {
+                return ['ok' => false, 'error' => 'thieu file clip tren dia: '.$clip['scene_code']];
+            }
+
+            $sources[] = $path;
+            $clipRows[] = $clip + [
+                'artifact_path' => $relative,
+                // Bam NOI DUNG nguon, khong chi duong dan: hai luot tren cung mot
+                // duong dan ma file da doi phai ra hai hash khac nhau, neu khong thi
+                // `manifest_hash` khong doi chieu lai duoc voi thu da thuc su ghep.
+                'sha256' => (string) hash_file('sha256', $path),
+            ];
+        }
+
+        $manifest = $this->finalCompositionManifest($clipRows, $options);
+        $final = VideoFinal::query()->create([
+            'session_id' => $sessionId,
+            'revision' => ((int) VideoFinal::query()->where('session_id', $sessionId)->max('revision')) + 1,
+            'status' => 'composing',
+            'plan_json' => $manifest,
+            'manifest_hash' => hash('sha256', $this->canonicalJson($manifest)),
+            'frozen_at' => now(),
+        ]);
+
+        $result = app(CompositionExecutor::class)->execute($manifest, $sources);
+
+        if (! $result->successful) {
+            $final->update([
+                'status' => 'failed',
+                'error_message' => Str::limit(implode(' | ', $result->reasons), 1000),
+            ]);
+
+            return ['ok' => false, 'error' => 'ghep that bai', 'reasons' => $result->reasons, 'final' => $final->refresh()];
+        }
+
+        return ['ok' => true, 'final' => $this->recordComposedFinal($final, $clipRows, $result)];
+    }
+
+    /**
+     * Ly do khong duoc bat dau luot moi, hoac `null`.
+     *
+     * Mot hang `composing` chi chan khi no CON CO THE dang chay. Tien trinh bi giet
+     * giua chung — het `max_execution_time`, may chu khoi dong lai — de lai mot hang
+     * `composing` vinh vien, va mot phep kiem "co hang composing thi tu choi" se
+     * khoa CHET man hinh ma khong co loi thoat nao tu giao dien.
+     *
+     * Nguong la ngan sach cong bien: mot luot bat dau lau hon ngan sach toi da thi
+     * khong the con dang chay.
+     */
+    private function blockingComposition(string $sessionId): ?string
+    {
+        $budget = (int) config('video.veo.compose_budget_seconds');
+        $stale = now()->subSeconds($budget + 60);
+        $running = VideoFinal::query()
+            ->where('session_id', $sessionId)
+            ->where('status', 'composing')
+            ->get();
+
+        foreach ($running as $row) {
+            if ($row->updated_at !== null && $row->updated_at->lessThan($stale)) {
+                $row->update([
+                    'status' => 'failed',
+                    'error_message' => 'luot ghep bi bo do: khong ket thuc trong ngan sach thoi gian',
+                ]);
+
+                continue;
+            }
+
+            return 'dang co mot luot ghep chay do dang cho session nay';
+        }
+
+        return null;
+    }
+
+    /**
+     * JSON CHUAN HOA: khoa sap xep de quy, thu tu danh sach giu nguyen.
+     *
+     * `json_encode` giu thu tu khoa theo thu tu ta viet mang, nen doi cho hai dong
+     * trong mot ham se doi hash cua mot ke hoach khong he doi.
+     */
+    private function canonicalJson(mixed $value): string
+    {
+        if (is_array($value) && ! array_is_list($value)) {
+            ksort($value);
+        }
+
+        if (is_array($value)) {
+            $value = array_map(fn (mixed $item) => is_array($item) ? json_decode($this->canonicalJson($item), true) : $item, $value);
+
+            if (! array_is_list($value)) {
+                ksort($value);
+            }
+        }
+
+        return json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $clips
+     * @param  array<string, mixed>  $options
+     * @return array<string, mixed>
+     */
+    private function finalCompositionManifest(array $clips, array $options): array
+    {
+        $fps = (int) ($options['fps'] ?? 24);
+        $crossfade = (int) ($options['crossfade_frames'] ?? 0);
+        $last = count($clips) - 1;
+        $entries = [];
+
+        foreach ($clips as $i => $clip) {
+            $entry = [
+                'path' => $clip['artifact_path'],
+                'sha256' => $clip['sha256'],
+                'trim_start_ms' => 0,
+                'duration_ms' => (int) $clip['duration_ms'],
+            ];
+
+            // Clip cuoi khong co moi noi nao phia sau — builder tu choi neu co.
+            if ($i < $last && $crossfade > 0) {
+                $entry['transition_after'] = ['type' => 'crossfade', 'frames' => $crossfade];
+            }
+
+            $entries[] = $entry;
+        }
+
+        return [
+            'output' => [
+                'width' => (int) ($options['width'] ?? 1080),
+                'height' => (int) ($options['height'] ?? 1920),
+                'fps' => $fps,
+                'crf' => (int) ($options['crf'] ?? 18),
+            ],
+            'clips' => $entries,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $clips
+     */
+    private function recordComposedFinal(VideoFinal $final, array $clips, CompositionResult $result): VideoFinal
+    {
+        $root = realpath((string) config('video.veo.compose_final_dir'));
+        $relative = $root === false
+            ? (string) $result->path
+            : str_replace('\\', '/', substr((string) $result->path, strlen(rtrim($root, '/\\')) + 1));
+
+        $saved = DB::transaction(function () use ($final, $clips, $result, $relative): VideoFinal {
+            foreach ($clips as $i => $clip) {
+                // `start_ms` la VI TRI TREN DONG THOI GIAN, lay tu `CompositionPlan`.
+                // Cong don do dai tung clip o day se sai ngay khi co mot chuyen canh
+                // mo: clip ke leo len phan chong lan cua clip truoc.
+                $row = $result->timeline[$i] ?? ['start_ms' => 0, 'duration_ms' => 0];
+
+                VideoFinalRender::query()->create([
+                    'final_id' => $final->id,
+                    'render_id' => $clip['render_id'],
+                    'sequence_no' => $i + 1,
+                    'start_ms' => $row['start_ms'],
+                    'duration_ms' => $row['duration_ms'],
+                ]);
+            }
+
+            $final->update([
+                'status' => 'ready',
+                'video_path' => $relative,
+                'duration_seconds' => (int) round(
+                    ((int) $result->frames) / (int) data_get($final->plan_json, 'output.fps', 24),
+                ),
+                // Ghep chay bang ffmpeg CUC BO nen khong ton dong nao. Cong chi phi
+                // cua cac clip vao day la dem lai mot khoan da tra tu truoc, va ghep
+                // lai lan thu hai se dem no lan nua.
+                'cost_total' => 0,
+            ]);
+
+            return $final->refresh();
+        });
+
+        $this->pruneOldFinals($final);
+
+        return $saved;
+    }
+
+    /**
+     * Xoa FILE cua cac ban final cu, giu lai N ban gan nhat cua session.
+     *
+     * Moi luot ghep de lai mot file hang chuc MB va khong ai don: sau hai muoi lan
+     * render o 1080x1920 la vai tram MB nam yen tren dia.
+     *
+     * Chi xoa file, KHONG xoa hang: lich su render la mot ban ghi, va man hinh da
+     * biet hien "khong co file" cho hang khong con file.
+     */
+    private function pruneOldFinals(VideoFinal $final): void
+    {
+        $keep = max(1, (int) config('video.veo.compose_keep_finals'));
+        $root = realpath((string) config('video.veo.compose_final_dir'));
+
+        if ($root === false) {
+            return;
+        }
+
+        $root = rtrim($root, '/\\').DIRECTORY_SEPARATOR;
+        $stale = VideoFinal::query()
+            ->where('session_id', $final->session_id)
+            ->whereNotNull('video_path')
+            ->orderByDesc('created_at')
+            ->skip($keep)
+            ->take(100)
+            ->get();
+
+        foreach ($stale as $row) {
+            $path = realpath($root.(string) $row->video_path);
+
+            if ($path === false || ! str_starts_with($path, $root)) {
+                continue;
+            }
+
+            if (@unlink($path)) {
+                @rmdir(dirname($path));
+            }
+        }
+    }
+
+    /**
+     * `video_path` la duong dan TUONG DOI trong `compose_final_dir`, khong phai duong
+     * public. File ra nam ngoai `public/` co chu dich: no chi den duoc qua mot route
+     * co kiem quyen du an, giong het duong cua clip.
+     *
+     * File co the chua ton tai (ban final that bai, hoac da bi don), nen duong dan
+     * chi thanh URL khi doc duoc.
      *
      * @return array<string, mixed>
      */
     private function finalRowView(VideoFinal $row): array
     {
         $path = trim((string) $row->video_path);
-        $playable = $path !== '' && is_file(public_path(ltrim($path, '/')));
+        $projectId = (string) optional($row->session)->project_id;
+        $root = realpath((string) config('video.veo.compose_final_dir'));
+        $playable = $path !== '' && $projectId !== '' && $root !== false
+            && is_file(rtrim($root, '/\\').DIRECTORY_SEPARATOR.$path);
 
         return [
             'id' => (string) $row->id,
             'status' => (string) $row->status,
             'file_name' => $path === '' ? null : basename($path),
-            'video_url' => $playable ? asset(ltrim($path, '/')) : null,
+            'video_url' => $playable ? route('video-projects.final-file', [$projectId, $row->id]) : null,
             'duration_seconds' => (int) $row->duration_seconds,
-            'width' => (int) data_get($row->plan_json, 'width', 0),
-            'height' => (int) data_get($row->plan_json, 'height', 0),
+            'width' => (int) data_get($row->plan_json, 'output.width', 0),
+            'height' => (int) data_get($row->plan_json, 'output.height', 0),
             'created_at' => $row->created_at?->format('Y-m-d H:i'),
+            // Moc bat dau cua tung clip TRONG ban final nay, khoa theo `render_id`.
+            //
+            // Timeline tren man hinh ve theo do dai cac clip cong lai, con ban final
+            // co chuyen canh mo nen ngan hon. Muon bam mot khoi ma nhay dung cho
+            // trong video thi phai lay moc tu chinh ban final, khong suy ra tu do
+            // dai clip.
+            'cuts' => $row->cuts->mapWithKeys(
+                fn ($cut) => [(string) $cut->render_id => (int) $cut->start_ms],
+            )->all(),
         ];
     }
 

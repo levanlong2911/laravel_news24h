@@ -19,21 +19,25 @@ final class CompositionResult
         public readonly ?int $bytes,
         public readonly ?string $sha256,
         public readonly array $reasons,
+        /** @var list<array{start_ms: int, duration_ms: int}> */
+        public readonly array $timeline = [],
     ) {}
 
     /** @param list<string> $reasons */
     public static function refused(array $reasons): self
     {
-        return new self(false, null, null, null, null, null, $reasons);
+        return new self(false, null, null, null, null, null, $reasons, []);
     }
 
+    /** @param list<array{start_ms: int, duration_ms: int}> $timeline */
     public static function composed(
         string $path,
         int $frames,
         int $audioSamples,
         int $bytes,
         string $sha256,
+        array $timeline,
     ): self {
-        return new self(true, $path, $frames, $audioSamples, $bytes, $sha256, []);
+        return new self(true, $path, $frames, $audioSamples, $bytes, $sha256, [], $timeline);
     }
 }

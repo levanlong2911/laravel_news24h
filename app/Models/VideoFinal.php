@@ -17,12 +17,18 @@ class VideoFinal extends Model
     use HasUuids;
 
     protected $fillable = [
+        // `revision`, `manifest_hash`, `frozen_at` co cot tu migration dau nhung chua
+        // bao gio duoc khai o day — gan hang loat se AM THAM bo chung, va mot ban
+        // final khong co hash la mot ban khong doi chieu lai duoc.
+        'revision', 'manifest_hash', 'frozen_at',
         'session_id', 'video_path', 'thumbnail_path', 'duration_seconds',
         'cost_total', 'plan_json', 'status', 'error_message', 'published_at',
         'youtube_video_id', 'facebook_post_id', 'tiktok_video_id', 'instagram_video_id',
     ];
 
     protected $casts = [
+        'revision' => 'integer',
+        'frozen_at' => 'datetime',
         'duration_seconds' => 'integer',
         'cost_total' => 'float',
         'plan_json' => 'array',

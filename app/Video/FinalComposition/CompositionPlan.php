@@ -55,6 +55,37 @@ final class CompositionPlan
         );
     }
 
+    /**
+     * Vi tri va do dai cua tung clip TREN DONG THOI GIAN dau ra.
+     *
+     * `start_ms` la VI TRI, khong phai offset cat nguon — hai thu do khac nhau va
+     * `video_final_renders.start_ms` giu nghia thu nhat. Voi chuyen canh mo, clip ke
+     * bat dau SOM hon: no leo len phan chong lan cua clip truoc.
+     *
+     * Tra ve tu day chu khong de noi goi tu cong don: phep tru chong lan da song o
+     * lop nay, va hai ban sao cua cung mot phep tinh la hai cach de lech nhau.
+     *
+     * @return list<array{start_ms: int, duration_ms: int}>
+     */
+    public function timeline(): array
+    {
+        $fps = $this->profile->fps;
+        $rows = [];
+
+        foreach ($this->clips as $i => $clip) {
+            $startFrames = $i === 0
+                ? 0
+                : $this->framesThrough($i - 1) - ($this->transitions[$i - 1]->isCut() ? 0 : $this->transitions[$i - 1]->frames);
+
+            $rows[] = [
+                'start_ms' => (int) round($startFrames * 1000 / $fps),
+                'duration_ms' => (int) round($clip->frames * 1000 / $fps),
+            ];
+        }
+
+        return $rows;
+    }
+
     /** Khung tich luy sau khi da ghep toi clip thu `$index` (tinh tu 0). */
     public function framesThrough(int $index): int
     {

@@ -142,7 +142,15 @@ class AppServiceProvider extends ServiceProvider
                 builder: $app->make(\App\Video\FinalComposition\CompositionPlanBuilder::class),
                 verifier: $app->make(\App\Video\FinalComposition\CompositionOutputVerifier::class),
                 composeRoot: (string) config('video.veo.compose_final_dir'),
-                budgetSeconds: (int) config('video.veo.compose_budget_seconds'),
+                // Chan duoi `max_execution_time`: PHP giet request truoc khi ngan
+                // sach cua ta het thi ta khong bao gio kip ghi lai trang thai, va
+                // hang `composing` se o lai mai mai. `0` la khong gioi han (CLI).
+                budgetSeconds: (static function (): int {
+                    $wanted = (int) config('video.veo.compose_budget_seconds');
+                    $limit = (int) ini_get('max_execution_time');
+
+                    return $limit > 0 ? min($wanted, max(1, $limit - 10)) : $wanted;
+                })(),
             ),
         );
 

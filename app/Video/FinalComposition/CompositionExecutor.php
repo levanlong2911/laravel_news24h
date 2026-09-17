@@ -229,6 +229,7 @@ final class CompositionExecutor
             audioSamples: (int) $verdict['samples'],
             bytes: $bytes,
             sha256: $sha256,
+            timeline: $plan->timeline(),
         );
     }
 }

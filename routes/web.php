@@ -164,6 +164,8 @@ Route::group(
         Route::post('/{id}/scenes/{sceneId}/keyframe',        [VideoProjectsController::class, 'renderSceneKeyframe'])->name('video-projects.scene-keyframe-render');
         Route::get('/{id}/render-video',                      [VideoProjectsController::class, 'clips'])->name('video-projects.render-video');
         Route::get('/{id}/final-composition-preview',         [VideoProjectsController::class, 'finalCompositionPreview'])->name('video-projects.final-composition-preview');
+        Route::post('/{id}/final-composition/render',          [VideoProjectsController::class, 'renderFinalComposition'])->name('video-projects.final-render');
+        Route::get('/{id}/final-composition/{final}/file',     [VideoProjectsController::class, 'finalCompositionFile'])->name('video-projects.final-file');
         Route::post('/{id}/scenes/{sceneId}/clip',        [VideoProjectsController::class, 'renderSceneClip'])->name('video-projects.scene-clip-render');
         Route::post('/{id}/scene-clips/{render}/poll',        [VideoProjectsController::class, 'pollSceneClip'])->name('video-projects.scene-clip-poll');
         Route::get('/{id}/scene-clips/{render}/file',          [VideoProjectsController::class, 'sceneClipFile'])->name('video-projects.scene-clip-file');

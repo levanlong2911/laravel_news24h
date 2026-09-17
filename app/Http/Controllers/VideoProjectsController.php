@@ -23,6 +23,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use RuntimeException;
@@ -590,6 +591,83 @@ class VideoProjectsController extends Controller
             'id' => $id,
             'project' => $project,
             'composition' => $this->videoProjectService->finalCompositionCells($id),
+        ]);
+    }
+
+    /**
+     * Ghep ban final. CHAY DONG BO ngay trong request.
+     *
+     * Khong dung queue o buoc nay, nen thoi gian chay phai co tran: ngan sach nam o
+     * `video.veo.compose_budget_seconds`, va no phai thap hon gioi han cua may chu
+     * web. Mot vong polling tren trinh duyet KHONG giu cho tien trinh PHP song.
+     */
+    public function renderFinalComposition(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'size' => ['required', 'string', Rule::in(\App\Video\FinalComposition\CompositionPlanBuilder::SIZES)],
+            'fps' => 'required|integer|in:24,25,30',
+            'crf' => 'required|integer|between:16,28',
+            'crossfade' => 'nullable|boolean',
+        ]);
+
+        [$width, $height] = array_map('intval', explode('x', $data['size']));
+        $fps = (int) $data['fps'];
+
+        $result = $this->videoProjectService->renderFinalComposition($id, [
+            'width' => $width,
+            'height' => $height,
+            'fps' => $fps,
+            'crf' => (int) $data['crf'],
+            // 0,5 giay quy ra KHUNG o dung fps da chon: chong lan phai roi vao bien
+            // khung, va mot con so mili giay se phai lam tron o dau do.
+            'crossfade_frames' => $request->boolean('crossfade') ? (int) round($fps / 2) : 0,
+        ]);
+
+        if ($result['ok']) {
+            return back()->with('success', 'Ghep xong ban final.');
+        }
+
+        // Ly do tu verifier rat cu the (thieu khung, sai profile, lech tieng) — dua
+        // ca ra thay vi rut gon thanh "that bai", vi do la thu noi duoc phai sua gi.
+        return back()->with('error', trim(
+            $result['error'].(isset($result['reasons']) ? ': '.implode(' | ', $result['reasons']) : ''),
+        ));
+    }
+
+    /**
+     * Phat/tai file final. Di qua day chu khong qua `public/`: file nam ngoai thu muc
+     * cong khai, nen quyen doc no phai la quyen doc DU AN.
+     */
+    public function finalCompositionFile(string $id, string $finalId)
+    {
+        $this->ownedProject($id);
+
+        $final = \App\Models\VideoFinal::query()
+            ->whereKey($finalId)
+            ->whereHas('session', fn ($scope) => $scope->where('project_id', $id))
+            ->firstOrFail();
+
+        // `realpath` CA HAI dau truoc khi so. `storage_path()` tra ve dau phan cach
+        // lan (`storage\app/video-compose-final`) con `realpath` chuan hoa het ve
+        // `\` — so mot ben da chuan hoa voi mot ben chua thi luon truot, va ket qua
+        // la 404 cho mot file co that.
+        $root = realpath((string) config('video.veo.compose_final_dir'));
+
+        abort_if($root === false, 404);
+
+        $root = rtrim($root, '/\\').DIRECTORY_SEPARATOR;
+        $path = realpath($root.(string) $final->video_path);
+
+        // So tien to KEM dau phan cach: mot `video_path` doc hai khong duoc dan ra
+        // ngoai thu muc ket qua.
+        abort_if($path === false || ! str_starts_with($path, $root) || ! is_file($path), 404);
+
+        return response()->file($path, [
+            'Content-Type' => 'video/mp4',
+            // Trinh duyet doi seek duoc moi ve duoc khung hinh dau.
+            'Accept-Ranges' => 'bytes',
         ]);
     }
 
