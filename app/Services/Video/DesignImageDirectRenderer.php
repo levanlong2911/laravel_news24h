@@ -8,6 +8,7 @@ use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoRender;
 use App\Video\Media\RenderPriceSnapshot;
+use App\Video\Media\SpecRouting;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -145,7 +146,7 @@ class DesignImageDirectRenderer
      */
     private function spec(VideoDesignImage $image, array $spec, string $claimToken): array
     {
-        $provider = (string) ($spec['provider'] ?? 'openai');
+        $provider = SpecRouting::provider($spec);
         $pricing = (string) ($spec['pricing'] ?? 'estimated');
         $quality = $provider === 'openai' ? ImageQuality::fromSpecOrHigh($spec['quality'] ?? '') : null;
         $unit = $this->unitCost($spec, $pricing, $provider, $quality);
@@ -155,7 +156,10 @@ class DesignImageDirectRenderer
             'project_id' => $image->project_id,
             'claim_token' => $claimToken,
             'prompt' => (string) ($spec['prompt'] ?? ''),
-            'operation' => (string) ($spec['operation'] ?? 'generate'),
+            'operation' => SpecRouting::operation($spec),
+            // `null` voi `edit`/`mirror`/`scene_keyframe`: chung khong tra registry.
+            // `GeminiImageClient` doc thang truong nay, khong suy lai.
+            'task' => SpecRouting::task($spec),
             'provider' => $provider,
             'model' => (string) ($spec['model'] ?? ''),
             'quality' => $quality?->value,

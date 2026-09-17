@@ -151,6 +151,117 @@ return [
                     ],
                 ],
             ],
+
+            /*
+             * O NEO DANH TINH. Ten task trung `DesignImageStore::ANCHOR_TYPE` de khong
+             * sinh ra mot he ten thu hai canh `image_type`.
+             *
+             * Evidence file dung chung voi `environment_plate`: chung chung minh MODEL
+             * co that, nhan `imageConfig`, va gia bao nhieu — khong cai nao noi ve task.
+             * Chep lai ten file o day chu khong tro sang task kia: mot ngay nao do hai
+             * task co the dung hai ban evidence khac nhau, va luc do khong ai phai go
+             * mot tham chieu cheo ra truoc.
+             */
+            'identity_anchor' => [
+                [
+                    'id' => 'openai:gpt-image-2',
+                    'provider' => 'openai',
+                    'model' => 'gpt-image-2',
+                    'label' => 'GPT Image 2',
+                    // MAC DINH giu nguyen: Nano Banana la lua chon them, khong phai
+                    // thay the. KHONG so gia o day — anchor cho chon ca ba muc chat
+                    // luong, nen mot con so don le se sai o hai muc con lai.
+                    'default' => true,
+                    'pricing' => 'estimated',
+                    'max_variations' => 2,
+                    'controls' => [
+                        'sizes' => [
+                            '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152',
+                            '3840x2160', '720x1280', '1152x2048', '2160x3840',
+                        ],
+                        'default_size' => '1152x2048',
+                        'qualities' => ['low', 'medium', 'high'],
+                        'default_quality' => 'low',
+                    ],
+                ],
+                [
+                    'id' => 'gemini:gemini-3.1-flash-lite-image',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-3.1-flash-lite-image',
+                    'label' => 'Nano Banana 2 Lite',
+                    'default' => false,
+                    'pricing' => 'estimated',
+                    'max_variations' => 1,
+                    'api_version' => 'v1',
+                    'shape' => 'image_config',
+                    'controls' => [
+                        'aspect_ratios' => [
+                            '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4',
+                            '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1',
+                        ],
+                        'default_aspect_ratio' => '9:16',
+                        'image_sizes' => ['1K'],
+                        'default_image_size' => '1K',
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_12.json',
+                        'image_config' => 'gemini_image_config_2026_09_13.json',
+                        'capabilities' => 'gemini_image_capabilities.json',
+                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
+                    ],
+                ],
+                [
+                    'id' => 'gemini:gemini-3.1-flash-image',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-3.1-flash-image',
+                    'label' => 'Nano Banana 2',
+                    'default' => false,
+                    'pricing' => 'estimated',
+                    'max_variations' => 1,
+                    'api_version' => 'v1',
+                    'shape' => 'image_config',
+                    'controls' => [
+                        'aspect_ratios' => [
+                            '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4',
+                            '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1',
+                        ],
+                        'default_aspect_ratio' => '9:16',
+                        'image_sizes' => ['0.5K', '1K', '2K', '4K'],
+                        'default_image_size' => '1K',
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_12.json',
+                        'image_config' => 'gemini_image_config_2026_09_13.json',
+                        'capabilities' => 'gemini_image_capabilities.json',
+                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
+                    ],
+                ],
+                [
+                    'id' => 'gemini:gemini-3-pro-image',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-3-pro-image',
+                    'label' => 'Nano Banana Pro',
+                    'default' => false,
+                    'pricing' => 'estimated',
+                    'max_variations' => 1,
+                    'api_version' => 'v1',
+                    'shape' => 'image_config',
+                    'controls' => [
+                        'aspect_ratios' => [
+                            '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
+                        ],
+                        'default_aspect_ratio' => '9:16',
+                        'image_sizes' => ['1K', '2K', '4K'],
+                        'default_image_size' => '1K',
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_12.json',
+                        'image_config' => 'gemini_image_config_2026_09_13.json',
+                        'capabilities' => 'gemini_image_capabilities.json',
+                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
+                    ],
+                ],
+            ],
         ],
 
         // Ten model va `predictLongRunning` DA duoc chung minh bang

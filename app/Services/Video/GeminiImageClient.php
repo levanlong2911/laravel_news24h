@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
-use App\Video\Environment\EnvironmentPlatePrompt;
 use App\Video\Media\MediaModelRegistry;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Http\Client\ConnectionException;
@@ -51,10 +50,18 @@ final class GeminiImageClient
             return $this->fail('GEMINI_API_KEY chua cau hinh — khong gui request.');
         }
 
+        // Task doc tu spec DA CHUAN HOA, khong suy lai tu `operation`. Lop nay chi
+        // duoc goi sau `DesignImageDirectRenderer::spec()`, noi task da duoc quyet
+        // dinh — suy lai o day la cho mot task sai bi loai o buoc truoc co co hoi
+        // song lai thanh mot task dung.
+        $task = $spec['task'] ?? null;
+
+        if (! is_string($task) || $task === '') {
+            return $this->fail('spec khong mang task — khong gui request');
+        }
+
         try {
-            $entry = $this->registry->find(
-                EnvironmentPlatePrompt::TASK, 'gemini:'.(string) ($spec['model'] ?? ''),
-            );
+            $entry = $this->registry->find($task, 'gemini:'.(string) ($spec['model'] ?? ''));
         } catch (InvalidArgumentException $e) {
             return $this->fail('Registry model hong — khong gui request: '.$e->getMessage());
         }

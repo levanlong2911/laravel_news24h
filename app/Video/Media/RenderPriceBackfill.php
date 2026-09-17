@@ -4,7 +4,6 @@ namespace App\Video\Media;
 
 use App\Enums\DesignImageStatus;
 use App\Models\VideoDesignImage;
-use App\Video\Environment\EnvironmentPlatePrompt;
 use InvalidArgumentException;
 
 /**
@@ -102,16 +101,26 @@ final class RenderPriceBackfill
     /** @param array<string, mixed> $spec */
     private function entryFor(array $spec): ?array
     {
-        if ((string) ($spec['provider'] ?? 'openai') !== 'gemini') {
-            return null;
-        }
-
         try {
+            if (SpecRouting::provider($spec) !== 'gemini') {
+                return null;
+            }
+
+            $task = SpecRouting::task($spec);
+
+            if ($task === null) {
+                return null;
+            }
+
             return ($this->registry ?? new MediaModelRegistry)->find(
-                EnvironmentPlatePrompt::TASK, 'gemini:'.(string) ($spec['model'] ?? ''),
+                $task, 'gemini:'.(string) ($spec['model'] ?? ''),
             );
         } catch (InvalidArgumentException) {
-            // Registry hong thi coi nhu khong co gia: chot phia tren se chan truoc HTTP.
+            // Spec hong hoac registry hong thi coi nhu KHONG CO GIA, va khong nem ra
+            // ngoai: `apply()` se tra `pricing_unavailable`, roi
+            // `DesignImageQueue::claimForDirectRender()` goi `releaseWithError()` —
+            // claim duoc nha dung cach. Nem tu day la treo claim toi het lease, vi
+            // backfill chay NGOAI `try` cua `renderNow()`.
             return null;
         }
     }
