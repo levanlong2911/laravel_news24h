@@ -281,6 +281,23 @@ return [
         'preview_dir' => storage_path('app/video-compose-previews'),
         'compose_tmp_dir' => storage_path('app/video-compose-tmp'),
         'ffprobe_timeout' => (int) env('VIDEO_FFPROBE_TIMEOUT', 20),
+
+        // Ghep ban final (muc 2): chua noi vao DB, chua noi vao man hinh.
+        'compose_final_dir' => storage_path('app/video-compose-final'),
+        'compose_input_root' => base_path(),
+        'compose_budget_seconds' => (int) env('VIDEO_COMPOSE_BUDGET_SECONDS', 900),
+        'compose_max_input_bytes' => (int) env('VIDEO_COMPOSE_MAX_INPUT_BYTES', 2_000_000_000),
+        // Dung sai tieng: MAC DINH 0.
+        //
+        // AAC ma hoa theo khoi 1024 mau, nen ky vong duoc don len boi cua 1024 ngay
+        // trong verifier. Sau phep do — 1 clip, cat thang, crossfade chia chan 1024,
+        // va ba ca le — deu khop CHINH XAC cong thuc do. Khong co gi de noi ra.
+        'compose_audio_tolerance_samples' => (int) env('VIDEO_COMPOSE_AUDIO_TOLERANCE_SAMPLES', 0),
+        // Dung sai thoi gian cho moc dau va do dai tung luong cua output.
+        // Do that tren sau ban ghep: hinh khop timeline TUYET DOI ca sau lan,
+        // tieng lech nhieu nhat 0,333 ms. 5 ms la ~15 lan so do lon nhat, va van
+        // chat hon diem mu 21,3 ms cua phep dem mau.
+        'compose_timing_tolerance_ms' => (int) env('VIDEO_COMPOSE_TIMING_TOLERANCE_MS', 5),
         'duration_tolerance_ms' => (int) env('VIDEO_VEO_DURATION_TOLERANCE_MS', 1500),
     ],
 

@@ -113,6 +113,40 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(
+            \App\Video\FinalComposition\CompositionPlanBuilder::class,
+            static fn (Application $app) => new \App\Video\FinalComposition\CompositionPlanBuilder(
+                probe: $app->make(MediaProbe::class),
+            ),
+        );
+
+        $this->app->singleton(
+            \App\Video\FinalComposition\CompositionOutputVerifier::class,
+            static fn (Application $app) => new \App\Video\FinalComposition\CompositionOutputVerifier(
+                probe: $app->make(MediaProbe::class),
+                frames: $app->make(\App\Video\Media\FrameCounter::class),
+                ffmpeg: $app->make(FfmpegRunner::class),
+                audioToleranceSamples: (int) config('video.veo.compose_audio_tolerance_samples'),
+                timingToleranceMs: (int) config('video.veo.compose_timing_tolerance_ms'),
+            ),
+        );
+
+        $this->app->singleton(
+            \App\Video\FinalComposition\CompositionExecutor::class,
+            static fn (Application $app) => new \App\Video\FinalComposition\CompositionExecutor(
+                ffmpeg: $app->make(FfmpegRunner::class),
+                capabilities: $app->make(\App\Video\Media\FfmpegCapabilities::class),
+                inputs: new \App\Video\FinalComposition\CompositionInputs(
+                    inputRoot: (string) config('video.veo.compose_input_root'),
+                    maxTotalBytes: (int) config('video.veo.compose_max_input_bytes'),
+                ),
+                builder: $app->make(\App\Video\FinalComposition\CompositionPlanBuilder::class),
+                verifier: $app->make(\App\Video\FinalComposition\CompositionOutputVerifier::class),
+                composeRoot: (string) config('video.veo.compose_final_dir'),
+                budgetSeconds: (int) config('video.veo.compose_budget_seconds'),
+            ),
+        );
+
+        $this->app->singleton(
             GeminiVeoVideoClient::class,
             static fn (Application $app): GeminiVeoVideoClient => new GeminiVeoVideoClient(
                 http: $app->make(HttpFactory::class),
