@@ -44,18 +44,61 @@
         ['Exports', ''],
     ];
 
-    $exportFields = [
-        ['Độ phân giải', array_values(array_filter([
-            $uniformSize === null ? null : $uniformSize.' (theo clip nguồn)',
-            '1920 × 1080 (Full HD)',
-            '1280 × 720 (HD)',
-            '1080 × 1920 (Vertical)',
-        ]))],
-        ['Tỉ lệ khung hình', ['16:9 (Landscape)', '9:16 (Portrait)', '1:1 (Square)']],
-        ['Frame rate (FPS)', ['24 fps', '25 fps', '30 fps']],
-        ['Video codec', ['H.264 (libx264)', 'H.265 (libx265)']],
-        ['Audio codec', ['AAC', 'MP3']],
-    ];
+    // Dung danh sach cua `CompositionPlanBuilder` chu khong chep lai mot ban rieng:
+    // hai ban se lech nhau, va nguoi dung se chon duoc mot co ma server tu choi.
+    // Ti le khung hinh la thu SUY RA tu do phan giai, khong phai mot lua chon rieng:
+    // hai o chon doc lap thi chung mau thuan duoc voi nhau, va server se phai chon
+    // mot cai de tin.
+    $ratioOf = static function (int $w, int $h): string {
+        // Euclid thuan, khong dung `gmp_gcd`: may nay khong nap extension gmp, va mot
+        // ham khong ton tai o day se giet ca trang.
+        [$a, $b] = [$w, $h];
+
+        while ($b !== 0) {
+            [$a, $b] = [$b, $a % $b];
+        }
+
+        $d = max(1, abs($a));
+
+        return intdiv($w, $d).':'.intdiv($h, $d)
+            .($w > $h ? ' (ngang)' : ($w < $h ? ' (dọc)' : ' (vuông)'));
+    };
+
+    $sizeChoices = array_map(static function (string $size) use ($ratioOf): array {
+        [$w, $h] = array_map('intval', explode('x', $size));
+
+        return [$size, $w.' × '.$h.($w > $h ? ' (ngang)' : ' (dọc)'), $ratioOf($w, $h)];
+    }, \App\Video\FinalComposition\CompositionPlanBuilder::SIZES);
+
+    // Mac dinh theo co cua clip nguon khi chung dong nhat; lech nhau thi khong co
+    // "co nguon" nao ca, lay ban doc lam mac dinh.
+    $uniformKey = $uniformSize === null ? null : str_replace([' ', '×'], ['', 'x'], $uniformSize);
+    $defaultSize = in_array($uniformKey, array_column($sizeChoices, 0), true)
+        ? $uniformKey
+        : '1080x1920';
+
+    // Moc cat cua ban final DANG PHAT, khoa theo render_id. Rong khi chua co
+    // final, hoac khi final duoc ghep tu mot bo clip khac bo dang hien.
+    $finalCuts = ($latestFinal && $latestFinal['video_url']) ? $latestFinal['cuts'] : [];
+
+    // Khung xem truoc OM THEO ti le cua video, khong ep video vao mot khung sai ti
+    // le. Ban final o day la doc 1080x1920; nhet no vao mot khung ngang co dinh thi
+    // hoac phai chen vien den, hoac phai cat mat noi dung.
+    //
+    // Thu tu uu tien: co that cua ban final -> co dong nhat cua clip nguon -> 16:9.
+    $previewRatio = match (true) {
+        $latestFinal !== null && $latestFinal['width'] > 0 && $latestFinal['height'] > 0
+            => [$latestFinal['width'], $latestFinal['height']],
+        $clips !== [] && $clips[0]['width'] > 0 && $clips[0]['height'] > 0
+            => [$clips[0]['width'], $clips[0]['height']],
+        default => [16, 9],
+    };
+
+    // Chieu cao toi da cua khung, va be ngang suy ra tu no. Tinh o day chu khong
+    // bang `calc()` long nhau trong CSS: mot phep nhan voi mot ti le luu trong bien
+    // CSS de viet sai va khi sai thi im lang.
+    $previewMaxHeight = 520;
+    $previewMaxWidth = (int) round($previewMaxHeight * $previewRatio[0] / $previewRatio[1]);
 
     $playlist = array_map(static fn (array $clip) => [
         'src' => $clip['file_url'],
@@ -106,7 +149,7 @@
         <aside class="fcomp-card fcomp-clips">
             <div class="fcomp-card-title">List clip đã dựng xong <span>{{ count($clips) }} clips</span></div>
             @forelse($clips as $clip)
-                <div class="fcomp-clip-item" data-fcomp-seek="{{ $loop->index }}">
+                <div class="fcomp-clip-item" data-fcomp-seek="{{ $loop->index }}"@isset($finalCuts[$clip['render_id']]) data-fcomp-at="{{ $finalCuts[$clip['render_id']] }}"@endisset>
                     <i class="fas fa-grip-vertical"></i>
                     @if($clip['thumbnail_url'])
                         <img src="{{ $clip['thumbnail_url'] }}" alt="{{ $clip['title'] }}">
@@ -128,9 +171,11 @@
         <section class="fcomp-center">
             <div class="fcomp-card fcomp-preview">
                 <div class="fcomp-card-title">Xem trước Final Video</div>
-                <div class="fcomp-player">
+                <div class="fcomp-player" style="--fcomp-ar:{{ $previewRatio[0] }}/{{ $previewRatio[1] }};--fcomp-w:{{ $previewMaxWidth }}px">
                     @if($latestFinal && $latestFinal['video_url'])
-                        <video src="{{ $latestFinal['video_url'] }}" controls preload="metadata" playsinline></video>
+                        {{-- `data-fcomp-final` de JS biet day la mot the DUY NHAT, khong
+                             phai cap deck luan phien: playhead bam theo chinh no. --}}
+                        <video data-fcomp-final src="{{ $latestFinal['video_url'] }}" controls preload="metadata" playsinline></video>
                         <span class="fcomp-draft">{{ $latestFinal['status'] }}</span>
                     @elseif($clips !== [])
                         {{-- Chua co ban final thi phat CHINH cac clip, noi duoi nhau theo
@@ -193,7 +238,7 @@
                         </div>
                         <div class="fcomp-track fcomp-video-track">
                             @forelse($clips as $clip)
-                                <div class="fcomp-shot" data-fcomp-seek="{{ $loop->index }}" style="flex:{{ $clip['duration_ms'] }}@if($clip['thumbnail_url']);background-image:url('{{ $clip['thumbnail_url'] }}')@endif" title="{{ $clip['title'] }}">
+                                <div class="fcomp-shot" data-fcomp-seek="{{ $loop->index }}"@isset($finalCuts[$clip['render_id']]) data-fcomp-at="{{ $finalCuts[$clip['render_id']] }}"@endisset style="flex:{{ $clip['duration_ms'] }}@if($clip['thumbnail_url']);background-image:url('{{ $clip['thumbnail_url'] }}')@endif" title="{{ $clip['title'] }}">
                                     <b>{{ $sequence($clip['ordinal']) }}</b>
                                     <small>{{ $clock($clip['duration_ms']) }}</small>
                                 </div>
@@ -223,34 +268,65 @@
                 </dl>
             </section>
 
-            <section class="fcomp-card fcomp-settings">
+            <form class="fcomp-card fcomp-settings" method="POST" action="{{ route('video-projects.final-render', $id) }}">
+                @csrf
                 <div class="fcomp-card-title">Thiết lập xuất video</div>
-                @foreach($exportFields as $field)
-                    <label>
-                        <span>{{ $field[0] }}</span>
-                        <select disabled>
-                            @foreach($field[1] as $option)
-                                <option>{{ $option }}</option>
-                            @endforeach
-                        </select>
-                    </label>
-                @endforeach
+
+                <label>
+                    <span>Độ phân giải</span>
+                    <select name="size" data-fcomp-size @disabled($clips === [])>
+                        @foreach($sizeChoices as $size)
+                            <option value="{{ $size[0] }}" data-ratio="{{ $size[2] }}" @selected($size[0] === $defaultSize)>{{ $size[1] }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                {{-- Tro, vi day la he qua cua o tren chu khong phai mot lua chon rieng.
+                     Van hien ra vi nguoi dung can THAY minh dang xuat theo ti le nao. --}}
+                <label>
+                    <span>Tỉ lệ khung hình</span>
+                    <select disabled data-fcomp-ratio>
+                        <option>{{ collect($sizeChoices)->firstWhere(0, $defaultSize)[2] ?? '16:9 (ngang)' }}</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Frame rate (FPS)</span>
+                    <select name="fps" @disabled($clips === [])>
+                        @foreach([24, 25, 30] as $fps)
+                            <option value="{{ $fps }}" @selected($fps === 24)>{{ $fps }} fps</option>
+                        @endforeach
+                    </select>
+                </label>
+                {{-- Hai o nay chi co dung mot lua chon duoc ho tro, nen chung tro. --}}
+                <label><span>Video codec</span><select disabled><option>H.264 (libx264)</option></select></label>
+                <label><span>Audio codec</span><select disabled><option>AAC</option></select></label>
+
                 <label>
                     <span>Chất lượng (CRF)</span>
-                    <span class="fcomp-crf"><input type="range" min="12" max="32" value="18" disabled><b>18</b></span>
+                    <span class="fcomp-crf">
+                        <input type="range" name="crf" min="16" max="28" value="18" @disabled($clips === []) oninput="this.nextElementSibling.textContent=this.value">
+                        <b>18</b>
+                    </span>
                 </label>
                 <small>Giá trị thấp hơn = chất lượng cao hơn (khuyến nghị: 16-20)</small>
 
                 <details open>
                     <summary>Tùy chọn nâng cao <i class="fas fa-chevron-up"></i></summary>
+                    <label><input type="checkbox" name="crossfade" value="1" @disabled($clips === [])> Chuyển cảnh mờ giữa các clip (0,5 giây)</label>
                     @foreach($advancedOptions as $option)
                         <label><input type="checkbox" disabled @checked($option[1])> {{ $option[0] }}</label>
                     @endforeach
                 </details>
 
-                <button class="fcomp-render" type="button" disabled><i class="fas fa-cog"></i> Render Final Video</button>
-                <p>Chưa nối đường render. Các ô trên là thiết lập dự kiến, chưa lưu được.</p>
-            </section>
+                <button class="fcomp-render" type="submit" @disabled($clips === [])><i class="fas fa-cog"></i> Render Final Video</button>
+                <p>
+                    @if($clips === [])
+                        Chưa có clip nào dựng xong nên chưa ghép được.
+                    @else
+                        Ghép chạy đồng bộ ngay trong request, chưa qua hàng đợi — {{ count($clips) }} clip,
+                        {{ $clock($totalMs) }}. Đừng đóng tab khi đang chạy.
+                    @endif
+                </p>
+            </form>
         </aside>
 
         <section class="fcomp-card fcomp-history">

@@ -93,17 +93,24 @@ class FinalCompositionPreviewTest extends TestCase
         $this->assertStringContainsString('Timeline <span>00:00</span>', $html);
     }
 
-    public function test_nothing_on_the_screen_can_be_submitted_yet(): void
+    public function test_the_only_thing_the_screen_submits_is_a_render(): void
     {
-        // Duong render chua noi vao. Mot nut bam duoc o day se gui di dau do khong
-        // ai dinh nghia — nen chung phai tro, va phai tro MOT CACH NHIN THAY DUOC.
-        //
         // Doc THAN VIEW chu khong doc trang da render: layout chung co san form dang
-        // xuat va form tim kiem, nen tim `<form` tren trang la bat nham ca vo.
+        // xuat va form tim kiem, nen dem `<form` tren trang la bat nham ca vo.
         $view = file_get_contents(resource_path('views/video-projects/final-composition-preview.blade.php'));
 
-        $this->assertStringNotContainsString('<form', $view);
-        $this->assertGreaterThanOrEqual(12, substr_count($this->openBareProject(), 'disabled'));
+        // DUNG MOT form. Luu ban nhap, sap xep clip, cat clip — chua lam, nen chung
+        // van tro. Mot nut bam duoc ma khong co dich la mot loi hua voi nguoi dung.
+        $this->assertSame(1, substr_count($view, '<form'));
+        $this->assertStringContainsString("route('video-projects.final-render', \$id)", $view);
+        $this->assertStringContainsString('@csrf', $view);
+    }
+
+    public function test_an_empty_project_cannot_start_a_render(): void
+    {
+        // Khong co clip thi khong co gi de ghep, va nut phai tro — chu khong phai
+        // bam duoc roi server moi tu choi.
+        $this->assertStringContainsString('Chưa có clip nào dựng xong nên chưa ghép được', $this->openBareProject());
     }
 
     public function test_the_six_steps_carry_three_different_states(): void
@@ -347,9 +354,11 @@ class FinalCompositionPreviewTest extends TestCase
 
         $this->assertSame('720 × 1280', $this->cellsFor($project)['uniform_size']);
 
-        $response = $this->get(route('video-projects.final-composition-preview', $project->id));
+        $html = $this->get(route('video-projects.final-composition-preview', $project->id))->getContent();
 
-        $response->assertSee('720 × 1280 (theo clip nguồn)', false);
+        // Co nguon dong nhat thi no la co DUOC CHON SAN — khong bat nguoi dung tu di
+        // tim lai mot con so ma he thong da biet.
+        $this->assertMatchesRegularExpression('/<option value="720x1280"[^>]*\sselected/', $html);
     }
 
     public function test_with_no_final_the_player_plays_the_clips_themselves(): void
@@ -403,6 +412,22 @@ class FinalCompositionPreviewTest extends TestCase
         // vao mot cho con hinh chay o cho khac.
         $this->assertSame([8000, 5500], array_column($playlist, 'ms'));
         $this->assertSame(['S01 · Scene 1', 'S02 · Scene 3'], array_column($playlist, 'label'));
+    }
+
+    public function test_the_aspect_ratio_is_derived_from_the_resolution(): void
+    {
+        [$project, $session] = $this->projectWithSession();
+
+        $this->clip($session, $this->scene($project, 1), 'succeeded', 8000, 720, 1280);
+
+        $html = $this->get(route('video-projects.final-composition-preview', $project->id))->getContent();
+
+        // Ti le KHONG phai mot lua chon rieng — hai o chon doc lap thi chung mau thuan
+        // duoc voi nhau. No di theo do phan giai, va o hien no phai tro.
+        $this->assertStringContainsString('<option value="720x1280" data-ratio="9:16 (dọc)"', $html);
+        $this->assertStringContainsString('<option value="1920x1080" data-ratio="16:9 (ngang)"', $html);
+        $this->assertMatchesRegularExpression('/data-fcomp-ratio>\s*<option>9:16 \(dọc\)<\/option>/u', $html);
+        $this->assertStringContainsString('<select disabled data-fcomp-ratio>', $html);
     }
 
     public function test_the_render_history_sits_under_all_three_columns(): void

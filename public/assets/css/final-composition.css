@@ -278,29 +278,38 @@
     border-bottom: 0;
 }
 
+/* Khung OM THEO ti le cua video, khong ep video vao khung.
+   `--fcomp-ar` va `--fcomp-w` do blade dat, lay tu kich thuoc THAT cua ban final.
+   Video doc thi khung hep lai va cao len; video ngang thi khung rong het cot. Ca
+   hai truong hop deu khong con vien den, va khong cat mat noi dung nao. */
 .fcomp-player {
-    height: 320px;
-    margin: 0 11px 11px;
+    aspect-ratio: var(--fcomp-ar, 16 / 9);
+    width: 100%;
+    max-width: min(100%, var(--fcomp-w, 100%));
+    height: auto;
+    margin: 0 auto 11px;
     position: relative;
     background: #101a2c;
     border-radius: 4px;
     overflow: hidden;
 }
 
-.fcomp-player > img {
+/* MOI the media trong khung phat, khong chi `.fcomp-deck`.
+   Ban final duoc phat bang mot the <video> KHONG co lop `fcomp-deck` — no khong
+   can luan phien. Luat kich thuoc ma chi bam vao lop do thi the ay khong co kich
+   thuoc nao ca, va no tran ra theo kich thuoc goc 1080x1920. */
+.fcomp-player > img,
+.fcomp-player > video {
     width: 100%;
     height: 100%;
     object-fit: contain;
     background: #101a2c;
 }
 
+/* `.fcomp-deck` chi them phan xep chong va chuyen luot — kich thuoc lay o tren. */
 .fcomp-deck {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    background: #101a2c;
     opacity: 0;
 }
 
@@ -346,12 +355,16 @@
     cursor: pointer;
 }
 
+/* Chay bang `scaleX` nen phai rong SAN 100% va neo ben trai — doi `width` moi
+   khung la mot lan tinh lai bo cuc, doi `transform` thi khong. */
 .fcomp-scrub i {
     display: block;
-    width: 0;
+    width: 100%;
     height: 100%;
     border-radius: 4px;
     background: var(--fcomp-cursor);
+    transform: scaleX(0);
+    transform-origin: left center;
 }
 
 .fcomp-player-empty {
@@ -509,6 +522,13 @@
     cursor: pointer;
 }
 
+/* Chi nhung khoi CO moc trong ban final moi bam duoc — mot con tro tay tren
+   mot khoi khong nhay di dau la mot loi hua suong. */
+.fcomp-shot:not(.seekable),
+.fcomp-clip-item:not(.seekable) {
+    cursor: default;
+}
+
 .fcomp-shot.playing {
     outline: 2px solid var(--fcomp-cursor);
     outline-offset: -2px;
@@ -530,7 +550,6 @@
     width: 2px;
     background: var(--fcomp-cursor);
     pointer-events: none;
-    transition: left 0.12s linear;
 }
 
 .fcomp-playhead b {
@@ -843,8 +862,10 @@
         margin-bottom: 10px;
     }
 
+    /* Man hep: chi ha TRAN chieu cao, van de ti le tu quyet dinh be ngang —
+       dat `height` co dinh o day se pha lai dung cai vua sua. */
     .fcomp-player {
-        height: 220px;
+        max-width: min(100%, calc(var(--fcomp-w, 100%) * 0.62));
     }
 
     .fcomp-timeline-panel {

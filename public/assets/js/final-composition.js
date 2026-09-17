@@ -8,16 +8,223 @@
 (function () {
     'use strict';
 
+    function clockOf(ms) {
+        var seconds = Math.max(0, Math.round(ms / 1000));
+
+        return String(Math.floor(seconds / 60)).padStart(2, '0') + ':'
+            + String(seconds % 60).padStart(2, '0');
+    }
+
+    /**
+     * Ve theo nhip MAN HINH, khong theo `timeupdate`.
+     *
+     * `timeupdate` chi ban khoang bon lan moi giay, nen playhead nhay tung nac ~250ms
+     * — do la cai giat nhin thay duoc. `requestAnimationFrame` cho 60 khung/giay va
+     * dung han khi video dung, nen khong dot CPU luc dang nghi.
+     *
+     * Va KHONG dat `transition` len playhead: transition 0,12s chay xong roi dung
+     * cho nac sau, hai co che cung dieu khien mot thuoc tinh se danh nhau.
+     *
+     * @param {Array} videos  moi the co the dang phat
+     * @param {Function} paint
+     */
+    function follow(videos, paint) {
+        var frame = null;
+
+        function tick() {
+            paint();
+            frame = requestAnimationFrame(tick);
+        }
+
+        function start() {
+            if (frame === null) {
+                tick();
+            }
+        }
+
+        function stop() {
+            if (frame !== null) {
+                cancelAnimationFrame(frame);
+                frame = null;
+            }
+
+            paint();
+        }
+
+        videos.forEach(function (video) {
+            video.addEventListener('play', start);
+            video.addEventListener('playing', start);
+            video.addEventListener('pause', stop);
+            video.addEventListener('ended', stop);
+            video.addEventListener('seeked', paint);
+            video.addEventListener('loadedmetadata', paint);
+        });
+    }
+
+    /**
+     * Dat playhead bang `transform` chu khong bang `left`.
+     *
+     * `left` theo phan tram bat trinh duyet tinh lai bo cuc moi khung; `transform`
+     * chi cham toi tang hop thanh. Va dong ho chi ghi khi GIAY doi — ghi
+     * `textContent` 60 lan mot giay cho mot chuoi khong doi la 59 lan thua.
+     */
+    function mover(playhead, lanes) {
+        var clock = playhead.querySelector('b');
+        var shown = null;
+
+        // Do be ngang MOT LAN, do lai khi cua so doi.
+        //
+        // `clientWidth` bat trinh duyet tinh lai bo cuc de tra loi. Doc no trong moi
+        // khung roi ghi `transform` ngay sau la giang co bo cuc 60 lan mot giay —
+        // dung cai lam no giat.
+        var width = lanes.clientWidth;
+
+        window.addEventListener('resize', function () {
+            width = lanes.clientWidth;
+        });
+
+        return function (ratio, ms) {
+            playhead.style.transform = 'translateX(' + (ratio * width) + 'px)';
+
+            var text = clockOf(ms);
+
+            if (clock !== null && text !== shown) {
+                clock.textContent = text;
+                shown = text;
+            }
+        };
+    }
+
+    /**
+     * Thoi diem phat, NOI SUY giua hai khung video.
+     *
+     * `video.currentTime` chi nhay theo khung hinh — video 24fps thi no doi 24 lan
+     * mot giay, du ta ve 60 lan. Doc tho la playhead di 24 nac.
+     *
+     * Giua hai lan `currentTime` doi, suy ra vi tri bang dong ho tuong. Chan tren
+     * 0,1 giay de neu video khung lai thi dau phat khong chay vuot roi giat nguoc.
+     */
+    function interpolator(video) {
+        var seen = -1;
+        var base = 0;
+        var wall = 0;
+
+        return function () {
+            var now = video.currentTime;
+
+            if (now !== seen) {
+                seen = now;
+                base = now;
+                wall = performance.now();
+
+                return now;
+            }
+
+            if (video.paused || video.ended) {
+                return now;
+            }
+
+            var drift = (performance.now() - wall) / 1000 * (video.playbackRate || 1);
+
+            return Math.min(base + Math.min(drift, 0.1), video.duration || base + drift);
+        };
+    }
+
+    /**
+     * Ban final: mot the <video>, playhead bam theo chinh no.
+     *
+     * Moc de nhay toi lay tu `data-fcomp-at` — do la `start_ms` cua clip TRONG BAN
+     * FINAL, doc tu `video_final_renders`. Khong suy ra tu do dai clip cong don:
+     * ban final co chuyen canh mo nen ngan hon tong do dai, va hai con so do lech
+     * nhau dung bang tong phan chong lan.
+     */
+    function single(root) {
+        var video = root.querySelector('[data-fcomp-final]');
+        var playhead = root.querySelector('.fcomp-playhead');
+        var lanes = root.querySelector('.fcomp-lanes');
+
+        if (video === null || playhead === null || lanes === null) {
+            return;
+        }
+
+        var move = mover(playhead, lanes);
+        var at = interpolator(video);
+
+        function paint() {
+            var total = video.duration;
+
+            if (!isFinite(total) || total <= 0) {
+                return;
+            }
+
+            var seconds = at();
+
+            move(Math.min(Math.max(seconds / total, 0), 1), seconds * 1000);
+        }
+
+        follow([video], paint);
+
+        root.querySelectorAll('[data-fcomp-at]').forEach(function (node) {
+            node.classList.add('seekable');
+
+            node.addEventListener('click', function () {
+                var at = Number(node.dataset.fcompAt) / 1000;
+
+                if (isFinite(at)) {
+                    video.currentTime = at;
+
+                    var started = video.play();
+
+                    if (started && typeof started.catch === 'function') {
+                        started.catch(function () {});
+                    }
+                }
+            });
+        });
+
+        paint();
+    }
+
+    /**
+     * Ti le khung hinh di theo do phan giai.
+     *
+     * O ti le la thu SUY RA, khong phai lua chon rieng — nhung neu no dung im khi o
+     * do phan giai doi thi no dang noi sai, va do con te hon khong hien gi.
+     */
+    function mirrorRatio(root) {
+        var size = root.querySelector('[data-fcomp-size]');
+        var ratio = root.querySelector('[data-fcomp-ratio] option');
+
+        if (size === null || ratio === null) {
+            return;
+        }
+
+        size.addEventListener('change', function () {
+            var chosen = size.options[size.selectedIndex];
+
+            if (chosen && chosen.dataset.ratio) {
+                ratio.textContent = chosen.dataset.ratio;
+            }
+        });
+    }
+
     var root = document.querySelector('.fcomp');
 
     if (root === null) {
         return;
     }
 
+    mirrorRatio(root);
+
     var payload = root.querySelector('[data-fcomp-playlist]');
     var decks = Array.prototype.slice.call(root.querySelectorAll('[data-fcomp-deck]'));
 
     if (payload === null || decks.length < 2) {
+        // Da co ban final: mot the <video> duy nhat, khong luan phien. Playhead van
+        // phai chay — truoc day ca khoi nay thoat o day, va timeline dung im trong
+        // khi video dang phat.
+        single(root);
+
         return;
     }
 
@@ -35,7 +242,7 @@
 
     var label = root.querySelector('[data-fcomp-now]');
     var playhead = root.querySelector('.fcomp-playhead');
-    var headClock = playhead === null ? null : playhead.querySelector('b');
+    var lanes = root.querySelector('.fcomp-lanes');
     var stage = root.querySelector('.fcomp-player');
     var toggle = root.querySelector('[data-fcomp-toggle]');
     var timeText = root.querySelector('[data-fcomp-time]');
@@ -53,13 +260,6 @@
 
     var index = 0;
     var active = 0;
-
-    function clock(ms) {
-        var seconds = Math.max(0, Math.round(ms / 1000));
-
-        return String(Math.floor(seconds / 60)).padStart(2, '0') + ':'
-            + String(seconds % 60).padStart(2, '0');
-    }
 
     function deck(which) {
         return decks[which];
@@ -166,28 +366,36 @@
         paint();
     }
 
+    // Mot bo noi suy cho MOI the: chung khong cung mot dong thoi gian, va dung chung
+    // mot bo thi luc doi the se ra mot buoc nhay gia.
+    var clocks = decks.map(interpolator);
+
     function elapsedMs() {
-        return offsets[index] + (deck(active).currentTime * 1000);
+        return offsets[index] + (clocks[active]() * 1000);
     }
+
+    var move = playhead !== null && lanes !== null ? mover(playhead, lanes) : null;
+    var shownTime = null;
 
     function paint() {
         var elapsed = Math.min(elapsedMs(), total);
         var ratio = total === 0 ? 0 : Math.min(Math.max(elapsed / total, 0), 1);
 
-        if (playhead !== null) {
-            playhead.style.left = (ratio * 100) + '%';
-        }
-
-        if (headClock !== null) {
-            headClock.textContent = clock(elapsed);
+        if (move !== null) {
+            move(ratio, elapsed);
         }
 
         if (scrubFill !== null) {
-            scrubFill.style.width = (ratio * 100) + '%';
+            // `scaleX` thay vi `width`: cung ly do voi playhead — doi `width` la mot
+            // lan tinh lai bo cuc, doi `transform` thi khong.
+            scrubFill.style.transform = 'scaleX(' + ratio + ')';
         }
 
-        if (timeText !== null) {
-            timeText.textContent = clock(elapsed) + ' / ' + clock(total);
+        var text = clockOf(elapsed) + ' / ' + clockOf(total);
+
+        if (timeText !== null && text !== shownTime) {
+            timeText.textContent = text;
+            shownTime = text;
         }
     }
 
@@ -202,13 +410,11 @@
         toggle.setAttribute('aria-label', playing ? 'Tạm dừng' : 'Phát');
     }
 
-    decks.forEach(function (node) {
-        node.addEventListener('timeupdate', function () {
-            if (node === deck(active)) {
-                paint();
-            }
-        });
+    // Mot vong `requestAnimationFrame` chung cho ca hai the: chi the dang hien moi
+    // phat, va `paint()` von doc thang tu the do.
+    follow(decks, paint);
 
+    decks.forEach(function (node) {
         node.addEventListener('play', paintToggle);
         node.addEventListener('pause', paintToggle);
 
