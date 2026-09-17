@@ -28,12 +28,12 @@ final class CompositionOutputVerifier
      *         `reasons` rong la dat
      */
     public function inspect(
-        CompositionPlan $plan,
+        CompositionExpectation $expected,
         string $output,
         string $pcmPath,
         Deadline $deadline,
     ): array {
-        $p = $plan->profile;
+        $p = $expected->profile;
         $measured = $this->probe->inspect($output, $deadline->remaining());
 
         if (($measured['ok'] ?? false) !== true) {
@@ -76,7 +76,7 @@ final class CompositionOutputVerifier
         // 200 ms van co dung so mau, va mot ban thieu vai tram mau van don len cung
         // mot boi cua 1024. Kiem duration o day CHAT HON phep dem 64 lan.
         $reasons = [...$reasons, ...$this->timing(
-            $plan, (array) $measured['video'], (array) $measured['audio'],
+            $expected, (array) $measured['video'], (array) $measured['audio'],
         )];
 
         // Profile sai thi DUNG o day: giai ma ca luong tieng cua mot file da hong
@@ -98,11 +98,11 @@ final class CompositionOutputVerifier
         }
 
         // Khung hinh: BANG TUYET DOI. No roi rac, khong co gi de dung sai.
-        if ($count->frames !== $plan->expectedFrames()) {
-            $reasons[] = sprintf('so khung: cho %d, do duoc %d', $plan->expectedFrames(), $count->frames);
+        if ($count->frames !== $expected->frames) {
+            $reasons[] = sprintf('so khung: cho %d, do duoc %d', $expected->frames, $count->frames);
         }
 
-        [$samples, $audioReasons] = $this->samples($plan, $output, $pcmPath, $deadline);
+        [$samples, $audioReasons] = $this->samples($expected, $output, $pcmPath, $deadline);
 
         return [
             'reasons' => [...$reasons, ...$audioReasons],
@@ -120,7 +120,7 @@ final class CompositionOutputVerifier
      * @return array{0: ?int, 1: list<string>}
      */
     private function samples(
-        CompositionPlan $plan,
+        CompositionExpectation $expected,
         string $output,
         string $pcmPath,
         Deadline $deadline,
@@ -147,7 +147,7 @@ final class CompositionOutputVerifier
             return [null, ['khong doc duoc kich thuoc file PCM']];
         }
 
-        $frameBytes = 2 * $plan->profile->channels;
+        $frameBytes = 2 * $expected->profile->channels;
 
         if ($bytes % $frameBytes !== 0) {
             return [null, [sprintf(
@@ -179,14 +179,14 @@ final class CompositionOutputVerifier
         // Muon chinh xac tung mau thi phai do TRUOC khi ma hoa AAC, va do la mot luot
         // chay graph nua; chua lam o muc nay.
         $frame = 1024;
-        $timeline = $plan->expectedAudioSamples();
-        $expected = (int) ceil($timeline / $frame) * $frame;
-        $drift = abs($samples - $expected);
+        $timeline = $expected->audioSamples;
+        $rounded = (int) ceil($timeline / $frame) * $frame;
+        $drift = abs($samples - $rounded);
 
         if ($drift > $this->audioToleranceSamples) {
             return [$samples, [sprintf(
                 'tieng lech %d mau (%.3f ms): timeline %d, don len khoi AAC thanh %d, do duoc %d',
-                $drift, $drift * 1000 / $plan->profile->sampleRate, $timeline, $expected, $samples,
+                $drift, $drift * 1000 / $expected->profile->sampleRate, $timeline, $rounded, $samples,
             )]];
         }
 
@@ -213,9 +213,9 @@ final class CompositionOutputVerifier
      * @param  array<string, mixed>  $audio
      * @return list<string>
      */
-    private function timing(CompositionPlan $plan, array $video, array $audio): array
+    private function timing(CompositionExpectation $expected, array $video, array $audio): array
     {
-        $timeline = $plan->expectedFrames() / $plan->profile->fps;
+        $timeline = $expected->frames / $expected->profile->fps;
         $reasons = [];
 
         foreach ([['hinh', $video], ['tieng', $audio]] as [$label, $stream]) {

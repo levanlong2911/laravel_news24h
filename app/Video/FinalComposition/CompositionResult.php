@@ -21,12 +21,27 @@ final class CompositionResult
         public readonly array $reasons,
         /** @var list<array{start_ms: int, duration_ms: int}> */
         public readonly array $timeline = [],
+        /**
+         * Luot dung giua chung NHUNG da kip de lai output cung receipt.
+         *
+         * Khac han `refused`: o day co mot file da di qua verifier va mot bang chung
+         * gan no voi luot nay. Ha `failed` cho truong hop nay la ket luan hong cho mot
+         * thu chua ai do lai, va dong luon duong doi soat — doi phuc hoi chi quet hang
+         * con `composing`.
+         */
+        public readonly bool $unresolved = false,
     ) {}
 
     /** @param list<string> $reasons */
     public static function refused(array $reasons): self
     {
         return new self(false, null, null, null, null, null, $reasons, []);
+    }
+
+    /** @param list<string> $reasons */
+    public static function unresolved(array $reasons, string $path): self
+    {
+        return new self(false, $path, null, null, null, null, $reasons, [], true);
     }
 
     /** @param list<array{start_ms: int, duration_ms: int}> $timeline */

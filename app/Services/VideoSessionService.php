@@ -1139,6 +1139,13 @@ class VideoSessionService
             return ['status' => 'error', 'error' => 'khong co final dang composing cho session nay'];
         }
 
+        // Luot do Laravel tu chay ffmpeg KHONG phai viec cua worker: plan cua no mang
+        // hinh dang khac (`output`, `clips[].sha256`, khong co `output_path`), va giao
+        // no ra day la de hai ben cung ghi mot hang.
+        if (data_get($final->plan_json, 'engine') === VideoFinal::ENGINE_LARAVEL) {
+            return ['status' => 'error', 'final_id' => $final->id, 'error' => 'luot ghep nay do Laravel dieu phoi'];
+        }
+
         // Chốt một lần — retry (mất mạng, restart) trả lại đúng plan đã dùng,
         // không tính lại từ video_shots (có thể đã đổi sau khi chốt).
         if (is_array($final->plan_json)) {
@@ -1188,6 +1195,13 @@ class VideoSessionService
             $final = VideoFinal::query()->whereKey($finalId)->lockForUpdate()->firstOrFail();
 
             if ($final->status !== 'composing') {
+                return $final;
+            }
+
+            // Xem `buildFinalCompositionPlan()`: hang do Laravel chay khong nhan ket
+            // qua tu duong PATCH. Tra ve nguyen trang chu khong ha `failed` — luot ay
+            // van dang chay binh thuong o phia ben kia.
+            if (data_get($final->plan_json, 'engine') === VideoFinal::ENGINE_LARAVEL) {
                 return $final;
             }
 

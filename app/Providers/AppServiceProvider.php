@@ -131,6 +131,17 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(
+            \App\Services\Video\FinalCompositionReconciler::class,
+            static fn (Application $app) => new \App\Services\Video\FinalCompositionReconciler(
+                verifier: $app->make(\App\Video\FinalComposition\CompositionOutputVerifier::class),
+                composeRoot: (string) config('video.veo.compose_final_dir'),
+                // Doi phuc hoi chay o CLI, khong bi `max_execution_time` chan nhu
+                // request web — nhung van phai co han, vi no bam va giai ma file lon.
+                budgetSeconds: (int) config('video.veo.compose_budget_seconds'),
+            ),
+        );
+
+        $this->app->singleton(
             \App\Video\FinalComposition\CompositionExecutor::class,
             static fn (Application $app) => new \App\Video\FinalComposition\CompositionExecutor(
                 ffmpeg: $app->make(FfmpegRunner::class),

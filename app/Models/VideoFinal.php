@@ -16,6 +16,16 @@ class VideoFinal extends Model
 {
     use HasUuids;
 
+    /**
+     * Dau chu so huu trong `plan_json.engine`.
+     *
+     * Hai duong ghep dung CHUNG mot bang: worker Python doi lay viec bang
+     * `GET /video-finals/composing` roi bao ket qua bang PATCH, con duong Laravel tu
+     * chay ffmpeg trong request. Khong danh dau thi worker Python nhan duoc mot
+     * manifest hinh dang Laravel va PATCH de len mot hang Laravel dang chay.
+     */
+    public const ENGINE_LARAVEL = 'laravel-ffmpeg';
+
     protected $fillable = [
         // `revision`, `manifest_hash`, `frozen_at` co cot tu migration dau nhung chua
         // bao gio duoc khai o day — gan hang loat se AM THAM bo chung, va mot ban

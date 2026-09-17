@@ -34,17 +34,47 @@ final class CompositionExecutor
     ) {}
 
     /**
+     * Ngan sach DA BI CHAN TREN boi `max_execution_time` (xem `AppServiceProvider`).
+     *
+     * Noi goi can so nay de mo dong ho tu dau luong render chu khong tu day; lay
+     * thang `config()` o do la lay lai con so CHUA chan, va deadline se dai hon cai
+     * han that su cua PHP.
+     */
+    public function budgetSeconds(): int
+    {
+        return $this->budgetSeconds;
+    }
+
+    /**
      * @param  array<string, mixed>  $manifest
      * @param  list<string>  $sources
      */
-    public function execute(array $manifest, array $sources): CompositionResult
-    {
-        // Dat ngan sach TRUOC khi cham vao bat ky file nao: sao chep va probe cung
-        // tieu thoi gian, va mot dong ho bat dau o giua luot khong dung duoc gi.
-        $deadline = Deadline::in($this->budgetSeconds);
+    /**
+     * @param  Deadline|null  $deadline  ngan sach cua CA LUOT, tinh tu luc nguoi goi
+     *                                   bat dau — khong phai tu luc vao day. Noi goi
+     *                                   con truy van va bam nguon truoc do, va thoi
+     *                                   gian ay cung an vao han cua PHP.
+     */
+    public function execute(
+        array $manifest,
+        array $sources,
+        ?Deadline $deadline = null,
+        ?CompositionRun $run = null,
+    ): CompositionResult {
+        $deadline = $deadline ?? Deadline::in($this->budgetSeconds);
 
         $workspace = null;
+
+        // Danh sach giu lai duoc bo sung NGAY khi co thu can giu, chu khong doi ket
+        // qua tra ve. Mot exception xay ra sau do — het gio, loi ghi, bat ky — khong
+        // duoc phep keo theo viec xoa mat output da do xong va bang chung cua no.
         $keep = [];
+
+        // Duong dan output DA di qua verifier, cua mot luot CO CHU. Day moi la moc
+        // phan loai: co no thi luot nay la "chua doi soat", khong co thi la "that
+        // bai". Lay moc la "receipt da ghi xong" se xep mot luot ghi receipt hong
+        // thanh that bai, trong khi output van nam do va khong ai nhan lai nua.
+        $verified = null;
 
         try {
             // Preflight va tao thu muc deu NAM TRONG day: `remaining()` nem khi het
@@ -59,24 +89,36 @@ final class CompositionExecutor
                 return CompositionResult::refused(['ffmpeg thieu: '.$missing]);
             }
 
-            $workspace = CompositionWorkspace::create($this->composeRoot);
-            $result = $this->run($manifest, $sources, $workspace, $deadline);
+            $workspace = CompositionWorkspace::create($this->composeRoot, $run?->finalId);
 
-            if ($result->successful && $result->path !== null) {
-                $keep[] = $result->path;
-            }
-
-            return $result;
+            return $this->run($manifest, $sources, $workspace, $deadline, $run, $keep, $verified);
         } catch (CompositionRefused $e) {
-            return CompositionResult::refused([$e->getMessage()]);
+            return $this->stopped([$e->getMessage()], $verified);
         } catch (Throwable $e) {
             // Khong phan loai duoc: KHONG doan bua no thuoc ve ffmpeg hay ve output.
-            return CompositionResult::refused([get_class($e).': '.$e->getMessage()]);
+            return $this->stopped([get_class($e).': '.$e->getMessage()], $verified);
         } finally {
             // Chi don khi thu muc DA tao duoc. Loi khi don duoc bo qua co chu dich:
             // no khong duoc thay the ket qua chinh.
             $workspace?->discard($keep);
         }
+    }
+
+    /**
+     * Luot dung giua chung: da co output duoc xac minh hay chua?
+     *
+     * Co thi ket qua la `unresolved` — file van nam do, hang phai o lai `composing`
+     * de doi phuc hoi con nhin thay. Receipt co ghi duoc hay khong KHONG doi duoc
+     * cau tra loi nay: thieu receipt chi khien doi phuc hoi bao `needs_attention`,
+     * chu khong bien mot output da do dat thanh mot luot that bai.
+     *
+     * @param  list<string>  $reasons
+     */
+    private function stopped(array $reasons, ?string $verified): CompositionResult
+    {
+        return $verified === null
+            ? CompositionResult::refused($reasons)
+            : CompositionResult::unresolved($reasons, $verified);
     }
 
     /**
@@ -119,47 +161,6 @@ final class CompositionExecutor
     }
 
     /**
-     * Bam theo KHOI, kiem gio giua chung.
-     *
-     * `hash_file()` tren mot file hang tram MB chay toi cung roi moi tra ve — kiem
-     * het gio sau do la biet muon. Vong nay dung ngay khi ngan sach can.
-     *
-     * @throws CompositionRefused
-     */
-    private function hash(string $path, Deadline $deadline): ?string
-    {
-        $handle = @fopen($path, 'rb');
-
-        if ($handle === false) {
-            return null;
-        }
-
-        $context = hash_init('sha256');
-
-        try {
-            while (! feof($handle)) {
-                $chunk = fread($handle, 1 << 20);
-
-                if ($chunk === false) {
-                    return null;
-                }
-
-                if ($chunk !== '') {
-                    hash_update($context, $chunk);
-                }
-
-                if ($deadline->expired()) {
-                    throw new CompositionRefused('het ngan sach thoi gian khi dang bam file ket qua');
-                }
-            }
-        } finally {
-            fclose($handle);
-        }
-
-        return hash_final($context);
-    }
-
-    /**
      * @param  array<string, mixed>  $manifest
      * @param  list<string>  $sources
      * @return array{0: CompositionPlan, 1: CompositionCommand}
@@ -182,12 +183,17 @@ final class CompositionExecutor
     /**
      * @param  array<string, mixed>  $manifest
      * @param  list<string>  $sources
+     * @param  list<string>  $keep  duoc bo sung ngay khi co thu can giu, de `finally`
+     *                              cua noi goi khong don mat no
      */
     private function run(
         array $manifest,
         array $sources,
         CompositionWorkspace $workspace,
         Deadline $deadline,
+        ?CompositionRun $compositionRun,
+        array &$keep,
+        ?string &$verified,
     ): CompositionResult {
         // Sao truoc, roi PROBE TREN BAN SAO: probe mot ban ma encode mot ban khac la
         // mot khe co that, va `E` tinh tu metadata nen mot file khac noi dung cung
@@ -200,27 +206,53 @@ final class CompositionExecutor
         }
 
         $output = $workspace->output();
-        $run = $this->ffmpeg->run($command->arguments($graphPath, $output), $deadline->remaining());
+        $process = $this->ffmpeg->run($command->arguments($graphPath, $output), $deadline->remaining());
 
-        if (! $run->successful) {
-            return CompositionResult::refused([$run->tail()]);
+        if (! $process->successful) {
+            return CompositionResult::refused([$process->tail()]);
         }
 
-        $verdict = $this->verifier->inspect($plan, $output, $workspace->path('probe.pcm'), $deadline);
+        $verdict = $this->verifier->inspect($plan->expectation(), $output, $workspace->path('probe.pcm'), $deadline);
 
         if ($verdict['reasons'] !== []) {
             return CompositionResult::refused($verdict['reasons']);
         }
 
+        // TU DAY TRO DI output da qua verifier. Dat moc NGAY, truoc ca phep do dung
+        // luong: moi loi phia sau deu xay ra khi tren dia da co mot file da dat, va
+        // ha `failed` cho no la dong luon duong nhan lai.
+        //
+        // Duong CLI xem thu khong so huu hang nao nen khong co gi de doi soat — no
+        // giu nguyen nghia `refused`.
+        $keep = [$output];
+
+        if ($compositionRun !== null) {
+            $verified = $output;
+        }
+
         $bytes = @filesize($output);
-        $sha256 = $this->hash($output, $deadline);
+        $sha256 = ChunkedDigest::sha256($output, $deadline, 'file ket qua');
 
         if ($bytes === false || $sha256 === null) {
-            return CompositionResult::refused(['khong do duoc file da ghep']);
+            return $this->stopped(['khong do duoc file da ghep'], $verified);
         }
 
         if ($deadline->expired()) {
-            return CompositionResult::refused(['het ngan sach thoi gian truoc khi ket thuc']);
+            return $this->stopped(['het ngan sach thoi gian truoc khi ket thuc'], $verified);
+        }
+
+        if ($compositionRun !== null) {
+            $receipt = $workspace->path(CompositionReceipt::FILE);
+
+            // Nem o day — het dia, khong ghi duoc, `rename` hong — di ra `execute()`
+            // va thanh `unresolved`, vi `$verified` da duoc dat tu truoc.
+            CompositionReceipt::write($receipt, CompositionReceipt::build(
+                $compositionRun, $plan->expectation(), $sha256, $bytes, $this->cuts($manifest, $plan),
+            ));
+
+            // Them NGAY, khong doi tra ve: tu day output va receipt di voi nhau, ke ca
+            // khi duong tra ve khong con di toi noi.
+            $keep[] = $receipt;
         }
 
         return CompositionResult::composed(
@@ -231,5 +263,41 @@ final class CompositionExecutor
             sha256: $sha256,
             timeline: $plan->timeline(),
         );
+    }
+
+    /**
+     * Cat canh cua ban final: danh tinh clip lay tu MANIFEST da chot, vi tri lay tu
+     * `CompositionPlan`.
+     *
+     * Khong lay `render_id` tu dau khac: manifest la thu duoc bam vao `manifest_hash`,
+     * nen no la ban duy nhat doi chieu lai duoc.
+     *
+     * @param  array<string, mixed>  $manifest
+     * @return list<array{render_id: string, sequence_no: int, start_ms: int, duration_ms: int}>
+     *
+     * @throws CompositionRefused
+     */
+    private function cuts(array $manifest, CompositionPlan $plan): array
+    {
+        $entries = (array) ($manifest['clips'] ?? []);
+        $timeline = $plan->timeline();
+        $cuts = [];
+
+        foreach ($timeline as $i => $row) {
+            $renderId = $entries[$i]['render_id'] ?? null;
+
+            if (! is_string($renderId) || $renderId === '') {
+                throw new CompositionRefused(sprintf('clip %d trong manifest khong co render_id', $i + 1));
+            }
+
+            $cuts[] = [
+                'render_id' => $renderId,
+                'sequence_no' => $i + 1,
+                'start_ms' => $row['start_ms'],
+                'duration_ms' => $row['duration_ms'],
+            ];
+        }
+
+        return $cuts;
     }
 }

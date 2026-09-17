@@ -23,13 +23,32 @@ final class CompositionWorkspace
 
     private function __construct(public readonly string $directory) {}
 
-    /** @throws CompositionRefused */
-    public static function create(string $root): self
+    /**
+     * @param  string|null  $id  ten thu muc — phai la UUID. `null` sinh mot cai moi.
+     *
+     * @throws CompositionRefused
+     */
+    public static function create(string $root, ?string $id = null): self
     {
-        $directory = rtrim($root, '/\\').DIRECTORY_SEPARATOR.Str::uuid()->toString();
+        // Ten thu muc di thang vao duong dan. Nhan bua mot chuoi tu noi goi la nhan
+        // ca `..` va dau phan cach, tuc la cho phep ghi ra ngoai thu muc goc.
+        if ($id !== null && Str::isUuid($id) === false) {
+            throw new CompositionRefused('ten thu muc luot chay khong phai UUID: '.$id);
+        }
 
-        if (! @mkdir($directory, 0775, true) && ! is_dir($directory)) {
-            throw new CompositionRefused('khong tao duoc thu muc luot chay: '.$directory);
+        $directory = rtrim($root, '/\\').DIRECTORY_SEPARATOR.($id ?? Str::uuid()->toString());
+
+        if (! is_dir(dirname($directory)) && ! @mkdir(dirname($directory), 0775, true)) {
+            throw new CompositionRefused('khong tao duoc thu muc goc: '.dirname($directory));
+        }
+
+        // TAO DOC QUYEN, khong `is_dir()` roi dung lai. Thu muc da ton tai nghia la
+        // co mot luot khac dang o trong do hoac da de lai bang chung chua doi soat —
+        // ghi de len no la cach danh mat dung cai ta vua dung cong giu.
+        if (! @mkdir($directory, 0775)) {
+            throw new CompositionRefused(is_dir($directory)
+                ? 'thu muc luot chay da ton tai: '.$directory
+                : 'khong tao duoc thu muc luot chay: '.$directory);
         }
 
         return new self($directory);

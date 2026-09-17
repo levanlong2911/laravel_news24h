@@ -22,6 +22,14 @@ final class CompositionPlanBuilder
     private const CRF_MAX = 28;
 
     /**
+     * Ngan sach tam khi nguoi goi khong dua deadline (test goi thang builder).
+     *
+     * Khong dung `hash_file()` cho truong hop nay: hai duong bam khac nhau la hai
+     * hanh vi khac nhau, va cai chay trong test se khong con la cai chay that.
+     */
+    private const DIGEST_FALLBACK_SECONDS = 300;
+
+    /**
      * @param  list<string>  $sizes  noi rong danh sach nay tu trong lop la de mot co
      *                               chi dung cho fixture chay duoc o production
      */
@@ -145,6 +153,31 @@ final class CompositionPlanBuilder
         ?Deadline $deadline,
     ): CompositionClip {
         $label = 'clip '.($i + 1);
+
+        // Doi chieu BAN SAO voi hash da chot, TRUOC khi probe.
+        //
+        // Hash ky vong den tu `video_renders.primary_artifact_hash` — thu da ghi lai
+        // luc render xong — chu khong phai tu file hien tai. Bam lai file ngay truoc
+        // khi ghep la hop thuc hoa mot file co the da bi thay, vi ca hai ve cua phep
+        // so deu doc cung mot noi dung.
+        //
+        // Thieu hash thi TU CHOI, khong bo qua: mot manifest khong co hash la mot ban
+        // final khong doi chieu lai duoc voi thu da thuc su ghep.
+        $expected = $entry['sha256'] ?? null;
+
+        if (! is_string($expected) || preg_match('/^[a-f0-9]{64}$/', $expected) !== 1) {
+            throw new CompositionRefused($label.': thieu sha256 hop le trong manifest');
+        }
+
+        $actual = ChunkedDigest::sha256($path, $deadline ?? Deadline::in(self::DIGEST_FALLBACK_SECONDS), 'ban sao '.$label);
+
+        if ($actual === null || ! hash_equals($expected, $actual)) {
+            throw new CompositionRefused(sprintf(
+                '%s: noi dung da doi giua luc chot va luc sao chep (cho %s, doc duoc %s)',
+                $label, substr($expected, 0, 12), $actual === null ? 'khong bam duoc' : substr($actual, 0, 12),
+            ));
+        }
+
         // Probe tung clip an vao ngan sach chung cua ca luot, khong co han muc rieng.
         $measured = $this->probe->inspect($path, $deadline?->remaining());
 

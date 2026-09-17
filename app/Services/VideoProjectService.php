@@ -14,7 +14,6 @@ use App\Models\VideoArtifact;
 use App\Models\Admin;
 use App\Models\VideoDesignImage;
 use App\Models\VideoFinal;
-use App\Models\VideoFinalRender;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
@@ -27,6 +26,7 @@ use App\Services\Video\DesignImageDirectRenderer;
 use App\Services\Video\DesignImageQueue;
 use App\Services\Video\DesignImageRenderer;
 use App\Services\Video\DesignImageStore;
+use App\Services\Video\FinalCompositionReconciler;
 use App\Video\Render\Video\SceneClipDispatchService;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\OpenAiImageClient;
@@ -42,7 +42,10 @@ use App\Video\Concept\Canonical\Enums\ProvenanceOrigin;
 use App\Video\Concept\Persistence\CanonicalConceptExecutionService;
 use App\Video\Concept\Viewpoint;
 use App\Video\FinalComposition\CompositionExecutor;
+use App\Video\FinalComposition\CompositionReceipt;
 use App\Video\FinalComposition\CompositionResult;
+use App\Video\FinalComposition\CompositionRun;
+use App\Video\FinalComposition\Deadline;
 use App\Video\Environment\EnvironmentPlatePrompt;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\Profiles\CategoryCreativeProfileResolver as CanonicalProfileResolver;
@@ -63,6 +66,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use RuntimeException;
+use Throwable;
 
 class VideoProjectService
 {
@@ -1013,6 +1018,11 @@ class VideoProjectService
      */
     public function renderFinalComposition(string $projectId, array $options): array
     {
+        // Ngan sach bat dau TU DAY chu khong tu luc vao executor: truy van, doc dia va
+        // bam sha256 tung clip nguon deu an vao cung mot han cua PHP. Dat dong ho o
+        // giua luot thi phan da tieu truoc do khong ai tru di.
+        $executor = app(CompositionExecutor::class);
+        $deadline = Deadline::in($executor->budgetSeconds());
         $cells = $this->finalCompositionCells($projectId);
 
         if ($cells['clips'] === []) {
@@ -1045,11 +1055,6 @@ class VideoProjectService
         }
 
         $sessionId = (string) $sessions->first();
-        $blocked = $this->blockingComposition($sessionId);
-
-        if ($blocked !== null) {
-            return ['ok' => false, 'error' => $blocked];
-        }
 
         $disk = app(\Illuminate\Contracts\Filesystem\Factory::class)->disk((string) config('video.veo.disk'));
         $sources = [];
@@ -1064,38 +1069,177 @@ class VideoProjectService
                 return ['ok' => false, 'error' => 'thieu file clip tren dia: '.$clip['scene_code']];
             }
 
+            // Hash KY VONG lay tu `primary_artifact_hash` — thu `RenderCheckpointService`
+            // da ghi lai ngay luc render xong. Bam lai file o day la lay chinh file
+            // dang nghi ngo lam chuan: file bi thay giua luc render va luc bam se di
+            // qua em, vi ca hai ve cua phep so deu doc cung mot noi dung.
+            $expected = (string) optional($render)->primary_artifact_hash;
+
+            if (preg_match('/^[a-f0-9]{64}$/', $expected) !== 1) {
+                return ['ok' => false, 'error' => sprintf(
+                    'clip %s chua co hash artifact da luu — khong doi chieu duoc noi dung se ghep',
+                    $clip['scene_code'],
+                )];
+            }
+
             $sources[] = $path;
             $clipRows[] = $clip + [
                 'artifact_path' => $relative,
-                // Bam NOI DUNG nguon, khong chi duong dan: hai luot tren cung mot
-                // duong dan ma file da doi phai ra hai hash khac nhau, neu khong thi
-                // `manifest_hash` khong doi chieu lai duoc voi thu da thuc su ghep.
-                'sha256' => (string) hash_file('sha256', $path),
+                'sha256' => $expected,
             ];
         }
 
-        $manifest = $this->finalCompositionManifest($clipRows, $options);
-        $final = VideoFinal::query()->create([
-            'session_id' => $sessionId,
-            'revision' => ((int) VideoFinal::query()->where('session_id', $sessionId)->max('revision')) + 1,
-            'status' => 'composing',
-            'plan_json' => $manifest,
-            'manifest_hash' => hash('sha256', $this->canonicalJson($manifest)),
-            'frozen_at' => now(),
-        ]);
-
-        $result = app(CompositionExecutor::class)->execute($manifest, $sources);
-
-        if (! $result->successful) {
-            $final->update([
-                'status' => 'failed',
-                'error_message' => Str::limit(implode(' | ', $result->reasons), 1000),
-            ]);
-
-            return ['ok' => false, 'error' => 'ghep that bai', 'reasons' => $result->reasons, 'final' => $final->refresh()];
+        // Bam xong ma het gio thi DUNG O DAY: tao hang `composing` roi de executor tu
+        // choi ngay sau do chi de lai mot hang `failed` khong noi len dieu gi.
+        if ($deadline->expired()) {
+            return ['ok' => false, 'error' => 'het ngan sach thoi gian ngay khi chuan bi nguon'];
         }
 
-        return ['ok' => true, 'final' => $this->recordComposedFinal($final, $clipRows, $result)];
+        $manifest = $this->finalCompositionManifest($clipRows, $options);
+
+        // Kiem luot dang chay VA cap so ban trong CUNG mot transaction, tren mot hang
+        // session da khoa. Kiem truoc roi tao sau thi hai request dong thoi deu vuot
+        // qua duoc phep kiem, cung chay ffmpeg, va cung tinh ra `max(revision) + 1`.
+        //
+        // Khoa chi giu trong vai mili giay — ffmpeg chay NGOAI transaction.
+        try {
+            $final = DB::transaction(function () use ($sessionId, $manifest): VideoFinal {
+                if (VideoSession::query()->whereKey($sessionId)->lockForUpdate()->first() === null) {
+                    throw new RuntimeException('khong tim thay session cua cac clip nay');
+                }
+
+                $blocked = $this->blockingComposition($sessionId);
+
+                if ($blocked !== null) {
+                    throw new RuntimeException($blocked);
+                }
+
+                return VideoFinal::query()->create([
+                    'session_id' => $sessionId,
+                    'revision' => ((int) VideoFinal::query()->where('session_id', $sessionId)->max('revision')) + 1,
+                    'status' => 'composing',
+                    'plan_json' => $manifest,
+                    'manifest_hash' => hash('sha256', $this->canonicalJson($manifest)),
+                    'frozen_at' => now(),
+                ]);
+            });
+        } catch (RuntimeException $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+
+        $result = $executor->execute($manifest, $sources, $deadline, new CompositionRun(
+            finalId: (string) $final->id,
+            manifestHash: (string) $final->manifest_hash,
+        ));
+
+        // Luot dung giua chung nhung DA co output di qua verifier — receipt thi co the
+        // chua ghi duoc. Day khong phai that bai: ha `failed` la ket luan hong cho mot
+        // file da do dat, va doi phuc hoi chi quet hang con `composing` nen se khong
+        // bao gio nhin toi no nua. Thieu receipt chi lam doi phuc hoi bao
+        // `needs_attention`, khong bien output thanh rac. Giu nguyen trang, chi bao ra.
+        if (! $result->successful && $result->unresolved) {
+            return [
+                'ok' => false,
+                'error' => 'ghep xong nhung luot chay khong ket thuc duoc — chay `php artisan video:final-recover` de doi soat',
+                'reasons' => $result->reasons,
+                'final' => $this->refreshed($final),
+            ];
+        }
+
+        if (! $result->successful) {
+            // Chua co output hop le. Ha `failed` CO DIEU KIEN, va mot loi DB o day
+            // khong duoc phep thay the ly do that su cua ffmpeg trong cau tra loi.
+            $this->failComposition($final, implode(' | ', $result->reasons));
+
+            return [
+                'ok' => false,
+                'error' => 'ghep that bai',
+                'reasons' => $result->reasons,
+                'final' => $this->refreshed($final),
+            ];
+        }
+
+        try {
+            $saved = $this->recordComposedFinal($final, $clipRows, $result);
+        } catch (Throwable $e) {
+            // KHONG xoa output, KHONG ha trang thai. Den day file da qua verify, va
+            // mot loi DB khong chung minh duoc file hong. Hang bi ket o `composing`
+            // thi con sua duoc; file da xoa thi khong lay lai duoc.
+            return [
+                'ok' => false,
+                'error' => 'ghep xong nhung khong luu duoc ket qua',
+                'reasons' => [$e->getMessage()],
+                'final' => $this->refreshed($final),
+            ];
+        }
+
+        // Don lich su chay SAU khi da commit va NGOAI nhanh xu ly that bai: loi o buoc
+        // don khong duoc phep bi doc thanh "luu ket qua that bai", vi nhanh do se doi
+        // xu voi mot ban final da `ready` nhu voi mot ban chua bao gio luu duoc.
+        $this->pruneQuietly($saved);
+
+        return ['ok' => true, 'final' => $saved];
+    }
+
+    /**
+     * Ha mot luot ve `failed` ma khong nem tiep.
+     *
+     * Co dieu kien `composing`: luot da bi cho khac ha xuong thi khong ghi de len ly
+     * do cua ho.
+     */
+    private function failComposition(VideoFinal $final, string $reason): void
+    {
+        try {
+            VideoFinal::query()
+                ->whereKey($final->id)
+                ->where('status', 'composing')
+                ->update(['status' => 'failed', 'error_message' => Str::limit($reason, 1000)]);
+        } catch (Throwable $e) {
+            $this->logQuietly('final composition: khong ha duoc trang thai that bai', [
+                'final_id' => (string) $final->id,
+                'reason' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * `refresh()` cung la mot truy van: goi no trong nhanh dang xu ly loi DB la de
+     * chinh cai loi do nem de len, va nguoi dung mat luon thong bao that.
+     */
+    private function refreshed(VideoFinal $final): VideoFinal
+    {
+        try {
+            return $final->refresh();
+        } catch (Throwable) {
+            return $final;
+        }
+    }
+
+    private function pruneQuietly(VideoFinal $final): void
+    {
+        try {
+            $this->pruneOldFinals($final);
+        } catch (Throwable $e) {
+            $this->logQuietly('final composition: don lich su that bai', [
+                'final_id' => (string) $final->id,
+                'reason' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Ghi log cung co the nem (dia day, handler hong). Trong cac nhanh cuu loi thi
+     * mot log that bai khong duoc phep tro thanh loi duy nhat nguoi dung nhin thay.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function logQuietly(string $message, array $context): void
+    {
+        try {
+            Log::warning($message, $context);
+        } catch (Throwable) {
+            // khong con cho nao de bao nua
+        }
     }
 
     /**
@@ -1119,19 +1263,82 @@ class VideoProjectService
             ->get();
 
         foreach ($running as $row) {
-            if ($row->updated_at !== null && $row->updated_at->lessThan($stale)) {
-                $row->update([
-                    'status' => 'failed',
-                    'error_message' => 'luot ghep bi bo do: khong ket thuc trong ngan sach thoi gian',
-                ]);
-
-                continue;
+            if ($row->updated_at === null || $row->updated_at->greaterThanOrEqualTo($stale)) {
+                return 'dang co mot luot ghep chay do dang cho session nay';
             }
 
-            return 'dang co mot luot ghep chay do dang cho session nay';
+            // Qua han KHONG dong nghia voi hong. Luot co the da ghep xong, da do dat,
+            // va chi chet o doan ghi DB — luc do tren dia con ca output lan receipt.
+            // Ha thang `failed` o day la chon mat dung cai bang chung do.
+            //
+            // Phep kiem nay phai RE: no chay duoi khoa hang session. Doc mot file JSON
+            // vai tram byte va mot `is_file()`, khong bam, khong probe. Viec xac minh
+            // that su la cua `video:final-recover`, chay ngoai transaction.
+            if ($this->leftEvidence($row)) {
+                return sprintf(
+                    'luot ghep %s da dung nhung de lai dau vet chua doi soat — chay `php artisan video:final-recover` truoc',
+                    $row->id,
+                );
+            }
+
+            $row->update([
+                'status' => 'failed',
+                'error_message' => 'luot ghep bi bo do: khong ket thuc trong ngan sach thoi gian',
+            ]);
         }
 
         return null;
+    }
+
+    /**
+     * Luot nay co de lai dau vet nao tren dia khong?
+     *
+     * BAT KY dau vet nao cung du: file ket qua, receipt, hay ca receipt dang viet do
+     * dang. Doc noi dung receipt de quyet dinh o day la sai huong — receipt thieu
+     * hoac hong KHONG phai bang chung rang luot da that bai, ma chi la ly do phai
+     * nhin ky hon. Ha `failed` vi thieu bang chung la dong luon duong doi soat: doi
+     * phuc hoi chi quet hang con `composing`.
+     *
+     * Phep kiem nay chay duoi khoa hang session nen chi duoc phep re: ba lan
+     * `is_file()`, khong doc, khong bam, khong probe.
+     */
+    private function leftEvidence(VideoFinal $final): bool
+    {
+        $directory = $this->runDirectory($final);
+
+        if ($directory === null) {
+            return false;
+        }
+
+        foreach ([CompositionReceipt::OUTPUT_NAME, CompositionReceipt::FILE, CompositionReceipt::FILE.'.tmp'] as $name) {
+            if (is_file($directory.DIRECTORY_SEPARATOR.$name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Thu muc luot chay, suy tu final ID.
+     *
+     * Khong luu thanh cot: mot duong dan suy ra duoc ma van luu lai la mot cho nua co
+     * the lech. `realpath` ca hai ve roi kiem tien to — `storage_path()` tra ve dau
+     * phan cach lan lon trong khi `realpath()` chuan hoa het, nen so chuoi thang se
+     * bao sai cho mot duong dan hoan toan hop le.
+     */
+    private function runDirectory(VideoFinal $final): ?string
+    {
+        $root = realpath((string) config('video.veo.compose_final_dir'));
+
+        if ($root === false) {
+            return null;
+        }
+
+        $root = rtrim($root, '/\\').DIRECTORY_SEPARATOR;
+        $directory = realpath($root.(string) $final->id);
+
+        return $directory !== false && str_starts_with($directory, $root) ? $directory : null;
     }
 
     /**
@@ -1171,6 +1378,11 @@ class VideoProjectService
 
         foreach ($clips as $i => $clip) {
             $entry = [
+                // Danh tinh clip nam TRONG manifest, tuc la nam trong `manifest_hash`.
+                // De no o mot cho khac — receipt chang han — thi doi phuc hoi chi con
+                // mot danh sach `render_id` khong doi chieu lai duoc voi ban da chot.
+                'render_id' => (string) $clip['render_id'],
+                'sequence_no' => $i + 1,
                 'path' => $clip['artifact_path'],
                 'sha256' => $clip['sha256'],
                 'trim_start_ms' => 0,
@@ -1186,6 +1398,7 @@ class VideoProjectService
         }
 
         return [
+            'engine' => VideoFinal::ENGINE_LARAVEL,
             'output' => [
                 'width' => (int) ($options['width'] ?? 1080),
                 'height' => (int) ($options['height'] ?? 1920),
@@ -1201,45 +1414,27 @@ class VideoProjectService
      */
     private function recordComposedFinal(VideoFinal $final, array $clips, CompositionResult $result): VideoFinal
     {
-        $root = realpath((string) config('video.veo.compose_final_dir'));
-        $relative = $root === false
-            ? (string) $result->path
-            : str_replace('\\', '/', substr((string) $result->path, strlen(rtrim($root, '/\\')) + 1));
+        $cuts = [];
 
-        $saved = DB::transaction(function () use ($final, $clips, $result, $relative): VideoFinal {
-            foreach ($clips as $i => $clip) {
-                // `start_ms` la VI TRI TREN DONG THOI GIAN, lay tu `CompositionPlan`.
-                // Cong don do dai tung clip o day se sai ngay khi co mot chuyen canh
-                // mo: clip ke leo len phan chong lan cua clip truoc.
-                $row = $result->timeline[$i] ?? ['start_ms' => 0, 'duration_ms' => 0];
+        foreach ($clips as $i => $clip) {
+            // `start_ms` la VI TRI TREN DONG THOI GIAN, lay tu `CompositionPlan`.
+            // Cong don do dai tung clip o day se sai ngay khi co mot chuyen canh mo:
+            // clip ke leo len phan chong lan cua clip truoc.
+            $row = $result->timeline[$i] ?? ['start_ms' => 0, 'duration_ms' => 0];
 
-                VideoFinalRender::query()->create([
-                    'final_id' => $final->id,
-                    'render_id' => $clip['render_id'],
-                    'sequence_no' => $i + 1,
-                    'start_ms' => $row['start_ms'],
-                    'duration_ms' => $row['duration_ms'],
-                ]);
-            }
+            $cuts[] = [
+                'render_id' => (string) $clip['render_id'],
+                'sequence_no' => $i + 1,
+                'start_ms' => (int) $row['start_ms'],
+                'duration_ms' => (int) $row['duration_ms'],
+            ];
+        }
 
-            $final->update([
-                'status' => 'ready',
-                'video_path' => $relative,
-                'duration_seconds' => (int) round(
-                    ((int) $result->frames) / (int) data_get($final->plan_json, 'output.fps', 24),
-                ),
-                // Ghep chay bang ffmpeg CUC BO nen khong ton dong nao. Cong chi phi
-                // cua cac clip vao day la dem lai mot khoan da tra tu truoc, va ghep
-                // lai lan thu hai se dem no lan nua.
-                'cost_total' => 0,
-            ]);
-
-            return $final->refresh();
-        });
-
-        $this->pruneOldFinals($final);
-
-        return $saved;
+        // Phep hoan tat song o `FinalCompositionReconciler`: duong chay that va doi
+        // phuc hoi phai dung DUNG mot transaction, khong phai hai ban giong nhau.
+        return app(FinalCompositionReconciler::class)->complete(
+            $final, $cuts, (string) $result->path, (int) $result->frames,
+        );
     }
 
     /**
@@ -1276,9 +1471,14 @@ class VideoProjectService
                 continue;
             }
 
-            if (@unlink($path)) {
-                @rmdir(dirname($path));
+            if (! @unlink($path)) {
+                continue;
             }
+
+            // Receipt di theo output. Bo lai thi `rmdir` luon that bai va moi thu muc
+            // da don van nam do voi mot file bang chung cho mot final khong con file.
+            @unlink(dirname($path).DIRECTORY_SEPARATOR.CompositionReceipt::FILE);
+            @rmdir(dirname($path));
         }
     }
 
