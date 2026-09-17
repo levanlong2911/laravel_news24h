@@ -3,7 +3,6 @@
 use App\Http\Controllers\Api\ApiAdvertisementController;
 use App\Http\Controllers\Api\PostApiController;
 use App\Http\Controllers\Api\RedditController;
-use App\Http\Controllers\VideoDesignImagesController;
 use App\Http\Controllers\VideoSessionController;
 use App\Video\Render\Controllers\RenderQaController;
 use App\Video\Render\Controllers\RenderWorkerController;
@@ -52,12 +51,6 @@ Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])
         Route::get('/video-finals/composing', [VideoSessionController::class, 'apiFinalsComposing']);
         Route::patch('/video-finals/{finalId}/result', [VideoSessionController::class, 'apiFinalResult']);
 
-        // O thiet ke anh — thuoc PROJECT, khong thuoc session nao
-        Route::get('/video-design-images/queued', [VideoDesignImagesController::class, 'queued']);
-        Route::post('/video-design-images/claim', [VideoDesignImagesController::class, 'claim']);
-        Route::post('/video-design-images/reclaim-expired', [VideoDesignImagesController::class, 'reclaimExpired']);
-        Route::patch('/video-design-images/{imageId}/heartbeat', [VideoDesignImagesController::class, 'heartbeat']);
-        Route::patch('/video-design-images/{imageId}/result', [VideoDesignImagesController::class, 'result']);
     });
 
 Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])

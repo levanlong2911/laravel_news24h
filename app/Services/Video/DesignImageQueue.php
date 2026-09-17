@@ -10,7 +10,6 @@ use App\Models\VideoProject;
 use App\Models\VideoRender;
 use App\Video\Media\RenderPriceBackfill;
 use App\Video\Render\Enums\RenderStatus;
-use DateTimeInterface;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -33,8 +32,6 @@ class DesignImageQueue
         private readonly RenderPriceBackfill $backfill = new RenderPriceBackfill,
     ) {}
 
-    private const CLAIM_MAX = 100;
-
     public const COLLECTION = 'design-images';
 
     private const DIRECT_WORKER = 'laravel:direct';
@@ -43,223 +40,24 @@ class DesignImageQueue
 
     private const REQUIRED_EVENT_KEYS = ['provider', 'model', 'render_kind', 'sent_prompt'];
 
-    /** @return array{0: ?VideoDesignImage, 1: string} */
-    public function enqueue(string $imageId): array
-    {
-        try {
-            return DB::transaction(function () use ($imageId) {
-                $projectId = VideoDesignImage::query()->whereKey($imageId)->value('project_id');
-
-                if ($projectId === null) {
-                    return [null, 'image_not_found'];
-                }
-
-                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
-                $image = VideoDesignImage::query()->whereKey($imageId)->firstOrFail();
-
-                if ($image->status === DesignImageStatus::QUEUED->value) {
-                    return [$image, 'already_queued'];
-                }
-
-                if (! in_array($image->status, DesignImageStatus::enqueueableValues(), true)) {
-                    return [$image, 'not_enqueueable'];
-                }
-
-                $image->update([
-                    'status' => DesignImageStatus::QUEUED->value,
-                    'queued_at' => now(),
-                    'render_error' => null,
-                    'worker_id' => null,
-                    'claim_token' => null,
-                    'claimed_at' => null,
-                    'lease_expires_at' => null,
-                ]);
-
-                return [$image, 'queued'];
-            });
-        } catch (ModelNotFoundException) {
-            return [null, 'image_not_found'];
-        }
-    }
-
-    /** @return iterable<VideoDesignImage> */
-    public function claimForRender(
-        string $workerId,
-        string $claimToken,
-        int $limit,
-        DateTimeInterface $leaseExpiresAt,
-        ?string $imageId = null,
-    ): iterable {
-        // MariaDB 10.4 khong co SKIP LOCKED. Mot UPDATE ... LIMIT la nguyen tu:
-        // hai worker khong the cung khop mot dong sau khi status doi.
-        $limit = max(1, min($limit, self::CLAIM_MAX));
-        $now = now();
-
-        // `image_id` de nguoi bam nut tren man hinh nhan DUNG o cua ho, khong
-        // vo tinh cam luon nhung o dang cho cua du an khac.
-        $bindings = [
-            DesignImageStatus::CLAIMED->value, $workerId, $claimToken, $now,
-            $leaseExpiresAt, $now, DesignImageStatus::QUEUED->value,
-        ];
-
-        if ($imageId !== null) {
-            $bindings[] = $imageId;
-        }
-
-        DB::update(
-            'UPDATE video_design_images
-             SET status = ?, worker_id = ?, claim_token = ?, claimed_at = ?,
-                 lease_expires_at = ?, updated_at = ?
-             WHERE status = ?'.($imageId === null ? '' : ' AND id = ?').'
-             ORDER BY queued_at, id
-             LIMIT '.$limit,
-            $bindings,
-        );
-
-        $claimed = VideoDesignImage::query()
-            ->where('claim_token', $claimToken)
-            ->orderBy('queued_at')
-            ->orderBy('id')
-            ->get();
-
-        // Worker khong duoc nhin thay mot spec thieu gia: bo sung ngay tai day, va o
-        // nao khong co gia thi roi khoi lo truoc khi ai do gui request cho no.
-        $usable = [];
-
-        foreach ($claimed as $image) {
-            [$priced, $why] = $this->backfill->apply($image, $workerId, $claimToken);
-
-            if (! $priced) {
-                $this->releaseWithError($image, $workerId, $claimToken, $why);
-
-                continue;
-            }
-
-            $usable[] = $image;
-        }
-
-        return $usable;
-    }
-
-    public function heartbeat(
-        string $imageId,
-        string $workerId,
-        string $claimToken,
-        DateTimeInterface $leaseExpiresAt,
-    ): bool {
-        // Dap dau tien nang CLAIMED -> RENDERING. Khong co endpoint rieng cho
-        // buoc do, giong het VideoShotRepository::heartbeat().
-        return VideoDesignImage::query()
-            ->whereKey($imageId)
-            ->where('worker_id', $workerId)
-            ->where('claim_token', $claimToken)
-            ->whereIn('status', DesignImageStatus::leasedValues())
-            ->where('lease_expires_at', '>', now())
-            ->update([
-                'status' => DesignImageStatus::RENDERING->value,
-                'lease_expires_at' => $leaseExpiresAt,
-            ]) === 1;
-    }
-
     /**
-     * Che do `queue` co worker nen nhat lai, nen tra o ve `queued` la dung. Che do
-     * `direct` KHONG co worker nao ca — de `queued` thi man hinh trong nhu dang cho
-     * ai do, ma khong ai chay, va o ket vinh vien. Danh `failed` kem ly do thi
-     * nguoi dung thay ngay va bam render lai duoc.
+     * Laravel la renderer duy nhat. Lease het han khong con worker Python nao nhat
+     * lai, nen cell phai that bai ro rang de nguoi dung chu dong render lai.
      */
     public function reclaimExpiredLeases(): int
     {
-        $direct = config('video.render_mode') === 'direct';
-
         return VideoDesignImage::query()
             ->whereIn('status', DesignImageStatus::leasedValues())
             ->whereNotNull('lease_expires_at')
             ->where('lease_expires_at', '<=', now())
             ->update([
-                'status' => ($direct ? DesignImageStatus::FAILED : DesignImageStatus::QUEUED)->value,
-                'render_error' => $direct ? 'Direct render exceeded its lease before reporting a result' : null,
+                'status' => DesignImageStatus::FAILED->value,
+                'render_error' => 'Direct render exceeded its lease before reporting a result',
                 'worker_id' => null,
                 'claim_token' => null,
                 'claimed_at' => null,
                 'lease_expires_at' => null,
             ]);
-    }
-
-    /**
-     * `$workerId` va `$claimToken` BAT BUOC — khong co duong bao ket qua nao ma
-     * khong cam claim. Duong shot co cua null de runner cu chua gui worker_id van
-     * chay duoc; o day khong co runner cu nao, nen cua do la no vo co.
-     *
-     * @param  list<array<string, mixed>>  $renders
-     * @return array{0: ?VideoDesignImage, 1: string}
-     */
-    public function reportResult(
-        string $imageId,
-        bool $success,
-        ?string $renderError,
-        array $renders,
-        string $workerId,
-        string $claimToken,
-    ): array {
-        if ($success && $renders === []) {
-            // Thanh cong ma khong co item nao la trang thai vo nghia: o se mang
-            // `rendered` nhung khong co artifact, khong co so cai, khong co tien.
-            return [null, 'result_success_without_renders'];
-        }
-
-        $invalid = $this->firstInvalidItem($renders);
-
-        if ($invalid !== null) {
-            return [null, $invalid];
-        }
-
-        try {
-            return DB::transaction(function () use (
-                $imageId, $success, $renderError, $renders, $workerId, $claimToken,
-            ) {
-                $projectId = VideoDesignImage::query()->whereKey($imageId)->value('project_id');
-
-                if ($projectId === null) {
-                    return [null, 'image_not_found'];
-                }
-
-                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
-                $image = VideoDesignImage::query()->whereKey($imageId)->firstOrFail();
-
-                // Nhan dien PHAT LAI truoc cong claim. Sau luot bao cao dau tien
-                // claim da duoc tra lai, nen outbox cua Python phat lai se dam vao
-                // `claim_not_owned_or_expired` va thu lai vo tan. Duong shot khong
-                // dinh vi no kiem idempotency truoc quyen so huu — thu tu do moi dung.
-                if ($this->alreadyRecorded($image->id, $renders)) {
-                    return [$image, 'replayed'];
-                }
-
-                if (! $this->ownsTheClaim($image, $workerId, $claimToken)) {
-                    return [null, 'claim_not_owned_or_expired'];
-                }
-
-                foreach ($renders as $item) {
-                    $this->assertConfirmedMoney($item);
-                }
-
-                foreach ($renders as $item) {
-                    $this->record($image, $projectId, $item);
-                }
-
-                $image->update([
-                    'status' => ($success ? DesignImageStatus::RENDERED : DesignImageStatus::FAILED)->value,
-                    'render_error' => $success ? null : ($renderError ?: 'Render failed and the worker gave no reason'),
-                    'worker_id' => null,
-                    'claim_token' => null,
-                    'claimed_at' => null,
-                    'lease_expires_at' => null,
-                ]);
-
-                return [$image->refresh(), 'recorded'];
-            });
-        } catch (ModelNotFoundException) {
-            return [null, 'image_not_found'];
-        }
     }
 
     /**
@@ -444,7 +242,7 @@ class DesignImageQueue
     }
 
     /**
-     * Duong `render_mode=canonical`: hang `video_renders` da do RenderDispatchService
+     * Duong canonical: hang `video_renders` da do RenderDispatchService
      * tao va may trang thai Phan 14 dan toi `succeeded`, nen o day KHONG duoc tao
      * them hang nua — chi gan artifact vao hang do roi ket so o anh.
      *

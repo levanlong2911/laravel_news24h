@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Video;
 
-use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class VideoApiTokenTest extends TestCase
@@ -32,11 +31,6 @@ class VideoApiTokenTest extends TestCase
             ['patch', "/api/video-shots/{$id}/result"],
             ['get', '/api/video-finals/composing'],
             ['patch', "/api/video-finals/{$id}/result"],
-            ['get', '/api/video-design-images/queued'],
-            ['post', '/api/video-design-images/claim'],
-            ['post', '/api/video-design-images/reclaim-expired'],
-            ['patch', "/api/video-design-images/{$id}/heartbeat"],
-            ['patch', "/api/video-design-images/{$id}/result"],
         ];
     }
 
@@ -76,24 +70,5 @@ class VideoApiTokenTest extends TestCase
             ->getJson('/api/video-sessions/composing')
             ->assertOk();
 
-        $this->withHeader('X-Video-Token', 'token-loaded-before-runtime')
-            ->getJson('/api/video-design-images/queued')
-            ->assertOk();
-    }
-
-    public function test_a_route_that_passed_the_gate_no_longer_answers_unauthorized(): void
-    {
-        // Cong da chuyen len middleware: mot id la phai ra 404/422 cua chinh
-        // nghiep vu, khong con ra 401 nua.
-        config(['video.api_token' => 'token-loaded-before-runtime']);
-
-        $this->withHeader('X-Video-Token', 'token-loaded-before-runtime')
-            ->patchJson('/api/video-design-images/'.Str::uuid().'/result', [
-                'success' => true,
-                'worker_id' => 'worker-a',
-                'claim_token' => (string) Str::uuid(),
-                'renders' => [],
-            ])
-            ->assertStatus(422);
     }
 }

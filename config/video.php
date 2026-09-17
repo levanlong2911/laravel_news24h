@@ -25,10 +25,6 @@ return [
         'log_retention_days' => env('VIDEO_RUNNER_LOG_RETENTION_DAYS', 21),
     ],
 
-    'sync_render' => (bool) env('VIDEO_SYNC_RENDER', true),
-
-    'render_mode' => env('VIDEO_RENDER_MODE', 'direct'),
-
     'openai_image' => [
         'disk' => env('VIDEO_IMAGE_DISK', 'video_artifacts'),
 

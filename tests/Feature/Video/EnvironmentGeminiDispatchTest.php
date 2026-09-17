@@ -47,7 +47,6 @@ class EnvironmentGeminiDispatchTest extends TestCase
         Storage::fake('video_artifacts');
 
         config([
-            'video.render_mode' => 'direct',
             'video.openai_image.disk' => 'video_artifacts',
             'canonical_concept.openai.api_key' => 'test-key',
             'canonical_concept.openai.base_url' => 'https://api.openai.com',

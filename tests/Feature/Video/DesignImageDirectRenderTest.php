@@ -6,12 +6,10 @@ use App\Enums\DesignImageStatus;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
-use App\Services\PythonRunner;
 use App\Services\Video\DesignImageDirectRenderer;
 use App\Services\Video\DesignImageQueue;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
-use Mockery;
 use Tests\TestCase;
 
 /**
@@ -29,7 +27,6 @@ class DesignImageDirectRenderTest extends TestCase
         parent::setUp();
 
         $this->project = VideoProject::create(['title' => 'TEST direct '.uniqid()]);
-        config(['video.render_mode' => 'direct']);
     }
 
     private function cell(string $status = 'candidate'): VideoDesignImage
@@ -71,21 +68,6 @@ class DesignImageDirectRenderTest extends TestCase
         ];
     }
 
-    // ---- cau dao tong -------------------------------------------------
-
-    public function test_the_breaker_stops_a_python_process_from_ever_starting(): void
-    {
-        // phpunit.xml dat VIDEO_PYTHON_RUNNER=false. Day la cua DUY NHAT moi duong
-        // di qua de sinh tien trinh Python — chot o day thi duong moi them vao
-        // khong the di vong qua no.
-        $this->assertFalse(config('video.python_runner_enabled'));
-
-        [$ok, $output] = app(PythonRunner::class)->runAndWait('render_design_image_once.py', []);
-
-        $this->assertFalse($ok);
-        $this->assertStringContainsString('VIDEO_PYTHON_RUNNER', $output);
-    }
-
     // ---- claim / lease ------------------------------------------------
 
     public function test_the_cell_is_held_before_the_provider_is_ever_called(): void
@@ -110,10 +92,6 @@ class DesignImageDirectRenderTest extends TestCase
         $cell = $this->cell();
         app(DesignImageQueue::class)->claimForDirectRender($cell->id);
 
-        $runner = Mockery::mock(PythonRunner::class);
-        $runner->shouldNotReceive('runAndWait');
-        $this->instance(PythonRunner::class, $runner);
-
         [$image, $reason] = app(DesignImageDirectRenderer::class)->renderNow($cell->id);
 
         $this->assertSame('not_enqueueable', $reason);
@@ -124,41 +102,9 @@ class DesignImageDirectRenderTest extends TestCase
     {
         $cell = $this->cell(DesignImageStatus::RENDERED->value);
 
-        $runner = Mockery::mock(PythonRunner::class);
-        $runner->shouldNotReceive('runAndWait');
-        $this->instance(PythonRunner::class, $runner);
-
         [, $reason] = app(DesignImageDirectRenderer::class)->renderNow($cell->id);
 
         $this->assertSame('not_enqueueable', $reason);
-    }
-
-    // ---- ghi so cai ---------------------------------------------------
-
-    public function test_the_python_spec_carries_the_render_operation(): void
-    {
-        $cell = $this->cell();
-        $spec = $cell->prompt_spec_json;
-        $spec['operation'] = 'edit';
-        $cell->update(['prompt_spec_json' => $spec]);
-
-        $seen = null;
-        $runner = Mockery::mock(PythonRunner::class);
-        $runner->shouldReceive('runAndWait')->once()
-            ->andReturnUsing(function (string $script, array $args) use (&$seen) {
-                $this->assertSame('render_design_image_once.py', $script);
-                $this->assertSame('--spec', $args[0]);
-                $seen = json_decode(file_get_contents($args[1]), true);
-
-                return [true, json_encode(['ok' => false, 'error' => 'stop after inspect', 'renders' => []])];
-            });
-        $this->instance(PythonRunner::class, $runner);
-
-        app(DesignImageDirectRenderer::class)->renderNow($cell->id);
-
-        $this->assertSame('edit', $seen['operation']);
-        $this->assertSame('gpt-image-2', $seen['model']);
-        $this->assertSame('1024x1536', $seen['size']);
     }
 
     public function test_a_result_carrying_the_wrong_token_is_refused(): void
@@ -209,15 +155,4 @@ class DesignImageDirectRenderTest extends TestCase
             'O phai render lai duoc ngay tu man hinh');
     }
 
-    public function test_an_expired_queue_lease_still_goes_back_to_the_queue(): void
-    {
-        config(['video.render_mode' => 'queue']);
-        $cell = $this->cell();
-        [$image] = app(DesignImageQueue::class)->claimForDirectRender($cell->id);
-        $image->update(['lease_expires_at' => now()->subMinute()]);
-
-        app(DesignImageQueue::class)->reclaimExpiredLeases();
-
-        $this->assertSame(DesignImageStatus::QUEUED->value, $image->refresh()->status);
-    }
 }

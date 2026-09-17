@@ -24,7 +24,6 @@ use App\Services\Admin\ArticleService;
 use App\Services\Video\CreativeProfileResolver;
 use App\Services\Video\DesignImageDirectRenderer;
 use App\Services\Video\DesignImageQueue;
-use App\Services\Video\DesignImageRenderer;
 use App\Services\Video\DesignImageStore;
 use App\Services\Video\FinalCompositionReconciler;
 use App\Video\Render\Video\SceneClipDispatchService;
@@ -140,8 +139,6 @@ class VideoProjectService
 
     private DesignImageQueue $designImageQueue;
 
-    private DesignImageRenderer $designImageRenderer;
-
     private DesignImageDirectRenderer $designImageDirectRenderer;
 
     private VideoRenderPlanService $renderPlanService;
@@ -165,7 +162,6 @@ class VideoProjectService
         CanonicalPromptCompiler $canonicalPromptCompiler,
         DesignImageStore $designImageStore,
         DesignImageQueue $designImageQueue,
-        DesignImageRenderer $designImageRenderer,
         DesignImageDirectRenderer $designImageDirectRenderer,
         VisualIdentityStore $identityStore,
         CanonicalConceptInputBuilder $canonicalConceptInputBuilder,
@@ -181,7 +177,6 @@ class VideoProjectService
         $this->canonicalPromptCompiler = $canonicalPromptCompiler;
         $this->designImageStore = $designImageStore;
         $this->designImageQueue = $designImageQueue;
-        $this->designImageRenderer = $designImageRenderer;
         $this->designImageDirectRenderer = $designImageDirectRenderer;
         $this->identityStore = $identityStore;
         $this->canonicalConceptInputBuilder = $canonicalConceptInputBuilder;
@@ -652,26 +647,6 @@ class VideoProjectService
         ];
     }
 
-    /**
-     * Duong render dang bat.
-     *
-     * `direct` la duong DONG BO cua production: claim + lease ngay tren hang du
-     * lieu roi goi provider, cung hinh dang voi duong Haiku/Sonnet. Boc mot Job
-     * ra ngoai sau nay khong phai sua gi ben trong.
-     *
-     * `queue` la duong worker Python poll — de danh cho luc chay nen hang loat.
-     *
-     * Ca hai deu di qua `DesignImageQueue::record()` khi ghi so cai: so cai chi
-     * duoc phep co MOT noi ghi.
-     */
-    private function renderer(): DesignImageRenderer|DesignImageDirectRenderer
-    {
-        return match ((string) config('video.render_mode')) {
-            'direct' => $this->designImageDirectRenderer,
-            default => $this->designImageRenderer,
-        };
-    }
-
     /** @return list<array<string, mixed>> */
     public function anchorCells(string $projectId): array
     {
@@ -701,7 +676,7 @@ class VideoProjectService
             return [null, 'scene_keyframe_needs_scene_flow'];
         }
 
-        return $this->renderer()->renderNow($imageId);
+        return $this->designImageDirectRenderer->renderNow($imageId);
     }
 
     /**
@@ -758,7 +733,7 @@ class VideoProjectService
             ],
         );
 
-        return $image === null ? [null, $reason] : $this->renderer()->renderNow($image->id);
+        return $image === null ? [null, $reason] : $this->designImageDirectRenderer->renderNow($image->id);
     }
 
     /**

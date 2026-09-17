@@ -233,7 +233,7 @@ class VideoProjectsController extends Controller
         }
 
         return back()->with(
-            in_array($reason, ['rendered', 'queued'], true) ? 'success' : 'error',
+            $reason === 'rendered' ? 'success' : 'error',
             $this->renderOutcome($reason, $image),
         );
     }
@@ -249,7 +249,7 @@ class VideoProjectsController extends Controller
         }
 
         return back()->with(
-            in_array($reason, ['rendered', 'queued'], true) ? 'success' : 'error',
+            $reason === 'rendered' ? 'success' : 'error',
             $this->renderOutcome($reason, $image),
         );
     }
@@ -284,12 +284,9 @@ class VideoProjectsController extends Controller
                 'code' => $image->image_code,
                 'reason' => (string) $image->render_error,
             ]),
-            'timed_out' => __('messages.anchor_image_timed_out', ['code' => $image->image_code]),
-            'queued' => __('messages.anchor_render_queued', ['code' => $image->image_code]),
             'already_queued' => __('messages.anchor_render_already_queued', ['code' => $image->image_code]),
             'not_enqueueable' => __('messages.anchor_render_not_enqueueable', ['code' => $image->image_code]),
             'already_exists' => __('messages.reference_already_exists', ['code' => $image->image_code]),
-            'edit_not_supported_by_worker' => __('messages.edit_not_supported_by_worker', ['code' => $image->image_code]),
             default => $reason,
         };
     }

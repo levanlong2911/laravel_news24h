@@ -30,16 +30,14 @@ class RenderPriceBackfillTest extends TestCase
         $this->project = VideoProject::create(['title' => 'TEST backfill '.uniqid()]);
     }
 
-    public function test_a_worker_never_receives_a_cell_that_has_no_price_yet(): void
+    public function test_a_direct_claim_backfills_price_before_the_provider_is_called(): void
     {
         $image = $this->cell(['prompt' => 'x', 'model' => 'gpt-image-2', 'quality' => 'low']);
         $queue = app(DesignImageQueue::class);
 
-        $queue->enqueue($image->id);
+        [, $token, $reason] = $queue->claimForDirectRender($image->id, 90);
 
-        $claimed = $queue->claimForRender('worker-1', $token = (string) Str::uuid(), 10, now()->addSeconds(600));
-
-        $this->assertCount(1, $claimed);
+        $this->assertNotNull($token, $reason);
 
         $spec = $image->refresh()->prompt_spec_json;
 
@@ -49,16 +47,15 @@ class RenderPriceBackfillTest extends TestCase
         $this->assertSame($token, $image->claim_token);
     }
 
-    public function test_a_cell_nobody_can_price_leaves_the_batch_and_says_why(): void
+    public function test_a_cell_nobody_can_price_fails_before_a_direct_provider_call(): void
     {
         $image = $this->cell(['prompt' => 'x', 'model' => 'gpt-image-9000', 'quality' => 'low']);
         $queue = app(DesignImageQueue::class);
 
-        $queue->enqueue($image->id);
+        [, $token, $reason] = $queue->claimForDirectRender($image->id, 90);
 
-        $claimed = $queue->claimForRender('worker-1', (string) Str::uuid(), 10, now()->addSeconds(600));
-
-        $this->assertSame([], $claimed, 'o khong dinh gia duoc thi khong duoc phat ra ngoai');
+        $this->assertNull($token);
+        $this->assertSame('pricing_unavailable', $reason);
 
         $image->refresh();
 
