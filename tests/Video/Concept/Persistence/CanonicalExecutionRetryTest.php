@@ -62,10 +62,6 @@ class CanonicalExecutionRetryTest extends TestCase
     {
         parent::setUp();
 
-        // Cong compilability chay `compile_canonical_prompt.py`, ma phpunit.xml tat
-        // `VIDEO_PYTHON_RUNNER` — nen `freeze()` luon nem va test nay khong bao gio toi
-        // duoc phan no dang kiem. Bat co len va dua runner mot cai gia: cai dang duoc
-        // kiem o day la RETRY co bien thanh semantic repair khong, khong phai Python.
         config(['video.python_runner_enabled' => true]);
 
         $runner = Mockery::mock(PythonRunner::class);

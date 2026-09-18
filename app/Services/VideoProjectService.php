@@ -30,7 +30,6 @@ use App\Video\Render\Video\SceneClipDispatchService;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\OpenAiImageClient;
 use App\Services\Video\PlanningStageStore;
-use App\Services\Video\CanonicalPromptCompiler;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
 use App\Video\Concept\Persistence\Models\CanonicalConceptRevision;
 use App\Video\Concept\Persistence\Enums\CanonicalConceptStatus;
@@ -133,8 +132,6 @@ class VideoProjectService
 
     private InspirationStageRunner $inspirationRunner;
 
-    private CanonicalPromptCompiler $canonicalPromptCompiler;
-
     private DesignImageStore $designImageStore;
 
     private DesignImageQueue $designImageQueue;
@@ -159,7 +156,6 @@ class VideoProjectService
         PlanningStageStore $stageStore,
         InspirationStageRunner $inspirationRunner,
         VideoRenderPlanService $renderPlanService,
-        CanonicalPromptCompiler $canonicalPromptCompiler,
         DesignImageStore $designImageStore,
         DesignImageQueue $designImageQueue,
         DesignImageDirectRenderer $designImageDirectRenderer,
@@ -174,7 +170,6 @@ class VideoProjectService
         $this->stageStore = $stageStore;
         $this->inspirationRunner = $inspirationRunner;
         $this->renderPlanService = $renderPlanService;
-        $this->canonicalPromptCompiler = $canonicalPromptCompiler;
         $this->designImageStore = $designImageStore;
         $this->designImageQueue = $designImageQueue;
         $this->designImageDirectRenderer = $designImageDirectRenderer;
@@ -2346,7 +2341,6 @@ class VideoProjectService
         Viewpoint $viewpoint,
         ImageSize $size,
         ?ImageModel $model = null,
-        \App\Enums\PromptProducer $producer = \App\Enums\PromptProducer::CANONICAL,
     ): array {
         $project = $this->videoProjectRepository->getById($projectId);
 
@@ -2354,33 +2348,7 @@ class VideoProjectService
             return [null, 'project_not_found', null];
         }
 
-        if ($producer === \App\Enums\PromptProducer::SKILL) {
-            return $this->skillAnchorPrompt($project->id, $stage, $size, $model);
-        }
-
-        $revision = CanonicalConceptRevision::query()
-            ->where('video_project_id', $project->id)
-            ->where('status', CanonicalConceptStatus::FROZEN)
-            ->orderByDesc('revision')
-            ->first();
-
-        if ($revision === null) {
-            return [null, 'no_frozen_canonical_revision', null];
-        }
-
-        $concept = json_decode((string) $revision->canonical_json, true);
-
-        if (! is_array($concept)) {
-            return [null, 'frozen_canonical_json_unreadable', null];
-        }
-
-        [$compiled, $reason] = $this->canonicalPromptCompiler->compile(
-            $revision, $viewpoint->value,
-            $size->width(), $size->height(), $stage->value, [],
-            $model, $project->id, $revision->id,
-        );
-
-        return [$compiled, $reason, $concept];
+        return $this->skillAnchorPrompt($project->id, $stage, $size, $model);
     }
 
     /**

@@ -5,15 +5,12 @@ declare(strict_types=1);
 namespace App\Video\Concept\Persistence;
 
 use App\Video\Concept\ConceptInput;
-use App\Video\Concept\Exceptions\CanonicalValidationException;
 use App\Video\Concept\Freeze\FrozenCanonicalConcept;
 use App\Video\Concept\Persistence\Enums\CanonicalConceptStatus;
 use App\Video\Concept\Persistence\Enums\CanonicalEventType;
 use App\Video\Concept\Persistence\Enums\DecisionOrigin;
-use App\Video\Concept\Persistence\Enums\ValidationStage;
 use App\Video\Concept\Persistence\Models\CanonicalConceptRevision;
 use App\Video\Concept\Persistence\Repository\CanonicalConceptRepository;
-use App\Video\Concept\Validation\CanonicalCompilabilityValidator;
 
 final class CanonicalConceptPersistenceService
 {
@@ -21,8 +18,6 @@ final class CanonicalConceptPersistenceService
         private readonly CanonicalConceptRepository $repository,
         private readonly CanonicalProcessingObserver $observer,
         private readonly CanonicalFreezePersistenceService $freezer,
-        private readonly CanonicalCompilabilityValidator $compilability,
-        private readonly CanonicalValidationRecorder $recorder,
     ) {}
 
     public function createRevision(
@@ -67,29 +62,9 @@ final class CanonicalConceptPersistenceService
         FrozenCanonicalConcept $frozen,
         DecisionOrigin $origin = DecisionOrigin::GENERATED,
     ): PersistedCanonicalConcept {
-        $compilable = $this->compilability->validate(
-            $frozen,
-            (string) $revision->id,
-            (string) $revision->video_project_id,
-        );
-
-        if ($compilable->fails()) {
-            $this->recorder->record(
-                revision: $revision,
-                attempt: null,
-                stage: ValidationStage::COMPILABILITY,
-                result: $compilable,
-                documentHash: hash('sha256', $frozen->canonicalJson),
-                validatorVersion: 'compile-canonical-prompt-v1',
-            );
-
-            throw new CanonicalValidationException(
-                errors: $compilable->errors,
-                failedRawJson: $frozen->canonicalJson,
-                message: 'Canonical revision cannot be compiled into a prompt.',
-            );
-        }
-
+        // Chot "dong bang duoc thi phai dung duoc thanh prompt" da bi go cung voi
+        // duong Python dung prompt. Concept van dong bang duoc, nhung khong con ai
+        // chung minh no dung duoc thanh prompt truoc khi dong.
         $record = $this->freezer->freeze($revision->id, $frozen, $origin);
 
         return new PersistedCanonicalConcept(

@@ -7,7 +7,6 @@ use App\Enums\ImageModel;
 use App\Enums\ImageQuality;
 use App\Enums\ImageSize;
 use App\Enums\ImageVariations;
-use App\Enums\PromptProducer;
 use App\Enums\SceneStep;
 use App\Form\AdminCustomValidator;
 use App\Models\Admin;
@@ -102,8 +101,6 @@ class VideoProjectsController extends Controller
         // $selectedViewpoint = Viewpoint::tryFrom((string) old('viewpoint', $promptPreview['viewpoint'] ?? ''));
         $selectedSize = ImageSize::tryFrom((string) old('size', $promptPreview['size'] ?? ''));
         $selectedVariations = ImageVariations::tryFrom((int) old('variations', 0));
-        $selectedProducer = PromptProducer::tryFrom((string) old('producer', ''))
-            ?? $this->producerOfPreview($promptPreview);
 
         $compiledPrompt = null;
         $compiledPromptHash = null;
@@ -141,8 +138,6 @@ class VideoProjectsController extends Controller
             ],
             'selectedSize' => $selectedSize,
             'selectedVariations' => $selectedVariations,
-            'selectedProducer' => $selectedProducer,
-            'previewProducer' => $this->producerOfPreview($promptPreview),
             'previewPromptVersion' => $promptPreview['lineage']['prompt_version'] ?? null,
             'anchorPrompt' => $this->videoProjectService->latestAnchorPrompt($project->id),
             'anchorCells' => $this->videoProjectService->anchorCells($project->id),
@@ -185,7 +180,7 @@ class VideoProjectsController extends Controller
         $size = ImageSize::LANDSCAPE;
 
         [$compiled, $reason, $concept] = $this->videoProjectService->compiledAnchorPrompt(
-            $id, $stage, $viewpoint, $size, ImageModel::GPT_IMAGE_2, PromptProducer::SKILL,
+            $id, $stage, $viewpoint, $size, ImageModel::GPT_IMAGE_2,
         );
 
         if ($compiled === null) {
@@ -433,21 +428,6 @@ class VideoProjectsController extends Controller
         return redirect()
             ->route('video-projects.environment', $id)
             ->with($level, $this->renderOutcome($reason, $image));
-    }
-
-    /**
-     * Prompt do bo nao sinh: doc tu lineage da luu, khong doan.
-     *
-     * @param  array<string, mixed>|null  $preview
-     */
-    private function producerOfPreview(?array $preview): PromptProducer
-    {
-        $version = (string) ($preview['lineage']['prompt_version'] ?? '');
-        $canonicalHash = (string) ($preview['lineage']['canonical_hash'] ?? '');
-
-        return $version !== '' && $canonicalHash === ''
-            ? PromptProducer::SKILL
-            : PromptProducer::CANONICAL;
     }
 
     public function scene(string $id, ?string $scene = null, ?string $step = null)
