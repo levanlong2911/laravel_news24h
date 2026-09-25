@@ -1,6 +1,16 @@
 <?php
 
 return [
+    'screenplay_schema_invalid' => 'The screenplay schema is invalid or does not match the active contract. No model request was sent. Check the configuration.',
+    'screenplay_profile_contract_mismatch' => 'The screenplay profile does not match the active contract. No model request was sent. Check the configuration.',
+    'screenplay_profile_invalid' => 'The screenplay profile is invalid. No model request was sent. See the log for the affected fields.',
+    'screenplay_contract_unsupported' => 'The configured screenplay contract version is not supported. No model request was sent. Check the configuration.',
+    'screenplay_call_failed' => 'The screenplay request did not reach a response. The attempt was recorded as failed. See the log.',
+    'screenplay_timeout' => 'The model did not answer within the time allowed. The attempt was recorded as failed. See the log for how long it waited and how many requests were sent.',
+    'screenplay_connection_failed' => 'The screenplay request could not reach the provider. The attempt was recorded as failed. See the log for the connection error and how many requests were sent.',
+    'screenplay_author_failed' => 'The model answered but the answer was unusable. The response and its cost were recorded. See the log.',
+    'screenplay_after_response_failed' => 'The response arrived but could not be processed. The response and its cost were recorded as a failed attempt. See the log.',
+    'screenplay_result_not_stored' => 'The response arrived but writing the outcome failed, so its stored state is unknown. Check the stage row before running again.',
     'add_success' => 'Add successful',
     'add_error' => 'Add error',
     'update_success' => 'Update successful',

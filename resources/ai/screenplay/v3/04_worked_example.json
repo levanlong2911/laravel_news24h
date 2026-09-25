@@ -1,0 +1,325 @@
+{
+    "logline": "A crossing is built with its floor left open to the drop beneath it, and every practical step of building it argues for closing that floor.",
+    "design_thesis": {
+        "central_idea": "The walking surface is left open, so the ground far below stays visible under every step, and the crossing protects people along its sides instead of at its floor.",
+        "visible_difference": "Where a closed deck hides the drop, this one shows it, and the protection stands upright at the edges where a hand actually reaches.",
+        "spatial_consequence": "Loads are carried out to the edge members, leaving the route underfoot free of anything a person cannot see through.",
+        "coherence": "The same open deck runs the whole way across, and the side protection keeps the same rhythm from one rim to the other.",
+        "realization": "The crews keep the deck open through fabrication, erection and finishing, and close nothing underfoot to make the next operation easier."
+    },
+    "premise": {
+        "question": "Does the feeling of walking above the gorge survive once the crossing is actually built?",
+        "force": "Every practical step of building wants to close the floor, because a solid deck is easier to stand on and to work from.",
+        "device": "Every scene returns to the walking surface, from the offcut held against the window to the last step across it.",
+        "change": "A sample turned against the light becomes a surface that people cross without thinking about it.",
+        "answer": "It survives, because the protection was put at the sides in the first decision and never borrowed back from the floor."
+    },
+    "characters": [
+        {
+            "id": "ch_crossing",
+            "name": "The crossing",
+            "role": "protagonist",
+            "kind": "object",
+            "description": "A footbridge whose walking surface is open mesh, so the ground far below stays visible under every step, with the protection carried at its sides.",
+            "personality": null,
+            "appearance": "A thin dark line strung between two rims, its deck an open grid that the light falls through, bounded along both edges by upright members and taut horizontal runs that stop short of blocking the view."
+        },
+        {
+            "id": "ch_design_team",
+            "name": "The design team",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The group that settles how the open walking surface and the edge protection work together before anything is made.",
+            "personality": "Slow to agree, and unwilling to close the floor to make an argument easier.",
+            "appearance": "Four or five people in plain working clothes, sleeves pushed back, reading glasses pushed up onto foreheads or hanging at collars, pencils behind ears."
+        },
+        {
+            "id": "ch_designer",
+            "name": "The design representative",
+            "role": "supporting",
+            "kind": "person",
+            "description": "The one who carries the settled idea out of the room and returns at the end to see whether it survived.",
+            "personality": "Blunt in the room, quiet on site, and slow to accept a compromise once it is drawn.",
+            "appearance": "A spare figure in dark working clothes, short hair going grey at the temples, a folded drawing carried in one hand and a flat carpenter pencil in the breast pocket."
+        },
+        {
+            "id": "ch_fabricators",
+            "name": "The fabrication crew",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The crew who make the deck sections and the edge members in the workshop and check them against the drawings.",
+            "personality": "Methodical, and happier to reject a part than to argue about it.",
+            "appearance": "Workers in heavy leather aprons and clear visors, thick gloves, ear defenders pushed back off the ears, sleeves taped at the wrist."
+        },
+        {
+            "id": "ch_erectors",
+            "name": "The erection crew",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The crew who fasten the connections between sections already placed, working from the deck behind them.",
+            "personality": "Unhurried, working to a rhythm rather than to a clock.",
+            "appearance": "Crews in weathered orange jackets and scuffed hard hats, full harnesses worn outside the jackets, lanyards hanging at the hip."
+        },
+        {
+            "id": "ch_finisher",
+            "name": "The finishing lead",
+            "role": "supporting",
+            "kind": "person",
+            "description": "The one who closes the junctions between sections and sets the side protection along the finished deck.",
+            "personality": "Particular about edges, and slower at the last section than at the first.",
+            "appearance": "A compact figure in a padded jacket gone shiny at the elbows, knee pads strapped over the trousers, a roll of fixings at the belt."
+        },
+        {
+            "id": "ch_operator",
+            "name": "The operating representative",
+            "role": "supporting",
+            "kind": "person",
+            "description": "The one who reads the finished detail on behalf of the people who will keep the crossing open.",
+            "personality": "Watches the surface rather than the view, and asks about the parts nobody looks at.",
+            "appearance": "A steady figure in a dark weatherproof coat buttoned to the throat, a notebook in the side pocket, boots newer than anyone else on site."
+        },
+        {
+            "id": "ch_travellers",
+            "name": "The people who cross",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The people the crossing was built for, who use it on ordinary errands once it is open.",
+            "personality": "Unceremonious about it, except for the ones crossing for the first time.",
+            "appearance": "A loose stream of people in everyday coats and caps, carrying cloth bags and bundles, one or two with a child on the hip."
+        }
+    ],
+    "locations": [
+        {
+            "id": "lo_layout_table",
+            "name": "The layout table",
+            "description": "A long low table carrying an arrangement drawing of the gorge and the crossing, weighted at the corners, with offcuts of deck mesh stacked against one end."
+        },
+        {
+            "id": "lo_workshop",
+            "name": "The fabrication workshop",
+            "description": "A covered shop with deck sections resting on trestles down the middle and edge members racked along one wall, drawings pinned at working height."
+        },
+        {
+            "id": "lo_working_end",
+            "name": "A joint out over the gorge",
+            "description": "The meeting of two placed sections of the crossing, reached along the deck from the near tower, with the river a long way below."
+        },
+        {
+            "id": "lo_deck_section",
+            "name": "An installed deck section",
+            "description": "A stretch of the crossing already in place, reached along the deck from the near rim, its mesh underfoot and the gorge floor visible through it."
+        },
+        {
+            "id": "lo_mid_span",
+            "name": "The middle of the crossing",
+            "description": "The centre of the finished crossing, furthest from either rim, where the deck runs level and the drop is at its deepest."
+        }
+    ],
+    "scenes": [
+        {
+            "id": "sc_01",
+            "stage": "design",
+            "location_id": "lo_layout_table",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_design_team",
+                "ch_designer"
+            ],
+            "action": "One of the team traces the old route on the drawing with a finger, all the way around the head of the gorge and back down the far side, then lays the same finger straight across the gap. The team sets a piece of deck mesh on the drawing and turns it against the window, and walks the short line rim to rim, marking each place an edge member would stand and each place where closing the floor would have been the easier answer.",
+            "dialogue": [],
+            "sound": "Paper slides under weights, the mesh rings faintly when it is set down, and a chair rolls back.",
+            "duration_estimate_ms": 16000,
+            "why_it_cannot_be_cut": "The long way round and the short line are put side by side, and the team chooses to protect the crossing at its sides instead of at its floor.",
+            "leads_to": "The settled arrangement goes to the workshop as parts to be made.",
+            "build_state": null
+        },
+        {
+            "id": "sc_02",
+            "stage": "construction",
+            "location_id": "lo_workshop",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_fabricators",
+                "ch_designer"
+            ],
+            "action": "The fabrication crew lifts a finished deck section onto trestles and lays the drawing beside it, working along the connection details one at a time while the design representative reads over their shoulder, and drags one section clear where the edge member meets the deck at the wrong angle before starting the next.",
+            "dialogue": [],
+            "sound": "Trestles take the weight with a knock, a tape runs out and snaps back, and a section is dragged clear.",
+            "duration_estimate_ms": 13000,
+            "why_it_cannot_be_cut": "The idea becomes parts with a fixed shape, and the first one that does not match is taken out here rather than found later.",
+            "leads_to": "The checked sections leave the shop for the gorge.",
+            "build_state": {
+                "subject_id": "ch_crossing",
+                "state": "Deck sections and edge members made and checked in the shop, nothing yet placed at the gorge."
+            }
+        },
+        {
+            "id": "sc_03",
+            "stage": "construction",
+            "location_id": "lo_working_end",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_erectors"
+            ],
+            "action": "Weeks further on, two placed sections meet at a joint above the gorge, both already carried and held where they come together. The erection crew reaches the joint along the deck behind it, clipped to the line overhead. One of them drives a pin down through the holes where the two sections line up. Another sets a wrench on the fastening beside it and works it until it stops turning.",
+            "dialogue": [],
+            "sound": "Boots ring on mesh, a drift pin rings as it is driven, and wind moves through the deck.",
+            "duration_estimate_ms": 8000,
+            "why_it_cannot_be_cut": "The work that holds the two halves together is done by hand, by people standing on what they are joining.",
+            "leads_to": "The sections being joined here still need their junctions closed and their edges set.",
+            "build_state": {
+                "subject_id": "ch_crossing",
+                "state": "Towers, anchorages and cables complete, deck placed and extending from both rims with the middle still open."
+            }
+        },
+        {
+            "id": "sc_04",
+            "stage": "finishing",
+            "location_id": "lo_deck_section",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_finisher",
+                "ch_erectors"
+            ],
+            "action": "On an installed stretch the finishing lead kneels at the junction where two sections meet, sights along the edge before fixing anything, and closes it. Then the side protection goes up, set upright and run out along the deck, and between each fixing the lead stops and looks down through the mesh to check that the ground below is still there to see.",
+            "dialogue": [],
+            "sound": "A drill runs in short bursts, a length of protection rings as it is set upright, and wind passes through the deck.",
+            "duration_estimate_ms": 18000,
+            "why_it_cannot_be_cut": "The protection goes up at the sides and the floor stays open, which is the whole argument made physical.",
+            "leads_to": "The finished detail is ready to be looked over.",
+            "build_state": {
+                "subject_id": "ch_crossing",
+                "state": "Deck continuous between the rims, junctions being closed and side protection going up along the finished stretches."
+            }
+        },
+        {
+            "id": "sc_05",
+            "stage": "completion",
+            "location_id": "lo_deck_section",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_operator",
+                "ch_designer",
+                "ch_finisher"
+            ],
+            "action": "The operating representative crouches at the first junction in from the rim and looks along the closed seam, then follows the line of fixings where the side protection meets the deck, stopping at each one and writing in a notebook. The finishing lead names what sits behind each fixing. The design representative watches the mesh underfoot rather than the two of them.",
+            "dialogue": [],
+            "sound": "A notebook page turns, a boot scuffs on the mesh, and the river runs a long way down.",
+            "duration_estimate_ms": 9000,
+            "why_it_cannot_be_cut": "The finished detail is read closely by someone who was not there when it was made.",
+            "leads_to": "The film moves to a later day, with the crossing in use.",
+            "build_state": {
+                "subject_id": "ch_crossing",
+                "state": "Complete, the deck continuous and the side protection run from rim to rim."
+            }
+        },
+        {
+            "id": "sc_06",
+            "stage": "operation",
+            "location_id": "lo_mid_span",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_travellers"
+            ],
+            "action": "A stream of people crosses on ordinary errands, most of them walking straight through without slowing, until one of them stops near the middle, looks down through the mesh at the ground far below, rests a hand on the side protection, and then walks on.",
+            "dialogue": [],
+            "sound": "Footsteps overlap, bundles shift, and someone laughs further back along the deck.",
+            "duration_estimate_ms": 15000,
+            "why_it_cannot_be_cut": "The question the film opened with is answered by somebody simply walking across.",
+            "leads_to": null,
+            "build_state": {
+                "subject_id": "ch_crossing",
+                "state": "Complete and in use."
+            }
+        }
+    ],
+    "coverage": [
+        {
+            "coverage_id": "cov_design_need",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_01"
+            ],
+            "evidence": "A finger traces the old way round the head of the gorge, then lays straight across the gap on the same drawing."
+        },
+        {
+            "coverage_id": "cov_design_decision",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_01"
+            ],
+            "evidence": "The team marks where edge members must stand rather than closing the floor, settling protection at the sides."
+        },
+        {
+            "coverage_id": "cov_build_fabrication",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_02"
+            ],
+            "evidence": "Sections are checked against the drawing on the trestles and one is dragged clear for a wrong angle."
+        },
+        {
+            "coverage_id": "cov_build_supports",
+            "mode": "transition",
+            "scene_ids": [
+                "sc_02",
+                "sc_03"
+            ],
+            "evidence": "Between the shop and the joint, the towers, anchorages and cables are built and the deck sections are placed."
+        },
+        {
+            "coverage_id": "cov_build_erection",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_03"
+            ],
+            "evidence": "A pin is driven through the aligned holes at the joint, and a fastening beside it is turned until it stops."
+        },
+        {
+            "coverage_id": "cov_build_access",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_03"
+            ],
+            "evidence": "The crew reaches the joint along the deck behind it, clipped to the line overhead."
+        },
+        {
+            "coverage_id": "cov_fin_junctions",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_04"
+            ],
+            "evidence": "The finishing lead sights along the edge and closes the junction where two sections meet."
+        },
+        {
+            "coverage_id": "cov_fin_protection",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_04"
+            ],
+            "evidence": "Side protection is set upright and run out while the mesh underfoot stays open to the ground below."
+        },
+        {
+            "coverage_id": "cov_comp_inspection",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_05"
+            ],
+            "evidence": "The operating representative looks along a closed seam and follows the line of fixings where the protection meets the deck."
+        },
+        {
+            "coverage_id": "cov_op_use",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_06"
+            ],
+            "evidence": "People cross on ordinary errands, and one stops at the middle to look down through the deck."
+        }
+    ]
+}

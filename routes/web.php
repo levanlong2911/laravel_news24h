@@ -151,6 +151,10 @@ Route::group(
         Route::post('/{id}/inspiration/reset',  [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
         Route::post('/{id}/concept',            [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
         Route::post('/{id}/concept/reset',      [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
+        Route::post('/{id}/screenplay',         [VideoProjectsController::class, 'screenplay'])->name('video-projects.screenplay');
+        Route::post('/{id}/screenplay/foundation',       [VideoProjectsController::class, 'screenplayFoundation'])->name('video-projects.screenplay-foundation');
+        Route::post('/{id}/screenplay/foundation/reset', [VideoProjectsController::class, 'resetScreenplayFoundation'])->name('video-projects.screenplay-foundation-reset');
+        Route::post('/{id}/screenplay/reset',   [VideoProjectsController::class, 'resetScreenplay'])->name('video-projects.screenplay-reset');
         Route::post('/{id}/anchor-image',       [VideoProjectsController::class, 'createAnchorImage'])->name('video-projects.anchor-image');
         Route::post('/{id}/design-images/{imageId}/enqueue', [VideoProjectsController::class, 'renderDesignImage'])->name('video-projects.design-image-enqueue');
         Route::post('/{id}/anchor/approve',      [VideoProjectsController::class, 'approveAnchor'])->name('video-projects.anchor-approve');

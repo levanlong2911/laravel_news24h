@@ -69,6 +69,8 @@ use Throwable;
 
 class VideoProjectService
 {
+    private const CURL_OPERATION_TIMEDOUT = 28;
+
     private const LOCKED_CAMERA = 'The camera stays exactly where the supplied frame was taken from: '
         .'same position, same lens, same framing, for the whole shot.';
 
@@ -2439,6 +2441,718 @@ class VideoProjectService
         }
 
         return [$result->compiled, 'ok', []];
+    }
+
+    /**
+     * Brief Haiku -> ke hoach san xuat phim. Di qua `PlanningStageStore` nhu moi
+     * chang khac, nen thua huong claim/lease, cache theo hash va cot chi phi.
+     *
+     * Validator chay TRUOC khi ghi thanh cong: mot kich ban vi pham van la mot
+     * luot da tra tien, nen no duoc ghi that bai KEM raw va usage.
+     *
+     * @return array{0: ?array<string, mixed>, 1: string}
+     */
+    public function authorScreenplay(string $projectId): array
+    {
+        $project = $this->videoProjectRepository->getById($projectId);
+
+        if ($project === null || $project->article === null) {
+            return [null, 'project_not_found'];
+        }
+
+        $brief = $this->stageStore->latestOutputForProject(
+            $projectId,
+            PlanningStageName::INSPIRATION,
+        );
+
+
+        if (! is_array($brief) || $brief === []) {
+            return [null, 'no_inspiration_brief'];
+        }
+
+        $profile = $this->screenplayProfile((string) ($project->article->category?->slug ?? ''));
+
+        if ($profile === null) {
+            return [null, 'no_screenplay_profile'];
+        }
+
+        try {
+            $author = app(\App\Video\Screenplay\ScreenplayAuthor::class);
+        } catch (\App\Video\Prompt\Exceptions\TextCompletionException $e) {
+            Log::error('screenplay: configured contract is not supported, no model call made', [
+                'project_id' => $projectId,
+                'reason' => $e->getMessage(),
+            ]);
+
+            return [null, 'screenplay_contract_unsupported'];
+        }
+        // dd($author);
+
+
+        $contract = $author->contractVersion();
+
+        if (($profile['contract_version'] ?? null) !== $contract) {
+            Log::error('screenplay: profile does not match the author contract, no model call made', [
+                'project_id' => $projectId,
+                'author_contract' => $contract,
+                'profile_contract' => $profile['contract_version'] ?? null,
+            ]);
+
+            return [null, 'screenplay_profile_contract_mismatch'];
+        }
+
+        $profileErrors = (new \App\Video\Screenplay\ScreenplayValidator)
+            ->profileViolations($profile, $contract);
+
+        if ($profileErrors !== []) {
+            Log::error('screenplay: invalid profile, no model call made', [
+                'project_id' => $projectId,
+                'violations' => $profileErrors,
+            ]);
+
+            return [null, 'screenplay_profile_invalid'];
+        }
+
+        try {
+            $author->assertSchemaMatchesContract();
+        } catch (\App\Video\Prompt\Exceptions\TextCompletionException $e) {
+            Log::error('screenplay: invalid schema configuration, no model call made', [
+                'project_id' => $projectId,
+                'reason' => $e->getMessage(),
+            ]);
+
+            return [null, 'screenplay_schema_invalid'];
+        }
+
+        [$inspiration, $unclean] = (new \App\Video\Screenplay\CreativeInspirationBuilder)
+            ->build($brief);
+
+        if ($inspiration === null) {
+            Log::warning('screenplay: inspiration refused, no model call made', [
+                'project_id' => $projectId,
+                'violations' => $unclean,
+            ]);
+
+            return [null, 'inspiration_carries_source_facts'];
+        }
+
+        $requirements = [
+            'aspect_ratio' => (string) config('video.screenplay.aspect_ratio', '9:16'),
+        ];
+
+        $input = [
+            'fingerprint' => $author->fingerprint($inspiration, $profile, $requirements),
+        ];
+
+        [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
+            $projectId,
+            PlanningStageName::SCREENPLAY,
+            $input,
+        );
+
+        if ($reason === 'already_succeeded') {
+            return [$claimed->output_json ?? [], 'cached'];
+        }
+
+        if ($token === null) {
+            return [null, 'screenplay_running'];
+        }
+
+        $startedAt = microtime(true);
+
+        Log::info('screenplay: calling the model', [
+            'project_id' => $projectId,
+            'stage_id' => $claimed->id,
+            'contract' => $contract,
+            'profile' => $profile['profile_version'] ?? null,
+            'model' => (string) config('video.screenplay.model'),
+            'max_tokens' => (int) config('video.screenplay.max_tokens'),
+            'timeout_seconds' => (int) config('video.screenplay.timeout_seconds'),
+            'attempts' => (int) config('video.screenplay.retry_times'),
+            'prompt_dir' => (string) config('video.screenplay.prompt_dir'),
+        ]);
+
+        try {
+            $result = $author->author($inspiration, $profile, $requirements);
+        } catch (\App\Video\Screenplay\ScreenplayFailure $e) {
+            Log::error('screenplay: author failed after a paid response', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'waited_seconds' => round(microtime(true) - $startedAt, 1),
+                'exception' => $e,
+            ]);
+
+            return [null, $this->recordScreenplayFailure(
+                $projectId,
+                $claimed->id,
+                $token,
+                $e->getMessage(),
+                'screenplay_author_failed',
+                $e->usage,
+                $e->rawResponse,
+            )];
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $errno = $this->curlErrorNumber($e);
+            $timedOut = $errno === self::CURL_OPERATION_TIMEDOUT;
+
+            Log::error('screenplay: the request never reached a response', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'waited_seconds' => round(microtime(true) - $startedAt, 1),
+                'timeout_seconds' => (int) config('video.screenplay.timeout_seconds'),
+                'curl_errno' => $errno,
+                'exception' => $e,
+            ]);
+
+            return [null, $this->recordScreenplayFailure(
+                $projectId,
+                $claimed->id,
+                $token,
+                $e->getMessage(),
+                $timedOut ? 'screenplay_timeout' : 'screenplay_connection_failed',
+            )];
+        } catch (\Throwable $e) {
+            Log::error('screenplay: author failed before any response', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'waited_seconds' => round(microtime(true) - $startedAt, 1),
+                'exception' => $e,
+            ]);
+
+            return [null, $this->recordScreenplayFailure(
+                $projectId,
+                $claimed->id,
+                $token,
+                $e->getMessage(),
+                'screenplay_call_failed',
+            )];
+        }
+
+        try {
+            $excludedNames = array_values(array_map(
+                static fn (array $item): string => (string) ($item['value'] ?? ''),
+                $brief['excluded_context'] ?? [],
+            ));
+
+            $validator = new \App\Video\Screenplay\ScreenplayValidator;
+            $structural = $validator->structural($result->screenplay, $profile, $contract, $excludedNames);
+
+            if ($structural !== []) {
+                return [null, $this->recordScreenplayFailure(
+                    $projectId,
+                    $claimed->id,
+                    $token,
+                    'Screenplay failed validation: '.implode('; ', $structural),
+                    'screenplay_invalid',
+                    $result->usage,
+                    $result->rawResponse,
+                )];
+            }
+
+            $warnings = $validator->editorial($result->screenplay, $profile);
+        } catch (\Throwable $e) {
+            Log::error('screenplay: failed after a paid response', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'exception' => $e,
+            ]);
+
+            return [null, $this->recordScreenplayFailure(
+                $projectId,
+                $claimed->id,
+                $token,
+                $e->getMessage(),
+                'screenplay_after_response_failed',
+                $result->usage,
+                $result->rawResponse,
+            )];
+        }
+
+        try {
+            $recorded = $this->stageStore->finishSucceeded(
+                $claimed->id,
+                $token,
+                $result->rawResponse,
+                $result->toStorage()
+                    + ['schema_version' => $contract]
+                    + ['warnings' => $warnings],
+                $result->usage,
+            );
+        } catch (\Throwable $e) {
+            Log::error('screenplay: writing the paid result threw, stored state unknown', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'exception' => $e,
+            ]);
+
+            return [null, 'screenplay_result_not_stored'];
+        }
+
+        if (! $recorded) {
+            Log::warning('screenplay: claim lost, paid result not recorded', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+            ]);
+
+            return [null, 'screenplay_claim_lost'];
+        }
+
+        return [$result->screenplay, $warnings === [] ? 'ok' : 'ok_needs_review'];
+    }
+
+    /**
+     * Viet phan nen tang cua kich ban: khong scene, khong coverage, khong shot.
+     *
+     * @return array{0: ?array<string, mixed>, 1: string}
+     */
+    public function authorScreenplayFoundation(string $projectId, bool $force = false): array
+    {
+        [$author, $profile, $inspiration, $brief, $reason] = $this->prepareScreenplayCall(
+            $projectId,
+            'video.screenplay.foundation_author',
+            static fn (array $loaded): array => self::foundationProfile($loaded),
+        );
+
+        if ($author === null) {
+            return [null, $reason];
+        }
+
+        $contract = $author->contractVersion();
+        $requirements = ['aspect_ratio' => (string) config('video.screenplay.aspect_ratio', '9:16')];
+        $input = ['fingerprint' => $author->fingerprint($inspiration, $profile, $requirements)];
+
+        [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage(
+            $projectId,
+            PlanningStageName::SCREENPLAY_FOUNDATION,
+            $input,
+            $force,
+        );
+
+        if ($claimReason === 'already_succeeded') {
+            return [$claimed->output_json ?? [], 'cached'];
+        }
+
+        if ($token === null) {
+            return [null, 'screenplay_running'];
+        }
+
+        $startedAt = microtime(true);
+
+        try {
+            $result = $author->author($inspiration, $profile, $requirements);
+        } catch (\App\Video\Screenplay\ScreenplayFailure $e) {
+            Log::error('screenplay foundation: author failed after a paid response', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'waited_seconds' => round(microtime(true) - $startedAt, 1),
+                'exception' => $e,
+            ]);
+
+            return [null, $this->recordScreenplayFailure(
+                $projectId, $claimed->id, $token, $e->getMessage(),
+                'screenplay_author_failed', $e->usage, $e->rawResponse,
+            )];
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $errno = $this->curlErrorNumber($e);
+
+            Log::error('screenplay foundation: the request never reached a response', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'waited_seconds' => round(microtime(true) - $startedAt, 1),
+                'timeout_seconds' => (int) config('video.screenplay.foundation.timeout_seconds'),
+                'curl_errno' => $errno,
+                'exception' => $e,
+            ]);
+
+            return [null, $this->recordScreenplayFailure(
+                $projectId, $claimed->id, $token, $e->getMessage(),
+                $errno === self::CURL_OPERATION_TIMEDOUT ? 'screenplay_timeout' : 'screenplay_connection_failed',
+            )];
+        } catch (\Throwable $e) {
+            Log::error('screenplay foundation: author failed before any response', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'waited_seconds' => round(microtime(true) - $startedAt, 1),
+                'exception' => $e,
+            ]);
+
+            return [null, $this->recordScreenplayFailure(
+                $projectId, $claimed->id, $token, $e->getMessage(), 'screenplay_call_failed',
+            )];
+        }
+
+        try {
+            $excludedNames = array_values(array_map(
+                static fn (array $item): string => (string) ($item['value'] ?? ''),
+                $brief['excluded_context'] ?? [],
+            ));
+
+            $violations = (new \App\Video\Screenplay\ScreenplayValidator)
+                ->structural($result->screenplay, $profile, $contract, $excludedNames);
+
+            if ($violations !== []) {
+                return [null, $this->recordScreenplayFailure(
+                    $projectId, $claimed->id, $token,
+                    'Foundation failed validation: '.implode('; ', $violations),
+                    'screenplay_invalid', $result->usage, $result->rawResponse,
+                )];
+            }
+        } catch (\Throwable $e) {
+            Log::error('screenplay foundation: failed after a paid response', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'exception' => $e,
+            ]);
+
+            return [null, $this->recordScreenplayFailure(
+                $projectId, $claimed->id, $token, $e->getMessage(),
+                'screenplay_after_response_failed', $result->usage, $result->rawResponse,
+            )];
+        }
+
+        try {
+            $recorded = $this->stageStore->finishSucceeded(
+                $claimed->id,
+                $token,
+                $result->rawResponse,
+                $result->toStorage() + ['schema_version' => $contract],
+                $result->usage,
+            );
+        } catch (\Throwable $e) {
+            Log::error('screenplay foundation: writing the paid result threw, stored state unknown', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+                'exception' => $e,
+            ]);
+
+            return [null, 'screenplay_result_not_stored'];
+        }
+
+        if (! $recorded) {
+            Log::warning('screenplay foundation: claim lost, paid result not recorded', [
+                'project_id' => $projectId,
+                'stage_id' => $claimed->id,
+            ]);
+
+            return [null, 'screenplay_claim_lost'];
+        }
+
+        return [$result->screenplay, 'ok'];
+    }
+
+    /**
+     * @return array{foundation: ?array<string, mixed>, running: bool,
+     *               error: ?string, written_at: ?string}
+     */
+    public function latestScreenplayFoundation(string $projectId): array
+    {
+        [$latest] = $this->stageStore->latestStageForProject(
+            $projectId,
+            PlanningStageName::SCREENPLAY_FOUNDATION,
+            [],
+        );
+
+        $stored = $latest?->status === VideoPlanningStageStatus::SUCCEEDED->value
+            ? ($latest->output_json ?? null)
+            : null;
+
+        return [
+            'foundation' => is_array($stored) && $stored !== [] ? $stored : null,
+            'running' => $latest?->status === VideoPlanningStageStatus::RUNNING->value
+                && $latest->lease_expires_at?->isFuture() === true,
+            'error' => $latest?->status === VideoPlanningStageStatus::FAILED->value
+                ? $latest->error_message
+                : null,
+            'written_at' => $latest?->finished_at?->format('d/m/Y H:i'),
+        ];
+    }
+
+    /** @return array{0: bool, 1: string} */
+    public function resetScreenplayFoundation(string $projectId): array
+    {
+        [$latest] = $this->stageStore->latestStageForProject(
+            $projectId,
+            PlanningStageName::SCREENPLAY_FOUNDATION,
+            [],
+        );
+
+        if ($latest === null) {
+            return [false, 'Chua co luot viet nen tang nao'];
+        }
+
+        return $this->stageStore->releaseClaim($latest->id, 'Nguoi dung reset thu cong')
+            ? [true, 'ok']
+            : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>
+     */
+    private static function foundationProfile(array $profile): array
+    {
+        $kept = [];
+
+        foreach (['contract_version', 'subject_class', 'objective', 'arc_stages',
+            'arc_required_stages', 'originality', 'identity_dimensions',
+            'people_policy', 'concept_antipatterns', 'concept_forbidden_terms'] as $key) {
+            if (array_key_exists($key, $profile)) {
+                $kept[$key] = $profile[$key];
+            }
+        }
+
+        unset($kept['people_policy']['dialogue_requires_person_id']);
+        $kept['contract_version'] = (string) config('video.screenplay.foundation.contract_version');
+        $kept['dimension_bounds'] = config('video.screenplay.foundation.dimension_bounds');
+
+        return $kept;
+    }
+
+    /**
+     * @param  \Closure(array<string, mixed>): array<string, mixed>|null  $shapeProfile
+     * @return array{0: ?\App\Video\Screenplay\ScreenplayAuthor, 1: array<string, mixed>,
+     *               2: array<string, mixed>, 3: array<string, mixed>, 4: string}
+     */
+    private function prepareScreenplayCall(
+        string $projectId,
+        string $authorKey,
+        ?\Closure $shapeProfile = null,
+    ): array {
+        $project = $this->videoProjectRepository->getById($projectId);
+
+        if ($project === null || $project->article === null) {
+            return [null, [], [], [], 'project_not_found'];
+        }
+
+        $brief = $this->stageStore->latestOutputForProject($projectId, PlanningStageName::INSPIRATION);
+
+        if (! is_array($brief) || $brief === []) {
+            return [null, [], [], [], 'no_inspiration_brief'];
+        }
+
+        $profile = $this->screenplayProfile((string) ($project->article->category?->slug ?? ''));
+
+        if ($profile === null) {
+            return [null, [], [], [], 'no_screenplay_profile'];
+        }
+
+        if ($shapeProfile !== null) {
+            $profile = $shapeProfile($profile);
+        }
+
+        try {
+            $author = app($authorKey);
+        } catch (\App\Video\Prompt\Exceptions\TextCompletionException $e) {
+            Log::error('screenplay: configured contract is not supported, no model call made', [
+                'project_id' => $projectId,
+                'author' => $authorKey,
+                'reason' => $e->getMessage(),
+            ]);
+
+            return [null, [], [], [], 'screenplay_contract_unsupported'];
+        }
+
+        $contract = $author->contractVersion();
+
+        if (($profile['contract_version'] ?? null) !== $contract) {
+            Log::error('screenplay: profile does not match the author contract, no model call made', [
+                'project_id' => $projectId,
+                'author_contract' => $contract,
+                'profile_contract' => $profile['contract_version'] ?? null,
+            ]);
+
+            return [null, [], [], [], 'screenplay_profile_contract_mismatch'];
+        }
+
+        $profileErrors = (new \App\Video\Screenplay\ScreenplayValidator)
+            ->profileViolations($profile, $contract);
+
+        if ($profileErrors !== []) {
+            Log::error('screenplay: invalid profile, no model call made', [
+                'project_id' => $projectId,
+                'author' => $authorKey,
+                'violations' => $profileErrors,
+            ]);
+
+            return [null, [], [], [], 'screenplay_profile_invalid'];
+        }
+
+        try {
+            $author->assertSchemaMatchesContract();
+        } catch (\App\Video\Prompt\Exceptions\TextCompletionException $e) {
+            Log::error('screenplay: invalid schema configuration, no model call made', [
+                'project_id' => $projectId,
+                'reason' => $e->getMessage(),
+            ]);
+
+            return [null, [], [], [], 'screenplay_schema_invalid'];
+        }
+
+        [$inspiration, $unclean] = (new \App\Video\Screenplay\CreativeInspirationBuilder)->build($brief);
+
+        if ($inspiration === null) {
+            Log::warning('screenplay: inspiration refused, no model call made', [
+                'project_id' => $projectId,
+                'violations' => $unclean,
+            ]);
+
+            return [null, [], [], [], 'inspiration_carries_source_facts'];
+        }
+
+        return [$author, $profile, $inspiration, $brief, 'ok'];
+    }
+
+    private function curlErrorNumber(\Illuminate\Http\Client\ConnectionException $e): ?int
+    {
+        $previous = $e->getPrevious();
+
+        if ($previous instanceof \GuzzleHttp\Exception\ConnectException) {
+            $errno = $previous->getHandlerContext()['errno'] ?? null;
+
+            if (is_int($errno)) {
+                return $errno;
+            }
+        }
+
+        return preg_match('/cURL error (\d+)/', $e->getMessage(), $match) === 1
+            ? (int) $match[1]
+            : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $usage
+     */
+    private function recordScreenplayFailure(
+        string $projectId,
+        string $stageId,
+        string $token,
+        string $error,
+        string $reason,
+        array $usage = [],
+        string $rawResponse = '',
+    ): string {
+        try {
+            $written = $this->stageStore->finishFailed($stageId, $token, $error, $usage, $rawResponse);
+        } catch (\Throwable $storage) {
+            Log::error('screenplay: writing the failed attempt threw, stored state unknown', [
+                'project_id' => $projectId,
+                'stage_id' => $stageId,
+                'failure' => $error,
+                'exception' => $storage,
+            ]);
+
+            return 'screenplay_result_not_stored';
+        }
+
+        if (! $written) {
+            Log::warning('screenplay: claim no longer held, failure not recorded', [
+                'project_id' => $projectId,
+                'stage_id' => $stageId,
+                'failure' => $error,
+            ]);
+
+            return 'screenplay_claim_lost';
+        }
+
+        return $reason;
+    }
+
+    /**
+     * Trang thai chang SCREENPLAY cho man hinh: ban da luu, canh bao bien tap,
+     * va co dang chay hay khong.
+     *
+     * @return array{screenplay: ?array<string, mixed>, warnings: list<string>,
+     *               running: bool, error: ?string, written_at: ?string}
+     */
+    public function latestScreenplay(string $projectId): array
+    {
+        [$latest] = $this->stageStore->latestStageForProject(
+            $projectId,
+            PlanningStageName::SCREENPLAY,
+            [],
+        );
+
+        $stored = $latest?->status === VideoPlanningStageStatus::SUCCEEDED->value
+            ? ($latest->output_json ?? null)
+            : null;
+
+        $warnings = is_array($stored) ? ($stored['warnings'] ?? []) : [];
+
+        if (is_array($stored)) {
+            unset($stored['warnings']);
+        }
+
+        return [
+            'screenplay' => is_array($stored) && $stored !== [] ? $stored : null,
+            'warnings' => is_array($warnings) ? array_values($warnings) : [],
+            'running' => $latest?->status === VideoPlanningStageStatus::RUNNING->value
+                && $latest->lease_expires_at?->isFuture() === true,
+            'error' => $latest?->status === VideoPlanningStageStatus::FAILED->value
+                ? $latest->error_message
+                : null,
+            'written_at' => $latest?->finished_at?->format('d/m/Y H:i'),
+        ];
+    }
+
+    /** @return array{0: bool, 1: string} */
+    public function resetScreenplay(string $projectId): array
+    {
+        [$latest] = $this->stageStore->latestStageForProject(
+            $projectId,
+            PlanningStageName::SCREENPLAY,
+            [],
+        );
+
+        if ($latest === null) {
+            return [false, 'Chua co luot viet kich ban nao'];
+        }
+
+        return $this->stageStore->releaseClaim($latest->id, 'Nguoi dung reset thu cong')
+            ? [true, 'ok']
+            : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function screenplayProfile(string $category): ?array
+    {
+        $key = config("video.screenplay.profiles.{$category}");
+
+        if (! is_string($key) || $key === '') {
+            return null;
+        }
+
+        $path = rtrim((string) config('video.screenplay.profile_dir'), '/\\')
+            .DIRECTORY_SEPARATOR.$key.'.json';
+
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        $creative = $this->creativeProfileResolver->resolve($category);
+
+        if ($creative === null || $creative->arcStages === []) {
+            return null;
+        }
+
+        $defaults = [
+            'objective' => $creative->conceptMission,
+            'concept_antipatterns' => $creative->conceptAntipatterns,
+            'concept_forbidden_terms' => $creative->conceptForbiddenTerms,
+        ];
+
+        // Only legacy v2 profiles inherit their stage lists from the creative profile.
+        if (($decoded['contract_version'] ?? null) === 'screenplay_v2') {
+            $defaults['arc_stages'] = $creative->arcStages;
+            $defaults['arc_required_stages'] = $creative->arcRequiredStages;
+        }
+
+        return $decoded + $defaults;
     }
 
     /**

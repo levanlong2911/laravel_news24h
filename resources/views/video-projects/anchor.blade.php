@@ -109,6 +109,117 @@
             <div class="vp-panel">
                 <div class="va-head">
                     <span class="n">3</span>
+                    <b>KỊCH BẢN PHIM</b>
+                    <em>nội dung — chưa phân cảnh</em>
+                    <span class="grow"></span>
+                    @if($screenplayFoundation['foundation'] !== null)<span class="va-tag ok">Đã có nội dung</span>@endif
+                    @if(! $brief['analysed'])
+                        <button class="vp-btn sm" disabled title="Cần brief Haiku trước">Viết nội dung kịch bản</button>
+                    @elseif($screenplayFoundation['running'])
+                        <button class="vp-btn sm" disabled>Đang viết…</button>
+                        <form method="POST" action="{{ route('video-projects.screenplay-foundation-reset', $project->id) }}">
+                            @csrf
+                            <button class="vp-btn sm dg">Reset lượt bị kẹt</button>
+                        </form>
+                    @else
+                        @php $hasFoundation = $screenplayFoundation['foundation'] !== null; @endphp
+                        <form method="POST" action="{{ route('video-projects.screenplay-foundation', $project->id) }}"
+                              id="screenplayFoundationForm" data-modal="confirmScreenplayFoundation" onsubmit="return vpLockForm(this)">
+                            @csrf
+                            @if($hasFoundation)<input type="hidden" name="force" value="1">@endif
+                        </form>
+                        <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmScreenplayFoundation"
+                                data-busy="Đang viết…">{{ $hasFoundation ? 'Tạo bản khác (tính phí)' : 'Viết nội dung kịch bản' }}</button>
+                        @include('modal.confirm_action', [
+                            'id' => 'confirmScreenplayFoundation',
+                            'form' => 'screenplayFoundationForm',
+                            'content' => $hasFoundation
+                                ? 'Gọi Claude Sonnet 5 viết một bản nội dung MỚI, dù brief không đổi. Bản đang có vẫn được giữ trong lịch sử — tác vụ này tính tiền.'
+                                : 'Gọi Claude Sonnet 5 viết nội dung kịch bản: ý tưởng thiết kế, tiền đề, tóm tắt, diễn biến qua năm giai đoạn và kết thúc. Bước này chưa tạo scene — tác vụ này tính tiền.',
+                            'detail' => $hasFoundation
+                                ? 'Bỏ qua bản đã lưu và gọi model. Tối đa 4.000 token đầu ra, khoảng $0.05.'
+                                : 'Prompt gọn ~18 KB, tối đa 4.000 token đầu ra. Cùng brief + cùng bộ luật thì dùng lại bản đã lưu, không gọi model.',
+                        ])
+                    @endif
+                </div>
+                <div class="va-body">
+                    @if($screenplayFoundation['error'])
+                        <div class="va-lbl" style="color:var(--vp-red);font-weight:400">{{ $screenplayFoundation['error'] }}</div>
+                    @elseif($screenplayFoundation['foundation'] === null)
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Chưa viết nội dung kịch bản.</div>
+                    @else
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">
+                            <b>{{ $screenplayFoundation['foundation']['schema_version'] ?? '—' }}</b>
+                            &middot; {{ count($screenplayFoundation['foundation']['stage_treatments'] ?? []) }} giai đoạn
+                            &middot; chưa phân cảnh
+                            &middot; {{ $screenplayFoundation['written_at'] ?? '—' }}
+                        </div>
+                        <textarea class="va-ta" readonly>{{ \App\Video\Screenplay\ScreenplayFoundationText::render($screenplayFoundation['foundation']) }}</textarea>
+                    @endif
+                </div>
+
+                <div class="va-head" style="border-top:1px solid var(--vp-line)">
+                    <b>PHÂN CẢNH ĐẦY ĐỦ</b>
+                    <em>screenplay v3 — scene, coverage, build state</em>
+                    <span class="grow"></span>
+                    @if($screenplay['screenplay'] !== null)<span class="va-tag ok">Đã có kịch bản</span>@endif
+                    @if(! $brief['analysed'])
+                        <button class="vp-btn sm" disabled title="Cần brief Haiku trước">Viết kịch bản</button>
+                    @elseif($screenplay['running'])
+                        <button class="vp-btn sm" disabled>Đang viết…</button>
+                        <form method="POST" action="{{ route('video-projects.screenplay-reset', $project->id) }}">
+                            @csrf
+                            <button class="vp-btn sm dg">Reset lượt bị kẹt</button>
+                        </form>
+                    @else
+                        <form method="POST" action="{{ route('video-projects.screenplay', $project->id) }}"
+                              id="screenplayForm" data-modal="confirmScreenplay" onsubmit="return vpLockForm(this)">
+                            @csrf
+                        </form>
+                        <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmScreenplay"
+                                data-busy="Đang viết…">{{ $screenplay['screenplay'] === null ? 'Viết kịch bản' : 'Viết lại' }}</button>
+                        @include('modal.confirm_action', [
+                            'id' => 'confirmScreenplay',
+                            'form' => 'screenplayForm',
+                            'content' => 'Gọi Claude Sonnet 5 viết kịch bản phim từ brief Haiku — tác vụ này tính tiền.',
+                            'detail' => 'Lượt gần nhất tốn $0.2279. Cùng brief + cùng bộ luật thì dùng lại bản đã lưu, không gọi model.',
+                        ])
+                    @endif
+                </div>
+                <div class="va-body">
+                    @if($screenplay['error'])
+                        <div class="va-lbl" style="color:var(--vp-red);font-weight:400">{{ $screenplay['error'] }}</div>
+                    @elseif($screenplay['screenplay'] === null)
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Chưa viết kịch bản.</div>
+                    @else
+                        @if($screenplay['warnings'] !== [])
+                            <div class="alert alert-warning">
+                                <b>{{ count($screenplay['warnings']) }} cảnh báo biên tập</b>
+                                <ul class="mb-0 pl-3">
+                                    @foreach($screenplay['warnings'] as $warning)
+                                        <li>{{ $warning }}</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+                        @php
+                            $scenes = $screenplay['screenplay']['scenes'] ?? [];
+                            $seconds = round(array_sum(array_column($scenes, 'duration_estimate_ms')) / 1000, 1);
+                        @endphp
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">
+                            <b>{{ $screenplay['screenplay']['schema_version'] ?? 'bản cũ' }}</b>
+                            &middot; {{ count($scenes) }} scene
+                            @if($seconds > 0)&middot; {{ $seconds }}s @endif
+                            &middot; {{ $screenplay['written_at'] ?? '—' }}
+                        </div>
+                        <textarea class="va-ta" readonly>{{ \App\Video\Screenplay\ScreenplayText::render($screenplay['screenplay']) }}</textarea>
+                    @endif
+                </div>
+            </div>
+
+            <div class="vp-panel">
+                <div class="va-head">
+                    <span class="n">4</span>
                     <b>ANCHOR PROMPT</b>
                     <span class="grow"></span>
                     @if($compiledPrompt !== null)<span class="va-tag ok">Đã có prompt</span>@endif

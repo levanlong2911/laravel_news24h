@@ -20,8 +20,10 @@ use App\Video\Prompt\AnthropicTextClient;
 use App\Video\Prompt\OpenAiTextClient;
 use App\Video\Prompt\GeometryPromptAuthor;
 use App\Video\Prompt\TextCompletionClient;
+use App\Video\Concept\Claude\AnthropicStructuredOutputClient;
 use App\Video\Scene\ScenePlanAuthor;
 use App\Video\Scene\ScenePlanReviewer;
+use App\Video\Screenplay\ScreenplayAuthor;
 use GuzzleHttp\Client;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Contracts\Foundation\Application;
@@ -207,6 +209,69 @@ class AppServiceProvider extends ServiceProvider
                     timeoutSeconds: $timeout,
                     retryTimes: $retryTimes,
                     retrySleepMs: $retrySleep,
+                );
+            }
+        );
+
+        $this->app->singleton(
+            'video.screenplay.llm_client',
+            static function (Application $app): AnthropicStructuredOutputClient {
+                return new AnthropicStructuredOutputClient(
+                    http: $app->make(HttpFactory::class),
+                    apiKey: (string) config('canonical_concept.anthropic.api_key'),
+                    baseUrl: (string) config('canonical_concept.anthropic.base_url'),
+                    apiVersion: (string) config('canonical_concept.anthropic.api_version'),
+                    timeoutSeconds: (int) config('video.screenplay.timeout_seconds'),
+                    retryTimes: (int) config('video.screenplay.retry_times'),
+                    retrySleepMs: 0,
+                );
+            }
+        );
+
+        $this->app->singleton(
+            'video.screenplay.foundation_author',
+            static function (Application $app): ScreenplayAuthor {
+                return new ScreenplayAuthor(
+                    client: new AnthropicStructuredOutputClient(
+                        http: $app->make(HttpFactory::class),
+                        apiKey: (string) config('canonical_concept.anthropic.api_key'),
+                        baseUrl: (string) config('canonical_concept.anthropic.base_url'),
+                        apiVersion: (string) config('canonical_concept.anthropic.api_version'),
+                        timeoutSeconds: (int) config('video.screenplay.foundation.timeout_seconds'),
+                        retryTimes: (int) config('video.screenplay.foundation.retry_times'),
+                        retrySleepMs: 0,
+                    ),
+                    promptDir: (string) config('video.screenplay.foundation.prompt_dir'),
+                    schemaPath: (string) config('video.screenplay.foundation.schema_path'),
+                    promptVersion: (string) config('video.screenplay.foundation.prompt_version'),
+                    model: (string) config('video.screenplay.model'),
+                    maxTokens: (int) config('video.screenplay.foundation.max_tokens'),
+                    contractVersion: (string) config('video.screenplay.foundation.contract_version'),
+                    exampleGuidance: [
+                        'A WORKED EXAMPLE',
+                        'Its subject is deliberately unlike yours. Copy the way the decisions',
+                        'were made. Never copy its story, its characters, its locations or its',
+                        'sentences.',
+                        'It shows how every concrete feature of the inspiration is set aside,',
+                        'how an abstract question is answered with a different physical design,',
+                        'and how each stage is described without writing any scenes.',
+                        'It does not stand in for the design work this assignment asks of you.',
+                    ],
+                );
+            }
+        );
+
+        $this->app->singleton(
+            ScreenplayAuthor::class,
+            static function (Application $app): ScreenplayAuthor {
+                return new ScreenplayAuthor(
+                    client: $app->make('video.screenplay.llm_client'),
+                    promptDir: (string) config('video.screenplay.prompt_dir'),
+                    schemaPath: (string) config('video.screenplay.schema_path'),
+                    promptVersion: (string) config('video.screenplay.prompt_version'),
+                    model: (string) config('video.screenplay.model'),
+                    maxTokens: (int) config('video.screenplay.max_tokens'),
+                    contractVersion: (string) config('video.screenplay.contract_version'),
                 );
             }
         );

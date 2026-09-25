@@ -137,6 +137,8 @@ class VideoProjectsController extends Controller
             'selectedSize' => $selectedSize,
             'selectedVariations' => $selectedVariations,
             'previewPromptVersion' => $promptPreview['lineage']['prompt_version'] ?? null,
+            'screenplay' => $this->videoProjectService->latestScreenplay($project->id),
+            'screenplayFoundation' => $this->videoProjectService->latestScreenplayFoundation($project->id),
             'anchorPrompt' => $this->videoProjectService->latestAnchorPrompt($project->id),
             'anchorCells' => $this->videoProjectService->anchorCells($project->id),
             // 'prompt' => null,
@@ -191,6 +193,65 @@ class VideoProjectsController extends Controller
         return back()->with('success', $reason === 'cached'
             ? 'Brief không đổi — dùng lại prompt cũ, không gọi model.'
             : 'Đã viết prompt bằng gpt-5.6-terra.');
+    }
+
+    public function screenplayFoundation(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $force = $request->boolean('force');
+
+        [$foundation, $reason] = $this->videoProjectService->authorScreenplayFoundation($id, $force);
+
+        if ($foundation === null) {
+            return back()->with('error', $this->anchorMessage($reason));
+        }
+
+        return back()->with('success', $reason === 'cached'
+            ? 'Brief không đổi — dùng lại nội dung đã có, không gọi model.'
+            : ($force ? 'Đã tạo bản nội dung mới. Chưa phân cảnh.' : 'Đã viết nội dung kịch bản. Chưa phân cảnh.'));
+    }
+
+    public function resetScreenplayFoundation(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = $this->videoProjectService->resetScreenplayFoundation($id);
+
+        return $done
+            ? back()->with('success', 'Đã reset — bấm Viết nội dung kịch bản để chạy lại.')
+            : back()->with('error', $reason);
+    }
+
+    public function screenplay(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$screenplay, $reason] = $this->videoProjectService->authorScreenplay($id);
+        // dd([$screenplay, $reason]);
+
+        if ($screenplay === null) {
+            return back()->with('error', $this->anchorMessage($reason));
+        }
+
+        if ($reason === 'ok_needs_review') {
+            return back()->with('warning', 'Đã viết kịch bản — có cảnh báo biên tập, đọc phần cảnh báo bên dưới.');
+        }
+
+        return back()->with('success', $reason === 'cached'
+            ? 'Brief không đổi — dùng lại kịch bản cũ, không gọi model.'
+            : 'Đã viết kịch bản bằng Claude Sonnet 5.');
+    }
+
+    public function resetScreenplay(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = $this->videoProjectService->resetScreenplay($id);
+
+        return $done
+            ? back()->with('success', 'Đã reset — bấm Viết kịch bản để chạy lại.')
+            : back()->with('error', $reason);
     }
 
     public function resetConcept(string $id)
@@ -317,6 +378,21 @@ class VideoProjectsController extends Controller
             'environment_media_models_broken' => __('messages.environment_media_models_broken'),
             'environment_unknown_media_model' => __('messages.environment_unknown_media_model'),
             'environment_media_setting_invalid' => __('messages.environment_media_setting_invalid'),
+            'no_screenplay_profile' => 'Chủ đề này chưa có profile kịch bản.',
+            'screenplay_profile_contract_mismatch' => __('messages.screenplay_profile_contract_mismatch'),
+            'screenplay_profile_invalid' => __('messages.screenplay_profile_invalid'),
+            'screenplay_contract_unsupported' => __('messages.screenplay_contract_unsupported'),
+            'screenplay_schema_invalid' => __('messages.screenplay_schema_invalid'),
+            'screenplay_call_failed' => __('messages.screenplay_call_failed'),
+            'screenplay_timeout' => __('messages.screenplay_timeout'),
+            'screenplay_connection_failed' => __('messages.screenplay_connection_failed'),
+            'screenplay_author_failed' => __('messages.screenplay_author_failed'),
+            'screenplay_after_response_failed' => __('messages.screenplay_after_response_failed'),
+            'screenplay_result_not_stored' => __('messages.screenplay_result_not_stored'),
+            'inspiration_carries_source_facts' => 'Brief còn dữ kiện nguồn (số đo, ngày, tên) — chưa gọi model, xem log để biết trường nào.',
+            'screenplay_invalid' => 'Kịch bản vi phạm hợp đồng cấu trúc — nguyên văn và chi phí đã được lưu, xem log.',
+            'screenplay_running' => 'Đang có một lượt viết kịch bản chạy cho dự án này.',
+            'screenplay_claim_lost' => 'Mất claim khi lưu — kết quả đã trả tiền không được ghi.',
             default => $reason,
         };
     }

@@ -1,0 +1,153 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["logline", "arc_template", "target_duration_seconds", "discarded", "arc", "subjects", "locations", "scenes"],
+  "properties": {
+    "logline": { "type": "string", "minLength": 20, "maxLength": 300 },
+    "arc_template": { "type": "string", "minLength": 2, "maxLength": 40 },
+    "target_duration_seconds": { "type": "integer" },
+
+    "discarded": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_insight", "reason"],
+        "properties": {
+          "source_insight": { "type": "integer" },
+          "reason": { "type": "string", "minLength": 15, "maxLength": 300 }
+        }
+      }
+    },
+
+    "arc": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["beat", "purpose"],
+        "properties": {
+          "beat": { "type": "string", "enum": ["hook", "context", "progression", "escalation", "reveal", "payoff"] },
+          "purpose": { "type": "string", "minLength": 10, "maxLength": 300 }
+        }
+      }
+    },
+
+    "subjects": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "role", "kind", "identity", "basis", "reference"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^sub_[a-z0-9_]{2,40}$" },
+          "role": { "type": "string", "enum": ["protagonist", "supporting", "incidental"] },
+          "kind": { "type": "string", "enum": ["object", "person"] },
+          "identity": { "type": "string", "minLength": 20, "maxLength": 800 },
+          "basis": { "type": "string", "enum": ["evidenced", "derived", "reconstruction", "illustrative"] },
+          "reference": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["required", "type", "reason"],
+            "properties": {
+              "required": { "type": "boolean" },
+              "type": { "type": "string", "enum": ["identity_anchor", "reference_view", "none"] },
+              "reason": { "type": "string", "minLength": 15, "maxLength": 300 }
+            }
+          }
+        }
+      }
+    },
+
+    "locations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "key", "label", "space", "light", "basis", "reference"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^l_[a-z0-9_]{2,40}$" },
+          "key": { "type": "string", "minLength": 3, "maxLength": 40 },
+          "label": { "type": "string", "minLength": 3, "maxLength": 60 },
+          "space": { "type": "string", "minLength": 20, "maxLength": 600 },
+          "light": { "type": "string", "minLength": 10, "maxLength": 300 },
+          "basis": { "type": "string", "enum": ["evidenced", "derived", "reconstruction", "illustrative"] },
+          "reference": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["required", "reason"],
+            "properties": {
+              "required": { "type": "boolean" },
+              "reason": { "type": "string", "minLength": 15, "maxLength": 300 }
+            }
+          }
+        }
+      }
+    },
+
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "beat", "location_id", "purpose", "shots"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^sc_[0-9]{2}$" },
+          "beat": { "type": "string", "enum": ["hook", "context", "progression", "escalation", "reveal", "payoff"] },
+          "location_id": { "type": "string", "pattern": "^l_[a-z0-9_]{2,40}$" },
+          "purpose": { "type": "string", "minLength": 20, "maxLength": 400 },
+
+          "shots": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "role", "subject_ids", "action", "state_from", "state_to", "camera", "camera_intent", "duration_ms", "narration", "audio", "transition_to_next", "basis", "source_insights"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^sc_[0-9]{2}_[a-e]$" },
+                "role": { "type": "string", "enum": ["establishing", "primary_action", "medium", "detail", "reveal"] },
+                "subject_ids": {
+                  "type": "array",
+                  "minItems": 0,
+                  "items": { "type": "string", "pattern": "^sub_[a-z0-9_]{2,40}$" }
+                },
+                "action": { "type": "string", "minLength": 15, "maxLength": 500 },
+                "state_from": { "type": "string", "minLength": 5, "maxLength": 300 },
+                "state_to": { "type": "string", "minLength": 5, "maxLength": 300 },
+
+                "camera": {
+                  "type": ["object", "null"],
+                  "additionalProperties": false,
+                  "required": ["shot_size", "angle", "height"],
+                  "properties": {
+                    "shot_size": { "type": "string", "enum": ["extreme_wide", "wide", "medium_wide", "medium", "medium_close", "close"] },
+                    "angle": { "type": "string", "enum": ["eye_level", "low", "high", "overhead", "three_quarter", "profile", "frontal", "rear"] },
+                    "height": { "type": "string", "enum": ["ground", "low", "mid_subject", "above_subject"] }
+                  }
+                },
+
+                "camera_intent": { "type": ["string", "null"], "maxLength": 200 },
+                "duration_ms": { "type": "integer" },
+                "narration": { "type": ["string", "null"], "maxLength": 400 },
+                "audio": { "type": ["string", "null"], "maxLength": 200 },
+                "transition_to_next": { "type": "string", "enum": ["cut", "match_cut", "dissolve", "hard_cut", "end"] },
+                "basis": { "type": "string", "enum": ["evidenced", "derived", "reconstruction", "illustrative"] },
+                "source_insights": {
+                  "type": "array",
+                  "minItems": 0,
+                  "items": { "type": "integer" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

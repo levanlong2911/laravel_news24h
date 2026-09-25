@@ -1,0 +1,61 @@
+{
+    "profile_version": "superyacht_v1",
+    "contract_version": "screenplay_v2",
+    "subject_class": "superyacht",
+    "identity_dimensions": [
+        "overall length and length-to-beam ratio",
+        "sheer line and freeboard",
+        "bow geometry",
+        "superstructure massing and how it sits on the hull",
+        "window and glazing pattern",
+        "stern and transom treatment"
+    ],
+    "environments": [
+        {
+            "key": "design_studio",
+            "label": "Design studio",
+            "prompt": "A naval architect's design office: drawing boards, large pinned elevation sheets, screens showing line plans, a wide desk with rolled drawings, daylight from tall windows."
+        },
+        {
+            "key": "shipyard_hall",
+            "label": "Shipyard hall",
+            "prompt": "The interior of a shipbuilding assembly hall: steel roof trusses, an overhead travelling crane on its rails, a marked building berth with support blocks in a straight row, work platforms and staged steel plate, high side windows."
+        },
+        {
+            "key": "paint_shed",
+            "label": "Paint shed",
+            "prompt": "The interior of an enclosed fairing and paint shed: sealed white walls, even diffuse lighting from ceiling banks, mobile scaffolding towers, masking sheets and extraction ducting, no daylight."
+        },
+        {
+            "key": "launch_quay",
+            "label": "Launch quay",
+            "prompt": "A shipyard launch quay at the water's edge under open sky: concrete apron with bollards and mooring lines, a travel lift or quayside crane, calm harbour water, yard sheds in the distance."
+        },
+        {
+            "key": "open_water",
+            "label": "Open water",
+            "prompt": "Open sea under open sky, nothing but water to the horizon: moderate swell, natural daylight, no land, no harbour, no structure of any kind."
+        },
+        {
+            "key": "at_anchor",
+            "label": "At anchor",
+            "prompt": "A sheltered anchorage in daylight: calm water, a low coastline in the far distance, no other vessels close by, no harbour structures."
+        },
+        {
+            "key": "exterior_deck",
+            "label": "Exterior deck aboard",
+            "prompt": "An open deck aboard the vessel: teak or composite decking, stainless guardrails, the sea visible beyond the rail, daylight from open sky."
+        },
+        {
+            "key": "interior_space",
+            "label": "Interior space aboard",
+            "prompt": "An interior space aboard the vessel: full-height glazing to one side with the sea beyond, flush joinery, indirect ceiling light, no visible fixtures that would read as a building."
+        }
+    ],
+    "state_change_means": "Either the stage of construction the vessel has reached, or the way a space aboard transforms in use.",
+    "scale_anchor": "One standing person at distance. Without one in frame, a superyacht reads at any size.",
+    "min_scenes": 3,
+    "max_scenes": 30,
+    "max_subjects": 6,
+    "max_locations": 5
+}

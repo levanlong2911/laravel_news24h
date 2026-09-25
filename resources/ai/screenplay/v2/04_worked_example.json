@@ -1,0 +1,179 @@
+{
+    "logline": "A walkway is strung across a gorge one section at a time, and nothing solid is ever put between the people who will cross it and the drop beneath them.",
+    "design_thesis": {
+        "central_idea": "The crossing puts nothing solid between a person walking and the gorge beneath them. Every surface they stand on or look past is open, so the drop stays present for the whole walk instead of being screened off.",
+        "visible_difference": "There is no solid deck and no infilled handrail. The walking surface is an open grid hung on thin vertical hangers, and the sides are a top rail with one lower wire, so the whole span reads as a thin line strung between two towers rather than a road laid across the gap.",
+        "spatial_consequence": "A person is carried across without being separated from what they are carried over. The walk around the gorge is replaced by a walk above it, and the crossing becomes somewhere to stand rather than only a way through.",
+        "coherence": "The open grid, the unfilled sides and the exposed hangers are one decision applied three times: do not screen the gorge. An open deck also lets the wind through instead of holding it.",
+        "realization": "The film must show the walking surface as a grid before it becomes a floor, and the sides going from a row of bare posts to a finished line, because those two changes are where the decision stops being a drawing."
+    },
+    "premise": {
+        "question": "What is it like to cross a gap on something you can see straight through?",
+        "force": "The walking surface has to carry people while staying open, and every part of it is worked on from the end that is already fixed.",
+        "device": "Every scene returns to the walking surface itself. The grid is in frame from the first offcut on the table to the last step across it.",
+        "change": "At the start the line stops at the near rim. At the end a person with no part in building it is standing in the middle of the gorge.",
+        "answer": "The last scene shows someone stop in the middle, look down through the deck, and go on."
+    },
+    "characters": [
+        {
+            "id": "ch_crossing",
+            "name": "The crossing",
+            "role": "protagonist",
+            "kind": "object",
+            "description": "The structure being built. Absent at the start, incomplete through the middle, and carrying people at the end.",
+            "personality": null,
+            "appearance": "Two slender towers of welded steel, one on each rim, carrying a pair of cables that curve down between them. Beneath the cables an open grid deck hangs on thin vertical hangers, and the gorge is visible through the grid from above and from below. The sides are a top rail and one lower wire, with nothing filled in."
+        },
+        {
+            "id": "ch_designer",
+            "name": "The designer",
+            "role": "supporting",
+            "kind": "person",
+            "description": "Decides what the walking surface will be. Appears once, at the point where the decision can still go the other way.",
+            "personality": "Does not argue for the choice. Puts the rejected sample down where it could still be picked up again.",
+            "appearance": "A grey work shirt with the sleeves pushed back, short hair going white at the temples, and reading glasses pushed up onto the forehead."
+        },
+        {
+            "id": "ch_rigger",
+            "name": "The rigger",
+            "role": "supporting",
+            "kind": "person",
+            "description": "Works the open end. Lines up each section, finishes the joints behind it, and walks out on what is already fixed.",
+            "personality": "Unhurried to the point of looking slow. Will stop and wait on a misalignment rather than force it.",
+            "appearance": "A dull orange jacket worn pale at the shoulders, and a hard hat that has lost most of its paint. Heavy gloves, and a harness worn outside the jacket with its line hanging at the hip."
+        },
+        {
+            "id": "ch_traveller",
+            "name": "The traveller",
+            "role": "supporting",
+            "kind": "person",
+            "description": "Has no part in the work. Uses the crossing once it is open, and is the only person in the film who stops on it by choice.",
+            "personality": "Unbothered by the drop, and curious about it.",
+            "appearance": "A heavy dark coat to the knee, a wool cap pulled down, and a cloth bag on a long strap."
+        }
+    ],
+    "locations": [
+        {
+            "id": "lo_drawing_table",
+            "name": "The drawing table",
+            "description": "A wide table under a window, one long sheet weighted at the corners, a curve drawn across it from edge to edge, and two offcuts of decking lying beside the sheet."
+        },
+        {
+            "id": "lo_near_rim",
+            "name": "The near rim",
+            "description": "A cleared shelf of rock at the gorge edge, staging timbers laid flat, a crane track running toward the drop, and the far wall rising beyond the gap."
+        },
+        {
+            "id": "lo_deck_end",
+            "name": "The open end of the deck",
+            "description": "The last section fixed to the run, its far edge stopping in mid-air, the joints behind it still raw, grid underfoot, and the river a long way below showing through it."
+        },
+        {
+            "id": "lo_mid_span",
+            "name": "The middle of the crossing",
+            "description": "The lowest point of the finished deck, both rims equally far off, the river directly below through the grid, and nothing overhead but the two cables."
+        }
+    ],
+    "scenes": [
+        {
+            "id": "sc_01",
+            "stage": "design",
+            "location_id": "lo_drawing_table",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_designer"
+            ],
+            "action": "Two offcuts lie on the drawing: a solid plate and a piece of open grid. The designer weighs one in each hand, puts the plate down at the far end of the table, and lays the grid over the drawn curve. Wind moves the corner of the sheet and a weight goes on it without the designer looking up.",
+            "dialogue": [],
+            "sound": "A window frame rattling in its seat; two offcuts set down on wood.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "Without it the open grid looks like a material the crossing always had. Here it is picked over a solid plate, and the plate stays on the table.",
+            "leads_to": "The grid laid on the curve is what every section out on the cables is made of."
+        },
+        {
+            "id": "sc_02",
+            "stage": "construction",
+            "location_id": "lo_deck_end",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_rigger",
+                "ch_crossing"
+            ],
+            "action": "A new grid section hangs level on its hangers, its near edge out of line with the run already fixed. The rigger kneels on the fixed deck, sets a bar between the two edges and levers. The gap closes along one side and opens along the other. The bar moves and levers again. The edges come flush and the rigger drops pins down the line of the joint.",
+            "dialogue": [],
+            "sound": "Steel on steel; pins dropping into their holes.",
+            "duration_estimate_ms": 15000,
+            "why_it_cannot_be_cut": "Without it the deck simply grows. This is where a hanging section is made to line up with the one before it, and where the work has to be done twice before it goes.",
+            "leads_to": "The section is pinned along its joint and the run now ends one section further out over the gap."
+        },
+        {
+            "id": "sc_03",
+            "stage": "construction",
+            "location_id": "lo_deck_end",
+            "int_ext": "EXT",
+            "time": "DUSK",
+            "character_ids": [
+                "ch_crossing"
+            ],
+            "action": "The end stands much further out than it did, and the joints behind it are weathered. Beyond the last edge there is air, and beyond that the far rim with its own deck reaching back. The two ends do not meet. Wind comes up through the grid and nothing on the deck moves.",
+            "dialogue": [],
+            "sound": "Wind passing through grid, a flat continuous note.",
+            "duration_estimate_ms": 7000,
+            "why_it_cannot_be_cut": "Without it the gorge is never seen still open with the deck already out over it. Here the grid stands at its own end with nothing beneath it, and the two sides have not met.",
+            "leads_to": "The deck stops short of the far side, so closing that gap is what the remaining work is for."
+        },
+        {
+            "id": "sc_04",
+            "stage": "finishing",
+            "location_id": "lo_deck_end",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_rigger",
+                "ch_crossing"
+            ],
+            "action": "The rigger runs a grinder along the seam where two runs of grid meet, taking the proud edge down until a boot pushed across it stops catching. The grinder goes down on the deck. The rigger then pulls the lower wire through its brackets and hauls it up to tension, and the side of the deck stops being a row of bare posts and becomes a line.",
+            "dialogue": [],
+            "sound": "Grinder, then the ring of a wire coming up to tension.",
+            "duration_estimate_ms": 13000,
+            "why_it_cannot_be_cut": "Without it the grid stays a structure that holds weight. This is where its surface and its sides are made continuous, which is the state the last scene walks on.",
+            "leads_to": "This seam and this length of wire are finished, and the same work follows the end outward as the deck grows toward the far side."
+        },
+        {
+            "id": "sc_05",
+            "stage": "completion",
+            "location_id": "lo_near_rim",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_rigger",
+                "ch_crossing"
+            ],
+            "action": "From the rim the crossing runs away flat and thin to the far wall. Where the gap was there is now a run of grid no different from the rest, its joints already dulled like the others. The towers hold the two cables in a long shallow curve and the deck hangs beneath them in one line. The gorge stays visible through the grid along its whole length. The rigger carries the coiled running wire off the deck and lays it on the staging timbers.",
+            "dialogue": [],
+            "sound": "Wind across the gorge mouth; wire dragging on grid.",
+            "duration_estimate_ms": 10000,
+            "why_it_cannot_be_cut": "Without it the crossing is never seen whole. It runs unbroken from one rim to the other, and for the first time something is being taken off it instead of added.",
+            "leads_to": "The running wire comes off the deck, and what stands between the rims is one continuous line."
+        },
+        {
+            "id": "sc_06",
+            "stage": "operation",
+            "location_id": "lo_mid_span",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_traveller",
+                "ch_crossing"
+            ],
+            "action": "The staging at the rim is gone and the rock at the deck's end is bare. The traveller walks in along the deck, bag on one shoulder, and stops near the middle. Looks down through the grid at the river directly below, stays there, then goes on toward the far rim. The gorge is visible underfoot the whole way.",
+            "dialogue": [],
+            "sound": "Footsteps on grid; wind; the river faint and a long way down.",
+            "duration_estimate_ms": 20000,
+            "why_it_cannot_be_cut": "Without it the crossing is only ever worked on. Here someone with no part in the work stops in the middle and looks down through the deck, which is what the open surface was chosen for.",
+            "leads_to": null
+        }
+    ]
+}

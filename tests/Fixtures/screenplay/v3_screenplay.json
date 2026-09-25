@@ -1,0 +1,521 @@
+{
+    "schema_version": "screenplay_v3",
+    "logline": "A studio settles one argument about a walking surface, and a yard spends the build proving the argument was worth having.",
+    "design_thesis": {
+        "central_idea": "One unbroken walking surface runs the length of the vessel, and every other decision gives way to it.",
+        "visible_difference": "Where other vessels step down between terrace and lounge, this one carries a single level through.",
+        "spatial_consequence": "Structure is carried outboard and overhead so that nothing interrupts the run underfoot.",
+        "coherence": "The same surface reads from the stern terrace to the forward lounge, inside and out.",
+        "realization": "The yard keeps the long openings and the level run through plating, glazing and fit-out."
+    },
+    "premise": {
+        "question": "Can a vessel of this size be walked end to end without ever stepping up or down?",
+        "force": "Every structural member wants to land exactly where the surface must stay unbroken.",
+        "device": "Every scene returns to the walking surface, from the first offcut on the table to the last step across it.",
+        "change": "An argument in a studio becomes a surface that a group of guests walks without noticing.",
+        "answer": "It can, once the structure is pushed outboard and the yard refuses to break the run."
+    },
+    "characters": [
+        {
+            "id": "ch_vessel",
+            "name": "The vessel",
+            "role": "protagonist",
+            "kind": "object",
+            "description": "A fictional superyacht whose whole architecture is organised around one unbroken walking surface running from the stern terrace to the forward lounge.",
+            "personality": null,
+            "appearance": "A long low hull with a knife bow, a deep sheer and a raked superstructure set well aft, its glazing carried in long horizontal openings above an unbroken run of pale deck."
+        },
+        {
+            "id": "ch_design_team",
+            "name": "The design team",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The studio group that settles the architectural idea and carries it into deck plans the yard can build.",
+            "personality": "Argumentative in the room and unified once a decision is taken.",
+            "appearance": "A shifting group in plain working clothes, sleeves pushed back, always standing rather than sitting when a decision is close."
+        },
+        {
+            "id": "ch_engineers",
+            "name": "The engineering representatives",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The engineers who coordinate the proposed arrangement and later walk the joints on the shop floor.",
+            "personality": "Careful, slow to agree, quick to halt work that is drifting.",
+            "appearance": "A small group in site coats and hard hats, each carrying a light and a marker, moving in single file along a structure."
+        },
+        {
+            "id": "ch_site_crew",
+            "name": "The trade crews",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The crews who lay the blocks, raise the frames, close the hull and set the superstructure.",
+            "personality": "Unhurried and methodical, working to a rhythm rather than to a clock.",
+            "appearance": "Crews in heavy protective gear and visors, faces hidden while working, moving in pairs around standing steel."
+        },
+        {
+            "id": "ch_outfitters",
+            "name": "The outfitting teams",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The teams who fair and coat the topsides, bed the glazing and carry the interior through the vessel.",
+            "personality": "Quietly proprietorial about surfaces they have finished.",
+            "appearance": "Teams in pale coveralls and knee pads, gloved, carrying panels and glass between them along a long interior."
+        },
+        {
+            "id": "ch_lead",
+            "name": "The lead designer",
+            "role": "supporting",
+            "kind": "person",
+            "description": "The one who settles the argument in the studio and returns at the end to walk the result.",
+            "personality": "Blunt in the studio and reluctant to accept a compromise once it is drawn.",
+            "appearance": "A spare figure in dark working clothes, a pencil held sideways, given to crouching to read a surface at eye level."
+        },
+        {
+            "id": "ch_captain",
+            "name": "The captain",
+            "role": "supporting",
+            "kind": "person",
+            "description": "The incoming captain who inherits the vessel and afterwards runs it at sea.",
+            "personality": "Measured, watching the crew more than the guests.",
+            "appearance": "A steady figure in plain uniform, hands behind the back at rest, moving without hurry along a deck."
+        },
+        {
+            "id": "ch_yard",
+            "name": "The yard representatives",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The yard group that hands the finished vessel across to the people who will run it.",
+            "personality": "Formal in the handover, visibly relieved once the folders are across.",
+            "appearance": "A small group in shore clothes carrying folders, standing slightly apart from the crew at a gangway."
+        },
+        {
+            "id": "ch_crew",
+            "name": "The operating crew",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The service and operating crew who run the vessel and look after the guests aboard.",
+            "personality": "Invisible by intention, attentive without appearing to watch.",
+            "appearance": "Crew in pale service dress moving along a terrace with trays, stepping aside without being asked."
+        },
+        {
+            "id": "ch_guests",
+            "name": "The guest group",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The group of guests who finally use the spaces the studio argued about at the beginning.",
+            "personality": "Easy with each other, drifting rather than gathering.",
+            "appearance": "A loose group in light evening clothes, barefoot or in soft shoes, moving between an open terrace and an inner lounge."
+        }
+    ],
+    "locations": [
+        {
+            "id": "lo_studio",
+            "name": "The design studio",
+            "description": "A long room with a table running most of its length, plans weighted at the corners and offcuts of decking stacked against one wall."
+        },
+        {
+            "id": "lo_hall",
+            "name": "The building hall",
+            "description": "A high enclosed hall with blocks set in a line down the middle, cranes overhead and material staged along both walls."
+        },
+        {
+            "id": "lo_quay",
+            "name": "The fitting-out quay",
+            "description": "A working quay with bollards, a gangway and a stretch of open water beyond, the vessel lying alongside."
+        },
+        {
+            "id": "lo_deck",
+            "name": "The stern terrace and lounge",
+            "description": "The aft terrace of the finished vessel and the lounge it opens into, one surface running between them."
+        }
+    ],
+    "scenes": [
+        {
+            "id": "sc_01",
+            "stage": "design",
+            "location_id": "lo_studio",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_design_team",
+                "ch_lead"
+            ],
+            "action": "The design team lays offcuts of decking across a long table and walks the length of it, turning each piece against the light until one of them settles the argument about how the walking surface should read.",
+            "dialogue": [],
+            "sound": "Pencils drag on paper, a chair rolls back, and the room goes quiet as the offcuts are turned.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "It is the moment the team stops arguing about the surface and starts agreeing about it.",
+            "leads_to": "The team carries the settled surface into the arrangement of the decks.",
+            "build_state": {
+                "subject_id": "ch_vessel",
+                "state": "The vessel exists only as offcuts, drawings and a question about the walking surface."
+            }
+        },
+        {
+            "id": "sc_02",
+            "stage": "design",
+            "location_id": "lo_studio",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_design_team",
+                "ch_engineers",
+                "ch_lead"
+            ],
+            "action": "Design and engineering stand over the deck plans together, tracing the routes a person walks from the stern terrace to the forward lounge, and marking every place where a structural member would break the run of the surface they settled.",
+            "dialogue": [
+                {
+                    "character_id": "ch_lead",
+                    "line": "If the run breaks here, the whole idea is only a drawing."
+                }
+            ],
+            "sound": "Paper slides, markers squeak, and one voice reads out a route while another answers.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "The distinguishing idea becomes an arrangement the yard can actually execute.",
+            "leads_to": "The resolved plans leave the studio for the building hall.",
+            "build_state": {
+                "subject_id": "ch_vessel",
+                "state": "The vessel is a coordinated set of deck plans with the circulation resolved."
+            }
+        },
+        {
+            "id": "sc_03",
+            "stage": "construction",
+            "location_id": "lo_hall",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_site_crew",
+                "ch_engineers"
+            ],
+            "action": "Site engineers walk the prepared blocks while trade crews lower the first frames into place, the bare keel line running away from them down the length of the empty hall and the frames standing up from it like the ribs of a hand.",
+            "dialogue": [],
+            "sound": "Chain falls rattle, steel rings under a mallet, and boots grind on grit.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "The vessel first takes a physical length and volume that a person can stand beside.",
+            "leads_to": "The standing frames wait to be enclosed.",
+            "build_state": {
+                "subject_id": "ch_vessel",
+                "state": "Keel laid on blocks with the lower frames standing, no plating and no decks."
+            }
+        },
+        {
+            "id": "sc_04",
+            "stage": "construction",
+            "location_id": "lo_hall",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_site_crew",
+                "ch_engineers"
+            ],
+            "action": "Crews close the hull plate by plate and leave the long openings the design asked for, then set the superstructure blocks down onto the finished deck while engineers walk the joints with a light, stopping twice to mark a run that has to be reworked before the next block goes on.",
+            "dialogue": [],
+            "sound": "Grinders whine, a crane motor holds a steady note, and someone calls a halt.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "The defining form of the vessel arrives, and the check that protects it happens here.",
+            "leads_to": "The enclosed volume is handed to the outfitting teams.",
+            "build_state": {
+                "subject_id": "ch_vessel",
+                "state": "Hull plated with the design openings retained, main deck closed and the superstructure blocks set."
+            }
+        },
+        {
+            "id": "sc_05",
+            "stage": "finishing",
+            "location_id": "lo_hall",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_outfitters",
+                "ch_site_crew"
+            ],
+            "action": "Outfitting teams take over the enclosed volume, fairing and coating the topsides, bedding the long glazing into the openings, and carrying interior material along the circulation the studio drew, until the routes through the vessel can be walked instead of read.",
+            "dialogue": [],
+            "sound": "Sanders run in long passes, suction cups thump against glass, and trolleys roll.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "The interior becomes something a person can move through rather than a drawing.",
+            "leads_to": "The finished spaces are ready to be judged against the promise.",
+            "build_state": {
+                "subject_id": "ch_vessel",
+                "state": "Topsides faired and coated, glazing bedded in, interior fit-out under way."
+            }
+        },
+        {
+            "id": "sc_06",
+            "stage": "finishing",
+            "location_id": "lo_quay",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_outfitters",
+                "ch_lead",
+                "ch_captain"
+            ],
+            "action": "On the quay the teams walk the signature spaces with the lead designer and the incoming captain, stepping from the stern terrace through to the forward lounge without once breaking stride, the walking surface running unbroken under them the whole way.",
+            "dialogue": [],
+            "sound": "Footsteps carry without interruption, and water slaps the quay wall.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "The idea settled in the studio is walked end to end and found to hold.",
+            "leads_to": "The completed vessel is presented whole.",
+            "build_state": {
+                "subject_id": "ch_vessel",
+                "state": "Signature spaces complete and recognisable, the vessel alongside the quay."
+            }
+        },
+        {
+            "id": "sc_07",
+            "stage": "completion",
+            "location_id": "lo_quay",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": [
+                "ch_captain",
+                "ch_lead",
+                "ch_yard"
+            ],
+            "action": "The yard representatives walk the owner representative and the captain down the full length of the vessel, stopping at the stern where the terraces fold open, and hand across the keys and the folders that make the vessel theirs to run.",
+            "dialogue": [],
+            "sound": "Gulls call, a gangway shifts underfoot, and folders change hands.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "The vessel stops belonging to the people who made it.",
+            "leads_to": "The crew take the vessel to sea.",
+            "build_state": {
+                "subject_id": "ch_vessel",
+                "state": "Complete vessel afloat and accepted, handed to the owner representative and crew."
+            }
+        },
+        {
+            "id": "sc_08",
+            "stage": "operation",
+            "location_id": "lo_deck",
+            "int_ext": "EXT",
+            "time": "DUSK",
+            "character_ids": [
+                "ch_captain",
+                "ch_crew",
+                "ch_guests"
+            ],
+            "action": "Service crew move along the stern terrace with trays while a group of guests drifts forward through the lounge and back out again, nobody breaking stride at the thresholds, the walking surface carrying them the way the studio said it would.",
+            "dialogue": [],
+            "sound": "Glasses touch, a swell moves under the hull, and conversation drifts forward and aft.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "The promise made in the studio is finally tested by people simply walking.",
+            "leads_to": null,
+            "build_state": {
+                "subject_id": "ch_vessel",
+                "state": "In service, the vessel carrying a guest group at sea."
+            }
+        }
+    ],
+    "coverage": [
+        {
+            "coverage_id": "cov_design_brief",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_01"
+            ],
+            "evidence": "The team turns offcuts against the light until the surface question is settled."
+        },
+        {
+            "coverage_id": "cov_design_decision",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_02"
+            ],
+            "evidence": "The unbroken walking surface is fixed as the architectural idea on the deck plans."
+        },
+        {
+            "coverage_id": "cov_design_arrangement",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_02"
+            ],
+            "evidence": "Routes from the stern terrace to the forward lounge are traced across the deck plans."
+        },
+        {
+            "coverage_id": "cov_design_engineering",
+            "mode": "transition",
+            "scene_ids": [
+                "sc_02",
+                "sc_03"
+            ],
+            "evidence": "Between the studio and the hall, engineering resolves the members that would break the run."
+        },
+        {
+            "coverage_id": "cov_design_release",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_02"
+            ],
+            "evidence": "The resolved plans leave the studio and the yard takes up the work."
+        },
+        {
+            "coverage_id": "cov_build_berth",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_03"
+            ],
+            "evidence": "Prepared blocks, overhead cranes and staged material stand ready in the hall."
+        },
+        {
+            "coverage_id": "cov_build_bottom",
+            "mode": "transition",
+            "scene_ids": [
+                "sc_03",
+                "sc_04"
+            ],
+            "evidence": "Between the frames standing and the hull closing, the lower structure is completed."
+        },
+        {
+            "coverage_id": "cov_build_frames",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_03"
+            ],
+            "evidence": "Frames are lowered onto the keel line and stand up along the length of the hall."
+        },
+        {
+            "coverage_id": "cov_build_plating",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_04"
+            ],
+            "evidence": "Crews close the hull plate by plate and leave the long design openings open."
+        },
+        {
+            "coverage_id": "cov_build_deck",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_04"
+            ],
+            "evidence": "The main deck is closed before the superstructure blocks are set down onto it."
+        },
+        {
+            "coverage_id": "cov_build_superstructure",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_04"
+            ],
+            "evidence": "The superstructure blocks are set and the defining form of the vessel appears."
+        },
+        {
+            "coverage_id": "cov_build_machinery",
+            "mode": "transition",
+            "scene_ids": [
+                "sc_04",
+                "sc_05"
+            ],
+            "evidence": "Between the blocks going on and the outfitting starting, machinery and services are installed."
+        },
+        {
+            "coverage_id": "cov_build_check",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_04"
+            ],
+            "evidence": "Engineers walk the joints with a light and halt work over a run that must be reworked."
+        },
+        {
+            "coverage_id": "cov_build_handover",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_05"
+            ],
+            "evidence": "The enclosed volume passes from the trade crews to the outfitting teams."
+        },
+        {
+            "coverage_id": "cov_fin_fairing",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_05"
+            ],
+            "evidence": "The topsides are faired and coated in long passes along the hull."
+        },
+        {
+            "coverage_id": "cov_fin_glazing",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_05"
+            ],
+            "evidence": "The long glazing is bedded into the openings the design kept open."
+        },
+        {
+            "coverage_id": "cov_fin_interior",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_05"
+            ],
+            "evidence": "Interior material is carried along the circulation the studio drew."
+        },
+        {
+            "coverage_id": "cov_fin_signature",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_06"
+            ],
+            "evidence": "The stern terrace and forward lounge are walked end to end without a break."
+        },
+        {
+            "coverage_id": "cov_fin_snag",
+            "mode": "not_applicable",
+            "scene_ids": [],
+            "evidence": "No outstanding work is shown, and the film does not invent a defect to resolve."
+        },
+        {
+            "coverage_id": "cov_fin_accept",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_06"
+            ],
+            "evidence": "The teams walk the finished spaces with the lead designer and the captain."
+        },
+        {
+            "coverage_id": "cov_comp_whole",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_07"
+            ],
+            "evidence": "The vessel is walked end to end alongside the quay as one coherent whole."
+        },
+        {
+            "coverage_id": "cov_comp_launch",
+            "mode": "transition",
+            "scene_ids": [
+                "sc_06",
+                "sc_07"
+            ],
+            "evidence": "Between the hall and the quay, the vessel goes from supported to afloat."
+        },
+        {
+            "coverage_id": "cov_comp_trial",
+            "mode": "not_applicable",
+            "scene_ids": [],
+            "evidence": "No trial activity is shown, and no performance or certification claim is made."
+        },
+        {
+            "coverage_id": "cov_comp_delivery",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_07"
+            ],
+            "evidence": "Keys and folders are handed to the owner representative and the captain."
+        },
+        {
+            "coverage_id": "cov_op_crew",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_08"
+            ],
+            "evidence": "Service crew work the stern terrace while the vessel is under way."
+        },
+        {
+            "coverage_id": "cov_op_guests",
+            "mode": "shown",
+            "scene_ids": [
+                "sc_08"
+            ],
+            "evidence": "A guest group drifts between the terrace and the lounge without breaking stride."
+        }
+    ]
+}

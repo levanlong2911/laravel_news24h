@@ -1,0 +1,61 @@
+{
+    "logline": "A harbour ferry is designed with two identical working ends and sides that open along their whole length, so a crowd can board at once, and every stage of building it tests whether that open side can close into shelter.",
+    "design_thesis": {
+        "central_idea": "The ferry is one long covered hall with two identical working ends. Each side opens along almost its full length through a row of sliding gates, so passengers board across the width all at once and the vessel departs in whichever direction its next pier lies.",
+        "visible_difference": "The vessel reads as a low, even body with the same profile at both ends, one continuous roof, and a long band of gates along each side. A small glazed helm cabin sits on the roof at mid-length, facing both ends, reached from the hall by a crew stair beneath it.",
+        "spatial_consequence": "Benches run across the hall from one side to the other, so every passenger sits a few steps from a gate. Boarding and leaving happen across the width, and the whole hall empties toward the pier together.",
+        "coherence": "The identical ends, the side gates and the cross benches all serve one rule: people move on and off across the ferry's width. Each depends on the other two, and together they turn a stop into a single movement of the whole crowd.",
+        "realization": "The film must show the hull built with matching ends, each side framed as a row of openings with posts between them, every gate hung and adjusted to meet its neighbours, and the helm cabin set on the roof at mid-length."
+    },
+    "principal_dimensions": {
+        "length_m": 48,
+        "beam_m": 14.5,
+        "rationale": "Length is set by how much of a waiting crowd must reach a gate at the same moment, so the hull is long enough for a full pier queue to board side by side. Beam is set by the cross benches and the standing space inside each row of gates, and ends where those bands end."
+    },
+    "premise": {
+        "question": "Can a vessel that opens its whole side to the pier still feel like shelter once it is crossing open water?",
+        "force": "Every opening that makes boarding quick is also an opening for wind and spray once the ferry is under way.",
+        "device": "The film keeps returning to the row of side gates: drawn as a single line, framed in steel, hung and adjusted, and finally opened and closed by the crew at a pier.",
+        "change": "A row of gates argued over on paper becomes a routine the crew performs by habit, and passengers board together across the width.",
+        "answer": "The ending shows the gates closing behind a full hall and the ferry pulling away in the direction it arrived from, while passengers settle on the benches beside the closed side."
+    },
+    "synopsis": "An operator wants less of each crossing spent at the stops, and a design team answers with a ferry that has two identical working ends. Its hull is one long covered hall with a row of sliding gates along each side and benches running across its width, and a small helm cabin sits on the roof at mid-length above a crew stair. The argument is over the side: every opening that speeds boarding is also an opening for wind and spray once the ferry is under way. In the yard, the hull is built with matching ends and its sides are framed as rows of openings with posts between them. Fitting-out crews hang each gate and adjust it against its neighbours until a closed side reads as one surface. The operator's representatives and the master walk the hall, open and close the gates in sequence, and step through them from both sides. In service, a waiting crowd steps aboard across the width in one movement, the gates close, and the ferry pulls away in the direction it arrived from.",
+    "stage_treatments": [
+        {
+            "stage": "design",
+            "dramatic_purpose": "The film has to settle one decision before anything is made: whether the ferry can work from two identical ends so that people move on and off across its width.",
+            "observable_development": "The design team lays a row of card benches across a long strip of paper, marks gates along both edges and turns the strip end for end to show it reads the same either way. Operator representatives sweep a hand across the strip in one motion, from the pier edge to the benches. The helm cabin is slid along the roof of the model until it sits at mid-length, facing both ends, above the crew stair that reaches it from the hall.",
+            "participants": "The design team, with operator representatives who bring the question of every stop into the room.",
+            "handover_to_next": "The agreed arrangement leaves the studio as drawings of a hull with matching ends and open sides."
+        },
+        {
+            "stage": "construction",
+            "dramatic_purpose": "The idea has to become a hull, and its sides have to rise as rows of openings from the first framing.",
+            "observable_development": "Yard crews set out the framing for both ends from the same template, and site engineers hold one end's drawings against the other's steel. Along each side the structure rises as a row of openings with posts between them, and the roof goes on over the hall while the sides are still bare.",
+            "participants": "Yard crews and site engineers, working along the length of the same hull.",
+            "handover_to_next": "The framed hull, with its row of openings on each side, passes to the fitting-out crews."
+        },
+        {
+            "stage": "finishing",
+            "dramatic_purpose": "This is where each open side has to become a wall that can close, so the gates have to be made to work as one surface.",
+            "observable_development": "Fitting-out crews hang the gates one by one, sliding each shut against the one before it and adjusting its runners until the edges meet. Benches are fixed across the hall from side to side, and the helm cabin is glazed toward both ends. A crew member walks the length of a closed side, running a hand along the seams.",
+            "participants": "Fitting-out crews, working gate by gate along both sides.",
+            "handover_to_next": "The finished hall, with every gate hung, is ready for the people who will run it."
+        },
+        {
+            "stage": "completion",
+            "dramatic_purpose": "The people who will run the ferry have to operate the arrangement themselves and find that it makes sense to someone who did not build it.",
+            "observable_development": "Operator representatives open and close the gates along one side in sequence while the master watches from the helm cabin, then comes down the crew stair at mid-length into the hall. They sit on a bench, stand, and step out through the nearest gate, then repeat it on the other side.",
+            "participants": "Operator representatives and the master, with the fitting-out crews standing by.",
+            "handover_to_next": "The ferry passes from the yard to the operator and goes into service."
+        },
+        {
+            "stage": "operation",
+            "dramatic_purpose": "The film answers its opening question with ordinary passengers who board together and settle as if the crossing were a room.",
+            "observable_development": "At a pier the crew slides the gates open along the pier side, and a waiting crowd steps aboard across the width and spreads along the benches. The gates close and the ferry pulls away in the direction it came from. Out on the water, wind moves across the harbour beyond the closed gates while passengers read and talk on the benches beside them.",
+            "participants": "The crew and the passengers.",
+            "handover_to_next": "The film leaves the viewer with the side gates opening and closing as an ordinary part of every stop."
+        }
+    ],
+    "ending": "The last moments follow the ferry into another pier. The gates slide open along its side, one crowd steps off and another steps on across the full width at once, the gates close, and the ferry leaves in the direction it arrived from. Whether an open side could still shelter people is answered by passengers who sit down beside the closed gates and do not look up."
+}

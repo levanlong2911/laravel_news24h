@@ -1,0 +1,240 @@
+{
+    "profile_version": "yacht_v1",
+    "contract_version": "screenplay_v3",
+    "subject_class": "superyacht",
+    "scope": "full_lifecycle",
+    "objective": "Create an original, physically credible documentary-style film about a distinctive fictional superyacht, from collaborative design through construction, finishing, delivery and guest experience.",
+    "min_scenes": 3,
+    "max_scenes": 30,
+    "max_subjects": 12,
+    "max_locations": 12,
+    "min_shots_per_scene": 1,
+    "max_shots_per_scene": 10,
+    "arc_stages": [
+        "design",
+        "construction",
+        "finishing",
+        "completion",
+        "operation"
+    ],
+    "arc_required_stages": [
+        "design",
+        "construction",
+        "finishing",
+        "completion",
+        "operation"
+    ],
+    "originality": {
+        "whole_vessel_design_required": true,
+        "verified_market_novelty_claim_allowed": false,
+        "reproduce_source_names_brands_dates_measurements": false
+    },
+    "identity_dimensions": [
+        "Hull proportions, sheer and freeboard",
+        "Bow geometry",
+        "Superstructure massing",
+        "Glazing and openings",
+        "Stern and terraces",
+        "Deck relationships, circulation and signature spaces"
+    ],
+    "state_change_means": "Either the stage of construction the vessel has reached, or the way a space aboard transforms in use.",
+    "scale_anchor": "A standing person at distance reads the size of a superyacht. Use one where scale matters; it is guidance, not a requirement for every scene.",
+    "people_policy": {
+        "design": [
+            "design team",
+            "engineering representatives"
+        ],
+        "construction": [
+            "site engineers",
+            "trade crews"
+        ],
+        "finishing": [
+            "outfitting teams",
+            "quality representatives"
+        ],
+        "completion": [
+            "yard representatives",
+            "owner representative",
+            "captain"
+        ],
+        "operation": [
+            "operating crew",
+            "service crew",
+            "guest group"
+        ],
+        "recurring_representatives": true,
+        "declare_visible_participants": true,
+        "background_groups_allowed": true,
+        "fixed_people_count_per_scene": false,
+        "group_counts_as_one_subject": true,
+        "dialogue_requires_person_id": true
+    },
+    "coverage_policy": {
+        "one_item_does_not_equal_one_scene": true,
+        "every_coverage_id_appears_exactly_once": true,
+        "shown": "Show observable action or a visible result supporting the item.",
+        "transition": "Name the scenes the transition sits between, and state the progress that is being skipped.",
+        "not_applicable": "Kept in the draft for a reviewer to judge. It never satisfies a required item and never authorises production.",
+        "required_accepts_only_shown": true,
+        "evidence_is_a_claim_not_a_proof": true,
+        "coverage_claims_require_editorial_review": true
+    },
+    "coverage": [
+        {
+            "id": "cov_design_brief",
+            "stage": "design",
+            "level": "shown_or_transition",
+            "label": "Establish the design question and constraints."
+        },
+        {
+            "id": "cov_design_decision",
+            "stage": "design",
+            "level": "required",
+            "label": "The design team settles the vessel's distinguishing architectural idea."
+        },
+        {
+            "id": "cov_design_arrangement",
+            "stage": "design",
+            "level": "shown_or_transition",
+            "label": "Establish coherent deck levels, spaces and circulation."
+        },
+        {
+            "id": "cov_design_engineering",
+            "stage": "design",
+            "level": "shown_or_transition",
+            "label": "Design and engineering coordinate the proposed arrangement without invented certification claims."
+        },
+        {
+            "id": "cov_design_release",
+            "stage": "design",
+            "level": "required",
+            "label": "The yard receives the agreed design and understands the work to execute."
+        },
+        {
+            "id": "cov_build_berth",
+            "stage": "construction",
+            "level": "shown_or_transition",
+            "label": "Establish a prepared worksite, supports, access and staged material."
+        },
+        {
+            "id": "cov_build_bottom",
+            "stage": "construction",
+            "level": "shown_or_transition",
+            "label": "Show or establish progress of the lower hull structure."
+        },
+        {
+            "id": "cov_build_frames",
+            "stage": "construction",
+            "level": "shown_or_transition",
+            "label": "Show or establish the framing that gives the hull its volume."
+        },
+        {
+            "id": "cov_build_plating",
+            "stage": "construction",
+            "level": "required",
+            "label": "Crews enclose supported hull structure while retaining the design's defining openings."
+        },
+        {
+            "id": "cov_build_deck",
+            "stage": "construction",
+            "level": "shown_or_transition",
+            "label": "Establish the decks and their spatial relationships."
+        },
+        {
+            "id": "cov_build_superstructure",
+            "stage": "construction",
+            "level": "required",
+            "label": "Crews realize the distinctive superstructure form."
+        },
+        {
+            "id": "cov_build_machinery",
+            "stage": "construction",
+            "level": "shown_or_transition",
+            "label": "Establish machinery and service installation with credible access."
+        },
+        {
+            "id": "cov_build_check",
+            "stage": "construction",
+            "level": "required",
+            "label": "Check completed work; if a deviation is shown, resolve it before dependent work proceeds."
+        },
+        {
+            "id": "cov_build_handover",
+            "stage": "construction",
+            "level": "shown_or_transition",
+            "label": "Outfitting teams receive the relevant completed work areas."
+        },
+        {
+            "id": "cov_fin_fairing",
+            "stage": "finishing",
+            "level": "shown_or_transition",
+            "label": "Establish surface preparation and coating progress."
+        },
+        {
+            "id": "cov_fin_glazing",
+            "stage": "finishing",
+            "level": "shown_or_transition",
+            "label": "Establish glazing installation consistent with the vessel's design."
+        },
+        {
+            "id": "cov_fin_interior",
+            "stage": "finishing",
+            "level": "shown_or_transition",
+            "label": "Establish interior fit-out, materials and usable circulation."
+        },
+        {
+            "id": "cov_fin_signature",
+            "stage": "finishing",
+            "level": "required",
+            "label": "Show the signature spaces becoming complete and recognizable."
+        },
+        {
+            "id": "cov_fin_snag",
+            "stage": "finishing",
+            "level": "shown_or_transition",
+            "label": "Resolve outstanding work if present; do not invent defects."
+        },
+        {
+            "id": "cov_fin_accept",
+            "stage": "finishing",
+            "level": "shown_or_transition",
+            "label": "Teams review finished spaces without implying unsupported technical approval."
+        },
+        {
+            "id": "cov_comp_whole",
+            "stage": "completion",
+            "level": "required",
+            "label": "Reveal the completed vessel as a coherent architectural whole."
+        },
+        {
+            "id": "cov_comp_launch",
+            "stage": "completion",
+            "level": "shown_or_transition",
+            "label": "Establish launch and the transition from supported hull to afloat vessel."
+        },
+        {
+            "id": "cov_comp_trial",
+            "stage": "completion",
+            "level": "shown_or_transition",
+            "label": "Establish trial activity without inventing performance figures or certification."
+        },
+        {
+            "id": "cov_comp_delivery",
+            "stage": "completion",
+            "level": "required",
+            "label": "Show meaningful transfer to the owner representative and operating crew."
+        },
+        {
+            "id": "cov_op_crew",
+            "stage": "operation",
+            "level": "shown_or_transition",
+            "label": "Show or establish crew operation and guest service."
+        },
+        {
+            "id": "cov_op_guests",
+            "stage": "operation",
+            "level": "required",
+            "label": "A guest group experiences the specific spatial qualities promised by the design."
+        }
+    ]
+}

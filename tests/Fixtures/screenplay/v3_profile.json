@@ -1,0 +1,14 @@
+{
+    "profile_version": "test_v3",
+    "contract_version": "screenplay_v3",
+    "min_scenes": 3,
+    "max_scenes": 30,
+    "max_subjects": 12,
+    "max_locations": 12,
+    "arc_stages": ["design", "construction", "finishing", "completion", "operation"],
+    "arc_required_stages": ["design", "construction", "finishing", "completion", "operation"],
+    "coverage": [
+        {"id": "cov_design", "stage": "design", "level": "required", "label": "Show the design decision."},
+        {"id": "cov_build", "stage": "construction", "level": "shown_or_transition", "label": "Establish construction progress."}
+    ]
+}

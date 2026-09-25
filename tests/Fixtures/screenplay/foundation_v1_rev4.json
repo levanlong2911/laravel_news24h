@@ -1,0 +1,130 @@
+{
+    "source": "video_planning_stages rev4 screenplay_foundation, project a2cda747-de71-4e3f-8c38-c9f4fa4ae08b",
+    "model": "claude-sonnet-5",
+    "inspiration": {
+        "ideas": [
+            {
+                "aspect": "size_and_dimensions",
+                "idea": "The yacht is 82 metres in length with a 12.8-metre beam and approximately 2,250 gross tonnage."
+            },
+            {
+                "aspect": "form_and_proportions",
+                "idea": "Design employs clean lines, harmonious proportions, sculpted surfaces and three-dimensional elements to achieve strong visual identity without compromising balance, with intent to remain visually relevant over time."
+            },
+            {
+                "aspect": "spatial_layout",
+                "idea": "Owner's suite positioned forward on upper deck for privacy and horizon views; interior circulation uses side passage overlooking exterior rather than central corridor to maintain visual connection with sea."
+            },
+            {
+                "aspect": "deck_organization",
+                "idea": "Bridge deck dedicated entirely to wellness amenities rather than traditional lounge, with gym, sauna, massage area, shower and pool. Stern features extensive beach club space."
+            },
+            {
+                "aspect": "amenities",
+                "idea": "Features include fully operational touch-and-go helipad, lift connecting all decks to sundeck, 144-square-metre beach club with fold-down side terraces, extensive tender and water toy storage with garage accommodating two 10-metre tenders plus option for third seven-metre crew tender, and main deck pool with transparent bottom filtering light into beach club below."
+            },
+            {
+                "aspect": "wellness_and_relaxation",
+                "idea": "Bridge deck aft dedicated to comprehensive wellness facilities including gym, sauna, massage area, shower and pool rather than traditional social spaces."
+            },
+            {
+                "aspect": "windows_and_glazing",
+                "idea": "Side passage overlooking exterior provides constant visual connection with sea; main deck pool has transparent bottom to filter natural light into beach club below."
+            },
+            {
+                "aspect": "capacity",
+                "idea": "Seven cabins accommodate 12 guests with crew quarters for 21 personnel."
+            },
+            {
+                "aspect": "construction_new_build_and_refit",
+                "idea": "Construction in steel and aluminium with naval architecture developed in-house by shipyard. Power from two 2,240 kW engines with maximum speed of 17 knots and cruising speed of 14 knots; range approximately 6,200 nautical miles at 12 knots. Equipped with two pairs of non-retractable stabiliser fins including zero-speed stabilisation."
+            }
+        ]
+    },
+    "profile": {
+        "contract_version": "screenplay_foundation_v1",
+        "subject_class": "superyacht",
+        "objective": "Create an original, physically credible documentary-style film about a distinctive fictional superyacht, from collaborative design through construction, finishing, delivery and guest experience.",
+        "arc_stages": [
+            "design",
+            "construction",
+            "finishing",
+            "completion",
+            "operation"
+        ],
+        "arc_required_stages": [
+            "design",
+            "construction",
+            "finishing",
+            "completion",
+            "operation"
+        ],
+        "originality": {
+            "whole_vessel_design_required": true,
+            "verified_market_novelty_claim_allowed": false,
+            "reproduce_source_names_brands_dates_measurements": false
+        },
+        "identity_dimensions": [
+            "Hull proportions, sheer and freeboard",
+            "Bow geometry",
+            "Superstructure massing",
+            "Glazing and openings",
+            "Stern and terraces",
+            "Deck relationships, circulation and signature spaces"
+        ],
+        "people_policy": {
+            "design": [
+                "design team",
+                "engineering representatives"
+            ],
+            "construction": [
+                "site engineers",
+                "trade crews"
+            ],
+            "finishing": [
+                "outfitting teams",
+                "quality representatives"
+            ],
+            "completion": [
+                "yard representatives",
+                "owner representative",
+                "captain"
+            ],
+            "operation": [
+                "operating crew",
+                "service crew",
+                "guest group"
+            ],
+            "recurring_representatives": true,
+            "declare_visible_participants": true,
+            "background_groups_allowed": true,
+            "fixed_people_count_per_scene": false,
+            "group_counts_as_one_subject": true
+        },
+        "concept_antipatterns": [
+            "the category default: a three-tier stepped superstructure set aft on a long foredeck, a raked stem, a reverse transom with full-beam swim platform, and continuous horizontal glazing bands",
+            "independent horizontal slabs stacked like a wedding cake",
+            "apartment-block or cruise-ship massing",
+            "decorative mast, radar domes, antennas unless required by source evidence",
+            "bulbous bow, anchor pockets, or unexplained hull-side apertures unless required by source evidence"
+        ],
+        "concept_forbidden_terms": [
+            "cantilever",
+            "cantilevered",
+            "cantilevering",
+            "wedding cake",
+            "stacked slabs",
+            "apartment block",
+            "cruise ship",
+            "bulbous",
+            "overhanging",
+            "floating slab",
+            "fin",
+            "fins"
+        ]
+    },
+    "requirements": {
+        "aspect_ratio": "9:16"
+    },
+    "expected_fingerprint": "128133cfbfb6ed5986d371f8f545e682325a670a81c522dc069c9f909c4ca860"
+}

@@ -1,0 +1,68 @@
+{
+    "inspiration": {
+        "ideas": [
+            {
+                "aspect": "span_and_height",
+                "idea": "A walkway crosses a gorge far above the river."
+            },
+            {
+                "aspect": "structure",
+                "idea": "Two towers carry a pair of spun cables."
+            },
+            {
+                "aspect": "assembly_method",
+                "idea": "The deck is assembled in sections working from both sides toward the middle."
+            },
+            {
+                "aspect": "materials",
+                "idea": "The deck is open mesh so wind passes through it rather than pushing against it."
+            },
+            {
+                "aspect": "access_before",
+                "idea": "People used to walk around the gorge for hours to reach the clinic."
+            }
+        ]
+    },
+    "profile": {
+        "contract_version": "screenplay_foundation_v1",
+        "subject_class": "footbridge",
+        "arc_stages": [
+            "design",
+            "construction",
+            "finishing",
+            "completion",
+            "operation"
+        ],
+        "arc_required_stages": [
+            "design",
+            "construction",
+            "completion",
+            "operation"
+        ],
+        "people_policy": {
+            "design": [
+                "design team",
+                "design representative"
+            ],
+            "construction": [
+                "fabrication crew",
+                "erection crew"
+            ],
+            "finishing": [
+                "finishing team"
+            ],
+            "completion": [
+                "design representative",
+                "finishing team",
+                "operating representative"
+            ],
+            "operation": [
+                "people who cross"
+            ],
+            "group_counts_as_one_subject": true
+        }
+    },
+    "film_requirements": {
+        "aspect_ratio": "9:16"
+    }
+}

@@ -1,0 +1,75 @@
+{
+    "inspiration": {
+        "ideas": [
+            {
+                "aspect": "size_and_dimensions",
+                "idea": "The ferry is 42 metres long with a 10-metre beam and carries 300 passengers."
+            },
+            {
+                "aspect": "hull_and_structure",
+                "idea": "The hull is an aluminium catamaran."
+            },
+            {
+                "aspect": "passenger_spaces",
+                "idea": "Passengers sit in an enclosed saloon on the main deck, which has a bar at one end."
+            },
+            {
+                "aspect": "open_spaces",
+                "idea": "An open upper deck at the stern looks back toward the city."
+            },
+            {
+                "aspect": "operations",
+                "idea": "The operator wants each stop to take less of the crossing."
+            }
+        ]
+    },
+    "profile": {
+        "contract_version": "screenplay_foundation_v2",
+        "subject_class": "harbour ferry",
+        "dimension_bounds": {
+            "length_m": {
+                "min": 30,
+                "max": 60
+            }
+        },
+        "arc_stages": [
+            "design",
+            "construction",
+            "finishing",
+            "completion",
+            "operation"
+        ],
+        "arc_required_stages": [
+            "design",
+            "construction",
+            "completion",
+            "operation"
+        ],
+        "people_policy": {
+            "design": [
+                "design team",
+                "operator representatives"
+            ],
+            "construction": [
+                "yard crews",
+                "site engineers"
+            ],
+            "finishing": [
+                "fitting-out crews"
+            ],
+            "completion": [
+                "operator representatives",
+                "master",
+                "fitting-out crews"
+            ],
+            "operation": [
+                "crew",
+                "passengers"
+            ],
+            "group_counts_as_one_subject": true
+        }
+    },
+    "film_requirements": {
+        "aspect_ratio": "9:16"
+    }
+}

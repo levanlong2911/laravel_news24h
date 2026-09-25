@@ -1,0 +1,56 @@
+{
+    "logline": "A crossing is built with its floor left open to the drop beneath it, and every practical step of building it argues for closing that floor.",
+    "design_thesis": {
+        "central_idea": "The walking surface is left open, so the ground far below stays visible under every step, and the crossing protects people along its sides instead of at its floor.",
+        "visible_difference": "Where a closed deck hides the drop, this one shows it, and the protection stands upright at the edges where a hand actually reaches.",
+        "spatial_consequence": "Loads are carried out to the edge members, leaving the route underfoot free of anything a person cannot see through.",
+        "coherence": "The same open deck runs the whole way across, and the side protection keeps the same rhythm from one rim to the other.",
+        "realization": "The crews keep the deck open through fabrication, erection and finishing, and close nothing underfoot to make the next operation easier."
+    },
+    "premise": {
+        "question": "Does the feeling of walking above the gorge survive once the crossing is actually built?",
+        "force": "Every practical step of building wants to close the floor, because a solid deck is easier to stand on and to work from.",
+        "device": "The film repeatedly returns to the walking surface, from the offcut held against the window to the last step across it.",
+        "change": "A sample turned against the light becomes a surface that people cross without thinking about it.",
+        "answer": "It survives, because the protection was put at the sides in the first decision and never borrowed back from the floor."
+    },
+    "synopsis": "A studio settles one argument about a walking surface and then spends the build defending it. The crossing is designed with its floor left open, so the ground far below stays visible under every step, and the protection is carried at its sides instead. Every practical step of building wants to close that floor, because a solid deck is easier to stand on and to work from. Parts are made and checked in a shop, then placed across the gorge and fastened by hand from the deck already standing. The operation that moves a section out over the gap is never shown, because nothing establishes how it travels or what holds it on the way. In finishing, the junctions are closed and the side protection goes up while the surface underfoot stays open. Someone from outside the build reads the finished detail and takes the crossing on. It ends with people crossing on ordinary errands, one of them stopping to look down through the deck before walking on.",
+    "stage_treatments": [
+        {
+            "stage": "design",
+            "dramatic_purpose": "The film has to settle one argument before anything is made: whether the floor of the crossing can be left open.",
+            "observable_development": "A team turns an offcut of deck mesh against the light, traces the long way round the gorge and then the short line across it, and marks where edge members must stand rather than closing the floor.",
+            "participants": "The design team, with one representative who carries the decision out of the room.",
+            "handover_to_next": "The settled arrangement leaves the studio as parts to be made."
+        },
+        {
+            "stage": "construction",
+            "dramatic_purpose": "The idea has to become metal with a fixed shape, and then stand across the gap without anyone standing on what is not yet theirs.",
+            "observable_development": "Sections are checked against the drawing in a shop and one is dragged clear for a wrong angle. Later, out over the gorge, a crew reaches a joint along the deck behind it and makes a fastening by hand.",
+            "participants": "A fabrication crew in the shop, an erection crew at the gorge.",
+            "handover_to_next": "The placed deck waits for its junctions and its edges."
+        },
+        {
+            "stage": "finishing",
+            "dramatic_purpose": "This is where the argument is either kept or quietly lost, because the easiest way to finish a deck is to close it.",
+            "observable_development": "A junction between sections is closed, side protection is set upright and run out along the deck, and the lead stops between fixings to look down through the mesh at the ground below.",
+            "participants": "A finishing lead working along an installed stretch, with the erection crew nearby.",
+            "handover_to_next": "The finished detail is ready to be looked over by someone from outside the build."
+        },
+        {
+            "stage": "completion",
+            "dramatic_purpose": "Someone who was not there when it was made has to read the work and take it on.",
+            "observable_development": "An operating representative crouches at the first junction in from the rim, looks along the closed seam, and follows the line of fixings where the protection meets the deck.",
+            "participants": "The operating representative, the finishing lead and the design representative.",
+            "handover_to_next": "The film moves to a later day, with the crossing in use."
+        },
+        {
+            "stage": "operation",
+            "dramatic_purpose": "The question the film opened with is answered by people who are not thinking about it at all.",
+            "observable_development": "A stream of people crosses on ordinary errands. One stops near the middle, looks down through the mesh at the ground far below, rests a hand on the side protection, and walks on.",
+            "participants": "The people the crossing was built for.",
+            "handover_to_next": "The film ends on the surface it argued about, being used without comment."
+        }
+    ],
+    "ending": "The last thing the film shows is not the crossing but somebody using it: a traveller stopping near the middle, looking down through the open deck at the ground far below, resting a hand on the side protection, and walking on without ceremony. The question the film opened with is answered by the fact that nobody has to think about it."
+}

@@ -1,0 +1,22 @@
+{
+    "contract_version": "screenplay_foundation_v1",
+    "prompt_version": "foundation-v1",
+    "schema": "schemas/screenplay_foundation_v1.json",
+    "status": "frozen",
+    "example_guidance": [
+        "A WORKED EXAMPLE",
+        "Its subject is deliberately unlike yours. Copy the way the decisions",
+        "were made. Never copy its story, its characters, its locations or its",
+        "sentences.",
+        "It shows how a design decision becomes a premise and how each stage",
+        "is described without writing any scenes.",
+        "It does not stand in for the design work this assignment asks of you."
+    ],
+    "file_hashes": {
+        "foundation_v1/00_writer_contract.md": "cab48e26b948e1956f0e379f140428561ee931874db5fbcd4b3a29ef00742a2e",
+        "foundation_v1/04_worked_example.input.json": "f71baf1d06a3c77d5b338039277f690c3ba1404213f2ed28605157a9f70c7196",
+        "foundation_v1/04_worked_example.json": "fe32c310cad6e29d6b7e2125e8ea01a7fd619851c6ee3d1c602162fee8fb4609",
+        "foundation_v1/04_worked_example.md": "e300f6e986e34e1814f3e6f2b01d90e9c54d6da3176d1374254d66027e85c05c",
+        "schemas/screenplay_foundation_v1.json": "4bf33f744f8ddf1d6afae77d3d571d18650d8d49ff122b41ef65f99836dd571e"
+    }
+}

@@ -756,6 +756,55 @@ return [
             : null,
     ],
 
+    'screenplay' => [
+        'contract_version' => 'screenplay_v3',
+
+        'prompt_dir' => resource_path('ai/screenplay/v3'),
+
+        'schema_path' => resource_path('ai/screenplay/schemas/screenplay_v3.json'),
+
+        'prompt_version' => env('SCREENPLAY_PROMPT_VERSION', 'screenplay-v1'),
+
+        'model' => env('SCREENPLAY_MODEL', 'claude-sonnet-5'),
+
+        'max_tokens' => (int) env('SCREENPLAY_MAX_TOKENS', 32000),
+
+        'timeout_seconds' => (int) env('SCREENPLAY_TIMEOUT_SECONDS', 1800),
+
+        /** Attempt count, not retries: 1 means one HTTP request and no second send. */
+        'retry_times' => (int) env('SCREENPLAY_RETRY_TIMES', 1),
+
+        'profile_dir' => resource_path('ai/profiles/screenplay'),
+
+        'profiles' => [
+            'yacht' => 'yacht_v1',
+        ],
+
+        'foundation' => [
+            'contract_version' => 'screenplay_foundation_v2',
+
+            'prompt_dir' => resource_path('ai/screenplay/foundation_v2'),
+
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_foundation_v2.json'),
+
+            'prompt_version' => env('SCREENPLAY_FOUNDATION_PROMPT_VERSION', 'foundation-v2-r1'),
+
+            /** @var array{length_m: array{min: int, max: int}} */
+            'dimension_bounds' => [
+                'length_m' => ['min' => 100, 'max' => 180],
+            ],
+
+            'max_tokens' => (int) env('SCREENPLAY_FOUNDATION_MAX_TOKENS', 16000),
+
+            'timeout_seconds' => (int) env('SCREENPLAY_FOUNDATION_TIMEOUT_SECONDS', 600),
+
+            /** Attempt count, not retries: 1 means one HTTP request. */
+            'retry_times' => (int) env('SCREENPLAY_FOUNDATION_RETRY_TIMES', 1),
+        ],
+
+        'aspect_ratio' => env('SCREENPLAY_ASPECT_RATIO', '9:16'),
+    ],
+
     'creation_arc' => [
         'categories' => [
             'yacht' => 'vessel',
