@@ -162,6 +162,18 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
                 ? $json['usage']
                 : [];
 
+        // Keep the complete response even when there is no text block to extract.
+        $failedResponse = in_array($stopReason, ['refusal', 'max_tokens'], true)
+            ? new AnthropicStructuredOutputResponse(
+                rawText: $response->body(),
+                model: (string) ($json['model'] ?? $model),
+                stopReason: $stopReason,
+                inputTokens: (int) ($usage['input_tokens'] ?? 0),
+                outputTokens: (int) ($usage['output_tokens'] ?? 0),
+                requestId: $response->header('request-id'),
+            )
+            : null;
+
         /*
          * Structured output khong nen duoc
          * downstream parse neu model tu choi.
@@ -169,7 +181,8 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
         if ($stopReason === 'refusal') {
             throw new AnthropicRefusalException(
                 'Claude refused to generate '
-                .'the canonical concept.'
+                .'the canonical concept.',
+                response: $failedResponse,
             );
         }
 
@@ -191,7 +204,8 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
                 )
                 .' output tokens. '
                 .'Increase '
-                .'CANONICAL_CONCEPT_MAX_TOKENS.'
+                .'CANONICAL_CONCEPT_MAX_TOKENS.',
+                response: $failedResponse,
             );
         }
 
@@ -231,14 +245,26 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
                 );
     }
 
+    public function timeoutSeconds(): int
+    {
+        return $this->timeoutSeconds;
+    }
+
+    /** Number of HTTP requests one call may send, retries included. */
+    public function attempts(): int
+    {
+        return max($this->retryTimes, 1);
+    }
+
     private function extendPhpExecutionTime(): void
     {
+        $attempts = max($this->retryTimes, 1);
+
         $seconds =
-            ($this->timeoutSeconds
-                * ($this->retryTimes + 1))
+            ($this->timeoutSeconds * $attempts)
             + (int) ceil(
                 $this->retrySleepMs
-                * $this->retryTimes
+                * ($attempts - 1)
                 / 1000
             )
             + 30;
