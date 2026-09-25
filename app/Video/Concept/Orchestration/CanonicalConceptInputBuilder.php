@@ -14,6 +14,7 @@ use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Inspiration\InspirationBrief;
 use App\Video\Inspiration\InspirationBuilder;
 use App\Video\Inspiration\InspirationResult;
+use App\Video\Inspiration\InvalidInspirationBrief;
 use App\Video\Profiles\CategoryCreativeProfile as CanonicalProfile;
 
 final class CanonicalConceptInputBuilder
@@ -75,16 +76,25 @@ final class CanonicalConceptInputBuilder
 
         $draft = $this->analyst->analyze($article, $profile);
 
-        $brief = $this->inspirationBuilder->build(
-            draft: $draft->brief,
-            profile: $profile,
-            index: $index,
-        );
+        try {
+            $brief = $this->inspirationBuilder->build(
+                draft: $draft->brief,
+                profile: $profile,
+                index: $index,
+            );
+        } catch (InvalidInspirationBrief $exception) {
+            throw new InvalidInspirationBrief(
+                $exception->violations,
+                $draft->rawResponse,
+                $draft->usage,
+            );
+        }
 
         return new InspirationResult(
             brief: $brief,
             attempts: $draft->attempts,
             rawResponse: $draft->rawResponse,
+            usage: $draft->usage,
         );
     }
 }

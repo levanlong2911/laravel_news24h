@@ -7,10 +7,11 @@ use App\Video\Article\RawArticle;
 use App\Video\Evidence\EvidenceIndex;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
+use App\Video\Llm\LlmResponse;
 
 final class ClaudeInspirationAnalyst
 {
-    public const INSTRUCTION_VERSION = 'inspiration-v1';
+    public const INSTRUCTION_VERSION = 'inspiration-v2';
 
     private const MAX_ATTEMPTS = 1;
 
@@ -54,14 +55,23 @@ final class ClaudeInspirationAnalyst
             }
 
             if ($merged !== null && $lastViolations === []) {
-                return new InspirationResult($merged, $attempt, $response->text);
+                return new InspirationResult(
+                    $merged,
+                    $attempt,
+                    $response->text,
+                    self::usageOf($response),
+                );
             }
 
             // [DEAD 2026-08-19] khong con luot sau de gui loi sua.
             // $correction = $this->correction($lastViolations);
         }
 
-        throw new InvalidInspirationBrief($lastViolations, $response->text);
+        throw new InvalidInspirationBrief(
+            $lastViolations,
+            $response->text,
+            self::usageOf($response),
+        );
     }
 
     // [DEAD 2026-08-19] MAX_ATTEMPTS = 1 nen khong con duong toi — xoa sau khi xong du an.
@@ -111,14 +121,18 @@ final class ClaudeInspirationAnalyst
         First identify one or more article patterns from this closed list:
         - {$patterns}
 
-        Then extract concrete information that may inspire a new design. When present, pay
-        particular attention to these profile-specific inspection aspects:
+        Then extract concrete information that may inspire a new design. The inspection
+        aspect list is:
         - {$aspects}
 
-        These are inspection guides, not fields that must all be filled. Return only aspects
-        for which the article supplies concrete useful information. A result containing only
-        one useful aspect is valid; an empty source_insights list is valid when the article
-        contains no useful design information.
+        Every source_insights[].aspect must belong to the inspection aspect list.
+        Membership in article_patterns alone does not make a value a valid aspect.
+
+        You do not need to fill every aspect. Return only aspects for which the article
+        supplies concrete useful information. A result containing only one useful aspect is
+        valid; an empty source_insights list is valid when the article contains no useful
+        design information. When the article carries useful information that no listed
+        aspect covers, leave that information out — never invent an aspect name for it.
 
         Ignore vague praise unless the article explains a concrete detail behind it. Keep
         context of these types out of source_insights: {$excluded}. Put prominent instances
@@ -159,5 +173,19 @@ final class ClaudeInspirationAnalyst
           ]
         }
         TEXT;
+    }
+
+    /** @return array<string, mixed> */
+    private static function usageOf(LlmResponse $response): array
+    {
+        return [
+            'model' => $response->model,
+            'provider_model' => $response->providerModel,
+            'instruction_version' => self::INSTRUCTION_VERSION,
+            'tokens_in' => $response->tokensIn,
+            'tokens_out' => $response->tokensOut,
+            'thinking_tokens' => $response->thinkingTokens,
+            'cost_usd' => $response->costUsd,
+        ];
     }
 }

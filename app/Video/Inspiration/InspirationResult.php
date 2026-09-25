@@ -11,9 +11,11 @@ namespace App\Video\Inspiration;
  */
 final class InspirationResult
 {
+    /** @param array<string, mixed> $usage Khoá đã khớp PlanningStageStore */
     public function __construct(
         public readonly InspirationBrief $brief,
         public readonly int $attempts,
         public readonly string $rawResponse = '',
+        public readonly array $usage = [],
     ) {}
 }

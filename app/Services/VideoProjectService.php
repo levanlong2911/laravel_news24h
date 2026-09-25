@@ -241,6 +241,9 @@ class VideoProjectService
         if ($token === null) {
             return [null, 'Đang có một lượt phân tích chạy cho dự án này — đợi xong rồi thử lại'];
         }
+
+        $result = null;
+
         try {
             $category = (string) ($project->article->category?->slug ?? '');
             $profile = $this->creativeProfileResolver->resolve($category);
@@ -267,6 +270,7 @@ class VideoProjectService
                     $token,
                     $empty,
                     $result->rawResponse,
+                    $result->usage,
                 );
             }
 
@@ -275,10 +279,7 @@ class VideoProjectService
                 $token,
                 $result->rawResponse,
                 $output,
-                [
-                    'model' => 'haiku',
-                    'instruction_version' => \App\Video\Inspiration\ClaudeInspirationAnalyst::INSTRUCTION_VERSION,
-                ],
+                $result->usage,
             );
 
             return [$output, 'ok'];
@@ -289,11 +290,14 @@ class VideoProjectService
                 'exception' => $e,
             ]);
 
+            $fromBrief = $e instanceof \App\Video\Inspiration\InvalidInspirationBrief;
+
             return $this->failInspirationStage(
                 $stage->id,
                 $token,
                 $e->getMessage(),
-                $e instanceof \App\Video\Inspiration\InvalidInspirationBrief ? $e->rawResponse : '',
+                $result?->rawResponse ?? ($fromBrief ? $e->rawResponse : ''),
+                $result?->usage ?? ($fromBrief ? $e->usage : []),
             );
         }
     }
@@ -360,18 +364,22 @@ class VideoProjectService
         );
     }
 
-    /** @return array{0: null, 1: string} */
+    /**
+     * @param  array<string, mixed>  $usage
+     * @return array{0: null, 1: string}
+     */
     private function failInspirationStage(
         string $stageId,
         string $claimToken,
         string $reason,
         string $rawResponse = '',
+        array $usage = [],
     ): array {
         $this->stageStore->finishFailed(
             $stageId,
             $claimToken,
             $reason,
-            [
+            $usage !== [] ? $usage : [
                 'model' => 'haiku',
                 'instruction_version' => \App\Video\Inspiration\ClaudeInspirationAnalyst::INSTRUCTION_VERSION,
             ],
