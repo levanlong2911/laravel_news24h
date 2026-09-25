@@ -97,8 +97,8 @@
                 </td>
                 <td>
                     <a class="btn btn-sm btn-primary" href="{{ route('video-projects.anchor', $p->id) }}">Open</a>
-                    <a class="btn btn-sm btn-secondary" href="{{ route('video-projects.scene', $p->id) }}">Scenes</a>
-                    <a class="btn btn-sm btn-dark" href="{{ route('video-projects.render-video', $p->id) }}">Video</a>
+                    {{-- <a class="btn btn-sm btn-secondary" href="{{ route('video-projects.scene', $p->id) }}">Scenes</a>
+                    <a class="btn btn-sm btn-dark" href="{{ route('video-projects.render-video', $p->id) }}">Video</a> --}}
                 </td>
             </tr>
         @empty

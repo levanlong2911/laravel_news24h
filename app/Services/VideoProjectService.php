@@ -2344,11 +2344,7 @@ class VideoProjectService
 
     /** @return array{0: ?CompiledAnchorPrompt, 1: string, 2: ?array<string, mixed>} */
     public function compiledAnchorPrompt(
-        string $projectId,
-        AnchorStage $stage,
-        Viewpoint $viewpoint,
-        ImageSize $size,
-        ?ImageModel $model = null,
+        string $projectId
     ): array {
         $project = $this->videoProjectRepository->getById($projectId);
 
@@ -2356,31 +2352,18 @@ class VideoProjectService
             return [null, 'project_not_found', null];
         }
 
-        return $this->skillAnchorPrompt($project->id, $stage, $size, $model);
+        return $this->skillAnchorPrompt($project->id);
     }
 
     /**
-     * Duong skill khong doc canonical revision: no di thang tu brief Haiku.
-     *
-     * Di qua `PlanningStageStore` nhu moi chang khac — de dung lai claim/lease
-     * (chan tra tien hai lan), cache `already_succeeded` (cung dau vao thi
-     * KHONG goi model lai) va cot `cost_usd` da co san.
-     *
-     * Khong co concept nen `$concept` tra ve rong: `storeAnchorPromptPreview()`
-     * se khong dong bang duoc VisualIdentity, va do la dung — prompt nay khong
-     * suy ra tu mot ban thiet ke da dong bang nao.
-     *
      * @return array{0: ?CompiledAnchorPrompt, 1: string, 2: ?array<string, mixed>}
      */
     private function skillAnchorPrompt(
-        string $projectId,
-        AnchorStage $stage,
-        ImageSize $size,
-        ?ImageModel $model,
+        string $projectId
     ): array {
-        if ($model === null) {
-            return [null, 'anchor_setting_required', null];
-        }
+        $stage = AnchorStage::FABRICATION_GEOMETRY_ANCHOR;
+        $size = ImageSize::LANDSCAPE;
+        $model = ImageModel::GPT_IMAGE_2;
 
         $brief = $this->stageStore->latestOutputForProject(
             $projectId,

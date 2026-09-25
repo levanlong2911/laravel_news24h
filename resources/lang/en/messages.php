@@ -26,7 +26,7 @@ return [
     'project_not_found' => 'Project not found',
     'anchor_no_category' => 'Project has no category — cannot resolve the Python profile',
     'anchor_no_concept' => 'No concept yet — run Create Prompt first',
-    'anchor_choose_prompt_settings' => 'Choose stage, viewpoint, and size to compile the anchor prompt.',
+    'anchor_choose_prompt_settings' => 'Compile the anchor prompt.',
     'anchor_image_created' => 'Design cell :code created — queued for render',
     'anchor_image_exists' => 'Same prompt and settings already exist: :code',
     'anchor_image_rendered' => 'Cell :code rendered — the candidates are below',

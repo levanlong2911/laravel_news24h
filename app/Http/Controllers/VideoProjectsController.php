@@ -93,7 +93,6 @@ class VideoProjectsController extends Controller
                 ->with('error', __('messages.project_not_found'));
         }
         $brief = $this->videoProjectService->latestInspiration($project->id);
-        $concept = $this->videoProjectService->latestConcept($project->id);
         $promptPreview = $this->videoProjectService->anchorPromptPreview($project->id);
         $selectedModel = ImageModel::tryFrom((string) old('model', $promptPreview['lineage']['model'] ?? ''));
         $selectedQuality = ImageQuality::tryFrom((string) old('quality', ''));
@@ -122,7 +121,6 @@ class VideoProjectsController extends Controller
             'active' => 'active',
             'project' => $project,
             'brief' => $brief,
-            'concept' => $concept,
             'compiledPrompt' => $compiledPrompt,
             'compiledPromptHash' => $compiledPromptHash,
             'compileReason' => $compileReason,
@@ -131,18 +129,18 @@ class VideoProjectsController extends Controller
             'selectedQuality' => $selectedQuality,
             'selectedStage' => $selectedStage,
             // 'selectedViewpoint' => $selectedViewpoint,
-            'viewpointLabels' => [
-                Viewpoint::FrontThreeQuarter->value => 'Front three-quarter',
-                Viewpoint::Side->value => 'Side profile',
-                Viewpoint::RearThreeQuarter->value => 'Rear three-quarter',
-            ],
+            // 'viewpointLabels' => [
+            //     Viewpoint::FrontThreeQuarter->value => 'Front three-quarter',
+            //     Viewpoint::Side->value => 'Side profile',
+            //     Viewpoint::RearThreeQuarter->value => 'Rear three-quarter',
+            // ],
             'selectedSize' => $selectedSize,
             'selectedVariations' => $selectedVariations,
             'previewPromptVersion' => $promptPreview['lineage']['prompt_version'] ?? null,
             'anchorPrompt' => $this->videoProjectService->latestAnchorPrompt($project->id),
             'anchorCells' => $this->videoProjectService->anchorCells($project->id),
-            'prompt' => null,
-            'reason' => 'chua sinh',
+            // 'prompt' => null,
+            // 'reason' => 'chua sinh',
         ]);
     }
 
@@ -175,20 +173,19 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
-        $stage = AnchorStage::FABRICATION_GEOMETRY_ANCHOR;
-        $viewpoint = Viewpoint::FrontThreeQuarter;
-        $size = ImageSize::LANDSCAPE;
-
-        [$compiled, $reason, $concept] = $this->videoProjectService->compiledAnchorPrompt(
-            $id, $stage, $viewpoint, $size, ImageModel::GPT_IMAGE_2,
-        );
+        [$compiled, $reason, $concept] = $this->videoProjectService->compiledAnchorPrompt($id);
 
         if ($compiled === null) {
             return back()->with('error', $this->anchorMessage($reason));
         }
 
         $this->videoProjectService->storeAnchorPromptPreview(
-            $id, $stage, $viewpoint, $size, $compiled, $concept ?? [],
+            $id,
+            AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
+            Viewpoint::FrontThreeQuarter,
+            ImageSize::LANDSCAPE,
+            $compiled,
+            $concept ?? [],
         );
 
         return back()->with('success', $reason === 'cached'

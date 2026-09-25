@@ -480,95 +480,6 @@ a.vp-btn[disabled] {
     font-size: .78rem;
 }
 
-.va-steps {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 8px;
-    align-items: stretch;
-    margin: 0 0 14px;
-    padding: 12px;
-    background: #fff;
-    border: 1px solid var(--vp-line);
-    border-radius: 8px;
-}
-
-.va-step {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    min-width: 0;
-    padding: 8px 10px;
-    background: #f8fafc;
-    border: 1px solid transparent;
-    border-radius: 7px;
-}
-
-.va-step .n {
-    display: grid;
-    place-items: center;
-    width: 24px;
-    height: 24px;
-    flex: 0 0 auto;
-    color: var(--vp-dim);
-    font-size: .7rem;
-    font-weight: 700;
-    background: #e2e8f0;
-    border-radius: 50%;
-}
-
-.va-step .t {
-    min-width: 0;
-}
-
-.va-step .t b,
-.va-step .t em {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.va-step .t b {
-    color: var(--vp-ink);
-    font-size: .72rem;
-    font-weight: 700;
-}
-
-.va-step .t em {
-    margin-top: 1px;
-    color: var(--vp-dim);
-    font-size: .62rem;
-    font-style: normal;
-}
-
-.va-step.done {
-    background: var(--vp-green-bg);
-    border-color: #bbf7d0;
-}
-
-.va-step.done .n {
-    color: #fff;
-    background: var(--vp-green);
-}
-
-.va-step.now {
-    background: var(--vp-blue-bg);
-    border-color: var(--vp-blue-line);
-}
-
-.va-step.now .n {
-    color: #fff;
-    background: var(--vp-blue);
-}
-
-.va-step.now .t b {
-    color: var(--vp-blue);
-}
-
-.va-step-sep {
-    display: none;
-}
-
 .va-grid {
     display: grid;
     grid-template-columns: minmax(420px, .92fr) minmax(560px, 1.08fr);
@@ -1038,10 +949,6 @@ a.vp-btn[disabled] {
     .va-grid > .va-col:last-child {
         position: static;
     }
-
-    .va-steps {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
 }
 
 @media (max-width: 1050px) {
@@ -1060,10 +967,6 @@ a.vp-btn[disabled] {
 }
 
 @media (max-width: 900px) {
-    .va-steps {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
     .va-insp-grid {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -1074,7 +977,6 @@ a.vp-btn[disabled] {
         flex-direction: column;
     }
 
-    .va-steps,
     .va-fields,
     .va-set,
     .va-set.four,

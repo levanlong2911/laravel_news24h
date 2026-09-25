@@ -6,19 +6,6 @@
 @endsection
 
 @section('content')
-@php
-    $steps = [
-        ['n' => 1, 'name' => 'Article',          'sub' => 'Nguồn bài viết',     'done' => $project->article !== null],
-        ['n' => 2, 'name' => 'Inspiration',      'sub' => 'Ý tưởng nội dung',   'done' => $brief['analysed']],
-        ['n' => 3, 'name' => 'Creative Concept', 'sub' => 'Thiết kế khái niệm', 'done' => $concept['analysed']],
-        ['n' => 4, 'name' => 'Anchor Setup',     'sub' => 'Thiết lập anchor',   'done' => $compiledPrompt !== null],
-        ['n' => 5, 'name' => 'Generate',         'sub' => 'Tạo anchor',         'done' => $anchorCells !== []],
-        ['n' => 6, 'name' => 'Approve',          'sub' => 'Duyệt anchor',       'done' => false],
-    ];
-    $current = 1;
-    foreach ($steps as $step) { if ($step['done']) { $current = $step['n'] + 1; } }
-@endphp
-
 <div class="container-fluid vp">
 
     @if($errors->any())
@@ -37,16 +24,6 @@
             <p>Tạo identity anchor cho video project</p>
         </div>
         <a class="vp-btn" href="{{ route('video-projects.index') }}">← Quay lại dự án</a>
-    </div>
-
-    <div class="va-steps">
-        @foreach($steps as $step)
-            <div class="va-step {{ $step['done'] ? 'done' : ($step['n'] === $current ? 'now' : '') }}">
-                <span class="n">{{ $step['done'] ? '✓' : $step['n'] }}</span>
-                <span class="t"><b>{{ $step['name'] }}</b><em>{{ $step['sub'] }}</em></span>
-            </div>
-            @if(! $loop->last)<span class="va-step-sep">›</span>@endif
-        @endforeach
     </div>
 
     <div class="va-grid">
@@ -97,7 +74,6 @@
                             'id' => 'confirmInspiration',
                             'form' => 'inspirationForm',
                             'content' => 'Gọi Claude Haiku phân tích bài viết — tác vụ này tính tiền.',
-                            'detail' => 'Lượt gần nhất tốn $0.009209.',
                         ])
                     @endif
                 </div>
@@ -224,10 +200,9 @@
                         <div class="va-field">
                             <label>Variations</label>
                             <select class="ctl" name="variations" form="anchorImageForm" required @disabled($compiledPrompt === null)>
-                                <option value="" @selected($selectedVariations === null)>Choose variations</option>
                                 @foreach(\App\Enums\ImageVariations::cases() as $v)
                                     <option value="{{ $v->value }}"
-                                            @selected($selectedVariations?->value === $v->value)>{{ $v->label() }}</option>
+                                            @selected(($selectedVariations?->value ?? 1) === $v->value)>{{ $v->label() }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -314,7 +289,7 @@
                     @endif
                 @empty
                     <div class="va-lbl" style="padding-left:14px;font-weight:400;color:var(--vp-dim)">
-                        Chưa có ứng viên nào — biên dịch prompt rồi bấm <b>Generate Anchor</b>.
+                        Chưa có hình ảnh nào - bấm <b>Render Image</b>.
                     </div>
                 @endforelse
 
