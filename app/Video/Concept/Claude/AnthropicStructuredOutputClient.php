@@ -14,6 +14,9 @@ use RuntimeException;
 
 final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
 {
+    /** @var list<string> */
+    public const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
     public function __construct(
         private readonly HttpFactory $http,
         private readonly string $apiKey,
@@ -22,7 +25,15 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
         private readonly int $timeoutSeconds,
         private readonly int $retryTimes,
         private readonly int $retrySleepMs,
+        private readonly bool $stream = false,
+        private readonly ?string $effort = null,
     ) {
+        if ($this->effort !== null && ! in_array($this->effort, self::EFFORTS, true)) {
+            throw new RuntimeException(
+                'Anthropic effort must be one of '.implode(', ', self::EFFORTS).'.'
+            );
+        }
+
         if (trim($this->apiKey) === '') {
             throw new RuntimeException(
                 'Anthropic API key is not configured.'
@@ -90,7 +101,35 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
 
         $this->extendPhpExecutionTime();
 
-        $response =
+        $outputConfig = [
+            'format' => [
+                'type' => 'json_schema',
+
+                'schema' => $outputSchema,
+            ],
+        ];
+
+        if ($this->effort !== null) {
+            $outputConfig['effort'] = $this->effort;
+        }
+
+        $body = [
+            'model' => $model,
+
+            'max_tokens' => $maxTokens,
+
+            'system' => $system,
+
+            'messages' => $messages,
+
+            'output_config' => $outputConfig,
+        ];
+
+        if ($this->stream) {
+            $body['stream'] = true;
+        }
+
+        $request =
             $this->http
                 ->withHeaders([
                     'x-api-key' => $this->apiKey,
@@ -106,32 +145,20 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
                     $this->retryTimes,
                     $this->retrySleepMs,
                     throw: false
-                )
-                ->post(
-                    rtrim(
-                        $this->baseUrl,
-                        '/'
-                    )
-                    .'/v1/messages',
-
-                    [
-                        'model' => $model,
-
-                        'max_tokens' => $maxTokens,
-
-                        'system' => $system,
-
-                        'messages' => $messages,
-
-                        'output_config' => [
-                            'format' => [
-                                'type' => 'json_schema',
-
-                                'schema' => $outputSchema,
-                            ],
-                        ],
-                    ]
                 );
+
+        if ($this->stream) {
+            $request = $request->withOptions(['stream' => true]);
+        }
+
+        $response = $request->post(
+            rtrim(
+                $this->baseUrl,
+                '/'
+            )
+            .'/v1/messages',
+            $body
+        );
 
         if (! $response->successful()) {
             throw new AnthropicRequestException(
@@ -141,7 +168,9 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
             );
         }
 
-        $json = $response->json();
+        $json = $this->stream
+            ? $this->readStream($response)
+            : $response->json();
 
         if (! is_array($json)) {
             throw new AnthropicRequestException(
@@ -165,7 +194,9 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
         // Keep the complete response even when there is no text block to extract.
         $failedResponse = in_array($stopReason, ['refusal', 'max_tokens'], true)
             ? new AnthropicStructuredOutputResponse(
-                rawText: $response->body(),
+                rawText: $this->stream
+                    ? (string) json_encode($json, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                    : $response->body(),
                 model: (string) ($json['model'] ?? $model),
                 stopReason: $stopReason,
                 inputTokens: (int) ($usage['input_tokens'] ?? 0),
@@ -248,6 +279,134 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
     public function timeoutSeconds(): int
     {
         return $this->timeoutSeconds;
+    }
+
+    public function streams(): bool
+    {
+        return $this->stream;
+    }
+
+    public function effort(): ?string
+    {
+        return $this->effort;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function readStream(Response $response): array
+    {
+        $stream = $response->toPsrResponse()->getBody();
+        $message = ['content' => [], 'usage' => []];
+        $buffer = '';
+        $finished = false;
+
+        while (! $stream->eof()) {
+            $buffer .= str_replace("\r\n", "\n", $stream->read(8192));
+
+            while (($end = strpos($buffer, "\n\n")) !== false) {
+                $event = substr($buffer, 0, $end);
+                $buffer = substr($buffer, $end + 2);
+                $finished = $this->applyStreamEvent($event, $message) || $finished;
+            }
+        }
+
+        if (trim($buffer) !== '') {
+            $finished = $this->applyStreamEvent($buffer, $message) || $finished;
+        }
+
+        if (! $finished) {
+            throw new AnthropicRequestException(
+                'Anthropic stream ended before message_stop after '
+                .(int) ($message['usage']['output_tokens'] ?? 0)
+                .' output tokens.'
+            );
+        }
+
+        $message['content'] = array_values($message['content']);
+
+        return $message;
+    }
+
+    /**
+     * @param  array<string, mixed>  $message
+     */
+    private function applyStreamEvent(string $event, array &$message): bool
+    {
+        $data = '';
+
+        foreach (explode("\n", $event) as $line) {
+            if (str_starts_with($line, 'data:')) {
+                $data .= ltrim(substr($line, 5));
+            }
+        }
+
+        if ($data === '') {
+            return false;
+        }
+
+        $payload = json_decode($data, true);
+
+        if (! is_array($payload)) {
+            return false;
+        }
+
+        switch ($payload['type'] ?? null) {
+            case 'message_start':
+                $start = is_array($payload['message'] ?? null) ? $payload['message'] : [];
+                $message['id'] = $start['id'] ?? null;
+                $message['model'] = $start['model'] ?? null;
+                $message['usage'] = is_array($start['usage'] ?? null) ? $start['usage'] : [];
+
+                return false;
+
+            case 'content_block_start':
+                $block = is_array($payload['content_block'] ?? null) ? $payload['content_block'] : [];
+                $message['content'][(int) ($payload['index'] ?? 0)] = $block;
+
+                return false;
+
+            case 'content_block_delta':
+                $index = (int) ($payload['index'] ?? 0);
+                $delta = is_array($payload['delta'] ?? null) ? $payload['delta'] : [];
+
+                if (($delta['type'] ?? null) === 'text_delta') {
+                    $message['content'][$index]['text'] = ($message['content'][$index]['text'] ?? '')
+                        .(string) ($delta['text'] ?? '');
+                } elseif (($delta['type'] ?? null) === 'thinking_delta') {
+                    $message['content'][$index]['thinking'] = ($message['content'][$index]['thinking'] ?? '')
+                        .(string) ($delta['thinking'] ?? '');
+                }
+
+                return false;
+
+            case 'message_delta':
+                $delta = is_array($payload['delta'] ?? null) ? $payload['delta'] : [];
+
+                if (array_key_exists('stop_reason', $delta)) {
+                    $message['stop_reason'] = $delta['stop_reason'];
+                }
+
+                if (is_array($payload['usage'] ?? null)) {
+                    $message['usage'] = array_replace($message['usage'], $payload['usage']);
+                }
+
+                return false;
+
+            case 'message_stop':
+                return true;
+
+            case 'error':
+                throw new AnthropicRequestException(
+                    'Anthropic stream error: '
+                    .(string) ($payload['error']['type'] ?? 'unknown')
+                    .': '
+                    .(string) ($payload['error']['message'] ?? '')
+                );
+
+            default:
+                return false;
+        }
     }
 
     /** Number of HTTP requests one call may send, retries included. */

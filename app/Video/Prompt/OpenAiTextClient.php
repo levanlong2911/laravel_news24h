@@ -8,6 +8,7 @@ use App\Video\Prompt\Exceptions\TextCompletionException;
 use App\Video\Prompt\Exceptions\TextCompletionRefusalException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use RuntimeException;
 use Throwable;
 
@@ -25,6 +26,7 @@ final class OpenAiTextClient implements TextCompletionClient
         private readonly int $timeoutSeconds,
         private readonly int $retryTimes,
         private readonly int $retrySleepMs,
+        private readonly bool $stream = false,
     ) {
         if (trim($this->apiKey) === '') {
             throw new RuntimeException('OpenAI API key is not configured.');
@@ -63,7 +65,7 @@ final class OpenAiTextClient implements TextCompletionClient
 
         $this->extendPhpExecutionTime();
 
-        $response = $this->http
+        $request = $this->http
             ->withHeaders([
                 'Authorization' => 'Bearer '.$this->apiKey,
                 'content-type' => 'application/json',
@@ -79,11 +81,16 @@ final class OpenAiTextClient implements TextCompletionClient
                         || $exception->response->serverError()
                     ),
                 throw: false,
-            )
-            ->post(
-                rtrim($this->baseUrl, '/').self::ENDPOINT,
-                $this->payload($model, $system, $user, $maxTokens, $outputSchema),
             );
+
+        if ($this->stream) {
+            $request = $request->withOptions(['stream' => true]);
+        }
+
+        $response = $request->post(
+            rtrim($this->baseUrl, '/').self::ENDPOINT,
+            $this->payload($model, $system, $user, $maxTokens, $outputSchema),
+        );
 
         if ($response->failed()) {
             $error = $response->json('error') ?? [];
@@ -96,29 +103,131 @@ final class OpenAiTextClient implements TextCompletionClient
             ));
         }
 
-        $refusal = $response->json('choices.0.message.refusal');
+        $message = $this->stream ? $this->readStream($response) : [
+            'content' => (string) ($response->json('choices.0.message.content') ?? ''),
+            'refusal' => $response->json('choices.0.message.refusal'),
+            'finish_reason' => (string) ($response->json('choices.0.finish_reason') ?? ''),
+            'model' => $response->json('model'),
+            'usage' => (array) ($response->json('usage') ?? []),
+        ];
 
-        if (is_string($refusal) && trim($refusal) !== '') {
-            throw new TextCompletionRefusalException($refusal);
+        if (is_string($message['refusal']) && trim($message['refusal']) !== '') {
+            throw new TextCompletionRefusalException($message['refusal']);
         }
 
-        $text = (string) ($response->json('choices.0.message.content') ?? '');
-
-        if (trim($text) === '') {
+        if (trim($message['content']) === '') {
             throw new TextCompletionException('OpenAI returned no text content.');
         }
 
         $requestId = $response->header('x-request-id');
 
         return new TextCompletionResponse(
-            text: trim($text),
-            model: (string) ($response->json('model') ?? $model),
-            stopReason: $this->stopReason((string) ($response->json('choices.0.finish_reason') ?? '')),
-            inputTokens: (int) ($response->json('usage.prompt_tokens') ?? 0),
-            outputTokens: (int) ($response->json('usage.completion_tokens') ?? 0),
+            text: trim($message['content']),
+            model: (string) ($message['model'] ?? $model),
+            stopReason: $this->stopReason((string) $message['finish_reason']),
+            inputTokens: (int) ($message['usage']['prompt_tokens'] ?? 0),
+            outputTokens: (int) ($message['usage']['completion_tokens'] ?? 0),
             requestId: is_string($requestId) && trim($requestId) !== '' ? $requestId : null,
-            reasoningTokens: (int) ($response->json('usage.completion_tokens_details.reasoning_tokens') ?? 0),
+            reasoningTokens: (int) ($message['usage']['completion_tokens_details']['reasoning_tokens'] ?? 0),
         );
+    }
+
+    public function streams(): bool
+    {
+        return $this->stream;
+    }
+
+    /**
+     * @return array{content: string, refusal: ?string, finish_reason: string, model: ?string, usage: array<string, mixed>}
+     */
+    private function readStream(Response $response): array
+    {
+        $body = $response->toPsrResponse()->getBody();
+        $message = ['content' => '', 'refusal' => null, 'finish_reason' => '', 'model' => null, 'usage' => []];
+        $buffer = '';
+        $done = false;
+
+        while (! $body->eof()) {
+            $buffer .= str_replace("\r\n", "\n", $body->read(8192));
+
+            while (($end = strpos($buffer, "\n\n")) !== false) {
+                $done = $this->applyStreamEvent(substr($buffer, 0, $end), $message) || $done;
+                $buffer = substr($buffer, $end + 2);
+            }
+        }
+
+        if (trim($buffer) !== '') {
+            $done = $this->applyStreamEvent($buffer, $message) || $done;
+        }
+
+        if (! $done) {
+            throw new TextCompletionException(
+                'OpenAI stream ended before [DONE] after '.mb_strlen($message['content']).' characters.'
+            );
+        }
+
+        return $message;
+    }
+
+    /**
+     * @param  array{content: string, refusal: ?string, finish_reason: string, model: ?string, usage: array<string, mixed>}  $message
+     */
+    private function applyStreamEvent(string $event, array &$message): bool
+    {
+        $data = '';
+
+        foreach (explode("\n", $event) as $line) {
+            if (str_starts_with($line, 'data:')) {
+                $data .= ltrim(substr($line, 5));
+            }
+        }
+
+        if ($data === '') {
+            return false;
+        }
+
+        if ($data === '[DONE]') {
+            return true;
+        }
+
+        $chunk = json_decode($data, true);
+
+        if (! is_array($chunk)) {
+            return false;
+        }
+
+        if (is_array($chunk['error'] ?? null)) {
+            throw new TextCompletionException(sprintf(
+                'OpenAI stream error (%s): %s',
+                (string) ($chunk['error']['code'] ?? $chunk['error']['type'] ?? 'unknown'),
+                (string) ($chunk['error']['message'] ?? ''),
+            ));
+        }
+
+        if (is_string($chunk['model'] ?? null)) {
+            $message['model'] = $chunk['model'];
+        }
+
+        if (is_array($chunk['usage'] ?? null)) {
+            $message['usage'] = $chunk['usage'];
+        }
+
+        $choice = is_array($chunk['choices'][0] ?? null) ? $chunk['choices'][0] : [];
+        $delta = is_array($choice['delta'] ?? null) ? $choice['delta'] : [];
+
+        if (is_string($delta['content'] ?? null)) {
+            $message['content'] .= $delta['content'];
+        }
+
+        if (is_string($delta['refusal'] ?? null)) {
+            $message['refusal'] = ($message['refusal'] ?? '').$delta['refusal'];
+        }
+
+        if (is_string($choice['finish_reason'] ?? null)) {
+            $message['finish_reason'] = $choice['finish_reason'];
+        }
+
+        return false;
     }
 
     /**
@@ -141,6 +250,11 @@ final class OpenAiTextClient implements TextCompletionClient
                 ['role' => 'user', 'content' => $user],
             ],
         ];
+
+        if ($this->stream) {
+            $payload['stream'] = true;
+            $payload['stream_options'] = ['include_usage' => true];
+        }
 
         if ($outputSchema !== null) {
             $payload['response_format'] = [
