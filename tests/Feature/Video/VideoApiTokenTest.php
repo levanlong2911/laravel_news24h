@@ -6,16 +6,7 @@ use Tests\TestCase;
 
 class VideoApiTokenTest extends TestCase
 {
-    /**
-     * MOI route Python goi duoc. Truoc day phep kiem token nam trong
-     * `VideoSessionController::checkToken()` va duoc goi lai o muoi phuong thuc,
-     * trong khi test chi cham toi hai route — tam route con lai chua bao gio co
-     * bang chung la chung that su doi token.
-     *
-     * Bang nay phai lon len cung nhom route trong `routes/api.php`.
-     *
-     * @return list<array{0: string, 1: string}>
-     */
+    /** @return list<array{0: string, 1: string}> */
     public static function everyPythonRoute(): array
     {
         $id = '00000000-0000-0000-0000-000000000000';
@@ -35,40 +26,10 @@ class VideoApiTokenTest extends TestCase
     }
 
     /** @dataProvider everyPythonRoute */
-    public function test_a_python_route_refuses_a_caller_without_a_token(string $method, string $url): void
+    public function test_the_retired_python_composer_routes_are_not_registered(string $method, string $url): void
     {
-        config(['video.api_token' => 'token-loaded-before-runtime']);
-
-        $this->json($method, $url)->assertUnauthorized();
-    }
-
-    /** @dataProvider everyPythonRoute */
-    public function test_a_python_route_refuses_a_caller_holding_the_wrong_token(string $method, string $url): void
-    {
-        config(['video.api_token' => 'token-loaded-before-runtime']);
-
-        $this->withHeader('X-Video-Token', 'khong-phai-token-nay')
+        $this->withHeader('X-Video-Token', 'even-an-old-valid-token')
             ->json($method, $url)
-            ->assertUnauthorized();
-    }
-
-    /** @dataProvider everyPythonRoute */
-    public function test_a_python_route_refuses_everyone_when_no_token_is_configured(string $method, string $url): void
-    {
-        // Token rong KHONG duoc bien thanh "ai cung vao duoc": mot .env thieu
-        // dong la mo toang ca API render.
-        config(['video.api_token' => null]);
-
-        $this->withHeader('X-Video-Token', '')->json($method, $url)->assertUnauthorized();
-    }
-
-    public function test_the_right_token_gets_through(): void
-    {
-        config(['video.api_token' => 'token-loaded-before-runtime']);
-
-        $this->withHeader('X-Video-Token', 'token-loaded-before-runtime')
-            ->getJson('/api/video-sessions/composing')
-            ->assertOk();
-
+            ->assertNotFound();
     }
 }
