@@ -1,10 +1,35 @@
 # Scene–Shot Contract · Versioning · Approval
 
-**Status:** specification agreed in principle. No runtime code changed, no migration run.
+**Status:** core screenplay-selection, breakdown, render-intent and reconciliation
+rules are implemented and covered by isolated tests. The six 2026-09-25
+migrations were rehearsed on a copy and applied to `news24h` on 2026-09-25. The
+shot contract v5 and the single coverage authority (§8.1) are implemented and
+covered by fake-data tests; no real model call has run against them yet.
 **Scope:** the new production flow (screenplay → shot breakdown → render). Legacy data keeps its own path.
 
 Lines marked **[VERIFIED]** are facts read from the code, with `file:line`.
-Lines marked **[PROPOSED]** do not exist yet.
+Lines marked **[PROPOSED]** are limited to the remaining environment/profile
+decisions; implemented sections are marked explicitly below.
+Lines marked **[DECIDED 2026-09-25]** were approved as the contract for the
+shot layer and were implemented in step 3 of the rollout.
+
+---
+
+## 0. Version register
+
+Every layer names its contract, its prompt and what it reads. When one of them
+changes, this table changes in the same commit.
+
+| Layer | Contract | Prompt version | Reads | Notes |
+|---|---|---|---|---|
+| Screenplay foundation | `screenplay_foundation_v2` (`v1` frozen, manifest + checksums) | `foundation-v2-r1` | inspiration brief, profile `yacht_v1`, `dimension_bounds` 100–180 m | model does not reuse or reverse source features |
+| Scene expansion | `screenplay_scene_expansion_v1` | `scene-expansion-v1-r1` | the selected foundation v2 only, profile `yacht_v1` | streamed, effort `medium`, `max_tokens` 32000 |
+| Assembled screenplay | `screenplay_v4` = foundation v2 fields + expansion fields | — (assembled by PHP) | foundation + expansion | validated with v3 scene rules and foundation rules |
+| Shot breakdown | `scene-contract-v5` (render gate accepts v5 only) | `scene-plan-v4`, review `scene-review-v4` (v3 files kept) | the approved and selected `screenplay_v4` | no milestones; `coverage_ids` per shot; PHP copies `stage` → `scene_type` and `build_state` → `state_json`, see §8.1. Author and reviewer: `gpt-5.6-terra`, streamed, 900 s, one attempt (`video.scene_plan.client`) || Anchor prompt | `geometry-reference-v1` (object), `character-reference-v1` (person, group) | same | the latest `screenplay_v4` characters | one prompt per character |
+| Anchor image | model `gpt-image-2.5-flare` (default), `gpt-image-2.5-sunburst`, `gpt-image-2` | — | the character's stored prompt | evidence `openai_models_2026_09_25.json` |
+
+Legacy contracts (`screenplay_v2`, `screenplay_v3`, profile `vessel_v1`
+milestones) stay readable under their own rules and are never reinterpreted.
 
 ---
 
@@ -31,23 +56,30 @@ A shot **never** adds an event, subject or place outside the approved scene. To 
 ## 2. Identity chain
 
 ```
-video_planning_stages   stage=screenplay · planning_revision=R · content_hash=Hs
+video_planning_stages   stage=screenplay_foundation · schema_version=screenplay_foundation_v2
+    logline · design_thesis · principal_dimensions · premise · synopsis · stage_treatments · ending
+        │  (selected on the page; its stage id travels in _meta.foundation_stage_id)
+        ▼
+video_planning_stages   stage=screenplay · input.contract_version=screenplay_scene_expansion_v1
+    model returns characters · locations · scenes · coverage
+    PHP copies the foundation fields unchanged ⇒ output.schema_version=screenplay_v4
+    planning_revision=R · content_hash=Hs
     scenes[].id = sc_NN
         │  (only when R is APPROVED and SELECTED)
         ▼
 video_planning_stages   stage=scene_plan · planning_revision=P · content_hash=Hp
-    header for one breakdown revision                       [PROPOSED role]
+    header for one breakdown revision                       [IMPLEMENTED]
         │
         ▼
 video_render_scenes     project_id · revision=P
-    + screenplay_stage_id · screenplay_scene_code · screenplay_hash   [PROPOSED columns]
+    + screenplay_stage_id · screenplay_scene_code · screenplay_hash   [IMPLEMENTED]
         │
         ▼
 video_shots             scene_id → video_render_scenes.id            [VERIFIED]
     shot_code · shot_index · plan_revision=P
         │
         ▼
-video_design_images     + shot_id                                    [PROPOSED column]
+video_design_images     render_scene_id → the expanded planned shot  [IMPLEMENTED]
         │
         ▼
 video_renders           shot_id                                      [VERIFIED]
@@ -55,7 +87,8 @@ video_renders           shot_id                                      [VERIFIED]
 
 **[VERIFIED]** `video_shots.scene_id` (FK → `video_render_scenes`) and `shot_index` already exist, from `2026_08_18_150000:39-40,55`. The one-scene-many-shots relation is already in the schema.
 
-**[VERIFIED]** `shot_index` has **zero references** in `app/` and `tests/`. Adding it to `$fillable` + cast is safe.
+**[IMPLEMENTED]** `shot_index` is fillable/cast and participates in planned-shot
+ordering. `scene_sequence_index` continues to carry the parent scene order.
 
 **[VERIFIED]** `scene_sequence_index` **currently holds `scene_index`** (`SceneShotFactory:66`) and is read as `sequenceIndex` (`SceneExecutionPacketBuilder:61`). **Do not** repurpose this column.
 
@@ -95,7 +128,9 @@ Normalisation rules:
 
 **[VERIFIED]** `PlanningStageStore::finishSucceeded()` writes `output_hash = hash('sha256', $rawResponse)` — that is the **raw hash**, not the approved content hash.
 
-**[PROPOSED]** The content hash lives in the planning stage's output metadata. The server **recomputes** it before approval and before selecting a production version.
+**[IMPLEMENTED]** `ScreenplayContentHash` computes the normalised content hash;
+approval and production selection recompute and compare it rather than trusting
+client metadata.
 
 ---
 
@@ -110,7 +145,8 @@ A new draft **does not** affect the version in production. Approved content is *
 
 ### 5.1 Storing approval decisions
 
-**[VERIFIED]** `video_review_decisions` already exists (`2026_08_18_120000:69-88`), has **no model**, and has **zero reads/writes** in `app/`.
+**[IMPLEMENTED]** `video_review_decisions` is accessed through
+`VideoReviewDecision` and the approval/selection services.
 
 ```
 entity_type   screenplay | scene_plan | shot | render | final
@@ -120,7 +156,7 @@ revision · reviewer_id · decision · reason · metadata_json
 
 **[VERIFIED]** `entity_id` is declared `uuid`. There is **no `content_hash` column**.
 
-**[PROPOSED]**
+**[IMPLEMENTED]**
 - Screenplay approval → `entity_id` = UUID of the `video_planning_stages` row, stage=`screenplay`.
 - Breakdown approval → `entity_id` = UUID of the `video_planning_stages` row, stage=`scene_plan`.
 - `content_hash` + `contract_version` live in `metadata_json`, **checked on every read**.
@@ -128,7 +164,8 @@ revision · reviewer_id · decision · reason · metadata_json
 
 ### 5.2 Breakdown header
 
-**[PROPOSED]** Reuse the `video_planning_stages` row with stage=`scene_plan` as the object representing one plan revision. Do not create a new header table merely because the scenes live in several rows.
+**[IMPLEMENTED]** The `video_planning_stages` row with stage=`scene_plan`
+represents one plan revision. No duplicate header table is introduced.
 
 Conditions:
 - Record the screenplay source: stage UUID + revision + content hash.
@@ -138,7 +175,7 @@ Conditions:
 
 ### 5.3 Production selection pointers
 
-**[PROPOSED — new columns on `video_projects`]**
+**[IMPLEMENTED — columns on `video_projects`]**
 
 ```
 selected_screenplay_stage_id
@@ -159,23 +196,37 @@ Switching must:
 
 ## 6. Subject mapping
 
-**[VERIFIED]** `video_visual_identities` has `UNIQUE(project_id, identity_type, version)` (`2026_08_18_110000:40`). Two characters with `identity_type='subject'` and `version=1` **collide**.
+**[RESOLVED]** Migration `2026_09_25_000100` scopes identities by stable
+`subject_key` and changes the version unique key accordingly.
 
-**[VERIFIED]** `VisualIdentityStore` looks up by `project_id + identity_type` in **all three** places:
+**[IMPLEMENTED]** `VisualIdentityStore` carries `subject_key` through all lookup
+and version queries:
 - `:17-19` latest identity
 - `:53-56` find again by hash
 - `:67-70` increment version
 
-**None of them distinguishes individual subjects.** Changing the unique key alone still returns the wrong subject.
-
-**[PROPOSED]**
-- The server issues a **stable subject key**, separate from the display name and from the `ch_*` code.
-- The mapping is identified by **screenplay stage UUID + character/location code**.
-- A new screenplay **may propose** reusing an existing subject; an uncertain case **must be confirmed by a person**. Never auto-match on the code.
+The implemented identity scope follows these rules:
+- The server issues a subject key for each screenplay stage and character, separate from the display name.
 - Identity version increments when the **identity content** changes, not when a line of dialogue changes.
-- Fix **all three** `VisualIdentityStore` queries to carry the subject scope.
+- All `VisualIdentityStore` queries carry the subject scope.
 
 Locations follow the same principle, but **build state is a variant of the same location** — do not create a new location merely because the hall goes from empty to occupied.
+
+**[IMPLEMENTED 2026-09-25 — step 4, revised by the user]**
+- Only **main characters** (`role: protagonist` in the approved screenplay) carry a
+  subject, an anchor and reference images. Supporting and incidental characters
+  reach renders as text (`appearance`) only; their prompts, renders and anchor
+  approvals are refused with `character_not_main`.
+- Every main character has a generated `sp_<hash(stage, character)>` subject key
+  without any click. There is no cross-revision confirmation mechanism.
+- Anchor slots are `(project, subject_key)`: `DesignImageStore::sameSlot()` and
+  `approvedAnchorFor($projectId, $subjectKey)`. An anchor without `subject_key`
+  and without `character_id` counts as `master_vessel`.
+- A main-character anchor rendered before subjects existed is bound at approval:
+  the subject key and screenplay stage are written into its spec.
+- The production anchor of the scene flow is the anchor of the first main
+  `object` character; `/scenes/plan` refuses with
+  `screenplay_has_no_main_object` when there is none.
 
 ---
 
@@ -195,7 +246,7 @@ The earlier "dead path" conclusion was wrong because it was tested against `vess
 
 **Consequence:** `milestone_keys` **must not be removed** until the new path works and is proven.
 
-**[PROPOSED] New path** — not simply `location_id → one image`:
+**[IMPLEMENTED] New path** — not simply `location_id → one image`:
 
 ```
 stable location  +  build state to be shown
@@ -206,6 +257,13 @@ the specific artifact used by the shot
 ```
 
 If the new environment is missing, **report it missing**. **Never** silently fall back to milestones and pick a different plate.
+
+For screenplay-linked plans, `VideoProjectService` derives an immutable
+`screenplay-environment-v1` requirement from the selected screenplay's
+`location_id`, location description and `build_state`. Its hash becomes the
+environment key. The clean-plate prompt may describe surrounding access,
+supports and tools appropriate to that state, but explicitly excludes the main
+subject. Only plans without screenplay linkage use the legacy milestone bridge.
 
 ---
 
@@ -218,13 +276,51 @@ If the new environment is missing, **report it missing**. **Never** silently fal
 - A coverage item must point at the scene/shot that carries it. **Declaring an ID does not prove the content is there.**
 - Camera limits are stated **in the input**; never let the model choose movement and then silently coerce it to `locked`.
 
+### 8.1 Shot contract `scene-contract-v5` and one coverage authority [DECIDED 2026-09-25]
+
+**[VERIFIED — the problem]** `scene-contract-v4` still requires every plan to
+cover the 15 required milestones of `vessel_v1` across 7 phases
+(`VideoProjectService::validatedScenes()` → `checkMilestones()`, and the
+"Plan does not cover required milestones" gate). A screenplay-linked plan is
+therefore pushed to invent shots for milestones the screenplay never shows,
+which breaks §1. The shot `phase` is also not tied to the screenplay scene's
+`stage`, and shots carry no coverage reference, so §8's "a coverage item must
+point at the scene/shot that carries it" is not checked below the screenplay.
+
+**Decision.** For screenplay-linked plans the screenplay coverage (26 items of
+`yacht_v1`) is the only coverage authority. Milestones remain for legacy plans
+that are not linked to a screenplay, unchanged.
+
+| Kind | Field | Rule |
+|---|---|---|
+| Inherited from the screenplay scene | `screenplay_scene_code` | must name a scene of the selected `screenplay_v4` |
+| | `location_id` | must equal the scene's location |
+| | `character_ids` | subset of the scene's characters |
+| | `stage` | equals the scene's stage; the model no longer chooses a `phase` |
+| | `build_state` | copied by PHP from the scene; the model does not author it |
+| Authored by the model | `shot_index` | 1…n inside its scene, in order |
+| | `title`, `purpose` | as in v4 |
+| | `coverage_ids` | subset of the coverage items whose `shown` scene list contains this shot's screenplay scene |
+| | `transition_mode`, `state_before`, `scene_state`, `delta` | as in v4 |
+| | `video.action`, `video.preserve`, `video.end_state` | as in v4 |
+| | `camera_mode` | `locked` |
+| | `basis` | **`source_supported` only**: a linked plan may not add process steps outside its scene |
+| Removed for linked plans | `milestone_keys`, free `phase` | environment comes from `location_id` + `build_state` (§7) |
+
+Plan-level rules:
+
+- every screenplay scene has between `min_shots_per_scene` and `max_shots_per_scene` shots (already enforced);
+- for every pair *(coverage item with mode `shown`, scene named in its `scene_ids`)* at least one shot of that scene carries the item in `coverage_ids`;
+- `transition` and `not_applicable` items require no shot; they are already accounted for in the screenplay;
+- a shot's `coverage_ids` never name an item the screenplay did not attribute to its scene.
+
 ---
 
 ## 9. Three result concepts — not interchangeable
 
 | Concept | What it is | Stored in | Read by |
 |---|---|---|---|
-| **Current request** | the render the shot is **waiting on** | `shot.current_render_id` **[proposed]** | monitoring screen |
+| **Current request** | the render the shot is **waiting on** | `shot.current_render_id` **[implemented]** | monitoring screen |
 | **Result history** | the **set of records** of every render + attempt, stale ones included | `video_renders` · `render_attempts` **[existing]** | history screen |
 | **Selected result** | the specific render/artifact used for assembly | `shot.video_render_id` **[existing]** | final composition |
 
@@ -232,11 +328,15 @@ History is a **set of records**, not a pointer.
 
 **[VERIFIED]** `video_shots.video_render_id` is documented in the model as *"Clip dang duoc tinh la cua shot nay"* — its **meaning is already "selected result"**. What is wrong is the **write condition**, not the name.
 
-**[VERIFIED]** `VideoShotCheckpointService::markVideoReady()` only checks `execution_status === SUCCEEDED` before writing `video_render_id`. It does not check `execution_purpose`, and does not check that the render is still the current request. Its caller `VideoRenderExecutionService:473` **does not filter canary**.
+**[RESOLVED]** `VideoShotCheckpointService::markVideoReady()` now checks
+ownership, production purpose, success, current request and the auto-selection
+version before writing `video_render_id`.
 
-**[VERIFIED]** `sceneClipCells()` deliberately takes the **latest attempt whatever its state** — correct for monitoring. `finalCompositionCells()` consumes those same cells and skips anything not `succeeded` ⇒ **a rerun that is running or failed hides an earlier successful clip**. Live bug.
+**[RESOLVED]** Monitoring continues to show the current request, while
+`finalCompositionCells()` reads the selected, reconciled result. A failed rerun
+does not hide a prior valid selected clip.
 
-**[PROPOSED]** Auto-selection on completion requires **six** conditions. **Keep the existing check and add the new ones — do not replace.**
+**[IMPLEMENTED]** Auto-selection on completion requires **six** conditions:
 
 ```
 render.shot_id            === shot.id
@@ -274,7 +374,7 @@ request_hash     the RENDER's input                → prevents PAYING TWICE
 
 **[VERIFIED]** `request_hash` + `idempotencyKey()` already exist and run. The other two are new. A **new** `operation_id` **may** reuse the same render — that is correct behaviour.
 
-**[PROPOSED] Dispatch order — do not reorder:**
+**[IMPLEMENTED] Dispatch order — do not reorder:**
 
 ```
 1  authenticate + authorise
@@ -310,7 +410,7 @@ Two orderings matter, and they are different rules:
 | two **new** operations with the same `expected` | one succeeds, one gets 409 |
 | a new operation reusing a render already `SUCCEEDED` | selects immediately; its own retry **does not** reselect |
 
-**[PROPOSED] Where operation events live**
+**[IMPLEMENTED] Where operation events live**
 
 Keep the two kinds apart; do not force them into one table:
 
@@ -319,20 +419,25 @@ USER OPERATIONS        → video_session_events    (a table for events)
 RECONCILIATION RULINGS → video_review_decisions  (a table for decisions)
 ```
 
-**[VERIFIED]** `video_session_events` is **not yet an idempotency store**: it has only `index(session_id, created_at)` and **no unique index at all**. A shot has a `session_id` (`SceneShotFactory::sessionFor()`), so the table **fits semantically** — but it needs the minimum below before use:
+`video_session_events` is now the operation idempotency store. Migration
+`2026_09_25_000500` adds `operation_id`, `operation_payload_hash`,
+`operation_result_json` and `UNIQUE(session_id, operation_id)`.
+`ShotIntentService` performs the lookup, payload comparison, shot mutation and
+event write inside the same transaction:
 
 ```
-⬜  the uniqueness scope for operation_id, and the matching UNIQUE index
-⬜  where the payload hash and the operation RESULT are stored for replay
-⬜  protection against two concurrent requests writing a duplicate
-⬜  writing the event and changing the shot in THE SAME transaction
+✓  uniqueness scope: `(session_id, operation_id)`
+✓  payload hash: `operation_payload_hash`; replay result: `operation_result_json`
+✓  the unique index and project/shot locks reject concurrent duplicates
+✓  the event and shot pointer mutation are committed in the same transaction
 ```
 
 Putting `operation_id` in a JSON column and calling it deduplicated is **not enough**.
 
 ### 9.3 Reconciling the selected result
 
-**[PROPOSED]** One **shared reconciler** used by both writers and readers, returning **three states**, not a boolean:
+**[IMPLEMENTED]** `ShotSelectionReconciler` is shared by checkpoints and
+readers, returning **three states**, not a boolean:
 
 ```
 valid                enough evidence, meets the requirements
@@ -448,11 +553,16 @@ Whether to bar legacy data is a **product decision**, never a side effect of a m
 
 ---
 
-## 11. Profile `yacht_v1` — draft
+## 11. Profile `yacht_v1`
 
-**[PROPOSED]** The application does not read it yet. `vessel_v1` and `vessel_v2` are **untouched**.
+**[VERIFIED 2026-09-25]** `resources/ai/profiles/screenplay/yacht_v1.json` is live:
+the foundation, scene-expansion and `screenplay_v4` validators read it, and a
+paid expansion run (rev16) answered all 26 coverage items. `vessel_v1` and
+`vessel_v2` are untouched.
 
-`yacht_v1` is usable for **writing screenplays** before the new environment path is finished; only the **whole production flow** cannot move onto it yet.
+The shot layer does not read `yacht_v1` yet; it still loads `vessel_v1` through
+`SceneProfile`. §8.1 decides that screenplay-linked plans stop using the
+milestones of `vessel_v1` and take their coverage from the screenplay instead.
 
 ```json
 {
@@ -550,7 +660,13 @@ Reason: **[VERIFIED]** the profile's `min_scenes` **gates the output**, not just
 
 ---
 
-## 12. Screenplay v3 — application validation rules
+## 12. Screenplay v3 / v4 — application validation rules
+
+`screenplay_v4` applies every rule of this section to its scene part, and the
+foundation rules (length bounds, beam below length, stage treatments in profile
+order, source-fact scan of synopsis, treatments, ending and rationale) to its
+foundation part. The model never returns the foundation part in the expansion
+step; the expansion validator refuses it.
 
 JSON Schema itself does support conditionals (`if`/`then`/`else`) and cardinality caps. The schema still stays structurally simple, and **the application validator carries the cardinality and cross-reference rules**. Written here so writer and reader cannot drift.
 
@@ -595,11 +711,13 @@ A `not_applicable` item still carries its reason in `evidence`, and the validato
 
 ### 12.3 Limits the validator must enforce
 
-**[VERIFIED]** `max_subjects` and `max_locations` are declared in the profile but **enforced nowhere** — `ScreenplayValidator` reads only `min_scenes` / `max_scenes` (`:231-232`). Changing the numbers in JSON does nothing until a check exists.
+**[IMPLEMENTED]** `max_subjects` and `max_locations` are checked before the
+provider call by the profile guard and again against the returned screenplay by
+`ScreenplayValidator`.
 
 ```
-min_scenes / max_scenes        enforced today
-max_subjects / max_locations   ⬜ PROPOSED 12 / 12 — awaiting approval AND a check
+min_scenes / max_scenes        enforced
+max_subjects / max_locations   enforced at 12 / 12
                                a group counts as ONE subject, not its members
 min/max_shots_per_scene        belongs to the breakdown layer, not this validator
 ```
@@ -617,15 +735,3 @@ The validator is told the contract **by the caller**, as an explicit argument �
 - Malformed model output returns **path-tagged errors** (`coverage[3].evidence: …`), not warnings and not exceptions. Shape and type are checked before any iteration, `count()` or string interpolation.
 - A missing field and an explicit `null` are **different**. `build_state` absent is an error; `build_state: null` is a legitimate statement that build state does not apply to that scene.
 - Nothing guarantees an unexpected throw is impossible. So the **service** wraps everything that runs after the paid response — validation, editorial pass and the write — and on any throw records the attempt with its raw response and usage. The three outcomes are kept apart: the write returned `true` (recorded), returned `false` (the claim was no longer held), or threw (the stored state is **unknown** and must not be reported as recorded).
-
----
-
-## 13. Three open decisions
-
-```
-⬜  Who confirms that a character in two screenplays is the same subject
-⬜  Caps on subjects/locations: by recurring role, or by total head count
-⬜  New environment path: the data shape of "build state to be shown"
-```
-
-These three do **not** block finishing the screenplay layer. They block moving rendering onto the new flow.
