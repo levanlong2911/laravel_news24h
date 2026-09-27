@@ -709,9 +709,9 @@ return [
     ],
 
     'scene_plan' => [
-        'prompt_path' => resource_path('ai/prompts/scene_plan_v3.txt'),
+        'prompt_path' => resource_path('ai/prompts/scene_plan_v4.txt'),
 
-        'prompt_version' => env('SCENE_PLAN_PROMPT_VERSION', 'scene-plan-v3'),
+        'prompt_version' => env('SCENE_PLAN_PROMPT_VERSION', 'scene-plan-v4'),
 
         'model' => env('SCENE_PLAN_MODEL'),
 
@@ -721,7 +721,23 @@ return [
          */
         'max_tokens' => (int) env('SCENE_PLAN_MAX_TOKENS', 32000),
 
-        'max_scenes' => (int) env('SCENE_PLAN_MAX_SCENES', 24),
+        'client' => [
+            'stream' => (bool) env('SCENE_PLAN_STREAM', true),
+            'timeout_seconds' => (int) env('SCENE_PLAN_TIMEOUT_SECONDS', 900),
+            /** Attempt count, not retries: 1 means one HTTP request. */
+            'retry_times' => (int) env('SCENE_PLAN_RETRY_TIMES', 1),
+        ],
+
+        // Moi item cua scene plan v3 la MOT shot. Truong cu `max_scenes` khong
+        // con dung nghia va lam screenplay 25-30 scene bat kha thi.
+        'max_shots' => (int) env('SCENE_PLAN_MAX_SHOTS', 300),
+        'min_shots_per_scene' => 1,
+        'max_shots_per_scene' => 10,
+
+        'trial' => [
+            'min_scenes' => 2,
+            'max_scenes' => 4,
+        ],
 
         'profile_dir' => resource_path('ai/profiles/scene_planning'),
 
@@ -740,8 +756,8 @@ return [
          */
         'review' => [
             'enabled' => (bool) env('SCENE_REVIEW_ENABLED', true),
-            'prompt_path' => resource_path('ai/prompts/scene_review_v3.txt'),
-            'prompt_version' => env('SCENE_REVIEW_PROMPT_VERSION', 'scene-review-v3'),
+            'prompt_path' => resource_path('ai/prompts/scene_review_v4.txt'),
+            'prompt_version' => env('SCENE_REVIEW_PROMPT_VERSION', 'scene-review-v4'),
             'model' => env('SCENE_REVIEW_MODEL'),
             'max_tokens' => (int) env('SCENE_REVIEW_MAX_TOKENS', 32000),
             'max_rounds' => (int) env('SCENE_REVIEW_MAX_ROUNDS', 2),
@@ -800,6 +816,31 @@ return [
 
             /** Attempt count, not retries: 1 means one HTTP request. */
             'retry_times' => (int) env('SCREENPLAY_FOUNDATION_RETRY_TIMES', 1),
+        ],
+
+        'scenes' => [
+            'contract_version' => 'screenplay_scene_expansion_v1',
+
+            'assembled_version' => 'screenplay_v4',
+
+            'foundation_version' => 'screenplay_foundation_v2',
+
+            'prompt_dir' => resource_path('ai/screenplay/scene_expansion_v1'),
+
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_scene_expansion_v1.json'),
+
+            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v1-r1'),
+
+            'max_tokens' => (int) env('SCREENPLAY_SCENES_MAX_TOKENS', 32000),
+
+            'stream' => (bool) env('SCREENPLAY_SCENES_STREAM', true),
+
+            'effort' => env('SCREENPLAY_SCENES_EFFORT', 'medium'),
+
+            'timeout_seconds' => (int) env('SCREENPLAY_SCENES_TIMEOUT_SECONDS', 900),
+
+            /** Attempt count, not retries: 1 means one HTTP request. */
+            'retry_times' => (int) env('SCREENPLAY_SCENES_RETRY_TIMES', 1),
         ],
 
         'aspect_ratio' => env('SCREENPLAY_ASPECT_RATIO', '9:16'),

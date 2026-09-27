@@ -51,6 +51,13 @@
             @php($approved = $keyframes[$sceneId]['approved'] ?? null)
             @php($status = $clip['status'] ?? null)
             @php($running = in_array($status, ['submitting', 'submitted', 'provider_running', 'polling'], true))
+            @php($selectedUsable = ($clip['selected_status'] ?? null) === 'succeeded'
+                && ($clip['selected_validity'] ?? null) === 'valid'
+                && ($clip['selected_render_id'] ?? null))
+            @php($selectableOptions = array_values(array_filter(
+                $clip['successful_options'] ?? [],
+                static fn (array $option): bool => ($option['validity'] ?? null) === 'valid',
+            )))
             @php($model = $clipModels[0] ?? null)
             {{-- Shot duoc sinh luc bam Render, nen thieu shot KHONG con la ly do chan. --}}
             @php($blocked = match (true) {
@@ -91,6 +98,8 @@
                     <form class="vs-ctrl js-clip-form"
                           data-action="{{ route('video-projects.scene-clip-render', [$id, $sceneId]) }}">
                         @csrf
+                        <input type="hidden" name="expected_intent_version" value="{{ $clip['intent_version'] ?? 0 }}">
+                        <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
 
                         <label>Model</label>
                         <select name="model_id" class="js-model">
@@ -144,6 +153,26 @@
                         </button>
                     </form>
 
+                    @if($selectableOptions !== [])
+                        <form method="POST" action="{{ route('video-projects.scene-clip-select', [$id, $clip['shot_id']]) }}">
+                            @csrf
+                            <input type="hidden" name="expected_intent_version" value="{{ $clip['intent_version'] }}">
+                            <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+                            <label>Clip dùng cho timeline</label>
+                            <select name="render_id">
+                                @foreach($selectableOptions as $option)
+                                    <option value="{{ $option['render_id'] }}"
+                                            @selected($option['render_id'] === ($clip['selected_render_id'] ?? null))>
+                                        Lượt {{ $option['attempt_no'] }} · {{ $option['validity'] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            <button type="submit" class="vp-btn sm" title="Chọn kết quả này cho timeline">
+                                <i class="fas fa-check"></i> Chọn clip
+                            </button>
+                        </form>
+                    @endif
+
                     <div class="m js-note">
                         @if($running)
                             đang dựng · đã hỏi {{ $clip['poll_count'] }} lần
@@ -160,16 +189,24 @@
                 </div>
 
                 <div class="vs-c">
-                    @if($status === 'succeeded' && ($clip['artifact_path'] ?? null))
+                    @if($selectedUsable && ($clip['selected_artifact_path'] ?? null))
                         <div class="vs-stage js-stage">
                             {{-- `#t=0.1`: khong co no thi trinh duyet chi tai metadata roi de o den.
                                  Doan fragment nay bat no seek toi 0.1s va ve mot khung hinh that. --}}
                             <video preload="metadata" muted playsinline
-                                   src="{{ route('video-projects.scene-clip-file', [$id, $clip['render_id']]) }}#t=0.1"></video>
+                                   src="{{ route('video-projects.scene-clip-file', [$id, $clip['selected_render_id']]) }}#t=0.1"></video>
                         </div>
-                        <div class="m js-meta">{{ $clip['width'] }}×{{ $clip['height'] }}
-                            @if($clip['duration_ms']) · {{ round($clip['duration_ms'] / 1000, 1) }}s @endif
+                        <div class="m js-meta">{{ $clip['selected_width'] }}×{{ $clip['selected_height'] }}
+                            @if($clip['selected_duration_ms']) · {{ round($clip['selected_duration_ms'] / 1000, 1) }}s @endif
                             · bấm để phóng to</div>
+                        @if($running)
+                            <div class="m"><span class="dot"></span>Một lượt mới đang chạy; clip đã chọn vẫn được giữ.</div>
+                        @elseif($status === 'failed')
+                            <div class="m" style="color:var(--vp-amber-fg)">Lượt mới hỏng; clip đã chọn vẫn dùng được.</div>
+                        @endif
+                    @elseif(($clip['selected_render_id'] ?? null) && ($clip['selected_validity'] ?? null) !== 'valid')
+                        <div class="vs-stage broken js-stage">cần đối soát</div>
+                        <div class="m js-meta">{{ implode(', ', $clip['selected_validity_reasons'] ?? []) }}</div>
                     @elseif($running)
                         <div class="vs-stage js-stage"><span><span class="dot"></span>đang dựng video — chờ một chút</span></div>
                         <div class="m js-meta"></div>
@@ -279,8 +316,17 @@
     function apply(row, data) {
         var submit = row.querySelector('.js-submit');
         var again = row.querySelector('.js-poll');
+        var form = row.querySelector('.js-clip-form');
 
         note(row).textContent = data.note || '';
+
+        if (form && data.intent_version !== null && data.intent_version !== undefined) {
+            form.querySelector('[name="expected_intent_version"]').value = String(data.intent_version);
+        }
+
+        if (form && data.next_operation_id) {
+            form.querySelector('[name="operation_id"]').value = data.next_operation_id;
+        }
 
         if (data.poll_url) { row.dataset.pollUrl = data.poll_url; }
 
@@ -297,14 +343,21 @@
         again.hidden = true;
 
         if (data.state === 'succeeded') {
-            showVideo(row, data.file_url, data.meta);
+            if (data.file_url && data.current_is_selected) {
+                showVideo(row, data.file_url, data.meta);
+            } else if (!data.selected_render_id) {
+                stage(row).className = 'vs-stage broken js-stage';
+                stage(row).textContent = 'hoàn tất — chưa được chọn';
+            }
 
             return;
         }
 
         if (data.state === 'failed') {
-            stage(row).className = 'vs-stage broken js-stage';
-            stage(row).textContent = 'hỏng';
+            if (!data.selected_render_id) {
+                stage(row).className = 'vs-stage broken js-stage';
+                stage(row).textContent = 'hỏng';
+            }
         }
     }
 
@@ -315,7 +368,8 @@
         var form = row.querySelector('.js-clip-form');
 
         if (form) {
-            ['model_id', 'resolution', 'aspect_ratio', 'duration_seconds'].forEach(function (name) {
+            ['model_id', 'resolution', 'aspect_ratio', 'duration_seconds',
+                'expected_intent_version', 'operation_id'].forEach(function (name) {
                 var field = form.querySelector('[name="' + name + '"]');
                 if (field) { body.append(name, field.value); }
             });

@@ -36,7 +36,7 @@ class ScreenplayFoundationTest extends TestCase
     {
         parent::setUp();
 
-        $application = (string) DB::connection(config('database.default'))
+        $application = (string) DB::connection('mysql')
             ->selectOne('SELECT DATABASE() AS db')->db;
         DB::purge('testing');
         $isolated = (string) DB::connection('testing')->selectOne('SELECT DATABASE() AS db')->db;

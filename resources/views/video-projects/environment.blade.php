@@ -129,14 +129,20 @@
         <div class="alert alert-danger">{{ $mediaModelsError }}</div>
     @endif
 
-    @if($environments === [])
+    @if($environmentRequirementsError)
+        <div class="alert alert-danger">{{ __('messages.'.$environmentRequirementsError) }}</div>
+    @endif
+
+    @if($environments === [] && !$environmentRequirementsError)
         <div class="vp-panel">
             <div class="va-head">
                 <b>ENVIRONMENT LIBRARY</b>
             </div>
             <div class="va-body">
                 <div class="va-lbl" style="color:var(--vp-red);font-weight:400">
-                    {{ __('messages.environment_no_profile') }}
+                    {{ $environmentRequirementsError
+                        ? __('messages.'.$environmentRequirementsError)
+                        : __('messages.environment_no_profile') }}
                 </div>
             </div>
         </div>

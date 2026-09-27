@@ -11,11 +11,17 @@ final class VisualIdentityStore
 {
     public const SUBJECT = 'subject';
 
-    public function latestForProject(string $projectId, string $type = self::SUBJECT): ?VideoVisualIdentity
-    {
+    public const DEFAULT_SUBJECT_KEY = 'master_vessel';
+
+    public function latestForProject(
+        string $projectId,
+        string $type = self::SUBJECT,
+        string $subjectKey = self::DEFAULT_SUBJECT_KEY,
+    ): ?VideoVisualIdentity {
         return VideoVisualIdentity::query()
             ->where('project_id', $projectId)
             ->where('identity_type', $type)
+            ->where('subject_key', $subjectKey)
             ->orderByDesc('version')
             ->first();
     }
@@ -26,6 +32,7 @@ final class VisualIdentityStore
         array $conceptOutput,
         string $name = 'master_vessel',
         string $type = self::SUBJECT,
+        string $subjectKey = self::DEFAULT_SUBJECT_KEY,
     ): ?VideoVisualIdentity {
         // Duoi Phan 1 khong con khoa `design_identity`: ban sac hinh anh nam
         // o BA nhanh cua CanonicalDesignSpec. Gop dung ba nhanh do —
@@ -42,16 +49,32 @@ final class VisualIdentityStore
             return null;
         }
 
+        return $this->freezeIdentity($projectId, $identity, $name, $type, $subjectKey);
+    }
+
+    /** @param array<string, mixed> $identity */
+    public function freezeIdentity(
+        string $projectId,
+        array $identity,
+        string $name,
+        string $type = self::SUBJECT,
+        string $subjectKey = self::DEFAULT_SUBJECT_KEY,
+    ): ?VideoVisualIdentity {
+        if ($identity === [] || preg_match('/^[a-z][a-z0-9_]{2,95}$/', $subjectKey) !== 1) {
+            return null;
+        }
+
         $identity = $this->sortDeep($identity);
         $hash = $this->hash($identity);
 
         try {
-            return DB::transaction(function () use ($projectId, $identity, $hash, $name, $type) {
+            return DB::transaction(function () use ($projectId, $identity, $hash, $name, $type, $subjectKey) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
                 $existing = VideoVisualIdentity::query()
                     ->where('project_id', $projectId)
                     ->where('identity_type', $type)
+                    ->where('subject_key', $subjectKey)
                     ->where('identity_hash', $hash)
                     ->orderByDesc('version')
                     ->first();
@@ -63,10 +86,12 @@ final class VisualIdentityStore
                 return VideoVisualIdentity::create([
                     'project_id' => $projectId,
                     'identity_type' => $type,
+                    'subject_key' => $subjectKey,
                     'name' => $name,
                     'version' => 1 + (int) VideoVisualIdentity::query()
                         ->where('project_id', $projectId)
                         ->where('identity_type', $type)
+                        ->where('subject_key', $subjectKey)
                         ->max('version'),
                     'identity_json' => $identity,
                     'identity_hash' => $hash,

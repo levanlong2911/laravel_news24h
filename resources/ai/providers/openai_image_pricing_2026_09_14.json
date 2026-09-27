@@ -10,10 +10,43 @@
     "does_not_prove": "gia niem yet cua OpenAI: trang gia khong cong bo gia moi anh cho gpt-image-2, chi co $30/1M output token va mot calculator",
     "notes": [
         "Muon co so da doi chieu: lay tu calculator trong image generation guide, hoac tu hoa don that.",
-        "Khi co so that, doi usd_per_image va DOI LUON pricing_version \u2014 moi o da render giu nguyen gia cu cua no."
+        "Khi co so that, doi usd_per_image va DOI LUON pricing_version — moi o da render giu nguyen gia cu cua no.",
+        "2026-09-25: added gpt-image-2.5-flare and gpt-image-2.5-sunburst. The pricing page lists both at the same token prices as gpt-image-2 (image input 8.00, cached input 2.00, output 30.00 USD per 1M tokens), so they carry the same per-image estimates. The gpt-image-2 figures are unchanged, so pricing_version is unchanged. Model ids: openai_models_2026_09_25.json."
     ],
     "models": {
         "gpt-image-2": {
+            "qualities": {
+                "low": {
+                    "usd_per_image": 0.015
+                },
+                "medium": {
+                    "usd_per_image": 0.041
+                },
+                "high": {
+                    "usd_per_image": 0.11
+                },
+                "auto": {
+                    "usd_per_image": 0.11
+                }
+            }
+        },
+        "gpt-image-2.5-flare": {
+            "qualities": {
+                "low": {
+                    "usd_per_image": 0.015
+                },
+                "medium": {
+                    "usd_per_image": 0.041
+                },
+                "high": {
+                    "usd_per_image": 0.11
+                },
+                "auto": {
+                    "usd_per_image": 0.11
+                }
+            }
+        },
+        "gpt-image-2.5-sunburst": {
             "qualities": {
                 "low": {
                     "usd_per_image": 0.015

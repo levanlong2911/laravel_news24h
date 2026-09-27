@@ -77,6 +77,41 @@
         ])
     </div>
 
+    @if($productionScreenplayScenes !== [])
+        <div class="vs-c" style="margin-bottom:10px">
+            <form method="POST" action="{{ route('video-projects.scenes-plan-trial', $id) }}"
+                  onsubmit="return window.confirm('Tạo bản thử sẽ gọi model và tính phí. Tiếp tục?') && vpLockForm(this)"
+                  style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+                @csrf
+                <label>
+                    <span class="m">Từ scene</span>
+                    <select name="from" required>
+                        @foreach($productionScreenplayScenes as $item)
+                            <option value="{{ $item['id'] }}">{{ $item['id'] }} · {{ $item['stage'] }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <label>
+                    <span class="m">Đến scene</span>
+                    <select name="to" required>
+                        @foreach($productionScreenplayScenes as $item)
+                            <option value="{{ $item['id'] }}">{{ $item['id'] }} · {{ $item['stage'] }}</option>
+                        @endforeach
+                    </select>
+                </label>
+                <button type="submit" class="vp-btn sm">Thử nhóm scene (tính phí)</button>
+            </form>
+
+            @if($trial['scope'] !== [])
+                <div style="margin-top:8px">
+                    <b>Bản thử {{ implode(', ', $trial['scope']) }}</b>
+                    <span class="m">· {{ $trial['status'] }} · {{ count($trial['shots']) }} shot</span>
+                    @if($trial['error'])<div style="color:var(--vp-red-fg)">{{ $trial['error'] }}</div>@endif
+                </div>
+            @endif
+        </div>
+    @endif
+
     @php
         $reviewReasons = [
             'passed' => 'Vòng rà cuối chấp nhận bản này.',
@@ -239,6 +274,10 @@
                         <span class="ph">{{ $milestone }}</span>
                     @endforeach
 
+                    @foreach($s['coverage'] as $coverageId)
+                        <span class="ph">{{ $coverageId }}</span>
+                    @endforeach
+
                     @if($s['continuity_group'] === null)
                         <div class="m">chưa có nhóm cảnh</div>
                     @else
@@ -320,10 +359,10 @@
                     @if($cell['approved'])
                         @php($chosen = collect($cell['approved']['artifacts'])
                             ->firstWhere('id', $cell['approved']['selected_artifact_id']))
-                        {{-- <div class="vs-lbl">ĐÃ DUYỆT</div>
+                        <div class="vs-lbl">ĐÃ DUYỆT</div>
                         @if($cell['approved']['cost_recorded_has_ledger'])
                             <div class="m">@include('video-projects.partials.cost-recorded', ['cell' => $cell['approved']])</div>
-                        @endif --}}
+                        @endif
                         @if($chosen)
                             <a class="frame" href="{{ $chosen['url'] }}" target="_blank">
                                 <img src="{{ $chosen['url'] }}" alt="">

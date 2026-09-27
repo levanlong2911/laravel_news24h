@@ -6,30 +6,16 @@ namespace App\Video\Scene\Services;
 
 use App\Models\VideoRender;
 use App\Models\VideoShot;
-use App\Video\Render\Enums\RenderStatus;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 final class VideoShotCheckpointService
 {
+    public function __construct(private readonly ShotIntentService $intents) {}
+
     public function markVideoReady(VideoShot $shot, VideoRender $render, string $motionSpecHash): VideoShot
     {
-        return DB::transaction(function () use ($shot, $render, $motionSpecHash): VideoShot {
-            $shot = VideoShot::query()->whereKey($shot->id)->lockForUpdate()->firstOrFail();
-            $render = VideoRender::query()->whereKey($render->id)->firstOrFail();
-
-            if ($render->execution_status !== RenderStatus::SUCCEEDED) {
-                throw new RuntimeException('Video render must succeed before shot is ready.');
-            }
-
-            $shot->forceFill([
-                'video_render_id' => $render->id,
-                'motion_spec_hash' => $motionSpecHash,
-                'scene_status' => 'video_ready',
-            ])->save();
-
-            return $shot->refresh();
-        }, attempts: 3);
+        return $this->intents->complete($shot, $render, $motionSpecHash);
     }
 
     public function commitState(VideoShot $shot): VideoShot

@@ -52,13 +52,29 @@ final class ScreenplayValidator
     ) {}
 
     /** @var list<string> A response is a whole film. */
-    public const CONTRACTS = ['screenplay_v2', 'screenplay_v3'];
+    public const CONTRACTS = ['screenplay_v2', 'screenplay_v3', 'screenplay_v4'];
 
     /** @var list<string> A response is one step towards a film, not a film. */
-    public const STEP_CONTRACTS = ['screenplay_foundation_v1', 'screenplay_foundation_v2'];
+    public const STEP_CONTRACTS = [
+        'screenplay_foundation_v1',
+        'screenplay_foundation_v2',
+        'screenplay_scene_expansion_v1',
+    ];
 
     /** @var list<string> */
-    private const DIMENSIONED_CONTRACTS = ['screenplay_foundation_v2'];
+    public const EXPANSION_CONTRACTS = ['screenplay_scene_expansion_v1'];
+
+    /** @var list<string> */
+    private const DIMENSIONED_CONTRACTS = ['screenplay_foundation_v2', 'screenplay_v4'];
+
+    /** @var list<string> */
+    private const SCENE_CONTRACTS = ['screenplay_v3', 'screenplay_v4', 'screenplay_scene_expansion_v1'];
+
+    /** @var list<string> */
+    private const FOUNDATION_FIELDS = [
+        'logline', 'design_thesis', 'principal_dimensions', 'premise',
+        'synopsis', 'stage_treatments', 'ending',
+    ];
 
     /** @var list<string> */
     public const ALL_CONTRACTS = [...self::CONTRACTS, ...self::STEP_CONTRACTS];
@@ -148,6 +164,8 @@ final class ScreenplayValidator
     private const CHARACTER_KINDS = [
         'screenplay_v2' => ['object', 'person'],
         'screenplay_v3' => ['object', 'person', 'group'],
+        'screenplay_v4' => ['object', 'person', 'group'],
+        'screenplay_scene_expansion_v1' => ['object', 'person', 'group'],
     ];
 
     /** @return list<string> Configuration errors, checked before any model call. */
@@ -162,7 +180,7 @@ final class ScreenplayValidator
             $errors[] = 'contract_version: must match the author contract';
         }
 
-        if (in_array($contract, self::CONTRACTS, true)) {
+        if (in_array($contract, self::CONTRACTS, true) || in_array($contract, self::EXPANSION_CONTRACTS, true)) {
             foreach (['min_scenes', 'max_scenes', 'max_subjects', 'max_locations'] as $key) {
                 if (! is_int($profile[$key] ?? null) || $profile[$key] <= 0) {
                     $errors[] = "{$key}: must be a positive integer";
@@ -209,7 +227,7 @@ final class ScreenplayValidator
             }
         }
 
-        if ($contract !== 'screenplay_v3') {
+        if (! in_array($contract, self::SCENE_CONTRACTS, true)) {
             return $errors;
         }
 
@@ -268,6 +286,10 @@ final class ScreenplayValidator
             return ['contract_version: profile does not match the author contract'];
         }
 
+        if (in_array($contract, self::EXPANSION_CONTRACTS, true)) {
+            return $this->expansionViolations($screenplay, $profile, $contract, $excludedNames);
+        }
+
         if (in_array($contract, self::STEP_CONTRACTS, true)) {
             return $this->foundationViolations($screenplay, $profile, $contract, $excludedNames);
         }
@@ -287,13 +309,14 @@ final class ScreenplayValidator
             $this->sourceFactViolations($screenplay, $contract, $excludedNames),
         );
 
-        if ($contract === 'screenplay_v3') {
+        if (in_array($contract, self::SCENE_CONTRACTS, true)) {
+            $violations = array_merge($violations, $this->sceneRuleViolations($screenplay, $profile));
+        }
+
+        if (in_array($contract, self::DIMENSIONED_CONTRACTS, true)) {
             $violations = array_merge(
                 $violations,
-                $this->subjectLimitViolations($screenplay, $profile),
-                $this->speakerViolations($screenplay),
-                $this->buildStateViolations($screenplay),
-                $this->coverageViolations($screenplay, $profile),
+                $this->foundationPartViolations($screenplay, $profile, $contract, $excludedNames),
             );
         }
 
@@ -307,6 +330,33 @@ final class ScreenplayValidator
      * @return list<string>
      */
     private function foundationViolations(
+        array $foundation,
+        array $profile,
+        string $contract,
+        array $excludedNames,
+    ): array {
+        $violations = [];
+
+        foreach (['scenes', 'coverage', 'shots', 'characters', 'locations',
+            'duration_estimate_ms', 'dialogue'] as $forbidden) {
+            if (array_key_exists($forbidden, $foundation)) {
+                $violations[] = "{$forbidden}: this step does not produce it";
+            }
+        }
+
+        return array_merge(
+            $this->foundationPartViolations($foundation, $profile, $contract, $excludedNames),
+            $violations,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $foundation
+     * @param  array<string, mixed>  $profile
+     * @param  list<string>  $excludedNames
+     * @return list<string>
+     */
+    private function foundationPartViolations(
         array $foundation,
         array $profile,
         string $contract,
@@ -336,13 +386,6 @@ final class ScreenplayValidator
             }
         }
 
-        foreach (['scenes', 'coverage', 'shots', 'characters', 'locations',
-            'duration_estimate_ms', 'dialogue'] as $forbidden) {
-            if (array_key_exists($forbidden, $foundation)) {
-                $violations[] = "{$forbidden}: this step does not produce it";
-            }
-        }
-
         return array_merge(
             $violations,
             in_array($contract, self::DIMENSIONED_CONTRACTS, true)
@@ -350,6 +393,58 @@ final class ScreenplayValidator
                 : [],
             $this->treatmentViolations($foundation, $profile),
             $this->sourceFactsIn($this->foundationTexts($foundation), $excludedNames),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $expansion
+     * @param  array<string, mixed>  $profile
+     * @param  list<string>  $excludedNames
+     * @return list<string>
+     */
+    private function expansionViolations(
+        array $expansion,
+        array $profile,
+        string $contract,
+        array $excludedNames,
+    ): array {
+        $violations = [];
+
+        foreach (self::FOUNDATION_FIELDS as $field) {
+            if (array_key_exists($field, $expansion)) {
+                $violations[] = "{$field}: this step does not produce it";
+            }
+        }
+
+        $shape = $this->collectionShapeViolations($expansion, $contract);
+
+        if ($shape !== []) {
+            return array_values(array_unique(array_merge($violations, $shape)));
+        }
+
+        return array_values(array_unique(array_merge(
+            $violations,
+            $this->forbiddenTermViolations($expansion, $profile),
+            $this->identityViolations($expansion),
+            $this->linkViolations($expansion, $profile),
+            $this->stageViolations($expansion, $profile),
+            $this->sceneRuleViolations($expansion, $profile),
+            $this->sourceFactsIn($this->sceneTexts($expansion, $contract), $excludedNames),
+        )));
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @param  array<string, mixed>  $profile
+     * @return list<string>
+     */
+    private function sceneRuleViolations(array $screenplay, array $profile): array
+    {
+        return array_merge(
+            $this->subjectLimitViolations($screenplay, $profile),
+            $this->speakerViolations($screenplay),
+            $this->buildStateViolations($screenplay),
+            $this->coverageViolations($screenplay, $profile),
         );
     }
 
@@ -522,9 +617,19 @@ final class ScreenplayValidator
             );
         }
 
+        return array_merge($violations, $this->collectionShapeViolations($screenplay, $contract));
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @return list<string>
+     */
+    private function collectionShapeViolations(array $screenplay, string $contract): array
+    {
+        $violations = [];
         $collections = ['characters', 'locations', 'scenes'];
 
-        if ($contract === 'screenplay_v3') {
+        if (in_array($contract, self::SCENE_CONTRACTS, true)) {
             $collections[] = 'coverage';
         }
 
@@ -812,7 +917,7 @@ final class ScreenplayValidator
      */
     private function coverageReviewWarnings(array $screenplay, array $profile): array
     {
-        if (($profile['contract_version'] ?? null) !== 'screenplay_v3') {
+        if (! in_array($profile['contract_version'] ?? null, self::SCENE_CONTRACTS, true)) {
             return [];
         }
 
@@ -1383,6 +1488,17 @@ final class ScreenplayValidator
             $texts["premise.{$key}"] = (string) ($screenplay['premise'][$key] ?? '');
         }
 
+        return $texts + $this->sceneTexts($screenplay, $contract);
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @return array<string, string>
+     */
+    private function sceneTexts(array $screenplay, string $contract): array
+    {
+        $texts = [];
+
         foreach ($screenplay['characters'] ?? [] as $character) {
             foreach (['name', 'description', 'personality', 'appearance'] as $key) {
                 $texts["{$character['id']}.{$key}"] = (string) ($character[$key] ?? '');
@@ -1406,12 +1522,12 @@ final class ScreenplayValidator
                 $texts["{$id}.dialogue[{$index}]"] = (string) ($line['line'] ?? '');
             }
 
-            if ($contract === 'screenplay_v3' && is_array($scene['build_state'] ?? null)) {
+            if (in_array($contract, self::SCENE_CONTRACTS, true) && is_array($scene['build_state'] ?? null)) {
                 $texts["{$id}.build_state.state"] = (string) ($scene['build_state']['state'] ?? '');
             }
         }
 
-        if ($contract === 'screenplay_v3') {
+        if (in_array($contract, self::SCENE_CONTRACTS, true)) {
             foreach ($this->rowsOf($screenplay, 'coverage') as $index => $item) {
                 if (is_array($item)) {
                     $texts["coverage[{$index}].evidence"] = (string) ($item['evidence'] ?? '');

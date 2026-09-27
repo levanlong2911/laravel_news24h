@@ -106,7 +106,7 @@ class ScreenplayV3ContractTest extends TestCase
 
         $this->assertSame(
             ['contract_version: unsupported author contract'],
-            $validator->structural($this->screenplay(), $this->profile(), 'screenplay_v4'),
+            $validator->structural($this->screenplay(), $this->profile(), 'screenplay_v99'),
         );
     }
 

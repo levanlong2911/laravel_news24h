@@ -47,6 +47,7 @@ final class ScreenplayAuthor
         private readonly string $contractVersion = self::DEFAULT_CONTRACT,
         /** @var list<string> */
         private readonly array $exampleGuidance = self::EXAMPLE_GUIDANCE,
+        private readonly string $sourceKey = 'inspiration',
     ) {
         if (! in_array($contractVersion, ScreenplayValidator::ALL_CONTRACTS, true)) {
             throw new TextCompletionException("Unsupported screenplay contract: {$contractVersion}");
@@ -96,6 +97,12 @@ final class ScreenplayAuthor
                 : null,
             'attempts' => $this->client instanceof AnthropicStructuredOutputClient
                 ? $this->client->attempts()
+                : null,
+            'stream' => $this->client instanceof AnthropicStructuredOutputClient
+                ? $this->client->streams()
+                : null,
+            'effort' => $this->client instanceof AnthropicStructuredOutputClient
+                ? $this->client->effort()
                 : null,
             'system_bytes' => strlen($system),
             'input_bytes' => strlen($userMessage),
@@ -226,7 +233,7 @@ final class ScreenplayAuthor
     {
         return json_encode(
             [
-                'inspiration' => $inspiration,
+                $this->sourceKey => $inspiration,
                 'profile' => $profile,
                 'film_requirements' => $requirements,
             ],

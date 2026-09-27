@@ -10,12 +10,15 @@ use App\Models\VideoRender;
 use App\Models\VideoRenderScene;
 use App\Models\VideoShot;
 use App\Services\Video\DesignImageStore;
-use App\Video\Scene\ScenePreservationPrompt;
 use App\Video\Media\Mp4Probe;
 use App\Video\Media\VideoModelRegistry;
 use App\Video\Render\Enums\RenderStatus;
 use App\Video\Render\RenderDispatchService;
+use App\Video\Scene\ScenePreservationPrompt;
+use App\Video\Scene\Services\ShotIntentService;
+use App\Video\Scene\Services\ShotSelectionReconciler;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -48,6 +51,7 @@ final class SceneClipDispatchService
         private readonly VideoModelRegistry $registry,
         private readonly FilesystemFactory $storage,
         private readonly Mp4Probe $probe,
+        private readonly ShotIntentService $intents,
     ) {}
 
     /**
@@ -58,9 +62,55 @@ final class SceneClipDispatchService
      * @param  VideoArtifact  $source  anh DA DUYET cua chinh scene nay
      * @param  array<string, mixed>  $controls
      */
-    public function create(VideoShot $shot, VideoArtifact $source, string $modelId, array $controls = []): VideoRender
-    {
-        return $this->build($shot, $source, self::PURPOSE_PRODUCTION, $modelId, $controls);
+    public function create(
+        VideoShot $shot,
+        VideoArtifact $source,
+        string $modelId,
+        array $controls = [],
+        ?int $expectedIntentVersion = null,
+        ?string $operationId = null,
+    ): VideoRender {
+        // HTTP callers must carry the ETag and operation identity they rendered
+        // into the page. Direct unit tests exercise the same transaction with a
+        // fresh operation instead of duplicating these transport-only values.
+        if ($expectedIntentVersion === null || $operationId === null) {
+            if (! app()->runningUnitTests()) {
+                throw new RuntimeException('Scene clip dispatch requires intent version and operation id.');
+            }
+
+            $expectedIntentVersion = (int) $shot->refresh()->intent_version;
+            $operationId = (string) Str::uuid();
+        }
+
+        $payloadHash = hash('sha256', json_encode([
+            'shot_id' => (string) $shot->id,
+            'source_artifact_id' => (string) $source->id,
+            'model_id' => $modelId,
+            'controls' => $this->canonical($controls),
+            'expected_intent_version' => $expectedIntentVersion,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+        [$updated, $render, $reason] = $this->intents->dispatch(
+            $shot,
+            $expectedIntentVersion,
+            $operationId,
+            $payloadHash,
+            fn (VideoShot $locked): VideoRender => $this->build(
+                $locked,
+                $source,
+                self::PURPOSE_PRODUCTION,
+                $modelId,
+                $controls,
+            ),
+        );
+
+        if ($updated === null || $render === null) {
+            throw new RuntimeException($reason);
+        }
+
+        $shot->setRawAttributes($updated->getAttributes(), true);
+
+        return $render;
     }
 
     /**
@@ -125,7 +175,7 @@ final class SceneClipDispatchService
 
         // CHECK `video_renders_one_owner` cho dung MOT chu so huu. Chu cua clip la
         // shot; session suy ra duoc qua shot, con dat ca hai la vi pham rang buoc.
-        return $this->dispatch->create(
+        $render = $this->dispatch->create(
             sessionId: null,
             assetId: (string) ($shot->scene_id ?? $shot->shot_code),
             provider: (string) $entry['provider'],
@@ -144,6 +194,8 @@ final class SceneClipDispatchService
             shotId: $shot->id,
             executionPurpose: $purpose,
         );
+
+        return $render;
     }
 
     /** @param array<string, mixed> $request */
@@ -206,6 +258,21 @@ final class SceneClipDispatchService
             throw new RuntimeException('Anh da duyet khong gan voi lan render nao — khong truy duoc canonical.');
         }
 
+        if ($purpose === self::PURPOSE_PRODUCTION && $shot->scene_id !== null) {
+            $stillSelected = VideoDesignImage::query()
+                ->where('render_scene_id', $shot->scene_id)
+                ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
+                ->where('status', DesignImageStatus::APPROVED->value)
+                ->where('selected_artifact_id', $source->id)
+                ->exists();
+
+            if (! $stillSelected) {
+                throw new RuntimeException(
+                    'source_keyframe_changed: anh nguon khong con la keyframe duoc duyet cua scene.',
+                );
+            }
+        }
+
         $prompt = trim((string) $shot->compiled_prompt);
 
         if ($prompt === '') {
@@ -238,7 +305,7 @@ final class SceneClipDispatchService
             'end_frame' => $end === null
                 ? null
                 : $this->freezeFrame($end['artifact'], $end['scene_id']),
-            'motion_spec_hash' => $this->motionSpecHash($shot),
+            'motion_spec_hash' => ShotSelectionReconciler::motionSpecHash($shot),
         ];
 
         $this->assertCombination($entry, $request, $purpose);
@@ -577,16 +644,20 @@ final class SceneClipDispatchService
         return $value;
     }
 
-    private function motionSpecHash(VideoShot $shot): string
+    private function canonical(mixed $value): mixed
     {
-        $spec = $shot->spec_json ?? [];
+        if (! is_array($value)) {
+            return $value;
+        }
 
-        return hash('sha256', (string) json_encode([
-            'motion' => $spec['motion'] ?? [],
-            'camera' => $spec['camera'] ?? [],
-            'duration_seconds' => $spec['duration_seconds'] ?? null,
-            'from_state_id' => $shot->from_state_id,
-            'to_state_id' => $shot->to_state_id,
-        ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+        if (! array_is_list($value)) {
+            ksort($value, SORT_STRING);
+        }
+
+        foreach ($value as $key => $child) {
+            $value[$key] = $this->canonical($child);
+        }
+
+        return $value;
     }
 }

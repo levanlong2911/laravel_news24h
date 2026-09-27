@@ -97,7 +97,7 @@ class ScreenplayV3IntegrationTest extends TestCase
 
     private function useIsolatedDatabase(): void
     {
-        $application = (string) DB::connection(config('database.default'))
+        $application = (string) DB::connection('mysql')
             ->selectOne('SELECT DATABASE() AS db')->db;
         $this->applicationDatabase = $application;
         DB::purge('testing');
@@ -279,23 +279,34 @@ class ScreenplayV3IntegrationTest extends TestCase
         $this->assertSame('yacht_v1', $video['screenplay']['profiles']['yacht']);
     }
 
-    public function test_the_http_action_writes_v3_and_the_page_displays_it(): void
+    public function test_the_http_action_no_longer_runs_v3_and_the_scene_panel_leaves_v3_rows_out(): void
     {
         $admin = new Admin(['name' => 'Screenplay test admin']);
         $admin->id = (string) Str::uuid();
         $admin->setRelation('role', new Role(['name' => 'admin']));
         $this->actingAs($admin);
-        $this->serviceAnswering($this->screenplayWithOmissionsDeclaredAsTransitions());
         $page = route('video-projects.anchor', $this->project->id);
+
+        $this->serviceAnswering($this->screenplayWithOmissionsDeclaredAsTransitions())
+            ->authorScreenplay($this->project->id);
+        $this->assertSame('screenplay_v3', $this->storedStage()->output_json['schema_version']);
 
         $this->from($page)->post(route('video-projects.screenplay', $this->project->id))
             ->assertRedirect($page)
-            ->assertSessionHas('success');
-        $this->assertSame('screenplay_v3', $this->storedStage()->output_json['schema_version']);
+            ->assertSessionHas('error');
+
+        $this->assertSame(
+            1,
+            VideoPlanningStage::query()
+                ->where('project_id', $this->project->id)
+                ->where('stage', PlanningStageName::SCREENPLAY->value)
+                ->count(),
+            'without a selected foundation the button must not claim or call',
+        );
+
         $this->get($page)->assertOk()
-            ->assertSee('screenplay_v3')
-            ->assertSee('COVERAGE')
-            ->assertSee('Build state:');
+            ->assertSee('Chưa tạo phân cảnh.')
+            ->assertDontSee('screenplay_v3');
     }
 
     public function test_a_v3_screenplay_runs_through_the_service_into_the_database_and_reads_back(): void

@@ -2,13 +2,21 @@
 
 namespace Tests\Feature\Video;
 
+use App\Enums\PlanningStageName;
+use App\Enums\VideoPlanningStageStatus;
 use App\Models\Admin;
+use App\Models\VideoArtifact;
+use App\Models\VideoDesignImage;
+use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
 use App\Models\VideoRenderScene;
 use App\Models\VideoSession;
 use App\Models\VideoShot;
+use App\Services\Video\ScreenplayApprovalService;
 use App\Services\VideoProjectService;
+use App\Video\Scene\Services\ShotSelectionReconciler;
+use App\Video\Screenplay\ScreenplayContentHash;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -151,8 +159,13 @@ class FinalCompositionPreviewTest extends TestCase
 
     private function scene(VideoProject $project, int $index): VideoRenderScene
     {
+        $screenplay = $project->selectedScreenplayStage()->firstOrFail();
+
         return VideoRenderScene::create([
             'project_id' => $project->id,
+            'screenplay_stage_id' => $screenplay->id,
+            'screenplay_scene_code' => 'sc_'.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
+            'screenplay_hash' => ScreenplayContentHash::of($screenplay->output_json),
             'revision' => 1,
             'scene_index' => $index,
             'scene_code' => 'S'.str_pad((string) $index, 2, '0', STR_PAD_LEFT),
@@ -174,7 +187,10 @@ class FinalCompositionPreviewTest extends TestCase
             'shot_code' => 'shot_'.uniqid(),
             'shot_type' => 'video',
             'kind' => 'video',
-            'spec_json' => [],
+            'plan_revision' => 1,
+            'shot_index' => 1,
+            'spec_json' => ['motion' => [], 'camera' => [], 'duration_seconds' => 8],
+            'compiled_prompt' => 'test',
             'status' => 'pending',
             'scene_status' => 'pending',
         ]);
@@ -189,7 +205,15 @@ class FinalCompositionPreviewTest extends TestCase
         int $height = 1280,
         string $purpose = 'production',
     ): VideoRender {
-        return VideoRender::create([
+        $source = $this->sourceArtifact($shot);
+        $request = [
+            'compiled_prompt' => ['prompt' => (string) $shot->compiled_prompt],
+            'motion_spec_hash' => ShotSelectionReconciler::motionSpecHash($shot),
+            'source_artifact_id' => (string) $source->id,
+            'source_artifact' => ['scene_id' => (string) $shot->scene_id],
+            'end_frame' => null,
+        ];
+        $render = VideoRender::create([
             'shot_id' => $shot->id,
             'attempt_no' => $attemptNo,
             'render_kind' => 'video',
@@ -198,14 +222,82 @@ class FinalCompositionPreviewTest extends TestCase
             'model' => 'veo-3',
             'sent_prompt' => 'test',
             'prompt_sha256' => hash('sha256', 'test'),
+            'request_hash' => hash('sha256', json_encode($request, JSON_THROW_ON_ERROR)),
+            'render_request_json' => json_encode($request, JSON_THROW_ON_ERROR),
+            'idempotency_key' => 'final-preview-'.Str::uuid(),
             'cost_usd' => 0,
             'status' => 'succeeded',
             'execution_status' => $executionStatus,
             'duration_ms' => $durationMs,
             'width' => $width,
             'height' => $height,
+            'artifact_path' => $executionStatus === 'succeeded' ? 'video/final-'.$attemptNo.'.mp4' : null,
+            'primary_artifact_hash' => $executionStatus === 'succeeded' ? str_repeat('9', 64) : null,
             'proof_verified' => false,
         ]);
+
+        if ($purpose === 'production') {
+            $values = ['current_render_id' => $render->id];
+
+            if ($executionStatus === 'succeeded') {
+                $values['video_render_id'] = $render->id;
+            }
+
+            $shot->forceFill($values)->save();
+        }
+
+        return $render;
+    }
+
+    private function sourceArtifact(VideoShot $shot): VideoArtifact
+    {
+        $image = VideoDesignImage::query()
+            ->where('render_scene_id', $shot->scene_id)
+            ->where('image_type', 'scene_keyframe')
+            ->first();
+
+        if ($image?->selected_artifact_id !== null) {
+            return VideoArtifact::query()->findOrFail($image->selected_artifact_id);
+        }
+
+        $scene = VideoRenderScene::query()->findOrFail($shot->scene_id);
+        $image = VideoDesignImage::create([
+            'project_id' => $scene->project_id,
+            'render_scene_id' => $scene->id,
+            'image_code' => 'scene-keyframe-'.$scene->scene_index,
+            'image_type' => 'scene_keyframe',
+            'status' => 'approved',
+            'revision' => 1,
+        ]);
+        $imageRender = VideoRender::create([
+            'design_image_id' => $image->id,
+            'attempt_no' => 1,
+            'render_kind' => 'image',
+            'execution_purpose' => 'production',
+            'provider' => 'test',
+            'model' => 'test',
+            'sent_prompt' => 'keyframe',
+            'prompt_sha256' => hash('sha256', 'keyframe'),
+            'request_hash' => hash('sha256', 'keyframe-'.$image->id),
+            'idempotency_key' => 'final-keyframe-'.Str::uuid(),
+            'execution_status' => 'succeeded',
+            'cost_usd' => 0,
+        ]);
+        $artifact = VideoArtifact::create([
+            'project_id' => $scene->project_id,
+            'render_id' => $imageRender->id,
+            'design_image_id' => $image->id,
+            'artifact_type' => 'image',
+            'role' => 'scene_keyframe',
+            'storage_disk' => 'video_artifacts',
+            'storage_path' => 'tests/final-keyframe-'.$image->id.'.png',
+            'mime_type' => 'image/png',
+            'file_size' => 1,
+            'sha256' => str_repeat('a', 64),
+        ]);
+        $image->forceFill(['selected_artifact_id' => $artifact->id])->save();
+
+        return $artifact;
     }
 
     private function clip(
@@ -225,6 +317,52 @@ class FinalCompositionPreviewTest extends TestCase
     private function projectWithSession(): array
     {
         $project = VideoProject::create(['title' => 'TEST final composition '.uniqid()]);
+        $screenplayOutput = [
+            'schema_version' => 'screenplay_v4',
+            'logline' => 'A selected screenplay for the final preview.',
+            'scenes' => [],
+        ];
+        $screenplay = VideoPlanningStage::create([
+            'project_id' => $project->id,
+            'planning_revision' => 1,
+            'stage' => PlanningStageName::SCREENPLAY->value,
+            'status' => VideoPlanningStageStatus::SUCCEEDED->value,
+            'input_hash' => hash('sha256', 'final-screenplay-'.$project->id),
+            'output_json' => $screenplayOutput,
+        ]);
+        app(ScreenplayApprovalService::class)->approve(
+            $project->id,
+            $screenplay->id,
+            null,
+            (string) Str::uuid(),
+        );
+        $plan = VideoPlanningStage::create([
+            'project_id' => $project->id,
+            'planning_revision' => 1,
+            'stage' => PlanningStageName::SCENE_PLAN->value,
+            'status' => VideoPlanningStageStatus::SUCCEEDED->value,
+            'input_hash' => hash('sha256', 'final-plan-'.$project->id),
+            'output_json' => [
+                'revision' => 1,
+                'review' => [
+                    'status' => 'passed',
+                    'reason' => 'passed',
+                    'reviewed_plan_sha256' => str_repeat('b', 64),
+                    'rounds' => [[
+                        'round' => 1,
+                        'verdict' => 'pass',
+                        'plan_sha256_in' => str_repeat('b', 64),
+                        'findings' => [],
+                    ]],
+                ],
+                'warnings' => [],
+            ],
+        ]);
+        $project->forceFill([
+            'selected_screenplay_stage_id' => $screenplay->id,
+            'selected_scene_plan_stage_id' => $plan->id,
+            'production_selection_version' => 1,
+        ])->save();
 
         $session = VideoSession::create([
             'project_id' => $project->id,
@@ -270,17 +408,18 @@ class FinalCompositionPreviewTest extends TestCase
         $this->assertSame((string) $second->id, $clips[0]['render_id']);
     }
 
-    public function test_a_shot_whose_latest_attempt_failed_is_left_out_entirely(): void
+    public function test_a_failed_current_attempt_keeps_the_selected_successful_clip(): void
     {
         [$project, $session] = $this->projectWithSession();
         $shot = $this->shot($session, $this->scene($project, 1));
 
-        $this->attempt($shot, 'succeeded', 1);
+        $selected = $this->attempt($shot, 'succeeded', 1);
         $this->attempt($shot, 'failed', 2);
 
-        // Lan dau da xong, nhung nguoi dung render lai va lan sau hong. Quay ve dung
-        // file cu la dua ra mot canh ma ho da chu y thay the.
-        $this->assertSame([], $this->cellsFor($project)['clips']);
+        $clips = $this->cellsFor($project)['clips'];
+
+        $this->assertCount(1, $clips);
+        $this->assertSame((string) $selected->id, $clips[0]['render_id']);
     }
 
     public function test_a_canary_attempt_never_takes_the_place_of_the_real_clip(): void

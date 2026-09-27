@@ -14,6 +14,7 @@ final class ScreenplayText
         return match ($version) {
             'screenplay_v2' => self::renderV2($screenplay),
             'screenplay_v3' => self::renderV3($screenplay),
+            'screenplay_v4' => self::renderV4($screenplay),
             '' => self::renderLegacy($screenplay),
             default => "Screenplay version {$version} is not supported by this view.",
         };
@@ -32,9 +33,29 @@ final class ScreenplayText
     }
 
     /** @param array<string, mixed> $screenplay */
+    public static function renderScenes(array $screenplay): string
+    {
+        if (($screenplay['schema_version'] ?? null) !== 'screenplay_v4') {
+            return self::render($screenplay);
+        }
+
+        return implode("\n", self::sceneLines($screenplay, true));
+    }
+
+    /** @param array<string, mixed> $screenplay */
+    private static function renderV4(array $screenplay): string
+    {
+        return implode("\n", array_merge(
+            ScreenplayFoundationText::bodyLines($screenplay),
+            ['', str_repeat('=', 70), ''],
+            self::sceneLines($screenplay, true),
+        ));
+    }
+
+    /** @param array<string, mixed> $screenplay */
     private static function renderBody(array $screenplay, bool $withAccounting): string
     {
-        $lines = [
+        return implode("\n", array_merge([
             (string) ($screenplay['logline'] ?? ''),
             '',
             'DESIGN THESIS',
@@ -51,8 +72,16 @@ final class ScreenplayText
             '  Change   : '.($screenplay['premise']['change'] ?? ''),
             '  Answer   : '.($screenplay['premise']['answer'] ?? ''),
             '',
-            'CHARACTERS',
-        ];
+        ], self::sceneLines($screenplay, $withAccounting)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @return list<string>
+     */
+    private static function sceneLines(array $screenplay, bool $withAccounting): array
+    {
+        $lines = ['CHARACTERS'];
 
         foreach ($screenplay['characters'] ?? [] as $character) {
             $lines[] = '';
@@ -122,7 +151,7 @@ final class ScreenplayText
             $lines = array_merge($lines, self::coverageLines($screenplay));
         }
 
-        return implode("\n", $lines);
+        return $lines;
     }
 
     /** @param array<string, mixed> $scene */

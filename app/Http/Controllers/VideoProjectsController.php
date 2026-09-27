@@ -12,14 +12,15 @@ use App\Form\AdminCustomValidator;
 use App\Models\Admin;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
-use App\Models\VideoShot;
 use App\Services\VideoProjectService;
 use App\Video\Concept\Viewpoint;
 use App\Video\Render\Video\SceneClipDispatchService;
 use App\Video\Render\Video\SceneShotFactory;
 use App\Video\Render\Video\VideoRenderExecutionService;
-use Illuminate\Support\Arr;
+use App\Video\Scene\Services\ShotIntentService;
+use App\Video\Scene\Services\ShotSelectionReconciler;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
@@ -40,18 +41,26 @@ class VideoProjectsController extends Controller
 
     private SceneShotFactory $shots;
 
+    private ShotIntentService $shotIntents;
+
+    private ShotSelectionReconciler $shotSelections;
+
     public function __construct(
         VideoProjectService $videoProjectService,
         AdminCustomValidator $form,
         SceneClipDispatchService $clips,
         VideoRenderExecutionService $clipExecution,
         SceneShotFactory $shots,
+        ShotIntentService $shotIntents,
+        ShotSelectionReconciler $shotSelections,
     ) {
         $this->videoProjectService = $videoProjectService;
         $this->form = $form;
         $this->clips = $clips;
         $this->clipExecution = $clipExecution;
         $this->shots = $shots;
+        $this->shotIntents = $shotIntents;
+        $this->shotSelections = $shotSelections;
     }
 
     public function store(string $articleId)
@@ -80,39 +89,42 @@ class VideoProjectsController extends Controller
         ]);
     }
 
-    public function anchor(string $id)
+    public function anchor(Request $request, string $id)
     {
         $project = $this->videoProjectService->getdataByprojectId($id);
-
-        if ($project !== null) {
-            $this->authorizeProject($project);
-        }
 
         if ($project === null) {
             return redirect()->route('video-projects.index')
                 ->with('error', __('messages.project_not_found'));
         }
-        $brief = $this->videoProjectService->latestInspiration($project->id);
-        $promptPreview = $this->videoProjectService->anchorPromptPreview($project->id);
-        $selectedModel = ImageModel::tryFrom((string) old('model', $promptPreview['lineage']['model'] ?? ''));
-        $selectedQuality = ImageQuality::tryFrom((string) old('quality', ''));
-        $selectedStage = AnchorStage::FABRICATION_GEOMETRY_ANCHOR;
-        // $selectedViewpoint = Viewpoint::tryFrom((string) old('viewpoint', $promptPreview['viewpoint'] ?? ''));
-        $selectedSize = ImageSize::tryFrom((string) old('size', $promptPreview['size'] ?? ''));
-        $selectedVariations = ImageVariations::tryFrom((int) old('variations', 0));
 
-        $compiledPrompt = null;
-        $compiledPromptHash = null;
-        $compileReason = 'choose_prompt_settings';
+        $this->authorizeProject($project);
 
-        if ($promptPreview !== null) {
-            $compiledPrompt = $promptPreview['prompt'];
-            $compiledPromptHash = hash('sha256', $promptPreview['prompt']);
-            $compileReason = 'ok';
+        $characters = app(\App\Services\Video\CharacterAnchorPromptService::class)->characters($project->id);
+        $cells = $this->videoProjectService->anchorCells($project->id);
+        $primaryObjectId = collect($characters)->firstWhere('kind', 'object')['id'] ?? null;
+        $submittedFor = old('size') === null ? null : (string) old('character_id', '');
+        $anchorRows = [];
+
+        foreach ($characters === [] ? [null] : $characters as $character) {
+            $characterId = $character['id'] ?? null;
+            $preview = $this->videoProjectService->anchorPromptPreview($project->id, $characterId);
+            $submitted = $submittedFor === (string) $characterId;
+
+            $anchorRows[] = [
+                'character' => $character,
+                'prompt' => $preview['prompt'] ?? null,
+                'prompt_hash' => $preview['prompt_sha256'] ?? null,
+                'prompt_version' => $preview['lineage']['prompt_version'] ?? null,
+                'size' => ImageSize::tryFrom((string) ($submitted ? old('size') : ($preview['size'] ?? ''))),
+                'model' => ImageModel::tryFrom((string) ($submitted ? old('model') : ($preview['lineage']['model'] ?? ''))),
+                'quality' => $submitted ? ImageQuality::tryFrom((string) old('quality', '')) : null,
+                'variations' => ImageVariations::tryFrom((int) ($submitted ? old('variations', 1) : 1)),
+                'cells' => array_values(array_filter($cells, static fn (array $cell): bool => $character === null
+                    || ($cell['character_id'] ?? null) === $characterId
+                    || (($cell['character_id'] ?? null) === null && $characterId === $primaryObjectId))),
+            ];
         }
-
-        $compileReason = $this->anchorMessage($compileReason);
-        $nextImageCode = $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name);
 
         return view('video-projects.anchor', [
             'route' => 'video-projects',
@@ -120,29 +132,13 @@ class VideoProjectsController extends Controller
             'menu' => 'menu-open',
             'active' => 'active',
             'project' => $project,
-            'brief' => $brief,
-            'compiledPrompt' => $compiledPrompt,
-            'compiledPromptHash' => $compiledPromptHash,
-            'compileReason' => $compileReason,
-            'nextImageCode' => $nextImageCode,
-            'selectedModel' => $selectedModel,
-            'selectedQuality' => $selectedQuality,
-            'selectedStage' => $selectedStage,
-            // 'selectedViewpoint' => $selectedViewpoint,
-            // 'viewpointLabels' => [
-            //     Viewpoint::FrontThreeQuarter->value => 'Front three-quarter',
-            //     Viewpoint::Side->value => 'Side profile',
-            //     Viewpoint::RearThreeQuarter->value => 'Rear three-quarter',
-            // ],
-            'selectedSize' => $selectedSize,
-            'selectedVariations' => $selectedVariations,
-            'previewPromptVersion' => $promptPreview['lineage']['prompt_version'] ?? null,
-            'screenplay' => $this->videoProjectService->latestScreenplay($project->id),
+            'brief' => $this->videoProjectService->latestInspiration($project->id),
+            'anchorRows' => $anchorRows,
+            'compileReason' => $this->anchorMessage('choose_prompt_settings'),
+            'nextImageCode' => $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name),
+            'screenplay' => $this->videoProjectService->latestScreenplayScenes($project->id),
             'screenplayFoundation' => $this->videoProjectService->latestScreenplayFoundation($project->id),
             'anchorPrompt' => $this->videoProjectService->latestAnchorPrompt($project->id),
-            'anchorCells' => $this->videoProjectService->anchorCells($project->id),
-            // 'prompt' => null,
-            // 'reason' => 'chua sinh',
         ]);
     }
 
@@ -171,9 +167,42 @@ class VideoProjectsController extends Controller
             : back()->with('error', $reason);
     }
 
-    public function concept(string $id)
+    public function concept(Request $request, string $id)
     {
         $this->ownedProject($id);
+
+        $characterId = $request->string('character_id')->toString();
+
+        if ($characterId !== '') {
+            [$compiled, $reason, $character] = app(\App\Services\Video\CharacterAnchorPromptService::class)->author(
+                $id,
+                $characterId,
+                AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
+                ImageSize::LANDSCAPE,
+                \App\Services\Video\CharacterAnchorPromptService::anchorModel(),
+                $request->boolean('force'),
+            );
+
+            if ($compiled === null) {
+                return back()->with('error', $this->anchorMessage($reason));
+            }
+
+            $this->videoProjectService->storeAnchorPromptPreview(
+                $id,
+                AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
+                Viewpoint::FrontThreeQuarter,
+                ImageSize::LANDSCAPE,
+                $compiled,
+                [],
+                $character,
+            );
+
+            $name = (string) ($character['name'] ?? $characterId);
+
+            return back()->with('success', $reason === 'cached'
+                ? "Nhân vật {$name} không đổi — dùng lại prompt đã có, không gọi model."
+                : "Đã viết prompt cho {$name}.");
+        }
 
         [$compiled, $reason, $concept] = $this->videoProjectService->compiledAnchorPrompt($id);
 
@@ -223,35 +252,83 @@ class VideoProjectsController extends Controller
             : back()->with('error', $reason);
     }
 
-    public function screenplay(string $id)
+    public function screenplay(Request $request, string $id)
     {
         $this->ownedProject($id);
 
-        [$screenplay, $reason] = $this->videoProjectService->authorScreenplay($id);
-        // dd([$screenplay, $reason]);
+        [$screenplay, $reason] = $this->videoProjectService->authorScreenplayScenes(
+            $id,
+            $request->string('foundation_stage_id')->toString(),
+            $request->boolean('force'),
+        );
 
         if ($screenplay === null) {
             return back()->with('error', $this->anchorMessage($reason));
         }
 
         if ($reason === 'ok_needs_review') {
-            return back()->with('warning', 'Đã viết kịch bản — có cảnh báo biên tập, đọc phần cảnh báo bên dưới.');
+            return back()->with('warning', 'Đã tạo phân cảnh — có cảnh báo biên tập, đọc phần cảnh báo bên dưới.');
         }
 
         return back()->with('success', $reason === 'cached'
-            ? 'Brief không đổi — dùng lại kịch bản cũ, không gọi model.'
-            : 'Đã viết kịch bản bằng Claude Sonnet 5.');
+            ? 'Nội dung kịch bản không đổi — dùng lại phân cảnh đã có, không gọi model.'
+            : 'Đã tạo phân cảnh bằng Claude Sonnet 5.');
     }
 
     public function resetScreenplay(string $id)
     {
         $this->ownedProject($id);
 
-        [$done, $reason] = $this->videoProjectService->resetScreenplay($id);
+        [$done, $reason] = $this->videoProjectService->resetScreenplayScenes($id);
 
         return $done
-            ? back()->with('success', 'Đã reset — bấm Viết kịch bản để chạy lại.')
+            ? back()->with('success', 'Đã reset — bấm Tạo phân cảnh để chạy lại.')
             : back()->with('error', $reason);
+    }
+
+    public function approveScreenplay(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+        $data = $request->validate([
+            'stage_id' => ['required', 'uuid'],
+            'operation_id' => ['required', 'uuid'],
+            'reason' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        [$done, $reason] = $this->videoProjectService->approveScreenplay(
+            $id,
+            $data['stage_id'],
+            $this->actorId(),
+            $data['operation_id'],
+            $data['reason'] ?? null,
+        );
+
+        return $done
+            ? back()->with('success', $reason === 'replayed'
+                ? 'Bản phân cảnh này đã được duyệt trước đó.'
+                : 'Đã duyệt bản phân cảnh theo đúng nội dung hiện tại.')
+            : back()->with('error', $this->anchorMessage($reason));
+    }
+
+    public function selectScreenplay(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+        $data = $request->validate([
+            'stage_id' => ['required', 'uuid'],
+            'expected_selection_version' => ['required', 'integer', 'min:0'],
+        ]);
+
+        [$done, $reason] = $this->videoProjectService->selectScreenplayForProduction(
+            $id,
+            $data['stage_id'],
+            (int) $data['expected_selection_version'],
+        );
+
+        return $done
+            ? back()->with('success', $reason === 'already_selected'
+                ? 'Bản phân cảnh này đang được dùng cho production.'
+                : 'Đã chọn bản phân cảnh làm nguồn production.')
+            : back()->with('error', $this->anchorMessage($reason));
     }
 
     public function resetConcept(string $id)
@@ -279,6 +356,7 @@ class VideoProjectsController extends Controller
             ImageModel::from($data['model']),
             ImageQuality::from($data['quality']),
             ImageVariations::from((int) $data['variations']),
+            ($data['character_id'] ?? null) ?: null,
         );
 
         if ($image === null) {
@@ -353,6 +431,12 @@ class VideoProjectsController extends Controller
             'no_concept' => __('messages.anchor_no_concept'),
             'choose_prompt_settings' => __('messages.anchor_choose_prompt_settings'),
             'anchor_prompt_missing' => __('messages.anchor_prompt_missing'),
+            'character_prompt_no_screenplay' => 'Chưa có bản phân cảnh được duyệt và chọn cho production — duyệt, chọn bản phân cảnh rồi mới viết prompt cho từng nhân vật.',
+            'character_prompt_unknown_character' => 'Nhân vật này không có trong bản phân cảnh production.',
+            'character_not_main' => 'Chỉ nhân vật chính (protagonist) mới có anchor — nhân vật phụ được mô tả bằng chữ khi render. Không gọi model, không render, không duyệt.',
+            'anchor_prompt_other_screenplay' => 'Prompt hoặc ảnh này thuộc một bản phân cảnh khác bản production đang chọn — viết lại prompt trước.',
+            'screenplay_has_no_main_object' => 'Bản phân cảnh production không có nhân vật chính loại object để làm anchor chính.',
+            'character_prompt_running' => 'Đang có một lượt viết prompt chạy cho dự án này.',
             'anchor_prompt_stale' => __('messages.anchor_prompt_stale'),
             'no_inspiration_brief' => __('messages.anchor_no_inspiration_brief'),
             'anchor_setting_required' => __('messages.anchor_setting_required', ['field' => 'Model']),
@@ -375,10 +459,21 @@ class VideoProjectsController extends Controller
             'scene_keyframe_needs_scene_flow' => __('messages.scene_keyframe_needs_scene_flow'),
             'no_environment_profile' => __('messages.environment_no_profile'),
             'unknown_environment_key' => __('messages.environment_unknown_key'),
+            'environment_requirement_unreadable' => __('messages.environment_requirement_unreadable'),
             'environment_media_models_broken' => __('messages.environment_media_models_broken'),
             'environment_unknown_media_model' => __('messages.environment_unknown_media_model'),
             'environment_media_setting_invalid' => __('messages.environment_media_setting_invalid'),
             'no_screenplay_profile' => 'Chủ đề này chưa có profile kịch bản.',
+            'screenplay_foundation_not_selectable' => __('messages.screenplay_foundation_not_selectable'),
+            'screenplay_not_approvable' => 'Bản phân cảnh không thuộc dự án, chưa hoàn tất hoặc không còn hợp lệ để duyệt.',
+            'approval_operation_invalid' => 'Mã thao tác duyệt không hợp lệ.',
+            'approval_operation_conflict' => 'Mã thao tác duyệt đã được dùng cho một nội dung khác.',
+            'screenplay_not_approved' => 'Bản phân cảnh chưa được duyệt hoặc quyết định duyệt không còn khớp nội dung.',
+            'screenplay_not_selected' => __('messages.screenplay_not_selected'),
+            'production_selection_conflict' => 'Bản production đã được thay đổi ở thao tác khác. Tải lại trang trước khi chọn.',
+            'subject_mapping_invalid' => 'Nhân vật hoặc khóa chủ thể không hợp lệ.',
+            'subject_mapping_foreign' => 'Chủ thể được chọn không thuộc dự án này.',
+            'subject_mapping_operation_conflict' => 'Mã thao tác xác nhận chủ thể đã được dùng cho một lựa chọn khác.',
             'screenplay_profile_contract_mismatch' => __('messages.screenplay_profile_contract_mismatch'),
             'screenplay_profile_invalid' => __('messages.screenplay_profile_invalid'),
             'screenplay_contract_unsupported' => __('messages.screenplay_contract_unsupported'),
@@ -512,6 +607,7 @@ class VideoProjectsController extends Controller
         abort_if($stage === null, 404);
 
         $plan = $this->videoProjectService->latestScenePlan($id);
+        $trial = $this->videoProjectService->latestScenePlanTrial($id);
         $scenes = $plan['scenes'];
         $current = $scene === null
             ? ($scenes[0] ?? null)
@@ -534,6 +630,8 @@ class VideoProjectsController extends Controller
             'profileNotice' => $plan['profile_notice'],
             'preservationNotice' => $plan['preservation_notice'],
             'review' => $plan['review'],
+            'trial' => $trial,
+            'productionScreenplayScenes' => $this->videoProjectService->productionScreenplayScenes($id),
             'keyframes' => $keyframes,
             'referenceRoles' => [
                 'identity' => 'Identity view',
@@ -575,6 +673,30 @@ class VideoProjectsController extends Controller
             : back()->with('success', __('messages.scene_plan_done', ['count' => $count]));
     }
 
+    public function planSceneTrial(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+        $from = trim((string) $request->input('from'));
+        $to = trim((string) $request->input('to'));
+        $scope = $this->videoProjectService->trialScopeBetween($id, $from, $to);
+
+        if ($scope === null) {
+            return back()->with('error', 'Chon mot nhom lien tiep tu 2 den 4 scene.');
+        }
+
+        [$count, $reason] = $this->videoProjectService->planScenes(
+            $id, auth()->id(), false, $scope,
+        );
+
+        if ($count === null) {
+            return back()->with('error', $this->anchorMessage($reason));
+        }
+
+        return $reason === 'ok_needs_review'
+            ? back()->with('warning', 'Ban thu da luu nhung can kiem tra lai.')
+            : back()->with('success', 'Da tao ban thu cho '.implode(', ', $scope).'.');
+    }
+
     private function actor(): ?Admin
     {
         $user = auth()->user();
@@ -611,7 +733,7 @@ class VideoProjectsController extends Controller
     {
         $project = $this->ownedProject($id);
 
-        $plan = $this->videoProjectService->latestScenePlan($id);
+        $plan = $this->videoProjectService->selectedScenePlan($id);
         $revision = (int) $plan['revision'];
         $scenes = $plan['scenes'] ?? [];
         $clips = $this->videoProjectService->sceneClipCells($id, $revision);
@@ -741,13 +863,13 @@ class VideoProjectsController extends Controller
             $status = $clips[$key]['status'] ?? null;
 
             $summary['running'] += in_array($status, ['submitting', 'submitted', 'provider_running', 'polling'], true) ? 1 : 0;
-            $summary['done'] += $status === 'succeeded' ? 1 : 0;
+            $summary['done'] += ($clips[$key]['selected_status'] ?? null) === 'succeeded'
+                && ($clips[$key]['selected_validity'] ?? null) === 'valid' ? 1 : 0;
             $summary['failed'] += $status === 'failed' ? 1 : 0;
         }
 
         return $summary;
     }
-
 
     /**
      * Mot luot: sinh shot cho scene (neu chua co), dong bang anh da duyet lam nguon,
@@ -765,7 +887,7 @@ class VideoProjectsController extends Controller
         try {
             $data = $this->form->validate($request, 'SceneClipRenderForm');
 
-            $plan = $this->videoProjectService->latestScenePlan($id);
+            $plan = $this->videoProjectService->selectedScenePlan($id);
             $revision = (int) $plan['revision'];
 
             $scene = \App\Models\VideoRenderScene::query()
@@ -799,11 +921,25 @@ class VideoProjectsController extends Controller
             }
 
             $shot = $this->shots->forScene($scene, $row);
-            $render = $this->clips->create($shot, $source, (string) $data['model_id'], Arr::except($data, 'model_id'));
+            $render = $this->clips->create(
+                $shot,
+                $source,
+                (string) $data['model_id'],
+                Arr::except($data, ['model_id', 'expected_intent_version', 'operation_id']),
+                (int) $data['expected_intent_version'],
+                (string) $data['operation_id'],
+            );
         } catch (ValidationException $e) {
             return $this->clipRefused($request, implode(' ', $e->validator->errors()->all()), $id, $sceneId);
         } catch (Throwable $e) {
-            return $this->clipRefused($request, $e->getMessage(), $id, $sceneId);
+            $reason = match ($e->getMessage()) {
+                'shot_dispatch_conflict' => 'Clip đã thay đổi ở thao tác khác. Tải lại trang trước khi render.',
+                'shot_dispatch_operation_conflict' => 'Mã thao tác render đã được dùng cho một yêu cầu khác.',
+                'shot_dispatch_replay_missing' => 'Không còn tìm thấy lượt render của thao tác trước.',
+                default => $e->getMessage(),
+            };
+
+            return $this->clipRefused($request, $reason, $id, $sceneId);
         }
 
         [$ok, $reason] = $this->clipExecution->submit($render->id);
@@ -813,6 +949,47 @@ class VideoProjectsController extends Controller
         }
 
         return back()->with($ok ? 'status' : 'error', 'Clip: '.$reason);
+    }
+
+    public function selectSceneClip(Request $request, string $id, string $shotId)
+    {
+        $this->ownedProject($id);
+        $data = $request->validate([
+            'render_id' => ['required', 'uuid'],
+            'expected_intent_version' => ['required', 'integer', 'min:0'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+        $shot = \App\Models\VideoShot::query()
+            ->whereKey($shotId)
+            ->whereIn('scene_id', \App\Models\VideoRenderScene::query()
+                ->where('project_id', $id)
+                ->select('id'))
+            ->firstOrFail();
+        $render = VideoRender::query()
+            ->whereKey($data['render_id'])
+            ->where('shot_id', $shot->id)
+            ->where('execution_purpose', SceneClipDispatchService::PURPOSE_PRODUCTION)
+            ->firstOrFail();
+        [$selected, $reason] = $this->shotIntents->manualSelect(
+            $shot,
+            $render,
+            (int) $data['expected_intent_version'],
+            $data['operation_id'],
+            $this->actorId(),
+        );
+
+        if ($selected === null) {
+            return back()->with('error', match ($reason) {
+                'shot_selection_conflict' => 'Clip đã thay đổi ở một thao tác khác. Tải lại trang trước khi chọn.',
+                'shot_selection_incompatible' => 'Clip này không còn khớp đầu vào hiện tại của shot.',
+                'shot_selection_operation_conflict' => 'Mã thao tác đã được dùng cho một lựa chọn khác.',
+                default => 'Không thể chọn clip này.',
+            });
+        }
+
+        return back()->with('success', $reason === 'replayed'
+            ? 'Thao tác chọn clip này đã được ghi trước đó; lựa chọn hiện tại không bị thay đổi.'
+            : 'Đã chọn clip dùng cho timeline.');
     }
 
     /**
@@ -848,6 +1025,11 @@ class VideoProjectsController extends Controller
      */
     private function clipState(string $id, VideoRender $render, string $reason): array
     {
+        $shot = $render->shot()->first();
+        $currentIsSelected = $shot !== null
+            && (string) $shot->video_render_id === (string) $render->id;
+        $currentSelectionValid = $currentIsSelected
+            && $this->shotSelections->verdict($shot, $render)['status'] === 'valid';
         $status = $render->execution_status?->value;
         $running = in_array($status, ['submitting', 'submitted', 'provider_running', 'polling'], true);
 
@@ -860,8 +1042,13 @@ class VideoProjectsController extends Controller
 
         $note = match ($state) {
             'running' => 'đang dựng · đã hỏi '.$render->provider_poll_count.' lần',
-            'failed' => (string) ($render->failure_message ?? $reason),
-            'succeeded' => '',
+            'failed' => (string) ($render->failure_message ?? $reason)
+                .($shot?->video_render_id !== null ? ' Clip đã chọn vẫn được giữ.' : ''),
+            'succeeded' => match (true) {
+                $currentSelectionValid => '',
+                $shot?->video_render_id !== null => 'Lượt mới đã xong; clip đã chọn vẫn được giữ.',
+                default => 'Lượt render đã xong nhưng không đủ điều kiện tự chọn.',
+            },
             default => $reason,
         };
 
@@ -870,15 +1057,20 @@ class VideoProjectsController extends Controller
             'reason' => $reason,
             'note' => $note,
             'poll_url' => route('video-projects.scene-clip-poll', [$id, $render->id]),
-            'file_url' => $state === 'succeeded'
+            'file_url' => $state === 'succeeded' && $currentSelectionValid
                 ? route('video-projects.scene-clip-file', [$id, $render->id])
                 : null,
             'meta' => $render->width && $render->height
                 ? $render->width.'×'.$render->height
                     .($render->duration_ms ? ' · '.round($render->duration_ms / 1000, 1).'s' : '')
                 : '',
+            'intent_version' => $shot?->intent_version,
+            'selected_render_id' => $shot?->video_render_id,
+            'current_is_selected' => $currentSelectionValid,
+            'next_operation_id' => (string) \Illuminate\Support\Str::uuid(),
         ];
     }
+
     /**
      * Clip nam tren disk rieng chu khong phai public, nen no chi ra khoi may qua
      * day — sau khi da kiem du an va kiem hang render thuoc du an do.

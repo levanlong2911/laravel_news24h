@@ -24,6 +24,7 @@ class AnchorImageForm
                 'quality' => ['required', Rule::enum(ImageQuality::class)],
                 'variations' => ['required', Rule::enum(ImageVariations::class)],
                 'prompt_sha256' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/'],
+                'character_id' => ['nullable', 'string', 'regex:/^ch_[a-z0-9_]{1,56}$/'],
             ],
             [
                 'size.required' => __('messages.anchor_setting_required', ['field' => 'Size']),

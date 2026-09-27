@@ -14,6 +14,7 @@ enum PlanningStageName: string
     case SCREENPLAY = 'screenplay';
     case SCREENPLAY_FOUNDATION = 'screenplay_foundation';
     case SCENE_PLAN = 'scene_plan';
+    case SCENE_PLAN_TRIAL = 'scene_plan_trial';
     case FINALIZE = 'finalize';
 
     /** @return list<string> */
@@ -27,9 +28,11 @@ enum PlanningStageName: string
         return match ($this) {
             self::INSPIRATION => self::CONCEPT,
             self::CONCEPT => self::ANCHOR_PROMPT,
-            self::ANCHOR_PROMPT => self::SCREENPLAY,
+            self::ANCHOR_PROMPT => self::SCREENPLAY_FOUNDATION,
+            self::SCREENPLAY_FOUNDATION => self::SCREENPLAY,
             self::SCREENPLAY => self::SCENE_PLAN,
             self::SCENE_PLAN => self::FINALIZE,
+            self::SCENE_PLAN_TRIAL => null,
             self::FINALIZE => null,
         };
     }

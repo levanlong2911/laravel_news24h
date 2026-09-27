@@ -260,9 +260,9 @@ class DesignImageStore
             ->all();
     }
 
-    public function approvedAnchorFor(string $projectId): ?VideoDesignImage
+    public function approvedAnchorFor(string $projectId, string $subjectKey): ?VideoDesignImage
     {
-        return VideoDesignImage::query()
+        return $this->whereAnchorSubject(VideoDesignImage::query(), $subjectKey)
             ->where('project_id', $projectId)
             ->where('image_type', self::ANCHOR_TYPE)
             ->where('status', DesignImageStatus::APPROVED->value)
@@ -270,6 +270,24 @@ class DesignImageStore
             ->with('artifact')
             ->orderByDesc('approved_at')
             ->first();
+    }
+
+    public static function anchorSubjectKey(VideoDesignImage $image): string
+    {
+        $spec = is_array($image->prompt_spec_json) ? $image->prompt_spec_json : [];
+        $subjectKey = $spec['subject_key'] ?? null;
+
+        return is_string($subjectKey) && $subjectKey !== ''
+            ? $subjectKey
+            : VisualIdentityStore::DEFAULT_SUBJECT_KEY;
+    }
+
+    private function whereAnchorSubject(Builder $query, string $subjectKey): Builder
+    {
+        return $query->whereRaw(
+            "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(prompt_spec_json, '$.subject_key')), ?) = ?",
+            [VisualIdentityStore::DEFAULT_SUBJECT_KEY, $subjectKey],
+        );
     }
 
     /**
@@ -506,6 +524,8 @@ class DesignImageStore
                     return [false, 'not_approvable'];
                 }
 
+                $previousArtifactId = $image->selected_artifact_id;
+
                 $this->sameSlot($projectId, $image)
                     ->whereKeyNot($image->id)
                     ->where('status', DesignImageStatus::APPROVED->value)
@@ -517,6 +537,13 @@ class DesignImageStore
                     'approved_at' => now(),
                     'approved_by' => $adminId,
                 ])->save();
+
+                if ($image->image_type === self::SCENE_KEYFRAME_TYPE
+                    && $image->render_scene_id !== null
+                    && (string) $previousArtifactId !== (string) $artifact->id) {
+                    app(\App\Video\Scene\Services\ShotIntentService::class)
+                        ->invalidateForKeyframe((string) $image->render_scene_id);
+                }
 
                 return [true, 'approved'];
             });
@@ -542,6 +569,10 @@ class DesignImageStore
             $image->{$column} === null
                 ? $query->whereNull($column)
                 : $query->where($column, $image->{$column});
+        }
+
+        if ($image->image_type === self::ANCHOR_TYPE) {
+            $this->whereAnchorSubject($query, self::anchorSubjectKey($image));
         }
 
         return $query;
@@ -592,6 +623,8 @@ class DesignImageStore
             'queued_at' => $image->queued_at,
             'worker' => $image->worker_id,
             'view_key' => $spec['view_key'] ?? null,
+            'character_id' => $spec['character_id'] ?? null,
+            'character_name' => $spec['character_name'] ?? null,
             'environment' => $spec['environment'] ?? null,
             'quality' => (string) ($spec['quality'] ?? ''),
             'size' => (string) ($spec['size'] ?? ''),

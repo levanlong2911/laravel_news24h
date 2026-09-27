@@ -1,0 +1,327 @@
+{
+    "characters": [
+        {
+            "id": "ch_ferry",
+            "name": "The ferry",
+            "role": "protagonist",
+            "kind": "object",
+            "description": "A harbour ferry built as one long covered hall with two identical working ends, gates along both sides and benches across its width.",
+            "personality": null,
+            "appearance": "A low, even body with the same profile at both ends, one continuous roof, and a long band of sliding gates along each side; a small glazed helm cabin sits on the roof at mid-length, above a crew stair."
+        },
+        {
+            "id": "ch_design_team",
+            "name": "The design team",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The studio team that settles how people move on and off the ferry.",
+            "personality": "Works by laying things out and turning them over, with few words.",
+            "appearance": "A small group in work clothes gathered round a long table."
+        },
+        {
+            "id": "ch_operator_reps",
+            "name": "Operator representatives",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The people from the operator who will run the ferry and who bring the question of every stop.",
+            "personality": "Practical, and quick to try things with their own hands.",
+            "appearance": "Two or three people in the operator's jackets."
+        },
+        {
+            "id": "ch_yard_crews",
+            "name": "Yard crews",
+            "role": "incidental",
+            "kind": "group",
+            "description": "The crews who set out and raise the hull structure in the building hall.",
+            "personality": null,
+            "appearance": "Crews in overalls and hard hats working along the length of the hull."
+        },
+        {
+            "id": "ch_site_engineers",
+            "name": "Site engineers",
+            "role": "incidental",
+            "kind": "group",
+            "description": "The engineers who hold the drawings against the steel as it goes up.",
+            "personality": null,
+            "appearance": "A pair of engineers carrying rolled drawings."
+        },
+        {
+            "id": "ch_fitters",
+            "name": "Fitting-out crews",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The crews who hang the gates, fix the benches and glaze the helm cabin.",
+            "personality": "Patient with small adjustments.",
+            "appearance": "Crews with tool belts working gate by gate along both sides."
+        },
+        {
+            "id": "ch_master",
+            "name": "The master",
+            "role": "supporting",
+            "kind": "person",
+            "description": "The ferry's master, who is put in charge of it at completion.",
+            "personality": "Says little and watches how things move.",
+            "appearance": "A weathered person in a dark uniform jacket."
+        },
+        {
+            "id": "ch_crew",
+            "name": "The crew",
+            "role": "incidental",
+            "kind": "group",
+            "description": "The deck crew who work the gates at every pier.",
+            "personality": null,
+            "appearance": "Two deck hands in high-visibility vests."
+        },
+        {
+            "id": "ch_passengers",
+            "name": "The passengers",
+            "role": "supporting",
+            "kind": "group",
+            "description": "People crossing the harbour on ordinary errands.",
+            "personality": null,
+            "appearance": "A mixed crowd with bags, bicycles and coffee cups."
+        }
+    ],
+    "locations": [
+        {
+            "id": "lo_studio",
+            "name": "The studio",
+            "description": "A long table under daylight, covered with a paper strip, card benches and a small card cabin."
+        },
+        {
+            "id": "lo_building_hall",
+            "name": "The building hall",
+            "description": "A covered yard hall where the hull stands on blocks, with a steel template leaning against the wall."
+        },
+        {
+            "id": "lo_ferry_hall",
+            "name": "The ferry's hall",
+            "description": "The covered passenger hall inside the ferry, with gates along both sides and benches across its width."
+        },
+        {
+            "id": "lo_fitting_quay",
+            "name": "The fitting-out quay",
+            "description": "A working quay where the ferry lies alongside while it is finished and handed over."
+        },
+        {
+            "id": "lo_pier",
+            "name": "The home pier",
+            "description": "A public pier where a crowd waits along the edge for the ferry."
+        },
+        {
+            "id": "lo_far_pier",
+            "name": "The far pier",
+            "description": "The pier across the harbour, with its own waiting crowd."
+        }
+    ],
+    "scenes": [
+        {
+            "id": "sc_01",
+            "stage": "design",
+            "location_id": "lo_studio",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": ["ch_design_team", "ch_operator_reps"],
+            "action": "The design team lays a row of card benches across a long strip of paper and marks gates along both edges. One of them turns the strip end for end and it reads the same. An operator representative sweeps a hand across the strip in one motion, from the pier edge to the benches, and the team slides a small card cabin along the roof line until it sits at mid-length, above a pencilled crew stair.",
+            "dialogue": [],
+            "sound": "Card on paper, a pencil scoring a line, the strip turned over on the table.",
+            "duration_estimate_ms": 14000,
+            "why_it_cannot_be_cut": "The one rule every later stage defends is settled here: people move on and off across the width.",
+            "leads_to": "The agreed arrangement leaves the studio as drawings of a hull with matching ends and open sides.",
+            "build_state": null
+        },
+        {
+            "id": "sc_02",
+            "stage": "construction",
+            "location_id": "lo_building_hall",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": ["ch_yard_crews", "ch_site_engineers", "ch_ferry"],
+            "action": "Yard crews set out the framing for one end from the steel template, then carry the same template to the far end and set out the second end from it. A site engineer holds the drawing for the first end against the steel of the second and walks the frame edge with a finger.",
+            "dialogue": [],
+            "sound": "Template boards laid on steel, chalk on plate, footsteps down the length of the hall.",
+            "duration_estimate_ms": 13000,
+            "why_it_cannot_be_cut": "The matching ends are what let the ferry leave a pier in either direction, and they are made matching from the first frame.",
+            "leads_to": "With both ends framed, the sides begin to rise between them.",
+            "build_state": {
+                "subject_id": "ch_ferry",
+                "state": "Framing for both ends set out from one template; no side structure, roof, gates or benches yet."
+            }
+        },
+        {
+            "id": "sc_03",
+            "stage": "construction",
+            "location_id": "lo_building_hall",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": ["ch_yard_crews", "ch_ferry"],
+            "action": "Along each side the structure rises as a row of openings with posts between them. The roof goes on over the hall while the sides are still bare, and one of the yard crew walks in through an opening on one side and out through the opposite side of the hull without stopping.",
+            "dialogue": [],
+            "sound": "Posts set down on steel, roof panels lowered and bolted, air moving through the open bays.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "The sides are built as openings from the start; this is where that becomes structure.",
+            "leads_to": "The roofed hull goes to the water to be fitted out.",
+            "build_state": {
+                "subject_id": "ch_ferry",
+                "state": "Hull framed with matching ends; each side a row of open bays between posts; roof closed over the hall; no gates, benches or helm cabin."
+            }
+        },
+        {
+            "id": "sc_04",
+            "stage": "finishing",
+            "location_id": "lo_ferry_hall",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": ["ch_fitters", "ch_ferry"],
+            "action": "Alongside the fitting-out quay, fitting-out crews hang the gates one by one, sliding each shut against the one before it and adjusting its runners until the edges meet. Benches are fixed across the hall from side to side, and the helm cabin on the roof is glazed toward both ends. One of the crew walks the length of a closed side, running a hand along the seams.",
+            "dialogue": [],
+            "sound": "Gates rolling on runners and meeting with a soft knock, drivers tightening bench fixings.",
+            "duration_estimate_ms": 15000,
+            "why_it_cannot_be_cut": "Each open side has to become a wall that can close; this is where it becomes one surface.",
+            "leads_to": "The finished hall is ready for the people who will run it.",
+            "build_state": {
+                "subject_id": "ch_ferry",
+                "state": "Gates hung along both sides and meeting edge to edge when closed; benches fixed across the hall; helm cabin glazed toward both ends."
+            }
+        },
+        {
+            "id": "sc_05",
+            "stage": "completion",
+            "location_id": "lo_ferry_hall",
+            "int_ext": "INT",
+            "time": "DAY",
+            "character_ids": ["ch_operator_reps", "ch_master", "ch_fitters", "ch_ferry"],
+            "action": "Operator representatives open and close the gates along one side in sequence while the master watches from the helm cabin, then comes down the crew stair at mid-length into the hall. They sit on a bench, stand, and step out through the nearest gate onto the quay, then do the same on the other side while the fitting-out crews stand by.",
+            "dialogue": [
+                {
+                    "character_id": "ch_master",
+                    "line": "Now the other side."
+                }
+            ],
+            "sound": "Gates opening and closing one after another, steps on the crew stair.",
+            "duration_estimate_ms": 16000,
+            "why_it_cannot_be_cut": "The people who will run the ferry work the arrangement themselves, and it makes sense to someone who did not build it.",
+            "leads_to": "The ferry passes to the operator and goes into service.",
+            "build_state": {
+                "subject_id": "ch_ferry",
+                "state": "Complete: gates, cross benches, helm cabin and crew stair in place; lying alongside the fitting-out quay."
+            }
+        },
+        {
+            "id": "sc_06",
+            "stage": "operation",
+            "location_id": "lo_pier",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": ["ch_crew", "ch_passengers", "ch_ferry"],
+            "action": "At the home pier the crew slides the gates open along the pier side, and the waiting crowd steps aboard across the width and spreads along the benches. The gates close and the ferry pulls away in the direction it came from.",
+            "dialogue": [],
+            "sound": "Gates running open together, footsteps crossing the threshold at once, engines taking up.",
+            "duration_estimate_ms": 12000,
+            "why_it_cannot_be_cut": "The film's question is first answered in use: a whole crowd boards together.",
+            "leads_to": "The ferry heads out across the harbour with a full hall.",
+            "build_state": {
+                "subject_id": "ch_ferry",
+                "state": "Complete and in service."
+            }
+        },
+        {
+            "id": "sc_07",
+            "stage": "operation",
+            "location_id": "lo_ferry_hall",
+            "int_ext": "INT",
+            "time": "CONTINUOUS",
+            "character_ids": ["ch_passengers", "ch_ferry"],
+            "action": "Out on the water, wind moves across the harbour beyond the closed gates while passengers read and talk on the benches beside them.",
+            "dialogue": [],
+            "sound": "Wind against the closed side, low talk, a page turning.",
+            "duration_estimate_ms": 10000,
+            "why_it_cannot_be_cut": "The open side has closed into shelter, and the people sitting beside it show it without a word.",
+            "leads_to": "The ferry comes into the far pier.",
+            "build_state": {
+                "subject_id": "ch_ferry",
+                "state": "Complete and in service, gates closed under way."
+            }
+        },
+        {
+            "id": "sc_08",
+            "stage": "operation",
+            "location_id": "lo_far_pier",
+            "int_ext": "EXT",
+            "time": "DAY",
+            "character_ids": ["ch_crew", "ch_passengers", "ch_ferry"],
+            "action": "The ferry comes into the far pier. The gates slide open along its side, one crowd steps off and another steps on across the full width at once, the gates close, and the ferry leaves in the direction it arrived from. The new passengers sit down beside the closed gates and do not look up.",
+            "dialogue": [],
+            "sound": "Gates opening and closing, two crowds passing on the threshold, engines taking up again.",
+            "duration_estimate_ms": 14000,
+            "why_it_cannot_be_cut": "The ending answers the premise with an ordinary stop.",
+            "leads_to": null,
+            "build_state": {
+                "subject_id": "ch_ferry",
+                "state": "Complete and in service."
+            }
+        }
+    ],
+    "coverage": [
+        {
+            "coverage_id": "cov_design_need",
+            "mode": "shown",
+            "scene_ids": ["sc_01"],
+            "evidence": "An operator representative sweeps a hand across the paper strip in one motion, from the pier edge to the benches."
+        },
+        {
+            "coverage_id": "cov_design_decision",
+            "mode": "shown",
+            "scene_ids": ["sc_01"],
+            "evidence": "Gates are marked along both edges, the strip reads the same end for end, and the helm cabin is set at mid-length."
+        },
+        {
+            "coverage_id": "cov_build_ends",
+            "mode": "shown",
+            "scene_ids": ["sc_02"],
+            "evidence": "The second end is set out from the same template and checked against the drawing for the first."
+        },
+        {
+            "coverage_id": "cov_build_sides",
+            "mode": "shown",
+            "scene_ids": ["sc_03"],
+            "evidence": "Each side rises as a row of openings with posts between them while the roof closes over the hall."
+        },
+        {
+            "coverage_id": "cov_build_launch",
+            "mode": "transition",
+            "scene_ids": ["sc_03", "sc_04"],
+            "evidence": "The move from the building hall to the water is left out: the roofed hull stands in the hall in sc_03 and lies alongside the fitting-out quay in sc_04."
+        },
+        {
+            "coverage_id": "cov_fin_gates",
+            "mode": "shown",
+            "scene_ids": ["sc_04"],
+            "evidence": "Gates are hung one by one and their runners adjusted until the edges meet."
+        },
+        {
+            "coverage_id": "cov_fin_benches",
+            "mode": "shown",
+            "scene_ids": ["sc_04"],
+            "evidence": "Benches are fixed across the hall from side to side."
+        },
+        {
+            "coverage_id": "cov_comp_handover",
+            "mode": "shown",
+            "scene_ids": ["sc_05"],
+            "evidence": "Operator representatives and the master open, close and step through the gates on both sides."
+        },
+        {
+            "coverage_id": "cov_op_boarding",
+            "mode": "shown",
+            "scene_ids": ["sc_06", "sc_08"],
+            "evidence": "A waiting crowd steps aboard across the width at once, at the home pier and again at the far pier."
+        },
+        {
+            "coverage_id": "cov_op_crossing",
+            "mode": "shown",
+            "scene_ids": ["sc_07"],
+            "evidence": "Passengers read and talk on the benches beside the closed gates under way."
+        }
+    ]
+}

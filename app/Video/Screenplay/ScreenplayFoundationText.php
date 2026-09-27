@@ -15,6 +15,20 @@ final class ScreenplayFoundationText
             return "Foundation version {$version} is not supported by this view.";
         }
 
+        return implode("\n", [
+            ...self::bodyLines($foundation),
+            '',
+            str_repeat('=', 70),
+            'No scenes yet. The scene breakdown is a later step.',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $foundation
+     * @return list<string>
+     */
+    public static function bodyLines(array $foundation): array
+    {
         $lines = [
             (string) ($foundation['logline'] ?? ''),
             '',
@@ -65,11 +79,8 @@ final class ScreenplayFoundationText
         $lines[] = 'ENDING';
         $lines[] = '';
         $lines[] = (string) ($foundation['ending'] ?? '');
-        $lines[] = '';
-        $lines[] = str_repeat('=', 70);
-        $lines[] = 'No scenes yet. The scene breakdown is a later step.';
 
-        return implode("\n", $lines);
+        return $lines;
     }
 
     /** @return list<string> */

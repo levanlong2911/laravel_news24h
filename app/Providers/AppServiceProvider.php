@@ -213,6 +213,28 @@ class AppServiceProvider extends ServiceProvider
             }
         );
 
+        $this->app->bind(
+            'video.scene_plan.client',
+            static function (Application $app): TextCompletionClient {
+                $shared = $app->make(TextCompletionClient::class);
+
+                if (! $shared instanceof OpenAiTextClient) {
+                    return $shared;
+                }
+
+                return new OpenAiTextClient(
+                    http: $app->make(HttpFactory::class),
+                    apiKey: (string) config('canonical_concept.openai.api_key'),
+                    baseUrl: (string) config('canonical_concept.openai.base_url'),
+                    reasoningEffort: (string) config('canonical_concept.openai.reasoning_effort'),
+                    timeoutSeconds: (int) config('video.scene_plan.client.timeout_seconds'),
+                    retryTimes: (int) config('video.scene_plan.client.retry_times'),
+                    retrySleepMs: 0,
+                    stream: (bool) config('video.scene_plan.client.stream'),
+                );
+            }
+        );
+
         $this->app->singleton(
             'video.screenplay.llm_client',
             static function (Application $app): AnthropicStructuredOutputClient {
@@ -262,6 +284,41 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(
+            'video.screenplay.scene_author',
+            static function (Application $app): ScreenplayAuthor {
+                return new ScreenplayAuthor(
+                    client: new AnthropicStructuredOutputClient(
+                        http: $app->make(HttpFactory::class),
+                        apiKey: (string) config('canonical_concept.anthropic.api_key'),
+                        baseUrl: (string) config('canonical_concept.anthropic.base_url'),
+                        apiVersion: (string) config('canonical_concept.anthropic.api_version'),
+                        timeoutSeconds: (int) config('video.screenplay.scenes.timeout_seconds'),
+                        retryTimes: (int) config('video.screenplay.scenes.retry_times'),
+                        retrySleepMs: 0,
+                        stream: (bool) config('video.screenplay.scenes.stream'),
+                        effort: config('video.screenplay.scenes.effort'),
+                    ),
+                    promptDir: (string) config('video.screenplay.scenes.prompt_dir'),
+                    schemaPath: (string) config('video.screenplay.scenes.schema_path'),
+                    promptVersion: (string) config('video.screenplay.scenes.prompt_version'),
+                    model: (string) config('video.screenplay.model'),
+                    maxTokens: (int) config('video.screenplay.scenes.max_tokens'),
+                    contractVersion: (string) config('video.screenplay.scenes.contract_version'),
+                    exampleGuidance: [
+                        'A WORKED EXAMPLE',
+                        'Its subject is deliberately unlike yours. Copy the way the decisions',
+                        'were made. Never copy its story, its characters, its locations or its',
+                        'sentences.',
+                        'It shows how a selected foundation becomes scenes without changing it,',
+                        'how coverage is accounted for, and how build state is written.',
+                        'Its scene count belongs to its own foundation and is not a target.',
+                    ],
+                    sourceKey: 'foundation',
+                );
+            }
+        );
+
+        $this->app->singleton(
             ScreenplayAuthor::class,
             static function (Application $app): ScreenplayAuthor {
                 return new ScreenplayAuthor(
@@ -290,16 +347,40 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(
+            'video.character_prompt_author',
+            static function (Application $app): GeometryPromptAuthor {
+                return new GeometryPromptAuthor(
+                    client: $app->make(TextCompletionClient::class),
+                    promptPath: (string) config('image_prompt.character_prompt_path'),
+                    promptVersion: (string) config('image_prompt.character_prompt_version'),
+                    model: (string) config('canonical_concept.'.config('canonical_concept.provider').'.model'),
+                    maxTokens: (int) config('image_prompt.'.config('canonical_concept.provider').'.max_tokens'),
+                );
+            }
+        );
+
+        $this->app->singleton(
+            \App\Services\Video\CharacterAnchorPromptService::class,
+            static fn (Application $app): \App\Services\Video\CharacterAnchorPromptService => new \App\Services\Video\CharacterAnchorPromptService(
+                $app->make(\App\Services\Video\PlanningStageStore::class),
+                $app->make(GeometryPromptAuthor::class),
+                $app->make('video.character_prompt_author'),
+                $app->make(\App\Services\Video\ProductionSelectionService::class),
+                $app->make(\App\Services\Video\ScreenplaySubjectService::class),
+            ),
+        );
+
+        $this->app->singleton(
             ScenePlanAuthor::class,
             static function (Application $app): ScenePlanAuthor {
                 return new ScenePlanAuthor(
-                    client: $app->make(TextCompletionClient::class),
+                    client: $app->make('video.scene_plan.client'),
                     promptPath: (string) config('video.scene_plan.prompt_path'),
                     promptVersion: (string) config('video.scene_plan.prompt_version'),
                     model: (string) (config('video.scene_plan.model')
                         ?: config('canonical_concept.'.config('canonical_concept.provider').'.model')),
                     maxTokens: (int) config('video.scene_plan.max_tokens'),
-                    maxScenes: (int) config('video.scene_plan.max_scenes'),
+                    maxShots: (int) config('video.scene_plan.max_shots'),
                 );
             }
         );
@@ -308,7 +389,7 @@ class AppServiceProvider extends ServiceProvider
             ScenePlanReviewer::class,
             static function (Application $app): ScenePlanReviewer {
                 return new ScenePlanReviewer(
-                    client: $app->make(TextCompletionClient::class),
+                    client: $app->make('video.scene_plan.client'),
                     promptPath: (string) config('video.scene_plan.review.prompt_path'),
                     promptVersion: (string) config('video.scene_plan.review.prompt_version'),
                     model: (string) (config('video.scene_plan.review.model')

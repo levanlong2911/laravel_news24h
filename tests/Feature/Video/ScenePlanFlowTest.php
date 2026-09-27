@@ -15,6 +15,10 @@ use App\Models\VideoProject;
 use App\Models\VideoRenderScene;
 use App\Services\Video\DesignImageDirectRenderer;
 use App\Services\Video\DesignImageStore;
+use App\Services\Video\ProductionSelectionService;
+use App\Services\Video\ScreenplayApprovalService;
+use App\Services\Video\ScreenplaySubjectService;
+use App\Services\Video\VisualIdentityStore;
 use App\Services\VideoProjectService;
 use App\Video\Prompt\TextCompletionClient;
 use App\Video\Scene\ScenePlanAuthor;
@@ -30,6 +34,9 @@ use Tests\TestCase;
 class ScenePlanFlowTest extends TestCase
 {
     use DatabaseTransactions;
+
+    /** @var list<string> */
+    protected $connectionsToTransact = ['testing'];
 
     private const MARKER = 'PLANNING INPUT:';
 
@@ -52,9 +59,19 @@ class ScenePlanFlowTest extends TestCase
     {
         parent::setUp();
 
+        $application = (string) DB::connection('mysql')
+            ->selectOne('SELECT DATABASE() AS db')->db;
+        $isolated = (string) DB::connection('testing')->selectOne('SELECT DATABASE() AS db')->db;
+
+        if ($isolated === '' || $isolated === $application) {
+            $this->markTestSkipped("Refusing to write to the application database ({$application}).");
+        }
+
+        config(['database.default' => 'testing']);
+
         Storage::fake('video_artifacts');
 
-        $this->client = new RecordingTextCompletionClient();
+        $this->client = new RecordingTextCompletionClient;
         $this->app->forgetInstance(ScenePlanAuthor::class);
         $this->app->instance(TextCompletionClient::class, $this->client);
 
@@ -72,11 +89,209 @@ class ScenePlanFlowTest extends TestCase
             'admin_id' => $this->owner->id,
         ]);
 
+        $this->selectProductionScreenplay();
         $this->approvedAnchor(self::ANCHOR_PROMPT);
         $this->approveEveryPlate();
         $this->inspirationBrief();
 
         $this->actingAs($this->owner);
+    }
+
+    public function test_a_trial_group_is_planned_without_touching_production(): void
+    {
+        $this->client->text = $this->trialPlan();
+
+        $this->post(route('video-projects.scenes-plan-trial', $this->project->id), [
+            'from' => 'sc_04',
+            'to' => 'sc_06',
+        ])->assertSessionHas('success');
+
+        $trial = VideoPlanningStage::query()
+            ->where('project_id', $this->project->id)
+            ->where('stage', PlanningStageName::SCENE_PLAN_TRIAL->value)
+            ->sole();
+
+        $this->assertSame(VideoPlanningStageStatus::SUCCEEDED->value, $trial->status);
+        $this->assertSame(['sc_04', 'sc_05', 'sc_06'], $trial->input_json['plan_scope']);
+        $this->assertCount(3, $trial->output_json['scenes']);
+        $this->assertSame('passed', $trial->output_json['review']['status']);
+        $this->assertSame(0, VideoRenderScene::query()->where('project_id', $this->project->id)->count());
+        $this->assertSame(0, $this->scenePlanStages()->count());
+        $this->assertNull($this->project->refresh()->selected_scene_plan_stage_id);
+
+        $input = $this->planningInput();
+        $this->assertSame(['sc_04', 'sc_05', 'sc_06'], $input['planning_requirements']['plan_scope']);
+        $this->assertSame(3, $input['planning_requirements']['min_scenes']);
+        $this->assertSame(3, $input['profile']['min_scenes']);
+        $this->assertCount(11, $input['selected_screenplay']['scenes']);
+        $this->assertSame(
+            ['cov_hull_build'],
+            $this->client->authorSchema['properties']['scenes']['items']['properties']['coverage_ids']['items']['enum'],
+        );
+        $this->assertCount(11, app(VideoProjectService::class)->productionScreenplayScenes($this->project->id));
+
+        $this->get(route('video-projects.scene', $this->project->id))
+            ->assertOk()
+            ->assertSee('Bản thử sc_04, sc_05, sc_06');
+    }
+
+    public function test_a_trial_from_an_old_screenplay_is_not_shown_for_the_new_selection(): void
+    {
+        $this->client->text = $this->trialPlan();
+        $this->post(route('video-projects.scenes-plan-trial', $this->project->id), [
+            'from' => 'sc_04',
+            'to' => 'sc_06',
+        ])->assertSessionHas('success');
+
+        $current = VideoPlanningStage::query()
+            ->findOrFail($this->project->refresh()->selected_screenplay_stage_id);
+        $replacement = $current->replicate();
+        $replacement->id = (string) Str::uuid();
+        $replacement->planning_revision = (int) $current->planning_revision + 1;
+        $replacement->input_hash = hash('sha256', (string) Str::uuid());
+        $replacement->save();
+        $this->project->forceFill(['selected_screenplay_stage_id' => $replacement->id])->save();
+
+        $this->assertSame(
+            [],
+            app(VideoProjectService::class)->latestScenePlanTrial($this->project->id)['scope'],
+        );
+    }
+
+    public function test_a_trial_group_must_be_a_short_contiguous_run(): void
+    {
+        $this->client->text = $this->trialPlan();
+
+        foreach ([['sc_01', 'sc_06'], ['sc_06', 'sc_04'], ['sc_04', 'sc_04'], ['sc_04', 'sc_99']] as [$from, $to]) {
+            $this->post(route('video-projects.scenes-plan-trial', $this->project->id), [
+                'from' => $from,
+                'to' => $to,
+            ])->assertSessionHas('error');
+        }
+
+        $this->assertSame(0, $this->client->calls);
+        $this->assertSame(0, VideoPlanningStage::query()
+            ->where('project_id', $this->project->id)
+            ->where('stage', PlanningStageName::SCENE_PLAN_TRIAL->value)
+            ->count());
+    }
+
+    public function test_a_trial_shot_outside_the_group_fails_the_trial(): void
+    {
+        $plan = json_decode($this->trialPlan(), true, 512, JSON_THROW_ON_ERROR);
+        $plan['scenes'][2]['screenplay_scene_code'] = 'sc_07';
+        $this->client->text = json_encode($plan, JSON_THROW_ON_ERROR);
+
+        $this->post(route('video-projects.scenes-plan-trial', $this->project->id), [
+            'from' => 'sc_04',
+            'to' => 'sc_06',
+        ])->assertSessionHas('error');
+
+        $trial = VideoPlanningStage::query()
+            ->where('project_id', $this->project->id)
+            ->where('stage', PlanningStageName::SCENE_PLAN_TRIAL->value)
+            ->sole();
+
+        $this->assertSame(VideoPlanningStageStatus::FAILED->value, $trial->status);
+        $this->assertStringContainsString('sc_07', (string) $trial->error_message);
+        $this->assertSame(0, VideoRenderScene::query()->where('project_id', $this->project->id)->count());
+    }
+
+    public function test_a_screenplay_without_a_main_object_stops_planning_before_the_model(): void
+    {
+        $this->selectProductionScreenplay('supporting');
+        $this->client->text = $this->plan();
+
+        $this->post($this->url())->assertSessionHas('error');
+
+        $this->assertSame(0, $this->client->calls);
+        $this->assertSame(0, $this->scenePlanStages()->count());
+        $this->assertSame(
+            [null, 'screenplay_has_no_main_object'],
+            app(VideoProjectService::class)->productionSubjectKey($this->project->id),
+        );
+    }
+
+    public function test_only_main_characters_carry_a_subject(): void
+    {
+        $stage = VideoPlanningStage::query()->find($this->project->refresh()->selected_screenplay_stage_id);
+        $subjects = app(ScreenplaySubjectService::class);
+
+        $this->assertSame(['ch_vessel'], array_column($subjects->mainCharacters($stage), 'id'));
+        $this->assertStringStartsWith('sp_', (string) $subjects->subjectKeyFor($stage, 'ch_vessel'));
+        $this->assertNull($subjects->subjectKeyFor($stage, 'ch_crew'));
+        $this->assertSame($subjects->subjectKeyFor($stage, 'ch_vessel'), $subjects->primarySubjectKey($stage));
+    }
+
+    public function test_approving_another_subject_anchor_keeps_the_vessel_anchor(): void
+    {
+        $vessel = VideoDesignImage::query()
+            ->where('project_id', $this->project->id)
+            ->where('image_type', DesignImageStore::ANCHOR_TYPE)
+            ->sole();
+
+        $other = $this->anchorCandidate([
+            'prompt' => 'A second approved subject.',
+            'subject_key' => 'sp_test_other_subject',
+        ]);
+
+        $this->assertSame(
+            [true, 'approved'],
+            app(VideoProjectService::class)->approveAnchor($this->project->id, $other->id, null),
+        );
+
+        $this->assertSame(DesignImageStatus::APPROVED->value, $vessel->fresh()->status);
+        $this->assertSame(
+            (string) $vessel->id,
+            (string) app(DesignImageStore::class)
+                ->approvedAnchorFor($this->project->id, (string) $this->primarySubjectKey())?->id,
+        );
+        $this->assertSame(
+            (string) $other->design_image_id,
+            (string) app(DesignImageStore::class)->approvedAnchorFor($this->project->id, 'sp_test_other_subject')?->id,
+        );
+    }
+
+    public function test_a_supporting_character_anchor_cannot_be_approved(): void
+    {
+        $artifact = $this->anchorCandidate([
+            'prompt' => 'A working yard crew in overalls.',
+            'character_id' => 'ch_crew',
+        ]);
+
+        $this->assertSame(
+            [false, 'character_not_main'],
+            app(VideoProjectService::class)->approveAnchor($this->project->id, $artifact->id, null),
+        );
+        $this->assertSame(
+            DesignImageStatus::RENDERED->value,
+            VideoDesignImage::query()->whereKey($artifact->design_image_id)->value('status'),
+        );
+    }
+
+    public function test_a_main_character_anchor_rendered_without_a_subject_is_bound_at_approval(): void
+    {
+        $vessel = VideoDesignImage::query()
+            ->where('project_id', $this->project->id)
+            ->where('image_type', DesignImageStore::ANCHOR_TYPE)
+            ->sole();
+        $artifact = $this->anchorCandidate([
+            'prompt' => 'The vessel rendered before subjects existed.',
+            'character_id' => 'ch_vessel',
+        ]);
+
+        $this->assertSame(
+            [true, 'approved'],
+            app(VideoProjectService::class)->approveAnchor($this->project->id, $artifact->id, null),
+        );
+
+        $spec = VideoDesignImage::query()->findOrFail($artifact->design_image_id)->prompt_spec_json;
+        $this->assertSame($this->primarySubjectKey(), $spec['subject_key']);
+        $this->assertSame((string) $this->project->refresh()->selected_screenplay_stage_id, $spec['screenplay_stage_id']);
+        $this->assertSame(DesignImageStatus::SUPERSEDED->value, $vessel->fresh()->status, 'same subject, same slot');
+        $this->assertNotNull(app(VisualIdentityStore::class)->latestForProject(
+            $this->project->id, VisualIdentityStore::SUBJECT, (string) $this->primarySubjectKey(),
+        ));
     }
 
     public function test_another_member_cannot_spend_money_on_someone_elses_project(): void
@@ -139,17 +354,28 @@ class ScenePlanFlowTest extends TestCase
         $this->assertSame('profile_drawing', $scenes->first()->scene_code);
         $this->assertSame('in_service', $scenes->last()->scene_code);
         $this->assertSame(array_fill(0, 11, 1), $scenes->pluck('revision')->all());
-        $this->assertSame('scene-plan-v3', $scenes->first()->prompt_version);
+        $this->assertSame('scene-plan-v4', $scenes->first()->prompt_version);
         $this->assertSame(ScenePreservationPrompt::HARD_CUT, $scenes->first()->transition_mode);
         $this->assertSame('empty_desk', $scenes->first()->state_json['state_before']);
         $this->assertSame('first_sketch_pinned', $scenes->first()->state_json['scene_state']);
-        $this->assertSame(['concept_sketch'], $scenes->first()->milestone_keys);
-        $this->assertSame('inferred_process', $scenes->first()->basis);
+        $this->assertNull($scenes->first()->milestone_keys);
+        $this->assertSame('source_supported', $scenes->first()->basis);
         $this->assertSame('two_sheets_pinned', $scenes->first()->video_plan_json['end_state']);
         $this->assertSame('locked', $scenes->first()->video_plan_json['camera_mode']);
+        $this->assertSame('design', $scenes->first()->scene_type);
+        $this->assertSame([], $scenes->first()->state_json['coverage_ids']);
         $this->assertSame(
-            ['deck_fitted', 'superstructure'],
-            $scenes->firstWhere('scene_code', 'deck_and_house')->milestone_keys,
+            ['subject_id' => 'ch_vessel', 'state' => 'Approved vessel build state for scene 1.'],
+            $scenes->first()->state_json['build_state'],
+        );
+
+        $frames = $scenes->firstWhere('scene_code', 'frames_standing');
+
+        $this->assertSame('construction', $frames->scene_type);
+        $this->assertSame(['cov_hull_build'], $frames->state_json['coverage_ids']);
+        $this->assertSame(
+            'Approved vessel build state for scene 5.',
+            $frames->state_json['build_state']['state'],
         );
 
         $stage = $this->scenePlanStages()->sole();
@@ -171,7 +397,21 @@ class ScenePlanFlowTest extends TestCase
         $this->assertNull($stage->claim_token);
         $this->assertSame([], $stage->output_json['warnings']);
 
+        $production = $this->project->refresh();
+        $selectedStageId = $production->selected_screenplay_stage_id;
+        $this->assertSame($selectedStageId, $stage->input_json['screenplay_stage_id']);
+        $this->assertSame($stage->id, $production->selected_scene_plan_stage_id);
+        $this->assertSame(2, $production->production_selection_version);
+        $this->assertSame('screenplay_v4', $stage->input_json['screenplay_contract_version']);
+        $this->assertSame($selectedStageId, $scenes->first()->screenplay_stage_id);
+        $this->assertSame('sc_01', $scenes->first()->screenplay_scene_code);
+        $this->assertSame(1, $scenes->first()->shot_index);
+
         $summary = $this->planningInput()['identity_summary'];
+
+        $this->assertArrayHasKey('selected_screenplay', $this->planningInput());
+        $this->assertArrayNotHasKey('article', $this->planningInput());
+        $this->assertArrayNotHasKey('inspiration_brief', $this->planningInput());
 
         $this->assertSame('anchor_prompt', $summary['subject_class_source']);
         $this->assertSame('A large steel motor yacht under construction.', $summary['subject_class']);
@@ -185,10 +425,10 @@ class ScenePlanFlowTest extends TestCase
             ->where('project_id', $this->project->id)
             ->where('image_type', DesignImageStore::ANCHOR_TYPE)
             ->sole()
-            ->forceFill(['prompt_spec_json' => ['prompt' =>
-                "ASSET TYPE\nCanonical geometry identity anchor.\n\n"
+            ->forceFill(['prompt_spec_json' => ['prompt' => "ASSET TYPE\nCanonical geometry identity anchor.\n\n"
                 ."P0 - CANONICAL IDENTITY\nKnife-like vertical plumb bow, wide flat stern.\n\n"
                 ."P3 - PROPORTION\nSlender, about six times longer than it is wide.",
+                'subject_key' => $this->primarySubjectKey(),
             ]])
             ->save();
 
@@ -336,8 +576,11 @@ class ScenePlanFlowTest extends TestCase
         $response->assertViewHas('scenes', fn (array $scenes) => count($scenes) === 11
             && $scenes[0]['id'] === 'profile_drawing'
             && $scenes[0]['transition_mode'] === ScenePreservationPrompt::HARD_CUT
-            && $scenes[0]['milestones'] === ['First exterior sketch']
-            && $scenes[0]['basis'] === 'inferred_process'
+            && $scenes[0]['milestones'] === []
+            && $scenes[0]['coverage'] === []
+            && $scenes[3]['coverage'] === ['cov_hull_build']
+            && $scenes[0]['phase'] === 'design'
+            && $scenes[0]['basis'] === 'source_supported'
             && $scenes[0]['state_before'] === 'empty_desk'
             && $scenes[0]['end_state'] === 'two_sheets_pinned'
             && str_contains((string) $scenes[0]['video_prompt'], 'ACTION: ')
@@ -345,8 +588,8 @@ class ScenePlanFlowTest extends TestCase
 
         $response->assertSee('Chưa định giá');
         $response->assertSee('Exterior Profile Sketch');
-        $response->assertSee('First exterior sketch');
-        $response->assertSee('suy diễn');
+        $response->assertSee('cov_hull_build');
+        $response->assertDontSee('suy diễn');
     }
 
     public function test_a_category_without_a_profile_never_reaches_the_model(): void
@@ -359,55 +602,119 @@ class ScenePlanFlowTest extends TestCase
         $this->assertSame(0, VideoRenderScene::query()->where('project_id', $this->project->id)->count());
     }
 
-    public function test_a_plan_missing_a_required_milestone_is_refused_by_name(): void
+    public function test_scene_planning_requires_an_approved_selected_screenplay(): void
     {
-        $this->client->text = $this->planWith(8, ['milestone_keys' => ['surface_faired', 'glazed']]);
+        $this->project->forceFill([
+            'selected_screenplay_stage_id' => null,
+            'production_selection_version' => 2,
+        ])->save();
+
+        $this->post($this->url())->assertSessionHas('error');
+
+        $this->assertSame(0, $this->client->calls);
+        $this->assertSame(0, $this->scenePlanStages()->count());
+        $this->assertSame(0, VideoRenderScene::query()->where('project_id', $this->project->id)->count());
+    }
+
+    public function test_one_screenplay_scene_may_expand_to_multiple_ordered_shots(): void
+    {
+        config(['video.scene_plan.review.enabled' => false]);
+        $plan = json_decode($this->plan(), true, 512, JSON_THROW_ON_ERROR);
+        $secondShot = $plan['scenes'][0];
+        $secondShot['scene_code'] = 'profile_drawing_detail';
+        $secondShot['shot_index'] = 2;
+        $secondShot['transition_mode'] = ScenePreservationPrompt::CONTINUATION;
+        $secondShot['source_scene_code'] = 'profile_drawing';
+        $secondShot['camera_change_reason'] = '';
+        $secondShot['state_before'] = $plan['scenes'][0]['scene_state'];
+        $secondShot['scene_state'] = 'profile_detail_held';
+        $secondShot['video']['end_state'] = 'profile_detail_checked';
+        array_splice($plan['scenes'], 1, 0, [$secondShot]);
+        $plan['scenes'][2]['source_scene_code'] = 'profile_drawing_detail';
+        $plan['scenes'][2]['state_before'] = 'profile_detail_held';
+        $this->client->text = json_encode($plan, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+
+        $this->post($this->url())->assertSessionHas('warning');
+
+        $shots = VideoRenderScene::query()
+            ->where('project_id', $this->project->id)
+            ->where('screenplay_scene_code', 'sc_01')
+            ->orderBy('shot_index')
+            ->get();
+
+        $this->assertCount(2, $shots);
+        $this->assertSame([1, 2], $shots->pluck('shot_index')->all());
+        $this->assertSame(['profile_drawing', 'profile_drawing_detail'], $shots->pluck('scene_code')->all());
+    }
+
+    public function test_a_plan_leaving_a_shown_coverage_pair_uncarried_is_refused_by_name(): void
+    {
+        $this->client->text = $this->planWith(9, ['coverage_ids' => []]);
 
         $this->post($this->url())->assertSessionHas('error');
 
         $stage = $this->scenePlanStages()->sole();
 
-        $this->assertStringContainsString('painted', (string) $stage->error_message);
+        $this->assertStringContainsString('cov_first_water in sc_10', (string) $stage->error_message);
         $this->assertSame(0, VideoRenderScene::query()->where('project_id', $this->project->id)->count());
     }
 
-    public function test_milestones_may_not_step_backwards(): void
+    public function test_each_scene_named_by_a_shown_item_needs_its_own_carrying_shot(): void
     {
-        $this->client->text = $this->planWith(5, [
-            'phase' => 'rough_build',
-            'milestone_keys' => ['bottom_structure'],
-        ]);
+        $this->client->text = $this->planWith(4, ['coverage_ids' => []]);
+
+        $this->post($this->url())->assertSessionHas('error');
+
+        $message = (string) $this->scenePlanStages()->sole()->error_message;
+
+        $this->assertStringContainsString('cov_hull_build in sc_05', $message);
+        $this->assertStringNotContainsString('sc_04', $message);
+    }
+
+    public function test_a_shot_may_not_carry_coverage_attributed_to_another_scene(): void
+    {
+        $this->client->text = $this->planWith(0, ['coverage_ids' => ['cov_hull_build']]);
 
         $this->post($this->url())->assertSessionHas('error');
 
         $this->assertStringContainsString(
-            'move backwards',
+            "coverage_id 'cov_hull_build' is not shown in sc_01",
             (string) $this->scenePlanStages()->sole()->error_message,
         );
     }
 
-    public function test_a_milestone_must_belong_to_the_declared_phase(): void
+    public function test_a_shot_may_not_carry_a_transition_item(): void
     {
-        $this->client->text = $this->planWith(3, ['milestone_keys' => ['painted']]);
+        $this->client->text = $this->planWith(3, ['coverage_ids' => ['cov_hull_build', 'cov_paint_between']]);
 
         $this->post($this->url())->assertSessionHas('error');
 
         $this->assertStringContainsString(
-            'is not in phase',
+            "coverage_id 'cov_paint_between' is not shown in sc_04",
             (string) $this->scenePlanStages()->sole()->error_message,
         );
     }
 
-    public function test_a_scene_may_not_claim_more_milestones_than_the_profile_allows(): void
+    public function test_a_repeated_coverage_id_inside_one_shot_is_refused(): void
     {
-        $this->client->text = $this->planWith(3, [
-            'milestone_keys' => ['bottom_structure', 'hull_framing', 'shell_plating', 'deck_fitted'],
-        ]);
+        $this->client->text = $this->planWith(3, ['coverage_ids' => ['cov_hull_build', 'cov_hull_build']]);
 
         $this->post($this->url())->assertSessionHas('error');
 
         $this->assertStringContainsString(
-            'milestone_keys must be a list of 1 to 3',
+            'coverage_ids must not repeat',
+            (string) $this->scenePlanStages()->sole()->error_message,
+        );
+    }
+
+    public function test_an_inferred_process_shot_is_refused(): void
+    {
+        $this->client->text = $this->planWith(0, ['basis' => 'inferred_process']);
+
+        $this->post($this->url())->assertSessionHas('error');
+
+        $this->assertStringContainsString(
+            'basis must be source_supported',
             (string) $this->scenePlanStages()->sole()->error_message,
         );
     }
@@ -457,19 +764,17 @@ class ScenePlanFlowTest extends TestCase
         $this->assertSame(0, VideoRenderScene::query()->where('project_id', $this->project->id)->count());
     }
 
-    public function test_a_plan_above_the_configured_ceiling_is_refused(): void
+    public function test_a_shot_ceiling_below_the_screenplay_floor_is_refused_before_the_model(): void
     {
-        config(['video.scene_plan.max_scenes' => 10]);
+        config(['video.scene_plan.max_shots' => 10]);
         $this->app->forgetInstance(ScenePlanAuthor::class);
 
         $this->client->text = $this->plan();
 
         $this->post($this->url())->assertSessionHas('error');
 
-        $this->assertStringContainsString(
-            'the ceiling is 10',
-            (string) $this->scenePlanStages()->sole()->error_message,
-        );
+        $this->assertSame(0, $this->client->calls);
+        $this->assertSame(0, $this->scenePlanStages()->count());
     }
 
     public function test_a_title_longer_than_the_field_is_refused(): void
@@ -659,7 +964,7 @@ class ScenePlanFlowTest extends TestCase
 
     public function test_the_outgoing_schema_omits_unique_items_and_keeps_supported_constraints(): void
     {
-        config(['video.scene_plan.max_scenes' => 18]);
+        config(['video.scene_plan.max_shots' => 18]);
         $this->app->forgetInstance(ScenePlanAuthor::class);
 
         $this->client->text = $this->plan();
@@ -677,28 +982,31 @@ class ScenePlanFlowTest extends TestCase
         $scenes = $schema['properties']['scenes'];
         $items = $scenes['items']['properties'];
 
-        $this->assertArrayNotHasKey('uniqueItems', $items['milestone_keys']);
+        $this->assertArrayNotHasKey('uniqueItems', $items['coverage_ids']);
+        $this->assertArrayNotHasKey('phase', $items);
+        $this->assertArrayNotHasKey('milestone_keys', $items);
+        $this->assertArrayNotHasKey('stage', $items);
+        $this->assertArrayNotHasKey('build_state', $items);
 
         $this->assertSame(10, $scenes['minItems']);
         $this->assertSame(18, $scenes['maxItems']);
-        $this->assertSame(1, $items['milestone_keys']['minItems']);
-        $this->assertSame(3, $items['milestone_keys']['maxItems']);
+        $this->assertSame(['cov_hull_build', 'cov_first_water'], $items['coverage_ids']['items']['enum']);
+        $this->assertSame(2, $items['coverage_ids']['maxItems']);
+        $this->assertSame(['source_supported'], $items['basis']['enum']);
         $this->assertSame('^[a-z][a-z0-9_]{2,59}$', $items['scene_code']['pattern']);
     }
 
-    public function test_a_repeated_milestone_inside_one_scene_is_refused(): void
+    public function test_the_planning_input_carries_no_milestone_list(): void
     {
-        $this->client->text = $this->planWith(6, [
-            'milestone_keys' => ['deck_fitted', 'deck_fitted'],
-        ]);
+        $this->client->text = $this->plan();
+        $this->post($this->url())->assertSessionHas('success');
 
-        $this->post($this->url())->assertSessionHas('error');
+        $input = $this->planningInput();
 
-        $stage = $this->scenePlanStages()->sole();
-
-        $this->assertSame(VideoPlanningStageStatus::FAILED->value, $stage->status);
-        $this->assertStringContainsString('repeats within the scene', (string) $stage->error_message);
-        $this->assertSame(0, VideoRenderScene::query()->where('project_id', $this->project->id)->count());
+        $this->assertArrayNotHasKey('milestone_groups', $input['profile']);
+        $this->assertArrayNotHasKey('max_milestones_per_scene', $input['profile']);
+        $this->assertArrayNotHasKey('max_milestones_per_scene', $input['planning_requirements']);
+        $this->assertFalse($input['planning_requirements']['allow_inferred_process']);
     }
 
     public function test_a_purpose_below_the_field_minimum_is_refused(): void
@@ -1133,7 +1441,7 @@ class ScenePlanFlowTest extends TestCase
     {
         $this->client->text = $this->plan();
         $this->client->reviewQueue = [
-            $this->review('requires_replan', [$this->finding('arrangement_laid', 'blocking', 'milestone_basis')]),
+            $this->review('requires_replan', [$this->finding('arrangement_laid', 'blocking', 'coverage_basis')]),
         ];
 
         $this->post($this->url())->assertSessionHas('warning');
@@ -1171,7 +1479,7 @@ class ScenePlanFlowTest extends TestCase
         $this->client->text = $this->plan();
         $this->client->reviewQueue = [
             $this->review('revise', [$this->finding('arrangement_laid')], [
-                $this->sceneAt(1, ['milestone_keys' => ['launched']]),
+                $this->sceneAt(1, ['coverage_ids' => ['cov_first_water']]),
             ]),
         ];
 
@@ -1183,8 +1491,8 @@ class ScenePlanFlowTest extends TestCase
         $this->assertNotEmpty($review['rounds'][0]['patch_error']['text']);
         $this->assertCount(1, $review['plan_hashes']);
         $this->assertSame(
-            ['general_arrangement'],
-            json_decode((string) $this->sceneRowsAt(1)[1]['milestone_keys'], true, 512, JSON_THROW_ON_ERROR),
+            [],
+            json_decode((string) $this->sceneRowsAt(1)[1]['state_json'], true, 512, JSON_THROW_ON_ERROR)['coverage_ids'],
             'the rejected patch must not reach the database',
         );
     }
@@ -1279,7 +1587,7 @@ class ScenePlanFlowTest extends TestCase
         );
 
         $this->assertSame(
-            ['article', 'inspiration_brief', 'identity_summary', 'profile',
+            ['selected_screenplay', 'identity_summary', 'profile',
                 'planning_requirements', 'plan', 'heuristic_warnings'],
             array_keys($sent),
         );
@@ -1305,7 +1613,9 @@ class ScenePlanFlowTest extends TestCase
 
         $this->assertFalse($author['additionalProperties']);
         $this->assertSame([
-            'scene_code', 'title', 'purpose', 'phase', 'milestone_keys',
+            'scene_code', 'screenplay_scene_code', 'shot_index',
+            'location_id', 'character_ids',
+            'title', 'purpose', 'coverage_ids',
             'basis', 'state_before', 'scene_state', 'transition_mode',
             'continuity_group', 'source_scene_code', 'camera_change_reason',
             'camera_mode', 'delta', 'video',
@@ -1454,7 +1764,7 @@ class ScenePlanFlowTest extends TestCase
         $this->client->text = $this->plan();
         $this->client->reviewQueue = [
             $this->review('requires_replan', [
-                $this->finding('shell_closed', 'blocking', 'milestone_basis'),
+                $this->finding('shell_closed', 'blocking', 'coverage_basis'),
             ]),
         ];
 
@@ -1903,7 +2213,7 @@ class ScenePlanFlowTest extends TestCase
         $this->client->text = $plan;
         $this->client->reviewQueue = [
             $this->review('revise', [
-                $this->finding('arrangement_laid', 'blocking', 'milestone_basis', [[
+                $this->finding('arrangement_laid', 'blocking', 'coverage_basis', [[
                     'source' => 'article',
                     'scene_code' => 'arrangement_laid',
                     'field' => 'title',
@@ -2144,7 +2454,7 @@ class ScenePlanFlowTest extends TestCase
     /** Gop trung KHONG lam ban va hop le: validator van phai chay sau do. */
     public function test_a_merged_patch_still_has_to_pass_the_validator(): void
     {
-        $broken = $this->sceneAt(1, ['milestone_keys' => ['launched']]);
+        $broken = $this->sceneAt(1, ['coverage_ids' => ['cov_first_water']]);
 
         $this->client->text = $this->plan();
         $this->client->reviewQueue = [
@@ -2192,11 +2502,9 @@ class ScenePlanFlowTest extends TestCase
     /** Thu tu phan tu array MANG NGHIA — dao lai la noi dung khac, khong gop. */
     public function test_duplicate_patches_differing_in_array_order_are_refused(): void
     {
-        $first = $this->sceneAt(6, ['title' => 'Deck And House']);
+        $first = $this->sceneAt(6, ['title' => 'Deck And House', 'character_ids' => ['ch_crew', 'ch_vessel']]);
         $second = $first;
-        $second['milestone_keys'] = array_reverse($second['milestone_keys']);
-
-        $this->assertCount(2, $first['milestone_keys'], 'the fixture scene needs two milestones');
+        $second['character_ids'] = array_reverse($second['character_ids']);
 
         $this->client->text = $this->plan();
         $this->client->reviewQueue = [
@@ -2643,7 +2951,7 @@ class ScenePlanFlowTest extends TestCase
             'render_scene_id' => $scene->id,
             'image_code' => 'keyframe_'.uniqid(),
             'image_type' => DesignImageStore::SCENE_KEYFRAME_TYPE,
-            'prompt_spec_json' => ['prompt' => 'x', 'pricing' => 'unpriced'],
+            'prompt_spec_json' => ['prompt' => 'x', 'pricing' => 'unpriced', 'subject_key' => $this->primarySubjectKey()],
             'prompt_sha256' => hash('sha256', uniqid('', true)),
             'status' => DesignImageStatus::FAILED->value,
             'revision' => 1,
@@ -2698,8 +3006,8 @@ class ScenePlanFlowTest extends TestCase
             'created' => 1, 'data' => [['b64_json' => self::PNG_3X5]],
         ], 200)]);
 
-        $this->retypePlate('design_studio', 'image/jpeg');
         $this->planOnce();
+        $this->retypePlate($this->firstStoryEnvironmentKey(), 'image/jpeg');
         $scene = $this->sceneRow(1);
         [$preview] = $this->previewOf($scene);
 
@@ -2729,8 +3037,8 @@ class ScenePlanFlowTest extends TestCase
     {
         Http::fake();
 
-        $this->retypePlate('design_studio', 'image/gif');
         $this->planOnce();
+        $this->retypePlate($this->firstStoryEnvironmentKey(), 'image/gif');
         $scene = $this->sceneRow(1);
         [$preview] = $this->previewOf($scene);
 
@@ -2758,6 +3066,12 @@ class ScenePlanFlowTest extends TestCase
             ->save();
     }
 
+    private function firstStoryEnvironmentKey(): string
+    {
+        return (string) app(VideoProjectService::class)
+            ->environmentPageData((string) $this->project->id)['environments'][0]['key'];
+    }
+
     public function test_the_first_keyframe_goes_out_on_the_single_image_field_and_lands_in_the_ledger(): void
     {
         Http::fake(['*' => Http::response([
@@ -2779,7 +3093,9 @@ class ScenePlanFlowTest extends TestCase
         $this->assertSame(1, $image->artifacts()->count());
 
         Http::assertSentCount(1);
-        Http::assertSent(function ($request) use ($preview): bool {
+        $plateBytes = 'plate-bytes-'.$this->firstStoryEnvironmentKey();
+
+        Http::assertSent(function ($request) use ($preview, $plateBytes): bool {
             $this->assertSame('POST', $request->method());
             $this->assertSame('https://api.openai.com/v1/images/edits', $request->url());
 
@@ -2802,7 +3118,7 @@ class ScenePlanFlowTest extends TestCase
                 array_column($files, 'filename'),
             );
             $this->assertSame('anchor-bytes', $files[0]['contents']);
-            $this->assertSame('plate-bytes-design_studio', $files[1]['contents']);
+            $this->assertSame($plateBytes, $files[1]['contents']);
             $this->assertSame($preview['prompt'], $fields['prompt']);
             $this->assertSame('1152x2048', $fields['size']);
             $this->assertSame('low', $fields['quality']);
@@ -3160,10 +3476,6 @@ class ScenePlanFlowTest extends TestCase
         }
     }
 
-
-
-
-
     public function test_a_snapshot_naming_two_images_for_one_role_is_refused(): void
     {
         Http::fake();
@@ -3214,7 +3526,10 @@ class ScenePlanFlowTest extends TestCase
         $this->assertFalse($cell['slots'][1]['primary']);
         $this->assertSame('Ảnh neo', $cell['slots'][0]['title']);
         $this->assertSame('Port Side', $cell['slots'][1]['title']);
-        $this->assertSame('Design studio', $cell['slots'][2]['title']);
+        $this->assertSame(
+            'Test shipyard · Approved vessel build state for scene 1.',
+            $cell['slots'][2]['title'],
+        );
     }
 
     public function test_a_continuation_manifest_puts_the_anchor_second(): void
@@ -3307,6 +3622,44 @@ class ScenePlanFlowTest extends TestCase
         $response->assertSee('Environment Library →', false);
     }
 
+    public function test_the_selected_screenplay_drives_environment_requirements(): void
+    {
+        $this->planOnce();
+
+        $environments = app(VideoProjectService::class)
+            ->environmentPageData((string) $this->project->id)['environments'];
+
+        $this->assertCount(11, $environments);
+        $this->assertNotContains('design_studio', array_column($environments, 'key'));
+        $this->assertTrue(collect($environments)->every(
+            static fn (array $environment): bool => str_starts_with($environment['key'], 'story_'),
+        ));
+        $this->assertStringContainsString('working shipyard hall', $environments[0]['prompt']);
+        $this->assertStringContainsString(
+            'Approved vessel build state for scene 1.',
+            $environments[0]['prompt'],
+        );
+    }
+
+    public function test_an_unverifiable_linked_environment_plan_is_not_treated_as_empty(): void
+    {
+        $this->planOnce();
+        $stage = VideoPlanningStage::query()
+            ->findOrFail($this->project->refresh()->selected_screenplay_stage_id);
+        $output = $stage->output_json;
+        $output['locations'][0]['description'] = '';
+        $stage->forceFill(['output_json' => $output])->save();
+
+        $data = app(VideoProjectService::class)
+            ->environmentPageData((string) $this->project->id);
+
+        $this->assertSame('environment_requirement_unreadable', $data['environmentRequirementsError']);
+        $this->assertSame([], $data['environments']);
+        $this->get(route('video-projects.environment', $this->project->id))
+            ->assertOk()
+            ->assertSee(__('messages.environment_requirement_unreadable'));
+    }
+
     public function test_a_block_that_has_nothing_to_do_with_places_offers_no_such_link(): void
     {
         $this->planOnce();
@@ -3341,13 +3694,17 @@ class ScenePlanFlowTest extends TestCase
         $cell = $this->cellFor($scene, $scene->id);
 
         $this->assertSame([], $cell['slots']);
-        $this->assertSame('environment_plate_missing|Design studio', $cell['blocked_reason']);
+        $this->assertSame(
+            'environment_plate_missing|Test shipyard · Approved vessel build state for scene 1.',
+            $cell['blocked_reason'],
+        );
     }
 
     public function test_a_scene_spanning_two_places_blocks_instead_of_guessing(): void
     {
         $scene = $this->planOnce();
-        $this->sceneRow(1)->forceFill(['milestone_keys' => ['launched', 'sea_trial']])->save();
+        $this->makeLegacyPlan($this->sceneRow(1))
+            ->forceFill(['milestone_keys' => ['launched', 'sea_trial']])->save();
 
         $cell = $this->cellFor($scene, $this->sceneRow(1)->id);
 
@@ -3358,7 +3715,8 @@ class ScenePlanFlowTest extends TestCase
     public function test_a_milestone_the_environment_profile_never_heard_of_blocks(): void
     {
         $scene = $this->planOnce();
-        $this->sceneRow(1)->forceFill(['milestone_keys' => ['nothing_like_this']])->save();
+        $this->makeLegacyPlan($this->sceneRow(1))
+            ->forceFill(['milestone_keys' => ['nothing_like_this']])->save();
 
         $this->assertSame(
             'environment_unknown_milestone',
@@ -3369,6 +3727,7 @@ class ScenePlanFlowTest extends TestCase
     public function test_a_category_without_an_environment_library_blocks_every_scene(): void
     {
         $scene = $this->planOnce();
+        $this->makeLegacyPlan($scene)->save();
 
         config(['video.environment.profiles' => []]);
 
@@ -3385,7 +3744,7 @@ class ScenePlanFlowTest extends TestCase
         $this->approvedPlate('open_water');
 
         $this->assertSame(
-            'environment_plate_missing|Design studio',
+            'environment_plate_missing|Test shipyard · Approved vessel build state for scene 1.',
             $this->cellFor($scene, $scene->id)['blocked_reason'],
         );
     }
@@ -3395,16 +3754,42 @@ class ScenePlanFlowTest extends TestCase
         $scene = $this->planOnce();
         $this->dropPlates();
 
-        $artifact = $this->approvedPlate('design_studio');
+        $key = (string) app(VideoProjectService::class)
+            ->environmentPageData((string) $this->project->id)['environments'][0]['key'];
+        $artifact = $this->approvedPlate($key);
 
         VideoDesignImage::query()
             ->whereKey($artifact->design_image_id)
             ->update(['status' => DesignImageStatus::RENDERED->value]);
 
         $this->assertSame(
-            'environment_plate_missing|Design studio',
+            'environment_plate_missing|Test shipyard · Approved vessel build state for scene 1.',
             $this->cellFor($scene, $scene->id)['blocked_reason'],
         );
+    }
+
+    public function test_a_screenplay_environment_never_falls_back_to_a_milestone_plate(): void
+    {
+        $scene = $this->planOnce();
+        $this->dropPlates();
+        $this->approvedPlate('design_studio');
+
+        $cell = $this->cellFor($scene, $scene->id);
+
+        $this->assertSame([], $cell['slots']);
+        $this->assertSame(
+            'environment_plate_missing|Test shipyard · Approved vessel build state for scene 1.',
+            $cell['blocked_reason'],
+        );
+    }
+
+    private function makeLegacyPlan(VideoRenderScene $scene): VideoRenderScene
+    {
+        return $scene->forceFill([
+            'screenplay_stage_id' => null,
+            'screenplay_scene_code' => null,
+            'screenplay_hash' => null,
+        ]);
     }
 
     /** @return array<string, mixed> */
@@ -3601,7 +3986,9 @@ class ScenePlanFlowTest extends TestCase
         );
 
         Http::assertSentCount(1);
-        Http::assertSent(function ($request): bool {
+        $plateBytes = 'plate-bytes-'.$this->firstStoryEnvironmentKey();
+
+        Http::assertSent(function ($request) use ($plateBytes): bool {
             $files = array_values(array_filter(
                 $request->data(),
                 static fn (array $part): bool => isset($part['filename']),
@@ -3610,7 +3997,7 @@ class ScenePlanFlowTest extends TestCase
             $this->assertCount(3, $files);
             $this->assertSame(['image[]', 'image[]', 'image[]'], array_column($files, 'name'));
             $this->assertSame(
-                ['anchor-bytes', 'port-bytes', 'plate-bytes-design_studio'],
+                ['anchor-bytes', 'port-bytes', $plateBytes],
                 array_column($files, 'contents'),
                 'bytes go out in manifest order',
             );
@@ -4026,7 +4413,7 @@ class ScenePlanFlowTest extends TestCase
             (string) $this->project->id,
             (string) $this->owner->id,
             (string) $scene->id,
-            $preview["prompt_sha256"],
+            $preview['prompt_sha256'],
             $preview['anchor_confirm_artifact_id'],
             $preview['reference_manifest_hash'],
         );
@@ -4058,7 +4445,7 @@ class ScenePlanFlowTest extends TestCase
             (string) $this->project->id,
             (string) $this->owner->id,
             (string) $scene->id,
-            $preview["prompt_sha256"],
+            $preview['prompt_sha256'],
             $preview['anchor_confirm_artifact_id'],
             $preview['reference_manifest_hash'],
         );
@@ -4202,8 +4589,6 @@ class ScenePlanFlowTest extends TestCase
         Http::assertNothingSent();
     }
 
-
-
     public function test_a_continuation_snapshot_pointing_at_another_scene_is_refused(): void
     {
         Http::fake();
@@ -4296,7 +4681,7 @@ class ScenePlanFlowTest extends TestCase
             (string) $this->project->id,
             (string) $this->owner->id,
             (string) $scene->id,
-            $preview["prompt_sha256"],
+            $preview['prompt_sha256'],
             $preview['anchor_confirm_artifact_id'],
             $preview['reference_manifest_hash'],
         );
@@ -4345,7 +4730,7 @@ class ScenePlanFlowTest extends TestCase
             (string) $this->project->id,
             (string) $this->owner->id,
             (string) $scene->id,
-            $preview["prompt_sha256"],
+            $preview['prompt_sha256'],
             $preview['anchor_confirm_artifact_id'],
             str_repeat('0', 64),
         );
@@ -4370,7 +4755,7 @@ class ScenePlanFlowTest extends TestCase
             (string) $this->project->id,
             (string) $this->owner->id,
             (string) $scene->id,
-            $preview["prompt_sha256"],
+            $preview['prompt_sha256'],
             $preview['anchor_confirm_artifact_id'],
             $preview['reference_manifest_hash'],
         );
@@ -4560,7 +4945,10 @@ class ScenePlanFlowTest extends TestCase
             'project_id' => $this->project->id,
             'image_code' => 'anchor_'.uniqid(),
             'image_type' => DesignImageStore::ANCHOR_TYPE,
-            'prompt_spec_json' => ['prompt' => self::ANCHOR_PROMPT."\n\nREVISED\nA second hull."],
+            'prompt_spec_json' => [
+                'prompt' => self::ANCHOR_PROMPT."\n\nREVISED\nA second hull.",
+                'subject_key' => $this->primarySubjectKey(),
+            ],
             'prompt_sha256' => hash('sha256', uniqid('', true)),
             'status' => DesignImageStatus::RENDERED->value,
             'revision' => 1,
@@ -4664,6 +5052,12 @@ class ScenePlanFlowTest extends TestCase
         $this->client->text = $this->plan();
         $this->post($this->url())->assertSessionHas('success');
 
+        foreach (app(VideoProjectService::class)->environmentPageData((string) $this->project->id)['environments'] as $environment) {
+            if (str_starts_with((string) $environment['key'], 'story_')) {
+                $this->approvedPlate((string) $environment['key']);
+            }
+        }
+
         return VideoRenderScene::query()
             ->where('project_id', $this->project->id)
             ->orderBy('scene_index')->firstOrFail();
@@ -4754,8 +5148,11 @@ class ScenePlanFlowTest extends TestCase
     {
         yield 'delta' => [['delta_prompt' => 'Change only something else entirely.']];
         yield 'title' => [['title' => 'Another Title Here']];
-        yield 'basis' => [['basis' => 'source_supported']];
-        yield 'milestone_keys' => [['milestone_keys' => '["general_arrangement"]']];
+        yield 'basis' => [['basis' => 'inferred_process']];
+        yield 'coverage_ids' => [[
+            'state_json' => '{"state_before":"empty_desk","scene_state":"first_sketch_pinned",'
+                .'"location_id":"lo_yard","character_ids":["ch_crew"],"coverage_ids":["cov_first_water"]}',
+        ]];
         yield 'transition_mode' => [['transition_mode' => 'continuation_edit']];
         yield 'continuity_group' => [['continuity_group' => 'g_something_else']];
         yield 'camera_change_reason' => [['camera_change_reason' => null]];
@@ -4830,54 +5227,74 @@ class ScenePlanFlowTest extends TestCase
             ->where('stage', PlanningStageName::SCENE_PLAN->value);
     }
 
+    private function trialPlan(): string
+    {
+        $plan = json_decode($this->plan(), true, 512, JSON_THROW_ON_ERROR);
+        $scenes = array_slice($plan['scenes'], 3, 3);
+
+        foreach ($scenes as $index => &$scene) {
+            $scene['continuity_group'] = 'g_trial_hull';
+            $scene['transition_mode'] = $index === 0
+                ? ScenePreservationPrompt::HARD_CUT
+                : ScenePreservationPrompt::CONTINUATION;
+            $scene['source_scene_code'] = $index === 0 ? '' : $scenes[$index - 1]['scene_code'];
+            $scene['camera_change_reason'] = $index === 0
+                ? 'Open the trial on the first selected screenplay scene.'
+                : '';
+        }
+        unset($scene);
+
+        return json_encode(['scenes' => $scenes], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
+
     private function plan(
         string $firstMode = ScenePreservationPrompt::HARD_CUT,
         bool $warn = false,
     ): string {
         $rows = [
-            ['profile_drawing', 'Exterior Profile Sketch', 'design', ['concept_sketch'], $firstMode,
+            ['profile_drawing', 'Exterior Profile Sketch', [], $firstMode,
                 'empty_desk', 'first_sketch_pinned',
                 'A wide shot across the design office holds a first exterior sketch pinned to the wall.',
                 'The architect pins a second sheet beside the first.', 'two_sheets_pinned'],
-            ['arrangement_laid', 'General Arrangement Laid', 'design', ['general_arrangement'], 'continuation_edit',
+            ['arrangement_laid', 'General Arrangement Laid', [], 'continuation_edit',
                 'first_sketch_pinned', 'arrangement_laid_out',
                 $warn
                     ? 'The arrangement sheet slides open beside the sketch, its deck plans drawn in full.'
                     : 'The arrangement sheet lies open on the desk beside the sketch, its deck plans drawn in full.',
                 'A hand slides the sheet flat across the desk.', 'arrangement_flat'],
-            ['berth_ready', 'Building Berth Ready', 'preparation', ['berth_prepared'], 'hard_cut_edit',
+            ['berth_ready', 'Building Berth Ready', [], 'hard_cut_edit',
                 'arrangement_laid_out', 'berth_ready',
                 'A wide shot inside the empty assembly hall holds the building berth prepared, its support rows set in a straight line.',
                 'The hall lights come up along the support rows.', 'berth_lit'],
-            ['bottom_set', 'Bottom Structure Set', 'rough_build', ['bottom_structure'], 'continuation_edit',
+            ['bottom_set', 'Bottom Structure Set', ['cov_hull_build'], 'continuation_edit',
                 'berth_ready', 'bottom_structure_set',
                 'The bottom structure sits complete on the support rows, its plating and longitudinal girders in bare steel.',
                 'A welder works along the centre girder.', 'bottom_welded'],
-            ['frames_standing', 'Transverse Frames Standing', 'rough_build', ['hull_framing'], 'continuation_edit',
+            ['frames_standing', 'Transverse Frames Standing', ['cov_hull_build'], 'continuation_edit',
                 'bottom_structure_set', 'frames_standing',
                 'Transverse frames stand upright along the bottom structure, evenly spaced from bow to stern.',
                 'A crane hook settles onto the next frame.', 'frame_hooked'],
-            ['shell_closed', 'Shell Plating Closed', 'rough_build', ['shell_plating'], 'continuation_edit',
+            ['shell_closed', 'Shell Plating Closed', ['cov_hull_build'], 'continuation_edit',
                 'frames_standing', 'shell_closed',
                 'Shell plates close the hull sides completely, weld seams running the full length in bare grey steel.',
                 'Sparks flare along the last seam.', 'shell_welded'],
-            ['deck_and_house', 'Deck And Superstructure', 'rough_build', ['deck_fitted', 'superstructure'], 'continuation_edit',
+            ['deck_and_house', 'Deck And Superstructure', [], 'continuation_edit',
                 'shell_closed', 'superstructure_set',
                 'The flat main deck spans the whole length and the superstructure blocks sit stacked above it in bare steel.',
                 'A worker walks the length of the new deck.', 'deck_walked'],
-            ['machinery_seated', 'Machinery Seated Below', 'installation', ['machinery_installed'], 'continuation_edit',
+            ['machinery_seated', 'Machinery Seated Below', [], 'continuation_edit',
                 'superstructure_set', 'machinery_seated',
                 'Two engines sit seated in the open engine room, their mounts bolted and the hatch above them clear.',
                 'A fitter torques the forward mounting bolts.', 'mounts_torqued'],
-            ['surfaces_done', 'Paint And Glazing', 'finishing', ['surface_faired', 'painted', 'glazed'], 'continuation_edit',
+            ['surfaces_done', 'Paint And Glazing', [], 'continuation_edit',
                 'machinery_seated', 'finished_surfaces',
                 'The hull sides are faired smooth, finished in deep navy paint, with dark tinted glazing fitted in every opening.',
                 'A polisher passes along the painted flank.', 'flank_polished'],
-            ['first_water', 'Launched And Running', 'testing', ['launched', 'sea_trial'], 'hard_cut_edit',
+            ['first_water', 'Launched And Running', ['cov_first_water'], 'hard_cut_edit',
                 'finished_surfaces', 'afloat_at_sea',
                 'A wide shot from the water holds the vessel afloat under an overcast sky, crew at the bridge wing rail.',
                 'The bow wave builds along the forward entry.', 'running_at_speed'],
-            ['in_service', 'Vessel In Service', 'in_use', ['vessel_in_service'], 'hard_cut_edit',
+            ['in_service', 'Vessel In Service', [], 'hard_cut_edit',
                 'afloat_at_sea', 'vessel_in_service',
                 'A wide shot at golden hour holds the finished vessel at anchor in calm water, guests along the upper deck.',
                 'A tender pulls away from the stern platform.', 'tender_away'],
@@ -4887,8 +5304,8 @@ class ScenePlanFlowTest extends TestCase
         $group = null;
         $previousCode = '';
 
-        foreach ($rows as $row) {
-            [$code, $title, $phase, $milestones, $mode, $before, $state, $delta, $action, $end] = $row;
+        foreach ($rows as $rowIndex => $row) {
+            [$code, $title, $coverageIds, $mode, $before, $state, $delta, $action, $end] = $row;
 
             $opens = $group === null || $mode === ScenePreservationPrompt::HARD_CUT;
 
@@ -4898,11 +5315,14 @@ class ScenePlanFlowTest extends TestCase
 
             $scenes[] = [
                 'scene_code' => $code,
+                'screenplay_scene_code' => sprintf('sc_%02d', $rowIndex + 1),
+                'shot_index' => 1,
+                'location_id' => 'lo_yard',
+                'character_ids' => ['ch_crew'],
                 'title' => $title,
                 'purpose' => 'This step earns its place in the build.',
-                'phase' => $phase,
-                'milestone_keys' => $milestones,
-                'basis' => 'inferred_process',
+                'coverage_ids' => $coverageIds,
+                'basis' => 'source_supported',
                 'state_before' => $before,
                 'scene_state' => $state,
                 'transition_mode' => $mode,
@@ -4933,6 +5353,122 @@ class ScenePlanFlowTest extends TestCase
         $plan['scenes'][$index] = array_replace($plan['scenes'][$index], $override);
 
         return json_encode($plan, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
+
+    private function selectProductionScreenplay(string $vesselRole = 'protagonist'): void
+    {
+        $scenes = [];
+        $revision = 1 + (int) VideoPlanningStage::query()
+            ->where('project_id', $this->project->id)
+            ->where('stage', PlanningStageName::SCREENPLAY->value)
+            ->max('planning_revision');
+
+        for ($index = 1; $index <= 11; $index++) {
+            $scenes[] = [
+                'id' => sprintf('sc_%02d', $index),
+                'stage' => $index === 1 ? 'design' : 'construction',
+                'location_id' => 'lo_yard',
+                'character_ids' => ['ch_crew'],
+                'action' => 'The approved screenplay action for scene '.$index.'.',
+                'build_state' => [
+                    'subject_id' => 'ch_vessel',
+                    'state' => 'Approved vessel build state for scene '.$index.'.',
+                ],
+            ];
+        }
+
+        $stage = VideoPlanningStage::create([
+            'project_id' => $this->project->id,
+            'planning_revision' => $revision,
+            'stage' => PlanningStageName::SCREENPLAY->value,
+            'status' => VideoPlanningStageStatus::SUCCEEDED->value,
+            'input_json' => ['contract_version' => 'screenplay_scene_expansion_v1'],
+            'input_hash' => hash('sha256', 'screenplay-'.$this->project->id.'-'.$revision),
+            'output_json' => [
+                'schema_version' => 'screenplay_v4',
+                'logline' => 'A crew carries one approved vessel from design into operation.',
+                'synopsis' => 'The approved sequence follows the vessel through its build.',
+                'characters' => [
+                    [
+                        'id' => 'ch_vessel', 'name' => 'The vessel', 'kind' => 'object',
+                        'role' => $vesselRole, 'appearance' => 'The approved vessel design.',
+                    ],
+                    [
+                        'id' => 'ch_crew', 'name' => 'The crew', 'kind' => 'group',
+                        'role' => 'supporting', 'appearance' => 'A working yard crew.',
+                    ],
+                ],
+                'locations' => [[
+                    'id' => 'lo_yard',
+                    'name' => 'Test shipyard',
+                    'description' => 'A working shipyard hall with clear access, structural supports and practical fabrication equipment.',
+                ]],
+                'scenes' => $scenes,
+                'coverage' => [
+                    [
+                        'coverage_id' => 'cov_hull_build',
+                        'mode' => 'shown',
+                        'scene_ids' => ['sc_04', 'sc_05', 'sc_06'],
+                        'evidence' => 'The hull rises from bottom structure to closed shell.',
+                    ],
+                    [
+                        'coverage_id' => 'cov_first_water',
+                        'mode' => 'shown',
+                        'scene_ids' => ['sc_10'],
+                        'evidence' => 'The vessel meets the water for the first time.',
+                    ],
+                    [
+                        'coverage_id' => 'cov_paint_between',
+                        'mode' => 'transition',
+                        'scene_ids' => [],
+                        'evidence' => 'Painting happens between scenes and is not shown.',
+                    ],
+                ],
+            ],
+        ]);
+
+        $approvals = new ScreenplayApprovalService;
+        $approvals->approve($this->project->id, $stage->id, null, (string) Str::uuid());
+        (new ProductionSelectionService($approvals))->selectScreenplay(
+            $this->project->id, $stage->id, (int) $this->project->refresh()->production_selection_version,
+        );
+    }
+
+    private function primarySubjectKey(): ?string
+    {
+        $stage = VideoPlanningStage::query()->find($this->project->refresh()->selected_screenplay_stage_id);
+
+        return $stage === null ? null : app(ScreenplaySubjectService::class)->primarySubjectKey($stage);
+    }
+
+    /** @param array<string, mixed> $spec */
+    private function anchorCandidate(array $spec): VideoArtifact
+    {
+        $image = VideoDesignImage::create([
+            'project_id' => $this->project->id,
+            'image_code' => 'anchor_'.uniqid(),
+            'image_type' => DesignImageStore::ANCHOR_TYPE,
+            'prompt_spec_json' => $spec,
+            'prompt_sha256' => hash('sha256', uniqid('', true)),
+            'status' => DesignImageStatus::RENDERED->value,
+            'revision' => 1,
+        ]);
+
+        $path = 'anchors/'.uniqid().'.png';
+        Storage::disk('video_artifacts')->put($path, 'candidate-bytes');
+
+        return VideoArtifact::create([
+            'project_id' => $this->project->id,
+            'design_image_id' => $image->id,
+            'artifact_type' => 'image',
+            'role' => 'candidate',
+            'storage_disk' => 'video_artifacts',
+            'storage_path' => $path,
+            'mime_type' => 'image/png',
+            'sha256' => hash('sha256', 'candidate-bytes'),
+            'width' => 1536,
+            'height' => 1024,
+        ]);
     }
 
     /** @return array{0: string, 1: string} */
@@ -4993,7 +5529,7 @@ class ScenePlanFlowTest extends TestCase
             'project_id' => $this->project->id,
             'image_code' => 'anchor_'.uniqid(),
             'image_type' => 'identity_anchor',
-            'prompt_spec_json' => ['prompt' => $prompt],
+            'prompt_spec_json' => ['prompt' => $prompt, 'subject_key' => $this->primarySubjectKey()],
             'prompt_sha256' => hash('sha256', uniqid('', true)),
             'status' => 'rendered',
             'revision' => 1,

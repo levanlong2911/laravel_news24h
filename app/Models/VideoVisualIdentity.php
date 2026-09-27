@@ -12,7 +12,7 @@ class VideoVisualIdentity extends Model
     protected $table = 'video_visual_identities';
 
     protected $fillable = [
-        'project_id', 'identity_type', 'name', 'version',
+        'project_id', 'identity_type', 'subject_key', 'name', 'version',
         'identity_json', 'identity_hash', 'locked_at',
     ];
 

@@ -18,6 +18,8 @@ class SceneClipRenderForm
                 'duration_seconds' => ['nullable', 'integer', 'min:1', 'max:60'],
                 'aspect_ratio' => ['nullable', 'string', 'max:16'],
                 'resolution' => ['nullable', 'string', 'max:16'],
+                'expected_intent_version' => ['required', 'integer', 'min:0'],
+                'operation_id' => ['required', 'uuid'],
             ]);
 
         $data = $validator->validate();

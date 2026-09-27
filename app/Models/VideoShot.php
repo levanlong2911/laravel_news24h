@@ -16,6 +16,7 @@ class VideoShot extends Model
         'claim_token', 'claimed_at', 'lease_expires_at', 'plan_revision',
         'scene_id', 'scene_sequence_index', 'from_state_id', 'to_state_id',
         'transition_id', 'scene_status', 'scene_image_render_id', 'video_render_id',
+        'current_render_id', 'intent_version', 'auto_select_version', 'shot_index',
         'scene_projection_hash', 'motion_spec_hash', 'state_committed_at',
         'approved_qa_report_id', 'approved_artifact_hash', 'approved_by_admin_id'];
 
@@ -23,6 +24,10 @@ class VideoShot extends Model
         'spec_json' => 'array',
         'render_plan' => 'array',
         'scene_sequence_index' => 'integer',
+        'shot_index' => 'integer',
+        'plan_revision' => 'integer',
+        'intent_version' => 'integer',
+        'auto_select_version' => 'integer',
         'approved_at' => 'datetime',
         'claimed_at' => 'datetime',
         'lease_expires_at' => 'datetime',
@@ -45,6 +50,13 @@ class VideoShot extends Model
     public function videoRender()
     {
         return $this->belongsTo(VideoRender::class, 'video_render_id');
+    }
+
+    // Render ma shot dang theo doi. Khac `videoRender`: ket qua dang chay co the
+    // hong trong khi ket qua da chon cu van con dung duoc.
+    public function currentRender()
+    {
+        return $this->belongsTo(VideoRender::class, 'current_render_id');
     }
 
     public function latestRender()

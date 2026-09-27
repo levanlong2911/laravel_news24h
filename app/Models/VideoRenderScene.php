@@ -10,8 +10,9 @@ class VideoRenderScene extends Model
     use HasUuids;
 
     protected $fillable = [
-        'render_plan_id', 'project_id', 'revision',
-        'scene_index', 'scene_code', 'scene_type', 'milestone_keys', 'basis', 'title', 'purpose',
+        'render_plan_id', 'project_id', 'screenplay_stage_id', 'screenplay_scene_code',
+        'screenplay_hash', 'revision', 'scene_index', 'shot_index',
+        'scene_code', 'scene_type', 'milestone_keys', 'basis', 'title', 'purpose',
         'duration_ms', 'continuity_from_scene_id', 'state_json',
         'delta_prompt', 'prompt_version', 'transition_mode', 'references_json',
         'reference_manifest_hash', 'video_plan_json', 'design_image_id',
@@ -21,6 +22,7 @@ class VideoRenderScene extends Model
     protected $casts = [
         'revision' => 'integer',
         'scene_index' => 'integer',
+        'shot_index' => 'integer',
         'duration_ms' => 'integer',
         'state_json' => 'array',
         'references_json' => 'array',
@@ -31,6 +33,11 @@ class VideoRenderScene extends Model
     public function project()
     {
         return $this->belongsTo(VideoProject::class, 'project_id');
+    }
+
+    public function screenplayStage()
+    {
+        return $this->belongsTo(VideoPlanningStage::class, 'screenplay_stage_id');
     }
 
     public function renderPlan()

@@ -31,6 +31,17 @@ return [
         'geometry-reference-v1'
     ),
 
+    'character_prompt_path' => resource_path(
+        'ai/prompts/character_reference_v1.txt'
+    ),
+
+    'character_prompt_version' => env(
+        'IMAGE_CHARACTER_PROMPT_VERSION',
+        'character-reference-v1'
+    ),
+
+    'anchor_model' => env('IMAGE_ANCHOR_MODEL', 'gpt-image-2.5-flare'),
+
     'anthropic' => [
         'max_tokens' => (int) env('IMAGE_PROMPT_ANTHROPIC_MAX_TOKENS', 8000),
     ],

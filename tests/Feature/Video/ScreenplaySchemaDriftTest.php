@@ -160,7 +160,7 @@ class ScreenplaySchemaDriftTest extends TestCase
         }
     }
 
-    /** @dataProvider contracts */
+    /** @dataProvider filmContracts */
     public function test_the_nested_text_tables_still_match_the_schema(string $contract): void
     {
         $schema = $this->schema($contract);
@@ -212,7 +212,7 @@ class ScreenplaySchemaDriftTest extends TestCase
     public function test_the_kind_table_covers_exactly_the_contracts_the_validator_supports(): void
     {
         $this->assertSame(
-            ScreenplayValidator::CONTRACTS,
+            [...ScreenplayValidator::CONTRACTS, ...ScreenplayValidator::EXPANSION_CONTRACTS],
             array_keys($this->constant('CHARACTER_KINDS')),
         );
 
@@ -243,8 +243,51 @@ class ScreenplaySchemaDriftTest extends TestCase
     public static function contracts(): array
     {
         return [
+            ...self::filmContracts(),
+            'screenplay_scene_expansion_v1' => ['screenplay_scene_expansion_v1'],
+        ];
+    }
+
+    /** @return array<string, array{0: string}> */
+    public static function filmContracts(): array
+    {
+        return [
             'screenplay_v2' => ['screenplay_v2'],
             'screenplay_v3' => ['screenplay_v3'],
+            'screenplay_v4' => ['screenplay_v4'],
         ];
+    }
+
+    public function test_the_new_schemas_use_only_keywords_the_provider_already_accepted(): void
+    {
+        $collect = static function (mixed $node, array &$keys) use (&$collect): void {
+            if (! is_array($node)) {
+                return;
+            }
+
+            foreach ($node as $key => $child) {
+                if (is_string($key)) {
+                    $keys[$key] = true;
+                }
+
+                $collect($child, $keys);
+            }
+        };
+
+        $accepted = [];
+        foreach (['screenplay_v3', 'screenplay_foundation_v2'] as $proven) {
+            $collect($this->schema($proven), $accepted);
+        }
+
+        foreach (['screenplay_scene_expansion_v1', 'screenplay_v4'] as $contract) {
+            $used = [];
+            $collect($this->schema($contract), $used);
+
+            $this->assertSame(
+                [],
+                array_values(array_diff(array_keys($used), array_keys($accepted))),
+                "{$contract} uses a key no proven schema used",
+            );
+        }
     }
 }

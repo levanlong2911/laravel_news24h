@@ -3,28 +3,61 @@
 namespace Tests\Feature\Video;
 
 use App\Models\Article;
+use App\Models\Category;
 use App\Models\VideoProject;
 use App\Models\VideoVisualIdentity;
 use App\Services\Video\VisualIdentityStore;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class VisualIdentityFreezeTest extends TestCase
 {
-    use DatabaseTransactions;
-
     private VideoProject $project;
 
     private VisualIdentityStore $store;
+
+    private bool $inTransaction = false;
 
     protected function setUp(): void
     {
         parent::setUp();
 
+        $application = (string) DB::connection('mysql')
+            ->selectOne('SELECT DATABASE() AS db')->db;
+        DB::purge('testing');
+        $isolated = (string) DB::connection('testing')->selectOne('SELECT DATABASE() AS db')->db;
+
+        if ($isolated === '' || $isolated === $application) {
+            $this->markTestSkipped("Refusing to write to the application database ({$application}).");
+        }
+
+        config(['database.default' => 'testing']);
+
+        foreach (['keywords', 'categories', 'articles', 'video_projects', 'video_visual_identities'] as $table) {
+            if (! Schema::hasTable($table)) {
+                $this->markTestSkipped("The isolated database is missing {$table}.");
+            }
+        }
+
+        DB::beginTransaction();
+        $this->inTransaction = true;
+
+        $category = Category::create(['name' => 'TEST identity '.uniqid(), 'slug' => 'identity-'.uniqid()]);
+        $keyword = (string) Str::uuid();
+        DB::table('keywords')->insert([
+            'id' => $keyword,
+            'name' => 'TEST identity '.uniqid(),
+            'search_keyword' => 'test identity',
+            'category_id' => $category->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $article = Article::create([
-            'keyword_id' => DB::table('keywords')->value('id'),
-            'category_id' => DB::table('categories')->value('id'),
+            'keyword_id' => $keyword,
+            'category_id' => $category->id,
             'source_url' => 'https://example.com/'.uniqid(),
             'source_url_hash' => md5(uniqid('x', true)),
             'source_title' => 'TEST identity freeze source',
@@ -40,6 +73,16 @@ class VisualIdentityFreezeTest extends TestCase
         ]);
 
         $this->store = new VisualIdentityStore;
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->inTransaction) {
+            DB::rollBack();
+            $this->inTransaction = false;
+        }
+
+        parent::tearDown();
     }
 
     /**
@@ -88,6 +131,7 @@ class VisualIdentityFreezeTest extends TestCase
 
         $this->assertSame(1, $identity->version);
         $this->assertSame('subject', $identity->identity_type);
+        $this->assertSame('master_vessel', $identity->subject_key);
         $this->assertSame('master_vessel', $identity->name);
         $this->assertSame(64, strlen($identity->identity_hash));
     }
@@ -172,6 +216,47 @@ class VisualIdentityFreezeTest extends TestCase
         $second = $this->store->freezeFromConcept($this->project->id, $this->concept(['dimensions' => ['beam_m' => 18.0]]));
 
         $this->assertSame($second->id, $this->store->latestForProject($this->project->id)?->id);
+    }
+
+    public function test_two_subjects_keep_independent_versions_and_lookups(): void
+    {
+        $vessel = $this->store->freezeFromConcept(
+            $this->project->id,
+            $this->concept(),
+            name: 'Main vessel',
+            subjectKey: 'subject_main_vessel',
+        );
+        $tender = $this->store->freezeFromConcept(
+            $this->project->id,
+            $this->concept(['dimensions' => ['length_m' => 12.0, 'beam_m' => 4.0]]),
+            name: 'Tender',
+            subjectKey: 'subject_tender',
+        );
+
+        $this->assertSame(1, $vessel->version);
+        $this->assertSame(1, $tender->version);
+        $this->assertNotSame($vessel->id, $tender->id);
+        $this->assertSame(
+            $vessel->id,
+            $this->store->latestForProject($this->project->id, subjectKey: 'subject_main_vessel')->id,
+        );
+        $this->assertSame(
+            $tender->id,
+            $this->store->latestForProject($this->project->id, subjectKey: 'subject_tender')->id,
+        );
+
+        $tenderV2 = $this->store->freezeFromConcept(
+            $this->project->id,
+            $this->concept(['dimensions' => ['length_m' => 13.0, 'beam_m' => 4.0]]),
+            name: 'Tender',
+            subjectKey: 'subject_tender',
+        );
+
+        $this->assertSame(2, $tenderV2->version);
+        $this->assertSame(1, $this->store->latestForProject(
+            $this->project->id,
+            subjectKey: 'subject_main_vessel',
+        )->version);
     }
 
     /** @param array<string, mixed> $concept */

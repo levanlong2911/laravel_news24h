@@ -15,9 +15,13 @@ class VideoProject extends Model
     // đúng tên cho cùng giá trị đó, thêm 2026-08-18.
     protected $fillable = ['title', 'article_id', 'admin_id', 'project_type',
         'active_session_id', 'subject_id', 'design_ref',
-        'design_id', 'metadata_json'];
+        'design_id', 'metadata_json', 'selected_screenplay_stage_id',
+        'selected_scene_plan_stage_id', 'production_selection_version'];
 
-    protected $casts = ['metadata_json' => 'array'];
+    protected $casts = [
+        'metadata_json' => 'array',
+        'production_selection_version' => 'integer',
+    ];
 
     public function sessions()
     {
@@ -52,6 +56,16 @@ class VideoProject extends Model
     public function activeSession()
     {
         return $this->belongsTo(VideoSession::class, 'active_session_id');
+    }
+
+    public function selectedScreenplayStage()
+    {
+        return $this->belongsTo(VideoPlanningStage::class, 'selected_screenplay_stage_id');
+    }
+
+    public function selectedScenePlanStage()
+    {
+        return $this->belongsTo(VideoPlanningStage::class, 'selected_scene_plan_stage_id');
     }
 
     public function canonicalConceptRevisions()

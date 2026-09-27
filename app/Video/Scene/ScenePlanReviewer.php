@@ -14,8 +14,11 @@ final class ScenePlanReviewer
     /** @var list<string> */
     public const RULES = [
         'progress', 'source_image', 'end_state', 'preserve',
-        'camera', 'milestone_basis', 'content', 'duration', 'continuity',
+        'camera', 'coverage_basis', 'content', 'duration', 'continuity',
     ];
+
+    /** @var list<string> */
+    public const RETIRED_RULES = ['milestone_basis'];
 
     /** @var list<string> */
     public const VERDICTS = ['pass', 'revise', 'requires_replan'];
@@ -26,7 +29,7 @@ final class ScenePlanReviewer
     public const MAX_FINDINGS = 40;
 
     /** @var list<string> */
-    public const EVIDENCE_SOURCES = ['scene', 'article'];
+    public const EVIDENCE_SOURCES = ['scene', 'screenplay'];
 
     /** @var list<string> */
     public const SCENE_FIELDS = [
@@ -36,7 +39,7 @@ final class ScenePlanReviewer
     ];
 
     /** @var list<string> */
-    public const ARTICLE_FIELDS = ['title', 'summary'];
+    public const SCREENPLAY_FIELDS = ['logline', 'synopsis', 'ending'];
 
     public const MAX_EVIDENCE = 3;
 
@@ -54,18 +57,19 @@ final class ScenePlanReviewer
 
     /**
      * @param  array<string, mixed>  $reviewInput
+     * @param  list<string>  $coverageIds
      * @param  ?callable(): void  $onAttempt  fired once the request is built, immediately before the client call
      */
     public function review(
         array $reviewInput,
-        SceneProfile $profile,
-        int $maxScenes,
+        array $coverageIds,
+        int $maxShots,
         string $skill,
         ?callable $onAttempt = null,
     ): ScenePlanReviewResult {
         $system = $this->systemOf($skill);
         $user = $this->user($reviewInput);
-        $schema = $this->schema($profile, $maxScenes);
+        $schema = $this->schema($coverageIds, $maxShots);
 
         if ($this->maxTokens < 1) {
             throw new ScenePlanException('video.scene_plan.review.max_tokens must be >= 1.');
@@ -206,8 +210,11 @@ final class ScenePlanReviewer
         );
     }
 
-    /** @return array<string, mixed> */
-    private function schema(SceneProfile $profile, int $maxScenes): array
+    /**
+     * @param  list<string>  $coverageIds
+     * @return array<string, mixed>
+     */
+    private function schema(array $coverageIds, int $maxShots): array
     {
         return [
             'type' => 'object',
@@ -242,7 +249,7 @@ final class ScenePlanReviewer
                                         'field' => [
                                             'type' => 'string',
                                             'enum' => array_values(array_unique(
-                                                array_merge(self::SCENE_FIELDS, self::ARTICLE_FIELDS),
+                                                array_merge(self::SCENE_FIELDS, self::SCREENPLAY_FIELDS),
                                             )),
                                         ],
                                         'quote' => [
@@ -258,8 +265,8 @@ final class ScenePlanReviewer
                 ],
                 'patch' => [
                     'type' => 'array',
-                    'maxItems' => $maxScenes,
-                    'items' => ScenePlanAuthor::sceneItemSchema($profile),
+                    'maxItems' => $maxShots,
+                    'items' => ScenePlanAuthor::sceneItemSchema($coverageIds),
                 ],
             ],
         ];

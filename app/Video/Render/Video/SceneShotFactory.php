@@ -2,9 +2,11 @@
 
 namespace App\Video\Render\Video;
 
+use App\Models\VideoProject;
 use App\Models\VideoRenderScene;
 use App\Models\VideoSession;
 use App\Models\VideoShot;
+use App\Video\Scene\Services\ShotIntentService;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -15,12 +17,14 @@ use RuntimeException;
  * Ly do: mot shot ton tai la de mang mot lan render. Sinh san hang loat shot ma
  * khong ai bam thi chung chi lam ban bang va lam sai moi phep dem "dang dung".
  *
- * Mot scene co DUNG mot shot clip. Unique (session_id, shot_code, kind) o tang DB
- * la thu bao dam dieu do, ke ca khi hai request vao cung luc.
+ * Moi hang VideoRenderScene da la mot shot production. Cung shot code duoc phep
+ * xuat hien o revision ke hoach khac, nhung khong duoc lap trong mot revision.
  */
 final class SceneShotFactory
 {
     public const KIND = 'motion';
+
+    public function __construct(private readonly ShotIntentService $intents) {}
 
     /** @param array<string, mixed> $plan hang scene trong ke hoach dang hien */
     public function forScene(VideoRenderScene $scene, array $plan): VideoShot
@@ -32,25 +36,32 @@ final class SceneShotFactory
         }
 
         return DB::transaction(function () use ($scene, $plan, $prompt): VideoShot {
+            // The session table has no project-level unique key. Serialize the
+            // first session and shot creation so concurrent clicks cannot create
+            // two independent owners for the same production shot.
+            VideoProject::query()->whereKey($scene->project_id)->lockForUpdate()->firstOrFail();
             $session = $this->sessionFor((string) $scene->project_id);
             $code = (string) ($scene->scene_code ?? $scene->id);
 
             $shot = VideoShot::query()
                 ->where('session_id', $session->id)
+                ->where('plan_revision', (int) $scene->revision)
                 ->where('shot_code', $code)
                 ->where('kind', self::KIND)
                 ->lockForUpdate()
                 ->first();
 
             if ($shot !== null) {
-                // Prompt co the da doi sau lan bam truoc: giu shot, cap nhat noi dung.
-                $shot->forceFill([
+                return $this->intents->replaceInputs($shot, [
                     'compiled_prompt' => $prompt,
                     'scene_id' => $scene->id,
+                    'plan_revision' => (int) $scene->revision,
+                    'shot_index' => (int) ($scene->shot_index ?? 1),
+                    'scene_sequence_index' => (int) $scene->scene_index,
                     'spec_json' => $this->spec($plan),
-                ])->save();
-
-                return $shot;
+                    'to_state_id' => $plan['scene_state'] ?? null,
+                    'from_state_id' => $plan['state_before'] ?? null,
+                ]);
             }
 
             return VideoShot::create([
@@ -60,6 +71,8 @@ final class SceneShotFactory
                 'shot_code' => $code,
                 'shot_type' => mb_substr((string) ($plan['phase'] ?? 'scene'), 0, 20),
                 'kind' => self::KIND,
+                'plan_revision' => (int) $scene->revision,
+                'shot_index' => (int) ($scene->shot_index ?? 1),
                 'spec_json' => $this->spec($plan),
                 'compiled_prompt' => $prompt,
                 'scene_status' => 'keyframe_ready',

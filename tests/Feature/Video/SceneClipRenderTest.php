@@ -157,41 +157,43 @@ class SceneClipRenderTest extends TestCase
         // Kieu phai duoc dua ve dung o bien, neu khong nut Render luon hong.
         $form = new \App\Form\SceneClipRenderForm;
 
-        $data = $form->validate(\Illuminate\Http\Request::create("/x", "POST", [
-            "model_id" => "gemini:".self::MODEL,
-            "duration_seconds" => "8",
+        $data = $form->validate(\Illuminate\Http\Request::create('/x', 'POST', [
+            'model_id' => 'gemini:'.self::MODEL,
+            'duration_seconds' => '8',
+            'expected_intent_version' => 0,
+            'operation_id' => (string) Str::uuid(),
         ]));
 
-        $this->assertSame(8, $data["duration_seconds"]);
+        $this->assertSame(8, $data['duration_seconds']);
 
-        Http::fake(["*:predictLongRunning" => Http::response(["name" => self::OPERATION])]);
+        Http::fake(['*:predictLongRunning' => Http::response(['name' => self::OPERATION])]);
 
         $shot = $this->shotWithKeyframe();
         $render = app(SceneClipDispatchService::class)->create(
-            $shot, $this->source, "gemini:".self::MODEL,
-            ["duration_seconds" => $data["duration_seconds"]],
+            $shot, $this->source, 'gemini:'.self::MODEL,
+            ['duration_seconds' => $data['duration_seconds']],
         );
 
-        $this->assertSame(8, json_decode($render->render_request_json, true)["duration_seconds"]);
+        $this->assertSame(8, json_decode($render->render_request_json, true)['duration_seconds']);
     }
 
     public function test_a_long_resolution_with_a_short_duration_is_refused(): void
     {
         config([
-            "video.media_models.video.scene_clip.0.controls.resolutions" => ["720p", "1080p"],
-            "video.media_models.video.scene_clip.0.controls.long_resolutions" => ["1080p"],
-            "video.media_models.video.scene_clip.0.controls.long_resolution_duration" => 8,
+            'video.media_models.video.scene_clip.0.controls.resolutions' => ['720p', '1080p'],
+            'video.media_models.video.scene_clip.0.controls.long_resolutions' => ['1080p'],
+            'video.media_models.video.scene_clip.0.controls.long_resolution_duration' => 8,
         ]);
         app()->forgetInstance(\App\Video\Media\VideoModelRegistry::class);
 
         $shot = $this->shotWithKeyframe();
 
-        $this->expectExceptionMessageMatches("/1080p chi nhan thoi luong 8s/");
+        $this->expectExceptionMessageMatches('/1080p chi nhan thoi luong 8s/');
 
         try {
             app(SceneClipDispatchService::class)->create(
-                $shot, $this->source, "gemini:".self::MODEL,
-                ["resolution" => "1080p", "duration_seconds" => 2],
+                $shot, $this->source, 'gemini:'.self::MODEL,
+                ['resolution' => '1080p', 'duration_seconds' => 2],
             );
         } finally {
             Http::assertNothingSent();
@@ -278,7 +280,11 @@ class SceneClipRenderTest extends TestCase
         $this->assertEqualsWithDelta(2000, $render->duration_ms, 200);
         $this->assertSame(hash('sha256', $this->mp4Bytes()), $render->primary_artifact_hash);
         $this->assertSame('generated_video', $render->artifact_manifest['artifacts'][0]['kind']);
-        $this->assertSame('video_ready', $render->shot->refresh()->scene_status);
+        $shot = $render->shot->refresh();
+        $this->assertSame('keyframe_ready', $shot->scene_status);
+        $this->assertSame($render->id, $shot->current_render_id);
+        $this->assertNull($shot->video_render_id, 'an unselected scene plan must not auto-select a clip');
+        $this->assertNull($shot->auto_select_version, 'a stale completion must consume auto-selection');
     }
 
     public function test_a_clip_whose_length_does_not_match_is_thrown_away(): void
@@ -356,43 +362,43 @@ class SceneClipRenderTest extends TestCase
 
     public function test_a_failed_clip_that_never_reached_the_provider_can_be_retried(): void
     {
-        Http::fake(["*:predictLongRunning" => Http::response(["error" => ["message" => "khong nhan"]], 400)]);
+        Http::fake(['*:predictLongRunning' => Http::response(['error' => ['message' => 'khong nhan']], 400)]);
 
         $shot = $this->shotWithKeyframe();
         $dispatch = app(SceneClipDispatchService::class);
 
-        $first = $dispatch->create($shot, $this->source, "gemini:".self::MODEL);
+        $first = $dispatch->create($shot, $this->source, 'gemini:'.self::MODEL);
         app(VideoRenderExecutionService::class)->submit($first->id);
 
         $this->assertSame(RenderStatus::FAILED, $first->refresh()->execution_status);
-        $this->assertSame(0, VideoProviderSubmissionReceipt::query()->where("render_id", $first->id)->count());
+        $this->assertSame(0, VideoProviderSubmissionReceipt::query()->where('render_id', $first->id)->count());
 
         // Cung yeu cau, nhung luot truoc da hong va KHONG co bien lai — phai la hang MOI.
-        $second = $dispatch->create($shot, $this->source, "gemini:".self::MODEL);
+        $second = $dispatch->create($shot, $this->source, 'gemini:'.self::MODEL);
 
-        $this->assertNotSame($first->id, $second->id, "lam lai phai la mot hang render moi");
+        $this->assertNotSame($first->id, $second->id, 'lam lai phai la mot hang render moi');
         $this->assertSame(RenderStatus::QUEUED, $second->execution_status);
-        $this->assertNull($second->failure_message, "hang moi khong duoc mang loi cua luot truoc");
+        $this->assertNull($second->failure_message, 'hang moi khong duoc mang loi cua luot truoc');
     }
 
     public function test_a_clip_the_provider_already_took_is_never_silently_resent(): void
     {
-        Http::fake(["*:predictLongRunning" => Http::response(["name" => self::OPERATION])]);
+        Http::fake(['*:predictLongRunning' => Http::response(['name' => self::OPERATION])]);
 
         $shot = $this->shotWithKeyframe();
         $dispatch = app(SceneClipDispatchService::class);
 
-        $first = $dispatch->create($shot, $this->source, "gemini:".self::MODEL);
+        $first = $dispatch->create($shot, $this->source, 'gemini:'.self::MODEL);
         app(VideoRenderExecutionService::class)->submit($first->id);
 
-        $this->assertSame(1, VideoProviderSubmissionReceipt::query()->where("render_id", $first->id)->count());
+        $this->assertSame(1, VideoProviderSubmissionReceipt::query()->where('render_id', $first->id)->count());
 
         // Ep hang do thanh failed nhung bien lai van con: tien da di.
-        VideoRender::query()->whereKey($first->id)->update(["execution_status" => RenderStatus::FAILED->value]);
+        VideoRender::query()->whereKey($first->id)->update(['execution_status' => RenderStatus::FAILED->value]);
 
-        $this->expectExceptionMessageMatches("/tra tien hai lan/");
+        $this->expectExceptionMessageMatches('/tra tien hai lan/');
 
-        $dispatch->create($shot, $this->source, "gemini:".self::MODEL);
+        $dispatch->create($shot, $this->source, 'gemini:'.self::MODEL);
     }
 
     public function test_the_same_clip_request_twice_reuses_one_render(): void
@@ -733,21 +739,21 @@ class SceneClipRenderTest extends TestCase
         // Chan o tang model chi chan duong Eloquent. Day la duong ma mot doan code
         // voi va se dung, nen no phai bi chan o ngay tang DB.
         $render = $this->runningRender();
-        $receipt = VideoProviderSubmissionReceipt::query()->where("render_id", $render->id)->firstOrFail();
+        $receipt = VideoProviderSubmissionReceipt::query()->where('render_id', $render->id)->firstOrFail();
 
         try {
-            DB::table("video_provider_submission_receipts")->where("id", $receipt->id)
-                ->update(["provider_job_id" => "sua-trom"]);
-            $this->fail("query builder khong duoc sua bien lai");
+            DB::table('video_provider_submission_receipts')->where('id', $receipt->id)
+                ->update(['provider_job_id' => 'sua-trom']);
+            $this->fail('query builder khong duoc sua bien lai');
         } catch (\Illuminate\Database\QueryException $e) {
-            $this->assertStringContainsString("append-only", $e->getMessage());
+            $this->assertStringContainsString('append-only', $e->getMessage());
         }
 
         try {
-            DB::table("video_provider_submission_receipts")->where("id", $receipt->id)->delete();
-            $this->fail("query builder khong duoc xoa bien lai");
+            DB::table('video_provider_submission_receipts')->where('id', $receipt->id)->delete();
+            $this->fail('query builder khong duoc xoa bien lai');
         } catch (\Illuminate\Database\QueryException $e) {
-            $this->assertStringContainsString("append-only", $e->getMessage());
+            $this->assertStringContainsString('append-only', $e->getMessage());
         }
 
         $this->assertSame(self::OPERATION, $receipt->fresh()->provider_job_id);
@@ -1193,7 +1199,6 @@ class SceneClipRenderTest extends TestCase
     private function shotWithKeyframe(): VideoShot
     {
         Storage::disk('video_artifacts')->put('scene/keyframe.png', $this->pngBytes());
-
 
         $keyframe = VideoRender::create([
             'video_session_id' => $this->session->id,

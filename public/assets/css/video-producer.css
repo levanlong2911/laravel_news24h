@@ -1527,3 +1527,88 @@ a.vp-btn[disabled] {
     max-height: 88vh;
     background: #000;
 }
+
+.va-grid.va-top > .va-col:last-child {
+    position: static;
+}
+
+.va-anchor {
+    margin-top: 14px;
+}
+
+.va-row {
+    display: grid;
+    grid-template-columns: minmax(150px, .55fr) minmax(280px, 1.35fr) minmax(300px, 1.05fr) minmax(320px, 1.45fr);
+    gap: 16px;
+    align-items: start;
+    padding: 14px;
+    border-top: 1px solid var(--vp-line);
+}
+
+.va-row-head {
+    padding-top: 9px;
+    padding-bottom: 9px;
+    background: #fafcff;
+    color: var(--vp-dim);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.va-row-who {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+}
+
+.va-row-prompt,
+.va-row-set,
+.va-row-cands {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.va-row-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 31px;
+}
+
+.va-row .va-ta {
+    min-height: 240px;
+}
+
+.va-row .va-fields,
+.va-row .va-cands {
+    padding: 0;
+}
+
+.va-row .va-foot {
+    flex-wrap: wrap;
+    padding: 10px 0 0;
+    background: none;
+    border-radius: 0;
+}
+
+@media (max-width: 1280px) {
+    .va-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .va-row-head {
+        display: none;
+    }
+}
+
+@media (max-width: 760px) {
+    .va-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

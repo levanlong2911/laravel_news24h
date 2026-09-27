@@ -17,32 +17,39 @@ final class ScenePlanAuthor
         private readonly string $promptVersion,
         private readonly string $model,
         private readonly int $maxTokens,
-        private readonly int $maxScenes,
+        private readonly int $maxShots,
     ) {}
 
     /**
      * @param  array<string, mixed>  $planningInput
+     * @param  list<string>  $coverageIds
      * @param  ?callable(): void  $onAttempt  fired once the request is built, immediately before the client call
      */
     public function plan(
         array $planningInput,
         SceneProfile $profile,
+        array $coverageIds,
         ?callable $onAttempt = null,
+        ?int $minimumShots = null,
+        ?int $maximumShots = null,
     ): ScenePlanResult {
         if (array_key_exists('profile', $planningInput)) {
             throw new ScenePlanException('Planning input may not carry its own profile.');
         }
 
-        if ($this->maxScenes < $profile->minScenes) {
+        $minimumShots ??= $profile->minScenes;
+        $maximumShots ??= $this->maxShots;
+
+        if ($minimumShots < 1 || $maximumShots < $minimumShots || $maximumShots > $this->maxShots) {
             throw new ScenePlanException(
-                'video.scene_plan.max_scenes ('.$this->maxScenes
-                .') is below the profile min_scenes ('.$profile->minScenes.').'
+                'The requested shot range is outside video.scene_plan.max_shots.'
             );
         }
 
         $system = $this->system();
-        $user = $this->user(array_replace($planningInput, ['profile' => $profile->toPayload()]));
-        $schema = $this->schema($profile);
+        $profilePayload = array_replace($profile->toPlanningPayload(), ['min_scenes' => $minimumShots]);
+        $user = $this->user(array_replace($planningInput, ['profile' => $profilePayload]));
+        $schema = $this->schema($minimumShots, $maximumShots, $coverageIds);
 
         if ($this->maxTokens < 1) {
             throw new ScenePlanException('video.scene_plan.max_tokens must be >= 1.');
@@ -115,9 +122,9 @@ final class ScenePlanAuthor
         return $this->model;
     }
 
-    public function maxScenes(): int
+    public function maxShots(): int
     {
-        return $this->maxScenes;
+        return $this->maxShots;
     }
 
     public function skillHash(): string
@@ -162,34 +169,72 @@ final class ScenePlanAuthor
      * co the sua chu ma hop dong khong doi, va nguoc lai. Vao claim input de
      * dedup phan biet duoc hai hop dong.
      */
-    public const SCENE_CONTRACT_VERSION = 'scene-contract-v2';
+    public const SCENE_CONTRACT_VERSION = 'scene-contract-v5';
 
-    /** @return array<string, mixed> */
-    public static function sceneItemSchema(SceneProfile $profile): array
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @return list<string>
+     */
+    public static function shownCoverageIds(array $screenplay): array
     {
+        $ids = [];
+
+        foreach ((array) ($screenplay['coverage'] ?? []) as $item) {
+            if (is_array($item)
+                && ($item['mode'] ?? null) === 'shown'
+                && is_string($item['coverage_id'] ?? null)) {
+                $ids[$item['coverage_id']] = true;
+            }
+        }
+
+        return array_keys($ids);
+    }
+
+    /**
+     * @param  list<string>  $coverageIds
+     * @return array<string, mixed>
+     */
+    public static function sceneItemSchema(array $coverageIds): array
+    {
+        $coverageItem = $coverageIds === []
+            ? ['type' => 'string', 'pattern' => '^cov_[a-z0-9_]{3,40}$']
+            : ['type' => 'string', 'enum' => array_values($coverageIds)];
+
         return [
             'type' => 'object',
             'additionalProperties' => false,
             'required' => [
-                'scene_code', 'title', 'purpose', 'phase', 'milestone_keys',
+                'scene_code', 'screenplay_scene_code', 'shot_index',
+                'location_id', 'character_ids',
+                'title', 'purpose', 'coverage_ids',
                 'basis', 'state_before', 'scene_state', 'transition_mode',
                 'continuity_group', 'source_scene_code', 'camera_change_reason',
                 'camera_mode', 'delta', 'video',
             ],
             'properties' => [
                 'scene_code' => ['type' => 'string', 'pattern' => '^[a-z][a-z0-9_]{2,59}$'],
+                'screenplay_scene_code' => ['type' => 'string', 'pattern' => '^sc_[a-z0-9_]{1,56}$'],
+                'shot_index' => [
+                    'type' => 'integer',
+                    'minimum' => (int) config('video.scene_plan.min_shots_per_scene', 1),
+                    'maximum' => (int) config('video.scene_plan.max_shots_per_scene', 10),
+                ],
+                'location_id' => ['type' => 'string', 'pattern' => '^lo_[a-z0-9_]{1,56}$'],
+                'character_ids' => [
+                    'type' => 'array',
+                    'maxItems' => 12,
+                    'items' => ['type' => 'string', 'pattern' => '^ch_[a-z0-9_]{1,56}$'],
+                ],
                 'title' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 120],
                 'purpose' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 500],
-                'phase' => ['type' => 'string', 'enum' => $profile->phaseKeys()],
-                'milestone_keys' => [
+                'coverage_ids' => [
                     'type' => 'array',
-                    'minItems' => 1,
-                    'maxItems' => $profile->maxMilestonesPerScene,
-                    'items' => ['type' => 'string', 'enum' => $profile->milestoneKeys()],
+                    'maxItems' => count($coverageIds),
+                    'items' => $coverageItem,
                 ],
                 'basis' => [
                     'type' => 'string',
-                    'enum' => ['source_supported', 'inferred_process'],
+                    'enum' => ['source_supported'],
                 ],
                 'state_before' => ['type' => 'string', 'minLength' => 2, 'maxLength' => 120],
                 'scene_state' => ['type' => 'string', 'minLength' => 2, 'maxLength' => 120],
@@ -216,8 +261,11 @@ final class ScenePlanAuthor
         ];
     }
 
-    /** @return array<string, mixed> */
-    private function schema(SceneProfile $profile): array
+    /**
+     * @param  list<string>  $coverageIds
+     * @return array<string, mixed>
+     */
+    private function schema(int $minScenes, int $maxScenes, array $coverageIds): array
     {
         return [
             'type' => 'object',
@@ -225,10 +273,10 @@ final class ScenePlanAuthor
             'required' => ['scenes'],
             'properties' => [
                 'scenes' => [
-'type' => 'array',
-'minItems' => $profile->minScenes,
-'maxItems' => $this->maxScenes,
-'items' => self::sceneItemSchema($profile),
+                    'type' => 'array',
+                    'minItems' => $minScenes,
+                    'maxItems' => $maxScenes,
+                    'items' => self::sceneItemSchema($coverageIds),
                 ],
             ],
         ];

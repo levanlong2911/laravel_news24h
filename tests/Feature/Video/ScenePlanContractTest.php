@@ -32,11 +32,16 @@ class ScenePlanContractTest extends TestCase
         $this->assertNull($stage, 'the stage chain never terminates — a case points backwards');
 
         $this->assertSame(
-            ['inspiration', 'concept', 'anchor_prompt', 'scene_plan', 'finalize'],
+            [
+                'inspiration', 'concept', 'anchor_prompt',
+                'screenplay_foundation', 'screenplay', 'scene_plan', 'finalize',
+            ],
             $walked,
         );
 
-        $this->assertSame(count(PlanningStageName::cases()), count($walked));
+        $this->assertSame(count(PlanningStageName::cases()) - 1, count($walked));
+        $this->assertNotContains(PlanningStageName::SCENE_PLAN_TRIAL->value, $walked);
+        $this->assertNull(PlanningStageName::SCENE_PLAN_TRIAL->next());
     }
 
     public function test_an_unknown_transition_mode_is_refused_rather_than_defaulted(): void
