@@ -19,6 +19,7 @@ use App\Video\Render\Video\SceneShotFactory;
 use App\Video\Render\Video\VideoRenderExecutionService;
 use App\Video\Scene\Services\ShotIntentService;
 use App\Video\Scene\Services\ShotSelectionReconciler;
+use App\Services\Video\CharacterAnchorPromptService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
@@ -32,18 +33,13 @@ use Throwable;
 class VideoProjectsController extends Controller
 {
     private VideoProjectService $videoProjectService;
-
     private AdminCustomValidator $form;
-
     private SceneClipDispatchService $clips;
-
     private VideoRenderExecutionService $clipExecution;
-
     private SceneShotFactory $shots;
-
     private ShotIntentService $shotIntents;
-
     private ShotSelectionReconciler $shotSelections;
+    public CharacterAnchorPromptService $characterAnchorPromptService;
 
     public function __construct(
         VideoProjectService $videoProjectService,
@@ -53,6 +49,7 @@ class VideoProjectsController extends Controller
         SceneShotFactory $shots,
         ShotIntentService $shotIntents,
         ShotSelectionReconciler $shotSelections,
+        CharacterAnchorPromptService $characterAnchorPromptService
     ) {
         $this->videoProjectService = $videoProjectService;
         $this->form = $form;
@@ -61,6 +58,7 @@ class VideoProjectsController extends Controller
         $this->shots = $shots;
         $this->shotIntents = $shotIntents;
         $this->shotSelections = $shotSelections;
+        $this->characterAnchorPromptService = $characterAnchorPromptService;
     }
 
     public function store(string $articleId)
@@ -99,8 +97,9 @@ class VideoProjectsController extends Controller
         }
 
         $this->authorizeProject($project);
-
-        $characters = app(\App\Services\Video\CharacterAnchorPromptService::class)->characters($project->id);
+        //Hiển thị data màn hình anchior
+        $characters = $this->characterAnchorPromptService->characters($project->id);
+        // view image
         $cells = $this->videoProjectService->anchorCells($project->id);
         $primaryObjectId = collect($characters)->firstWhere('kind', 'object')['id'] ?? null;
         $submittedFor = old('size') === null ? null : (string) old('character_id', '');
@@ -120,7 +119,7 @@ class VideoProjectsController extends Controller
                 'model' => ImageModel::tryFrom((string) ($submitted ? old('model') : ($preview['lineage']['model'] ?? ''))),
                 'quality' => $submitted ? ImageQuality::tryFrom((string) old('quality', '')) : null,
                 'variations' => ImageVariations::tryFrom((int) ($submitted ? old('variations', 1) : 1)),
-                'cells' => array_values(array_filter($cells, static fn (array $cell): bool => $character === null
+                'cells' => array_values(array_filter($cells, static fn(array $cell): bool => $character === null
                     || ($cell['character_id'] ?? null) === $characterId
                     || (($cell['character_id'] ?? null) === null && $characterId === $primaryObjectId))),
             ];
@@ -392,13 +391,15 @@ class VideoProjectsController extends Controller
         $data = $this->form->validate($request, 'AnchorApproveForm');
 
         [$done, $reason] = $this->videoProjectService->approveAnchor(
-            $id, (string) $data['artifact_id'], auth()->id(),
+            $id,
+            (string) $data['artifact_id'],
+            auth()->id(),
         );
 
         return $done
             ? redirect()
-                ->route('video-projects.reference', $id)
-                ->with('success', __('messages.anchor_approved'))
+            ->route('video-projects.reference', $id)
+            ->with('success', __('messages.anchor_approved'))
             : back()->with('error', $this->anchorMessage($reason));
     }
 
@@ -499,7 +500,9 @@ class VideoProjectsController extends Controller
         $data = $this->form->validate($request, 'AnchorApproveForm');
 
         [$done, $reason] = $this->videoProjectService->approveReference(
-            $id, (string) $data['artifact_id'], auth()->id(),
+            $id,
+            (string) $data['artifact_id'],
+            auth()->id(),
         );
 
         return back()->with($done ? 'success' : 'error', $this->anchorMessage($reason));
@@ -528,7 +531,9 @@ class VideoProjectsController extends Controller
         $data = $this->form->validate($request, 'ReferenceImageForm');
 
         [$image, $reason] = $this->videoProjectService->renderReferenceDirect(
-            $id, (string) auth()->user()?->name, $data,
+            $id,
+            (string) auth()->user()?->name,
+            $data,
         );
 
         if ($image === null) {
@@ -549,7 +554,9 @@ class VideoProjectsController extends Controller
         $data = $this->form->validate($request, 'AnchorApproveForm');
 
         [$done, $reason] = $this->videoProjectService->approveEnvironmentReference(
-            $id, (string) $data['artifact_id'], auth()->id(),
+            $id,
+            (string) $data['artifact_id'],
+            auth()->id(),
         );
 
         return back()->with($done ? 'success' : 'error', $this->anchorMessage($reason));
@@ -584,7 +591,9 @@ class VideoProjectsController extends Controller
         }
 
         [$image, $reason] = $this->videoProjectService->renderEnvironmentDirect(
-            $id, (string) auth()->user()?->name, $data,
+            $id,
+            (string) auth()->user()?->name,
+            $data,
         );
 
         if ($image === null) {
@@ -639,7 +648,7 @@ class VideoProjectsController extends Controller
                 'geometry' => 'Supporting view',
             ],
             'sources' => collect($this->videoProjectService->sceneSourceCells($id, $plan['revision']))
-                ->map(fn (array $cell): array => array_replace($cell, [
+                ->map(fn(array $cell): array => array_replace($cell, [
                     'blocked_code' => $cell['blocked_reason'] === null
                         ? null
                         : explode('|', (string) $cell['blocked_reason'], 2)[0],
@@ -650,7 +659,7 @@ class VideoProjectsController extends Controller
                 ->all(),
             'summary' => [
                 'approved' => collect($keyframes)
-                    ->filter(static fn (array $cell): bool => $cell['approved'] !== null)
+                    ->filter(static fn(array $cell): bool => $cell['approved'] !== null)
                     ->count(),
             ],
         ]);
@@ -661,7 +670,9 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
 
         [$count, $reason] = $this->videoProjectService->planScenes(
-            $id, auth()->id(), $request->boolean('force'),
+            $id,
+            auth()->id(),
+            $request->boolean('force'),
         );
 
         if ($count === null) {
@@ -685,7 +696,10 @@ class VideoProjectsController extends Controller
         }
 
         [$count, $reason] = $this->videoProjectService->planScenes(
-            $id, auth()->id(), false, $scope,
+            $id,
+            auth()->id(),
+            false,
+            $scope,
         );
 
         if ($count === null) {
@@ -694,7 +708,7 @@ class VideoProjectsController extends Controller
 
         return $reason === 'ok_needs_review'
             ? back()->with('warning', 'Ban thu da luu nhung can kiem tra lai.')
-            : back()->with('success', 'Da tao ban thu cho '.implode(', ', $scope).'.');
+            : back()->with('success', 'Da tao ban thu cho ' . implode(', ', $scope) . '.');
     }
 
     private function actor(): ?Admin
@@ -718,7 +732,9 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
 
         [$preview, $reason] = $this->videoProjectService->sceneImagePreview(
-            $id, $this->actorId(), $sceneId,
+            $id,
+            $this->actorId(),
+            $sceneId,
         );
 
         return $this->keyframeJson($preview, $reason);
@@ -804,7 +820,7 @@ class VideoProjectsController extends Controller
         // Ly do tu verifier rat cu the (thieu khung, sai profile, lech tieng) — dua
         // ca ra thay vi rut gon thanh "that bai", vi do la thu noi duoc phai sua gi.
         return back()->with('error', trim(
-            $result['error'].(isset($result['reasons']) ? ': '.implode(' | ', $result['reasons']) : ''),
+            $result['error'] . (isset($result['reasons']) ? ': ' . implode(' | ', $result['reasons']) : ''),
         ));
     }
 
@@ -818,7 +834,7 @@ class VideoProjectsController extends Controller
 
         $final = \App\Models\VideoFinal::query()
             ->whereKey($finalId)
-            ->whereHas('session', fn ($scope) => $scope->where('project_id', $id))
+            ->whereHas('session', fn($scope) => $scope->where('project_id', $id))
             ->firstOrFail();
 
         // `realpath` CA HAI dau truoc khi so. `storage_path()` tra ve dau phan cach
@@ -829,8 +845,8 @@ class VideoProjectsController extends Controller
 
         abort_if($root === false, 404);
 
-        $root = rtrim($root, '/\\').DIRECTORY_SEPARATOR;
-        $path = realpath($root.(string) $final->video_path);
+        $root = rtrim($root, '/\\') . DIRECTORY_SEPARATOR;
+        $path = realpath($root . (string) $final->video_path);
 
         // So tien to KEM dau phan cach: mot `video_path` doc hai khong duoc dan ra
         // ngoai thu muc ket qua.
@@ -948,7 +964,7 @@ class VideoProjectsController extends Controller
             return response()->json($this->clipState($id, $render->refresh(), $reason));
         }
 
-        return back()->with($ok ? 'status' : 'error', 'Clip: '.$reason);
+        return back()->with($ok ? 'status' : 'error', 'Clip: ' . $reason);
     }
 
     public function selectSceneClip(Request $request, string $id, string $shotId)
@@ -1015,7 +1031,7 @@ class VideoProjectsController extends Controller
             ], 422);
         }
 
-        return back()->with('error', 'Clip: '.$reason);
+        return back()->with('error', 'Clip: ' . $reason);
     }
 
     /**
@@ -1041,9 +1057,9 @@ class VideoProjectsController extends Controller
         };
 
         $note = match ($state) {
-            'running' => 'đang dựng · đã hỏi '.$render->provider_poll_count.' lần',
+            'running' => 'đang dựng · đã hỏi ' . $render->provider_poll_count . ' lần',
             'failed' => (string) ($render->failure_message ?? $reason)
-                .($shot?->video_render_id !== null ? ' Clip đã chọn vẫn được giữ.' : ''),
+                . ($shot?->video_render_id !== null ? ' Clip đã chọn vẫn được giữ.' : ''),
             'succeeded' => match (true) {
                 $currentSelectionValid => '',
                 $shot?->video_render_id !== null => 'Lượt mới đã xong; clip đã chọn vẫn được giữ.',
@@ -1061,8 +1077,8 @@ class VideoProjectsController extends Controller
                 ? route('video-projects.scene-clip-file', [$id, $render->id])
                 : null,
             'meta' => $render->width && $render->height
-                ? $render->width.'×'.$render->height
-                    .($render->duration_ms ? ' · '.round($render->duration_ms / 1000, 1).'s' : '')
+                ? $render->width . '×' . $render->height
+                . ($render->duration_ms ? ' · ' . round($render->duration_ms / 1000, 1) . 's' : '')
                 : '',
             'intent_version' => $shot?->intent_version,
             'selected_render_id' => $shot?->video_render_id,
@@ -1082,9 +1098,9 @@ class VideoProjectsController extends Controller
         $owned = VideoRender::query()
             ->whereKey($render)
             ->where('render_kind', 'video')
-            ->where(fn ($query) => $query
-                ->whereHas('shot.session', fn ($scope) => $scope->where('project_id', $id))
-                ->orWhereHas('session', fn ($scope) => $scope->where('project_id', $id)))
+            ->where(fn($query) => $query
+                ->whereHas('shot.session', fn($scope) => $scope->where('project_id', $id))
+                ->orWhereHas('session', fn($scope) => $scope->where('project_id', $id)))
             ->firstOrFail();
 
         $disk = app(\Illuminate\Contracts\Filesystem\Factory::class)->disk((string) config('video.veo.disk'));
@@ -1109,9 +1125,9 @@ class VideoProjectsController extends Controller
         $owned = VideoRender::query()
             ->whereKey($render)
             ->where('render_kind', 'video')
-            ->where(fn ($query) => $query
-                ->whereHas('shot.session', fn ($scope) => $scope->where('project_id', $id))
-                ->orWhereHas('session', fn ($scope) => $scope->where('project_id', $id)))
+            ->where(fn($query) => $query
+                ->whereHas('shot.session', fn($scope) => $scope->where('project_id', $id))
+                ->orWhereHas('session', fn($scope) => $scope->where('project_id', $id)))
             ->firstOrFail();
 
         [$ok, $reason] = $this->clipExecution->poll($owned->id);
@@ -1120,7 +1136,7 @@ class VideoProjectsController extends Controller
             return response()->json($this->clipState($id, $owned->refresh(), $reason));
         }
 
-        return back()->with($ok ? 'status' : 'error', 'Clip: '.$reason);
+        return back()->with($ok ? 'status' : 'error', 'Clip: ' . $reason);
     }
 
     public function renderSceneKeyframe(Request $request, string $id, string $sceneId)
@@ -1150,7 +1166,10 @@ class VideoProjectsController extends Controller
         $data = $this->form->validate($request, 'SceneKeyframeRenderForm');
 
         [$done, $reason] = $this->videoProjectService->resumeSceneCandidate(
-            $id, $this->actorId(), $image, (string) $data['prompt_sha256'],
+            $id,
+            $this->actorId(),
+            $image,
+            (string) $data['prompt_sha256'],
         );
 
         return back()->with(
@@ -1166,7 +1185,10 @@ class VideoProjectsController extends Controller
         $data = $this->form->validate($request, 'SceneKeyframeApproveForm');
 
         [$done, $reason] = $this->videoProjectService->approveSceneKeyframe(
-            $id, $this->actorId(), $image, (string) $data['artifact_id'],
+            $id,
+            $this->actorId(),
+            $image,
+            (string) $data['artifact_id'],
         );
 
         return back()->with($done ? 'success' : 'error', $this->sceneKeyframeMessage($reason));
@@ -1206,7 +1228,7 @@ class VideoProjectsController extends Controller
     {
         [$code, $detail] = array_pad(explode('|', $reason, 2), 2, null);
 
-        $key = 'messages.scene_keyframe_'.$code;
+        $key = 'messages.scene_keyframe_' . $code;
         $text = __($key, $detail === null ? [] : ['name' => $detail]);
 
         return $text === $key ? $reason : $text;
@@ -1230,12 +1252,12 @@ class VideoProjectsController extends Controller
         try {
             $entries = $registry->forTask(SceneClipDispatchService::TASK);
         } catch (InvalidArgumentException $e) {
-            Log::warning('Registry clip hong: '.$e->getMessage());
+            Log::warning('Registry clip hong: ' . $e->getMessage());
 
             return [];
         }
 
-        return array_map(static fn (array $entry): array => [
+        return array_map(static fn(array $entry): array => [
             'id' => (string) $entry['id'],
             'label' => (string) $entry['label'],
             'default' => $entry['default'] === true,
