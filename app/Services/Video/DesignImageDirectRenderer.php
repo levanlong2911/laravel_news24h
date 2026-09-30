@@ -3,6 +3,7 @@
 namespace App\Services\Video;
 
 use App\Enums\DesignImageStatus;
+use App\Enums\ImageModel;
 use App\Enums\ImageQuality;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
@@ -79,6 +80,10 @@ class DesignImageDirectRenderer
                 throw new RuntimeException('Gemini chi duoc dung cho environment_plate, khong cho '.$spec['operation']);
             }
 
+            if ($spec['quality_error'] !== null) {
+                throw new RuntimeException($spec['quality_error']);
+            }
+
             // O khai co gia ma khong mang duoc DU snapshot thi day la hang hong: mot
             // lan goi co tra tien khong duoc phep di ma sau nay khong doi soat duoc.
             //
@@ -132,6 +137,32 @@ class DesignImageDirectRenderer
         return [$done, $done->status === DesignImageStatus::RENDERED->value ? 'rendered' : 'failed'];
     }
 
+    /**
+     * @param  array<string, mixed>  $spec
+     * @return array{0: ?ImageQuality, 1: ?string}
+     */
+    private static function openAiQuality(array $spec): array
+    {
+        $raw = $spec['quality'] ?? null;
+
+        if ($raw === null || $raw === '') {
+            return [ImageQuality::HIGH, null];
+        }
+
+        $label = is_string($raw) ? $raw : get_debug_type($raw);
+        $quality = is_string($raw) ? ImageQuality::tryFrom($raw) : null;
+
+        if ($quality === null) {
+            return [null, "Quality {$label} khong hop le — khong gui request."];
+        }
+
+        $model = ImageModel::tryFrom((string) ($spec['model'] ?? ''));
+
+        return $model !== null && ! $model->supports($quality)
+            ? [null, "Quality {$label} khong dung duoc voi model {$model->value} — khong gui request."]
+            : [$quality, null];
+    }
+
     private function budgetSeconds(): int
     {
         return max(
@@ -148,7 +179,7 @@ class DesignImageDirectRenderer
     {
         $provider = SpecRouting::provider($spec);
         $pricing = (string) ($spec['pricing'] ?? 'estimated');
-        $quality = $provider === 'openai' ? ImageQuality::fromSpecOrHigh($spec['quality'] ?? '') : null;
+        [$quality, $qualityError] = $provider === 'openai' ? self::openAiQuality($spec) : [null, null];
         $unit = $this->unitCost($spec, $pricing, $provider, $quality);
 
         return [
@@ -163,6 +194,7 @@ class DesignImageDirectRenderer
             'provider' => $provider,
             'model' => (string) ($spec['model'] ?? ''),
             'quality' => $quality?->value,
+            'quality_error' => $qualityError,
             'size' => (string) ($spec['size'] ?? ''),
             'variations' => (int) ($spec['variations'] ?? 1),
             'pricing' => $pricing,

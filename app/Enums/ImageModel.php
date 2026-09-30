@@ -25,6 +25,23 @@ enum ImageModel: string
         };
     }
 
+    /** @return list<ImageQuality> */
+    public function qualities(): array
+    {
+        return match ($this) {
+            self::GPT_IMAGE_2 => [ImageQuality::LOW, ImageQuality::MEDIUM, ImageQuality::HIGH, ImageQuality::AUTO],
+            self::GPT_IMAGE_2_5_FLARE, self::GPT_IMAGE_2_5_SUNBURST => [
+                ImageQuality::LOW, ImageQuality::MEDIUM, ImageQuality::HIGH,
+                ImageQuality::XHIGH, ImageQuality::MAX, ImageQuality::AUTO,
+            ],
+        };
+    }
+
+    public function supports(ImageQuality $quality): bool
+    {
+        return in_array($quality, $this->qualities(), true);
+    }
+
     public function label(): string
     {
         return match ($this) {

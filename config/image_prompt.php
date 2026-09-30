@@ -23,12 +23,12 @@ return [
     */
 
     'prompt_path' => resource_path(
-        'ai/prompts/geometry_reference_v1.txt'
+        'ai/prompts/geometry_reference_v2.txt'
     ),
 
     'prompt_version' => env(
         'IMAGE_PROMPT_VERSION',
-        'geometry-reference-v1'
+        'geometry-reference-v2'
     ),
 
     'character_prompt_path' => resource_path(
@@ -41,6 +41,20 @@ return [
     ),
 
     'anchor_model' => env('IMAGE_ANCHOR_MODEL', 'gpt-image-2.5-flare'),
+
+    'reference' => [
+        'prompt_path' => resource_path('ai/prompts/reference_view_v1.txt'),
+        'prompt_version' => 'reference-view-v1',
+        'model' => env('IMAGE_REFERENCE_PROMPT_MODEL', 'gpt-5.6-terra'),
+        'reasoning_effort' => env('IMAGE_REFERENCE_PROMPT_REASONING', 'medium'),
+        'max_tokens' => (int) env('IMAGE_REFERENCE_PROMPT_MAX_TOKENS', 16000),
+        'pricing' => [
+            'version' => 'openai-gpt-5.6-terra-2026-09-29',
+            'input_per_million' => 2.0,
+            'cached_input_per_million' => 0.2,
+            'output_per_million' => 12.0,
+        ],
+    ],
 
     'anthropic' => [
         'max_tokens' => (int) env('IMAGE_PROMPT_ANTHROPIC_MAX_TOKENS', 8000),

@@ -70,6 +70,16 @@ class DesignImageStore
         $priced = $this->openAiPricing->unitFor(
             (string) ($spec['model'] ?? ''), (string) ($spec['quality'] ?? ''),
         );
+        $quality = ImageQuality::tryFrom((string) ($spec['quality'] ?? ''));
+
+        if ($priced === null && $quality !== null && $quality->estimatedCostUsd() === null
+            && (string) ($spec['provider'] ?? 'openai') === 'openai') {
+            return array_replace($spec, [
+                'pricing' => 'unpriced',
+                'unit_cost_usd' => null,
+                'pricing_version' => null,
+            ]);
+        }
 
         return array_replace($spec, [
             'unit_cost_usd' => $priced['usd'] ?? null,
@@ -298,13 +308,15 @@ class DesignImageStore
     public function createReference(string $projectId, string $creator, array $spec): array
     {
         $spec = $this->withPriceSnapshot($spec);
-        $sha = $this->identityHash($spec, [
+        $sha = $this->identityHash($spec, array_merge([
             'source_artifact_sha256',
             'view_key',
             'environment',
             'identity_lock_hash',
             'derivation_version',
-        ]);
+        ], ($spec['derivation_version'] ?? null) === ReferencePromptWriter::DERIVATION_VERSION
+            ? ['identity_anchor_artifact_id', 'identity_anchor_sha256']
+            : []));
 
         try {
             return DB::transaction(function () use ($projectId, $creator, $spec, $sha) {

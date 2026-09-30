@@ -11,6 +11,8 @@ enum ImageQuality: string
     case LOW = 'low';
     case MEDIUM = 'medium';
     case HIGH = 'high';
+    case XHIGH = 'xhigh';
+    case MAX = 'max';
     case AUTO = 'auto';
 
     /** @return list<string> */
@@ -25,6 +27,8 @@ enum ImageQuality: string
             self::LOW => 'Low',
             self::MEDIUM => 'Medium',
             self::HIGH => 'High',
+            self::XHIGH => 'XHigh',
+            self::MAX => 'Max',
             self::AUTO => 'Auto',
         };
     }
@@ -38,13 +42,14 @@ enum ImageQuality: string
         return self::tryFrom((string) $value) ?? self::HIGH;
     }
 
-    public function estimatedCostUsd(): float
+    public function estimatedCostUsd(): ?float
     {
         return match ($this) {
             self::LOW => 0.015,
             self::MEDIUM => 0.041,
             self::HIGH => 0.11,
             self::AUTO => 0.11,
+            self::XHIGH, self::MAX => null,
         };
     }
 
@@ -54,6 +59,8 @@ enum ImageQuality: string
             self::LOW => 'Nháp nhanh, ảnh xem thử',
             self::MEDIUM => 'Ảnh neo — dùng lại cho mọi cảnh sau',
             self::HIGH => 'Chữ dày, sơ đồ, sửa ảnh nhạy danh tính',
+            self::XHIGH => 'Chi tiết hơn High, chậm hơn — chỉ GPT Image 2.5, chưa có ước tính giá',
+            self::MAX => 'Mức cao nhất, chậm nhất — chỉ GPT Image 2.5, chưa có ước tính giá',
             self::AUTO => 'Để nhà cung cấp chọn',
         };
     }
