@@ -147,9 +147,15 @@ Route::group(
             Route::post('/{id}/inspiration/reset', [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
             Route::post('/{id}/concept/reset', [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
+            //tạo phân cảnh
             Route::post('/{id}/screenplay', [VideoProjectsController::class, 'screenplay'])->name('video-projects.screenplay');
+            // viết kịch bản
             Route::post('/{id}/screenplay/foundation', [VideoProjectsController::class, 'screenplayFoundation'])->name('video-projects.screenplay-foundation');
             Route::post('/{id}/screenplay/foundation/reset', [VideoProjectsController::class, 'resetScreenplayFoundation'])->name('video-projects.screenplay-foundation-reset');
+            Route::post('/{id}/screenplay/characters', [VideoProjectsController::class, 'screenplayCharacters'])->name('video-projects.screenplay-characters');
+            Route::post('/{id}/screenplay/characters/reset', [VideoProjectsController::class, 'resetScreenplayCharacters'])->name('video-projects.screenplay-characters-reset');
+            Route::post('/{id}/screenplay/locations', [VideoProjectsController::class, 'screenplayLocations'])->name('video-projects.screenplay-locations');
+            Route::post('/{id}/screenplay/locations/reset', [VideoProjectsController::class, 'resetScreenplayLocations'])->name('video-projects.screenplay-locations-reset');
             Route::post('/{id}/screenplay/reset', [VideoProjectsController::class, 'resetScreenplay'])->name('video-projects.screenplay-reset');
             Route::post('/{id}/screenplay/approve', [VideoProjectsController::class, 'approveScreenplay'])->name('video-projects.screenplay-approve');
             Route::post('/{id}/screenplay/select', [VideoProjectsController::class, 'selectScreenplay'])->name('video-projects.screenplay-select');
@@ -157,6 +163,7 @@ Route::group(
             Route::post('/{id}/design-images/{imageId}/enqueue', [VideoProjectsController::class, 'renderDesignImage'])->name('video-projects.design-image-enqueue');
             Route::post('/{id}/anchor/approve', [VideoProjectsController::class, 'approveAnchor'])->name('video-projects.anchor-approve');
             Route::post('/{id}/reference/approve', [VideoProjectsController::class, 'approveReference'])->name('video-projects.reference-approve');
+            Route::post('/{id}/reference/prompt', [VideoProjectsController::class, 'writeReferencePrompt'])->name('video-projects.reference-prompt');
             Route::match(['get', 'post'], '/{id}/reference', [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
             Route::post('/{id}/environment/approve', [VideoProjectsController::class, 'approveEnvironment'])->name('video-projects.environment-approve');
             Route::match(['get', 'post'], '/{id}/environment', [VideoProjectsController::class, 'environment'])->name('video-projects.environment');

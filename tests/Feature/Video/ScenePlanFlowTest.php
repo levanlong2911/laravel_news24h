@@ -3532,6 +3532,35 @@ class ScenePlanFlowTest extends TestCase
         );
     }
 
+    public function test_a_manifest_takes_only_references_rendered_from_the_scene_anchor(): void
+    {
+        $scene = $this->planOnce();
+        $anchor = $this->approvedAnchorRow()->artifact;
+
+        $this->approvedReference('port_side', 'port-bytes', 'neutral_studio', [
+            'derivation_version' => \App\Services\Video\ReferencePromptWriter::DERIVATION_VERSION,
+            'identity_anchor_artifact_id' => 'another-anchor',
+            'identity_anchor_sha256' => (string) $anchor->sha256,
+        ]);
+        $this->approvedReference('starboard_side', 'mirror-bytes', 'neutral_studio', [
+            'derivation' => 'horizontal_flip',
+            'source_artifact_id' => (string) $anchor->id,
+            'source_artifact_sha256' => (string) $anchor->sha256,
+        ]);
+        $this->approvedReference('bow_front', 'bow-bytes', 'neutral_studio', [
+            'derivation' => 'gpt_edit',
+            'source_artifact_id' => (string) $anchor->id,
+            'source_artifact_sha256' => (string) $anchor->sha256,
+        ]);
+
+        $cell = app(VideoProjectService::class)->sceneSourceCells(
+            (string) $this->project->id, (int) $scene->revision,
+        )[(string) $scene->id];
+
+        $this->assertSame(['anchor', 'identity', 'environment'], array_column($cell['slots'], 'role'));
+        $this->assertSame(\App\Video\Reference\ReferenceView::from('bow_front')->label(), $cell['slots'][1]['title']);
+    }
+
     public function test_a_continuation_manifest_puts_the_anchor_second(): void
     {
         $scene = $this->planOnce();
@@ -4898,7 +4927,14 @@ class ScenePlanFlowTest extends TestCase
         string $viewKey,
         string $bytes,
         string $environment = 'neutral_studio',
+        ?array $provenance = null,
     ): VideoArtifact {
+        $anchor = $this->approvedAnchorRow()->artifact;
+        $provenance ??= [
+            'derivation_version' => \App\Services\Video\ReferencePromptWriter::DERIVATION_VERSION,
+            'identity_anchor_artifact_id' => (string) $anchor->id,
+            'identity_anchor_sha256' => (string) $anchor->sha256,
+        ];
         $candidate = VideoDesignImage::create([
             'project_id' => $this->project->id,
             'image_code' => 'reference_'.uniqid(),
@@ -4908,7 +4944,7 @@ class ScenePlanFlowTest extends TestCase
                 'prompt' => 'reference view',
                 'view_key' => $viewKey,
                 'environment' => $environment,
-            ],
+            ] + $provenance,
             'prompt_sha256' => hash('sha256', uniqid('', true)),
             'status' => DesignImageStatus::RENDERED->value,
             'revision' => 1,

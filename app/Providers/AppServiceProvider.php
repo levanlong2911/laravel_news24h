@@ -283,6 +283,41 @@ class AppServiceProvider extends ServiceProvider
             }
         );
 
+        foreach (['character_author' => 'characters', 'location_author' => 'locations'] as $key => $step) {
+            $this->app->singleton(
+                'video.screenplay.'.$key,
+                static function (Application $app) use ($step): ScreenplayAuthor {
+                    return new ScreenplayAuthor(
+                        client: new AnthropicStructuredOutputClient(
+                            http: $app->make(HttpFactory::class),
+                            apiKey: (string) config('canonical_concept.anthropic.api_key'),
+                            baseUrl: (string) config('canonical_concept.anthropic.base_url'),
+                            apiVersion: (string) config('canonical_concept.anthropic.api_version'),
+                            timeoutSeconds: (int) config("video.screenplay.{$step}.timeout_seconds"),
+                            retryTimes: (int) config("video.screenplay.{$step}.retry_times"),
+                            retrySleepMs: 0,
+                            stream: (bool) config("video.screenplay.{$step}.stream"),
+                            effort: config("video.screenplay.{$step}.effort"),
+                        ),
+                        promptDir: (string) config("video.screenplay.{$step}.prompt_dir"),
+                        schemaPath: (string) config("video.screenplay.{$step}.schema_path"),
+                        promptVersion: (string) config("video.screenplay.{$step}.prompt_version"),
+                        model: (string) config('video.screenplay.model'),
+                        maxTokens: (int) config("video.screenplay.{$step}.max_tokens"),
+                        contractVersion: (string) config("video.screenplay.{$step}.contract_version"),
+                        exampleGuidance: [
+                            'A WORKED EXAMPLE',
+                            'Its subject is deliberately unlike yours. Copy the way the decisions',
+                            'were made. Never copy its story, its characters, its locations or its',
+                            'sentences.',
+                            "It shows how a selected foundation yields the {$step} its scenes will need.",
+                        ],
+                        sourceKey: 'foundation',
+                    );
+                },
+            );
+        }
+
         $this->app->singleton(
             'video.screenplay.scene_author',
             static function (Application $app): ScreenplayAuthor {
@@ -344,6 +379,19 @@ class AppServiceProvider extends ServiceProvider
                     maxTokens: (int) config('image_prompt.'.config('canonical_concept.provider').'.max_tokens'),
                 );
             }
+        );
+
+        $this->app->bind(
+            'video.reference_prompt.client',
+            static fn (Application $app): OpenAiTextClient => new OpenAiTextClient(
+                http: $app->make(HttpFactory::class),
+                apiKey: (string) config('canonical_concept.openai.api_key'),
+                baseUrl: (string) config('canonical_concept.openai.base_url'),
+                reasoningEffort: (string) config('image_prompt.reference.reasoning_effort'),
+                timeoutSeconds: (int) config('image_prompt.timeout_seconds'),
+                retryTimes: (int) config('image_prompt.retry_times'),
+                retrySleepMs: (int) config('image_prompt.retry_sleep_ms'),
+            ),
         );
 
         $this->app->singleton(

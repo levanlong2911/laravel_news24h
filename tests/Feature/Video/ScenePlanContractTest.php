@@ -39,9 +39,17 @@ class ScenePlanContractTest extends TestCase
             $walked,
         );
 
-        $this->assertSame(count(PlanningStageName::cases()) - 1, count($walked));
-        $this->assertNotContains(PlanningStageName::SCENE_PLAN_TRIAL->value, $walked);
-        $this->assertNull(PlanningStageName::SCENE_PLAN_TRIAL->next());
+        $this->assertSame(count(PlanningStageName::cases()) - 4, count($walked));
+
+        foreach ([PlanningStageName::SCENE_PLAN_TRIAL, PlanningStageName::REFERENCE_PROMPT] as $side) {
+            $this->assertNotContains($side->value, $walked);
+            $this->assertNull($side->next());
+        }
+
+        foreach ([PlanningStageName::SCREENPLAY_CHARACTERS, PlanningStageName::SCREENPLAY_LOCATIONS] as $source) {
+            $this->assertNotContains($source->value, $walked);
+            $this->assertSame(PlanningStageName::SCREENPLAY, $source->next());
+        }
     }
 
     public function test_an_unknown_transition_mode_is_refused_rather_than_defaulted(): void

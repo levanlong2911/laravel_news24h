@@ -13,9 +13,12 @@ enum PlanningStageName: string
     case ANCHOR_PROMPT = 'anchor_prompt';
     case SCREENPLAY = 'screenplay';
     case SCREENPLAY_FOUNDATION = 'screenplay_foundation';
+    case SCREENPLAY_CHARACTERS = 'screenplay_characters';
+    case SCREENPLAY_LOCATIONS = 'screenplay_locations';
     case SCENE_PLAN = 'scene_plan';
     case SCENE_PLAN_TRIAL = 'scene_plan_trial';
     case FINALIZE = 'finalize';
+    case REFERENCE_PROMPT = 'reference_prompt';
 
     /** @return list<string> */
     public static function values(): array
@@ -30,10 +33,13 @@ enum PlanningStageName: string
             self::CONCEPT => self::ANCHOR_PROMPT,
             self::ANCHOR_PROMPT => self::SCREENPLAY_FOUNDATION,
             self::SCREENPLAY_FOUNDATION => self::SCREENPLAY,
+            self::SCREENPLAY_CHARACTERS => self::SCREENPLAY,
+            self::SCREENPLAY_LOCATIONS => self::SCREENPLAY,
             self::SCREENPLAY => self::SCENE_PLAN,
             self::SCENE_PLAN => self::FINALIZE,
             self::SCENE_PLAN_TRIAL => null,
             self::FINALIZE => null,
+            self::REFERENCE_PROMPT => null,
         };
     }
 }

@@ -80,6 +80,15 @@
                       id="referenceForm" data-modal="confirmReference"
                       onsubmit="return vpLockForm(this)" hidden>
                     @csrf
+                    <input type="hidden" name="reference_prompt_stage_id" id="referencePromptStage" value="">
+                    <input type="hidden" name="prompt_sha256" id="referencePromptSha" value="">
+                </form>
+
+                <form method="POST" action="{{ route('video-projects.reference-prompt', $id) }}"
+                      id="referencePromptForm" data-modal="confirmReferencePrompt"
+                      onsubmit="return vpLockForm(this)" hidden>
+                    @csrf
+                    <input type="hidden" name="view" id="referencePromptView" value="">
                 </form>
 
                 <div class="va-body">
@@ -89,8 +98,10 @@
                             <select class="ctl" name="view" id="referenceView" form="referenceForm" required
                                     @disabled($approvedAnchor === null)>
                                 @foreach($referenceViewCases as $view)
-                                    <option value="{{ $view->value }}">{{ $view->label() }}</option>
+                                    <option value="{{ $view->value }}" @selected(old('view') === $view->value)>{{ $view->displayLabel() }}</option>
                                 @endforeach
+                                <option value="" disabled>Tạo các ảnh cận cảnh chi tiết (chưa hỗ trợ)</option>
+                                <option value="" disabled>Tạo bộ ảnh tham chiếu từ ảnh hiện tại (chưa hỗ trợ)</option>
                             </select>
                         </div>
                         <div class="va-field">
@@ -104,7 +115,7 @@
                         </div>
                         <div class="va-field">
                             <label>Model</label>
-                            <select class="ctl" name="model" form="referenceForm" required
+                            <select class="ctl" name="model" id="referenceModel" form="referenceForm" required
                                     @disabled($approvedAnchor === null)>
                                 <option value="">Choose model</option>
                                 @foreach(\App\Enums\ImageModel::cases() as $model)
@@ -114,11 +125,12 @@
                         </div>
                         <div class="va-field">
                             <label>Quality</label>
-                            <select class="ctl" name="quality" form="referenceForm" required
+                            <select class="ctl" name="quality" id="referenceQuality" form="referenceForm" required
                                     @disabled($approvedAnchor === null)>
                                 <option value="">Choose quality</option>
                                 @foreach(\App\Enums\ImageQuality::cases() as $quality)
-                                    <option value="{{ $quality->value }}" title="{{ $quality->hint() }}">{{ $quality->label() }}</option>
+                                    <option value="{{ $quality->value }}" title="{{ $quality->hint() }}"
+                                            data-models="{{ collect(\App\Enums\ImageModel::cases())->filter(fn ($m) => $m->supports($quality))->map(fn ($m) => $m->value)->implode(' ') }}">{{ $quality->label() }}</option>
                                 @endforeach
                             </select>
                         </div>
@@ -144,24 +156,48 @@
                         </div>
                     </div>
 
-                    <div class="va-lbl" id="referenceMirrorNote" hidden
-                         style="color:var(--vp-green-fg);font-weight:400">
-                        Góc đối xứng đã có ảnh — lượt này lật ngang tại chỗ, 1 ảnh, $0.000.
-                    </div>
-                    <div class="va-lbl">PROMPT GỬI ĐI <span>(khối bảo toàn + ghi đè góc máy)</span></div>
+                    <div class="va-lbl">PROMPT GỬI ĐI <span>(AI viết VIEW GEOMETRY · khối bảo toàn + góc máy + môi trường do PHP ghép)</span></div>
                     <textarea class="va-ta" id="referencePrompt" readonly></textarea>
                     <div class="va-count"><span data-c="r">0</span> ký tự</div>
 
+                    <div class="va-lbl" id="referenceClaimsTitle" hidden>CÁC CÂU AI VIẾT <span>(nhãn và nguồn của từng câu)</span></div>
+                    <div id="referenceClaims"></div>
+
+                    <div id="referenceDiscrepancies"></div>
+
+                    <div class="va-lbl" id="referenceIncomplete" hidden style="color:var(--vp-red);font-weight:400">
+                        Báo cáo mâu thuẫn chưa đầy đủ — không render được. Viết lại (bạn tự bấm, có trả phí) hoặc xem lại ảnh anchor.
+                    </div>
+
+                    <label class="va-lbl" id="referenceAckRow" hidden style="font-weight:400;color:var(--vp-red)">
+                        <input type="checkbox" name="acknowledge_discrepancies" value="1" form="referenceForm">
+                        Tôi đã xem các mâu thuẫn quan trọng và giữ theo ảnh cho lượt render này (không phải duyệt production)
+                    </label>
+
+                    <label class="va-lbl" style="font-weight:400">
+                        <input type="checkbox" name="force" value="1" form="referencePromptForm">
+                        Viết lại dù đã có prompt cho đúng ảnh, nguồn và cấu hình này (trả phí)
+                    </label>
+
                     <div class="va-foot">
+                        <button type="button" class="vp-btn" data-toggle="modal" data-target="#confirmReferencePrompt"
+                                data-busy="Đang viết…" @disabled($approvedAnchor === null)>AI viết prompt</button>
                         <button type="button" id="generateReferenceButton" class="vp-btn pri"
                                 data-toggle="modal" data-target="#confirmReference"
                                 data-busy="Đang render…" @disabled($approvedAnchor === null)>Generate Reference</button>
                     </div>
 
                     @include('modal.confirm_action', [
+                        'id' => 'confirmReferencePrompt',
+                        'form' => 'referencePromptForm',
+                        'content' => 'Gửi ảnh anchor và gói kịch bản cho model viết VIEW GEOMETRY của góc đang chọn — TÁC VỤ NÀY TÍNH TIỀN.',
+                        'detail' => 'Ảnh, nguồn và cấu hình không đổi thì dùng lại prompt đã viết, không gọi model.',
+                    ])
+
+                    @include('modal.confirm_action', [
                         'id' => 'confirmReference',
                         'form' => 'referenceForm',
-                        'content' => 'Render reference từ canonical anchor đã duyệt.',
+                        'content' => 'Render reference bằng đúng prompt AI đang hiển thị.',
                         'detail' => 'Chi phí được tính theo model, quality và variations.',
                     ])
                 </div>
@@ -174,7 +210,7 @@
                 <div class="va-head">
                     <b>REFERENCE VIEWS</b>
                     <span class="grow"></span>
-                    <em>{{ collect($referenceViews)->pluck('view_key')->filter()->unique()->count() }}
+                    <em>{{ collect($referenceViews)->pluck('view_key')->intersect(collect($referenceViewCases)->map(fn ($view) => $view->value))->unique()->count() }}
                         / {{ count($referenceViewCases) }} góc &middot; {{ count($referenceViews) }} ô</em>
                 </div>
 
@@ -199,7 +235,7 @@
                                 <img src="{{ $candidate['url'] }}" alt="{{ $cell['image_code'] }}"
                                      width="{{ $candidate['width'] }}" height="{{ $candidate['height'] }}">
                                 <div class="cap">
-                                    <span>{{ \App\Video\Reference\ReferenceView::tryFrom((string) $cell['view_key'])?->label() ?? '—' }}
+                                    <span>{{ \App\Video\Reference\ReferenceView::tryFrom((string) $cell['view_key'])?->displayLabel() ?? '—' }}
                                         &middot; {{ \App\Video\Reference\ReferenceEnvironment::tryFrom((string) $cell['environment'])?->label() ?? '—' }}</span>
                                     <span class="act">
                                         <b class="{{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</b>
@@ -236,7 +272,7 @@
                 @forelse($pendingCells as $cell)
                     <div class="va-cell">
                         <span class="code">{{ $cell['image_code'] }}</span>
-                        <span class="va-tag blue">{{ \App\Video\Reference\ReferenceView::tryFrom((string) $cell['view_key'])?->label() ?? '—' }}
+                        <span class="va-tag blue">{{ \App\Video\Reference\ReferenceView::tryFrom((string) $cell['view_key'])?->displayLabel() ?? '—' }}
                             &middot; {{ \App\Video\Reference\ReferenceEnvironment::tryFrom((string) $cell['environment'])?->label() ?? '—' }}</span>
                         <span class="va-tag {{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</span>
                         <span class="grow"></span>
@@ -289,42 +325,96 @@
 <script src="{{ asset('assets/js/video-producer.js') }}?v={{ filemtime(public_path('assets/js/video-producer.js')) }}"></script>
 <script>
 (function () {
-    var preservation = @json($preservationBlock);
-    var cameras = @json($cameraOverrides);
-    var environments = @json($environmentOverrides);
-    var mirrorReady = @json($mirrorReady);
+    var prompts = @json($referencePrompts);
     var view = document.getElementById('referenceView');
     var environment = document.getElementById('referenceEnvironment');
-    var variations = document.getElementById('referenceVariations');
-    var note = document.getElementById('referenceMirrorNote');
     var box = document.getElementById('referencePrompt');
+    var stage = document.getElementById('referencePromptStage');
+    var sha = document.getElementById('referencePromptSha');
+    var promptView = document.getElementById('referencePromptView');
+    var list = document.getElementById('referenceDiscrepancies');
+    var claims = document.getElementById('referenceClaims');
+    var claimsTitle = document.getElementById('referenceClaimsTitle');
+    var ackBox = document.querySelector('#referenceAckRow input[type="checkbox"]');
+    var bases = {
+        image: 'thấy trong ảnh',
+        source: 'theo nguồn',
+        image_and_source: 'ảnh + nguồn',
+        inference: 'suy diễn phần chưa xác định'
+    };
+    var incomplete = document.getElementById('referenceIncomplete');
+    var ack = document.getElementById('referenceAckRow');
+    var render = document.getElementById('generateReferenceButton');
     var count = document.querySelector('[data-c="r"]');
     if (!view || !environment || !box) { return; }
 
     function sync() {
-        var mirrored = mirrorReady.indexOf(view.value + '|' + environment.value) !== -1;
+        var entry = prompts[view.value] || null;
+        var prompt = entry ? entry.prompts[environment.value] : null;
 
-        if (mirrored) {
-            box.value = 'Ảnh này được lật ngang từ góc đối xứng đã render — không gọi model, không tính tiền.';
-        } else {
-            var blocks = [preservation, cameras[view.value] || ''];
-            var extra = environments[environment.value] || '';
-            if (extra !== '') { blocks.push(extra); }
-            box.value = blocks.join('\n\n');
-        }
+        box.value = prompt ? prompt.prompt : 'Chưa có prompt do AI viết cho góc này — bấm "AI viết prompt".';
+        stage.value = entry ? entry.stage_id : '';
+        sha.value = prompt ? prompt.prompt_sha256 : '';
+        promptView.value = view.value;
 
-        if (variations) {
-            if (mirrored) { variations.value = '1'; }
-            Array.from(variations.options).forEach(function (option) {
-                option.disabled = mirrored && option.value !== '1';
+        claims.innerHTML = '';
+        (entry ? entry.claims : []).forEach(function (claim, index) {
+            var item = document.createElement('div');
+            item.className = 'va-lbl';
+            item.style.fontWeight = '400';
+            item.textContent = (index + 1) + '. [' + (bases[claim.basis] || claim.basis) + '] ' + claim.statement;
+            claim.sources.forEach(function (source) {
+                var cite = document.createElement('div');
+                cite.style.color = 'var(--vp-dim)';
+                cite.style.paddingLeft = '14px';
+                cite.textContent = source.path + ': "' + source.text + '"';
+                item.appendChild(cite);
             });
+            claims.appendChild(item);
+        });
+        claimsTitle.hidden = !entry;
+
+        if (ackBox) { ackBox.checked = false; }
+
+        list.innerHTML = '';
+        (entry ? entry.discrepancies : []).forEach(function (row) {
+            var item = document.createElement('div');
+            item.className = 'va-lbl';
+            item.style.fontWeight = '400';
+            item.textContent = '[' + row.severity + ' · ' + row.topic + '] Ảnh: ' + row.image_observation
+                + ' — Nguồn (' + row.source_path + '): "' + row.source_statement + '"';
+            list.appendChild(item);
+        });
+
+        incomplete.hidden = !(entry && entry.review_incomplete);
+        ack.hidden = !(entry && entry.has_major && !entry.review_incomplete);
+        if (render && {{ $approvedAnchor === null ? 'false' : 'true' }}) {
+            render.disabled = !prompt || entry.review_incomplete;
         }
-        if (note) { note.hidden = !mirrored; }
-        if (count) { count.textContent = box.value.length; }
+        if (count) { count.textContent = prompt ? box.value.length : 0; }
     }
 
     view.addEventListener('change', sync);
     environment.addEventListener('change', sync);
+    sync();
+})();
+
+(function () {
+    var model = document.getElementById('referenceModel');
+    var quality = document.getElementById('referenceQuality');
+    if (!model || !quality) { return; }
+
+    function sync() {
+        Array.from(quality.options).forEach(function (option) {
+            var models = (option.getAttribute('data-models') || '').split(' ');
+            option.disabled = option.value !== '' && model.value !== '' && models.indexOf(model.value) === -1;
+        });
+        if (quality.selectedOptions[0] && quality.selectedOptions[0].disabled) {
+            quality.value = '';
+        }
+    }
+
+    model.addEventListener('change', sync);
     sync();
 })();
 </script>

@@ -20,6 +20,7 @@ use App\Video\Render\Video\VideoRenderExecutionService;
 use App\Video\Scene\Services\ShotIntentService;
 use App\Video\Scene\Services\ShotSelectionReconciler;
 use App\Services\Video\CharacterAnchorPromptService;
+use App\Services\Video\ScreenplayExpansionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
@@ -40,6 +41,7 @@ class VideoProjectsController extends Controller
     private ShotIntentService $shotIntents;
     private ShotSelectionReconciler $shotSelections;
     public CharacterAnchorPromptService $characterAnchorPromptService;
+    private ScreenplayExpansionService $screenplayExpansion;
 
     public function __construct(
         VideoProjectService $videoProjectService,
@@ -49,8 +51,10 @@ class VideoProjectsController extends Controller
         SceneShotFactory $shots,
         ShotIntentService $shotIntents,
         ShotSelectionReconciler $shotSelections,
-        CharacterAnchorPromptService $characterAnchorPromptService
+        CharacterAnchorPromptService $characterAnchorPromptService,
+        ScreenplayExpansionService $screenplayExpansion
     ) {
+        $this->screenplayExpansion = $screenplayExpansion;
         $this->videoProjectService = $videoProjectService;
         $this->form = $form;
         $this->clips = $clips;
@@ -125,6 +129,8 @@ class VideoProjectsController extends Controller
             ];
         }
 
+        $screenplayFoundation = $this->videoProjectService->latestScreenplayFoundation($project->id);
+
         return view('video-projects.anchor', [
             'route' => 'video-projects',
             'action' => 'video-projects-index',
@@ -136,7 +142,13 @@ class VideoProjectsController extends Controller
             'compileReason' => $this->anchorMessage('choose_prompt_settings'),
             'nextImageCode' => $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name),
             'screenplay' => $this->videoProjectService->latestScreenplayScenes($project->id),
-            'screenplayFoundation' => $this->videoProjectService->latestScreenplayFoundation($project->id),
+            'screenplayFoundation' => $screenplayFoundation,
+            'screenplayCharacters' => $this->screenplayExpansion->latestCast(
+                $project->id, 'characters', $screenplayFoundation['stage_id'],
+            ),
+            'screenplayLocations' => $this->screenplayExpansion->latestCast(
+                $project->id, 'locations', $screenplayFoundation['stage_id'],
+            ),
             'anchorPrompt' => $this->videoProjectService->latestAnchorPrompt($project->id),
         ]);
     }
@@ -173,12 +185,12 @@ class VideoProjectsController extends Controller
         $characterId = $request->string('character_id')->toString();
 
         if ($characterId !== '') {
-            [$compiled, $reason, $character] = app(\App\Services\Video\CharacterAnchorPromptService::class)->author(
+            [$compiled, $reason, $character] = $this->characterAnchorPromptService->author(
                 $id,
                 $characterId,
                 AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
                 ImageSize::LANDSCAPE,
-                \App\Services\Video\CharacterAnchorPromptService::anchorModel(),
+                $this->characterAnchorPromptService->anchorModel(),
                 $request->boolean('force'),
             );
 
@@ -251,13 +263,68 @@ class VideoProjectsController extends Controller
             : back()->with('error', $reason);
     }
 
+    public function screenplayCharacters(Request $request, string $id)
+    {
+        return $this->screenplayCast($request, $id, 'characters');
+    }
+
+    public function screenplayLocations(Request $request, string $id)
+    {
+        return $this->screenplayCast($request, $id, 'locations');
+    }
+
+    public function resetScreenplayCharacters(string $id)
+    {
+        return $this->resetScreenplayCast($id, 'characters');
+    }
+
+    public function resetScreenplayLocations(string $id)
+    {
+        return $this->resetScreenplayCast($id, 'locations');
+    }
+
+    private function screenplayCast(Request $request, string $id, string $part)
+    {
+        $this->ownedProject($id);
+
+        $foundationStageId = $request->string('foundation_stage_id')->toString();
+        $force = $request->boolean('force');
+
+        [$cast, $reason] = $part === 'characters'
+            ? $this->screenplayExpansion->authorCharacters($id, $foundationStageId, $force)
+            : $this->screenplayExpansion->authorLocations($id, $foundationStageId, $force);
+
+        if ($cast === null) {
+            return back()->with('error', $this->anchorMessage($reason));
+        }
+
+        $label = $part === 'characters' ? 'nhân vật' : 'địa điểm';
+
+        return back()->with('success', $reason === 'cached'
+            ? "Nội dung kịch bản không đổi — dùng lại danh sách {$label} đã có, không gọi model."
+            : "Đã tạo danh sách {$label}.");
+    }
+
+    private function resetScreenplayCast(string $id, string $part)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = $this->screenplayExpansion->resetCast($id, $part);
+
+        return $done
+            ? back()->with('success', 'Đã reset — bấm tạo lại để chạy lại.')
+            : back()->with('error', $reason);
+    }
+
     public function screenplay(Request $request, string $id)
     {
         $this->ownedProject($id);
 
-        [$screenplay, $reason] = $this->videoProjectService->authorScreenplayScenes(
+        [$screenplay, $reason] = $this->screenplayExpansion->authorScenes(
             $id,
             $request->string('foundation_stage_id')->toString(),
+            $request->string('characters_stage_id')->toString(),
+            $request->string('locations_stage_id')->toString(),
             $request->boolean('force'),
         );
 
@@ -375,7 +442,7 @@ class VideoProjectsController extends Controller
         [$image, $reason] = $this->videoProjectService->renderDesignImage($id, $imageId);
 
         if ($image === null) {
-            return back()->with('error', $this->anchorMessage($reason));
+            return back()->with('error', $this->referenceMessage($reason));
         }
 
         return back()->with(
@@ -489,6 +556,9 @@ class VideoProjectsController extends Controller
             'screenplay_invalid' => 'Kịch bản vi phạm hợp đồng cấu trúc — nguyên văn và chi phí đã được lưu, xem log.',
             'screenplay_running' => 'Đang có một lượt viết kịch bản chạy cho dự án này.',
             'screenplay_claim_lost' => 'Mất claim khi lưu — kết quả đã trả tiền không được ghi.',
+            'screenplay_truncated' => 'Model bị cắt ở giới hạn token đầu ra — kết quả dở dang không được dùng; nguyên văn và chi phí đã được lưu.',
+            'screenplay_characters_not_selectable' => 'Chưa có danh sách nhân vật tạo từ đúng bản nội dung kịch bản này — tạo nhân vật trước.',
+            'screenplay_locations_not_selectable' => 'Chưa có danh sách địa điểm tạo từ đúng bản nội dung kịch bản này — tạo địa điểm trước.',
             default => $reason,
         };
     }
@@ -526,6 +596,28 @@ class VideoProjectsController extends Controller
         return view('video-projects.reference', $this->chrome() + $data);
     }
 
+    public function writeReferencePrompt(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $this->form->validate($request, 'ReferenceImageForm', 'prompt');
+
+
+        [$stage, $reason, $violations] = $this->videoProjectService->writeReferencePrompt($id, $data);
+
+
+        $message = $this->referenceMessage($reason);
+
+        if ($violations !== []) {
+            $message .= ' Chi tiết: '.implode(' | ', $violations);
+        }
+
+        return redirect()
+            ->route('video-projects.reference', $id)
+            ->withInput(['view' => $data['view']])
+            ->with($stage === null ? 'error' : 'success', $message);
+    }
+
     private function createReference(Request $request, string $id)
     {
         $data = $this->form->validate($request, 'ReferenceImageForm');
@@ -534,10 +626,11 @@ class VideoProjectsController extends Controller
             $id,
             (string) auth()->user()?->name,
             $data,
+            auth()->id() === null ? null : (string) auth()->id(),
         );
 
         if ($image === null) {
-            return back()->with('error', $this->anchorMessage($reason));
+            return back()->with('error', $this->referenceMessage($reason));
         }
 
         $level = in_array($reason, ['rendered', 'already_exists'], true) ? 'success' : 'error';
@@ -545,6 +638,28 @@ class VideoProjectsController extends Controller
         return redirect()
             ->route('video-projects.reference', $id)
             ->with($level, $this->renderOutcome($reason, $image));
+    }
+
+    private function referenceMessage(string $reason): string
+    {
+        return match ($reason) {
+            'written' => 'AI đã viết prompt cho góc này — xem trước trong ô prompt rồi mới render.',
+            'reference_prompt_cached' => 'Ảnh, nguồn và cấu hình không đổi — dùng lại prompt AI đã viết, không gọi model.',
+            'reference_prompt_running' => 'Đang có một lượt AI viết prompt chạy cho dự án này.',
+            'reference_prompt_call_failed' => 'Gọi model viết prompt thất bại — xem log.',
+            'reference_prompt_invalid' => 'Kết quả AI vi phạm hợp đồng — nguyên văn, usage và chi phí đã được lưu, không render được.',
+            'reference_prompt_claim_lost' => 'Mất claim khi lưu — kết quả đã trả tiền được ghi thành lượt mồ côi.',
+            'reference_prompt_not_found' => 'Không tìm thấy prompt AI đã viết cho góc này.',
+            'reference_prompt_stale' => 'Prompt AI không còn khớp ảnh anchor, gói nguồn hoặc góc đang chọn — viết lại prompt.',
+            'reference_needs_ai_prompt' => 'Ô reference này tạo bằng prompt PHP cũ hoặc lật ngang — không render lại được. Hãy bấm "AI viết prompt" rồi Generate Reference.',
+            'reference_review_incomplete' => 'Báo cáo mâu thuẫn chưa đầy đủ — không render được. Viết lại (trả phí) hoặc xem lại ảnh anchor.',
+            'reference_discrepancy_unacknowledged' => 'Có mâu thuẫn quan trọng — tick xác nhận giữ theo ảnh trước khi render.',
+            'reference_preview_stale' => 'Prompt đã khác bản đang xem trước — tải lại trang.',
+            'reference_anchor_source_unknown' => 'Ảnh anchor không ghi kịch bản và nhân vật nguồn — không ghép với kịch bản đang chọn.',
+            'reference_screenplay_unavailable' => 'Bản kịch bản mà ảnh anchor được tạo từ đó không còn đọc được.',
+            'reference_anchor_not_object' => 'Nhân vật của ảnh anchor không phải loại object trong kịch bản nguồn.',
+            default => $this->anchorMessage($reason),
+        };
     }
 
     public function approveEnvironment(Request $request, string $id)

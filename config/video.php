@@ -450,7 +450,7 @@ return [
             'luxury_vessel' => [
                 'mission' => 'Prepare a concise source-inspiration brief containing information from this article that could help a separate creative designer invent a completely new superyacht.',
 
-                'concept_mission' => 'Design a superyacht that has never existed. Its proportions and silhouette must be readable from outside the vessel.',
+                'concept_mission' => 'Design a superyacht that has never existed. Its proportions and silhouette must be readable from outside the superyacht.',
 
                 'identity_cross_checks' => [
                     [
@@ -818,20 +818,62 @@ return [
             'retry_times' => (int) env('SCREENPLAY_FOUNDATION_RETRY_TIMES', 1),
         ],
 
+        'characters' => [
+            'contract_version' => 'screenplay_characters_v1',
+
+            'prompt_dir' => resource_path('ai/screenplay/characters_v1'),
+
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_characters_v1.json'),
+
+            'prompt_version' => env('SCREENPLAY_CHARACTERS_PROMPT_VERSION', 'characters-v1-r3'),
+
+            'max_tokens' => (int) env('SCREENPLAY_CHARACTERS_MAX_TOKENS', 8000),
+
+            'stream' => (bool) env('SCREENPLAY_CHARACTERS_STREAM', true),
+
+            'effort' => env('SCREENPLAY_CHARACTERS_EFFORT', 'medium'),
+
+            'timeout_seconds' => (int) env('SCREENPLAY_CHARACTERS_TIMEOUT_SECONDS', 300),
+
+            /** Attempt count, not retries: 1 means one HTTP request. */
+            'retry_times' => (int) env('SCREENPLAY_CHARACTERS_RETRY_TIMES', 1),
+        ],
+
+        'locations' => [
+            'contract_version' => 'screenplay_locations_v1',
+
+            'prompt_dir' => resource_path('ai/screenplay/locations_v1'),
+
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_locations_v1.json'),
+
+            'prompt_version' => env('SCREENPLAY_LOCATIONS_PROMPT_VERSION', 'locations-v1-r5'),
+
+            'max_tokens' => (int) env('SCREENPLAY_LOCATIONS_MAX_TOKENS', 8000),
+
+            'stream' => (bool) env('SCREENPLAY_LOCATIONS_STREAM', true),
+
+            'effort' => env('SCREENPLAY_LOCATIONS_EFFORT', 'medium'),
+
+            'timeout_seconds' => (int) env('SCREENPLAY_LOCATIONS_TIMEOUT_SECONDS', 300),
+
+            /** Attempt count, not retries: 1 means one HTTP request. */
+            'retry_times' => (int) env('SCREENPLAY_LOCATIONS_RETRY_TIMES', 1),
+        ],
+
         'scenes' => [
-            'contract_version' => 'screenplay_scene_expansion_v1',
+            'contract_version' => 'screenplay_scene_expansion_v2',
 
             'assembled_version' => 'screenplay_v4',
 
             'foundation_version' => 'screenplay_foundation_v2',
 
-            'prompt_dir' => resource_path('ai/screenplay/scene_expansion_v1'),
+            'prompt_dir' => resource_path('ai/screenplay/scene_expansion_v2'),
 
-            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_scene_expansion_v1.json'),
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_scene_expansion_v2.json'),
 
-            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v1-r1'),
+            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v2-r7'),
 
-            'max_tokens' => (int) env('SCREENPLAY_SCENES_MAX_TOKENS', 32000),
+            'max_tokens' => (int) env('SCREENPLAY_SCENES_MAX_TOKENS', 64000),
 
             'stream' => (bool) env('SCREENPLAY_SCENES_STREAM', true),
 

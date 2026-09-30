@@ -118,12 +118,12 @@
                     <span class="grow"></span>
                     @if($screenplayFoundation['foundation'] !== null)<span class="va-tag ok">Đã có nội dung</span>@endif
                     @if(! $brief['analysed'])
-                        <button class="vp-btn sm" disabled title="Cần brief Haiku trước">Viết nội dung kịch bản</button>
+                        <button class="vp-btn sm" disabled title="Cần brief Haiku trước">Creat screen play</button>
                     @elseif($screenplayFoundation['running'])
                         <button class="vp-btn sm" disabled>Đang viết…</button>
                         <form method="POST" action="{{ route('video-projects.screenplay-foundation-reset', $project->id) }}">
                             @csrf
-                            <button class="vp-btn sm dg">Reset lượt bị kẹt</button>
+                            <button class="vp-btn sm dg">Reset</button>
                         </form>
                     @else
                         @php
@@ -168,9 +168,87 @@
                     @endif
                 </div>
 
+                @php
+                    $castSteps = [
+                        ['part' => 'characters', 'title' => 'NHÂN VẬT', 'noun' => 'nhân vật', 'state' => $screenplayCharacters],
+                        ['part' => 'locations', 'title' => 'ĐỊA ĐIỂM', 'noun' => 'địa điểm', 'state' => $screenplayLocations],
+                    ];
+                @endphp
+                @foreach($castSteps as $step)
+                    @php
+                        $castState = $step['state'];
+                        $castForm = 'screenplay'.ucfirst($step['part']).'Form';
+                        $castModal = 'confirmScreenplay'.ucfirst($step['part']);
+                        $hasCast = $castState['rows'] !== null;
+                        $castMaxTokens = number_format((int) config('video.screenplay.'.$step['part'].'.max_tokens'), 0, ',', '.');
+                        $castMinutes = intdiv((int) config('video.screenplay.'.$step['part'].'.timeout_seconds'), 60);
+                    @endphp
+                    <div class="va-head" style="border-top:1px solid var(--vp-line)">
+                        <b>{{ $step['title'] }}</b>
+                        <em>tạo từ nội dung kịch bản, phân cảnh chỉ dùng lại</em>
+                        <span class="grow"></span>
+                        @if($hasCast)<span class="va-tag ok">Đã có {{ $step['noun'] }}</span>@endif
+                        @if($castState['running'])
+                            <button class="vp-btn sm" disabled>Đang tạo {{ $step['noun'] }}…</button>
+                            <form method="POST" action="{{ route('video-projects.screenplay-'.$step['part'].'-reset', $project->id) }}">
+                                @csrf
+                                <button class="vp-btn sm dg">Reset lượt bị kẹt</button>
+                            </form>
+                        @elseif(! $screenplayFoundation['selectable'])
+                            <button class="vp-btn sm" disabled title="Cần nội dung kịch bản bản mới (screenplay_foundation_v2) trước">Tạo {{ $step['noun'] }}</button>
+                        @else
+                            <form method="POST" action="{{ route('video-projects.screenplay-'.$step['part'], $project->id) }}"
+                                  id="{{ $castForm }}" data-modal="{{ $castModal }}" onsubmit="return vpLockForm(this)">
+                                @csrf
+                                <input type="hidden" name="foundation_stage_id" value="{{ $screenplayFoundation['stage_id'] }}">
+                                @if($hasCast)<input type="hidden" name="force" value="1">@endif
+                            </form>
+                            <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#{{ $castModal }}"
+                                    data-busy="Đang tạo {{ $step['noun'] }}…">{{ $hasCast ? 'Tạo lại '.$step['noun'] : 'Tạo '.$step['noun'] }}</button>
+                            @include('modal.confirm_action', [
+                                'id' => $castModal,
+                                'form' => $castForm,
+                                'content' => 'Gọi '.config('video.screenplay.model').' tạo danh sách '.$step['noun'].' cho nội dung kịch bản rev '.$screenplayFoundation['revision']
+                                    .' phía trên. Bước phân cảnh chỉ dùng lại danh sách này, không tự thêm — tác vụ này tính tiền.',
+                                'detail' => ($hasCast ? 'Bỏ qua danh sách đã lưu và gọi model. ' : 'Cùng nội dung + cùng bộ luật thì dùng lại bản đã lưu, không gọi model. ')
+                                    .'Tối đa '.$castMaxTokens.' token đầu ra, chờ tối đa '.$castMinutes.' phút.',
+                            ])
+                        @endif
+                    </div>
+                    <div class="va-body">
+                        @if($castState['error'])
+                            <div class="va-lbl" style="color:var(--vp-red);font-weight:400">Lượt tạo {{ $step['noun'] }} gần nhất lỗi: {{ $castState['error'] }}</div>
+                        @endif
+                        @if(! $hasCast)
+                            @if(! $castState['error'])
+                                <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Chưa tạo {{ $step['noun'] }}.</div>
+                            @endif
+                        @else
+                            @if(! $castState['usable'])
+                                <div class="alert alert-warning">
+                                    Danh sách {{ $step['noun'] }} này tạo từ nội dung rev {{ $castState['foundation_revision'] }}, không phải bản nội dung đang hiển thị phía trên.
+                                </div>
+                            @endif
+                            <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">
+                                rev {{ $castState['revision'] }}
+                                &middot; {{ count($castState['rows']) }} {{ $step['noun'] }}
+                                &middot; {{ $castState['written_at'] ?? '—' }}
+                            </div>
+                            <textarea class="va-ta" readonly>@foreach($castState['rows'] as $row){{ $row['id'] ?? '?' }} · {{ $row['name'] ?? '' }}@if(isset($row['kind'])) · {{ $row['kind'] }} / {{ $row['role'] ?? '' }}@endif
+
+    {{ $row['description'] ?? '' }}
+@if(filled($row['appearance'] ?? null))
+    Ngoại hình: {{ $row['appearance'] }}
+@endif
+
+@endforeach</textarea>
+                        @endif
+                    </div>
+                @endforeach
+
                 <div class="va-head" style="border-top:1px solid var(--vp-line)">
                     <b>PHÂN CẢNH ĐẦY ĐỦ</b>
-                    <em>nhân vật, địa điểm, scene, coverage, build state</em>
+                    <em>scene, coverage, build state</em>
                     <span class="grow"></span>
                     @if($screenplay['screenplay'] !== null)
                         <span class="va-tag ok">Đã có phân cảnh</span>
@@ -203,6 +281,8 @@
                         </form>
                     @elseif(! $screenplayFoundation['selectable'])
                         <button class="vp-btn sm" disabled title="Cần nội dung kịch bản bản mới (screenplay_foundation_v2) trước">Tạo phân cảnh</button>
+                    @elseif(! $screenplayCharacters['usable'] || ! $screenplayLocations['usable'])
+                        <button class="vp-btn sm" disabled title="Cần nhân vật và địa điểm tạo từ đúng bản nội dung phía trên">Tạo phân cảnh</button>
                     @else
                         @php
                             $hasScenes = $screenplay['screenplay'] !== null;
@@ -213,6 +293,8 @@
                               id="screenplayForm" data-modal="confirmScreenplay" onsubmit="return vpLockForm(this)">
                             @csrf
                             <input type="hidden" name="foundation_stage_id" value="{{ $screenplayFoundation['stage_id'] }}">
+                            <input type="hidden" name="characters_stage_id" value="{{ $screenplayCharacters['stage_id'] }}">
+                            <input type="hidden" name="locations_stage_id" value="{{ $screenplayLocations['stage_id'] }}">
                             @if($hasScenes)<input type="hidden" name="force" value="1">@endif
                         </form>
                         <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmScreenplay"
@@ -221,7 +303,7 @@
                             'id' => 'confirmScreenplay',
                             'form' => 'screenplayForm',
                             'content' => 'Gọi '.config('video.screenplay.model').' tạo phân cảnh cho nội dung kịch bản rev '.$screenplayFoundation['revision']
-                                .' phía trên: chỉ tạo nhân vật, địa điểm, scene, coverage và build state. Nội dung phía trên được giữ nguyên, không viết lại — tác vụ này tính tiền.',
+                                .' phía trên: chỉ tạo scene, coverage và build state, dùng đúng nhân vật và địa điểm phía trên. Nội dung, nhân vật và địa điểm được giữ nguyên, không viết lại — tác vụ này tính tiền.',
                             'detail' => ($hasScenes ? 'Bỏ qua phân cảnh đã lưu và gọi model. ' : 'Cùng nội dung + cùng bộ luật thì dùng lại bản đã lưu, không gọi model. ')
                                 .'Tối đa '.$sceneMaxTokens.' token đầu ra, chờ tối đa '.$sceneMinutes.' phút; chi phí chưa đo, sẽ ghi lại sau lượt đầu.',
                         ])
@@ -421,6 +503,7 @@
                                     <option value="" @selected($row['quality'] === null)>Choose quality</option>
                                     @foreach(\App\Enums\ImageQuality::cases() as $q)
                                         <option value="{{ $q->value }}" title="{{ $q->hint() }}"
+                                                data-models="{{ collect(\App\Enums\ImageModel::cases())->filter(fn ($m) => $m->supports($q))->map(fn ($m) => $m->value)->implode(' ') }}"
                                                 @selected($row['quality']?->value === $q->value)>{{ $q->label() }}</option>
                                     @endforeach
                                 </select>
@@ -567,6 +650,15 @@
         if (!form || !box) { return; }
 
         function sync() {
+            var model = form.elements.model.value;
+            Array.from(form.elements.quality.options).forEach(function (option) {
+                var models = (option.getAttribute('data-models') || '').split(' ');
+                option.disabled = option.value !== '' && model !== '' && models.indexOf(model) === -1;
+            });
+            if (form.elements.quality.selectedOptions[0] && form.elements.quality.selectedOptions[0].disabled) {
+                form.elements.quality.value = '';
+            }
+
             var missing = ['size', 'model', 'quality', 'variations'].filter(function (name) {
                 var el = form.elements[name];
                 return !el || el.value === '';
@@ -579,12 +671,15 @@
                 ? 'Chưa có anchor prompt'
                 : (missing.length ? 'Chưa chọn: ' + missing.join(', ') : '');
 
-            var unit = prices[form.elements.quality.value] || 0;
+            var unit = prices[form.elements.quality.value];
             var count = parseInt(form.elements.variations.value, 10) || 1;
             box.textContent = count + ' ảnh · ' + form.elements.quality.value
                 + ' · ' + form.elements.size.value
-                + ' — ước lượng $' + unit.toFixed(3) + ' × ' + count
-                + ' = $' + (unit * count).toFixed(3) + '. Trang sẽ đứng đợi tới khi có ảnh.';
+                + (unit === null
+                    ? ' — chưa có ước tính giá cho mức này.'
+                    : ' — ước lượng $' + (unit || 0).toFixed(3) + ' × ' + count
+                        + ' = $' + ((unit || 0) * count).toFixed(3) + '.')
+                + ' Trang sẽ đứng đợi tới khi có ảnh.';
         }
 
         Array.from(form.elements)

@@ -30,14 +30,16 @@ use App\Services\Video\FinalCompositionReconciler;
 use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\ProductionSelectionService;
+use App\Services\Video\ReferencePromptWriter;
 use App\Services\Video\ScreenplayApprovalService;
+use App\Services\Video\ScreenplayExpansionService;
 use App\Services\Video\ScreenplaySubjectService;
 use App\Services\Video\VisualIdentityStore;
 use App\Video\Article\RawArticle;
 use App\Video\Concept\Canonical\Enums\ProvenanceOrigin;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
 use App\Video\Concept\Orchestration\CanonicalConceptInputBuilder;
-use App\Video\Concept\Persistence\CanonicalConceptExecutionService;
+use \App\Video\Prompt\GeometryPromptAuthor;
 use App\Video\Concept\Viewpoint;
 use App\Video\Environment\EnvironmentPlatePrompt;
 use App\Video\FinalComposition\CompositionExecutor;
@@ -46,8 +48,8 @@ use App\Video\FinalComposition\CompositionResult;
 use App\Video\FinalComposition\CompositionRun;
 use App\Video\FinalComposition\Deadline;
 use App\Video\Media\MediaModelRegistry;
+use App\Video\Inspiration\CategoryCreativeProfile as InspirationProfile;
 use App\Video\Profiles\CategoryCreativeProfileResolver as CanonicalProfileResolver;
-use App\Video\Reference\IdentityPreservationPrompt;
 use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceView;
 use App\Video\Render\Video\SceneClipDispatchService;
@@ -71,17 +73,6 @@ use Throwable;
 
 class VideoProjectService
 {
-    private const CURL_OPERATION_TIMEDOUT = 28;
-
-    /** @var list<string> */
-    private const SCENE_SECTIONS = ['characters', 'locations', 'scenes', 'coverage'];
-
-    /** @var list<string> */
-    private const FOUNDATION_SECTIONS = [
-        'logline', 'design_thesis', 'principal_dimensions', 'premise',
-        'synopsis', 'stage_treatments', 'ending',
-    ];
-
     private const LOCKED_CAMERA = 'The camera stays exactly where the supplied frame was taken from: '
         .'same position, same lens, same framing, for the whole shot.';
 
@@ -161,11 +152,13 @@ class VideoProjectService
 
     private CanonicalProfileResolver $canonicalProfileResolver;
 
-    private CanonicalConceptExecutionService $canonicalConceptExecutionService;
+    private GeometryPromptAuthor $geometryPromptAuthor;
 
     private ScreenplayApprovalService $screenplayApprovalService;
 
     private ProductionSelectionService $productionSelectionService;
+
+    private ScreenplayExpansionService $screenplayExpansion;
 
     public function __construct(
         VideoProjectRepositoryInterface $videoProjectRepository,
@@ -180,9 +173,10 @@ class VideoProjectService
         CanonicalConceptInputBuilder $canonicalConceptInputBuilder,
         CreativeProfileResolver $creativeProfileResolver,
         CanonicalProfileResolver $canonicalProfileResolver,
-        CanonicalConceptExecutionService $canonicalConceptExecutionService,
+        GeometryPromptAuthor $geometryPromptAuthor,
         ScreenplayApprovalService $screenplayApprovalService,
         ProductionSelectionService $productionSelectionService,
+        ScreenplayExpansionService $screenplayExpansion,
     ) {
         $this->videoProjectRepository = $videoProjectRepository;
         $this->articleService = $articleService;
@@ -196,9 +190,10 @@ class VideoProjectService
         $this->canonicalConceptInputBuilder = $canonicalConceptInputBuilder;
         $this->creativeProfileResolver = $creativeProfileResolver;
         $this->canonicalProfileResolver = $canonicalProfileResolver;
-        $this->canonicalConceptExecutionService = $canonicalConceptExecutionService;
+        $this->geometryPromptAuthor = $geometryPromptAuthor;
         $this->screenplayApprovalService = $screenplayApprovalService;
         $this->productionSelectionService = $productionSelectionService;
+        $this->screenplayExpansion = $screenplayExpansion;
     }
 
     public function listAll(?Admin $actor): iterable
@@ -247,43 +242,48 @@ class VideoProjectService
             return [null, 'Du an nay khong gan voi bai viet nao'];
         }
 
-        $dataInput = $this->inspirationInput($project);
+        $category = (string) ($project->article->category?->slug ?? '');
 
-        [$stage, $token, $reason] = $this->stageStore->claimProjectStage(
-            $project->id,
-            PlanningStageName::INSPIRATION,
-            $dataInput,
-        );
+        try {
+            $profile = $this->inspirationProfile($project);
 
-        if ($reason === 'already_succeeded') {
-            return [$stage->output_json, 'cached'];
+            if ($profile === null) {
+                return [null, "Category {$category} chua co creative profile"];
+            }
+
+            $input = $this->inspirationInput($project, $profile);
+
+            [$stage, $token, $reason] = $this->stageStore->claimProjectStage(
+                $project->id,
+                PlanningStageName::INSPIRATION,
+                $input,
+            );
+        } catch (\Throwable $e) {
+            Log::error('canonical-inspiration: khong mo duoc luot', [
+                'project_id' => $project->id,
+                'exception' => $e,
+            ]);
+
+            return [null, 'Khong mo duoc luot phan tich — xem log de biet nguyen nhan.'];
         }
 
         if ($token === null) {
-            return [null, 'Đang có một lượt phân tích chạy cho dự án này — đợi xong rồi thử lại'];
+            return match ($reason) {
+                'already_succeeded' => [$stage->output_json, 'cached'],
+                'claimed_by_other' => [null, 'Đang có một lượt phân tích chạy cho dự án này — đợi xong rồi thử lại'],
+                default => [null, 'Khong tim thay du an'],
+            };
         }
 
         $result = null;
 
         try {
-            $category = (string) ($project->article->category?->slug ?? '');
-            $profile = $this->creativeProfileResolver->resolve($category);
+            $post = $this->rawArticleFromModel($project->article);
+            $result = $this->canonicalConceptInputBuilder->buildInspiration($post, $profile);
 
-            if ($profile === null) {
-                return $this->failInspirationStage(
-                    $stage->id,
-                    $token,
-                    "Category {$category} chua co creative profile",
-                );
-            }
-
-            $result = $this->canonicalConceptInputBuilder->buildInspiration(
-                $this->rawArticleFromModel($project->article),
-                $profile,
-            );
 
             $output = $this->renderPlanService->briefForStorage($result->brief, $project->article);
-            $empty = $this->emptyInspirationReason($output);
+            $empty = $this->renderPlanService->briefEmptiness($output);
 
             if ($empty !== null) {
                 return $this->failInspirationStage(
@@ -295,13 +295,15 @@ class VideoProjectService
                 );
             }
 
-            $this->stageStore->finishSucceeded(
+            if (! $this->stageStore->finishSucceeded(
                 $stage->id,
                 $token,
                 $result->rawResponse,
                 $output,
                 $result->usage,
-            );
+            )) {
+                return $this->inspirationClaimLost($project->id, $input, $stage->id, $token, $result, $output);
+            }
 
             return [$output, 'ok'];
         } catch (\Throwable $e) {
@@ -336,13 +338,19 @@ class VideoProjectService
             return $this->emptyInspiration('Du an nay khong gan voi bai viet nao');
         }
 
-        // data send Haiku
-        $projectById = $this->inspirationInput($project);
+        try {
+            $input = $this->inspirationInput($project, $this->inspirationProfile($project));
+        } catch (\Throwable $e) {
+            $this->quietLog('canonical-inspiration: profile unreadable', $e, ['project_id' => $project->id]);
+
+            return $this->emptyInspiration('Creative profile cua category nay cau hinh loi — xem log.');
+        }
 
         [$latest, $matchesInput] = $this->stageStore->latestStageForProject(
             $project->id,
             PlanningStageName::INSPIRATION,
-            $projectById,
+            $input,
+            skipOrphans: true,
         );
 
         if ($latest === null) {
@@ -366,23 +374,45 @@ class VideoProjectService
         ];
     }
 
-    /** @param  array<string, mixed>  $output */
-    private function emptyInspirationReason(array $output): ?string
-    {
-        $focus = trim((string) ($output['article_focus'] ?? ''));
-        $insights = $output['source_insights'] ?? [];
-        $patterns = $output['article_patterns'] ?? [];
+    /**
+     * @param  array<string, mixed>  $input
+     * @param  array<string, mixed>  $output
+     * @return array{0: null, 1: string}
+     */
+    private function inspirationClaimLost(
+        string $projectId,
+        array $input,
+        string $stageId,
+        string $lostToken,
+        \App\Video\Inspiration\InspirationResult $result,
+        array $output,
+    ): array {
+        $orphaned = false;
 
-        if ($focus !== '' && $insights !== []) {
-            return null;
+        try {
+            $orphaned = $this->stageStore->recordOrphanAttempt(
+                $projectId,
+                PlanningStageName::INSPIRATION,
+                $input,
+                [],
+                $stageId,
+                $lostToken,
+                'claim_lost',
+                $result->usage,
+                $result->rawResponse,
+                $output,
+            );
+        } catch (\Throwable $e) {
+            $this->quietLog('canonical-inspiration: recordOrphanAttempt threw', $e, ['stage_id' => $stageId]);
         }
 
-        return sprintf(
-            'Haiku tra ve brief rong - focus %s, insights %d, patterns %d',
-            $focus === '' ? 'trong' : 'co',
-            is_array($insights) ? count($insights) : 0,
-            is_array($patterns) ? count($patterns) : 0,
-        );
+        Log::warning('canonical-inspiration: claim lost after a paid call', [
+            'project_id' => $projectId,
+            'stage_id' => $stageId,
+            'orphan_recorded' => $orphaned,
+        ]);
+
+        return [null, 'Lượt phân tích bị giành mất khi lưu — kết quả đã trả tiền không được dùng. Tải lại trang rồi bấm lại nếu cần.'];
     }
 
     /**
@@ -426,7 +456,8 @@ class VideoProjectService
         [$latest] = $this->stageStore->latestStageForProject(
             $project->id,
             PlanningStageName::INSPIRATION,
-            $this->inspirationInput($project),
+            [],
+            skipOrphans: true,
         );
 
         if ($latest === null) {
@@ -438,238 +469,238 @@ class VideoProjectService
             : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
     }
 
-    /** @return array{0: ?array<string, mixed>, 1: string} */
-    public function runConcept(string $projectId, bool $force = false): array
-    {
-        // dd($this->runCanonicalConcept($projectId, $force));
-        return $this->runCanonicalConcept($projectId, $force);
-    }
+    // /** @return array{0: ?array<string, mixed>, 1: string} */
+    // public function runConcept(string $projectId, bool $force = false): array
+    // {
+    //     // dd($this->runCanonicalConcept($projectId, $force));
+    //     return $this->runCanonicalConcept($projectId, $force);
+    // }
 
-    /** @return array{0: ?array<string, mixed>, 1: string} */
-    private function runCanonicalConcept(string $projectId, bool $force): array
-    {
-        $project = $this->videoProjectRepository->getById($projectId);
+    // /** @return array{0: ?array<string, mixed>, 1: string} */
+    // private function runCanonicalConcept(string $projectId, bool $force): array
+    // {
+    //     $project = $this->videoProjectRepository->getById($projectId);
 
-        if ($project?->article === null) {
-            return [null, 'Khong tim thay bai viet cua du an'];
-        }
+    //     if ($project?->article === null) {
+    //         return [null, 'Khong tim thay bai viet cua du an'];
+    //     }
 
-        $category = (string) ($project->article->category?->slug ?? '');
+    //     $category = (string) ($project->article->category?->slug ?? '');
 
-        if ($category === '') {
-            return [null, 'Bai viet chua co category'];
-        }
+    //     if ($category === '') {
+    //         return [null, 'Bai viet chua co category'];
+    //     }
 
-        $inspirationProfile = $this->creativeProfileResolver->resolve($category);
+    //     $inspirationProfile = $this->creativeProfileResolver->resolve($category);
 
-        if ($inspirationProfile === null) {
-            return [null, "Category {$category} chua co creative profile"];
-        }
+    //     if ($inspirationProfile === null) {
+    //         return [null, "Category {$category} chua co creative profile"];
+    //     }
 
-        $dataInput = $this->canonicalConceptStageInput($project, $category);
+    //     $dataInput = $this->canonicalConceptStageInput($project, $category);
 
-        [$stage, $token, $reason] = $this->stageStore->claimProjectStage(
-            $project->id,
-            PlanningStageName::CONCEPT,
-            $dataInput,
-            $force,
-        );
-        if ($reason === 'already_succeeded') {
-            return [$stage->output_json ?? [], 'cached'];
-        }
+    //     [$stage, $token, $reason] = $this->stageStore->claimProjectStage(
+    //         $project->id,
+    //         PlanningStageName::CONCEPT,
+    //         $dataInput,
+    //         $force,
+    //     );
+    //     if ($reason === 'already_succeeded') {
+    //         return [$stage->output_json ?? [], 'cached'];
+    //     }
 
-        if ($token === null) {
-            return [null, 'Dang co mot luot dung concept chay cho du an nay'];
-        }
+    //     if ($token === null) {
+    //         return [null, 'Dang co mot luot dung concept chay cho du an nay'];
+    //     }
 
-        try {
-            $storedInspiration = $this->stageStore->latestOutputForProject(
-                $project->id,
-                PlanningStageName::INSPIRATION,
-            );
+    //     try {
+    //         $storedInspiration = $this->stageStore->latestOutputForProject(
+    //             $project->id,
+    //             PlanningStageName::INSPIRATION,
+    //         );
 
-            if ($storedInspiration === null) {
-                throw new \RuntimeException(
-                    'Chua co inspiration trong DB. Hay bam Goi Haiku truoc.'
-                );
-            }
+    //         if ($storedInspiration === null) {
+    //             throw new \RuntimeException(
+    //                 'Chua co inspiration trong DB. Hay bam Goi Haiku truoc.'
+    //             );
+    //         }
 
-            $input = $this->canonicalConceptInputBuilder->fromBrief(
-                objectType: $category,
-                brief: $this->renderPlanService->briefFromStorage($storedInspiration),
-                canonicalProfile: $this->canonicalProfileResolver->resolve($category),
-            );
+    //         $input = $this->canonicalConceptInputBuilder->fromBrief(
+    //             objectType: $category,
+    //             brief: $this->renderPlanService->briefFromStorage($storedInspiration),
+    //             canonicalProfile: $this->canonicalProfileResolver->resolve($category),
+    //         );
 
-            $revision = $this->canonicalConceptExecutionService->create(
-                projectId: $project->id,
-                sessionId: null,
-                input: $input,
-            );
+    //         $revision = $this->canonicalConceptExecutionService->create(
+    //             projectId: $project->id,
+    //             sessionId: null,
+    //             input: $input,
+    //         );
 
-            $persisted = $this->canonicalConceptExecutionService->execute(
-                revision: $revision,
-                input: $input,
-            );
+    //         $persisted = $this->canonicalConceptExecutionService->execute(
+    //             revision: $revision,
+    //             input: $input,
+    //         );
 
-            $output = $persisted->frozen->spec->toArray();
-            $rawOutput = $persisted->frozen->canonicalJson;
+    //         $output = $persisted->frozen->spec->toArray();
+    //         $rawOutput = $persisted->frozen->canonicalJson;
 
-            $recorded = $this->stageStore->finishSucceeded(
-                $stage->id,
-                $token,
-                $rawOutput,
-                $output,
-                [
-                    'model' => $this->conceptProvider(),
-                    'provider_model' => $this->conceptModel(),
-                    'instruction_version' => (string) config('canonical_concept.prompt_version', 'concept-v1'),
-                    'tokens_in' => 0,
-                    'tokens_out' => 0,
-                    'thinking_tokens' => 0,
-                    'cost_usd' => 0,
-                ],
-            );
+    //         $recorded = $this->stageStore->finishSucceeded(
+    //             $stage->id,
+    //             $token,
+    //             $rawOutput,
+    //             $output,
+    //             [
+    //                 'model' => $this->conceptProvider(),
+    //                 'provider_model' => $this->conceptModel(),
+    //                 'instruction_version' => (string) config('canonical_concept.prompt_version', 'concept-v1'),
+    //                 'tokens_in' => 0,
+    //                 'tokens_out' => 0,
+    //                 'thinking_tokens' => 0,
+    //                 'cost_usd' => 0,
+    //             ],
+    //         );
 
-            if (! $recorded) {
-                Log::warning('canonical-concept: claim lost, paid result not recorded', [
-                    'project_id' => $project->id,
-                    'stage_id' => $stage->id,
-                    'provider_model' => $this->conceptModel(),
-                ]);
-            }
+    //         if (! $recorded) {
+    //             Log::warning('canonical-concept: claim lost, paid result not recorded', [
+    //                 'project_id' => $project->id,
+    //                 'stage_id' => $stage->id,
+    //                 'provider_model' => $this->conceptModel(),
+    //             ]);
+    //         }
 
-            if ($this->identityStore->freezeFromConcept($project->id, $output) === null) {
-                Log::warning('canonical-concept: visual identity freeze skipped', [
-                    'project_id' => $project->id,
-                    'stage_id' => $stage->id,
-                ]);
-            }
+    //         if ($this->identityStore->freezeFromConcept($project->id, $output) === null) {
+    //             Log::warning('canonical-concept: visual identity freeze skipped', [
+    //                 'project_id' => $project->id,
+    //                 'stage_id' => $stage->id,
+    //             ]);
+    //         }
 
-            return [$output, 'ok'];
-        } catch (\Throwable $e) {
-            $this->stageStore->finishFailed(
-                $stage->id,
-                $token,
-                $e->getMessage(),
-            );
+    //         return [$output, 'ok'];
+    //     } catch (\Throwable $e) {
+    //         $this->stageStore->finishFailed(
+    //             $stage->id,
+    //             $token,
+    //             $e->getMessage(),
+    //         );
 
-            Log::error('canonical-concept: concept stage failed', [
-                'project_id' => $project->id,
-                'exception' => $e,
-            ]);
+    //         Log::error('canonical-concept: concept stage failed', [
+    //             'project_id' => $project->id,
+    //             'exception' => $e,
+    //         ]);
 
-            return [null, $e->getMessage()];
-        }
-    }
+    //         return [null, $e->getMessage()];
+    //     }
+    // }
 
-    /** @return array<string, mixed> */
-    public function latestConcept(string $projectId): array
-    {
-        $project = $this->videoProjectRepository->getById($projectId);
+    // /** @return array<string, mixed> */
+    // public function latestConcept(string $projectId): array
+    // {
+    //     $project = $this->videoProjectRepository->getById($projectId);
 
-        if ($project === null) {
-            return $this->emptyConcept('Khong tim thay du an');
-        }
+    //     if ($project === null) {
+    //         return $this->emptyConcept('Khong tim thay du an');
+    //     }
 
-        if ($project->article === null) {
-            return $this->emptyConcept('Du an nay khong gan voi bai viet nao');
-        }
+    //     if ($project->article === null) {
+    //         return $this->emptyConcept('Du an nay khong gan voi bai viet nao');
+    //     }
 
-        $category = (string) ($project->article->category?->slug ?? '');
+    //     $category = (string) ($project->article->category?->slug ?? '');
 
-        // Duong canonical dung tu BAI VIET chu khong tu brief da luu — nen dieu
-        // kien can la category, khong phai inspiration da chay xong.
-        if ($category === '') {
-            return $this->emptyConcept('Bai viet chua co category');
-        }
+    //     // Duong canonical dung tu BAI VIET chu khong tu brief da luu — nen dieu
+    //     // kien can la category, khong phai inspiration da chay xong.
+    //     if ($category === '') {
+    //         return $this->emptyConcept('Bai viet chua co category');
+    //     }
 
-        $conceptInput = $this->canonicalConceptStageInput($project, $category);
+    //     $conceptInput = $this->canonicalConceptStageInput($project, $category);
 
-        [$latest, $matchesInput] = $this->stageStore->latestStageForProject(
-            $project->id,
-            PlanningStageName::CONCEPT,
-            $conceptInput,
-        );
+    //     [$latest, $matchesInput] = $this->stageStore->latestStageForProject(
+    //         $project->id,
+    //         PlanningStageName::CONCEPT,
+    //         $conceptInput,
+    //     );
 
-        if ($latest === null) {
-            return $this->emptyConcept();
-        }
+    //     if ($latest === null) {
+    //         return $this->emptyConcept();
+    //     }
 
-        $hasCachedSuccess = $this->stageStore->hasSucceededForProject(
-            $project->id,
-            PlanningStageName::CONCEPT,
-            $conceptInput,
-        );
+    //     $hasCachedSuccess = $this->stageStore->hasSucceededForProject(
+    //         $project->id,
+    //         PlanningStageName::CONCEPT,
+    //         $conceptInput,
+    //     );
 
-        $succeeded = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value;
-        $claimed = $latest->status === VideoPlanningStageStatus::RUNNING->value;
+    //     $succeeded = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value;
+    //     $claimed = $latest->status === VideoPlanningStageStatus::RUNNING->value;
 
-        $output = $succeeded ? ($latest->output_json ?? []) : [];
-        $canonical = $this->isCanonicalDesignSpec($output);
-        $decisions = $canonical
-            ? $this->legacyDecisions($output['provenance'] ?? [])
-            : ($output['decisions'] ?? []);
+    //     $output = $succeeded ? ($latest->output_json ?? []) : [];
+    //     $canonical = $this->isCanonicalDesignSpec($output);
+    //     $decisions = $canonical
+    //         ? $this->legacyDecisions($output['provenance'] ?? [])
+    //         : ($output['decisions'] ?? []);
 
-        return [
-            'analysed' => $succeeded,
-            'status' => $latest->status,
-            'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
-            'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
-            'error' => $latest->error_message,
-            'can_run' => ! $matchesInput || ! $hasCachedSuccess,
-            'thesis' => $canonical
-                ? ($output['design_thesis']['text'] ?? null)
-                : ($output['design_thesis'] ?? null),
-            'identity' => $canonical
-                ? $this->displayIdentityFromCanonical($output)
-                : ($output['design_identity'] ?? []),
-            'relationships' => $output['form_relationships'] ?? [],
-            'features' => $output['signature_features'] ?? [],
-            'decisions' => $decisions,
-            'json' => $output,
-            // Duoi Phan 1, concept CHINH LA DesignSpec — khong con buoc xuat.
-            // Ban ghi cu (truoc canonical) khong dung lai duoc nua: tra rong
-            // chu khong doan.
-            'design_spec' => $canonical ? $output : [],
-            'meta' => $succeeded ? [
-                'model' => $latest->model,
-                'instruction_version' => $latest->instruction_version,
-                'tokens_in' => $latest->tokens_in,
-                'tokens_out' => $latest->tokens_out,
-                'cost_usd' => $latest->cost_usd,
-                'finished_at' => $latest->finished_at,
-            ] : [],
-            'provenance_summary' => $this->provenanceSummary($decisions),
-            'frozen_at' => $succeeded ? $latest->finished_at : null,
-        ];
-    }
+    //     return [
+    //         'analysed' => $succeeded,
+    //         'status' => $latest->status,
+    //         'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
+    //         'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
+    //         'error' => $latest->error_message,
+    //         'can_run' => ! $matchesInput || ! $hasCachedSuccess,
+    //         'thesis' => $canonical
+    //             ? ($output['design_thesis']['text'] ?? null)
+    //             : ($output['design_thesis'] ?? null),
+    //         'identity' => $canonical
+    //             ? $this->displayIdentityFromCanonical($output)
+    //             : ($output['design_identity'] ?? []),
+    //         'relationships' => $output['form_relationships'] ?? [],
+    //         'features' => $output['signature_features'] ?? [],
+    //         'decisions' => $decisions,
+    //         'json' => $output,
+    //         // Duoi Phan 1, concept CHINH LA DesignSpec — khong con buoc xuat.
+    //         // Ban ghi cu (truoc canonical) khong dung lai duoc nua: tra rong
+    //         // chu khong doan.
+    //         'design_spec' => $canonical ? $output : [],
+    //         'meta' => $succeeded ? [
+    //             'model' => $latest->model,
+    //             'instruction_version' => $latest->instruction_version,
+    //             'tokens_in' => $latest->tokens_in,
+    //             'tokens_out' => $latest->tokens_out,
+    //             'cost_usd' => $latest->cost_usd,
+    //             'finished_at' => $latest->finished_at,
+    //         ] : [],
+    //         'provenance_summary' => $this->provenanceSummary($decisions),
+    //         'frozen_at' => $succeeded ? $latest->finished_at : null,
+    //     ];
+    // }
 
-    /**
-     * @param  list<array<string, mixed>>  $decisions
-     * @return array<string, int>|null
-     */
-    private function provenanceSummary(array $decisions): ?array
-    {
-        if ($decisions === []) {
-            return null;
-        }
+    // /**
+    //  * @param  list<array<string, mixed>>  $decisions
+    //  * @return array<string, int>|null
+    //  */
+    // private function provenanceSummary(array $decisions): ?array
+    // {
+    //     if ($decisions === []) {
+    //         return null;
+    //     }
 
-        $counts = [ProvenanceOrigin::INSPIRED->value => 0, ProvenanceOrigin::INVENTED->value => 0];
+    //     $counts = [ProvenanceOrigin::INSPIRED->value => 0, ProvenanceOrigin::INVENTED->value => 0];
 
-        foreach ($decisions as $decision) {
-            $value = (string) ($decision['provenance'] ?? '');
+    //     foreach ($decisions as $decision) {
+    //         $value = (string) ($decision['provenance'] ?? '');
 
-            if (array_key_exists($value, $counts)) {
-                $counts[$value]++;
-            }
-        }
+    //         if (array_key_exists($value, $counts)) {
+    //             $counts[$value]++;
+    //         }
+    //     }
 
-        return [
-            'total' => count($decisions),
-            'inspired' => $counts[ProvenanceOrigin::INSPIRED->value],
-            'invented' => $counts[ProvenanceOrigin::INVENTED->value],
-        ];
-    }
+    //     return [
+    //         'total' => count($decisions),
+    //         'inspired' => $counts[ProvenanceOrigin::INSPIRED->value],
+    //         'invented' => $counts[ProvenanceOrigin::INVENTED->value],
+    //     ];
+    // }
 
     /** @return list<array<string, mixed>> */
     public function anchorCells(string $projectId): array
@@ -698,6 +729,14 @@ class VideoProjectService
         // O keyframe BAT BUOC di qua `renderSceneImage()`/`resumeSceneCandidate()`.
         if ($image->image_type === DesignImageStore::SCENE_KEYFRAME_TYPE) {
             return [null, 'scene_keyframe_needs_scene_flow'];
+        }
+
+        if ($image->image_type === DesignImageStore::REFERENCE_TYPE) {
+            [$retryable, $why] = app(ReferencePromptWriter::class)->retryable($image);
+
+            if (! $retryable) {
+                return [null, $why];
+            }
         }
 
         return $this->designImageDirectRenderer->renderNow($imageId);
@@ -1794,8 +1833,12 @@ class VideoProjectService
 
         $continues = $primary['role'] === 'source_keyframe';
         [$anchor] = $continues ? $this->anchorForDisplay($projectId, $scene, $stage) : [null];
+        $identity = $continues ? $anchor : $primary;
+        $views = array_values(array_filter($views, static fn (array $view): bool => $identity !== null
+            && ($view['anchor_artifact_id'] ?? null) === (string) $identity['artifact_id']
+            && ($view['anchor_sha256'] ?? null) === (string) $identity['sha256']));
 
-        $used = [$primary['artifact_id'] => true];
+        $used =[$primary['artifact_id'] => true];
         $slots = [array_replace($primary, [
             'title' => $continues ? 'Từ '.$scene->source_scene_code : 'Ảnh neo',
         ])];
@@ -2098,11 +2141,19 @@ class VideoProjectService
                 continue;
             }
 
+            $anchorKeys = match (true) {
+                ($spec['derivation_version'] ?? null) === ReferencePromptWriter::DERIVATION_VERSION => ['identity_anchor_artifact_id', 'identity_anchor_sha256'],
+                ($spec['derivation'] ?? null) === 'gpt_edit' => ['source_artifact_id', 'source_artifact_sha256'],
+                default => null,
+            };
+
             $views[] = [
                 'artifact_id' => (string) $row->selected_artifact_id,
                 'candidate_id' => (string) $row->id,
                 'sha256' => (string) $row->artifact->sha256,
                 'environment' => (string) ($spec['environment'] ?? ''),
+                'anchor_artifact_id' => $anchorKeys === null ? null : (is_string($spec[$anchorKeys[0]] ?? null) ? $spec[$anchorKeys[0]] : null),
+                'anchor_sha256' => $anchorKeys === null ? null : (is_string($spec[$anchorKeys[1]] ?? null) ? $spec[$anchorKeys[1]] : null),
                 'slot' => $view?->slot() ?? PHP_INT_MAX,
                 'title' => $view?->label() ?? (string) ($spec['view_key'] ?? 'Tham chiếu'),
             ];
@@ -2134,81 +2185,63 @@ class VideoProjectService
             'project' => $project,
             'approvedAnchor' => $anchor,
             'referenceViews' => $this->designImageStore->referenceCellsFor($projectId),
-            'referenceViewCases' => ReferenceView::cases(),
+            'referenceViewCases' => ReferenceView::menu(),
             'referenceEnvironmentCases' => ReferenceEnvironment::cases(),
-            'preservationBlock' => IdentityPreservationPrompt::text(),
-            'mirrorReady' => $anchor?->artifact === null
-                ? []
-                : $this->mirrorReadyKeys($projectId, (string) $anchor->artifact->sha256),
-            'cameraOverrides' => collect(ReferenceView::cases())
-                ->mapWithKeys(fn (ReferenceView $view) => [$view->value => $this->cameraBlock($view)])
-                ->all(),
-            'environmentOverrides' => collect(ReferenceEnvironment::cases())
-                ->mapWithKeys(fn (ReferenceEnvironment $env) => [$env->value => $env->override()])
-                ->all(),
+            'referencePrompts' => app(ReferencePromptWriter::class)->previews($projectId, $anchor),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{0: ?VideoPlanningStage, 1: string, 2: list<string>}
+     */
+    public function writeReferencePrompt(string $projectId, array $data): array
+    {
+        $result = $this->productionAnchor($projectId);
+        return app(ReferencePromptWriter::class)->write(
+            $projectId,
+            $result,
+            ReferenceView::from((string) $data['view']),
+            (bool) ($data['force'] ?? false),
+        );
     }
 
     /**
      * @param  array<string, mixed>  $data
      * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
      */
-    public function renderReferenceDirect(string $projectId, string $creator, array $data): array
+    public function renderReferenceDirect(string $projectId, string $creator, array $data, ?string $actorId = null): array
     {
-        $anchor = $this->productionAnchor($projectId);
-
-        if ($anchor === null) {
-            return [null, 'no_approved_anchor'];
-        }
-
-        $artifact = $anchor->artifact;
-
-        if ($artifact === null) {
-            return [null, 'artifact_not_found'];
-        }
-
-        $disk = Storage::disk((string) $artifact->storage_disk);
-        $path = (string) $artifact->storage_path;
-
-        if ($path === '' || ! $disk->exists($path)) {
-            return [null, 'artifact_file_not_found'];
-        }
-
-        $artifactSha = hash('sha256', (string) $disk->get($path));
-
-        if (! hash_equals((string) $artifact->sha256, $artifactSha)) {
-            return [null, 'artifact_checksum_mismatch'];
-        }
-
         $view = ReferenceView::from((string) $data['view']);
         $environment = ReferenceEnvironment::from((string) $data['environment']);
 
-        $mirrorSource = $this->mirrorSourceArtifact($projectId, $view, $environment, $artifactSha);
+        [$ready, $why] = app(ReferencePromptWriter::class)->renderable(
+            $projectId,
+            $this->productionAnchor($projectId),
+            (string) $data['reference_prompt_stage_id'],
+            $view,
+            $environment,
+            (string) $data['prompt_sha256'],
+            (bool) ($data['acknowledge_discrepancies'] ?? false),
+            $actorId,
+        );
 
-        $spec = $mirrorSource === null
-            ? [
-                'operation' => 'edit',
-                'derivation' => 'gpt_edit',
-                'source_image_id' => $anchor->id,
-                'source_artifact_id' => $artifact->id,
-                'source_artifact_sha256' => $artifactSha,
-                'prompt' => $this->referencePrompt($view, $environment),
-                'variations' => (int) $data['variations'],
-            ]
-            : [
-                'operation' => 'mirror',
-                // Lat anh bang GD ngay tren may: khong co dong nao chay, nen o nay
-                // khong duoc mang uoc tinh nao ca.
-                'pricing' => 'free',
-                'derivation' => 'horizontal_flip',
-                'source_image_id' => $mirrorSource->design_image_id,
-                'source_artifact_id' => $mirrorSource->id,
-                'source_artifact_sha256' => (string) $mirrorSource->sha256,
-                'prompt' => IdentityPreservationPrompt::derivationStatement((string) $mirrorSource->sha256),
-                'variations' => 1,
-            ];
+        if ($ready === null) {
+            return [null, $why];
+        }
 
-        [$image, $reason] = $this->designImageStore->createReference($projectId, $creator, $spec + [
+        [$image, $reason] = $this->designImageStore->createReference($projectId, $creator, [
+            'operation' => 'edit',
+            'derivation' => 'gpt_edit',
+            'source_image_id' => $ready['anchor_image_id'],
+            'source_artifact_id' => $ready['anchor_artifact_id'],
+            'source_artifact_sha256' => $ready['anchor_sha256'],
+            'identity_anchor_artifact_id' => $ready['anchor_artifact_id'],
+            'identity_anchor_sha256' => $ready['anchor_sha256'],
+            'reference_prompt_stage_id' => $ready['stage_id'],
+            'source_packet_hash' => $ready['packet_hash'],
+            'prompt' => $ready['prompt'],
+            'variations' => (int) $data['variations'],
             'project_id' => $projectId,
             'image_type' => 'reference_view',
             'view_key' => $view->value,
@@ -2216,11 +2249,11 @@ class VideoProjectService
             'slot_index' => $view->slot(),
             'identity_lock_id' => null,
             'identity_lock_hash' => null,
-            'derivation_version' => IdentityPreservationPrompt::VERSION,
+            'derivation_version' => ReferencePromptWriter::DERIVATION_VERSION,
             'model' => (string) $data['model'],
             'quality' => (string) $data['quality'],
             'size' => (string) $data['size'],
-        ]);
+        ] + ($ready['discrepancy_ack'] === null ? [] : ['discrepancy_ack' => $ready['discrepancy_ack']]));
 
         if ($image === null) {
             return [null, $reason];
@@ -2566,90 +2599,6 @@ class VideoProjectService
         return $profile->environmentKeys() === [] ? null : $profile;
     }
 
-    /**
-     * @return list<string> Cac khoa "view|environment" se duoc lat thay vi goi
-     *                      provider, de man hinh khoa variations ve 1 dung luc.
-     */
-    private function mirrorReadyKeys(string $projectId, string $anchorSha): array
-    {
-        $ready = [];
-
-        foreach (ReferenceView::cases() as $view) {
-            foreach (ReferenceEnvironment::cases() as $environment) {
-                if ($this->mirrorSourceArtifact($projectId, $view, $environment, $anchorSha) !== null) {
-                    $ready[] = $view->value.'|'.$environment->value;
-                }
-            }
-        }
-
-        return $ready;
-    }
-
-    private function referencePrompt(ReferenceView $view, ReferenceEnvironment $environment): string
-    {
-        $blocks = [IdentityPreservationPrompt::text(), $this->cameraBlock($view)];
-
-        if ($environment->override() !== '') {
-            $blocks[] = $environment->override();
-        }
-
-        return implode("\n\n", $blocks);
-    }
-
-    /**
-     * @return VideoArtifact|null Anh cua goc doi xung da render tu CUNG mot anchor.
-     *                            Tra null thi duong edit chay; khong bao gio lay
-     *                            nguon tu mot o mirror khac.
-     */
-    private function mirrorSourceArtifact(
-        string $projectId,
-        ReferenceView $view,
-        ReferenceEnvironment $environment,
-        string $anchorSha,
-    ): ?VideoArtifact {
-        $partner = $view->mirrorPartner();
-
-        if ($partner === null) {
-            return null;
-        }
-
-        $cells = VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', 'reference_view')
-            ->whereIn('status', [
-                DesignImageStatus::RENDERED->value,
-                DesignImageStatus::APPROVED->value,
-            ])
-            ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
-            ->get();
-
-        foreach ($cells as $cell) {
-            $spec = $cell->prompt_spec_json ?? [];
-
-            if ((string) ($spec['view_key'] ?? '') !== $partner->value
-                || (string) ($spec['environment'] ?? '') !== $environment->value
-                || (string) ($spec['operation'] ?? '') !== 'edit'
-                || (string) ($spec['source_artifact_sha256'] ?? '') !== $anchorSha) {
-                continue;
-            }
-
-            $artifact = $cell->artifact ?? $cell->artifacts->first();
-
-            if ($artifact !== null && $artifact->render_id !== null) {
-                return $artifact;
-            }
-        }
-
-        return null;
-    }
-
-    private function cameraBlock(ReferenceView $view): string
-    {
-        return 'REFERENCE VIEW OVERRIDE: Replace any previous CAMERA / VIEW instruction with the following. '
-            .'Keep all canonical identity, topology and proportions unchanged. '
-            .$view->cameraOverride();
-    }
-
     public function nextImageCode(string $projectId, string $creator): string
     {
         return $this->designImageStore->nextImageCode($projectId, $creator);
@@ -2692,8 +2641,8 @@ class VideoProjectService
         if ($project === null) {
             return [null, 'project_not_found', null];
         }
-
-        return $this->skillAnchorPrompt($project->id);
+        $result = $this->skillAnchorPrompt($project->id);
+        return $result;
     }
 
     /**
@@ -2715,13 +2664,11 @@ class VideoProjectService
             return [null, 'no_inspiration_brief', null];
         }
 
-        $author = app(\App\Video\Prompt\GeometryPromptAuthor::class);
 
         $input = [
             'brief_hash' => hash('sha256', json_encode($brief, JSON_UNESCAPED_UNICODE)),
-            'skill_hash' => $author->skillHash(),
+            'skill_hash' => $this->geometryPromptAuthor->skillHash(),
         ];
-
         [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
             $projectId,
             PlanningStageName::ANCHOR_PROMPT,
@@ -2729,7 +2676,7 @@ class VideoProjectService
         );
 
         if ($reason === 'already_succeeded') {
-            $compiled = $author->rehydrate(
+            $compiled = $this->geometryPromptAuthor->rehydrate(
                 $claimed->output_json ?? [], $stage, $size, $model,
             );
 
@@ -2743,7 +2690,7 @@ class VideoProjectService
         }
 
         try {
-            $result = $author->author($brief, $stage, $size, $model);
+            $result = $this->geometryPromptAuthor->author($brief, $stage, $size, $model);
         } catch (\Throwable $e) {
             $this->stageStore->finishFailed($claimed->id, $token, $e->getMessage());
 
@@ -2766,7 +2713,6 @@ class VideoProjectService
                 'instruction_version' => $result->compiled->promptVersion,
                 'tokens_in' => $result->inputTokens,
                 'tokens_out' => $result->outputTokens,
-                'thinking_tokens' => 0,
                 'cost_usd' => 0,
             ],
         );
@@ -2808,7 +2754,7 @@ class VideoProjectService
             return [null, 'no_inspiration_brief'];
         }
 
-        $profile = $this->screenplayProfile((string) ($project->article->category?->slug ?? ''));
+        $profile = $this->screenplayExpansion->screenplayProfile((string) ($project->article->category?->slug ?? ''));
 
         if ($profile === null) {
             return [null, 'no_screenplay_profile'];
@@ -2919,7 +2865,7 @@ class VideoProjectService
                 'exception' => $e,
             ]);
 
-            return [null, $this->recordScreenplayFailure(
+            return [null, $this->screenplayExpansion->recordFailure(
                 $projectId,
                 $claimed->id,
                 $token,
@@ -2929,8 +2875,8 @@ class VideoProjectService
                 $e->rawResponse,
             )];
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            $errno = $this->curlErrorNumber($e);
-            $timedOut = $errno === self::CURL_OPERATION_TIMEDOUT;
+            $errno = $this->screenplayExpansion->curlErrorNumber($e);
+            $timedOut = $errno === ScreenplayExpansionService::CURL_OPERATION_TIMEDOUT;
 
             Log::error('screenplay: the request never reached a response', [
                 'project_id' => $projectId,
@@ -2941,7 +2887,7 @@ class VideoProjectService
                 'exception' => $e,
             ]);
 
-            return [null, $this->recordScreenplayFailure(
+            return [null, $this->screenplayExpansion->recordFailure(
                 $projectId,
                 $claimed->id,
                 $token,
@@ -2956,7 +2902,7 @@ class VideoProjectService
                 'exception' => $e,
             ]);
 
-            return [null, $this->recordScreenplayFailure(
+            return [null, $this->screenplayExpansion->recordFailure(
                 $projectId,
                 $claimed->id,
                 $token,
@@ -2975,7 +2921,7 @@ class VideoProjectService
             $structural = $validator->structural($result->screenplay, $profile, $contract, $excludedNames);
 
             if ($structural !== []) {
-                return [null, $this->recordScreenplayFailure(
+                return [null, $this->screenplayExpansion->recordFailure(
                     $projectId,
                     $claimed->id,
                     $token,
@@ -2994,7 +2940,7 @@ class VideoProjectService
                 'exception' => $e,
             ]);
 
-            return [null, $this->recordScreenplayFailure(
+            return [null, $this->screenplayExpansion->recordFailure(
                 $projectId,
                 $claimed->id,
                 $token,
@@ -3049,7 +2995,6 @@ class VideoProjectService
             'video.screenplay.foundation_author',
             static fn (array $loaded): array => self::foundationProfile($loaded),
         );
-
         if ($author === null) {
             return [null, $reason];
         }
@@ -3085,12 +3030,12 @@ class VideoProjectService
                 'exception' => $e,
             ]);
 
-            return [null, $this->recordScreenplayFailure(
+            return [null, $this->screenplayExpansion->recordFailure(
                 $projectId, $claimed->id, $token, $e->getMessage(),
                 'screenplay_author_failed', $e->usage, $e->rawResponse,
             )];
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            $errno = $this->curlErrorNumber($e);
+            $errno = $this->screenplayExpansion->curlErrorNumber($e);
 
             Log::error('screenplay foundation: the request never reached a response', [
                 'project_id' => $projectId,
@@ -3101,9 +3046,9 @@ class VideoProjectService
                 'exception' => $e,
             ]);
 
-            return [null, $this->recordScreenplayFailure(
+            return [null, $this->screenplayExpansion->recordFailure(
                 $projectId, $claimed->id, $token, $e->getMessage(),
-                $errno === self::CURL_OPERATION_TIMEDOUT ? 'screenplay_timeout' : 'screenplay_connection_failed',
+                $errno === ScreenplayExpansionService::CURL_OPERATION_TIMEDOUT ? 'screenplay_timeout' : 'screenplay_connection_failed',
             )];
         } catch (\Throwable $e) {
             Log::error('screenplay foundation: author failed before any response', [
@@ -3113,7 +3058,7 @@ class VideoProjectService
                 'exception' => $e,
             ]);
 
-            return [null, $this->recordScreenplayFailure(
+            return [null, $this->screenplayExpansion->recordFailure(
                 $projectId, $claimed->id, $token, $e->getMessage(), 'screenplay_call_failed',
             )];
         }
@@ -3128,7 +3073,7 @@ class VideoProjectService
                 ->structural($result->screenplay, $profile, $contract, $excludedNames);
 
             if ($violations !== []) {
-                return [null, $this->recordScreenplayFailure(
+                return [null, $this->screenplayExpansion->recordFailure(
                     $projectId, $claimed->id, $token,
                     'Foundation failed validation: '.implode('; ', $violations),
                     'screenplay_invalid', $result->usage, $result->rawResponse,
@@ -3141,7 +3086,7 @@ class VideoProjectService
                 'exception' => $e,
             ]);
 
-            return [null, $this->recordScreenplayFailure(
+            return [null, $this->screenplayExpansion->recordFailure(
                 $projectId, $claimed->id, $token, $e->getMessage(),
                 'screenplay_after_response_failed', $result->usage, $result->rawResponse,
             )];
@@ -3226,233 +3171,6 @@ class VideoProjectService
         return $this->stageStore->releaseClaim($latest->id, 'Nguoi dung reset thu cong')
             ? [true, 'ok']
             : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
-    }
-
-    /**
-     * @return array{0: ?array<string, mixed>, 1: string}
-     */
-    public function authorScreenplayScenes(string $projectId, ?string $foundationStageId, bool $force = false): array
-    {
-        $project = $this->videoProjectRepository->getById($projectId);
-
-        if ($project === null || $project->article === null) {
-            return [null, 'project_not_found'];
-        }
-
-        $foundationStage = $this->selectableFoundation($projectId, $foundationStageId);
-
-        if ($foundationStage === null) {
-            return [null, 'screenplay_foundation_not_selectable'];
-        }
-
-        $loaded = $this->screenplayProfile((string) ($project->article->category?->slug ?? ''));
-
-        if ($loaded === null) {
-            return [null, 'no_screenplay_profile'];
-        }
-
-        $assembledVersion = (string) config('video.screenplay.scenes.assembled_version');
-        $profile = self::sceneExpansionProfile($loaded);
-        $assembledProfile = self::assembledScreenplayProfile($loaded);
-
-        try {
-            $author = app('video.screenplay.scene_author');
-        } catch (\App\Video\Prompt\Exceptions\TextCompletionException $e) {
-            Log::error('screenplay scenes: configured contract is not supported, no model call made', [
-                'project_id' => $projectId,
-                'reason' => $e->getMessage(),
-            ]);
-
-            return [null, 'screenplay_contract_unsupported'];
-        }
-
-        $contract = $author->contractVersion();
-        $validator = new \App\Video\Screenplay\ScreenplayValidator;
-        $profileErrors = array_merge(
-            $validator->profileViolations($profile, $contract),
-            $validator->profileViolations($assembledProfile, $assembledVersion),
-        );
-
-        if ($profileErrors !== []) {
-            Log::error('screenplay scenes: invalid profile, no model call made', [
-                'project_id' => $projectId,
-                'violations' => $profileErrors,
-            ]);
-
-            return [null, 'screenplay_profile_invalid'];
-        }
-
-        try {
-            $author->assertSchemaMatchesContract();
-        } catch (\App\Video\Prompt\Exceptions\TextCompletionException $e) {
-            Log::error('screenplay scenes: invalid schema configuration, no model call made', [
-                'project_id' => $projectId,
-                'reason' => $e->getMessage(),
-            ]);
-
-            return [null, 'screenplay_schema_invalid'];
-        }
-
-        $foundation = self::foundationContent($foundationStage->output_json);
-        $requirements = ['aspect_ratio' => (string) config('video.screenplay.aspect_ratio', '9:16')];
-
-        $input = [
-            'contract_version' => $contract,
-            'target_schema_version' => $assembledVersion,
-            'foundation_content_hash' => hash('sha256', json_encode(
-                $foundation,
-                JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION,
-            )),
-            'fingerprint' => $author->fingerprint($foundation, $profile, $requirements),
-        ];
-
-        [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage(
-            $projectId,
-            PlanningStageName::SCREENPLAY,
-            $input,
-            $force,
-            [
-                'foundation_stage_id' => $foundationStage->id,
-                'foundation_revision' => $foundationStage->planning_revision,
-                'foundation_output_hash' => $foundationStage->output_hash,
-            ],
-        );
-
-        if ($claimReason === 'already_succeeded') {
-            return [$claimed->output_json ?? [], 'cached'];
-        }
-
-        if ($token === null) {
-            return [null, 'screenplay_running'];
-        }
-
-        $brief = $this->stageStore->latestOutputForProject($projectId, PlanningStageName::INSPIRATION);
-        $excludedNames = array_values(array_map(
-            static fn (array $item): string => (string) ($item['value'] ?? ''),
-            is_array($brief) ? ($brief['excluded_context'] ?? []) : [],
-        ));
-
-        $startedAt = microtime(true);
-
-        try {
-            $result = $author->author($foundation, $profile, $requirements);
-        } catch (\App\Video\Screenplay\ScreenplayFailure $e) {
-            Log::error('screenplay scenes: author failed after a paid response', [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'waited_seconds' => round(microtime(true) - $startedAt, 1),
-                'exception' => $e,
-            ]);
-
-            return [null, $this->recordScreenplayFailure(
-                $projectId, $claimed->id, $token, $e->getMessage(),
-                'screenplay_author_failed', $e->usage, $e->rawResponse,
-            )];
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            $errno = $this->curlErrorNumber($e);
-
-            Log::error('screenplay scenes: the request never reached a response', [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'waited_seconds' => round(microtime(true) - $startedAt, 1),
-                'timeout_seconds' => (int) config('video.screenplay.scenes.timeout_seconds'),
-                'curl_errno' => $errno,
-                'exception' => $e,
-            ]);
-
-            return [null, $this->recordScreenplayFailure(
-                $projectId, $claimed->id, $token, $e->getMessage(),
-                $errno === self::CURL_OPERATION_TIMEDOUT ? 'screenplay_timeout' : 'screenplay_connection_failed',
-            )];
-        } catch (\Throwable $e) {
-            Log::error('screenplay scenes: author failed before any response', [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'waited_seconds' => round(microtime(true) - $startedAt, 1),
-                'exception' => $e,
-            ]);
-
-            return [null, $this->recordScreenplayFailure(
-                $projectId, $claimed->id, $token, $e->getMessage(), 'screenplay_call_failed',
-            )];
-        }
-
-        try {
-            $expansionErrors = $validator->structural($result->screenplay, $profile, $contract, $excludedNames);
-
-            if ($expansionErrors !== []) {
-                return [null, $this->recordScreenplayFailure(
-                    $projectId, $claimed->id, $token,
-                    'Scene expansion failed validation: '.implode('; ', $expansionErrors),
-                    'screenplay_invalid', $result->usage, $result->rawResponse,
-                )];
-            }
-
-            $assembled = $foundation;
-
-            foreach (self::SCENE_SECTIONS as $section) {
-                $assembled[$section] = $result->screenplay[$section];
-            }
-
-            $assembledErrors = $validator->structural($assembled, $assembledProfile, $assembledVersion, $excludedNames);
-
-            if ($assembledErrors !== []) {
-                return [null, $this->recordScreenplayFailure(
-                    $projectId, $claimed->id, $token,
-                    'Assembled screenplay failed validation: '.implode('; ', $assembledErrors),
-                    'screenplay_invalid', $result->usage, $result->rawResponse,
-                )];
-            }
-
-            $warnings = $validator->editorial($assembled, $assembledProfile);
-        } catch (\Throwable $e) {
-            Log::error('screenplay scenes: failed after a paid response', [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'exception' => $e,
-            ]);
-
-            return [null, $this->recordScreenplayFailure(
-                $projectId, $claimed->id, $token, $e->getMessage(),
-                'screenplay_after_response_failed', $result->usage, $result->rawResponse,
-            )];
-        }
-
-        $output = $assembled + [
-            'schema_version' => $assembledVersion,
-            'author_model' => $result->authorModel,
-            'source_foundation' => [
-                'stage_id' => $foundationStage->id,
-                'revision' => $foundationStage->planning_revision,
-                'content_hash' => $input['foundation_content_hash'],
-            ],
-            'warnings' => $warnings,
-        ];
-
-        try {
-            $recorded = $this->stageStore->finishSucceeded(
-                $claimed->id, $token, $result->rawResponse, $output, $result->usage,
-            );
-        } catch (\Throwable $e) {
-            Log::error('screenplay scenes: writing the paid result threw, stored state unknown', [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'exception' => $e,
-            ]);
-
-            return [null, 'screenplay_result_not_stored'];
-        }
-
-        if (! $recorded) {
-            Log::warning('screenplay scenes: claim lost, paid result not recorded', [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-            ]);
-
-            return [null, 'screenplay_claim_lost'];
-        }
-
-        return [$output, $warnings === [] ? 'ok' : 'ok_needs_review'];
     }
 
     /**
@@ -3547,7 +3265,8 @@ class VideoProjectService
         return VideoPlanningStage::query()
             ->where('project_id', $projectId)
             ->where('stage', PlanningStageName::SCREENPLAY->value)
-            ->where('input_json->contract_version', (string) config('video.screenplay.scenes.contract_version'))
+            ->whereIn('input_json->contract_version', \App\Video\Screenplay\ScreenplayValidator::EXPANSION_CONTRACTS)
+            ->whereNull('input_json->orphan_of_stage_id')
             ->orderByDesc('planning_revision')
             ->first();
     }
@@ -3557,28 +3276,10 @@ class VideoProjectService
         return VideoPlanningStage::query()
             ->where('project_id', $projectId)
             ->where('stage', PlanningStageName::SCREENPLAY->value)
-            ->where('input_json->contract_version', (string) config('video.screenplay.scenes.contract_version'))
+            ->whereIn('input_json->contract_version', \App\Video\Screenplay\ScreenplayValidator::EXPANSION_CONTRACTS)
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->orderByDesc('planning_revision')
             ->first();
-    }
-
-    private function selectableFoundation(string $projectId, ?string $stageId): ?VideoPlanningStage
-    {
-        if ($stageId === null || $stageId === '') {
-            return null;
-        }
-
-        $stage = VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::SCREENPLAY_FOUNDATION->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
-
-        $version = is_array($stage?->output_json) ? ($stage->output_json['schema_version'] ?? null) : null;
-
-        return $version === config('video.screenplay.scenes.foundation_version') ? $stage : null;
     }
 
     private function selectedProductionScreenplay(VideoProject $project): ?VideoPlanningStage
@@ -3589,7 +3290,7 @@ class VideoProjectService
     /** @param array<string, mixed> $output */
     private function productionScreenplayContent(array $output): array
     {
-        foreach (['author_model', 'source_foundation', 'warnings'] as $metadata) {
+        foreach (['author_model', 'source_foundation', 'source_characters', 'source_locations', 'warnings'] as $metadata) {
             unset($output[$metadata]);
         }
 
@@ -3638,44 +3339,6 @@ class VideoProjectService
     }
 
     /**
-     * @param  array<string, mixed>  $output
-     * @return array<string, mixed>
-     */
-    private static function foundationContent(array $output): array
-    {
-        $content = [];
-
-        foreach (self::FOUNDATION_SECTIONS as $section) {
-            $content[$section] = $output[$section] ?? null;
-        }
-
-        return $content;
-    }
-
-    /**
-     * @param  array<string, mixed>  $profile
-     * @return array<string, mixed>
-     */
-    private static function sceneExpansionProfile(array $profile): array
-    {
-        $profile['contract_version'] = (string) config('video.screenplay.scenes.contract_version');
-
-        return $profile;
-    }
-
-    /**
-     * @param  array<string, mixed>  $profile
-     * @return array<string, mixed>
-     */
-    private static function assembledScreenplayProfile(array $profile): array
-    {
-        $profile['contract_version'] = (string) config('video.screenplay.scenes.assembled_version');
-        $profile['dimension_bounds'] = config('video.screenplay.foundation.dimension_bounds');
-
-        return $profile;
-    }
-
-    /**
      * @param  array<string, mixed>  $profile
      * @return array<string, mixed>
      */
@@ -3691,7 +3354,7 @@ class VideoProjectService
             }
         }
 
-        unset($kept['people_policy']['dialogue_requires_person_id']);
+        unset($kept['people_policy']['dialogue_requires_person_id'], $kept['people_policy']['dialogue_allowed']);
         $kept['contract_version'] = (string) config('video.screenplay.foundation.contract_version');
         $kept['dimension_bounds'] = config('video.screenplay.foundation.dimension_bounds');
 
@@ -3720,7 +3383,7 @@ class VideoProjectService
             return [null, [], [], [], 'no_inspiration_brief'];
         }
 
-        $profile = $this->screenplayProfile((string) ($project->article->category?->slug ?? ''));
+        $profile = $this->screenplayExpansion->screenplayProfile((string) ($project->article->category?->slug ?? ''));
 
         if ($profile === null) {
             return [null, [], [], [], 'no_screenplay_profile'];
@@ -3792,61 +3455,6 @@ class VideoProjectService
         return [$author, $profile, $inspiration, $brief, 'ok'];
     }
 
-    private function curlErrorNumber(\Illuminate\Http\Client\ConnectionException $e): ?int
-    {
-        $previous = $e->getPrevious();
-
-        if ($previous instanceof \GuzzleHttp\Exception\ConnectException) {
-            $errno = $previous->getHandlerContext()['errno'] ?? null;
-
-            if (is_int($errno)) {
-                return $errno;
-            }
-        }
-
-        return preg_match('/cURL error (\d+)/', $e->getMessage(), $match) === 1
-            ? (int) $match[1]
-            : null;
-    }
-
-    /**
-     * @param  array<string, mixed>  $usage
-     */
-    private function recordScreenplayFailure(
-        string $projectId,
-        string $stageId,
-        string $token,
-        string $error,
-        string $reason,
-        array $usage = [],
-        string $rawResponse = '',
-    ): string {
-        try {
-            $written = $this->stageStore->finishFailed($stageId, $token, $error, $usage, $rawResponse);
-        } catch (\Throwable $storage) {
-            Log::error('screenplay: writing the failed attempt threw, stored state unknown', [
-                'project_id' => $projectId,
-                'stage_id' => $stageId,
-                'failure' => $error,
-                'exception' => $storage,
-            ]);
-
-            return 'screenplay_result_not_stored';
-        }
-
-        if (! $written) {
-            Log::warning('screenplay: claim no longer held, failure not recorded', [
-                'project_id' => $projectId,
-                'stage_id' => $stageId,
-                'failure' => $error,
-            ]);
-
-            return 'screenplay_claim_lost';
-        }
-
-        return $reason;
-    }
-
     /**
      * Trang thai chang SCREENPLAY cho man hinh: ban da luu, canh bao bien tap,
      * va co dang chay hay khong.
@@ -3902,121 +3510,78 @@ class VideoProjectService
             : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
     }
 
-    /** @return array<string, mixed>|null */
-    private function screenplayProfile(string $category): ?array
-    {
-        $key = config("video.screenplay.profiles.{$category}");
+    // /**
+    //  * Python image_prompt still compiles the `creative_concept` branch. Store the
+    //  * canonical concept in Laravel, then project it at this boundary only.
+    //  *
+    //  * @param  array<string, mixed>  $concept
+    //  * @return array<string, mixed>
+    //  */
+    // private function pythonConceptFromStored(array $concept): array
+    // {
+    //     if (! $this->isCanonicalDesignSpec($concept)) {
+    //         return $concept;
+    //     }
 
-        if (! is_string($key) || $key === '') {
-            return null;
-        }
+    //     $dimensions = is_array($concept['dimensions'] ?? null) ? $concept['dimensions'] : [];
+    //     $geometry = is_array($concept['permanent_geometry'] ?? null) ? $concept['permanent_geometry'] : [];
+    //     $materials = is_array($concept['finished_materials'] ?? null) ? $concept['finished_materials'] : [];
 
-        $path = rtrim((string) config('video.screenplay.profile_dir'), '/\\')
-            .DIRECTORY_SEPARATOR.$key.'.json';
+    //     $identity = [
+    //         'design_length_m' => $dimensions['length_m'] ?? null,
+    //         'design_beam_m' => $dimensions['beam_m'] ?? null,
+    //         'length_to_beam_ratio' => $dimensions['length_to_beam_ratio'] ?? null,
+    //         'design_draft_m' => $dimensions['draft_m'] ?? null,
+    //         'visible_freeboard_at_midships_m' => $dimensions['freeboard_midships_m'] ?? null,
+    //         'typical_deck_to_deck_height_m' => $dimensions['deck_to_deck_height_m'] ?? null,
+    //         'visible_deck_tiers' => $geometry['superstructure']['enclosed_deck_levels']
+    //             ?? ($geometry['superstructure']['primary_tier_count'] ?? null),
+    //         'bow' => $geometry['bow'] ?? null,
+    //         'hull' => $geometry['hull'] ?? null,
+    //         'stern' => $this->legacyStern($geometry['stern'] ?? null),
+    //         'superstructure' => $geometry['superstructure'] ?? null,
+    //         'openings' => $this->legacyOpenings($geometry['openings'] ?? null),
+    //         'hull_material' => $materials['hull_material'] ?? $this->materialText($materials['hull'] ?? null, 'material'),
+    //         'superstructure_material' => $materials['superstructure_material'] ?? $this->materialText($materials['superstructure'] ?? null, 'material'),
+    //         'hull_colour' => $materials['hull_colour'] ?? $this->materialText($materials['hull'] ?? null, 'colour'),
+    //         'boot_stripe_colour' => $materials['boot_stripe_colour'] ?? null,
+    //         'superstructure_colour' => $materials['superstructure_colour'] ?? $this->materialText($materials['superstructure'] ?? null, 'colour'),
+    //         'glazing_type' => $materials['glazing_type'] ?? $this->materialText($materials['glazing'] ?? null, 'type'),
+    //     ];
 
-        if (! is_file($path)) {
-            return null;
-        }
+    //     $missing = array_keys(array_filter(
+    //         $identity,
+    //         static fn (mixed $value): bool => $value === null || $value === [],
+    //     ));
 
-        $decoded = json_decode((string) file_get_contents($path), true);
+    //     if ($missing !== []) {
+    //         throw new \RuntimeException(
+    //             'Canonical concept cannot compile to Python prompt; missing identity slots: '
+    //             .implode(', ', $missing)
+    //         );
+    //     }
 
-        if (! is_array($decoded)) {
-            return null;
-        }
+    //     $relationships = $this->legacyFormRelationships($concept['form_relationships'] ?? []);
+    //     $missingRelationships = array_keys(array_filter(
+    //         $relationships,
+    //         static fn (mixed $value): bool => ! is_string($value) || trim($value) === '',
+    //     ));
 
-        $creative = $this->creativeProfileResolver->resolve($category);
+    //     if ($missingRelationships !== []) {
+    //         throw new \RuntimeException(
+    //             'Canonical concept cannot compile to Python prompt; missing form_relationships: '
+    //             .implode(', ', $missingRelationships)
+    //         );
+    //     }
 
-        if ($creative === null || $creative->arcStages === []) {
-            return null;
-        }
-
-        $defaults = [
-            'objective' => $creative->conceptMission,
-            'concept_antipatterns' => $creative->conceptAntipatterns,
-            'concept_forbidden_terms' => $creative->conceptForbiddenTerms,
-        ];
-
-        // Only legacy v2 profiles inherit their stage lists from the creative profile.
-        if (($decoded['contract_version'] ?? null) === 'screenplay_v2') {
-            $defaults['arc_stages'] = $creative->arcStages;
-            $defaults['arc_required_stages'] = $creative->arcRequiredStages;
-        }
-
-        return $decoded + $defaults;
-    }
-
-    /**
-     * Python image_prompt still compiles the `creative_concept` branch. Store the
-     * canonical concept in Laravel, then project it at this boundary only.
-     *
-     * @param  array<string, mixed>  $concept
-     * @return array<string, mixed>
-     */
-    private function pythonConceptFromStored(array $concept): array
-    {
-        if (! $this->isCanonicalDesignSpec($concept)) {
-            return $concept;
-        }
-
-        $dimensions = is_array($concept['dimensions'] ?? null) ? $concept['dimensions'] : [];
-        $geometry = is_array($concept['permanent_geometry'] ?? null) ? $concept['permanent_geometry'] : [];
-        $materials = is_array($concept['finished_materials'] ?? null) ? $concept['finished_materials'] : [];
-
-        $identity = [
-            'design_length_m' => $dimensions['length_m'] ?? null,
-            'design_beam_m' => $dimensions['beam_m'] ?? null,
-            'length_to_beam_ratio' => $dimensions['length_to_beam_ratio'] ?? null,
-            'design_draft_m' => $dimensions['draft_m'] ?? null,
-            'visible_freeboard_at_midships_m' => $dimensions['freeboard_midships_m'] ?? null,
-            'typical_deck_to_deck_height_m' => $dimensions['deck_to_deck_height_m'] ?? null,
-            'visible_deck_tiers' => $geometry['superstructure']['enclosed_deck_levels']
-                ?? ($geometry['superstructure']['primary_tier_count'] ?? null),
-            'bow' => $geometry['bow'] ?? null,
-            'hull' => $geometry['hull'] ?? null,
-            'stern' => $this->legacyStern($geometry['stern'] ?? null),
-            'superstructure' => $geometry['superstructure'] ?? null,
-            'openings' => $this->legacyOpenings($geometry['openings'] ?? null),
-            'hull_material' => $materials['hull_material'] ?? $this->materialText($materials['hull'] ?? null, 'material'),
-            'superstructure_material' => $materials['superstructure_material'] ?? $this->materialText($materials['superstructure'] ?? null, 'material'),
-            'hull_colour' => $materials['hull_colour'] ?? $this->materialText($materials['hull'] ?? null, 'colour'),
-            'boot_stripe_colour' => $materials['boot_stripe_colour'] ?? null,
-            'superstructure_colour' => $materials['superstructure_colour'] ?? $this->materialText($materials['superstructure'] ?? null, 'colour'),
-            'glazing_type' => $materials['glazing_type'] ?? $this->materialText($materials['glazing'] ?? null, 'type'),
-        ];
-
-        $missing = array_keys(array_filter(
-            $identity,
-            static fn (mixed $value): bool => $value === null || $value === [],
-        ));
-
-        if ($missing !== []) {
-            throw new \RuntimeException(
-                'Canonical concept cannot compile to Python prompt; missing identity slots: '
-                .implode(', ', $missing)
-            );
-        }
-
-        $relationships = $this->legacyFormRelationships($concept['form_relationships'] ?? []);
-        $missingRelationships = array_keys(array_filter(
-            $relationships,
-            static fn (mixed $value): bool => ! is_string($value) || trim($value) === '',
-        ));
-
-        if ($missingRelationships !== []) {
-            throw new \RuntimeException(
-                'Canonical concept cannot compile to Python prompt; missing form_relationships: '
-                .implode(', ', $missingRelationships)
-            );
-        }
-
-        return [
-            'design_thesis' => (string) ($concept['design_thesis']['text'] ?? ''),
-            'design_identity' => $identity,
-            'form_relationships' => $relationships,
-            'signature_features' => [],
-            'decisions' => $this->legacyDecisions($concept['provenance'] ?? []),
-        ];
-    }
+    //     return [
+    //         'design_thesis' => (string) ($concept['design_thesis']['text'] ?? ''),
+    //         'design_identity' => $identity,
+    //         'form_relationships' => $relationships,
+    //         'signature_features' => [],
+    //         'decisions' => $this->legacyDecisions($concept['provenance'] ?? []),
+    //     ];
+    // }
 
     private function materialText(mixed $material, string $field): ?string
     {
@@ -4084,37 +3649,37 @@ class VideoProjectService
         return $openings;
     }
 
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function legacyDecisions(mixed $provenance): array
-    {
-        if (! is_array($provenance)) {
-            return [];
-        }
+    // /**
+    //  * @return list<array<string, mixed>>
+    //  */
+    // private function legacyDecisions(mixed $provenance): array
+    // {
+    //     if (! is_array($provenance)) {
+    //         return [];
+    //     }
 
-        return array_values(array_filter(array_map(
-            static function (mixed $item): ?array {
-                if (! is_array($item)) {
-                    return null;
-                }
+    //     return array_values(array_filter(array_map(
+    //         static function (mixed $item): ?array {
+    //             if (! is_array($item)) {
+    //                 return null;
+    //             }
 
-                $target = trim((string) ($item['target_path'] ?? ''));
+    //             $target = trim((string) ($item['target_path'] ?? ''));
 
-                if ($target === '') {
-                    return null;
-                }
+    //             if ($target === '') {
+    //                 return null;
+    //             }
 
-                return [
-                    'aspect' => $target,
-                    'area' => $target,
-                    'decision' => $target,
-                    'provenance' => (string) ($item['origin'] ?? ''),
-                ];
-            },
-            $provenance,
-        )));
-    }
+    //             return [
+    //                 'aspect' => $target,
+    //                 'area' => $target,
+    //                 'decision' => $target,
+    //                 'provenance' => (string) ($item['origin'] ?? ''),
+    //             ];
+    //         },
+    //         $provenance,
+    //     )));
+    // }
 
     /** @return array{prompt:string,prompt_sha256:string,stage:string,viewpoint:string,size:string,compiled_at:string,identity_id:?string,identity_hash:?string,identity_version:?int}|null */
     public function anchorPromptPreview(string $projectId, ?string $characterId = null): ?array
@@ -4254,90 +3819,90 @@ class VideoProjectService
             : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
     }
 
-    /** @param  array<string, mixed>  $output */
-    private function isCanonicalDesignSpec(array $output): bool
-    {
-        return is_string($output['schema_version'] ?? null)
-            && is_string($output['object_type'] ?? null)
-            && is_array($output['identity'] ?? null)
-            && is_array($output['dimensions'] ?? null)
-            && is_array($output['permanent_geometry'] ?? null)
-            && is_array($output['invariants'] ?? null);
-    }
+    // /** @param  array<string, mixed>  $output */
+    // private function isCanonicalDesignSpec(array $output): bool
+    // {
+    //     return is_string($output['schema_version'] ?? null)
+    //         && is_string($output['object_type'] ?? null)
+    //         && is_array($output['identity'] ?? null)
+    //         && is_array($output['dimensions'] ?? null)
+    //         && is_array($output['permanent_geometry'] ?? null)
+    //         && is_array($output['invariants'] ?? null);
+    // }
 
-    private function emptyConcept(?string $reason = null): array
-    {
-        return [
-            'analysed' => false,
-            'status' => null,
-            'running' => false,
-            'stuck' => false,
-            'error' => $reason,
-            'can_run' => true,
-            'thesis' => null,
-            'identity' => [],
-            'relationships' => [],
-            'features' => [],
-            'decisions' => [],
-            'json' => [],
-            'design_spec' => [],
-            'meta' => [],
-            'provenance_summary' => null,
-            'frozen_at' => null,
-        ];
-    }
+    // private function emptyConcept(?string $reason = null): array
+    // {
+    //     return [
+    //         'analysed' => false,
+    //         'status' => null,
+    //         'running' => false,
+    //         'stuck' => false,
+    //         'error' => $reason,
+    //         'can_run' => true,
+    //         'thesis' => null,
+    //         'identity' => [],
+    //         'relationships' => [],
+    //         'features' => [],
+    //         'decisions' => [],
+    //         'json' => [],
+    //         'design_spec' => [],
+    //         'meta' => [],
+    //         'provenance_summary' => null,
+    //         'frozen_at' => null,
+    //     ];
+    // }
 
-    /**
-     * @param  array<string, mixed>  $concept
-     * @return array<string, mixed>
-     */
-    private function displayIdentityFromCanonical(array $concept): array
-    {
-        return array_filter([
-            'object_type' => $concept['object_type'] ?? null,
-            'subject_class' => $concept['identity']['subject_class'] ?? null,
-            'length_m' => $concept['dimensions']['length_m'] ?? null,
-            'beam_m' => $concept['dimensions']['beam_m'] ?? null,
-            'length_to_beam_ratio' => $concept['dimensions']['length_to_beam_ratio'] ?? null,
-            'draft_m' => $concept['dimensions']['draft_m'] ?? null,
-            'bow' => $concept['permanent_geometry']['bow'] ?? null,
-            'hull' => $concept['permanent_geometry']['hull'] ?? null,
-            'stern' => $concept['permanent_geometry']['stern'] ?? null,
-            'superstructure' => $concept['permanent_geometry']['superstructure'] ?? null,
-            'openings' => $concept['permanent_geometry']['openings'] ?? null,
-        ], static fn (mixed $value): bool => $value !== null && $value !== []);
-    }
+    // /**
+    //  * @param  array<string, mixed>  $concept
+    //  * @return array<string, mixed>
+    //  */
+    // private function displayIdentityFromCanonical(array $concept): array
+    // {
+    //     return array_filter([
+    //         'object_type' => $concept['object_type'] ?? null,
+    //         'subject_class' => $concept['identity']['subject_class'] ?? null,
+    //         'length_m' => $concept['dimensions']['length_m'] ?? null,
+    //         'beam_m' => $concept['dimensions']['beam_m'] ?? null,
+    //         'length_to_beam_ratio' => $concept['dimensions']['length_to_beam_ratio'] ?? null,
+    //         'draft_m' => $concept['dimensions']['draft_m'] ?? null,
+    //         'bow' => $concept['permanent_geometry']['bow'] ?? null,
+    //         'hull' => $concept['permanent_geometry']['hull'] ?? null,
+    //         'stern' => $concept['permanent_geometry']['stern'] ?? null,
+    //         'superstructure' => $concept['permanent_geometry']['superstructure'] ?? null,
+    //         'openings' => $concept['permanent_geometry']['openings'] ?? null,
+    //     ], static fn (mixed $value): bool => $value !== null && $value !== []);
+    // }
 
-    /** @return array<string, mixed> */
-    private function canonicalConceptStageInput(VideoProject $project, string $objectType): array
-    {
-        return [
-            'article_id' => $project->article->id,
-            'object_type' => $objectType,
-            'content_hash' => (string) ($project->article->content_hash ?? ''),
-            'article_sha256' => hash('sha256', json_encode([
-                'title' => (string) $project->article->title,
-                'content' => (string) $project->article->content,
-                'source_url' => (string) ($project->article->source_url ?? ''),
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
-            'concept_flow' => 'canonical_parts_1_8',
-            'canonical_prompt_version' => (string) config('canonical_concept.prompt_version', 'concept-v1'),
-            'canonical_schema_version' => (string) config('canonical_concept.schema.version', '1.0'),
-            'canonical_model' => $this->conceptModel(),
-        ];
-    }
+    // /** @return array<string, mixed> */
+    // private function canonicalConceptStageInput(VideoProject $project, string $objectType): array
+    // {
+    //     return [
+    //         'article_id' => $project->article->id,
+    //         'object_type' => $objectType,
+    //         'content_hash' => (string) ($project->article->content_hash ?? ''),
+    //         'article_sha256' => hash('sha256', json_encode([
+    //             'title' => (string) $project->article->title,
+    //             'content' => (string) $project->article->content,
+    //             'source_url' => (string) ($project->article->source_url ?? ''),
+    //         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+    //         'concept_flow' => 'canonical_parts_1_8',
+    //         'canonical_prompt_version' => (string) config('canonical_concept.prompt_version', 'concept-v1'),
+    //         'canonical_schema_version' => (string) config('canonical_concept.schema.version', '1.0'),
+    //         'canonical_model' => $this->conceptModel(),
+    //     ];
+    // }
 
-    private function conceptProvider(): string
-    {
-        return (string) config('canonical_concept.provider', 'anthropic');
-    }
+    // private function conceptProvider(): string
+    // {
+    //     return (string) config('canonical_concept.provider', 'anthropic');
+    // }
 
-    private function conceptModel(): string
-    {
-        return (string) config(
-            'canonical_concept.'.$this->conceptProvider().'.model'
-        );
-    }
+    // private function conceptModel(): string
+    // {
+    //     return (string) config(
+    //         'canonical_concept.'.$this->conceptProvider().'.model'
+    //     );
+    // }
 
     private function rawArticleFromModel(\App\Models\Article $article): RawArticle
     {
@@ -4371,14 +3936,23 @@ class VideoProjectService
     }
 
     /** @return array<string, mixed> */
-    private function inspirationInput(VideoProject $project): array
+    private function inspirationInput(VideoProject $project, ?InspirationProfile $profile): array
     {
+        $result = $this->canonicalConceptInputBuilder->inspirationFingerprint($profile);
         return [
             'article_id' => $project->article->id,
             'category' => (string) ($project->article->category?->slug ?? ''),
             'title' => $project->article->title,
             'content' => (string) $project->article->content,
+            'inspiration' => $profile === null
+                ? null
+                : $result,
         ];
+    }
+
+    private function inspirationProfile(VideoProject $project): ?InspirationProfile
+    {
+        return $this->creativeProfileResolver->resolve((string) ($project->article->category?->slug ?? ''));
     }
 
     /** @return array{0: ?int, 1: string} [$sceneCount, $reason] */
