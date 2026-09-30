@@ -17,6 +17,8 @@ class PlanningStageStore
 
     private const METADATA_KEY = '_meta';
 
+    private const PRICING_METADATA_KEYS = ['pricing', 'pricing_version'];
+
     /**
      * @param  array<string, mixed>  $input
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
@@ -177,12 +179,18 @@ class PlanningStageStore
     }
 
 
+    /**
+     * @param  array<string, mixed>  $output
+     * @param  array<string, mixed>  $usage
+     * @param  array<string, ?string>  $pricing
+     */
     public function finishSucceeded(
         string $stageId,
         string $claimToken,
         string $rawResponse,
         array $output,
         array $usage = [],
+        array $pricing = [],
     ): bool {
         return $this->finishClaimed($stageId, $claimToken, [
             'status' => VideoPlanningStageStatus::SUCCEEDED->value,
@@ -194,9 +202,9 @@ class PlanningStageStore
             'instruction_version' => $usage['instruction_version'] ?? null,
             'tokens_in' => $usage['tokens_in'] ?? 0,
             'tokens_out' => $usage['tokens_out'] ?? 0,
-            'thinking_tokens' => $usage['thinking_tokens'] ?? 0,
+            'thinking_tokens' => self::measuredThinking($usage),
             'cost_usd' => $usage['cost_usd'] ?? 0,
-        ]);
+        ] + $this->pricingAttributes($pricing));
     }
 
     /** @param array{tokens_in?: int, tokens_out?: int, cost_usd?: float} $usage */
@@ -214,8 +222,10 @@ class PlanningStageStore
         string $error,
         array $usage = [],
         string $rawResponse = '',
+        array $output = [],
+        array $pricing = [],
     ): bool {
-        return $this->finishClaimed($stageId, $claimToken, [
+        return $this->finishClaimed($stageId, $claimToken, ($output === [] ? [] : ['output_json' => $output]) + [
             'status' => VideoPlanningStageStatus::FAILED->value,
             'error_message' => $error,
             // null chu khong phai chuoi rong: loi mang thi that su khong co raw,
@@ -227,9 +237,32 @@ class PlanningStageStore
             'instruction_version' => $usage['instruction_version'] ?? null,
             'tokens_in' => $usage['tokens_in'] ?? 0,
             'tokens_out' => $usage['tokens_out'] ?? 0,
-            'thinking_tokens' => $usage['thinking_tokens'] ?? 0,
+            'thinking_tokens' => self::measuredThinking($usage),
             'cost_usd' => $usage['cost_usd'] ?? 0,
-        ]);
+        ] + $this->pricingAttributes($pricing));
+    }
+
+    /**
+     * @param  array<string, ?string>  $pricing
+     * @return array<string, ?string>
+     */
+    private function pricingAttributes(array $pricing): array
+    {
+        $unknown = array_diff(array_keys($pricing), self::PRICING_METADATA_KEYS);
+
+        if ($unknown !== []) {
+            throw new \InvalidArgumentException(
+                'Only pricing metadata may change when a stage finishes: '.implode(', ', $unknown)
+            );
+        }
+
+        $attributes = [];
+
+        foreach ($pricing as $key => $value) {
+            $attributes['input_json->'.self::METADATA_KEY.'->'.$key] = $value;
+        }
+
+        return $attributes;
     }
 
     /**
@@ -323,7 +356,7 @@ class PlanningStageStore
                 'instruction_version' => $usage['instruction_version'] ?? null,
                 'tokens_in' => $usage['tokens_in'] ?? 0,
                 'tokens_out' => $usage['tokens_out'] ?? 0,
-                'thinking_tokens' => $usage['thinking_tokens'] ?? 0,
+                'thinking_tokens' => self::measuredThinking($usage),
                 'cost_usd' => $usage['cost_usd'] ?? 0,
                 'started_at' => now(),
                 'finished_at' => now(),
@@ -383,11 +416,16 @@ class PlanningStageStore
     }
 
     /** @return array{0: ?VideoPlanningStage, 1: bool} */
-    public function latestStageForProject(string $projectId, PlanningStageName $stage, array $input): array
-    {
+    public function latestStageForProject(
+        string $projectId,
+        PlanningStageName $stage,
+        array $input,
+        bool $skipOrphans = false,
+    ): array {
         $latest = VideoPlanningStage::query()
             ->where('project_id', $projectId)
             ->where('stage', $stage->value)
+            ->when($skipOrphans, static fn ($query) => $query->whereNull('input_json->orphan_of_stage_id'))
             ->orderByDesc('planning_revision')
             ->first();
 
@@ -439,6 +477,14 @@ class PlanningStageStore
                 'lease_expires_at' => null,
                 'finished_at' => now(),
             ]) > 0;
+    }
+
+    /** @param array<string, mixed> $usage */
+    private static function measuredThinking(array $usage): ?int
+    {
+        $value = $usage['thinking_tokens'] ?? null;
+
+        return is_int($value) && $value >= 0 ? $value : null;
     }
 
     /** @param array<string, mixed> $value */

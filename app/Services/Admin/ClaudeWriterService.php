@@ -121,8 +121,13 @@ class ClaudeWriterService
             $json['usage']['cache_creation_input_tokens'] ?? 0,
             $json['usage']['cache_read_input_tokens'] ?? 0,
             $json['model'] ?? '',
-            $json['usage']['output_tokens_details']['thinking_tokens'] ?? 0,
+            self::measuredThinking($json['usage']['output_tokens_details']['thinking_tokens'] ?? null),
         );
+    }
+
+    private static function measuredThinking(mixed $value): ?int
+    {
+        return is_int($value) && $value >= 0 ? $value : null;
     }
 
     /** @return array<string, mixed> */

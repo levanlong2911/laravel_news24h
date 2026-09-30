@@ -14,7 +14,7 @@ final class CostAccumulatingLlmClient implements LlmClient
 
     private int $latencyMs = 0;
 
-    private int $thinkingTokens = 0;
+    private ?int $thinkingTokens = 0;
 
     /** @var list<string> */
     private array $providerModels = [];
@@ -47,7 +47,9 @@ final class CostAccumulatingLlmClient implements LlmClient
         $this->tokensOut += $response->tokensOut;
         $this->costUsd += $response->costUsd;
         $this->latencyMs += $response->latencyMs;
-        $this->thinkingTokens += $response->thinkingTokens;
+        $this->thinkingTokens = $this->thinkingTokens === null || $response->thinkingTokens === null
+            ? null
+            : $this->thinkingTokens + $response->thinkingTokens;
 
         if ($response->providerModel !== '' && ! in_array($response->providerModel, $this->providerModels, true)) {
             $this->providerModels[] = $response->providerModel;
@@ -55,7 +57,7 @@ final class CostAccumulatingLlmClient implements LlmClient
     }
 
     /**
-     * @return array{call_count: int, tokens_in: int, tokens_out: int, cost_usd: float, latency_ms: int, provider_model: string, thinking_tokens: int}
+     * @return array{call_count: int, tokens_in: int, tokens_out: int, cost_usd: float, latency_ms: int, provider_model: string, thinking_tokens: ?int}
      */
     public function totals(): array
     {

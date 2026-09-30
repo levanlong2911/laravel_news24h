@@ -6,6 +6,9 @@ namespace App\Video\Prompt;
 
 final class TextCompletionResponse
 {
+    /**
+     * @param  array<string, mixed>  $usage
+     */
     public function __construct(
         public readonly string $text,
         public readonly string $model,
@@ -14,6 +17,7 @@ final class TextCompletionResponse
         public readonly int $outputTokens,
         public readonly ?string $requestId = null,
         public readonly int $reasoningTokens = 0,
+        public readonly array $usage = [],
     ) {}
 
     public function wasTruncated(): bool

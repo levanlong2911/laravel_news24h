@@ -59,6 +59,46 @@ final class OpenAiTextClient implements TextCompletionClient
             throw new TextCompletionException('System and user content must both be non-empty.');
         }
 
+        return $this->send($model, $system, $user, $maxTokens, $outputSchema);
+    }
+
+    /**
+     * @param  string  $imageDataUri  data:<mime>;base64,<bytes>
+     * @param  array<string,mixed>|null  $outputSchema
+     */
+    public function completeWithImage(
+        string $model,
+        string $system,
+        string $user,
+        string $imageDataUri,
+        int $maxTokens,
+        ?array $outputSchema = null,
+    ): TextCompletionResponse {
+        if (trim($system) === '' || trim($user) === '') {
+            throw new TextCompletionException('System and user content must both be non-empty.');
+        }
+
+        if (! str_starts_with($imageDataUri, 'data:image/') || ! str_contains($imageDataUri, ';base64,')) {
+            throw new TextCompletionException('The image must be a base64 data URI.');
+        }
+
+        return $this->send($model, $system, [
+            ['type' => 'text', 'text' => $user],
+            ['type' => 'image_url', 'image_url' => ['url' => $imageDataUri]],
+        ], $maxTokens, $outputSchema);
+    }
+
+    /**
+     * @param  string|list<array<string,mixed>>  $user
+     * @param  array<string,mixed>|null  $outputSchema
+     */
+    private function send(
+        string $model,
+        string $system,
+        string|array $user,
+        int $maxTokens,
+        ?array $outputSchema,
+    ): TextCompletionResponse {
         if ($maxTokens < 1) {
             throw new TextCompletionException('OpenAI maxTokens must be >= 1.');
         }
@@ -112,11 +152,15 @@ final class OpenAiTextClient implements TextCompletionClient
         ];
 
         if (is_string($message['refusal']) && trim($message['refusal']) !== '') {
-            throw new TextCompletionRefusalException($message['refusal']);
+            throw TextCompletionRefusalException::afterResponse(
+                $message['refusal'], $message['usage'], $message['refusal'], $message['model'],
+            );
         }
 
         if (trim($message['content']) === '') {
-            throw new TextCompletionException('OpenAI returned no text content.');
+            throw TextCompletionException::afterResponse(
+                'OpenAI returned no text content.', $message['usage'], $message['content'], $message['model'],
+            );
         }
 
         $requestId = $response->header('x-request-id');
@@ -129,6 +173,7 @@ final class OpenAiTextClient implements TextCompletionClient
             outputTokens: (int) ($message['usage']['completion_tokens'] ?? 0),
             requestId: is_string($requestId) && trim($requestId) !== '' ? $requestId : null,
             reasoningTokens: (int) ($message['usage']['completion_tokens_details']['reasoning_tokens'] ?? 0),
+            usage: $message['usage'],
         );
     }
 
@@ -231,13 +276,14 @@ final class OpenAiTextClient implements TextCompletionClient
     }
 
     /**
+     * @param  string|list<array<string,mixed>>  $user
      * @param  array<string,mixed>|null  $outputSchema
      * @return array<string,mixed>
      */
     private function payload(
         string $model,
         string $system,
-        string $user,
+        string|array $user,
         int $maxTokens,
         ?array $outputSchema,
     ): array {

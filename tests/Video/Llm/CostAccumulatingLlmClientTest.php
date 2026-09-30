@@ -55,7 +55,7 @@ class CostAccumulatingLlmClientTest extends TestCase
             'cost_usd'   => 0.03,
             'latency_ms' => 600,
             'provider_model' => '',
-            'thinking_tokens' => 0,
+            'thinking_tokens' => null,
         ], $client->totals());
     }
 

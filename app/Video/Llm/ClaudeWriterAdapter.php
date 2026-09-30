@@ -59,15 +59,17 @@ final class ClaudeWriterAdapter implements LlmClient
 
         if ($response->wasTruncated()) {
             throw new LlmUnavailable(sprintf(
-                'Claude bị CẮT ở trần %d token output (đã sinh %d, trong đó %d là thinking và %d là chữ) '
+                'Claude bị CẮT ở trần %d token output (đã sinh %d, trong đó %s là thinking và %s là chữ) '
                     .'nên kết quả không hoàn chỉnh — ĐÃ TỐN PHÍ cú gọi này. Có thể do bài dài, hoặc do model '
                     .'dùng adaptive thinking trong cùng max_tokens. Tăng LlmRequest::$maxTokens (hiện %d) '
                     .'hoặc probe cấu hình thinking riêng trước khi chạy lại. Bấm lại nguyên trạng sẽ hỏng '
                     .'y hệt và mất thêm tiền.',
                 $request->maxTokens,
                 $response->outputTokens,
-                $response->thinkingTokens,
-                max(0, $response->outputTokens - $response->thinkingTokens),
+                $response->thinkingTokens === null ? 'không rõ' : (string) $response->thinkingTokens,
+                $response->thinkingTokens === null
+                    ? 'không rõ'
+                    : (string) max(0, $response->outputTokens - $response->thinkingTokens),
                 $request->maxTokens,
             ), $llmResponse);
         }

@@ -364,12 +364,24 @@ class PlanningStageStoreTest extends TestCase
         $this->assertEqualsWithDelta(0.0304, (float) $row->cost_usd, 0.00001);
     }
 
-    public function test_a_stage_with_no_measurement_stores_zero_thinking(): void
+    public function test_a_stage_with_no_measurement_stores_no_thinking_figure(): void
     {
         [$stage, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
 
         $this->store->finishFailed($stage->id, $token, 'cURL error 28: timeout');
 
-        $this->assertSame(0, VideoPlanningStage::find($stage->id)->thinking_tokens);
+        $this->assertNull(VideoPlanningStage::find($stage->id)->thinking_tokens);
+    }
+
+    public function test_a_measured_zero_is_kept_and_a_malformed_figure_is_not_taken_as_one(): void
+    {
+        [$measured, $token] = $this->store->claim($this->session->id, 0, PlanningStageName::CONCEPT, []);
+        $this->store->finishSucceeded($measured->id, $token, '{}', [], ['thinking_tokens' => 0]);
+
+        [$malformed, $other] = $this->store->claim($this->session->id, 0, PlanningStageName::FINALIZE, []);
+        $this->store->finishSucceeded($malformed->id, $other, '{}', [], ['thinking_tokens' => '400']);
+
+        $this->assertSame(0, VideoPlanningStage::find($measured->id)->thinking_tokens);
+        $this->assertNull(VideoPlanningStage::find($malformed->id)->thinking_tokens);
     }
 }

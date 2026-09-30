@@ -162,7 +162,6 @@ final class CharacterAnchorPromptService
                 'instruction_version' => $result->compiled->promptVersion,
                 'tokens_in' => $result->inputTokens,
                 'tokens_out' => $result->outputTokens,
-                'thinking_tokens' => 0,
                 'cost_usd' => 0,
             ],
         );
