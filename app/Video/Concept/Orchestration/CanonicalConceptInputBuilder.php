@@ -7,8 +7,6 @@ namespace App\Video\Concept\Orchestration;
 use App\Video\Article\ArticleNormalizer;
 use App\Video\Article\RawArticle;
 use App\Video\Concept\ConceptInput;
-use App\Video\Extraction\Extractor;
-use App\Video\Gatekeeper\EvidenceGatekeeper;
 use App\Video\Inspiration\CategoryCreativeProfile as InspirationProfile;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Inspiration\InspirationBrief;
@@ -21,8 +19,6 @@ final class CanonicalConceptInputBuilder
 {
     public function __construct(
         private readonly ArticleNormalizer $normalizer,
-        private readonly Extractor $extractor,
-        private readonly EvidenceGatekeeper $gatekeeper,
         private readonly ClaudeInspirationAnalyst $analyst,
         private readonly InspirationBuilder $inspirationBuilder,
     ) {
@@ -65,16 +61,21 @@ final class CanonicalConceptInputBuilder
         );
     }
 
+    /** @return array{profile: array<string, string>, analyst: array<string, ?string>} */
+    public function inspirationFingerprint(InspirationProfile $profile): array
+    {
+        return [
+            'profile' => $profile->inspirationFingerprint(),
+            'analyst' => $this->analyst->fingerprint(),
+        ];
+    }
+
     public function buildInspiration(
         RawArticle $article,
         InspirationProfile $profile,
     ): InspirationResult {
         $index = $this->normalizer->normalize($article);
-
-        $extraction = $this->extractor->extract($article, $index);
-        $this->gatekeeper->verify($extraction->candidates, $index);
-
-        $draft = $this->analyst->analyze($article, $profile);
+        $draft = $this->analyst->analyze($article, $profile, $index);
 
         try {
             $brief = $this->inspirationBuilder->build(

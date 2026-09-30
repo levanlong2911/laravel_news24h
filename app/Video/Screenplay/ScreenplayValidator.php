@@ -59,16 +59,30 @@ final class ScreenplayValidator
         'screenplay_foundation_v1',
         'screenplay_foundation_v2',
         'screenplay_scene_expansion_v1',
+        'screenplay_characters_v1',
+        'screenplay_locations_v1',
+        'screenplay_scene_expansion_v2',
     ];
 
     /** @var list<string> */
-    public const EXPANSION_CONTRACTS = ['screenplay_scene_expansion_v1'];
+    public const EXPANSION_CONTRACTS = ['screenplay_scene_expansion_v1', 'screenplay_scene_expansion_v2'];
+
+    /** @var list<string> */
+    private const LISTED_SUBJECT_CONTRACTS = ['screenplay_scene_expansion_v2'];
+
+    /** @var array<string, string> */
+    public const CAST_CONTRACTS = [
+        'screenplay_characters_v1' => 'characters',
+        'screenplay_locations_v1' => 'locations',
+    ];
 
     /** @var list<string> */
     private const DIMENSIONED_CONTRACTS = ['screenplay_foundation_v2', 'screenplay_v4'];
 
     /** @var list<string> */
-    private const SCENE_CONTRACTS = ['screenplay_v3', 'screenplay_v4', 'screenplay_scene_expansion_v1'];
+    private const SCENE_CONTRACTS = [
+        'screenplay_v3', 'screenplay_v4', 'screenplay_scene_expansion_v1', 'screenplay_scene_expansion_v2',
+    ];
 
     /** @var list<string> */
     private const FOUNDATION_FIELDS = [
@@ -166,6 +180,8 @@ final class ScreenplayValidator
         'screenplay_v3' => ['object', 'person', 'group'],
         'screenplay_v4' => ['object', 'person', 'group'],
         'screenplay_scene_expansion_v1' => ['object', 'person', 'group'],
+        'screenplay_scene_expansion_v2' => ['object', 'person', 'group'],
+        'screenplay_characters_v1' => ['object', 'person', 'group'],
     ];
 
     /** @return list<string> Configuration errors, checked before any model call. */
@@ -180,7 +196,9 @@ final class ScreenplayValidator
             $errors[] = 'contract_version: must match the author contract';
         }
 
-        if (in_array($contract, self::CONTRACTS, true) || in_array($contract, self::EXPANSION_CONTRACTS, true)) {
+        if (in_array($contract, self::CONTRACTS, true)
+            || in_array($contract, self::EXPANSION_CONTRACTS, true)
+            || array_key_exists($contract, self::CAST_CONTRACTS)) {
             foreach (['min_scenes', 'max_scenes', 'max_subjects', 'max_locations'] as $key) {
                 if (! is_int($profile[$key] ?? null) || $profile[$key] <= 0) {
                     $errors[] = "{$key}: must be a positive integer";
@@ -225,6 +243,11 @@ final class ScreenplayValidator
             } elseif ($bounds[0] > $bounds[1]) {
                 $errors[] = 'dimension_bounds.length_m: min must not exceed max';
             }
+        }
+
+        $people = $profile['people_policy'] ?? null;
+        if (is_array($people) && array_key_exists('dialogue_allowed', $people) && ! is_bool($people['dialogue_allowed'])) {
+            $errors[] = 'people_policy.dialogue_allowed: must be true or false';
         }
 
         if (! in_array($contract, self::SCENE_CONTRACTS, true)) {
@@ -284,6 +307,10 @@ final class ScreenplayValidator
 
         if (($profile['contract_version'] ?? null) !== $contract) {
             return ['contract_version: profile does not match the author contract'];
+        }
+
+        if (array_key_exists($contract, self::CAST_CONTRACTS)) {
+            return $this->castViolations($screenplay, $profile, $contract, $excludedNames);
         }
 
         if (in_array($contract, self::EXPANSION_CONTRACTS, true)) {
@@ -429,7 +456,104 @@ final class ScreenplayValidator
             $this->linkViolations($expansion, $profile),
             $this->stageViolations($expansion, $profile),
             $this->sceneRuleViolations($expansion, $profile),
+            in_array($contract, self::LISTED_SUBJECT_CONTRACTS, true)
+                ? $this->unlistedSubjectViolations($expansion)
+                : [],
             $this->sourceFactsIn($this->sceneTexts($expansion, $contract), $excludedNames),
+        )));
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @return list<string>
+     */
+    private function unlistedSubjectViolations(array $screenplay): array
+    {
+        $violations = [];
+
+        foreach ($this->rowsOf($screenplay, 'scenes') as $scene) {
+            if (! is_array($scene) || ! is_array($scene['build_state'] ?? null)) {
+                continue;
+            }
+
+            $subject = $scene['build_state']['subject_id'] ?? null;
+
+            if (is_string($subject) && ! in_array($subject, (array) ($scene['character_ids'] ?? []), true)) {
+                $violations[] = "{$this->sceneLabel($scene)}.build_state.subject_id: {$subject} must be listed in character_ids";
+            }
+        }
+
+        return $violations;
+    }
+
+    /**
+     * @param  array<string, mixed>  $part
+     * @param  array<string, mixed>  $profile
+     * @param  list<string>  $excludedNames
+     * @return list<string>
+     */
+    private function castViolations(
+        array $part,
+        array $profile,
+        string $contract,
+        array $excludedNames,
+    ): array {
+        $collection = self::CAST_CONTRACTS[$contract];
+        $foreign = [];
+        $violations = [];
+
+        foreach ([...self::FOUNDATION_FIELDS, 'characters', 'locations', 'scenes', 'coverage'] as $field) {
+            if ($field !== $collection && array_key_exists($field, $part)) {
+                $foreign[] = "{$field}: this step does not produce it";
+            }
+        }
+
+        $rows = $part[$collection] ?? null;
+
+        if (! is_array($rows) || ! array_is_list($rows)) {
+            return [...$foreign, "{$collection}: must be a list"];
+        }
+
+        if ($rows === []) {
+            return [...$foreign, "{$collection}: must not be empty"];
+        }
+
+        foreach ($rows as $index => $row) {
+            if (! is_array($row)) {
+                $violations[] = "{$collection}[{$index}]: must be an object";
+
+                continue;
+            }
+
+            $violations = array_merge($violations, $this->fieldViolations(
+                $collection, "{$collection}[{$index}]", $row, self::FIELD_TYPES[$collection], $contract,
+            ));
+        }
+
+        if ($violations !== []) {
+            return array_values(array_unique([...$foreign, ...$violations]));
+        }
+
+        $violations = $foreign;
+        $cast = ['characters' => [], 'locations' => [], $collection => $rows];
+        $ids = array_column($rows, 'id');
+
+        if (count($ids) !== count(array_unique($ids))) {
+            $violations[] = "{$collection} carries duplicate ids";
+        }
+
+        if ($collection === 'characters') {
+            $violations = array_merge(
+                $violations,
+                $this->identityViolations($cast),
+                $this->forbiddenTermViolations($cast, $profile),
+            );
+        }
+
+        return array_values(array_unique(array_merge(
+            $violations,
+            $this->subjectLimitViolations($cast, $profile),
+            $this->sourceFactsIn($this->sceneTexts($cast, $contract), $excludedNames),
         )));
     }
 

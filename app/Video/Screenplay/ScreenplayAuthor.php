@@ -74,18 +74,35 @@ final class ScreenplayAuthor
         $this->schema();
     }
 
+    /** @return array<string, mixed> */
+    public function contractSchema(): array
+    {
+        return $this->schema();
+    }
+
     /**
      * @param  array<string, mixed>  $inspiration
      * @param  array<string, mixed>  $profile
      * @param  array<string, mixed>  $requirements
+     * @param  array<string, mixed>  $fixed
+     * @param  array<string, mixed>|null  $constrainedSchema
      *
      * @throws ScreenplayFailure
      */
-    public function author(array $inspiration, array $profile, array $requirements): ScreenplayResult
-    {
+    public function author(
+        array $inspiration,
+        array $profile,
+        array $requirements,
+        array $fixed = [],
+        ?array $constrainedSchema = null,
+    ): ScreenplayResult {
         $system = $this->rules();
-        $userMessage = $this->input($inspiration, $profile, $requirements);
+        $userMessage = $this->input($inspiration, $profile, $requirements, $fixed);
         $outputSchema = $this->schema();
+
+        if ($constrainedSchema !== null) {
+            $outputSchema = $constrainedSchema;
+        }
         $startedAt = microtime(true);
 
         Log::info('screenplay: request started', [
@@ -127,12 +144,15 @@ final class ScreenplayAuthor
                 throw $e;
             }
 
+            $truncated = $e instanceof \App\Video\Concept\Exceptions\AnthropicTruncatedOutputException;
+
             throw new ScreenplayFailure(
-                $e instanceof \App\Video\Concept\Exceptions\AnthropicTruncatedOutputException
+                $truncated
                     ? 'Screenplay was cut off at the token limit; raise max_tokens.'
                     : 'Claude refused to generate the screenplay.',
                 $e->response->rawText,
                 $this->usageOf($e->response),
+                $truncated ? ScreenplayFailure::TRUNCATED : ScreenplayFailure::REFUSED,
             );
         } catch (\Throwable $e) {
             $this->logEnded($startedAt, $e->getMessage(), null);
@@ -156,6 +176,7 @@ final class ScreenplayAuthor
                 'Screenplay was cut off at the token limit; raise max_tokens.',
                 $response->rawText,
                 $usage,
+                ScreenplayFailure::TRUNCATED,
             );
         }
 
@@ -189,8 +210,9 @@ final class ScreenplayAuthor
      * @param  array<string, mixed>  $inspiration
      * @param  array<string, mixed>  $profile
      * @param  array<string, mixed>  $requirements
+     * @param  array<string, mixed>  $fixed
      */
-    public function fingerprint(array $inspiration, array $profile, array $requirements): string
+    public function fingerprint(array $inspiration, array $profile, array $requirements, array $fixed = []): string
     {
         return hash('sha256', json_encode([
             'inspiration' => $inspiration,
@@ -201,7 +223,7 @@ final class ScreenplayAuthor
             'schema_version' => $this->contractVersion,
             'rules' => hash('sha256', $this->rules()),
             'schema' => hash('sha256', json_encode($this->schema())),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+        ] + ($fixed === [] ? [] : ['fixed' => $fixed]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
     }
 
     private function rules(): string
@@ -228,12 +250,12 @@ final class ScreenplayAuthor
      * @param  array<string, mixed>  $inspiration
      * @param  array<string, mixed>  $profile
      * @param  array<string, mixed>  $requirements
+     * @param  array<string, mixed>  $fixed
      */
-    private function input(array $inspiration, array $profile, array $requirements): string
+    private function input(array $inspiration, array $profile, array $requirements, array $fixed = []): string
     {
         return json_encode(
-            [
-                $this->sourceKey => $inspiration,
+            [$this->sourceKey => $inspiration] + $fixed + [
                 'profile' => $profile,
                 'film_requirements' => $requirements,
             ],
@@ -325,7 +347,6 @@ final class ScreenplayAuthor
             'instruction_version' => $this->promptVersion,
             'tokens_in' => $response->inputTokens,
             'tokens_out' => $response->outputTokens,
-            'thinking_tokens' => 0,
             'cost_usd' => ClaudeWriterService::costUsd(
                 $response->inputTokens,
                 $response->outputTokens,

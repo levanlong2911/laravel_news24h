@@ -1,0 +1,34 @@
+{
+    "locations": [
+        {
+            "id": "lo_studio",
+            "name": "The studio",
+            "description": "A long table under daylight, covered with a paper strip, card benches and a small card cabin."
+        },
+        {
+            "id": "lo_building_hall",
+            "name": "The building hall",
+            "description": "A covered yard hall with building blocks set out along its floor and a steel template leaning against the wall."
+        },
+        {
+            "id": "lo_ferry_hall",
+            "name": "The ferry's hall",
+            "description": "The covered passenger hall inside the ferry, one long space under its roof, its sides a row of openings between posts and its floor clear from side to side."
+        },
+        {
+            "id": "lo_fitting_quay",
+            "name": "The fitting-out quay",
+            "description": "A working quay with bollards along its edge and a gangway landing beside the berth."
+        },
+        {
+            "id": "lo_pier",
+            "name": "The home pier",
+            "description": "A public pier with a long boarding edge and a waiting area beside it."
+        },
+        {
+            "id": "lo_far_pier",
+            "name": "The far pier",
+            "description": "The pier across the harbour, with its own boarding edge and waiting area."
+        }
+    ]
+}

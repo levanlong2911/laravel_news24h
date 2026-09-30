@@ -1,0 +1,85 @@
+{
+    "characters": [
+        {
+            "id": "ch_ferry",
+            "name": "The ferry",
+            "role": "protagonist",
+            "kind": "object",
+            "description": "A harbour ferry built as one long covered hall with two identical working ends, gates along both sides and benches across its width.",
+            "personality": null,
+            "appearance": "A low, even body with the same profile at both ends, one continuous roof, and a long band of sliding gates along each side; a small glazed helm cabin sits on the roof at mid-length, above a crew stair."
+        },
+        {
+            "id": "ch_design_team",
+            "name": "The design team",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The studio team that settles how people move on and off the ferry.",
+            "personality": "Works by laying things out and turning them over, with few words.",
+            "appearance": "A small group in work clothes gathered round a long table."
+        },
+        {
+            "id": "ch_operator_reps",
+            "name": "Operator representatives",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The people from the operator who will run the ferry and who bring the question of every stop.",
+            "personality": "Practical, and quick to try things with their own hands.",
+            "appearance": "Two or three people in the operator's jackets."
+        },
+        {
+            "id": "ch_yard_crews",
+            "name": "Yard crews",
+            "role": "incidental",
+            "kind": "group",
+            "description": "The crews who set out and raise the hull structure in the building hall.",
+            "personality": null,
+            "appearance": "Crews in overalls and hard hats working along the length of the hull."
+        },
+        {
+            "id": "ch_site_engineers",
+            "name": "Site engineers",
+            "role": "incidental",
+            "kind": "group",
+            "description": "The engineers who hold the drawings against the steel as it goes up.",
+            "personality": null,
+            "appearance": "A pair of engineers carrying rolled drawings."
+        },
+        {
+            "id": "ch_fitters",
+            "name": "Fitting-out crews",
+            "role": "supporting",
+            "kind": "group",
+            "description": "The crews who hang the gates, fix the benches and glaze the helm cabin.",
+            "personality": "Patient with small adjustments.",
+            "appearance": "Crews with tool belts working gate by gate along both sides."
+        },
+        {
+            "id": "ch_master",
+            "name": "The master",
+            "role": "supporting",
+            "kind": "person",
+            "description": "The ferry's master, who is put in charge of it at completion.",
+            "personality": "Says little and watches how things move.",
+            "appearance": "A weathered person in a dark uniform jacket."
+        },
+        {
+            "id": "ch_crew",
+            "name": "The crew",
+            "role": "incidental",
+            "kind": "group",
+            "description": "The deck crew who work the gates at every pier.",
+            "personality": null,
+            "appearance": "Two deck hands in high-visibility vests."
+        },
+        {
+            "id": "ch_passengers",
+            "name": "The passengers",
+            "role": "supporting",
+            "kind": "group",
+            "description": "People crossing the harbour on ordinary errands.",
+            "personality": null,
+            "appearance": "A mixed crowd with bags, bicycles and coffee cups."
+        }
+    ]
+}

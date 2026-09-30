@@ -67,7 +67,8 @@
         "background_groups_allowed": true,
         "fixed_people_count_per_scene": false,
         "group_counts_as_one_subject": true,
-        "dialogue_requires_person_id": true
+        "dialogue_requires_person_id": true,
+        "dialogue_allowed": false
     },
     "coverage_policy": {
         "one_item_does_not_equal_one_scene": true,
@@ -210,7 +211,7 @@
             "id": "cov_comp_launch",
             "stage": "completion",
             "level": "shown_or_transition",
-            "label": "Establish launch and the transition from supported hull to afloat vessel."
+            "label": "Establish launch and the transition from supported hull to afloat vessel, before the first scene in which the vessel is afloat; never a first launch after it has been afloat."
         },
         {
             "id": "cov_comp_trial",

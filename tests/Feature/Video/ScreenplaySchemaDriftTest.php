@@ -212,7 +212,14 @@ class ScreenplaySchemaDriftTest extends TestCase
     public function test_the_kind_table_covers_exactly_the_contracts_the_validator_supports(): void
     {
         $this->assertSame(
-            [...ScreenplayValidator::CONTRACTS, ...ScreenplayValidator::EXPANSION_CONTRACTS],
+            [
+                ...ScreenplayValidator::CONTRACTS,
+                ...ScreenplayValidator::EXPANSION_CONTRACTS,
+                ...array_keys(array_filter(
+                    ScreenplayValidator::CAST_CONTRACTS,
+                    static fn (string $part): bool => $part === 'characters',
+                )),
+            ],
             array_keys($this->constant('CHARACTER_KINDS')),
         );
 

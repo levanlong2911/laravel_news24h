@@ -2,6 +2,7 @@
 
 namespace App\Video\Inspiration;
 
+use App\Services\Admin\ClaudeWriterService;
 use App\Video\Article\ArticleNormalizer;
 use App\Video\Article\RawArticle;
 use App\Video\Evidence\EvidenceIndex;
@@ -23,11 +24,26 @@ final class ClaudeInspirationAnalyst
         private readonly ArticleNormalizer $normalizer = new ArticleNormalizer,
     ) {}
 
-    public function analyze(RawArticle $article, CategoryCreativeProfile $profile): InspirationResult
+    /** @return array{instruction_version: string, model: string, provider_model: ?string} */
+    public function fingerprint(): array
     {
+        return [
+            'instruction_version' => self::INSTRUCTION_VERSION,
+            'model' => $this->model,
+            'provider_model' => ClaudeWriterService::supports($this->model)
+                ? ClaudeWriterService::modelId($this->model)
+                : null,
+        ];
+    }
+
+    public function analyze(
+        RawArticle $article,
+        CategoryCreativeProfile $profile,
+        ?EvidenceIndex $index = null,
+    ): InspirationResult {
         // Cùng văn bản mà validator sẽ đi tìm lại quote — cho model xem HTML thô
         // thì script/style lọt vào cả prompt lẫn kho đối chiếu.
-        $index = $this->normalizer->normalize($article);
+        $index ??= $this->normalizer->normalize($article);
         $articleBlock = $this->renderArticle($index);
         $correction = '';
         $lastViolations = [];

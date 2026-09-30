@@ -467,7 +467,7 @@ class VideoRenderPlanService
         }
     }
 
-    /** @return array{call_count:int,tokens_in:int,tokens_out:int,cost_usd:float,latency_ms:int,provider_model:string,thinking_tokens:int}|null */
+    /** @return array{call_count:int,tokens_in:int,tokens_out:int,cost_usd:float,latency_ms:int,provider_model:string,thinking_tokens:?int}|null */
     public function lastUsage(): ?array
     {
         return $this->lastRun?->totals();
@@ -479,6 +479,14 @@ class VideoRenderPlanService
         unset($data['uncovered_aspects']);
 
         return $data;
+    }
+
+    /** @param  array<string, mixed>  $output */
+    public function briefEmptiness(array $output): ?string
+    {
+        return trim((string) ($output['article_focus'] ?? '')) === ''
+            ? 'Haiku tra ve brief khong co article_focus'
+            : null;
     }
 
     /** @param  array<string, mixed>  $stored */

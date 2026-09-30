@@ -46,7 +46,7 @@ class InspirationStageRunner
         }
 
         $output = $this->renderPlanService->briefForStorage($result->brief, $article);
-        $empty = $this->emptinessOf($output);
+        $empty = $this->renderPlanService->briefEmptiness($output);
 
         if ($empty !== null) {
             Log::error('inspiration-stage: brief rong', [
@@ -69,25 +69,6 @@ class InspirationStageRunner
         );
 
         return [$output, 'ok'];
-    }
-
-    /** @param array<string, mixed> $output */
-    private function emptinessOf(array $output): ?string
-    {
-        $focus = trim((string) ($output['article_focus'] ?? ''));
-        $insights = $output['source_insights'] ?? [];
-        $patterns = $output['article_patterns'] ?? [];
-
-        if ($focus !== '' && $insights !== []) {
-            return null;
-        }
-
-        return sprintf(
-            'Haiku tra ve brief rong — focus %s, insights %d, patterns %d',
-            $focus === '' ? 'trong' : 'co',
-            count($insights),
-            count($patterns),
-        );
     }
 
     /** @return array{0: null, 1: string} */
@@ -117,7 +98,7 @@ class InspirationStageRunner
             'instruction_version' => ClaudeInspirationAnalyst::INSTRUCTION_VERSION,
             'tokens_in' => $totals['tokens_in'] ?? 0,
             'tokens_out' => $totals['tokens_out'] ?? 0,
-            'thinking_tokens' => $totals['thinking_tokens'] ?? 0,
+            'thinking_tokens' => $totals['thinking_tokens'] ?? null,
             'cost_usd' => $totals['cost_usd'] ?? 0,
         ];
     }

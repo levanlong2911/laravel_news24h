@@ -9,6 +9,7 @@ use App\Models\VideoProject;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\CreativeProfileResolver;
+use App\Services\Video\ScreenplayExpansionService;
 use App\Services\VideoProjectService;
 use App\Video\Concept\Contracts\StructuredOutputLlmClient;
 use App\Video\Screenplay\ScreenplayAuthor;
@@ -163,7 +164,7 @@ class ScreenplayProfileGuardTest extends TestCase
         [$service, $store, $client] = $this->serviceWithProfile($profile);
         $author = $this->app->make(ScreenplayAuthor::class);
         $this->assertSame($client, (new \ReflectionProperty($author, 'client'))->getValue($author));
-        $effective = (new \ReflectionMethod($service, 'screenplayProfile'))->invoke($service, 'yacht');
+        $effective = $this->app->make(ScreenplayExpansionService::class)->screenplayProfile('yacht');
         $creative = (new CreativeProfileResolver)->resolve('yacht');
         $this->assertSame($creative->arcStages, $effective['arc_stages']);
         $this->assertSame($creative->arcRequiredStages, $effective['arc_required_stages']);
@@ -183,7 +184,7 @@ class ScreenplayProfileGuardTest extends TestCase
         $store->shouldNotReceive('claimProjectStage');
 
         // Exercise the real loader while the running author intentionally remains v2.
-        $effective = (new \ReflectionMethod($service, 'screenplayProfile'))->invoke($service, 'yacht');
+        $effective = $this->app->make(ScreenplayExpansionService::class)->screenplayProfile('yacht');
         $this->assertArrayNotHasKey($field, $effective);
         $this->assertContains("{$field}: must be a nonempty list", (new ScreenplayValidator)->profileViolations($effective, 'screenplay_v3'));
         $this->assertSame([null, 'screenplay_profile_contract_mismatch'], $service->authorScreenplay('guard-project'));

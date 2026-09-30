@@ -160,6 +160,21 @@ final class CategoryCreativeProfile
         ];
     }
 
+    /** @return array{key: string, version: string, sha256: string} */
+    public function inspirationFingerprint(): array
+    {
+        return [
+            'key' => $this->key,
+            'version' => $this->version,
+            'sha256' => hash('sha256', json_encode([
+                'mission' => $this->mission,
+                'article_patterns' => $this->articlePatterns,
+                'inspection_aspects' => $this->inspectionAspects,
+                'excluded_context_types' => $this->excludedContextTypes,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+        ];
+    }
+
     /**
      * Alias chi doi TEN khi xuat DesignSpec; du lieu duoc dong bang van giu ten
      * ngan, vi Python doc thang ten do.
