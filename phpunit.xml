@@ -45,6 +45,7 @@
              thì dispatchPlanningJob() chạy chặng Claude NGAY trong request thay
              vì đẩy job, nên Queue::assertPushed() không bao giờ tới lượt. -->
         <env name="VIDEO_PLANNING_SYNC" value="false"/>
+        <env name="VIDEO_WORKFLOW" value="legacy"/>
         <!-- Lop chan thu hai sau Http::preventStrayRequests() trong TestCase:
              mot request lot luoi cung chi nhan 401, khong tinh tien. Gia tri
              phai KHAC RONG vi OpenAiImageClient nem khi thieu key. -->
