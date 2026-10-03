@@ -711,7 +711,12 @@ return [
     'scene_plan' => [
         'prompt_path' => resource_path('ai/prompts/scene_plan_v4.txt'),
 
-        'prompt_version' => env('SCENE_PLAN_PROMPT_VERSION', 'scene-plan-v4'),
+        'prompt_version' => env('SCENE_PLAN_PROMPT_VERSION', 'scene-plan-v4-r3'),
+
+        /** Skill for a screenplay whose scenes carry beats and subject states (screenplay_v6). */
+        'beat_prompt_path' => resource_path('ai/prompts/scene_plan_v5.txt'),
+
+        'beat_prompt_version' => env('SCENE_PLAN_BEAT_PROMPT_VERSION', 'scene-plan-v5-r3'),
 
         'model' => env('SCENE_PLAN_MODEL'),
 
@@ -757,7 +762,7 @@ return [
         'review' => [
             'enabled' => (bool) env('SCENE_REVIEW_ENABLED', true),
             'prompt_path' => resource_path('ai/prompts/scene_review_v4.txt'),
-            'prompt_version' => env('SCENE_REVIEW_PROMPT_VERSION', 'scene-review-v4'),
+            'prompt_version' => env('SCENE_REVIEW_PROMPT_VERSION', 'scene-review-v4-r3'),
             'model' => env('SCENE_REVIEW_MODEL'),
             'max_tokens' => (int) env('SCENE_REVIEW_MAX_TOKENS', 32000),
             'max_rounds' => (int) env('SCENE_REVIEW_MAX_ROUNDS', 2),
@@ -797,81 +802,149 @@ return [
         ],
 
         'foundation' => [
-            'contract_version' => 'screenplay_foundation_v2',
+            'contract_version' => 'screenplay_foundation_v3',
 
             'prompt_dir' => resource_path('ai/screenplay/foundation_v2'),
 
-            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_foundation_v2.json'),
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_foundation_v3.json'),
 
-            'prompt_version' => env('SCREENPLAY_FOUNDATION_PROMPT_VERSION', 'foundation-v2-r1'),
+            'prompt_version' => env('SCREENPLAY_FOUNDATION_PROMPT_VERSION', 'foundation-v3-r2'),
+
+            'model' => env('SCREENPLAY_FOUNDATION_MODEL', 'claude-sonnet-5-5'),
+
+            'effort' => env('SCREENPLAY_FOUNDATION_EFFORT', 'medium'),
 
             /** @var array{length_m: array{min: int, max: int}} */
             'dimension_bounds' => [
                 'length_m' => ['min' => 100, 'max' => 180],
             ],
 
-            'max_tokens' => (int) env('SCREENPLAY_FOUNDATION_MAX_TOKENS', 16000),
+            'max_tokens' => (int) env('SCREENPLAY_FOUNDATION_MAX_TOKENS', 48000),
 
-            'timeout_seconds' => (int) env('SCREENPLAY_FOUNDATION_TIMEOUT_SECONDS', 600),
+            'stream' => (bool) env('SCREENPLAY_FOUNDATION_STREAM', true),
+
+            'timeout_seconds' => (int) env('SCREENPLAY_FOUNDATION_TIMEOUT_SECONDS', 900),
 
             /** Attempt count, not retries: 1 means one HTTP request. */
             'retry_times' => (int) env('SCREENPLAY_FOUNDATION_RETRY_TIMES', 1),
         ],
 
+        'workflow' => env('VIDEO_WORKFLOW', 'design_first_v1'),
+
+        'design' => [
+            'contract_version' => 'vessel_design_v1',
+
+            'profile_contract_version' => 'superyacht_design_v1',
+
+            'prompt_dir' => resource_path('ai/screenplay/design_v1'),
+
+            'schema_path' => resource_path('ai/screenplay/schemas/vessel_design_v1.json'),
+
+            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v1-r4'),
+
+            'model' => env('SCREENPLAY_DESIGN_MODEL', 'gpt-5.6-sol'),
+
+            'max_tokens' => (int) env('SCREENPLAY_DESIGN_MAX_TOKENS', 48000),
+
+            'stream' => (bool) env('SCREENPLAY_DESIGN_STREAM', true),
+
+            'effort' => env('SCREENPLAY_DESIGN_EFFORT', 'high'),
+
+            'timeout_seconds' => (int) env('SCREENPLAY_DESIGN_TIMEOUT_SECONDS', 900),
+
+            /** Attempt count, not retries: 1 means one HTTP request. */
+            'retry_times' => (int) env('SCREENPLAY_DESIGN_RETRY_TIMES', 1),
+        ],
+
+        'story' => [
+            'contract_version' => 'screenplay_foundation_story_v1',
+
+            'foundation_version' => 'screenplay_foundation_v4',
+
+            'prompt_dir' => resource_path('ai/screenplay/foundation_v3'),
+
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_foundation_story_v1.json'),
+
+            'prompt_version' => env('SCREENPLAY_STORY_PROMPT_VERSION', 'foundation-story-v1-r2'),
+
+            'model' => env('SCREENPLAY_STORY_MODEL', 'claude-sonnet-5-5'),
+
+            'effort' => env('SCREENPLAY_STORY_EFFORT', 'medium'),
+
+            'max_tokens' => (int) env('SCREENPLAY_STORY_MAX_TOKENS', 48000),
+
+            'stream' => (bool) env('SCREENPLAY_STORY_STREAM', true),
+
+            'timeout_seconds' => (int) env('SCREENPLAY_STORY_TIMEOUT_SECONDS', 900),
+
+            /** Attempt count, not retries: 1 means one HTTP request. */
+            'retry_times' => (int) env('SCREENPLAY_STORY_RETRY_TIMES', 1),
+        ],
+
         'characters' => [
-            'contract_version' => 'screenplay_characters_v1',
+            'contract_version' => 'screenplay_characters_v2',
 
             'prompt_dir' => resource_path('ai/screenplay/characters_v1'),
 
-            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_characters_v1.json'),
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_characters_v2.json'),
 
-            'prompt_version' => env('SCREENPLAY_CHARACTERS_PROMPT_VERSION', 'characters-v1-r3'),
+            'prompt_version' => env('SCREENPLAY_CHARACTERS_PROMPT_VERSION', 'characters-v2-r3'),
 
-            'max_tokens' => (int) env('SCREENPLAY_CHARACTERS_MAX_TOKENS', 8000),
+            'model' => env('SCREENPLAY_CHARACTERS_MODEL', 'gpt-5.6-sol'),
+
+            'max_tokens' => (int) env('SCREENPLAY_CHARACTERS_MAX_TOKENS', 48000),
 
             'stream' => (bool) env('SCREENPLAY_CHARACTERS_STREAM', true),
 
-            'effort' => env('SCREENPLAY_CHARACTERS_EFFORT', 'medium'),
+            'effort' => env('SCREENPLAY_CHARACTERS_EFFORT', 'high'),
 
-            'timeout_seconds' => (int) env('SCREENPLAY_CHARACTERS_TIMEOUT_SECONDS', 300),
+            'timeout_seconds' => (int) env('SCREENPLAY_CHARACTERS_TIMEOUT_SECONDS', 900),
 
             /** Attempt count, not retries: 1 means one HTTP request. */
             'retry_times' => (int) env('SCREENPLAY_CHARACTERS_RETRY_TIMES', 1),
         ],
 
         'locations' => [
-            'contract_version' => 'screenplay_locations_v1',
+            'contract_version' => 'screenplay_locations_v3',
 
             'prompt_dir' => resource_path('ai/screenplay/locations_v1'),
 
-            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_locations_v1.json'),
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_locations_v3.json'),
 
-            'prompt_version' => env('SCREENPLAY_LOCATIONS_PROMPT_VERSION', 'locations-v1-r5'),
+            'prompt_version' => env('SCREENPLAY_LOCATIONS_PROMPT_VERSION', 'locations-v3-r2'),
 
-            'max_tokens' => (int) env('SCREENPLAY_LOCATIONS_MAX_TOKENS', 8000),
+            'model' => env('SCREENPLAY_LOCATIONS_MODEL', 'gpt-5.6-sol'),
+
+            'max_tokens' => (int) env('SCREENPLAY_LOCATIONS_MAX_TOKENS', 24000),
 
             'stream' => (bool) env('SCREENPLAY_LOCATIONS_STREAM', true),
 
-            'effort' => env('SCREENPLAY_LOCATIONS_EFFORT', 'medium'),
+            'effort' => env('SCREENPLAY_LOCATIONS_EFFORT', 'high'),
 
-            'timeout_seconds' => (int) env('SCREENPLAY_LOCATIONS_TIMEOUT_SECONDS', 300),
+            'timeout_seconds' => (int) env('SCREENPLAY_LOCATIONS_TIMEOUT_SECONDS', 900),
 
             /** Attempt count, not retries: 1 means one HTTP request. */
             'retry_times' => (int) env('SCREENPLAY_LOCATIONS_RETRY_TIMES', 1),
         ],
 
         'scenes' => [
-            'contract_version' => 'screenplay_scene_expansion_v2',
+            'contract_version' => 'screenplay_scene_expansion_v4',
 
-            'assembled_version' => 'screenplay_v4',
+            'assembled_version' => 'screenplay_v7',
 
-            'foundation_version' => 'screenplay_foundation_v2',
+            /** Assembled contracts a stored screenplay may carry and still be approved or used in production. */
+            'production_versions' => ['screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7'],
+
+            /** Foundation contracts the cast and scene steps may build on. */
+            'foundation_versions' => ['screenplay_foundation_v2', 'screenplay_foundation_v3', 'screenplay_foundation_v4'],
 
             'prompt_dir' => resource_path('ai/screenplay/scene_expansion_v2'),
 
-            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_scene_expansion_v2.json'),
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_scene_expansion_v4.json'),
 
-            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v2-r7'),
+            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v4-r6'),
+
+            'model' => env('SCREENPLAY_SCENES_MODEL', 'claude-sonnet-5-5'),
 
             'max_tokens' => (int) env('SCREENPLAY_SCENES_MAX_TOKENS', 64000),
 

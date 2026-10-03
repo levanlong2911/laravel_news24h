@@ -7,6 +7,7 @@ namespace App\Services\Video;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoVisualIdentity;
 use App\Video\Screenplay\ScreenplayContentHash;
+use App\Video\Screenplay\VesselDesign;
 
 final class ScreenplaySubjectService
 {
@@ -35,6 +36,12 @@ final class ScreenplaySubjectService
     {
         if (collect($this->mainCharacters($stage))->firstWhere('id', $characterId) === null) {
             return null;
+        }
+
+        $design = $stage->output_json[VesselDesign::SOURCE_DESIGN_KEY]['stage_id'] ?? null;
+
+        if ($characterId === VesselDesign::VESSEL_ID && is_string($design) && $design !== '') {
+            return VesselDesign::subjectKey($design);
         }
 
         return $this->generatedSubjectKey($stage, $characterId);

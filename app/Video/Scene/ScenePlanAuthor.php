@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Video\Scene;
 
 use App\Video\Prompt\TextCompletionClient;
+use App\Video\Screenplay\ScreenplayValidator;
 use JsonException;
 
 final class ScenePlanAuthor
@@ -18,7 +19,37 @@ final class ScenePlanAuthor
         private readonly string $model,
         private readonly int $maxTokens,
         private readonly int $maxShots,
+        private readonly ?string $beatPromptPath = null,
+        private readonly ?string $beatPromptVersion = null,
+        private readonly bool $beats = false,
     ) {}
+
+    public function forBeats(): self
+    {
+        if ($this->beatPromptPath === null || $this->beatPromptVersion === null) {
+            throw new ScenePlanException('video.scene_plan.beat_prompt_path and beat_prompt_version must be set.');
+        }
+
+        return new self(
+            client: $this->client,
+            promptPath: $this->beatPromptPath,
+            promptVersion: $this->beatPromptVersion,
+            model: $this->model,
+            maxTokens: $this->maxTokens,
+            maxShots: $this->maxShots,
+            beats: true,
+        );
+    }
+
+    public function usesBeats(): bool
+    {
+        return $this->beats;
+    }
+
+    public function contractVersion(): string
+    {
+        return $this->beats ? self::BEAT_CONTRACT_VERSION : self::SCENE_CONTRACT_VERSION;
+    }
 
     /**
      * @param  array<string, mixed>  $planningInput
@@ -171,6 +202,11 @@ final class ScenePlanAuthor
      */
     public const SCENE_CONTRACT_VERSION = 'scene-contract-v5';
 
+    public const BEAT_CONTRACT_VERSION = 'scene-contract-v6';
+
+    /** @var list<string> */
+    public const CONTRACT_VERSIONS = [self::SCENE_CONTRACT_VERSION, self::BEAT_CONTRACT_VERSION];
+
     /**
      * @param  array<string, mixed>  $screenplay
      * @return list<string>
@@ -194,7 +230,52 @@ final class ScenePlanAuthor
      * @param  list<string>  $coverageIds
      * @return array<string, mixed>
      */
-    public static function sceneItemSchema(array $coverageIds): array
+    public static function sceneItemSchema(array $coverageIds, bool $beats = false): array
+    {
+        $item = self::baseItemSchema($coverageIds);
+
+        if (! $beats) {
+            return $item;
+        }
+
+        $moment = [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'required' => ['progress', 'configuration'],
+            'properties' => [
+                'progress' => ['type' => ['string', 'null'], 'maxLength' => ScreenplayValidator::PROGRESS_LIMITS[1]],
+                'configuration' => [
+                    'type' => 'array',
+                    'items' => [
+                        'type' => 'object',
+                        'additionalProperties' => false,
+                        'required' => ['part', 'state'],
+                        'properties' => [
+                            'part' => ['type' => 'string', 'minLength' => 2, 'maxLength' => 80],
+                            'state' => ['type' => 'string', 'minLength' => 2, 'maxLength' => 120],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $item['required'] = [...$item['required'], 'beat_ids', 'keyframe_state', 'end_state'];
+        $item['properties']['beat_ids'] = [
+            'type' => 'array',
+            'minItems' => 1,
+            'items' => ['type' => 'string', 'pattern' => '^b[0-9]{1,2}$'],
+        ];
+        $item['properties']['keyframe_state'] = $moment;
+        $item['properties']['end_state'] = $moment;
+
+        return $item;
+    }
+
+    /**
+     * @param  list<string>  $coverageIds
+     * @return array<string, mixed>
+     */
+    private static function baseItemSchema(array $coverageIds): array
     {
         $coverageItem = $coverageIds === []
             ? ['type' => 'string', 'pattern' => '^cov_[a-z0-9_]{3,40}$']
@@ -276,7 +357,7 @@ final class ScenePlanAuthor
                     'type' => 'array',
                     'minItems' => $minScenes,
                     'maxItems' => $maxScenes,
-                    'items' => self::sceneItemSchema($coverageIds),
+                    'items' => self::sceneItemSchema($coverageIds, $this->beats),
                 ],
             ],
         ];

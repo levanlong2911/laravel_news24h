@@ -21,10 +21,14 @@ use App\Video\Scene\Services\ShotIntentService;
 use App\Video\Scene\Services\ShotSelectionReconciler;
 use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\ScreenplayExpansionService;
+use App\Services\Video\StoryFoundationService;
+use App\Services\Video\VesselDesignService;
+use App\Video\Screenplay\VesselDesign;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -131,6 +135,19 @@ class VideoProjectsController extends Controller
 
         $screenplayFoundation = $this->videoProjectService->latestScreenplayFoundation($project->id);
 
+        if (VesselDesign::isDesignFirst($project)) {
+            $stories = app(StoryFoundationService::class);
+            $story = $stories->latestStoryFoundation($project->id);
+
+            if ($story !== null && $story->id === $screenplayFoundation['stage_id']) {
+                $stories->ensureCast($project->id, $story);
+            }
+        }
+
+        $screenplayCharacters = $this->screenplayExpansion->latestCast(
+            $project->id, 'characters', $screenplayFoundation['stage_id'],
+        );
+
         return view('video-projects.anchor', [
             'route' => 'video-projects',
             'action' => 'video-projects-index',
@@ -143,13 +160,15 @@ class VideoProjectsController extends Controller
             'nextImageCode' => $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name),
             'screenplay' => $this->videoProjectService->latestScreenplayScenes($project->id),
             'screenplayFoundation' => $screenplayFoundation,
-            'screenplayCharacters' => $this->screenplayExpansion->latestCast(
-                $project->id, 'characters', $screenplayFoundation['stage_id'],
-            ),
+            'screenplayCharacters' => $screenplayCharacters,
             'screenplayLocations' => $this->screenplayExpansion->latestCast(
-                $project->id, 'locations', $screenplayFoundation['stage_id'],
+                $project->id, 'locations', $screenplayFoundation['stage_id'], $screenplayCharacters['stage_id'],
             ),
             'anchorPrompt' => $this->videoProjectService->latestAnchorPrompt($project->id),
+            'designFirst' => VesselDesign::isDesignFirst($project),
+            'vesselDesign' => VesselDesign::isDesignFirst($project)
+                ? app(VesselDesignService::class)->panel($project->id)
+                : null,
         ]);
     }
 
@@ -180,9 +199,13 @@ class VideoProjectsController extends Controller
 
     public function concept(Request $request, string $id)
     {
-        $this->ownedProject($id);
+        $project = $this->ownedProject($id);
 
         $characterId = $request->string('character_id')->toString();
+
+        if ($characterId === '' && VesselDesign::isDesignFirst($project)) {
+            return back()->with('error', $this->anchorMessage('character_prompt_no_design'));
+        }
 
         if ($characterId !== '') {
             [$compiled, $reason, $character] = $this->characterAnchorPromptService->author(
@@ -235,13 +258,41 @@ class VideoProjectsController extends Controller
             : 'Đã viết prompt bằng gpt-5.6-terra.');
     }
 
-    public function screenplayFoundation(Request $request, string $id)
+    public function vesselDesign(Request $request, string $id)
     {
         $this->ownedProject($id);
 
+        [$design, $reason] = app(VesselDesignService::class)->author($id, $request->boolean('force'));
+
+        if ($design === null) {
+            return back()->with('error', $this->anchorMessage($reason));
+        }
+
+        return back()->with('success', $reason === 'cached'
+            ? 'Đầu vào không đổi — dùng lại bản thiết kế đã có, không gọi model.'
+            : 'Đã thiết kế tàu. Bước tiếp theo: viết prompt anchor.');
+    }
+
+    public function resetVesselDesign(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = app(VesselDesignService::class)->reset($id);
+
+        return $done
+            ? back()->with('success', 'Đã reset — bấm Thiết kế tàu để chạy lại.')
+            : back()->with('error', $reason);
+    }
+
+    public function screenplayFoundation(Request $request, string $id)
+    {
+        $project = $this->ownedProject($id);
+
         $force = $request->boolean('force');
 
-        [$foundation, $reason] = $this->videoProjectService->authorScreenplayFoundation($id, $force);
+        [$foundation, $reason] = VesselDesign::isDesignFirst($project)
+            ? app(StoryFoundationService::class)->author($id, $force)
+            : $this->videoProjectService->authorScreenplayFoundation($id, $force);
 
         if ($foundation === null) {
             return back()->with('error', $this->anchorMessage($reason));
@@ -292,7 +343,9 @@ class VideoProjectsController extends Controller
 
         [$cast, $reason] = $part === 'characters'
             ? $this->screenplayExpansion->authorCharacters($id, $foundationStageId, $force)
-            : $this->screenplayExpansion->authorLocations($id, $foundationStageId, $force);
+            : $this->screenplayExpansion->authorLocations(
+                $id, $foundationStageId, $request->string('characters_stage_id')->toString(), $force,
+            );
 
         if ($cast === null) {
             return back()->with('error', $this->anchorMessage($reason));
@@ -453,7 +506,7 @@ class VideoProjectsController extends Controller
 
     public function approveAnchor(Request $request, string $id)
     {
-        $this->ownedProject($id);
+        $project = $this->ownedProject($id);
 
         $data = $this->form->validate($request, 'AnchorApproveForm');
 
@@ -462,6 +515,12 @@ class VideoProjectsController extends Controller
             (string) $data['artifact_id'],
             auth()->id(),
         );
+
+        if ($done && VesselDesign::isDesignFirst($project)) {
+            return redirect()
+                ->route('video-projects.anchor', $id)
+                ->with('success', 'Đã duyệt ảnh anchor và khoá nguồn thiết kế. Bước tiếp theo: viết nội dung kịch bản.');
+        }
 
         return $done
             ? redirect()
@@ -544,6 +603,8 @@ class VideoProjectsController extends Controller
             'subject_mapping_operation_conflict' => 'Mã thao tác xác nhận chủ thể đã được dùng cho một lựa chọn khác.',
             'screenplay_profile_contract_mismatch' => __('messages.screenplay_profile_contract_mismatch'),
             'screenplay_profile_invalid' => __('messages.screenplay_profile_invalid'),
+            'screenplay_profile_changed' => 'Nội dung kịch bản đang chọn được viết theo profile kịch bản khác với profile hiện hành — tạo lại nội dung kịch bản. Không gọi model.',
+            'screenplay_profile_unknown' => 'Không xác định được profile kịch bản mà bản nội dung này đã dùng — tạo lại nội dung kịch bản. Không gọi model.',
             'screenplay_contract_unsupported' => __('messages.screenplay_contract_unsupported'),
             'screenplay_schema_invalid' => __('messages.screenplay_schema_invalid'),
             'screenplay_call_failed' => __('messages.screenplay_call_failed'),
@@ -559,6 +620,20 @@ class VideoProjectsController extends Controller
             'screenplay_truncated' => 'Model bị cắt ở giới hạn token đầu ra — kết quả dở dang không được dùng; nguyên văn và chi phí đã được lưu.',
             'screenplay_characters_not_selectable' => 'Chưa có danh sách nhân vật tạo từ đúng bản nội dung kịch bản này — tạo nhân vật trước.',
             'screenplay_locations_not_selectable' => 'Chưa có danh sách địa điểm tạo từ đúng bản nội dung kịch bản này — tạo địa điểm trước.',
+            'screenplay_characters_outdated' => 'Danh sách nhân vật này tạo theo bộ luật cũ, không khớp hồ sơ nhân vật chính hiện hành — tạo lại nhân vật.',
+            'screenplay_locations_outdated' => 'Danh sách địa điểm này không tạo từ danh sách nhân vật đang dùng — tạo lại địa điểm.',
+            'screenplay_locations_without_brief_spaces' => 'Bộ địa điểm đang chọn chưa gắn đủ không gian của yêu cầu project (brief_space) — tạo lại địa điểm theo nội dung kịch bản hiện tại. Không gọi model.',
+            'screenplay_film_brief_invalid' => 'Khối film_brief trong profile kịch bản không hợp lệ hoặc không khớp coverage của profile. Không gọi model — xem log để biết mục nào.',
+            'screenplay_locations_unprofiled' =>'Danh sách địa điểm này tạo theo mẫu cũ (chỉ có tên và mô tả), thiếu bố cục, lối nối, thiết bị cố định và nguồn sáng — tạo lại địa điểm.',
+            'workflow_not_design_first' => 'Dự án này chạy luồng cũ (kịch bản trước, thiết kế sau). Luồng thiết kế trước chỉ áp dụng cho dự án mới.',
+            'character_prompt_no_design' => 'Chưa có bản thiết kế tàu — bấm Thiết kế tàu trước khi viết prompt anchor.',
+            'anchor_prompt_other_design' => 'Prompt hoặc ảnh này thuộc một bản thiết kế khác bản thiết kế hiện hành — viết lại prompt anchor từ bản thiết kế mới.',
+            'design_anchor_not_approved' => 'Chưa có ảnh anchor được duyệt cho bản thiết kế — duyệt ảnh anchor trước khi viết kịch bản. Không gọi model.',
+            'design_changed_since_anchor' => 'Bản thiết kế đã đổi so với lúc duyệt ảnh anchor — viết prompt, render và duyệt lại ảnh. Không gọi model.',
+            'anchor_design_incomplete' => 'Phần hình học đã chốt của bản thiết kế không toàn vẹn (có tham chiếu tới phần chưa chốt hoặc thiếu P0) — thiết kế lại tàu. Không gọi model, xem log để biết mục nào.',
+            'design_geometry_incomplete' => 'Phần hình học đã chốt của bản thiết kế không toàn vẹn — không thể giao cho bước địa điểm/phân cảnh. Không gọi model, xem log.',
+            'artifact_not_verified' =>'Ảnh này chưa có mã kiểm tra (sha256) — không thể khoá làm nguồn cho kịch bản.',
+            'foundation_not_design_first' => 'Bản nội dung này không dựng trên bản thiết kế tàu.',
             default => $reason,
         };
     }
@@ -846,10 +921,13 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
+        $source = $request->query('space_source');
+
         [$preview, $reason] = $this->videoProjectService->sceneImagePreview(
             $id,
             $this->actorId(),
             $sceneId,
+            is_string($source) && Str::isUuid($source) ? $source : null,
         );
 
         return $this->keyframeJson($preview, $reason);
@@ -1266,6 +1344,7 @@ class VideoProjectsController extends Controller
             $sceneId,
             (string) $data['prompt_sha256'],
             $data['anchor_artifact_id'] ?? null,
+            $data['space_source_artifact_id'] ?? null,
         );
 
         return back()->with(

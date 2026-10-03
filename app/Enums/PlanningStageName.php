@@ -19,6 +19,7 @@ enum PlanningStageName: string
     case SCENE_PLAN_TRIAL = 'scene_plan_trial';
     case FINALIZE = 'finalize';
     case REFERENCE_PROMPT = 'reference_prompt';
+    case VESSEL_DESIGN = 'vessel_design';
 
     /** @return list<string> */
     public static function values(): array
@@ -40,6 +41,7 @@ enum PlanningStageName: string
             self::SCENE_PLAN_TRIAL => null,
             self::FINALIZE => null,
             self::REFERENCE_PROMPT => null,
+            self::VESSEL_DESIGN => self::ANCHOR_PROMPT,
         };
     }
 }

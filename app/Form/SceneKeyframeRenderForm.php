@@ -16,12 +16,14 @@ class SceneKeyframeRenderForm
             [
                 'prompt_sha256' => ['required', 'string', 'regex:/^[0-9a-f]{64}$/'],
                 'anchor_artifact_id' => ['nullable', 'uuid'],
+                'space_source_artifact_id' => ['nullable', 'uuid'],
             ],
             [
                 'prompt_sha256.required' => __('messages.scene_keyframe_preview_stale'),
                 'prompt_sha256.string' => __('messages.scene_keyframe_preview_stale'),
                 'prompt_sha256.regex' => __('messages.scene_keyframe_preview_stale'),
                 'anchor_artifact_id.uuid' => __('messages.scene_keyframe_anchor_confirmation_stale'),
+                'space_source_artifact_id.uuid' => __('messages.scene_keyframe_space_source_stale', ['name' => '']),
             ]);
 
         return $validator->validate();

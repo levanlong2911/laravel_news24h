@@ -20,6 +20,17 @@ class PlanningStageStore
     private const PRICING_METADATA_KEYS = ['pricing', 'pricing_version'];
 
     /**
+     * @param  array<string, mixed>|null  $inputJson
+     * @return array<string, mixed>
+     */
+    public static function metadataOf(?array $inputJson): array
+    {
+        $metadata = $inputJson[self::METADATA_KEY] ?? null;
+
+        return is_array($metadata) ? $metadata : [];
+    }
+
+    /**
      * @param  array<string, mixed>  $input
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
      *                                                              reason: already_succeeded|claimed_by_other|claimed

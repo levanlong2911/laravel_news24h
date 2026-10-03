@@ -76,6 +76,9 @@ final class ScenePreservationPrompt
             'environment' => 'is an environment reference only: it shows the setting this frame takes '
                 .'place in. Take the place, the light and the surrounding materials from it. Do not '
                 .'take the subject\'s geometry from it.',
+            'space_geometry' => 'is the confirmed geometry source for the space of the subject this frame '
+                .'shows: read the permanent structure of that space from it. It shows the design, not this '
+                .'moment: never take its build state, its completion, its camera, its light or its setting.',
             default => 'is a supporting geometry reference only: use it to read structure that IMAGE 1 '
                 .'shows unclearly. Do not take its camera or setting.',
         };

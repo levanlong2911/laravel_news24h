@@ -13,13 +13,15 @@ use App\Video\Prompt\Exceptions\TextCompletionException;
 /**
  * Sinh prompt anh bang mot cu goi model, khong qua Python.
  *
- * Skill tu mang hai diem chen o cuoi file; phan truoc `SOURCE MATERIAL:` la
- * chi dan (system), phan sau la du lieu (user). Cat dung mot lan tai day de
- * khong phai giu hai ban cua cung mot van ban.
+ * Phan skill truoc `SOURCE MATERIAL:` la chi dan (system). Tin nhan user gom
+ * `SOURCE MATERIAL:` kem JSON nguon, va `OPTIONAL DOWNSTREAM REQUIREMENTS:`
+ * kem JSON yeu cau dau ra khi nguoi goi truyen vao.
  */
 final class GeometryPromptAuthor
 {
     private const SPLIT_MARKER = 'SOURCE MATERIAL:';
+
+    private const DOWNSTREAM_MARKER = 'OPTIONAL DOWNSTREAM REQUIREMENTS:';
 
     public function __construct(
         private readonly TextCompletionClient $client,
@@ -30,18 +32,31 @@ final class GeometryPromptAuthor
     ) {}
 
     /**
+     * @return array{aspect_ratio: string, orientation: string}
+     */
+    public static function downstreamFor(ImageSize $size): array
+    {
+        return [
+            'aspect_ratio' => $size->aspectRatio(),
+            'orientation' => $size->orientation(),
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $brief
+     * @param  array<string, mixed>|null  $downstream
      */
     public function author(
         array $brief,
         AnchorStage $stage,
         ImageSize $size,
         ImageModel $imageModel,
+        ?array $downstream = null,
     ): GeometryPromptResult {
         $response = $this->client->complete(
             model: $this->model,
             system: $this->system($this->skill()),
-            user: $this->user($brief),
+            user: $this->user($brief, $downstream),
             maxTokens: $this->maxTokens,
         );
 
@@ -121,13 +136,16 @@ final class GeometryPromptAuthor
 
     /**
      * @param  array<string, mixed>  $brief
+     * @param  array<string, mixed>|null  $downstream
      */
-    private function user(array $brief): string
+    private function user(array $brief, ?array $downstream): string
     {
-        return self::SPLIT_MARKER."\n\n".json_encode(
-            $brief,
-            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR,
-        );
+        $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR;
+        $user = self::SPLIT_MARKER."\n\n".json_encode($brief, $flags);
+
+        return $downstream === null
+            ? $user
+            : $user."\n\n".self::DOWNSTREAM_MARKER."\n\n".json_encode($downstream, $flags);
     }
 
     /**

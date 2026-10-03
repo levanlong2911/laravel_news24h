@@ -262,11 +262,13 @@ class AppServiceProvider extends ServiceProvider
                         timeoutSeconds: (int) config('video.screenplay.foundation.timeout_seconds'),
                         retryTimes: (int) config('video.screenplay.foundation.retry_times'),
                         retrySleepMs: 0,
+                        stream: (bool) config('video.screenplay.foundation.stream'),
+                        effort: config('video.screenplay.foundation.effort'),
                     ),
                     promptDir: (string) config('video.screenplay.foundation.prompt_dir'),
                     schemaPath: (string) config('video.screenplay.foundation.schema_path'),
                     promptVersion: (string) config('video.screenplay.foundation.prompt_version'),
-                    model: (string) config('video.screenplay.model'),
+                    model: (string) config('video.screenplay.foundation.model'),
                     maxTokens: (int) config('video.screenplay.foundation.max_tokens'),
                     contractVersion: (string) config('video.screenplay.foundation.contract_version'),
                     exampleGuidance: [
@@ -283,26 +285,94 @@ class AppServiceProvider extends ServiceProvider
             }
         );
 
+        $this->app->singleton(
+            'video.screenplay.design_author',
+            static function (Application $app): ScreenplayAuthor {
+                return new ScreenplayAuthor(
+                    client: new \App\Video\Concept\OpenAi\TextClientStructuredAdapter(
+                        new \App\Video\Prompt\OpenAiTextClient(
+                            http: $app->make(HttpFactory::class),
+                            apiKey: (string) config('canonical_concept.openai.api_key'),
+                            baseUrl: (string) config('canonical_concept.openai.base_url'),
+                            reasoningEffort: (string) config('video.screenplay.design.effort'),
+                            timeoutSeconds: (int) config('video.screenplay.design.timeout_seconds'),
+                            retryTimes: (int) config('video.screenplay.design.retry_times'),
+                            retrySleepMs: 0,
+                            stream: (bool) config('video.screenplay.design.stream'),
+                        ),
+                    ),
+                    promptDir: (string) config('video.screenplay.design.prompt_dir'),
+                    schemaPath: (string) config('video.screenplay.design.schema_path'),
+                    promptVersion: (string) config('video.screenplay.design.prompt_version'),
+                    model: (string) config('video.screenplay.design.model'),
+                    maxTokens: (int) config('video.screenplay.design.max_tokens'),
+                    contractVersion: (string) config('video.screenplay.design.contract_version'),
+                    exampleGuidance: [
+                        'A WORKED EXAMPLE',
+                        'Its subject is deliberately unlike yours. Copy the way the decisions',
+                        'were made. Never copy its vessel, its arrangement or its sentences.',
+                        'It shows how an abstract question from the inspiration becomes one',
+                        'whole design described precisely enough to build and draw.',
+                    ],
+                    sourceKey: 'inspiration',
+                );
+            }
+        );
+
+        $this->app->singleton(
+            'video.screenplay.story_author',
+            static function (Application $app): ScreenplayAuthor {
+                return new ScreenplayAuthor(
+                    client: new AnthropicStructuredOutputClient(
+                        http: $app->make(HttpFactory::class),
+                        apiKey: (string) config('canonical_concept.anthropic.api_key'),
+                        baseUrl: (string) config('canonical_concept.anthropic.base_url'),
+                        apiVersion: (string) config('canonical_concept.anthropic.api_version'),
+                        timeoutSeconds: (int) config('video.screenplay.story.timeout_seconds'),
+                        retryTimes: (int) config('video.screenplay.story.retry_times'),
+                        retrySleepMs: 0,
+                        stream: (bool) config('video.screenplay.story.stream'),
+                        effort: config('video.screenplay.story.effort'),
+                    ),
+                    promptDir: (string) config('video.screenplay.story.prompt_dir'),
+                    schemaPath: (string) config('video.screenplay.story.schema_path'),
+                    promptVersion: (string) config('video.screenplay.story.prompt_version'),
+                    model: (string) config('video.screenplay.story.model'),
+                    maxTokens: (int) config('video.screenplay.story.max_tokens'),
+                    contractVersion: (string) config('video.screenplay.story.contract_version'),
+                    exampleGuidance: [
+                        'A WORKED EXAMPLE',
+                        'Its subject is deliberately unlike yours. Copy the way the decisions',
+                        'were made. Never copy its story, its people or its sentences.',
+                        'It shows how a fixed design is followed from the drawing to the life',
+                        'on board without changing any part of it.',
+                    ],
+                    sourceKey: 'design',
+                );
+            }
+        );
+
         foreach (['character_author' => 'characters', 'location_author' => 'locations'] as $key => $step) {
             $this->app->singleton(
                 'video.screenplay.'.$key,
                 static function (Application $app) use ($step): ScreenplayAuthor {
                     return new ScreenplayAuthor(
-                        client: new AnthropicStructuredOutputClient(
-                            http: $app->make(HttpFactory::class),
-                            apiKey: (string) config('canonical_concept.anthropic.api_key'),
-                            baseUrl: (string) config('canonical_concept.anthropic.base_url'),
-                            apiVersion: (string) config('canonical_concept.anthropic.api_version'),
-                            timeoutSeconds: (int) config("video.screenplay.{$step}.timeout_seconds"),
-                            retryTimes: (int) config("video.screenplay.{$step}.retry_times"),
-                            retrySleepMs: 0,
-                            stream: (bool) config("video.screenplay.{$step}.stream"),
-                            effort: config("video.screenplay.{$step}.effort"),
+                        client: new \App\Video\Concept\OpenAi\TextClientStructuredAdapter(
+                            new \App\Video\Prompt\OpenAiTextClient(
+                                http: $app->make(HttpFactory::class),
+                                apiKey: (string) config('canonical_concept.openai.api_key'),
+                                baseUrl: (string) config('canonical_concept.openai.base_url'),
+                                reasoningEffort: (string) config("video.screenplay.{$step}.effort"),
+                                timeoutSeconds: (int) config("video.screenplay.{$step}.timeout_seconds"),
+                                retryTimes: (int) config("video.screenplay.{$step}.retry_times"),
+                                retrySleepMs: 0,
+                                stream: (bool) config("video.screenplay.{$step}.stream"),
+                            ),
                         ),
                         promptDir: (string) config("video.screenplay.{$step}.prompt_dir"),
                         schemaPath: (string) config("video.screenplay.{$step}.schema_path"),
                         promptVersion: (string) config("video.screenplay.{$step}.prompt_version"),
-                        model: (string) config('video.screenplay.model'),
+                        model: (string) config("video.screenplay.{$step}.model"),
                         maxTokens: (int) config("video.screenplay.{$step}.max_tokens"),
                         contractVersion: (string) config("video.screenplay.{$step}.contract_version"),
                         exampleGuidance: [
@@ -336,7 +406,7 @@ class AppServiceProvider extends ServiceProvider
                     promptDir: (string) config('video.screenplay.scenes.prompt_dir'),
                     schemaPath: (string) config('video.screenplay.scenes.schema_path'),
                     promptVersion: (string) config('video.screenplay.scenes.prompt_version'),
-                    model: (string) config('video.screenplay.model'),
+                    model: (string) config('video.screenplay.scenes.model'),
                     maxTokens: (int) config('video.screenplay.scenes.max_tokens'),
                     contractVersion: (string) config('video.screenplay.scenes.contract_version'),
                     exampleGuidance: [
@@ -368,14 +438,35 @@ class AppServiceProvider extends ServiceProvider
             }
         );
 
+        $this->app->bind(
+            'video.anchor_prompt.client',
+            static function (Application $app): TextCompletionClient {
+                $shared = $app->make(TextCompletionClient::class);
+
+                if (! $shared instanceof OpenAiTextClient) {
+                    return $shared;
+                }
+
+                return new OpenAiTextClient(
+                    http: $app->make(HttpFactory::class),
+                    apiKey: (string) config('canonical_concept.openai.api_key'),
+                    baseUrl: (string) config('canonical_concept.openai.base_url'),
+                    reasoningEffort: (string) config('image_prompt.anchor_author.reasoning_effort'),
+                    timeoutSeconds: (int) config('image_prompt.timeout_seconds'),
+                    retryTimes: (int) config('image_prompt.retry_times'),
+                    retrySleepMs: (int) config('image_prompt.retry_sleep_ms'),
+                );
+            }
+        );
+
         $this->app->singleton(
             GeometryPromptAuthor::class,
             static function (Application $app): GeometryPromptAuthor {
                 return new GeometryPromptAuthor(
-                    client: $app->make(TextCompletionClient::class),
+                    client: $app->make('video.anchor_prompt.client'),
                     promptPath: (string) config('image_prompt.prompt_path'),
                     promptVersion: (string) config('image_prompt.prompt_version'),
-                    model: (string) config('canonical_concept.'.config('canonical_concept.provider').'.model'),
+                    model: (string) config('image_prompt.anchor_author.model'),
                     maxTokens: (int) config('image_prompt.'.config('canonical_concept.provider').'.max_tokens'),
                 );
             }
@@ -398,10 +489,10 @@ class AppServiceProvider extends ServiceProvider
             'video.character_prompt_author',
             static function (Application $app): GeometryPromptAuthor {
                 return new GeometryPromptAuthor(
-                    client: $app->make(TextCompletionClient::class),
+                    client: $app->make('video.anchor_prompt.client'),
                     promptPath: (string) config('image_prompt.character_prompt_path'),
                     promptVersion: (string) config('image_prompt.character_prompt_version'),
-                    model: (string) config('canonical_concept.'.config('canonical_concept.provider').'.model'),
+                    model: (string) config('image_prompt.anchor_author.model'),
                     maxTokens: (int) config('image_prompt.'.config('canonical_concept.provider').'.max_tokens'),
                 );
             }
@@ -415,6 +506,7 @@ class AppServiceProvider extends ServiceProvider
                 $app->make('video.character_prompt_author'),
                 $app->make(\App\Services\Video\ProductionSelectionService::class),
                 $app->make(\App\Services\Video\ScreenplaySubjectService::class),
+                $app->make(\App\Services\Video\VesselDesignService::class),
             ),
         );
 
@@ -429,6 +521,8 @@ class AppServiceProvider extends ServiceProvider
                         ?: config('canonical_concept.'.config('canonical_concept.provider').'.model')),
                     maxTokens: (int) config('video.scene_plan.max_tokens'),
                     maxShots: (int) config('video.scene_plan.max_shots'),
+                    beatPromptPath: (string) config('video.scene_plan.beat_prompt_path'),
+                    beatPromptVersion: (string) config('video.scene_plan.beat_prompt_version'),
                 );
             }
         );

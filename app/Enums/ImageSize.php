@@ -41,11 +41,25 @@ enum ImageSize: string
 
     public function label(): string
     {
+        return sprintf('%d × %d (%s)', $this->width(), $this->height(), $this->aspectRatio());
+    }
+
+    public function aspectRatio(): string
+    {
         $w = $this->width();
         $h = $this->height();
         $divisor = self::greatestCommonDivisor($w, $h);
 
-        return sprintf('%d × %d (%d:%d)', $w, $h, $w / $divisor, $h / $divisor);
+        return sprintf('%d:%d', $w / $divisor, $h / $divisor);
+    }
+
+    public function orientation(): string
+    {
+        return match (true) {
+            $this->width() > $this->height() => 'landscape',
+            $this->width() < $this->height() => 'portrait',
+            default => 'square',
+        };
     }
 
     private static function greatestCommonDivisor(int $a, int $b): int

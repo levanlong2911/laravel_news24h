@@ -14,6 +14,8 @@ use App\Video\Prompt\OpenAiTextClient;
 use App\Video\Reference\IdentityPreservationPrompt;
 use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceView;
+use App\Video\Screenplay\LocationProfile;
+use App\Video\Screenplay\ProtagonistProfile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -603,6 +605,7 @@ final class ReferencePromptWriter
         }
 
         $scene = false;
+        $layout = false;
         $support = false;
 
         foreach ($paths as $path) {
@@ -613,11 +616,16 @@ final class ReferencePromptWriter
             }
 
             $scene = $scene || str_starts_with($path, 'scenes.');
+            $layout = $layout || (str_starts_with($path, 'locations.') && str_ends_with($path, '.layout'));
             $support = $support || str_starts_with($path, 'design.') || str_starts_with($path, 'subject.');
         }
 
         if ($scene && ! $support) {
             $violations[] = 'a scene action path needs a design or subject path beside it';
+        }
+
+        if ($layout && ! $support) {
+            $violations[] = 'a location layout path needs a design or subject path beside it';
         }
 
         return $violations;
@@ -806,6 +814,37 @@ final class ReferencePromptWriter
             $this->cite($paths, 'subject.'.$key, $packetSubject[$key]);
         }
 
+        if (is_array($subject[ProtagonistProfile::CHARACTER_KEY] ?? null)) {
+            $image = ProtagonistProfile::forImage($subject[ProtagonistProfile::CHARACTER_KEY]);
+            $profile = [];
+
+            foreach (ProtagonistProfile::IMAGE_SECTIONS as $section) {
+                $profile[$section] = $image[$section];
+                $this->cite($paths, 'subject.profile.'.$section, $profile[$section]);
+            }
+
+            $profile['figures'] = [];
+
+            foreach ($image['figures'] as $figure) {
+                $quantity = (string) ($figure['quantity'] ?? '');
+
+                if (preg_match(self::ID_PATTERN, $quantity) === 1) {
+                    $profile['figures'][$quantity] = trim(($figure['value'] ?? '').' '.($figure['unit'] ?? '')).' ('.($figure['origin'] ?? '').')';
+                    $this->cite($paths, 'subject.profile.figures.'.$quantity, $profile['figures'][$quantity]);
+                }
+            }
+
+            $profile['signature_features'] = $image['signature_features'];
+
+            foreach ($profile['signature_features'] as $index => $feature) {
+                foreach (ProtagonistProfile::RENDERED_FEATURE_FIELDS as $field) {
+                    $this->cite($paths, 'subject.profile.signature_features.'.$index.'.'.$field, $feature[$field] ?? null);
+                }
+            }
+
+            $packetSubject[ProtagonistProfile::CHARACTER_KEY] = $profile;
+        }
+
         $scenes = [];
         $locationIds = [];
 
@@ -817,7 +856,7 @@ final class ReferencePromptWriter
             }
 
             $present = in_array($subjectId, (array) ($scene['character_ids'] ?? []), true)
-                || (is_array($scene['build_state'] ?? null) && ($scene['build_state']['subject_id'] ?? null) === $subjectId);
+                || \App\Video\Screenplay\SceneBeats::subjectId($scene) === $subjectId;
 
             if (! $present) {
                 continue;
@@ -848,6 +887,16 @@ final class ReferencePromptWriter
                 'description' => $location['description'] ?? null,
             ];
             $this->cite($paths, 'locations.'.$id.'.description', $locations[$id]['description']);
+
+            if (LocationProfile::isProfiled($location)) {
+                $place = LocationProfile::forPrompt($location);
+                $locations[$id]['spatial_relation'] = $place['spatial_relation'];
+
+                if ($place['spatial_relation'] === LocationProfile::SUBJECT_PART && $place['subject_id'] === $subjectId) {
+                    $locations[$id]['layout'] = $place['layout'];
+                    $this->cite($paths, 'locations.'.$id.'.layout', $place['layout']);
+                }
+            }
         }
 
         foreach ($scenes as $id => $scene) {

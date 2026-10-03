@@ -148,6 +148,8 @@ Route::group(
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
             Route::post('/{id}/concept/reset', [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
             //tạo phân cảnh
+            Route::post('/{id}/design', [VideoProjectsController::class, 'vesselDesign'])->name('video-projects.vessel-design');
+            Route::post('/{id}/design/reset', [VideoProjectsController::class, 'resetVesselDesign'])->name('video-projects.vessel-design-reset');
             Route::post('/{id}/screenplay', [VideoProjectsController::class, 'screenplay'])->name('video-projects.screenplay');
             // viết kịch bản
             Route::post('/{id}/screenplay/foundation', [VideoProjectsController::class, 'screenplayFoundation'])->name('video-projects.screenplay-foundation');

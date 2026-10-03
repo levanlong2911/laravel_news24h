@@ -14,7 +14,7 @@ final class ScreenplayText
         return match ($version) {
             'screenplay_v2' => self::renderV2($screenplay),
             'screenplay_v3' => self::renderV3($screenplay),
-            'screenplay_v4' => self::renderV4($screenplay),
+            'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7' => self::renderV4($screenplay),
             '' => self::renderLegacy($screenplay),
             default => "Screenplay version {$version} is not supported by this view.",
         };
@@ -35,7 +35,7 @@ final class ScreenplayText
     /** @param array<string, mixed> $screenplay */
     public static function renderScenes(array $screenplay): string
     {
-        if (($screenplay['schema_version'] ?? null) !== 'screenplay_v4') {
+        if (! in_array($screenplay['schema_version'] ?? null, ['screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7'], true)) {
             return self::render($screenplay);
         }
 
@@ -102,7 +102,7 @@ final class ScreenplayText
         foreach ($screenplay['locations'] ?? [] as $location) {
             $lines[] = '';
             $lines[] = '  '.$location['name'].'   ['.$location['id'].']';
-            $lines[] = '    '.$location['description'];
+            array_push($lines, ...LocationProfile::lines($location, $screenplay['locations'], '    '));
         }
 
         $total = 0;
@@ -118,11 +118,14 @@ final class ScreenplayText
             $lines[] = 'Stage: '.$scene['stage'].'   ·   '.(int) $scene['duration_estimate_ms'].'ms';
 
             if ($withAccounting) {
-                $lines[] = self::buildStateLine($scene);
+                array_push($lines, ...self::stateLines($scene));
             }
+
+            array_push($lines, ...LocationProfile::settingLines(LocationProfile::sceneSetting($scene)));
 
             $lines[] = '';
             $lines[] = (string) $scene['action'];
+            array_push($lines, ...self::beatLines($scene));
 
             foreach ($scene['dialogue'] ?? [] as $line) {
                 $lines[] = '';
@@ -149,6 +152,54 @@ final class ScreenplayText
 
         if ($withAccounting) {
             $lines = array_merge($lines, self::coverageLines($screenplay));
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param  array<string, mixed>  $scene
+     * @return list<string>
+     */
+    private static function stateLines(array $scene): array
+    {
+        if (! array_key_exists('subject_state', $scene)) {
+            return [self::buildStateLine($scene)];
+        }
+
+        $state = $scene['subject_state'];
+
+        if (! is_array($state)) {
+            return ['Subject state: not shown in this scene.'];
+        }
+
+        return [
+            'Subject state: '.($state['subject_id'] ?? '?'),
+            ...SceneBeats::stateLines((array) ($state['start'] ?? []), '  START'),
+            ...SceneBeats::stateLines((array) ($state['end'] ?? []), '  END'),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $scene
+     * @return list<string>
+     */
+    private static function beatLines(array $scene): array
+    {
+        if (! is_array($scene['beats'] ?? null)) {
+            return [];
+        }
+
+        $lines = ['', 'Mode: '.($scene['scene_mode'] ?? '?')];
+
+        foreach ($scene['beats'] as $beat) {
+            if (! is_array($beat)) {
+                continue;
+            }
+
+            $jump = trim((string) ($beat['time_jump'] ?? ''));
+            $lines[] = '  '.($beat['id'] ?? '?').($jump === '' ? '' : ' (after: '.$jump.')').' — '
+                .($beat['action'] ?? '').' → '.($beat['visible_result'] ?? '');
         }
 
         return $lines;

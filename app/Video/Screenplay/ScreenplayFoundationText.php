@@ -11,7 +11,7 @@ final class ScreenplayFoundationText
     {
         $version = (string) ($foundation['schema_version'] ?? '');
 
-        if ($version !== '' && ! in_array($version, ['screenplay_foundation_v1', 'screenplay_foundation_v2'], true)) {
+        if ($version !== '' && ! in_array($version, ['screenplay_foundation_v1', 'screenplay_foundation_v2', 'screenplay_foundation_v3'], true)) {
             return "Foundation version {$version} is not supported by this view.";
         }
 
@@ -40,6 +40,7 @@ final class ScreenplayFoundationText
             '  Realization         : '.($foundation['design_thesis']['realization'] ?? ''),
             '',
             ...self::dimensionLines($foundation['principal_dimensions'] ?? null),
+            ...self::spacePlanLines($foundation['space_plan'] ?? null),
             'PREMISE',
             '  Question : '.($foundation['premise']['question'] ?? ''),
             '  Force    : '.($foundation['premise']['force'] ?? ''),
@@ -79,6 +80,31 @@ final class ScreenplayFoundationText
         $lines[] = 'ENDING';
         $lines[] = '';
         $lines[] = (string) ($foundation['ending'] ?? '');
+
+        return $lines;
+    }
+
+    /** @return list<string> */
+    private static function spacePlanLines(mixed $plan): array
+    {
+        if (! is_array($plan) || $plan === []) {
+            return [];
+        }
+
+        $lines = ['SPACE PLAN'];
+
+        foreach ($plan as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $lines[] = '  ['.($row['space'] ?? '?').']';
+            $lines[] = '    Placement : '.($row['placement'] ?? '');
+            $lines[] = '    Role      : '.($row['role'] ?? '');
+            $lines[] = '    Decision  : '.($row['layout_decision'] ?? '');
+        }
+
+        $lines[] = '';
 
         return $lines;
     }

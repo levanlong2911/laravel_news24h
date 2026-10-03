@@ -12,12 +12,25 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
 use App\Video\Prompt\GeometryPromptAuthor;
+use App\Video\Screenplay\ProtagonistProfile;
+use App\Video\Screenplay\VesselDesign;
 use Illuminate\Support\Facades\Log;
 
 final class CharacterAnchorPromptService
 {
     /** @var list<string> */
     private const FOUNDATION_CONTEXT = ['logline', 'design_thesis', 'principal_dimensions'];
+
+    public const PRODUCTION_SOURCE = 'production_character';
+
+    /** @var list<string> */
+    private const PARTICIPANT_FIELDS = ['id', 'name', 'role', 'kind', 'description', 'personality', 'appearance'];
+
+    /** @var list<string> */
+    private const EXTERIOR_PROFILE_SECTIONS = ['form_and_proportions', 'deck_organization', 'windows_and_glazing'];
+
+    /** @var list<string> */
+    private const EXTERIOR_FEATURE_FIELDS = ['name', 'region', 'location', 'standard_state', 'standard_geometry'];
 
     private const MAX_APPEARANCES = 8;
 
@@ -29,6 +42,7 @@ final class CharacterAnchorPromptService
         private readonly GeometryPromptAuthor $peopleAuthor,
         private readonly ProductionSelectionService $selection,
         private readonly ScreenplaySubjectService $subjects,
+        private readonly VesselDesignService $designs,
     ) {}
 
     public static function anchorModel(): ImageModel
@@ -44,10 +58,31 @@ final class CharacterAnchorPromptService
     }
 
     /**
-     * @return list<array{id: string, name: string, kind: string, role: string}>
+     * @return list<array{id: string, name: string, kind: string, role: string, appearance: string, profile: ?array<string, mixed>}>
      */
     public function characters(string $projectId): array
     {
+        if (VesselDesign::isDesignFirst(VideoProject::query()->find($projectId))) {
+            $design = $this->designs->currentStage($projectId);
+
+            if ($design === null) {
+                return [];
+            }
+
+            $vessel = $this->designs->vessel($design);
+
+            return [[
+                'id' => VesselDesign::VESSEL_ID,
+                'name' => $vessel['name'] !== '' ? $vessel['name'] : VesselDesign::VESSEL_ID,
+                'kind' => 'object',
+                'role' => 'protagonist',
+                'appearance' => $vessel['appearance'],
+                'profile' => is_array($vessel[ProtagonistProfile::CHARACTER_KEY] ?? null) ? $vessel[ProtagonistProfile::CHARACTER_KEY] : null,
+                'design_stage_id' => $vessel['design_stage_id'],
+                'design_revision' => (int) $design->planning_revision,
+            ]];
+        }
+
         $stage = $this->screenplayStage($projectId);
         $characters = [];
 
@@ -61,6 +96,8 @@ final class CharacterAnchorPromptService
                 'name' => (string) ($row['name'] ?? $row['id']),
                 'kind' => (string) ($row['kind'] ?? ''),
                 'role' => (string) ($row['role'] ?? ''),
+                'appearance' => (string) ($row['appearance'] ?? ''),
+                'profile' => is_array($row[ProtagonistProfile::CHARACTER_KEY] ?? null) ? $row[ProtagonistProfile::CHARACTER_KEY] : null,
             ];
         }
 
@@ -78,6 +115,10 @@ final class CharacterAnchorPromptService
         ImageModel $model,
         bool $force = false,
     ): array {
+        if (VesselDesign::isDesignFirst(VideoProject::query()->find($projectId))) {
+            return $this->authorFromDesign($projectId, $characterId, $stage, $size, $model, $force);
+        }
+
         $screenplay = $this->screenplayStage($projectId);
 
         if ($screenplay === null || ! is_array($screenplay->output_json)) {
@@ -102,16 +143,96 @@ final class CharacterAnchorPromptService
         $source = $isObject
             ? $this->objectSource($screenplay->output_json, $character)
             : $this->peopleSource($screenplay->output_json, $character);
+        $downstream = $isObject ? GeometryPromptAuthor::downstreamFor($size) : null;
 
+        return $this->write(
+            $projectId, $characterId, $character, $author, $source, $downstream,
+            ['screenplay_stage_id' => (string) $screenplay->id], $stage, $size, $model, $force,
+        );
+    }
+
+    /**
+     * @return array{0: ?CompiledAnchorPrompt, 1: string, 2: ?array<string, mixed>}
+     */
+    private function authorFromDesign(
+        string $projectId,
+        string $characterId,
+        AnchorStage $stage,
+        ImageSize $size,
+        ImageModel $model,
+        bool $force,
+    ): array {
+        $design = $this->designs->currentStage($projectId);
+
+        if ($design === null) {
+            return [null, 'character_prompt_no_design', null];
+        }
+
+        if ($characterId !== VesselDesign::VESSEL_ID) {
+            return [null, 'character_prompt_unknown_character', null];
+        }
+
+        $character = $this->designs->vessel($design);
+        $source = $this->designs->anchorSource($design);
+        $broken = VesselDesign::extractIntegrityViolations((array) $design->output_json, (array) ($source['design'] ?? []));
+
+        if ($broken !== []) {
+            Log::error('anchor prompt: the locked design extract is incomplete, no model call made', [
+                'project_id' => $projectId,
+                'design_stage_id' => $design->id,
+                'violations' => $broken,
+            ]);
+
+            return [null, 'anchor_design_incomplete', null];
+        }
+
+        return $this->write(
+            $projectId,
+            $characterId,
+            $character,
+            $this->objectAuthor,
+            $source,
+            GeometryPromptAuthor::downstreamFor($size),
+            [
+                'design_stage_id' => (string) $design->id,
+                'design_content_hash' => (string) $character['design_content_hash'],
+            ],
+            $stage,
+            $size,
+            $model,
+            $force,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $character
+     * @param  array<string, mixed>  $source
+     * @param  array<string, string>|null  $downstream
+     * @param  array<string, string>  $origin
+     * @return array{0: ?CompiledAnchorPrompt, 1: string, 2: ?array<string, mixed>}
+     */
+    private function write(
+        string $projectId,
+        string $characterId,
+        array $character,
+        GeometryPromptAuthor $author,
+        array $source,
+        ?array $downstream,
+        array $origin,
+        AnchorStage $stage,
+        ImageSize $size,
+        ImageModel $model,
+        bool $force,
+    ): array {
         $input = [
             'character_id' => $characterId,
-            'screenplay_stage_id' => (string) $screenplay->id,
+        ] + $origin + [
             'source_hash' => hash('sha256', json_encode(
                 $source,
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
             )),
             'skill_hash' => $author->skillHash(),
-        ];
+        ] + ($downstream === null ? [] : ['downstream' => $downstream]);
 
         [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
             $projectId,
@@ -133,7 +254,7 @@ final class CharacterAnchorPromptService
         }
 
         try {
-            $result = $author->author($source, $stage, $size, $model);
+            $result = $author->author($source, $stage, $size, $model, $downstream);
         } catch (\Throwable $e) {
             $this->stageStore->finishFailed($claimed->id, $token, $e->getMessage());
 
@@ -154,8 +275,7 @@ final class CharacterAnchorPromptService
                 'character_id' => $characterId,
                 'character_name' => (string) ($character['name'] ?? $characterId),
                 'character_kind' => (string) ($character['kind'] ?? ''),
-                'screenplay_stage_id' => (string) $screenplay->id,
-            ],
+            ] + $origin,
             [
                 'model' => (string) config('canonical_concept.provider'),
                 'provider_model' => $result->authorModel,
@@ -190,10 +310,34 @@ final class CharacterAnchorPromptService
             $context[$key] = $screenplay[$key] ?? null;
         }
 
+        $participant = array_intersect_key($character, array_flip(self::PARTICIPANT_FIELDS));
+        $profile = $character[ProtagonistProfile::CHARACTER_KEY] ?? null;
+
         return [
-            'participant' => $this->participant($character),
+            'source_kind' => self::PRODUCTION_SOURCE,
+            'participant' => is_array($profile)
+                ? $participant + [ProtagonistProfile::CHARACTER_KEY => $this->exteriorProfile($profile)]
+                : $participant,
             'design' => $context,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>
+     */
+    private function exteriorProfile(array $profile): array
+    {
+        $exterior = array_intersect_key($profile, array_flip(self::EXTERIOR_PROFILE_SECTIONS));
+        $exterior['signature_features'] = array_values(array_map(
+            static fn (mixed $feature): array => array_intersect_key(
+                is_array($feature) ? $feature : [],
+                array_flip(self::EXTERIOR_FEATURE_FIELDS),
+            ),
+            (array) ($profile['signature_features'] ?? []),
+        ));
+
+        return $exterior;
     }
 
     /**
@@ -234,9 +378,10 @@ final class CharacterAnchorPromptService
      */
     private function participant(array $character): array
     {
-        return array_intersect_key(
-            $character,
-            array_flip(['id', 'name', 'role', 'kind', 'description', 'personality', 'appearance']),
-        );
+        $participant = array_intersect_key($character, array_flip(self::PARTICIPANT_FIELDS));
+
+        return is_array($character[ProtagonistProfile::CHARACTER_KEY] ?? null)
+            ? $participant + [ProtagonistProfile::CHARACTER_KEY => ProtagonistProfile::forImage($character[ProtagonistProfile::CHARACTER_KEY])]
+            : $participant;
     }
 }

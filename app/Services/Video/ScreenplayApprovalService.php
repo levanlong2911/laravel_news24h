@@ -17,9 +17,13 @@ final class ScreenplayApprovalService
 {
     public const ENTITY_TYPE = 'screenplay';
 
-    private function productionContract(): string
+    /** @return list<string> */
+    public function productionContracts(): array
     {
-        return (string) config('video.screenplay.scenes.assembled_version', 'screenplay_v4');
+        return array_values(array_map('strval', (array) config(
+            'video.screenplay.scenes.production_versions',
+            [config('video.screenplay.scenes.assembled_version', 'screenplay_v4')],
+        )));
     }
 
     /**
@@ -56,7 +60,7 @@ final class ScreenplayApprovalService
 
             $contract = (string) ($stage->output_json['schema_version'] ?? '');
 
-            if ($contract !== $this->productionContract()) {
+            if (! in_array($contract, $this->productionContracts(), true)) {
                 return [null, 'screenplay_not_approvable'];
             }
 
@@ -118,7 +122,7 @@ final class ScreenplayApprovalService
         $hash = ScreenplayContentHash::of($stage->output_json);
         $contract = (string) ($stage->output_json['schema_version'] ?? '');
 
-        if ($contract !== $this->productionContract()) {
+        if (! in_array($contract, $this->productionContracts(), true)) {
             return null;
         }
 

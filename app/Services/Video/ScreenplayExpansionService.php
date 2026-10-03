@@ -9,16 +9,20 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Video\Prompt\Exceptions\TextCompletionException;
+use App\Video\Screenplay\FilmBrief;
+use App\Video\Screenplay\LocationProfile;
+use App\Video\Screenplay\ProtagonistProfile;
 use App\Video\Screenplay\ScreenplayAuthor;
 use App\Video\Screenplay\ScreenplayFailure;
 use App\Video\Screenplay\ScreenplayResult;
 use App\Video\Screenplay\ScreenplayValidator;
+use App\Video\Screenplay\VesselDesign;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Log;
 
 final class ScreenplayExpansionService
 {
-    public const CURL_OPERATION_TIMEDOUT = 28;
+    public const CURL_OPERATION_TIMEDOUT = ScreenplayStepRunner::CURL_OPERATION_TIMEDOUT;
 
     /** @var list<string> */
     private const SCENE_SECTIONS = ['characters', 'locations', 'scenes', 'coverage'];
@@ -27,6 +31,17 @@ final class ScreenplayExpansionService
     private const FOUNDATION_SECTIONS = [
         'logline', 'design_thesis', 'principal_dimensions', 'premise',
         'synopsis', 'stage_treatments', 'ending',
+    ];
+
+    private const SPACE_PLAN_SECTION = 'space_plan';
+
+    public const PROFILE_SNAPSHOT_KEY = 'screenplay_profile';
+
+    /** @var list<string> */
+    private const FOUNDATION_PROFILE_KEYS = [
+        'contract_version', 'subject_class', 'objective', 'arc_stages',
+        'arc_required_stages', 'originality', 'identity_dimensions', 'design_requirements',
+        'people_policy', 'concept_antipatterns', 'concept_forbidden_terms',
     ];
 
     /** @var array<string, array{stage: PlanningStageName, author: string}> */
@@ -45,18 +60,23 @@ final class ScreenplayExpansionService
         private readonly PlanningStageStore $stageStore,
         private readonly VideoProjectRepositoryInterface $projects,
         private readonly CreativeProfileResolver $creativeProfiles,
+        private readonly ScreenplayStepRunner $runner,
     ) {}
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
     public function authorCharacters(string $projectId, ?string $foundationStageId, bool $force = false): array
     {
-        return $this->authorCast($projectId, 'characters', $foundationStageId, $force);
+        return $this->authorCast($projectId, 'characters', $foundationStageId, null, $force);
     }
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
-    public function authorLocations(string $projectId, ?string $foundationStageId, bool $force = false): array
-    {
-        return $this->authorCast($projectId, 'locations', $foundationStageId, $force);
+    public function authorLocations(
+        string $projectId,
+        ?string $foundationStageId,
+        ?string $charactersStageId,
+        bool $force = false,
+    ): array {
+        return $this->authorCast($projectId, 'locations', $foundationStageId, $charactersStageId, $force);
     }
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
@@ -79,10 +99,27 @@ final class ScreenplayExpansionService
             return [null, 'screenplay_characters_not_selectable'];
         }
 
+        if ($this->charactersRuleViolations($characters->output_json['characters'], $context['profile'], $context['foundation']) !== []) {
+            return [null, 'screenplay_characters_outdated'];
+        }
+
         $locations = $this->selectedCast($projectId, 'locations', $locationsStageId, $context['foundation_hash']);
 
         if ($locations === null) {
             return [null, 'screenplay_locations_not_selectable'];
+        }
+
+        if (! self::builtFrom($locations, $characters)) {
+            return [null, 'screenplay_locations_outdated'];
+        }
+
+        if (! LocationProfile::allProfiled($locations->output_json['locations'])) {
+            return [null, 'screenplay_locations_unprofiled'];
+        }
+
+        if (FilmBrief::profileSpaces($context['profile']) !== []
+            && (new ScreenplayValidator)->briefSpaceViolations($locations->output_json['locations'], $context['profile']) !== []) {
+            return [null, 'screenplay_locations_without_brief_spaces'];
         }
 
         $author = $context['author'];
@@ -179,7 +216,7 @@ final class ScreenplayExpansionService
                         'content_hash' => $input['locations_content_hash'],
                     ],
                     'warnings' => $warnings,
-                ], $warnings === [] ? 'ok' : 'ok_needs_review'];
+                ] + $context['design_sources'], $warnings === [] ? 'ok' : 'ok_needs_review'];
             },
             $constrained,
         );
@@ -188,10 +225,14 @@ final class ScreenplayExpansionService
     /**
      * @return array{rows: ?list<array<string, mixed>>, stage_id: ?string, revision: ?int, running: bool,
      *               error: ?string, written_at: ?string, foundation_stage_id: ?string, foundation_revision: ?int,
-     *               usable: bool}
+     *               characters_revision: ?int, usable: bool, problem: ?string}
      */
-    public function latestCast(string $projectId, string $part, ?string $foundationStageId = null): array
-    {
+    public function latestCast(
+        string $projectId,
+        string $part,
+        ?string $foundationStageId = null,
+        ?string $charactersStageId = null,
+    ): array {
         $stage = self::CAST[$part]['stage'];
 
         [$attempt] = $this->stageStore->latestStageForProject($projectId, $stage, [], skipOrphans: true);
@@ -206,6 +247,9 @@ final class ScreenplayExpansionService
         $rows = is_array($latest?->output_json) ? ($latest->output_json[$part] ?? null) : null;
         $rows = is_array($rows) && array_is_list($rows) && $rows !== [] ? $rows : null;
         $source = is_array($latest?->input_json) ? ($latest->input_json['_meta'] ?? []) : [];
+        $problem = $rows !== null
+            ? $this->castProblem($projectId, $part, $latest, $foundationStageId, $charactersStageId)
+            : null;
 
         return [
             'rows' => $rows,
@@ -219,7 +263,9 @@ final class ScreenplayExpansionService
             'written_at' => $rows !== null ? $latest->finished_at?->format('d/m/Y H:i') : null,
             'foundation_stage_id' => $rows !== null ? ($source['foundation_stage_id'] ?? null) : null,
             'foundation_revision' => $rows !== null ? ($source['foundation_revision'] ?? null) : null,
-            'usable' => $rows !== null && $this->usableFor($projectId, $part, $latest->id, $foundationStageId),
+            'characters_revision' => $rows !== null ? ($source['characters_revision'] ?? null) : null,
+            'usable' => $rows !== null && $problem === null,
+            'problem' => $problem,
         ];
     }
 
@@ -283,19 +329,7 @@ final class ScreenplayExpansionService
 
     public function curlErrorNumber(ConnectionException $e): ?int
     {
-        $previous = $e->getPrevious();
-
-        if ($previous instanceof \GuzzleHttp\Exception\ConnectException) {
-            $errno = $previous->getHandlerContext()['errno'] ?? null;
-
-            if (is_int($errno)) {
-                return $errno;
-            }
-        }
-
-        return preg_match('/cURL error (\d+)/', $e->getMessage(), $match) === 1
-            ? (int) $match[1]
-            : null;
+        return $this->runner->curlErrorNumber($e);
     }
 
     /**
@@ -310,35 +344,17 @@ final class ScreenplayExpansionService
         array $usage = [],
         string $rawResponse = '',
     ): string {
-        try {
-            $written = $this->stageStore->finishFailed($stageId, $token, $error, $usage, $rawResponse);
-        } catch (\Throwable $storage) {
-            Log::error('screenplay: writing the failed attempt threw, stored state unknown', [
-                'project_id' => $projectId,
-                'stage_id' => $stageId,
-                'failure' => $error,
-                'exception' => $storage,
-            ]);
-
-            return 'screenplay_result_not_stored';
-        }
-
-        if (! $written) {
-            Log::warning('screenplay: claim no longer held, failure not recorded', [
-                'project_id' => $projectId,
-                'stage_id' => $stageId,
-                'failure' => $error,
-            ]);
-
-            return 'screenplay_claim_lost';
-        }
-
-        return $reason;
+        return $this->runner->recordFailure($projectId, $stageId, $token, $error, $reason, $usage, $rawResponse);
     }
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
-    private function authorCast(string $projectId, string $part, ?string $foundationStageId, bool $force): array
-    {
+    private function authorCast(
+        string $projectId,
+        string $part,
+        ?string $foundationStageId,
+        ?string $charactersStageId,
+        bool $force,
+    ): array {
         [$context, $reason] = $this->prepare($projectId, $foundationStageId, self::CAST[$part]['author'], false);
 
         if ($context === null) {
@@ -347,11 +363,42 @@ final class ScreenplayExpansionService
 
         $author = $context['author'];
         $contract = $context['contract'];
+        $withProfile = $part === 'characters' && ProtagonistProfile::enabled($context['profile']);
+        $schema = self::castSchemaFor($author->contractSchema(), $part, $withProfile, $context['film_brief']);
+        $fixed = [];
+        $meta = $context['meta'];
+        $sourceCharacters = null;
+
+        if ($part === 'locations') {
+            $characters = $this->selectedCast($projectId, 'characters', $charactersStageId, $context['foundation_hash']);
+
+            if ($characters === null) {
+                return [null, 'screenplay_characters_not_selectable'];
+            }
+
+            if ($this->charactersRuleViolations($characters->output_json['characters'], $context['profile'], $context['foundation']) !== []) {
+                return [null, 'screenplay_characters_outdated'];
+            }
+
+            $fixed = ['characters' => $characters->output_json['characters']];
+            $meta += [
+                'characters_stage_id' => $characters->id,
+                'characters_revision' => $characters->planning_revision,
+            ];
+            $sourceCharacters = [
+                'stage_id' => $characters->id,
+                'revision' => $characters->planning_revision,
+                'content_hash' => self::contentHash($fixed['characters']),
+            ];
+        }
 
         $input = [
             'contract_version' => $contract,
             'foundation_content_hash' => $context['foundation_hash'],
-            'fingerprint' => $author->fingerprint($context['foundation'], $context['profile'], $context['requirements']),
+        ] + ($sourceCharacters === null ? [] : [
+            'characters_content_hash' => $sourceCharacters['content_hash'],
+        ]) + [
+            'fingerprint' => $author->fingerprint($context['foundation'], $context['profile'], $context['requirements'], $fixed),
         ];
 
         $validator = new ScreenplayValidator;
@@ -362,27 +409,88 @@ final class ScreenplayExpansionService
             $part,
             $author,
             $context,
-            [],
+            $fixed,
             $input,
-            $context['meta'],
+            $meta,
             $force,
-            function (ScreenplayResult $result) use ($validator, $context, $contract, $part): array {
+            function (ScreenplayResult $result) use ($validator, $context, $contract, $part, $withProfile, $sourceCharacters, $fixed): array {
                 $violations = $validator->structural(
                     $result->screenplay, $context['profile'], $contract, $context['excluded'],
                 );
+
+                if ($violations === [] && $part === 'locations') {
+                    $violations = $validator->locationLinkViolations($result->screenplay['locations'], $fixed['characters']);
+                }
 
                 if ($violations !== []) {
                     return [ucfirst($part).' failed validation: '.implode('; ', $violations), null, ''];
                 }
 
+                $rows = $result->screenplay[$part];
+
+                if ($withProfile) {
+                    $profile = $result->screenplay[ProtagonistProfile::OUTPUT_KEY];
+                    $profileViolations = $validator->protagonistProfileViolations(
+                        $profile, $context['foundation'], $context['excluded'], ProtagonistProfile::focus($context['profile']),
+                        FilmBrief::profileSpaces($context['profile']),
+                    );
+
+                    if ($profileViolations !== []) {
+                        return ['Protagonist profile failed validation: '.implode('; ', $profileViolations), null, ''];
+                    }
+
+                    $rows[ProtagonistProfile::receiverIndex($rows)][ProtagonistProfile::CHARACTER_KEY] = $profile;
+                }
+
                 return [null, [
-                    $part => $result->screenplay[$part],
+                    $part => $rows,
                     'schema_version' => $contract,
                     'author_model' => $result->authorModel,
                     'source_foundation' => $context['source_foundation'],
-                ], 'ok'];
+                ] + ($sourceCharacters === null ? [] : ['source_characters' => $sourceCharacters]), 'ok'];
             },
+            $schema,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $schema
+     * @param  array<string, mixed>|null  $brief
+     * @return array<string, mixed>|null
+     */
+    private static function castSchemaFor(array $schema, string $part, bool $withProfile, ?array $brief): ?array
+    {
+        if ($part === 'locations') {
+            if (! isset($schema['properties']['locations']['items']['properties'][FilmBrief::COVERAGE_SPACE_KEY])) {
+                return null;
+            }
+
+            $schema['properties']['locations']['items']['properties'][FilmBrief::COVERAGE_SPACE_KEY] = FilmBrief::spaceField(
+                $schema['properties']['locations']['items']['properties'][FilmBrief::COVERAGE_SPACE_KEY],
+                $brief,
+            );
+
+            return $schema;
+        }
+
+        if (! $withProfile) {
+            unset($schema['properties'][ProtagonistProfile::OUTPUT_KEY]);
+            $schema['required'] = array_values(array_diff($schema['required'], [ProtagonistProfile::OUTPUT_KEY]));
+
+            return $schema;
+        }
+
+        $profile = ProtagonistProfile::OUTPUT_KEY;
+        $rooms = ProtagonistProfile::INTERIOR_KEY;
+
+        if (isset($schema['properties'][$profile]['properties'][$rooms]['items']['properties']['space'])) {
+            $schema['properties'][$profile]['properties'][$rooms]['items']['properties']['space'] = FilmBrief::spaceField(
+                $schema['properties'][$profile]['properties'][$rooms]['items']['properties']['space'],
+                $brief,
+            );
+        }
+
+        return $schema;
     }
 
     /**
@@ -402,11 +510,31 @@ final class ScreenplayExpansionService
             return [null, 'screenplay_foundation_not_selectable'];
         }
 
-        $loaded = $this->screenplayProfile((string) ($project->article->category?->slug ?? ''));
+        $current = $this->screenplayProfile((string) ($project->article->category?->slug ?? ''));
 
-        if ($loaded === null) {
+        if ($current === null) {
             return [null, 'no_screenplay_profile'];
         }
+
+        [$loaded, $source] = self::profileForFoundation($foundationStage, $current);
+
+        if ($loaded === null) {
+            Log::error('screenplay expansion: the profile the foundation was written with cannot be established, no model call made', [
+                'project_id' => $projectId,
+                'foundation_stage_id' => $foundationStage->id,
+                'reason' => $source,
+            ]);
+
+            return [null, $source];
+        }
+
+        [$designContext, $designReason] = self::designContext($projectId, $foundationStage);
+
+        if ($designContext === null) {
+            return [null, $designReason];
+        }
+
+        $loaded = VesselDesign::downstreamProfile($loaded) + $designContext;
 
         try {
             $author = app($authorKey);
@@ -420,13 +548,26 @@ final class ScreenplayExpansionService
             return [null, 'screenplay_contract_unsupported'];
         }
 
+        $filmBrief = self::foundationBrief($foundationStage);
+        $briefErrors = $filmBrief === null ? [] : FilmBrief::profileViolations($loaded, $filmBrief);
+
+        if ($briefErrors !== []) {
+            Log::error('screenplay expansion: the project brief does not fit the profile, no model call made', [
+                'project_id' => $projectId,
+                'author' => $authorKey,
+                'violations' => $briefErrors,
+            ]);
+
+            return [null, 'screenplay_film_brief_invalid'];
+        }
+
         $contract = $author->contractVersion();
         $assembledVersion = (string) config('video.screenplay.scenes.assembled_version');
-        $profile = $loaded;
+        $profile = FilmBrief::applyToProfile($loaded, $filmBrief);
         $profile['contract_version'] = $contract;
-        $assembledProfile = $loaded;
+        $assembledProfile = FilmBrief::applyToProfile($loaded, $filmBrief);
         $assembledProfile['contract_version'] = $assembledVersion;
-        $assembledProfile['dimension_bounds'] = config('video.screenplay.foundation.dimension_bounds');
+        $assembledProfile['dimension_bounds'] = self::dimensionBoundsFor($foundationStage);
 
         $validator = new ScreenplayValidator;
         $profileErrors = array_merge(
@@ -468,7 +609,9 @@ final class ScreenplayExpansionService
             'assembled_profile' => $assembledProfile,
             'foundation' => $foundation,
             'foundation_hash' => $foundationHash,
-            'requirements' => ['aspect_ratio' => (string) config('video.screenplay.aspect_ratio', '9:16')],
+            'requirements' => ['aspect_ratio' => (string) config('video.screenplay.aspect_ratio', '9:16')]
+                + ($filmBrief === null ? [] : [FilmBrief::REQUIREMENT_KEY => $filmBrief]),
+            'film_brief' => $filmBrief,
             'excluded' => array_values(array_map(
                 static fn (array $item): string => (string) ($item['value'] ?? ''),
                 is_array($brief) ? ($brief['excluded_context'] ?? []) : [],
@@ -477,12 +620,17 @@ final class ScreenplayExpansionService
                 'foundation_stage_id' => $foundationStage->id,
                 'foundation_revision' => $foundationStage->planning_revision,
                 'foundation_output_hash' => $foundationStage->output_hash,
+                'profile_source' => $source,
             ],
             'source_foundation' => [
                 'stage_id' => $foundationStage->id,
                 'revision' => $foundationStage->planning_revision,
                 'content_hash' => $foundationHash,
             ],
+            'design_sources' => array_filter([
+                VesselDesign::SOURCE_DESIGN_KEY => $foundationStage->output_json[VesselDesign::SOURCE_DESIGN_KEY] ?? null,
+                VesselDesign::SOURCE_ANCHOR_KEY => $foundationStage->output_json[VesselDesign::SOURCE_ANCHOR_KEY] ?? null,
+            ], static fn (mixed $source): bool => is_array($source)),
         ], 'ok'];
     }
 
@@ -508,158 +656,11 @@ final class ScreenplayExpansionService
         callable $finish,
         ?array $constrainedSchema = null,
     ): array {
-        [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage(
-            $projectId, $stage, $input, $force, $meta,
+        return $this->runner->run(
+            $projectId, $stage, $label, $author,
+            $context['foundation'], $context['profile'], $context['requirements'],
+            $fixed, $input, $meta, $force, $finish, $constrainedSchema,
         );
-
-        if ($claimReason === 'already_succeeded') {
-            return [$claimed->output_json ?? [], 'cached'];
-        }
-
-        if ($token === null) {
-            return [null, 'screenplay_running'];
-        }
-
-        $fail = function (string $error, string $reason, array $usage = [], string $raw = '') use (
-            $projectId, $stage, $label, $input, $meta, $claimed, $token,
-        ): string {
-            $recorded = $this->recordFailure($projectId, $claimed->id, $token, $error, $reason, $usage, $raw);
-
-            return $recorded === 'screenplay_claim_lost' && ($usage !== [] || $raw !== '')
-                ? $this->keepLostAttempt($projectId, $stage, $label, $input, $meta, $claimed->id, $token, $error, $usage, $raw)
-                : $recorded;
-        };
-
-        $startedAt = microtime(true);
-
-        try {
-            $result = $author->author(
-                $context['foundation'], $context['profile'], $context['requirements'], $fixed, $constrainedSchema,
-            );
-        } catch (ScreenplayFailure $e) {
-            Log::error("screenplay {$label}: author failed after a paid response", [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'kind' => $e->kind,
-                'waited_seconds' => round(microtime(true) - $startedAt, 1),
-                'exception' => $e,
-            ]);
-
-            return [null, $fail(
-                $e->getMessage(),
-                $e->kind === ScreenplayFailure::TRUNCATED ? 'screenplay_truncated' : 'screenplay_author_failed',
-                $e->usage, $e->rawResponse,
-            )];
-        } catch (ConnectionException $e) {
-            $errno = $this->curlErrorNumber($e);
-
-            Log::error("screenplay {$label}: the request never reached a response", [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'waited_seconds' => round(microtime(true) - $startedAt, 1),
-                'curl_errno' => $errno,
-                'exception' => $e,
-            ]);
-
-            return [null, $this->recordFailure(
-                $projectId, $claimed->id, $token, $e->getMessage(),
-                $errno === self::CURL_OPERATION_TIMEDOUT ? 'screenplay_timeout' : 'screenplay_connection_failed',
-            )];
-        } catch (\Throwable $e) {
-            Log::error("screenplay {$label}: author failed before any response", [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'waited_seconds' => round(microtime(true) - $startedAt, 1),
-                'exception' => $e,
-            ]);
-
-            return [null, $this->recordFailure(
-                $projectId, $claimed->id, $token, $e->getMessage(), 'screenplay_call_failed',
-            )];
-        }
-
-        try {
-            [$error, $output, $okReason] = $finish($result);
-        } catch (\Throwable $e) {
-            Log::error("screenplay {$label}: failed after a paid response", [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'exception' => $e,
-            ]);
-
-            return [null, $fail(
-                $e->getMessage(), 'screenplay_after_response_failed', $result->usage, $result->rawResponse,
-            )];
-        }
-
-        if ($error !== null || $output === null) {
-            return [null, $fail((string) $error, 'screenplay_invalid', $result->usage, $result->rawResponse)];
-        }
-
-        try {
-            $recorded = $this->stageStore->finishSucceeded(
-                $claimed->id, $token, $result->rawResponse, $output, $result->usage,
-            );
-        } catch (\Throwable $e) {
-            Log::error("screenplay {$label}: writing the paid result threw, stored state unknown", [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'exception' => $e,
-            ]);
-
-            return [null, 'screenplay_result_not_stored'];
-        }
-
-        if (! $recorded) {
-            return [null, $this->keepLostAttempt(
-                $projectId, $stage, $label, $input, $meta, $claimed->id, $token,
-                'claim_lost', $result->usage, $result->rawResponse, $output,
-            )];
-        }
-
-        return [$output, $okReason];
-    }
-
-    /**
-     * @param  array<string, mixed>  $input
-     * @param  array<string, mixed>  $meta
-     * @param  array<string, mixed>  $usage
-     * @param  array<string, mixed>  $output
-     */
-    private function keepLostAttempt(
-        string $projectId,
-        PlanningStageName $stage,
-        string $label,
-        array $input,
-        array $meta,
-        string $stageId,
-        string $token,
-        string $error,
-        array $usage,
-        string $rawResponse,
-        array $output = [],
-    ): string {
-        $kept = false;
-
-        try {
-            $kept = $this->stageStore->recordOrphanAttempt(
-                $projectId, $stage, $input, $meta, $stageId, $token, $error, $usage, $rawResponse, $output,
-            );
-        } catch (\Throwable $e) {
-            Log::error("screenplay {$label}: keeping the lost paid attempt threw", [
-                'project_id' => $projectId,
-                'stage_id' => $stageId,
-                'exception' => $e,
-            ]);
-        }
-
-        Log::warning("screenplay {$label}: claim lost after a paid response", [
-            'project_id' => $projectId,
-            'stage_id' => $stageId,
-            'orphan_recorded' => $kept,
-        ]);
-
-        return 'screenplay_claim_lost';
     }
 
     private function selectableFoundation(string $projectId, ?string $stageId): ?VideoPlanningStage
@@ -673,20 +674,104 @@ final class ScreenplayExpansionService
             ->where('project_id', $projectId)
             ->where('stage', PlanningStageName::SCREENPLAY_FOUNDATION->value)
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first(['id', 'planning_revision', 'output_hash', 'output_json']);
+            ->first(['id', 'planning_revision', 'output_hash', 'output_json', 'input_json']);
 
         $version = is_array($stage?->output_json) ? ($stage->output_json['schema_version'] ?? null) : null;
 
-        return $version === config('video.screenplay.scenes.foundation_version') ? $stage : null;
+        return in_array($version, (array) config('video.screenplay.scenes.foundation_versions'), true) ? $stage : null;
     }
 
-    private function usableFor(string $projectId, string $part, string $castStageId, ?string $foundationStageId): bool
-    {
-        $foundation = $this->selectableFoundation($projectId, $foundationStageId);
+    private function castProblem(
+        string $projectId,
+        string $part,
+        VideoPlanningStage $stage,
+        ?string $foundationStageId,
+        ?string $charactersStageId,
+    ): ?string {
+        $foundationStage = $this->selectableFoundation($projectId, $foundationStageId);
 
-        return $foundation !== null && $this->selectedCast(
-            $projectId, $part, $castStageId, self::contentHash(self::foundationContent($foundation->output_json)),
-        ) !== null;
+        if ($foundationStage === null) {
+            return 'foundation';
+        }
+
+        $foundation = self::foundationContent($foundationStage->output_json);
+        $foundationHash = self::contentHash($foundation);
+
+        if ($this->selectedCast($projectId, $part, $stage->id, $foundationHash) === null) {
+            return 'foundation';
+        }
+
+        [$profile] = self::profileForFoundation($foundationStage, $this->projectProfile($projectId));
+
+        if ($profile === null) {
+            return 'profile_changed';
+        }
+
+        $profile = FilmBrief::applyToProfile($profile, self::foundationBrief($foundationStage));
+
+        if ($part === 'characters') {
+            return $this->charactersRuleViolations($stage->output_json['characters'], $profile, $foundation) === []
+                ? null
+                : 'rules';
+        }
+
+        $characters = $this->selectedCast($projectId, 'characters', $charactersStageId, $foundationHash);
+
+        if ($characters === null
+            || $this->charactersRuleViolations($characters->output_json['characters'], $profile, $foundation) !== []
+            || ! self::builtFrom($stage, $characters)) {
+            return 'characters';
+        }
+
+        return LocationProfile::allProfiled($stage->output_json['locations']) ? null : 'profile';
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $profile
+     * @param  array<string, mixed>  $foundation
+     * @return list<string>
+     */
+    private function charactersRuleViolations(array $rows, array $profile, array $foundation): array
+    {
+        $violations = [];
+
+        if (ProtagonistProfile::protagonistOnly($profile) && count($rows) !== 1) {
+            $violations[] = 'characters: this profile declares only the protagonist';
+        }
+
+        if (! ProtagonistProfile::enabled($profile)) {
+            return $violations;
+        }
+
+        $index = ProtagonistProfile::receiverIndex($rows);
+
+        if ($index === null) {
+            return [...$violations, 'characters: no protagonist carries the profile'];
+        }
+
+        return [...$violations, ...(new ScreenplayValidator)->protagonistProfileViolations(
+            $rows[$index][ProtagonistProfile::CHARACTER_KEY] ?? null, $foundation, [], ProtagonistProfile::focus($profile),
+            FilmBrief::profileSpaces($profile),
+        )];
+    }
+
+    private static function builtFrom(VideoPlanningStage $locations, VideoPlanningStage $characters): bool
+    {
+        $source = is_array($locations->input_json) ? ($locations->input_json['characters_content_hash'] ?? null) : null;
+
+        return is_string($source)
+            && hash_equals(self::contentHash($characters->output_json['characters']), $source);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function projectProfile(string $projectId): ?array
+    {
+        $project = $this->projects->getById($projectId);
+
+        return $project?->article === null
+            ? null
+            : $this->screenplayProfile((string) ($project->article->category?->slug ?? ''));
     }
 
     private function selectedCast(string $projectId, string $part, ?string $stageId, string $foundationHash): ?VideoPlanningStage
@@ -714,15 +799,137 @@ final class ScreenplayExpansionService
     }
 
     /**
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>
+     */
+    public static function foundationShape(array $profile): array
+    {
+        $kept = array_intersect_key($profile, array_flip(self::FOUNDATION_PROFILE_KEYS));
+
+        unset($kept['people_policy']['dialogue_requires_person_id'], $kept['people_policy']['dialogue_allowed']);
+        $kept['contract_version'] = (string) config('video.screenplay.foundation.contract_version');
+        $kept['dimension_bounds'] = config('video.screenplay.foundation.dimension_bounds');
+
+        return $kept;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $current
+     * @return array{0: ?array<string, mixed>, 1: string}
+     */
+    public static function profileForFoundation(VideoPlanningStage $foundation, ?array $current): array
+    {
+        $meta = PlanningStageStore::metadataOf($foundation->input_json);
+        $snapshot = $meta[self::PROFILE_SNAPSHOT_KEY] ?? null;
+
+        if (is_array($snapshot) && $snapshot !== []) {
+            return [$snapshot, 'snapshot'];
+        }
+
+        $recorded = $meta['profile'] ?? null;
+
+        if (! is_array($recorded) || $current === null) {
+            return [null, 'screenplay_profile_unknown'];
+        }
+
+        $comparable = static function (array $shape): string {
+            unset($shape['contract_version'], $shape[FilmBrief::PROFILE_SPACES_KEY]);
+
+            return self::contentHash(self::sortedKeys($shape));
+        };
+
+        return $comparable(self::foundationShape($current)) === $comparable($recorded)
+            ? [FilmBrief::applyToProfile($current, null), 'legacy']
+            : [null, 'screenplay_profile_changed'];
+    }
+
+    /** @return array{0: ?array<string, mixed>, 1: string} */
+    private static function designContext(string $projectId, VideoPlanningStage $foundation): array
+    {
+        $source = $foundation->output_json[VesselDesign::SOURCE_DESIGN_KEY] ?? null;
+        $designId = is_array($source) ? ($source['stage_id'] ?? null) : null;
+
+        if (! is_string($designId) || $designId === '') {
+            return [[], 'ok'];
+        }
+
+        $design = VideoPlanningStage::query()
+            ->whereKey($designId)
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::VESSEL_DESIGN->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->first();
+        $output = is_array($design?->output_json) ? $design->output_json : [];
+
+        if ($design === null || ! hash_equals((string) ($source['content_hash'] ?? ''), VesselDesign::contentHash($output))) {
+            return [null, 'design_changed_since_anchor'];
+        }
+
+        if (! VesselDesign::hasCanonical($output)) {
+            return [[], 'ok'];
+        }
+
+        $broken = VesselDesign::extractIntegrityViolations($output, VesselDesign::anchorDesign($output, null));
+
+        if ($broken !== []) {
+            Log::error('screenplay expansion: the locked design extract is incomplete, no model call made', [
+                'project_id' => $projectId,
+                'design_stage_id' => $designId,
+                'violations' => $broken,
+            ]);
+
+            return [null, 'design_geometry_incomplete'];
+        }
+
+        return [[
+            VesselDesign::DESIGN_GEOMETRY_KEY => VesselDesign::screenplayGeometry($output),
+            VesselDesign::CONFIGURATION_COMPONENTS_KEY => VesselDesign::configurationComponents($output),
+        ], 'ok'];
+    }
+
+    /** @return array<string, mixed> */
+    public static function dimensionBoundsFor(VideoPlanningStage $foundation): array
+    {
+        $recorded = PlanningStageStore::metadataOf($foundation->input_json)['profile']['dimension_bounds'] ?? null;
+
+        return is_array($recorded) ? $recorded : (array) config('video.screenplay.foundation.dimension_bounds');
+    }
+
+    private static function sortedKeys(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        return array_map(static fn (mixed $child): mixed => self::sortedKeys($child), $value);
+    }
+
+    /** @return array<string, mixed>|null */
+    public static function foundationBrief(VideoPlanningStage $foundation): ?array
+    {
+        return FilmBrief::ofRequirements(
+            (array) (PlanningStageStore::metadataOf($foundation->input_json)['requirements'] ?? []),
+        );
+    }
+
+    /**
      * @param  array<string, mixed>  $output
      * @return array<string, mixed>
      */
-    private static function foundationContent(array $output): array
+    public static function foundationContent(array $output): array
     {
         $content = [];
 
         foreach (self::FOUNDATION_SECTIONS as $section) {
             $content[$section] = $output[$section] ?? null;
+        }
+
+        if (array_key_exists(self::SPACE_PLAN_SECTION, $output)) {
+            $content[self::SPACE_PLAN_SECTION] = $output[self::SPACE_PLAN_SECTION];
         }
 
         return $content;
@@ -756,9 +963,14 @@ final class ScreenplayExpansionService
 
         $scene['location_id'] = $only($scene['location_id'], $ids($locations));
         $scene['character_ids']['items'] = $only($scene['character_ids']['items'], $ids($characters));
-        $scene['build_state']['properties']['subject_id'] = $only(
-            $scene['build_state']['properties']['subject_id'], $ids($characters, 'object'),
-        );
+
+        foreach (['build_state', 'subject_state'] as $state) {
+            if (isset($scene[$state]['properties']['subject_id'])) {
+                $scene[$state]['properties']['subject_id'] = $only(
+                    $scene[$state]['properties']['subject_id'], $ids($characters, 'object'),
+                );
+            }
+        }
 
         if ($speaks) {
             $scene['dialogue']['items']['properties']['character_id'] = $only(
@@ -828,7 +1040,7 @@ final class ScreenplayExpansionService
         return [$expansion, $violations];
     }
 
-    private static function contentHash(mixed $value): string
+    public static function contentHash(mixed $value): string
     {
         return hash('sha256', json_encode(
             $value,

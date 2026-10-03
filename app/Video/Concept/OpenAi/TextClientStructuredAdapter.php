@@ -64,17 +64,7 @@ final class TextClientStructuredAdapter implements StructuredOutputLlmClient
             );
         }
 
-        if ($response->wasTruncated()) {
-            throw new AnthropicTruncatedOutputException(sprintf(
-                'Canonical output was truncated by the token budget after %d completion '
-                .'tokens (%d of them reasoning). Raise the provider max_tokens or lower '
-                .'the reasoning effort.',
-                $response->outputTokens,
-                $response->reasoningTokens,
-            ));
-        }
-
-        return new AnthropicStructuredOutputResponse(
+        $structured = new AnthropicStructuredOutputResponse(
             rawText: $response->text,
             model: $response->model,
             stopReason: $response->stopReason,
@@ -82,6 +72,18 @@ final class TextClientStructuredAdapter implements StructuredOutputLlmClient
             outputTokens: $response->outputTokens,
             requestId: $response->requestId,
         );
+
+        if ($response->wasTruncated()) {
+            throw new AnthropicTruncatedOutputException(sprintf(
+                'Canonical output was truncated by the token budget after %d completion '
+                .'tokens (%d of them reasoning). Raise the provider max_tokens or lower '
+                .'the reasoning effort.',
+                $response->outputTokens,
+                $response->reasoningTokens,
+            ), response: $structured);
+        }
+
+        return $structured;
     }
 
     /**

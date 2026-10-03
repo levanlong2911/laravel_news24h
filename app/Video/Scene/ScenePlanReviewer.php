@@ -29,17 +29,29 @@ final class ScenePlanReviewer
     public const MAX_FINDINGS = 40;
 
     /** @var list<string> */
-    public const EVIDENCE_SOURCES = ['scene', 'screenplay'];
+    public const EVIDENCE_SOURCES = ['scene', 'screenplay', 'screenplay_scene'];
 
     /** @var list<string> */
     public const SCENE_FIELDS = [
         'delta', 'title', 'purpose', 'basis', 'state_before', 'scene_state',
         'transition_mode', 'continuity_group', 'source_scene_code', 'camera_change_reason',
         'video.action', 'video.preserve', 'video.end_state',
+        'beat_ids', 'keyframe_state.progress', 'keyframe_state.configuration',
+        'end_state.progress', 'end_state.configuration',
     ];
 
     /** @var list<string> */
     public const SCREENPLAY_FIELDS = ['logline', 'synopsis', 'ending'];
+
+    /** @var list<string> */
+    public const SCREENPLAY_SCENE_FIELDS = [
+        'action',
+        'subject_state.start.progress', 'subject_state.start.configuration',
+        'subject_state.end.progress', 'subject_state.end.configuration',
+    ];
+
+    /** @var list<string> */
+    public const BEAT_FIELDS = ['beat.action', 'beat.visible_result', 'beat.time_jump'];
 
     public const MAX_EVIDENCE = 3;
 
@@ -66,10 +78,11 @@ final class ScenePlanReviewer
         int $maxShots,
         string $skill,
         ?callable $onAttempt = null,
+        bool $beats = false,
     ): ScenePlanReviewResult {
         $system = $this->systemOf($skill);
         $user = $this->user($reviewInput);
-        $schema = $this->schema($coverageIds, $maxShots);
+        $schema = $this->schema($coverageIds, $maxShots, $beats);
 
         if ($this->maxTokens < 1) {
             throw new ScenePlanException('video.scene_plan.review.max_tokens must be >= 1.');
@@ -214,7 +227,7 @@ final class ScenePlanReviewer
      * @param  list<string>  $coverageIds
      * @return array<string, mixed>
      */
-    private function schema(array $coverageIds, int $maxShots): array
+    private function schema(array $coverageIds, int $maxShots, bool $beats = false): array
     {
         return [
             'type' => 'object',
@@ -248,9 +261,12 @@ final class ScenePlanReviewer
                                         'scene_code' => ['type' => 'string', 'maxLength' => 60],
                                         'field' => [
                                             'type' => 'string',
-                                            'enum' => array_values(array_unique(
-                                                array_merge(self::SCENE_FIELDS, self::SCREENPLAY_FIELDS),
-                                            )),
+                                            'enum' => array_values(array_unique(array_merge(
+                                                self::SCENE_FIELDS,
+                                                self::SCREENPLAY_FIELDS,
+                                                self::SCREENPLAY_SCENE_FIELDS,
+                                                self::BEAT_FIELDS,
+                                            ))),
                                         ],
                                         'quote' => [
                                             'type' => 'string',
@@ -266,7 +282,7 @@ final class ScenePlanReviewer
                 'patch' => [
                     'type' => 'array',
                     'maxItems' => $maxShots,
-                    'items' => ScenePlanAuthor::sceneItemSchema($coverageIds),
+                    'items' => ScenePlanAuthor::sceneItemSchema($coverageIds, $beats),
                 ],
             ],
         ];

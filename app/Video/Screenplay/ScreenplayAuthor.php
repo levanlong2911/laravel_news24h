@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Video\Screenplay;
 
-use App\Services\Admin\ClaudeWriterService;
 use App\Video\Concept\Claude\AnthropicStructuredOutputClient;
 use App\Video\Concept\Contracts\StructuredOutputLlmClient;
 use App\Video\Prompt\Exceptions\TextCompletionException;
@@ -13,6 +12,13 @@ use Illuminate\Support\Facades\Log;
 final class ScreenplayAuthor
 {
     public const DEFAULT_CONTRACT = 'screenplay_v2';
+
+    /** @var array<string, array{input_usd_per_mtok: float, output_usd_per_mtok: float}> */
+    public const PRICING = [
+        'claude-sonnet-5' => ['input_usd_per_mtok' => 2.00, 'output_usd_per_mtok' => 10.00],
+        'claude-sonnet-5-5' => ['input_usd_per_mtok' => 2.00, 'output_usd_per_mtok' => 10.00],
+        'gpt-5.6-sol' => ['input_usd_per_mtok' => 4.00, 'output_usd_per_mtok' => 20.00],
+    ];
 
     /** @var list<string> */
     private const DOCUMENTS = [
@@ -52,11 +58,29 @@ final class ScreenplayAuthor
         if (! in_array($contractVersion, ScreenplayValidator::ALL_CONTRACTS, true)) {
             throw new TextCompletionException("Unsupported screenplay contract: {$contractVersion}");
         }
+
+        if (! array_key_exists($model, self::PRICING)) {
+            throw new TextCompletionException("No price is known for screenplay model: {$model}");
+        }
     }
 
     public function contractVersion(): string
     {
         return $this->contractVersion;
+    }
+
+    /**
+     * @return array{model: string, prompt_version: string, contract_version: string, rules_hash: string, schema_hash: string}
+     */
+    public function promptLineage(): array
+    {
+        return [
+            'model' => $this->model,
+            'prompt_version' => $this->promptVersion,
+            'contract_version' => $this->contractVersion,
+            'rules_hash' => hash('sha256', $this->rules()),
+            'schema_hash' => hash('sha256', json_encode($this->schema())),
+        ];
     }
 
     private function logEnded(float $startedAt, string $reason, ?string $rawText): void
@@ -341,17 +365,18 @@ final class ScreenplayAuthor
     /** @return array<string, mixed> */
     private function usageOf(object $response): array
     {
+        $price = self::PRICING[$this->model];
+
         return [
-            'model' => 'sonnet5',
+            'model' => $this->model,
             'provider_model' => $response->model,
             'instruction_version' => $this->promptVersion,
             'tokens_in' => $response->inputTokens,
             'tokens_out' => $response->outputTokens,
-            'cost_usd' => ClaudeWriterService::costUsd(
-                $response->inputTokens,
-                $response->outputTokens,
-                'sonnet5',
-            ),
+            'cost_usd' => (
+                $response->inputTokens * $price['input_usd_per_mtok']
+                + $response->outputTokens * $price['output_usd_per_mtok']
+            ) / 1_000_000,
         ];
     }
 }

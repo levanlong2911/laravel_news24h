@@ -33,9 +33,7 @@ final class ProductionSelectionService
             return null;
         }
 
-        $expected = (string) config('video.screenplay.scenes.assembled_version', 'screenplay_v4');
-
-        if (($stage->output_json['schema_version'] ?? null) !== $expected
+        if (! in_array($stage->output_json['schema_version'] ?? null, $this->approvals->productionContracts(), true)
             || $this->approvals->matchingApproval($stage) === null) {
             return null;
         }
