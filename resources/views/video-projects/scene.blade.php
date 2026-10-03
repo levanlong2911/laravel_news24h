@@ -118,6 +118,7 @@
             'patched_but_unreviewed' => 'Bản vá cuối chưa được rà lại — hết số vòng cho phép.',
             'rounds_exhausted' => 'Hết số vòng rà cho phép.',
             'requires_replan' => 'Reviewer báo phải sinh lại: lỗi không sửa được bằng cách vá scene đang có.',
+            'unresolved_shots' => 'Còn shot đánh dấu UNRESOLVED: — kịch bản chưa đủ căn cứ để quay đúng hành động, không được đánh dấu đã rà xong.',
             'no_progress' => 'Bản vá không đổi gì so với bản hiện tại.',
             'oscillated' => 'Bản vá đưa kế hoạch quay về một trạng thái đã qua.',
             'patch_invalid' => 'Bản vá không qua được kiểm cấu trúc — giữ bản trước đó.',
@@ -263,12 +264,22 @@
         <div class="vs-h"><b>4</b> Image</div>
 
         @forelse($scenes as $s)
+            @if($s['screenplay_scene_code'] !== null && ($loop->first || ($scenes[$loop->index - 1]['screenplay_scene_code'] ?? null) !== $s['screenplay_scene_code']))
+                <div class="vs-c" style="grid-column:1/-1;font-weight:600">
+                    Scene {{ strtoupper($s['screenplay_scene_code']) }}
+                </div>
+            @endif
             <div class="vs-row">
 
                 <div class="vs-c vs-plan">
                     <span class="o">{{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }}</span>
                     <span class="t">{{ $s['title'] }}</span>
+                    <span class="ph">Shot {{ $s['shot_index'] }}</span>
                     <span class="ph">{{ $s['phase'] }}</span>
+
+                    @foreach($s['beat_ids'] as $beatId)
+                        <span class="ph" title="Beat của scene">{{ $beatId }}</span>
+                    @endforeach
 
                     @foreach($s['milestones'] as $milestone)
                         <span class="ph">{{ $milestone }}</span>
@@ -306,6 +317,17 @@
                             @if($s['end_state']) → {{ $s['end_state'] }} @endif
                         </div>
                     @endif
+
+                    @foreach(['keyframe_state' => 'Khung hình', 'shot_end_state' => 'Cuối clip'] as $stateKey => $stateLabel)
+                        @if(is_array($s[$stateKey]))
+                            <div class="m">
+                                <b>{{ $stateLabel }}:</b> {{ $s[$stateKey]['progress'] ?? '—' }}
+                                @foreach((array) ($s[$stateKey]['configuration'] ?? []) as $item)
+                                    · {{ $item['part'] ?? '?' }}: {{ $item['state'] ?? '?' }}
+                                @endforeach
+                            </div>
+                        @endif
+                    @endforeach
                 </div>
 
                 <div class="vs-c vs-prompt">
@@ -411,6 +433,7 @@
                             <div class="frame">chưa render</div>
                         @endif
                         <button type="button" class="vp-btn pri sm js-kf"
+                                data-scene="{{ $s['scene_id'] }}"
                                 data-preview="{{ route('video-projects.scene-keyframe-preview', [$id, $s['scene_id']]) }}"
                                 data-render="{{ route('video-projects.scene-keyframe-render', [$id, $s['scene_id']]) }}">
                             {{ $cell['approved'] ? 'Tạo bản khác' : 'Xem trước → Render' }}
@@ -435,6 +458,13 @@
       <div class="modal-body">
         <div id="kfError" class="vs-c" style="display:none;color:var(--vp-amber-fg)"></div>
         <div id="kfBody" style="display:none">
+          <div id="kfSpace" style="display:none">
+            <div class="vs-lbl">NGUỒN HÌNH HỌC CHO KHÔNG GIAN <span id="kfSpaceName"></span></div>
+            <div class="m">Chọn ảnh thể hiện được không gian này. Ảnh đã duyệt và đúng checksum chưa chắc đủ thông tin — chỉ chọn khi ảnh thật sự cho thấy không gian cần dựng.</div>
+            <div id="kfSpaceOptions" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0"></div>
+            <div id="kfSpaceBlocked" class="vs-c" style="display:none;color:var(--vp-amber-fg)">Chưa có ảnh phù hợp — cảnh này chưa render được. Cần render và duyệt một reference view thể hiện được không gian này trước.</div>
+          </div>
+
           <div class="vs-lbl">PROMPT SẼ GỬI</div>
           <pre id="kfPrompt" class="body" style="white-space:pre-wrap;max-height:34vh;overflow:auto"></pre>
 
@@ -450,6 +480,7 @@
           @csrf
           <input type="hidden" name="prompt_sha256" id="kfHash">
           <input type="hidden" name="anchor_artifact_id" id="kfAnchor">
+          <input type="hidden" name="space_source_artifact_id" id="kfSpaceSource">
           <button type="submit" class="btn btn-primary" id="kfGo" disabled>Render →</button>
         </form>
       </div>
@@ -460,6 +491,7 @@
 
 @section('script')
 <script src="{{ asset('assets/js/video-producer.js') }}?v={{ filemtime(public_path('assets/js/video-producer.js')) }}"></script>
+<script src="{{ asset('assets/js/keyframe-preview-gate.js') }}?v={{ filemtime(public_path('assets/js/keyframe-preview-gate.js')) }}"></script>
 <script>
 (function () {
     var modal = document.getElementById('kfModal');
@@ -470,7 +502,96 @@
     var table = document.getElementById('kfSources');
     var form = document.getElementById('kfForm');
     var go = document.getElementById('kfGo');
+    var space = document.getElementById('kfSpace');
+    var spaceOptions = document.getElementById('kfSpaceOptions');
+    var spaceBlocked = document.getElementById('kfSpaceBlocked');
+    var spaceInput = document.getElementById('kfSpaceSource');
     var active = null;
+    var spaceChoice = null;
+    var gate = window.KeyframePreviewGate.create();
+    var ticket = null;
+
+    function lockRender() {
+        go.disabled = true;
+        document.getElementById('kfHash').value = '';
+        spaceInput.value = '';
+    }
+
+    function spaceOption(value, text, checked, imageUrl) {
+        var label = document.createElement('label');
+        label.className = 'vs-c';
+        label.style.cssText = 'display:flex;flex-direction:column;gap:4px;cursor:pointer;max-width:160px';
+
+        var radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'kfSpaceRadio';
+        radio.value = value;
+        radio.checked = checked;
+        radio.addEventListener('change', function () {
+            spaceChoice = value;
+
+            if (value === 'none') {
+                gate.cancel();
+                ticket = null;
+                lockRender();
+                spaceBlocked.style.display = '';
+            } else {
+                load();
+            }
+        });
+        label.appendChild(radio);
+
+        if (imageUrl) {
+            var image = document.createElement('img');
+            image.src = imageUrl;
+            image.alt = text;
+            image.style.cssText = 'width:150px;height:auto;border:1px solid var(--vp-line)';
+            label.appendChild(image);
+        }
+
+        var caption = document.createElement('span');
+        caption.textContent = text;
+        label.appendChild(caption);
+        spaceOptions.appendChild(label);
+    }
+
+    function fillSpace(source) {
+        spaceOptions.replaceChildren();
+        spaceBlocked.style.display = spaceChoice === 'none' ? '' : 'none';
+
+        if (!source) {
+            space.style.display = 'none';
+            spaceInput.value = '';
+            return;
+        }
+
+        space.style.display = '';
+        document.getElementById('kfSpaceName').textContent = source.name ? '«' + source.name + '»' : '';
+        spaceInput.value = spaceChoice === 'none' ? '' : (source.chosen || '');
+
+        if (source.options.length === 0 && source.chosen) {
+            var locked = document.createElement('div');
+            locked.className = 'm';
+            locked.textContent = 'Nguồn hình học đã khoá trong bản này: ' + source.chosen;
+            spaceOptions.appendChild(locked);
+            return;
+        }
+
+        source.options.forEach(function (option) {
+            spaceOption(
+                option.artifact_id,
+                option.title + ' · ' + (option.kind === 'anchor' ? 'ảnh neo' : 'reference') + ' · ' + option.sha
+                    + (option.suggested ? ' · đã chọn ở lần trước (chưa xác nhận)' : ''),
+                spaceChoice === option.artifact_id && source.chosen === option.artifact_id,
+                option.url
+            );
+        });
+        spaceOption('none', 'Chưa có ảnh phù hợp', spaceChoice === 'none', null);
+
+        if (source.options.length === 0) {
+            spaceBlocked.style.display = '';
+        }
+    }
 
     function appendRow(source) {
         var tr = table.insertRow();
@@ -489,7 +610,7 @@
         go.disabled = true;
     }
 
-    function fill(preview) {
+    function fill(preview, accepted) {
         document.getElementById('kfPrompt').textContent = preview.prompt;
         document.getElementById('kfCost').textContent = preview.cost_note;
         document.getElementById('kfHash').value = preview.prompt_sha256;
@@ -497,37 +618,71 @@
 
         table.replaceChildren();
         preview.sources.forEach(appendRow);
+        fillSpace(preview.space_source);
 
         error.style.display = 'none';
         body.style.display = '';
-        go.disabled = preview.blocked_reason !== null;
+        go.disabled = !gate.renderable(accepted, preview);
     }
 
     function load() {
         if (active === null) { return; }
 
-        go.disabled = true;
+        lockRender();
         form.action = active.dataset.render;
 
-        fetch(active.dataset.preview, {
+        var mine = gate.begin(active.dataset.scene, spaceChoice, window.AbortController);
+        var url = active.dataset.preview;
+        ticket = mine;
+
+        if (mine.choice !== null) {
+            url += (url.indexOf('?') === -1 ? '?' : '&') + 'space_source=' + encodeURIComponent(mine.choice);
+        }
+
+        fetch(url, {
             headers: { 'Accept': 'application/json' },
-            credentials: 'same-origin'
+            credentials: 'same-origin',
+            signal: mine.signal
         })
             .then(function (response) { return response.json(); })
             .then(function (payload) {
-                payload.ok ? fill(payload.preview) : fail(payload.message);
+                if (!gate.isCurrent(mine)) { return; }
+
+                if (!payload.ok) {
+                    fail(payload.message);
+                } else if (gate.accepts(mine, payload.preview)) {
+                    fill(payload.preview, mine);
+                }
             })
-            .catch(function () { fail('Không đọc được bản xem trước.'); });
+            .catch(function (reason) {
+                if (gate.isCurrent(mine) && !(reason && reason.name === 'AbortError')) {
+                    fail('Không đọc được bản xem trước.');
+                }
+            });
     }
 
     document.querySelectorAll('.js-kf').forEach(function (button) {
         button.addEventListener('click', function () {
             active = button;
+            spaceChoice = null;
             body.style.display = 'none';
             error.style.display = 'none';
             $('#kfModal').modal('show');
             load();
         });
+    });
+
+    $('#kfModal').on('hidden.bs.modal', function () {
+        gate.cancel();
+        ticket = null;
+        active = null;
+        lockRender();
+    });
+
+    form.addEventListener('submit', function (event) {
+        if (ticket === null || !gate.isCurrent(ticket) || go.disabled) {
+            event.preventDefault();
+        }
     });
 })();
 </script>
