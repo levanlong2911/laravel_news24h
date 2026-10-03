@@ -1,6 +1,12 @@
-# Image Generation Skill — gpt-image-2
+# Image Generation Skill — GPT Image 2.5
 
-Nguồn: `SKILL.md` của skill `imagegen`. Nguyên văn.
+> **UPDATED 2026-10-02.** Based on the `SKILL.md` of the `imagegen` skill, brought up to date with the official
+> OpenAI documentation read on 2026-10-02 from the pages' `.md` sources:
+> [Image generation guide](https://developers.openai.com/api/docs/guides/image-generation) and
+> [Image prompting guide](https://developers.openai.com/api/docs/guides/image-prompting?site_locale=en).
+> This file is NO LONGER a verbatim copy of the skill. Skill text that is still correct is kept; model, parameter,
+> API, limitation and cost information is replaced by the 2026-10 documentation. Additions by this system are
+> marked "Note for this system".
 
 > Generate or edit raster images when the task benefits from AI-created bitmap
 > visuals such as photos, illustrations, textures, sprites, mockups, or
@@ -12,6 +18,27 @@ Nguồn: `SKILL.md` của skill `imagegen`. Nguyên văn.
 > directly in HTML/CSS/canvas.
 
 Generates or edits images for the current project (for example website assets, game assets, UI mockups, product mockups, wireframes, logo design, photorealistic images, or infographics).
+
+## Contents
+- [Top-level modes and rules](#top-level-modes-and-rules)
+- [When to use](#when-to-use)
+- [When not to use](#when-not-to-use)
+- [Choose a model](#choose-a-model)
+- [Decision tree](#decision-tree)
+- [Workflow](#workflow)
+- [Transparent image requests](#transparent-image-requests)
+- [Prompt augmentation](#prompt-augmentation)
+- [Use-case taxonomy (exact slugs)](#use-case-taxonomy-exact-slugs)
+- [Shared prompt schema](#shared-prompt-schema)
+- [Examples](#examples)
+- [Prompting best practices](#prompting-best-practices)
+- [Guidance by asset type](#guidance-by-asset-type)
+- [GPT Image model guidance](#gpt-image-model-guidance)
+- [API reference](#api-reference)
+- [Limitations](#limitations)
+- [Cost and latency](#cost-and-latency)
+- [Fallback CLI mode only](#fallback-cli-mode-only)
+- [Reference map](#reference-map)
 
 ## Top-level modes and rules
 
@@ -30,8 +57,9 @@ Rules:
 
 - Use the built-in `image_gen` tool by default for normal image generation and editing requests.
 - Do not switch to CLI fallback for ordinary quality, size, or file-path control.
-- For transparent images, ask built-in `image_gen` for a transparent background and preserve the generated alpha.
-- Never silently switch from built-in `image_gen` or CLI `gpt-image-2` to CLI `gpt-image-1.5`; ask the user first unless they explicitly requested `gpt-image-1.5`.
+- For transparent images, ask for a transparent background (`background="transparent"` with PNG or WebP output) and preserve the generated alpha.
+- Never silently switch models. On the API path, use `gpt-image-2.5-flare` or `gpt-image-2.5-sunburst` as described in [Choose a model](#choose-a-model); ask the user before using any other model unless they explicitly requested it.
+- Do not move a workflow to `gpt-image-1.5` or `gpt-image-1`: both are deprecated (`gpt-image-1.5` shuts down on December 1, 2026; `gpt-image-1` on October 23, 2026). A transparent background no longer requires `gpt-image-1.5` — both GPT Image 2.5 models support it, and it is available in preview for `gpt-image-2`.
 - The word `batch` by itself does not mean CLI fallback. If the user asks for many assets or says to batch-generate assets without explicitly asking for CLI/API/model controls, stay on the built-in path and issue one built-in call per requested asset or variant.
 - If the built-in tool fails or is unavailable, tell the user the CLI fallback exists and that it requires `OPENAI_API_KEY`. Proceed only if the user explicitly asks for that fallback.
 - If the user explicitly asks for CLI mode, use the bundled `scripts/image_gen.py` workflow. Do not create one-off SDK runners.
@@ -49,7 +77,7 @@ Built-in save-path policy:
 - Never leave a project-referenced asset only at the default `$CODEX_HOME/*` path.
 - Do not overwrite an existing asset unless the user explicitly asked for replacement; otherwise create a sibling versioned filename such as `hero-v2.png` or `item-icon-edited.png`.
 
-Shared prompt guidance for both modes lives in `references/prompting.md` and `references/sample-prompts.md`.
+Shared prompt guidance for both modes lives in `references/prompting.md` (including all official OpenAI examples) and `references/sample-prompts.md`.
 
 Fallback-only docs/resources for CLI mode:
 
@@ -57,6 +85,8 @@ Fallback-only docs/resources for CLI mode:
 - `references/image-api.md`
 - `references/codex-network.md`
 - `scripts/image_gen.py`
+
+Note for this system: `scripts/image_gen.py` is not part of this repository, so the script's own flags and defaults described in `references/cli.md` are unverified here. All reference files were updated for GPT Image 2.5 on 2026-10-02: `references/image-api.md` holds the full OpenAI API reference for the Images endpoints and how this repo's Laravel client maps to it; `references/cli.md` and `references/sample-prompts.md` follow it.
 
 ## When to use
 
@@ -72,6 +102,26 @@ Fallback-only docs/resources for CLI mode:
 - Making a small project-local asset edit when the source file already exists in an editable native format
 - Any task where the user clearly wants deterministic code-native output instead of a generated bitmap
 
+## Choose a model
+
+The API generates and edits images with `gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`. Choose Sunburst for workflows where editing precision matters most, and Flare for fast, high-quality everyday image generation.
+
+- **GPT Image 2.5 Flare** (`gpt-image-2.5-flare`) is the small model, optimized for speed, with image quality comparable to GPT Image 2.
+- **GPT Image 2.5 Sunburst** (`gpt-image-2.5-sunburst`) is the base model, optimized for quality, with higher image quality than GPT Image 2.
+- Both models offer improvements in precise editing and subject preservation, and both support image generation, editing, and transparent backgrounds.
+- Dated snapshots visible to this system's API key on 2026-09-25: `gpt-image-2.5-flare-2026-09-08`, `gpt-image-2.5-sunburst-2026-09-08` (`resources/ai/providers/openai_models_2026_09_25.json`).
+
+For a new workflow, start with Flare when speed is the priority, or Sunburst when demanding quality requirements are the priority. Once the output meets the requirements, look for opportunities to reduce latency.
+
+| Current workflow | Start by testing |
+| --- | --- |
+| An existing, validated GPT Image 2 workflow already meets the quality requirements | GPT Image 2.5 Flare. Check whether acceptable quality holds while latency drops. |
+| A complex use case where GPT Image 2 does not meet the quality requirements | GPT Image 2.5 Sunburst. First establish that it delivers the quality needed. |
+
+If Sunburst meets the requirements, test Flare with the same prompts and inputs; switch to Flare only if it also meets them and improves latency. Measure response time and quality on your own workload — results depend on prompts, reference images, output dimensions, and quality settings. The full migration procedure is in `references/prompting.md` → *Migrate an existing workflow*.
+
+Note for this system: the identity anchor uses `gpt-image-2.5-flare` by default (`config/image_prompt.php` → `anchor_model`, env `IMAGE_ANCHOR_MODEL`). `App\Enums\ImageModel` offers `gpt-image-2`, `gpt-image-2.5-flare` and `gpt-image-2.5-sunburst`, and `ImageModel::qualities()` allows `xhigh` and `max` only for the two 2.5 models.
+
 ## Decision tree
 
 Think about two separate questions:
@@ -82,7 +132,7 @@ Think about two separate questions:
 Intent:
 
 - If the user wants to modify an existing image while preserving parts of it, treat the request as **edit**.
-- If the user provides images only as references for style, composition, mood, or subject guidance, treat the request as **generate**.
+- If the user provides images only as references for style, composition, mood, or subject guidance, treat the request as **generate** (on the API, reference-guided generation also goes through the edits endpoint — see [API reference](#api-reference)).
 - If the user provides no images, treat the request as **generate**.
 
 Built-in edit semantics:
@@ -97,7 +147,7 @@ Execution strategy:
 
 - In the built-in default path, produce many assets or variants by issuing one `image_gen` call per requested asset or variant.
 - In the CLI fallback path, use the CLI `generate-batch` subcommand only when the user explicitly chose CLI mode and needs many prompts/assets.
-- For many distinct assets, do not use `n` as a substitute for separate prompts. `n` is for variants of one prompt; distinct assets need distinct built-in calls or distinct CLI `generate-batch` jobs.
+- For many distinct assets, do not use `n` as a substitute for separate prompts. `n` is for variants of one prompt (by default the API returns a single image); distinct assets need distinct built-in calls or distinct CLI `generate-batch` jobs.
 
 Assume the user wants a new image unless they clearly ask to change an existing one.
 
@@ -118,18 +168,24 @@ Assume the user wants a new image unless they clearly ask to change an existing 
    - If the user's prompt is already specific and detailed, normalize it into a clear spec without adding creative requirements.
    - If the user's prompt is generic, add tasteful augmentation only when it materially improves output quality.
 10. Use the built-in `image_gen` tool by default.
-11. For transparent-output requests, ask built-in `image_gen` for a transparent background and preserve the generated alpha channel.
-12. Inspect outputs and validate: subject, style, composition, text accuracy, and invariants/avoid items.
+11. For transparent-output requests, ask for a transparent background and preserve the generated alpha channel.
+12. Inspect outputs and validate: subject, style, composition, text accuracy, and invariants/avoid items. Use the checklist in `references/prompting.md` → *Check the result*: Is required text accurate and legible, are diagram labels and relationships correct? Do identities, product shapes, labels, and reference details remain intact? Did the edit change only what was requested? If transparency is required, does the file contain an alpha channel rather than a painted background?
 13. Iterate with a single targeted change, then re-check.
 14. For preview-only work, render the image inline; the underlying file may remain at the default `$CODEX_HOME/generated_images/...` path.
 15. For project-bound work, move or copy the selected artifact into the workspace and update any consuming code or references. Never leave a project-referenced asset only at the default `$CODEX_HOME/generated_images/...` path.
 16. For batches or multi-asset requests, persist every requested deliverable final in the workspace unless the user explicitly asked to keep outputs preview-only. Discarded variants do not need to be kept unless requested.
-17. If the user explicitly chooses or confirms the CLI fallback, then use the fallback-only docs for model, quality, size, `input_fidelity`, masks, output format, output paths, and network setup.
+17. If the user explicitly chooses or confirms the CLI fallback, then use [GPT Image model guidance](#gpt-image-model-guidance) and the fallback-only docs for model, quality, size, masks, output format, output paths, and network setup.
 18. Always report the final saved path(s) for any workspace-bound asset(s), plus the final prompt or prompt set and whether the built-in tool or fallback CLI mode was used.
 
 ## Transparent image requests
 
-Ask built-in `image_gen` for a genuinely transparent background and preserve its alpha.
+- Request an isolated subject in the prompt and a genuinely transparent background in the request: `background="transparent"` with `output_format` `png` or `webp`.
+- Preserve the returned alpha channel and check the decoded image's alpha, including hair, glass, shadows, and object edges. A drawn checkerboard is not transparency.
+- Do not set `output_compression` for PNG.
+- For subsequent edits, repeat the requirement to preserve the transparent background.
+- Both GPT Image 2.5 models support transparent backgrounds; for `gpt-image-2` it is available in preview.
+
+Worked example: `references/prompting.md` → *Create a transparent product cutout*.
 
 ## Prompt augmentation
 
@@ -157,9 +213,11 @@ Not allowed augmentations:
 - brand names, slogans, palettes, or narrative beats that are not implied
 - arbitrary side-specific placement unless the surrounding layout supports it
 
+Note: when the image tool runs inside the Responses API, the mainline model automatically revises the prompt; the result is returned in `revised_prompt` (see [API reference](#api-reference)). Inspect it when the output drifts from the request.
+
 ## Use-case taxonomy (exact slugs)
 
-Classify each request into one of these buckets and keep the slug consistent across prompts and references.
+Classify each request into one of these buckets and keep the slug consistent across prompts and references. Each slug has an official worked example in `references/prompting.md` → *Official examples*.
 
 Generate:
 
@@ -181,7 +239,7 @@ Edit:
 - `identity-preserve` — try-on, person-in-scene; lock face/body/pose.
 - `precise-object-edit` — remove/replace a specific element (including interior swaps).
 - `lighting-weather` — time-of-day/season/atmosphere changes only.
-- `background-extraction` — transparent background / clean cutout. Ask built-in `image_gen` for actual transparency.
+- `background-extraction` — transparent background / clean cutout. Ask for actual transparency.
 - `style-transfer` — apply reference style while changing subject/scene.
 - `compositing` — multi-image insert/merge with matched lighting/perspective.
 - `sketch-to-render` — drawing/line art to photoreal render.
@@ -210,8 +268,9 @@ Avoid: <negative constraints>
 Notes:
 
 - `Asset type` and `Input images` are prompt scaffolding, not dedicated CLI flags.
-- `Scene/backdrop` refers to the visual setting. It is not the same as the fallback CLI `background` parameter, which controls output transparency behavior.
-- Fallback-only execution notes such as `Quality:`, `Input fidelity:`, masks, output format, and output paths belong in the CLI path only. Do not treat them as built-in `image_gen` tool arguments.
+- `Scene/backdrop` refers to the visual setting. It is not the same as the API `background` parameter, which controls output transparency behavior.
+- Execution settings such as `quality`, `size`, `background`, `output_format`, masks, and output paths are request parameters, not prompt text. The official guide: "Set API parameters separately from the prompt."
+- The official guide states that short prompts, descriptive paragraphs, JSON-like structures, instructions, and tags can all express the same intent; choose the format that makes the requirements easiest to read and update rather than relying on special syntax. This schema is one such format.
 
 Augmentation rules:
 
@@ -243,52 +302,141 @@ Primary request: replace only the background with a warm sunset gradient
 Constraints: change only the background; keep the product and its edges unchanged; no text; no watermark
 ```
 
+All 23 official OpenAI examples (prompt, settings, input images, and the published Flare and Sunburst outputs) are in `references/prompting.md` → *Official examples*.
+
 ## Prompting best practices
 
-- Structure prompt as scene/backdrop -> subject -> details -> constraints.
+- Define the result: name the subject and intended use (product photograph, advertisement, diagram), the composition, aspect ratio, and important placement constraints.
+- Structure prompt as scene/backdrop -> subject -> details -> constraints; for complex requests, use labeled sections.
 - Include intended use (ad, UI mock, infographic) to set the mode and polish level.
-- Use camera/composition language for photorealism.
+- Describe visible details: materials, lighting, colors, and the visual medium. Request `photorealistic` or `real photograph` explicitly when that is the goal.
+- Use camera/composition language for photorealism; treat camera specifications as cues for appearance, not a guarantee of exact physical simulation.
+- For wide, cinematic, low-light, rainy, or neon scenes, specify scale, atmosphere, and color instead of relying on mood words alone.
+- For people, describe body framing, relative scale, gaze, and interaction with objects.
 - Only use SVG/vector stand-ins when the user explicitly asked for vector output or a non-image placeholder.
-- Quote exact text and specify typography + placement.
+- Quote exact text, specify typography + placement, and say how many times it should appear; ask for no extra text, then check spelling and legibility.
 - For tricky words, spell them letter-by-letter and require verbatim rendering.
-- For multi-image inputs, reference images by index and describe how they should be used.
+- Compare `medium` or `high` quality for small text, dense information, or multiple fonts.
+- For multi-image inputs, reference images by index and describe how they should be used. Note for this system: on `gpt-image-2` the index labels were measured to have no effect and the order of `image[]` decides; see the CORRECTION in `references/prompting.md`.
+- For edits, separate changes from constraints: say `change only X`, list what to preserve (identity, geometry, layout, lighting, labels), and state exclusions (unwanted text, logos, watermarks). For precise local edits, also name saturation, contrast, arrows, camera angle, and surrounding objects that must remain unchanged.
 - For edits, repeat invariants every iteration to reduce drift.
-- Iterate with single-change follow-ups.
+- Iterate with single-change follow-ups: pass the previous output as the next edit input, request one change, and repeat the details to preserve.
+- If a region must remain pixel-identical, composite the approved edit into the original image instead of relying on prompting alone.
 - If the prompt is generic, add only the extra detail that will materially help.
 - If the prompt is already detailed, normalize it instead of expanding it.
-- For CLI fallback only, see `references/cli.md` and `references/image-api.md` for model, `quality`, `input_fidelity`, masks, output format, and output-path guidance.
-- For transparent images, ask built-in `image_gen` for actual transparency and preserve its alpha.
+- For model, `quality`, size, masks, output format, and output paths, see [GPT Image model guidance](#gpt-image-model-guidance) and [API reference](#api-reference).
+- For transparent images, ask for actual transparency and preserve its alpha.
 
 More principles shared by both modes: `references/prompting.md`.
 Copy/paste specs shared by both modes: `references/sample-prompts.md`.
 
 ## Guidance by asset type
 
-Asset-type templates (website assets, game assets, wireframes, logo) are consolidated in `references/sample-prompts.md`.
+Asset-type templates (website assets, game assets, wireframes, logo) are consolidated in `references/sample-prompts.md`. Official worked examples for logos, interfaces, diagrams, slides, comics, historical scenes, holiday cards, and merchandise are in `references/prompting.md` → *Official examples*.
 
-## gpt-image-2 guidance for CLI fallback
+## GPT Image model guidance
 
-The fallback CLI defaults to `gpt-image-2`.
+### GPT Image 2.5 (`gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`)
 
-- Use `gpt-image-2` for new CLI/API workflows unless the user confirms a different model.
-- CLI `gpt-image-2` does not support `background=transparent`; ask before using `gpt-image-1.5` unless the user explicitly requested that model.
-- `gpt-image-2` always uses high fidelity for image inputs; do not set `input_fidelity` with this model.
-- `gpt-image-2` supports `quality` values `low`, `medium`, `high`, and `auto`.
-- Use `quality low` for fast drafts, thumbnails, and quick iterations. Use `medium`, `high`, or `auto` for final assets, dense text, diagrams, identity-sensitive edits, or high-resolution outputs.
-- Square images are typically fastest to generate. Use `1024x1024` for fast square drafts.
-- If the user asks for 4K-style output, use `3840x2160` for landscape or `2160x3840` for portrait.
-- `gpt-image-2` size may be `auto` or `WIDTHxHEIGHT` if all constraints hold: max edge `<= 3840px`, both edges multiples of `16px`, long-to-short ratio `<= 3:1`, total pixels between `655,360` and `8,294,400`.
+- Use one of the two GPT Image 2.5 models for new workflows. The official documentation: "For new integrations, use one of the GPT Image 2.5 models."
+- `quality`: `low`, `medium`, `high`, `xhigh`, `max`, or `auto`. Both models default to `auto`. Earlier GPT Image models support quality settings up to `high`.
+- Use `quality="low"` for quick drafts. For final assets, compare higher quality settings to find the right balance of detail, latency, and cost.
+- Choose the model before tuning `quality`. The same quality label does not imply the same image quality or response time across models. Use `xhigh` or `max` only when they improve an unmet quality requirement within the latency budget; a higher setting doesn't guarantee a better result for every prompt.
+- `size`: `auto` or `WIDTHxHEIGHT`. Recommended sizes: `1024x1024` (square), `1536x1024` (landscape), `1024x1536` (portrait). Common sizes also include `2048x2048` (2K square), `2048x1152` (2K landscape), `3840x2160` (4K landscape), and `2160x3840` (4K portrait).
+- Custom size constraints: width and height must be multiples of 16; the aspect ratio must be between 1:3 and 3:1; neither edge may exceed 3840 pixels; the total pixel count must be between 655,360 and 8,294,400 (4K). Resolutions above `2560x1440` are experimental.
+- `background`: `auto`, `opaque`, or `transparent`. For transparent output use `output_format` `png` or `webp`.
+- `output_format`: `png` (default), `jpeg`, or `webp`. `output_compression` (0–100%) applies to JPEG and WebP only. JPEG is faster than PNG; prioritize it if latency is a concern.
+- `size`, `quality`, and `background` support `auto`, where the model selects the best option based on the prompt.
+- `input_fidelity` is not documented for the 2.5 models; do not set it until it is verified.
 
-Popular `gpt-image-2` sizes:
+### GPT Image 2 (`gpt-image-2`, earlier model)
 
-- `1024x1024` square
-- `1536x1024` landscape
-- `1024x1536` portrait
-- `2048x2048` 2K square
-- `2048x1152` 2K landscape
-- `3840x2160` 4K landscape
-- `2160x3840` 4K portrait
-- `auto`
+- The documentation keeps `gpt-image-2` under *Earlier GPT Image models*; use it to maintain existing integrations.
+- `quality`: `low`, `medium`, `high`, or `auto` (default).
+- `size`: any resolution satisfying the same constraints as above (max edge `3840px`, both edges multiples of `16px`, long-to-short ratio at most `3:1`, total pixels from `655,360` to `8,294,400`). Square images are typically fastest to generate. Popular sizes: `1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, `2048x1152`, `3840x2160`, `2160x3840`, `auto` (default).
+- `input_fidelity`: omit it; the API doesn't allow changing it because the model processes every image input at high fidelity automatically. Image input tokens can therefore be higher for edit requests that include reference images.
+- `background`: for transparent output, explicitly set `transparent` and use PNG or WebP. Transparent backgrounds are available in preview for `gpt-image-2`.
+- `output_compression`: JPEG or WebP only, not PNG.
+- Note for this system: the upstream skill's CLI `scripts/image_gen.py` defaulted to `gpt-image-2`; the script is not in this repository, so its current default is unverified.
+
+### Deprecated models
+
+- `gpt-image-1.5`: shuts down on December 1, 2026 ([deprecation notice](https://developers.openai.com/api/docs/deprecations#2026-06-02-gpt-image-model-deprecations)). Sizes `1024x1024`, `1024x1536`, `1536x1024`, `auto`; `input_fidelity` `low` or `high`.
+- `gpt-image-1`: shuts down on October 23, 2026 ([deprecation notice](https://developers.openai.com/api/docs/deprecations#2026-04-22-legacy-gpt-model-snapshots)). Sizes `1024x1024`, `1024x1536`, `1536x1024`, `auto`; `input_fidelity` `low` or `high` (high input fidelity uses more image input tokens).
+- Validate existing workflows with a current model before migrating; full parameter tables are in `references/prompting.md` → *Older model reference*.
+
+## API reference
+
+### Image API and Responses API
+
+- **Image API** — two endpoints: **Generations** create images from scratch based on a text prompt; **Edits** modify existing images using a new prompt, either partially or entirely. Set `model` to `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` directly.
+- **Responses API** — generates images as part of conversations or multi-step flows through the built-in image generation tool, and accepts image inputs and outputs within context. Select a supported mainline model at the top level and specify `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare` in the tool's `model` field. `gpt-5` and newer models should support the image generation tool; check the model detail page to confirm.
+- Compared to the Image API, the Responses API adds multi-turn editing (iterative high-fidelity edits with prompting) and flexible inputs (image File IDs as input images, not just bytes).
+- Choosing: if you only need to generate or edit a single image from one prompt, the Image API is the best choice; for conversational, editable image experiences, use the Responses API.
+- Both APIs customize output by quality, size, format, and compression.
+- Organization verification: you may need to complete [API Organization Verification](https://help.openai.com/en/articles/10910291-api-organization-verification) from the developer console before using GPT Image models.
+
+### Generation options
+
+- `n` generates multiple images in a single request; by default the API returns a single image.
+- **Multi-turn (Responses API):** provide earlier image generation call outputs in context (or just the image ID), or use `previous_response_id`. The optional `action` parameter controls whether the tool generates or edits: `action: "auto"` lets the model decide, `"generate"` always creates a new image, `"edit"` forces editing when an image is in context.
+- **Streaming:** the Responses API and Image API support streaming partial images. `partial_images` takes 0–3; at 0 only the final image is returned, and for larger values fewer partials may arrive if the full image is generated quickly. Each partial image incurs an additional 100 image output tokens.
+- **Revised prompt:** with the Responses API image tool, the mainline model automatically revises the prompt; read it from `revised_prompt` on the image generation call.
+
+### Edits, references, and masks
+
+- The edits endpoint edits existing images, generates new images using other images as references (one or more), and edits parts of an image with a mask.
+- With the Responses API, input images can be a fully qualified URL, a Base64-encoded data URL, or a File ID created with the Files API.
+- Masks: masking with GPT Image is entirely prompt-based; the model uses the mask as guidance but may not follow its exact shape with complete precision. With multiple input images, the mask applies to the first image. The image and mask must be the same format and size, each under 50MB, and the mask must contain an alpha channel. See [editing with a mask](https://developers.openai.com/api/docs/guides/image-generation#edit-an-image-using-a-mask).
+
+### Output
+
+- The Image API returns base64-encoded image data.
+- Output format `png` (default), `jpeg`, or `webp`; `output_compression` 0–100% for JPEG/WebP (for example, `output_compression=50` compresses the image by 50%).
+
+### Content moderation and errors
+
+- All prompts and generated images are filtered in accordance with the [content policy](https://openai.com/policies/usage-policies/). The `moderation` parameter takes `auto` (default, standard filtering) or `low` (less restrictive filtering).
+- Handle failures like other API errors: check the HTTP status or SDK exception type, log the request ID, retry transient rate-limit and server failures with backoff, and don't automatically retry quota errors or user errors that require changing the request.
+- User-correctable failures may return `error.type = "image_generation_user_error"`; don't retry them without modifying the prompt or input images. Use `error.code` as the stable discriminator.
+- `error.code = "moderation_blocked"` may include `error.moderation_details` with `moderation_stage` (`input`, `output`, or `unknown`) and coarse `categories` (for example `harassment`, `self-harm`, `sexual`, `violence`). Keep the end-user message generic; use the details for developer logs, support workflows, analytics, and light remediation hints.
+
+## Limitations
+
+- **Latency:** complex prompts may take up to 2 minutes to process.
+- **Text rendering:** although significantly improved, the model can still struggle with precise text placement and clarity.
+- **Consistency:** the model may occasionally struggle to maintain visual consistency for recurring characters or brand elements across multiple generations.
+- **Composition control:** despite improved instruction following, the model may have difficulty placing elements precisely in structured or layout-sensitive compositions.
+- Repeated edits can still change details intended to be preserved; restate constraints and inspect each result.
+
+## Cost and latency
+
+- Both GPT Image 2.5 models use the same token rates: $8 per million image input tokens, $2 per million cached image input tokens, $30 per million image output tokens, $5 per million text input tokens, and $1.25 per million cached text input tokens. See [pricing](https://developers.openai.com/api/docs/pricing#image-generation).
+- Equal token rates don't mean equal cost per image: token consumption can differ by model and quality setting. Use the response's `usage` to measure token consumption for your prompts, sizes, and quality settings, and confirm current pricing rather than assuming the faster model costs less.
+- Responses API requests include the mainline model's token usage in addition to image generation costs.
+- Cached input pricing for GPT Image 2 and GPT Image 2.5 applies only to the image generation tool in the Responses API, not to direct Images API requests (including `/v1/images/edits`). Cached token counts aren't included in the Responses API output, so `usage` can't verify cache hits.
+- Each streamed partial image costs an additional 100 image output tokens.
+- A larger non-square resolution can sometimes produce fewer output tokens than a smaller or square resolution at the same quality setting.
+- Published per-image prices for earlier models (output only, excluding input tokens):
+
+| Model | Quality | 1024 x 1024 | 1024 x 1536 | 1536 x 1024 |
+| --- | --- | --- | --- | --- |
+| GPT Image 2 | Low | $0.006 | $0.005 | $0.005 |
+| GPT Image 2 | Medium | $0.053 | $0.041 | $0.041 |
+| GPT Image 2 | High | $0.211 | $0.165 | $0.165 |
+| GPT Image 1.5 | Low | $0.009 | $0.013 | $0.013 |
+| GPT Image 1.5 | Medium | $0.034 | $0.05 | $0.05 |
+| GPT Image 1.5 | High | $0.133 | $0.2 | $0.2 |
+| GPT Image 1 | Low | $0.011 | $0.016 | $0.016 |
+| GPT Image 1 | Medium | $0.042 | $0.063 | $0.063 |
+| GPT Image 1 | High | $0.167 | $0.25 | $0.25 |
+| GPT Image 1 Mini | Low | $0.005 | $0.006 | $0.006 |
+| GPT Image 1 Mini | Medium | $0.011 | $0.015 | $0.015 |
+| GPT Image 1 Mini | High | $0.036 | $0.052 | $0.052 |
+
+- No per-image table is published for the GPT Image 2.5 models; the guide provides a token calculator instead.
+
+Note for this system: `resources/ai/providers/openai_image_pricing_2026_09_14.json` (`verified: false`) estimates every model, including both 2.5 models, at low $0.015 / medium $0.041 / high $0.11 per image. These estimates do not match the gpt-image-2 table above (low $0.005–0.006, high $0.165–0.211) and are not official 2.5 figures.
 
 ## Fallback CLI mode only
 
@@ -338,14 +486,15 @@ If installation is not possible in this environment, tell the user which depende
 ### Script-mode notes
 
 - CLI commands + examples: `references/cli.md`
-- API parameter quick reference: `references/image-api.md`
+- API parameter reference: `references/image-api.md` (full OpenAI API reference for the Images endpoints, updated 2026-10-02)
 - Network approvals / sandbox settings for CLI mode: `references/codex-network.md`
 
 ## Reference map
 
-- `references/prompting.md`: shared prompting principles for both modes.
-- `references/sample-prompts.md`: shared copy/paste prompt recipes for both modes.
-- `references/cli.md`: fallback-only CLI usage via `scripts/image_gen.py`.
-- `references/image-api.md`: fallback-only API/CLI parameter reference.
+- `references/prompting.md`: shared prompting principles for both modes, the official GPT Image 2.5 prompting guide (model choice, parameters, migration, fundamentals), all official examples with Flare and Sunburst outputs, a runnable example, the result checklist, and the older-model reference. Updated 2026-10-02.
+- `references/sample-prompts.md`: shared copy/paste prompt recipes for both modes, each linked to its official OpenAI example with the request settings used, plus recipes adapted from official examples (background extraction, object removal, person insertion, product scene, holiday card, merchandise, character reference). Updated 2026-10-02.
+- `references/cli.md`: fallback-only CLI usage via `scripts/image_gen.py` (script flags unverified in this repo), with GPT Image 2.5 model, size, quality and transparency guidance and the official OpenAI CLI and `curl` equivalents. Updated 2026-10-02.
+- `references/image-api.md`: the OpenAI API reference for `POST /images/generations`, `POST /images/edits` and the retired variations endpoint, verbatim with every schema, streaming event and example, plus a summary and the mapping to this repo's Laravel client (`OpenAiImageClient`). Updated 2026-10-02.
 - `references/codex-network.md`: fallback-only network/sandbox troubleshooting for CLI mode.
-- `scripts/image_gen.py`: fallback-only CLI implementation. Use only when the user explicitly chooses or confirms CLI mode.
+- `scripts/image_gen.py`: fallback-only CLI implementation. Use only when the user explicitly chooses or confirms CLI mode. Not part of this repository.
+- Sources: [Image generation guide](https://developers.openai.com/api/docs/guides/image-generation), [Image prompting guide](https://developers.openai.com/api/docs/guides/image-prompting?site_locale=en), [Pricing](https://developers.openai.com/api/docs/pricing#image-generation).

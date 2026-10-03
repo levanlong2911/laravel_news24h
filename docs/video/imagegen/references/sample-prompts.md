@@ -1,5 +1,13 @@
 # Sample prompts (copy/paste)
 
+> **UPDATED 2026-10-02.** The prompt recipes of the `imagegen` skill are kept unchanged — prompt text does not depend on
+> the model. What changed: the model notes follow the OpenAI API reference (`references/image-api.md`) and the
+> GPT Image 2.5 guides; every recipe links to the matching official OpenAI example in `references/prompting.md` →
+> *Official examples* (whose published Flare and Sunburst outputs show what the technique produces) together with the
+> request settings that example used; and recipes for official workflows the skill had no recipe for are added, marked
+> "Adapted from the official example". Official prompts are verbatim in `references/prompting.md`; the recipes here
+> restate them in the labeled scaffolding.
+
 These prompt recipes are shared across both top-level modes of the skill:
 - built-in `image_gen` tool (default)
 - `scripts/image_gen.py` CLI fallback for explicit or user-confirmed CLI/API/model requests
@@ -15,12 +23,15 @@ The labeled lines are prompt scaffolding, not a closed schema. `Asset type` and 
 
 Execution details such as explicit CLI flags, `quality`, `input_fidelity`, masks, output formats, and local output paths depend on mode. Use built-in `image_gen` by default, request transparent backgrounds directly, and preserve the generated alpha; apply CLI-specific controls only when the user chooses or confirms that fallback.
 
-CLI model notes:
-- `gpt-image-2` is the fallback CLI default for new workflows.
-- `gpt-image-2` supports `quality` values `low`, `medium`, `high`, and `auto`.
-- For 4K-style `gpt-image-2` output, use `3840x2160` or `2160x3840`.
-- CLI `gpt-image-2` does not support `background=transparent`; ask before using `gpt-image-1.5` unless the user explicitly requested that model.
-- Do not set `input_fidelity` with `gpt-image-2`; image inputs already use high fidelity.
+"Request settings" lines below are API parameters (`size`, `quality`, `background`, `output_format`, `n`), set separately from the prompt — never paste them into the prompt text.
+
+Model notes:
+- Use `gpt-image-2.5-flare` (small model, optimized for speed, image quality comparable to GPT Image 2) or `gpt-image-2.5-sunburst` (base model, optimized for quality, best for editing precision). See `SKILL.md` → *Choose a model*.
+- The 2.5 models accept `quality` `low`, `medium`, `high`, `xhigh`, `max`, `auto` (default `auto`); `gpt-image-2` accepts `low`, `medium`, `high`, `auto`.
+- Custom sizes (`WIDTHxHEIGHT`, edges divisible by 16, aspect ratio 1:3–3:1, up to `3840x2160`, experimental above `2560x1440`) work on `gpt-image-2` and both 2.5 models. For 4K-style output use `3840x2160` or `2160x3840`.
+- `background=transparent` (with `png` or `webp`) is supported by both 2.5 models and in preview for `gpt-image-2`. Switching to `gpt-image-1.5` for transparency is no longer needed; `gpt-image-1.5` shuts down on December 1, 2026.
+- Do not set `input_fidelity` with `gpt-image-2` (always high fidelity) or with the 2.5 models (not listed in the API reference).
+- Note for this system: recipes that label several input images by index (`Image 1`, `Image 2`) rely on labels that were measured to have no effect on `gpt-image-2`; the order of the images sent decides. See the CORRECTION in `references/prompting.md`.
 
 For prompting principles (structure, specificity, invariants, iteration), see `references/prompting.md`.
 
@@ -39,6 +50,7 @@ Materials/textures: real skin texture, worn fabric, salt-worn wood
 Constraints: natural color balance; no heavy retouching; no glamorization; no watermark
 Avoid: studio polish; staged look
 ```
+Official example: [Control style and lighting](prompting.md#control-style-and-lighting). Request settings: `size="1024x1536"`, `quality="medium"`.
 
 ### product-mockup
 ```
@@ -52,6 +64,21 @@ Lighting/mood: softbox lighting, clean highlights, controlled shadows
 Materials/textures: matte plastic, crisp label printing
 Constraints: no logos or trademarks; no watermark
 ```
+Related official examples: [Create a transparent product cutout](prompting.md#create-a-transparent-product-cutout), [Create the starting image](prompting.md#create-the-starting-image), [Design collectible merchandise](prompting.md#design-collectible-merchandise).
+
+### product-mockup: collectible merchandise
+Adapted from the official example [Design collectible merchandise](prompting.md#design-collectible-merchandise).
+```
+Use case: product-mockup
+Primary request: collectible action figure of a vintage-style toy propeller airplane in blister packaging
+Subject: rounded wings, a front-mounted spinning propeller, slightly worn paint edges, classic childhood proportions
+Style/medium: premium toy photography; realistic plastic and painted metal textures; high-end retail presentation
+Lighting/mood: studio lighting, shallow depth of field; nostalgic holiday warmth
+Materials/textures: sharp label printing
+Text (verbatim): "Christmas Memories Edition" (the only packaging text)
+Constraints: original design only; no trademarks; no watermarks; no logos
+```
+Request settings: `size="1024x1536"`, `quality="medium"`.
 
 ### ui-mockup
 ```
@@ -62,6 +89,7 @@ Style/medium: realistic product UI, not concept art
 Composition/framing: clean vertical mobile layout with clear hierarchy
 Constraints: practical layout, clear typography, no logos or trademarks, no watermark
 ```
+Official example: [Create an interface preview](prompting.md#create-an-interface-preview). Request settings: `size="1024x1536"`, `quality="medium"`.
 
 ### infographic-diagram
 ```
@@ -74,6 +102,7 @@ Composition/framing: vertical poster layout, top-to-bottom flow
 Text (verbatim): "Bean Hopper", "Grinder", "Brew Group", "Boiler", "Water Tank", "Drip Tray"
 Constraints: clear labels, strong contrast, no logos or trademarks, no watermark
 ```
+Official example: [Explain a process visually](prompting.md#explain-a-process-visually). Request settings: `size="1024x1536"`, `quality="medium"`. Verify labels and factual relationships as well as appearance.
 
 ### scientific-educational
 ```
@@ -86,6 +115,7 @@ Composition/framing: landscape slide-style layout with clear hierarchy and gener
 Text (verbatim): "Cellular Respiration at a Glance", "Glucose", "Pyruvate", "ATP", "NADH", "FADH2", "CO2", "O2", "H2O"
 Constraints: scientifically plausible; avoid tiny text; no extra decoration; no watermark
 ```
+Official example: [Create scientific and educational visuals](prompting.md#create-scientific-and-educational-visuals). Request settings: `size="1536x1024"`, `quality="high"`.
 
 ### logo-brand
 ```
@@ -95,6 +125,7 @@ Style/medium: vector logo mark; flat colors; minimal
 Composition/framing: single centered logo on a plain background with generous padding
 Constraints: strong silhouette, balanced negative space; original design only; no gradients unless essential; no trademarks; no watermark
 ```
+Official example: [Design a reusable logo](prompting.md#design-a-reusable-logo). Request settings: `size="1024x1536"`, `quality="medium"`, `background="transparent"`, `output_format="png"`, `n=1` (use `n` for variations). The official prompt asks for a fully transparent background with clean alpha edges instead of a plain background.
 
 ### illustration-story
 ```
@@ -106,6 +137,21 @@ Style/medium: comic illustration with clear panels
 Composition/framing: 4 equal-sized vertical panels, readable actions per panel
 Constraints: no text; no logos or trademarks; no watermark
 ```
+Official example: [Turn a story into a comic strip](prompting.md#turn-a-story-into-a-comic-strip) (one concrete visual beat per panel). Request settings: `size="1024x1536"`, `quality="medium"`.
+
+### illustration-story: establish a reusable character
+Adapted from the official example [Establish the character](prompting.md#establish-the-character).
+```
+Use case: illustration-story
+Asset type: reusable character reference for a picture book
+Primary request: children's book illustration introducing a main character
+Subject: young storybook-style hero inspired by a little forest outlaw; simple green hooded tunic, soft brown boots, small belt pouch; kind expression, gentle eyes, brave but warm demeanor; carries a small wooden bow used only for helping
+Scene/backdrop: plain forest background that clearly showcases the character
+Style/medium: hand-painted watercolor look, soft outlines, warm earthy colors, whimsical and friendly
+Composition/framing: picture-book proportions (slightly oversized head, expressive face)
+Constraints: original character (no copyrighted characters); no text; no watermarks
+```
+Request settings: `size="1024x1536"`, `quality="medium"`. Continue with the edit recipe *character consistency workflow* below.
 
 ### stylized-concept
 ```
@@ -118,6 +164,7 @@ Composition/framing: wide-angle, low-angle
 Lighting/mood: volumetric light rays cutting through fog
 Constraints: no logos or trademarks; no watermark
 ```
+No direct official counterpart; the closest style-driven official example is [Establish the character](prompting.md#establish-the-character).
 
 ### ads-marketing
 ```
@@ -130,6 +177,21 @@ Lighting/mood: contemporary, energetic, tasteful
 Text (verbatim): "Yours to Create."
 Constraints: render the tagline exactly once; clean legible typography; no extra text; no watermarks; no unrelated logos
 ```
+Official example: [Render exact text](prompting.md#render-exact-text). Request settings: `size="1024x1536"`, `quality="medium"`.
+
+### ads-marketing: holiday card
+Adapted from the official example [Design a holiday card](prompting.md#design-a-holiday-card).
+```
+Use case: ads-marketing
+Asset type: Christmas holiday card
+Primary request: cozy Christmas scene with an old teddy bear sitting inside a keepsake box near a window with falling snow outside
+Subject: slightly worn fur, soft stitching repairs; the scene suggests the child has grown up but the memories remain
+Style/medium: premium holiday card photography; realistic textures; high print-quality composition
+Lighting/mood: soft cinematic lighting, shallow depth of field, tasteful bokeh lights; warm, nostalgic, gentle, emotional
+Text (verbatim): "Merry Christmas — some memories never fade." (the only card text)
+Constraints: original artwork only; no trademarks; no watermarks; no logos
+```
+Request settings: `size="1024x1536"`, `quality="medium"`. For a 3D pop-up or photographed-card treatment, specify paper layers, fibers, folds, and soft studio lighting.
 
 ### productivity-visual
 ```
@@ -142,6 +204,7 @@ Composition/framing: 16:9 landscape slide, clear data hierarchy, polished spacin
 Text (verbatim): "Market Opportunity", "TAM: $42B", "SAM: $8.7B", "SOM: $340M", "AGI Research, 2024", "Internal analysis"
 Constraints: readable labels, no clip art, no stock photography, no decorative clutter, no watermark
 ```
+Official example: [Build slides, diagrams, and charts](prompting.md#build-slides-diagrams-and-charts). Request settings: `size="1536x864"`, `quality="high"`. The sample market figures and citations are fictional design inputs; replace them with verified data before use.
 
 ### historical-scene
 ```
@@ -153,6 +216,7 @@ Style/medium: photorealistic photo
 Composition/framing: wide shot, eye-level
 Constraints: period-accurate details; no modern objects; no logos or trademarks; no watermark
 ```
+Official example: [Use historical and real-world context](prompting.md#use-historical-and-real-world-context) (a two-line prompt; the model infers context — inspect clothing, staging, and surroundings for accuracy). Request settings: `size="1024x1536"`, `quality="medium"`.
 
 ## Asset type templates (taxonomy-aligned)
 
@@ -252,6 +316,7 @@ Style/medium: painted game UI icon
 Composition/framing: centered icon; generous padding; clear silhouette
 Constraints: no text; no background scene elements; no logos or trademarks; no watermark
 ```
+Request settings: consider `background="transparent"` with `output_format="png"` for an icon cutout (both 2.5 models support it).
 
 ### Game assets example: tileable texture
 ```
@@ -361,6 +426,7 @@ Input images: Image 1: original infographic
 Primary request: replace "Bean Hopper", "Grinder", "Brew Group", "Boiler", "Water Tank", and "Drip Tray" with "Tolva", "Molino", "Grupo de infusión", "Caldera", "Depósito de agua", and "Bandeja de goteo"
 Constraints: change only the text; preserve layout, typography, spacing, and hierarchy; no extra words; do not alter logos or imagery
 ```
+Official example: [Translate while preserving layout](prompting.md#translate-while-preserving-layout) (a one-line prompt: "Translate the text in the infographic to Spanish. Do not change any other aspect of the image."). Request settings: `size="1024x1536"`, `quality="high"`. Check the translation and any words left in the original language.
 
 ### identity-preserve
 ```
@@ -369,6 +435,21 @@ Input images: Image 1: person photo; Image 2..N: clothing references
 Primary request: replace only the clothing with the provided garments
 Constraints: preserve face, body shape, pose, hair, expression, and identity; match lighting and shadows; keep the background unchanged; no accessories or text
 ```
+Official example: [Preserve identity and change clothing](prompting.md#preserve-identity-and-change-clothing) (one person photo plus three clothing references). Request settings: `size="1024x1536"`, `quality="medium"`. Send the person photo first (see the model notes on image order).
+
+### identity-preserve: insert a person into a scene
+Adapted from the official example [Insert a person into a scene](prompting.md#insert-a-person-into-a-scene).
+```
+Use case: identity-preserve
+Input images: Image 1: photo of the person
+Primary request: highly realistic action scene where this person is running away from a large brown bear attacking a campsite
+Scene/backdrop: campsite in Yosemite National Park with believable natural details; dusk
+Subject: the person centered but looking away from the camera; outdoorsy camping attire, dirt on the face, tears in the clothing; afraid but focused on escaping
+Style/medium: looks like a real photograph someone could have taken, not an overly enhanced or cinematic movie-poster image
+Lighting/mood: natural lighting and realistic colors; grounded, authentic, unstyled
+Constraints: preserve the person's facial features and proportions; avoid cinematic lighting, dramatic color grading, or stylized composition
+```
+Request settings: `size="1024x1536"`, `quality="medium"`. For `gpt-image-2`, omit `input_fidelity`.
 
 ### precise-object-edit
 ```
@@ -377,6 +458,17 @@ Input images: Image 1: room photo
 Primary request: replace only the white chairs with wooden chairs
 Constraints: preserve camera angle, room lighting, floor shadows, and surrounding objects; keep all other aspects unchanged
 ```
+Official example: [Change furniture in a room](prompting.md#change-furniture-in-a-room). Request settings: `size="1536x1024"`, `quality="medium"`.
+
+### precise-object-edit: remove an object
+Adapted from the official example [Remove an object](prompting.md#remove-an-object).
+```
+Use case: precise-object-edit
+Input images: Image 1: photo of a man holding a flower
+Primary request: remove the flower from the man's hand
+Constraints: keep the person, pose, lighting, and composition unchanged; do not change anything else
+```
+Request settings: `size="1024x1536"`, `quality="medium"`.
 
 ### lighting-weather
 ```
@@ -385,6 +477,18 @@ Input images: Image 1: original photo
 Primary request: make it look like a winter evening with gentle snowfall
 Constraints: preserve subject identity, geometry, camera angle, and composition; change only lighting, atmosphere, and weather
 ```
+Official example: [Change one condition](prompting.md#change-one-condition) (the previous output is the input; the whole prompt is "Make it look like a winter evening with snowfall."). Request settings: `size="1024x1536"`, `quality="medium"`.
+
+### background-extraction
+Adapted from the official example [Create a transparent product cutout](prompting.md#create-a-transparent-product-cutout). The skill taxonomy lists this slug but had no recipe.
+```
+Use case: background-extraction
+Input images: Image 1: product photograph
+Primary request: extract the product and isolate it on a fully transparent background
+Composition/framing: centered product, crisp silhouette
+Constraints: preserve product geometry and label legibility exactly; add only light polishing; no halos or fringing; no solid backdrop, checkerboard, scenery, or shadow; do not restyle the product; preserve clean alpha transparency
+```
+Request settings: `size="1024x1536"`, `quality="medium"`, `background="transparent"`, `output_format="png"` (no `output_compression` for PNG). For later edits, repeat the requirement to keep the transparent background.
 
 ### style-transfer
 ```
@@ -393,6 +497,7 @@ Input images: Image 1: style reference
 Primary request: apply Image 1's visual style to a man riding a motorcycle on a plain white backdrop
 Constraints: preserve palette, texture, and brushwork; no extra elements
 ```
+Official example: [Transfer a visual style](prompting.md#transfer-a-visual-style) (pixel-art reference; prompt: "Use the same style from the input image and generate a man riding a motorcycle on a white background."). Request settings: `size="1024x1536"`, `quality="medium"`.
 
 ### compositing
 ```
@@ -401,6 +506,20 @@ Input images: Image 1: base scene; Image 2: subject to insert
 Primary request: place the subject from Image 2 next to the person in Image 1
 Constraints: match lighting, perspective, and scale; keep the base framing unchanged; no extra elements
 ```
+Official example: [Combine references](prompting.md#combine-references). Request settings: `size="1024x1536"`, `quality="medium"`. Send the base scene first and the subject second (see the model notes on image order).
+
+### product-mockup: scene from a product photo
+Adapted from the official example [Create the starting image](prompting.md#create-the-starting-image).
+```
+Use case: product-mockup
+Input images: Image 1: product photograph
+Primary request: realistic billboard mockup of the product on a highway scene during sunset
+Text (verbatim): "Fresh and clean" (billboard text, exact, no extra characters, appears once)
+Style/medium: realistic photo mockup
+Composition/framing: billboard text centered
+Constraints: bold sans-serif, high contrast, clean kerning; perfectly legible; no watermarks; no logos
+```
+Request settings: `size="1024x1536"`, `quality="medium"`. Follow with the *lighting-weather* recipe on the output to change one condition at a time.
 
 ### character consistency workflow
 ```
@@ -412,6 +531,7 @@ Subject: same young forest hero gently helping a frightened squirrel out of a fa
 Style/medium: same children's book watercolor illustration style as Image 1
 Constraints: do not redesign the character; preserve facial features, proportions, outfit, color palette, and personality; no text; no watermark
 ```
+Official example: [Continue the story](prompting.md#continue-the-story), after [Establish the character](prompting.md#establish-the-character). Request settings: `size="1024x1536"`, `quality="medium"`.
 
 ### sketch-to-render
 ```
@@ -420,3 +540,4 @@ Input images: Image 1: drawing
 Primary request: turn the drawing into a photorealistic image
 Constraints: preserve layout, proportions, and perspective; choose realistic materials and lighting; do not add new elements or text
 ```
+Official example: [Turn a drawing into a realistic image](prompting.md#turn-a-drawing-into-a-realistic-image). Request settings: `size="1024x1536"`, `quality="medium"`.

@@ -1,90 +1,1966 @@
-# Image API quick reference
+# Image API reference — GPT Image over HTTP
 
-This file is for the fallback CLI mode only. Use it when the user explicitly asks to use `scripts/image_gen.py` / CLI / API / model controls, or after the user explicitly confirms that a transparent-output request should use the `gpt-image-1.5` true-transparency fallback path.
+> **UPDATED 2026-10-02.** This file replaces the old `imagegen` skill quick reference. Its source is the official
+> [OpenAI API reference — Images](https://developers.openai.com/api/reference/resources/images), read on 2026-10-02 from
+> `https://developers.openai.com/api/reference/resources/images/index.md` (the page's "View as Markdown" source). That page
+> contains every Images method (generate, edit, the retired variation endpoint), all request and response schemas, the
+> streaming event types, and every example. It is copied verbatim in
+> [OpenAI API reference — Images (verbatim)](#openai-api-reference--images-verbatim); only heading levels were shifted
+> one step down to nest under this file's title.
+>
+> The sections before it (summary, Laravel mapping, corrections) are written for this system and are not part of the
+> OpenAI page. The API reference shows HTTP (`curl`) examples, which map directly to Laravel's HTTP client; the SDK
+> examples of the HTML page (Python, TypeScript, Go, Ruby, Java, CLI) are not part of the markdown source.
 
-These parameters describe the Image API and bundled CLI fallback surface. Do not assume they are normal arguments on the built-in `image_gen` tool.
+## Contents
+- [Summary](#summary)
+- [Limits shown only on the HTML page](#limits-shown-only-on-the-html-page)
+- [Laravel mapping (this repo)](#laravel-mapping-this-repo)
+- [Corrections to the old version of this file](#corrections-to-the-old-version-of-this-file)
+- [Important boundary](#important-boundary)
+- [OpenAI API reference — Images (verbatim)](#openai-api-reference--images-verbatim)
+  - [Create image variation](#create-image-variation) (retired)
+  - [Create image edit](#create-image-edit)
+  - [Create image](#create-image)
+  - [Domain Types](#domain-types)
 
-## Scope
-- This fallback CLI is intended for GPT Image models (`gpt-image-2`, `gpt-image-1.5`, `gpt-image-1`, and `gpt-image-1-mini`).
-- The built-in `image_gen` tool and the fallback CLI do not expose the same controls.
+## Summary
 
-## Model summary
+Endpoints (base URL `https://api.openai.com/v1`):
 
-| Model | Quality | Input fidelity | Resolutions | Recommended use |
-| --- | --- | --- | --- | --- |
-| `gpt-image-2` | `low`, `medium`, `high`, `auto` | Always high fidelity for image inputs; do not set `input_fidelity` | `auto` or flexible sizes that satisfy the constraints below | Default for new CLI/API workflows: high-quality generation and editing, text-heavy images, photorealism, compositing, identity-sensitive edits, and workflows where fewer retries matter |
-| `gpt-image-1.5` | `low`, `medium`, `high`, `auto` | `low`, `high` | `1024x1024`, `1024x1536`, `1536x1024`, `auto` | True transparent-background fallback and backward-compatible workflows |
-| `gpt-image-1` | `low`, `medium`, `high`, `auto` | `low`, `high` | `1024x1024`, `1024x1536`, `1536x1024`, `auto` | Legacy compatibility |
-| `gpt-image-1-mini` | `low`, `medium`, `high`, `auto` | `low`, `high` | `1024x1024`, `1024x1536`, `1536x1024`, `auto` | Cost-sensitive draft batches and lower-stakes previews |
+| Method | Endpoint | Body | Notes |
+| --- | --- | --- | --- |
+| Create image | `POST /images/generations` | JSON | `model` must be specified explicitly |
+| Create image edit | `POST /images/edits` | JSON (`images: [{image_url}]` or `[{file_id}]`) or multipart (`image[]=@file`) | `model` defaults to `gpt-image-2.5-sunburst`; up to 16 input images |
+| Create image variation | `POST /images/variations` | multipart | **Retired** — use the edits endpoint with a prompt |
 
-## gpt-image-2 sizes
+Models accepted by the endpoints (`ImageModel`):
 
-`gpt-image-2` accepts `auto` or any `WIDTHxHEIGHT` size that satisfies all constraints:
+| Model | `quality` | Custom `WIDTHxHEIGHT` | `background: transparent` | `input_fidelity` | Status |
+| --- | --- | --- | --- | --- | --- |
+| `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08` | `low`, `medium`, `high`, `xhigh`, `max`, `auto` | yes | yes | not listed | current (edits default) |
+| `gpt-image-2.5-flare`, `gpt-image-2.5-flare-2026-09-08` | `low`, `medium`, `high`, `xhigh`, `max`, `auto` | yes | yes | not listed | current |
+| `gpt-image-2`, `gpt-image-2-2026-04-21` | `low`, `medium`, `high`, `auto` | yes | preview | omit | earlier model |
+| `gpt-image-1.5` | `low`, `medium`, `high`, `auto` | no | yes | `high`, `low` (default `low`) | shuts down 2026-12-01 |
+| `gpt-image-1` | `low`, `medium`, `high`, `auto` | no | yes | `high`, `low` (default `low`) | shuts down 2026-10-23 |
+| `gpt-image-1-mini` | `low`, `medium`, `high`, `auto` | no | yes | `low` only | — |
+| `chatgpt-image-latest` | — | — | — | — | listed in `ImageModel` |
+| `dall-e-2`, `dall-e-3` | `standard`, `hd` (legacy) | no | — | — | retired image models; legacy `response_format`, `style` |
 
-- Maximum edge length must be less than or equal to `3840px`.
-- Both edges must be multiples of `16px`.
-- Long edge to short edge ratio must not exceed `3:1`.
-- Total pixels must be at least `655,360` and no more than `8,294,400`.
+Shutdown dates come from the [image prompting guide](https://developers.openai.com/api/docs/guides/image-prompting?site_locale=en) (see `prompting.md` → *Older model reference*); the API reference itself does not state them.
 
-Popular sizes:
+Key rules from the reference:
 
-| Label | Size | Notes |
-| --- | --- | --- |
-| Square | `1024x1024` | Typical fast default |
-| Landscape | `1536x1024` | Standard landscape |
-| Portrait | `1024x1536` | Standard portrait |
-| 2K square | `2048x2048` | Larger square output |
-| 2K landscape | `2048x1152` | Widescreen output |
-| 4K landscape | `3840x2160` | Widescreen 4K output |
-| 4K portrait | `2160x3840` | Vertical 4K output |
-| Auto | `auto` | Default size |
+- `prompt`: required; at most 32,000 characters.
+- `n`: 1–10.
+- `size`: for `gpt-image-2` and both 2.5 models, any `WIDTHxHEIGHT` with both edges divisible by 16 and an aspect ratio between 1:3 and 3:1; above `2560x1440` is experimental; the maximum supported resolution is `3840x2160`; the size must also satisfy the model's current pixel and edge limits. Standard sizes `1024x1024`, `1536x1024`, `1024x1536` work for every GPT image model; `auto` where the model allows automatic sizing.
+- `quality`: defaults to `auto`; `xhigh` and `max` only on the 2.5 models.
+- `background`: `transparent`, `opaque`, or `auto` (default); with `transparent` use `output_format` `png` or `webp`.
+- `output_format`: `png`, `jpeg`, `webp`. `output_compression`: 0–100 for `jpeg`/`webp`, defaults to 100.
+- `moderation`: `auto` (default) or `low`.
+- `stream` + `partial_images` (0–3): server-sent events `image_generation.partial_image` / `image_generation.completed` (generations) and `image_edit.partial_image` / `image_edit.completed` (edits).
+- GPT image models always return base64 (`data[].b64_json`); `url` and `revised_prompt` are not returned by GPT image models; `response_format` and `style` are legacy and unsupported for them.
+- `user`: optional end-user identifier for abuse monitoring.
 
-Square images are typically fastest to generate. For 4K-style output, use `3840x2160` or `2160x3840`.
+## Limits shown only on the HTML page
 
-## Endpoints
-- Generate: `POST /v1/images/generations` (`client.images.generate(...)`)
-- Edit: `POST /v1/images/edits` (`client.images.edit(...)`)
+The HTML rendering of the edit page (`/api/reference/resources/images/methods/edit`) shows constraints that the markdown source omits:
 
-## Core parameters for GPT Image models
-- `prompt`: text prompt
-- `model`: image model
-- `n`: number of images (1-10)
-- `size`: `auto` by default for `gpt-image-2`; flexible `WIDTHxHEIGHT` sizes are allowed only for `gpt-image-2`; older GPT Image models use `1024x1024`, `1536x1024`, `1024x1536`, or `auto`
-- `quality`: `low`, `medium`, `high`, or `auto`
-- `background`: output transparency behavior (`transparent`, `opaque`, or `auto`) for generated output; this is not the same thing as the prompt's visual scene/backdrop
-- `output_format`: `png` (default), `jpeg`, `webp`
-- `output_compression`: 0-100 (jpeg/webp only)
-- `moderation`: `auto` (default) or `low`
+- `prompt`: `minLength 1`, `maxLength 32000`.
+- `images[].image_url` and `mask.image_url`: `maxLength 20971520` (20 MB as a URL or data URL string), `format uri`.
+- `n`: `minimum 1`, `maximum 10`.
+- `output_compression`: `minimum 0`, `maximum 100`.
+- `partial_images`: `minimum 0`, `maximum 3`.
 
-## Edit-specific parameters
-- `image`: one or more input images. For GPT Image models, you can provide up to 16 images.
-- `mask`: optional mask image
-- `input_fidelity`: `low` or `high` only for models that support it; do not set this for `gpt-image-2`
+The [image generation guide](https://developers.openai.com/api/docs/guides/image-generation) adds, for masks: the image to edit and the mask must be the same format and size (less than 50MB), the mask must contain an alpha channel, and with several input images the mask applies to the first image.
 
-Model-specific note for `input_fidelity`:
-- `gpt-image-2` always uses high fidelity for image inputs and does not support setting `input_fidelity`.
-- `gpt-image-1` and `gpt-image-1-mini` preserve all input images, but the first image gets richer textures and finer details.
-- `gpt-image-1.5` preserves the first 5 input images with higher fidelity.
+## Laravel mapping (this repo)
 
-## Transparent backgrounds
+[`App\Services\Video\OpenAiImageClient`](../../../../app/Services/Video/OpenAiImageClient.php) calls the Image API directly with Laravel's HTTP client. How each part of the reference maps to it:
 
-`gpt-image-2` does not currently support the Image API `background=transparent` parameter. In explicit CLI/API fallback mode, keep `gpt-image-2` when a flat chroma-key background plus local alpha extraction with `python "${CODEX_HOME:-$HOME/.codex}/skills/.system/imagegen/scripts/remove_chroma_key.py"` is acceptable.
+| Reference | `OpenAiImageClient` |
+| --- | --- |
+| `POST /images/generations`, JSON body | `generate()` — `ENDPOINT`, `->post($url, $payload)` with `content-type: application/json` (lines 18, 80–94) |
+| Generation body: `model`, `prompt`, `n`, `size`, `quality`, `output_format` | `$payload` (lines 68–75); `output_format` fixed to `png` |
+| `POST /images/edits`, multipart `image[]=@file` (reference "Edit image" example) | `editWithSources()` → `send()` — `->attach('image[]', $bytes, $filename)` per image (lines 152–157, 212–217) |
+| Single-image edit | `edit()` → `send()` with field name `image` (line 116); the reference's multipart examples use `image[]` |
+| Edit fields: `model`, `prompt`, `n`, `size`, `quality` | `$fields` (lines 190–196); `output_format` not sent, so the API default applies |
+| `prompt` maxLength 32000 | `MAX_PROMPT_CHARS = 32000` (line 22) — matches |
+| `n` 1–10 | `MAX_VARIATIONS = 10` (line 24) — matches |
+| Up to 16 input images | `MAX_SOURCE_IMAGES = 4` (line 26) — a stricter internal limit (its error message calls it the contract's ceiling) |
+| `data[].b64_json` | `base64_decode($item['b64_json'])` (lines 272–273) |
+| Response `usage`, `size`, `quality`, `output_format`, `created` | stored as `provider_usage` (lines 258–264) |
+| `x-request-id` header (curl `-D >(grep -i x-request-id …)`) | `$response->header('x-request-id')` (line 255) |
+| Error body `error.code` / `error.type` / `error.message` | `parseImageResponse()` failure branch (lines 243–251) |
+| Retry | retries only HTTP 429, twice, 1 s apart (lines 87–93, 204–210) |
 
-Use CLI `gpt-image-1.5` with `background=transparent` and a transparent-capable output format such as `png` or `webp` only after the user explicitly confirms that fallback, unless they already requested `gpt-image-1.5`, `scripts/image_gen.py`, or CLI fallback. If the user asks for true/native transparency, the subject is too complex for clean chroma-key removal, or local background removal fails validation, explain the tradeoff and ask before switching.
+Reference parameters the client does not send (the API defaults apply): `background` (`auto`), `moderation` (`auto`), `output_compression`, `partial_images`, `stream`, `user`, `mask`, `input_fidelity` (correctly omitted for `gpt-image-2` and not listed for the 2.5 models), and the JSON form of edits (`images[].image_url` / `file_id`).
 
-## Output
-- `data[]` list with `b64_json` per image
-- The bundled `scripts/image_gen.py` CLI decodes `b64_json` and writes output files for you.
+## Corrections to the old version of this file
 
-## Limits and notes
-- Input images and masks must be under 50MB.
-- Use the edits endpoint when the user requests changes to an existing image.
-- Masking is prompt-guided; exact shapes are not guaranteed.
-- Large sizes and high quality increase latency and cost.
-- Use `quality=low` for fast drafts, thumbnails, and quick iterations. Use `medium` or `high` for final assets, dense text, diagrams, identity-sensitive edits, or high-resolution outputs.
-- High `input_fidelity` can materially increase input token usage on models that support it.
-- If a request fails because a specific option is unsupported by the selected GPT Image model, retry manually without that option only when the option is not required by the user. If true transparent CLI output is required, ask before switching to `gpt-image-1.5` instead of dropping `background=transparent`, unless the user already explicitly chose that fallback.
+- The old file called `gpt-image-2` the default for new workflows. The reference now lists the GPT Image 2.5 models; edits default to `gpt-image-2.5-sunburst`.
+- The old file said `gpt-image-2` does not support `background=transparent` and recommended a chroma-key extraction script or a switch to `gpt-image-1.5`. The reference states that both 2.5 models support `opaque` and `transparent` backgrounds and that support is in preview for `gpt-image-2`. The chroma-key script is not part of this repository.
+- The old file listed `xhigh`/`max` nowhere; they exist for the 2.5 models.
+- The old file said flexible sizes are allowed only for `gpt-image-2`; they are allowed for `gpt-image-2` and both 2.5 models, with a maximum supported resolution of `3840x2160`.
+- `input_fidelity` details from the old file that the reference does not repeat (how `gpt-image-1`, `gpt-image-1-mini` and `gpt-image-1.5` weight the first input images) are no longer sourced and were removed.
 
 ## Important boundary
-- `quality`, `input_fidelity`, explicit masks, `background`, `output_format`, and related parameters are fallback-only execution controls.
-- Do not assume they are built-in `image_gen` tool arguments.
+
+- `quality`, `input_fidelity`, explicit masks, `background`, `output_format`, and related parameters are request parameters of the Image API, set separately from the prompt text.
+- In the `imagegen` skill they are fallback-only execution controls; do not assume they are built-in `image_gen` tool arguments.
+
+## OpenAI API reference — Images (verbatim)
+
+Source: `https://developers.openai.com/api/reference/resources/images/index.md`, read 2026-10-02. Relative links point to `https://developers.openai.com`.
+
+### Create image variation
+
+**post** `/images/variations`
+
+This endpoint is retired and no longer available. Use the image edits endpoint with a GPT Image model and a prompt to create a variation of an image. The request and response schemas below describe the legacy contract.
+
+#### Returns
+
+- `ImagesResponse object { created, background, data, 4 more }`
+
+  The response from the image generation endpoint.
+
+  - `created: number`
+
+    The Unix timestamp (in seconds) of when the image was created.
+
+  - `background: optional "transparent" or "opaque"`
+
+    The background parameter used for the image generation. Either `transparent` or `opaque`.
+
+    - `"transparent"`
+
+    - `"opaque"`
+
+  - `data: optional array of Image`
+
+    The list of generated images.
+
+    - `b64_json: optional string`
+
+      The base64-encoded JSON of the generated image. Returned by default for GPT image models, or when `response_format` is set to `b64_json` for models that support that parameter.
+
+    - `revised_prompt: optional string`
+
+      The revised prompt used to generate the image, for models that support prompt revision. Not returned by GPT image models.
+
+    - `url: optional string`
+
+      The URL of the generated image when `response_format` is set to `url` for models that support that parameter. Unsupported for GPT image models.
+
+  - `output_format: optional "png" or "webp" or "jpeg"`
+
+    The output format of the image generation. Either `png`, `webp`, or `jpeg`.
+
+    - `"png"`
+
+    - `"webp"`
+
+    - `"jpeg"`
+
+  - `quality: optional "low" or "medium" or "high" or 2 more`
+
+    The quality of the image generated. One of `low`, `medium`, `high`, `xhigh`, or `max`.
+
+    - `"low"`
+
+    - `"medium"`
+
+    - `"high"`
+
+    - `"xhigh"`
+
+    - `"max"`
+
+  - `size: optional string or "1024x1024" or "1024x1536" or "1536x1024"`
+
+    The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+    - `string`
+
+    - `"1024x1024" or "1024x1536" or "1536x1024"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `"1024x1024"`
+
+      - `"1024x1536"`
+
+      - `"1536x1024"`
+
+  - `usage: optional object { input_tokens, input_tokens_details, output_tokens, 2 more }`
+
+    For `gpt-image-1` only, the token usage information for the image generation.
+
+    - `input_tokens: number`
+
+      The number of tokens (images and text) in the input prompt.
+
+    - `input_tokens_details: object { image_tokens, text_tokens }`
+
+      The input tokens detailed information for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image tokens in the input prompt.
+
+      - `text_tokens: number`
+
+        The number of text tokens in the input prompt.
+
+    - `output_tokens: number`
+
+      The number of output tokens generated by the model.
+
+    - `total_tokens: number`
+
+      The total number of tokens (images and text) used for the image generation.
+
+    - `output_tokens_details: optional object { image_tokens, text_tokens }`
+
+      The output token details for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image output tokens generated by the model.
+
+      - `text_tokens: number`
+
+        The number of text output tokens generated by the model.
+
+#### Example
+
+```http
+curl https://api.openai.com/v1/images/variations \
+    -H 'Content-Type: multipart/form-data' \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -F 'image=@/path/to/image' \
+    -F n=1 \
+    -F response_format=url \
+    -F size=1024x1024 \
+    -F user=user-1234
+```
+
+##### Response
+
+```json
+{
+  "created": 0,
+  "background": "transparent",
+  "data": [
+    {
+      "b64_json": "b64_json",
+      "revised_prompt": "revised_prompt",
+      "url": "https://example.com"
+    }
+  ],
+  "output_format": "png",
+  "quality": "low",
+  "size": "1024x1024",
+  "usage": {
+    "input_tokens": 0,
+    "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+    },
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "output_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+    }
+  }
+}
+```
+
+#### Example
+
+```http
+curl https://api.openai.com/v1/images/variations \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -F image="@otter.png" \
+  -F n=2 \
+  -F size="1024x1024"
+```
+
+##### Response
+
+```json
+{
+  "created": 1589478378,
+  "data": [
+    {
+      "url": "https://..."
+    },
+    {
+      "url": "https://..."
+    }
+  ]
+}
+```
+
+### Create image edit
+
+**post** `/images/edits`
+
+Creates an edited or extended image given one or more source images and a prompt. This endpoint supports GPT Image models.
+
+#### Body Parameters
+
+- `images: array of object { file_id, image_url }`
+
+  Input image references to edit.
+  For GPT image models, you can provide up to 16 images.
+
+  - `file_id: optional string`
+
+    The File API ID of an uploaded image to use as input.
+
+  - `image_url: optional string`
+
+    A fully qualified URL or base64-encoded data URL.
+
+- `prompt: string`
+
+  A text description of the desired image edit.
+
+- `background: optional "transparent" or "opaque" or "auto" or null`
+
+  Set the background of the generated image output. `gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`, including their `2026-09-08` snapshots, support `opaque` and `transparent` backgrounds. Transparent backgrounds are available for supported GPT Image models. For `gpt-image-2` and `gpt-image-2-2026-04-21`, this support is in preview. When using `transparent`, set the output format to `png` or `webp`.
+
+  - `"transparent"`
+
+  - `"opaque"`
+
+  - `"auto"`
+
+- `input_fidelity: optional "high" or "low" or null`
+
+  Control how much effort the model will exert to match the style and features, especially facial features, of input images. Supports `high` and `low` on `gpt-image-1` and `gpt-image-1.5`; `gpt-image-1-mini` supports only `low`. For `gpt-image-2`, omit this parameter. Defaults to `low` on supported models.
+
+  - `"high"`
+
+  - `"low"`
+
+- `mask: optional object { file_id, image_url }`
+
+  Reference an input image by either URL or uploaded file ID.
+  Provide exactly one of `image_url` or `file_id`.
+
+  - `file_id: optional string`
+
+    The File API ID of an uploaded image to use as input.
+
+  - `image_url: optional string`
+
+    A fully qualified URL or base64-encoded data URL.
+
+- `model: optional string or "gpt-image-1.5" or "gpt-image-2" or "gpt-image-2-2026-04-21" or 7 more or null`
+
+  The GPT image model to use for image editing, including `gpt-image-2`, its dated snapshot `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, and `gpt-image-2.5-flare-2026-09-08`. Defaults to `gpt-image-2.5-sunburst`.
+
+  - `string`
+
+  - `"gpt-image-1.5" or "gpt-image-2" or "gpt-image-2-2026-04-21" or 7 more`
+
+    The GPT image model to use for image editing, including `gpt-image-2`, its dated snapshot `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, and `gpt-image-2.5-flare-2026-09-08`. Defaults to `gpt-image-2.5-sunburst`.
+
+    - `"gpt-image-1.5"`
+
+    - `"gpt-image-2"`
+
+    - `"gpt-image-2-2026-04-21"`
+
+    - `"gpt-image-2.5-sunburst"`
+
+    - `"gpt-image-2.5-sunburst-2026-09-08"`
+
+    - `"gpt-image-2.5-flare"`
+
+    - `"gpt-image-2.5-flare-2026-09-08"`
+
+    - `"gpt-image-1"`
+
+    - `"gpt-image-1-mini"`
+
+    - `"chatgpt-image-latest"`
+
+- `moderation: optional "low" or "auto" or null`
+
+  Moderation level for GPT image models.
+
+  - `"low"`
+
+  - `"auto"`
+
+- `n: optional number or null`
+
+  The number of edited images to generate.
+
+- `output_compression: optional number or null`
+
+  Compression level for `jpeg` or `webp` output.
+
+- `output_format: optional "png" or "jpeg" or "webp" or null`
+
+  Output image format. Supported for GPT image models.
+
+  - `"png"`
+
+  - `"jpeg"`
+
+  - `"webp"`
+
+- `partial_images: optional number or null`
+
+  The number of partial images to generate. This parameter is used for
+  streaming responses that return partial images. Value must be between 0 and 3.
+  When set to 0, the response will be a single image sent in one streaming event.
+
+  Note that the final image may be sent before the full number of partial images
+  are generated if the full image is generated more quickly.
+
+- `quality: optional "low" or "medium" or "high" or 3 more or null`
+
+  Output quality for GPT image models. The GPT image models support `low`, `medium`,
+  and `high`. `gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`, including their
+  `2026-09-08` snapshots, also support `xhigh` and `max`. Defaults to `auto`.
+
+  - `"low"`
+
+  - `"medium"`
+
+  - `"high"`
+
+  - `"xhigh"`
+
+  - `"max"`
+
+  - `"auto"`
+
+- `size: optional string or "auto" or "1024x1024" or "1536x1024" or "1024x1536" or null`
+
+  The size of the generated images. For `gpt-image-2`, `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, and `gpt-image-2.5-flare-2026-09-08`, arbitrary resolutions are supported as `WIDTHxHEIGHT` strings, for example `1536x864`. Width and height must both be divisible by 16 and the requested aspect ratio must be between 1:3 and 3:1. Resolutions above `2560x1440` are experimental, and the maximum supported resolution is `3840x2160`. The requested size must also satisfy the model's current pixel and edge limits. The standard sizes `1024x1024`, `1536x1024`, and `1024x1536` are supported by the GPT image models; `auto` is supported for models that allow automatic sizing.
+
+  - `string`
+
+  - `"auto" or "1024x1024" or "1536x1024" or "1024x1536"`
+
+    The size of the generated images. For `gpt-image-2`, `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, and `gpt-image-2.5-flare-2026-09-08`, arbitrary resolutions are supported as `WIDTHxHEIGHT` strings, for example `1536x864`. Width and height must both be divisible by 16 and the requested aspect ratio must be between 1:3 and 3:1. Resolutions above `2560x1440` are experimental, and the maximum supported resolution is `3840x2160`. The requested size must also satisfy the model's current pixel and edge limits. The standard sizes `1024x1024`, `1536x1024`, and `1024x1536` are supported by the GPT image models; `auto` is supported for models that allow automatic sizing.
+
+    - `"auto"`
+
+    - `"1024x1024"`
+
+    - `"1536x1024"`
+
+    - `"1024x1536"`
+
+- `stream: optional boolean or null`
+
+  Stream partial image results as events.
+
+- `user: optional string`
+
+  A unique identifier representing your end-user, which can help OpenAI
+  monitor and detect abuse.
+
+#### Returns
+
+- `ImagesResponse object { created, background, data, 4 more }`
+
+  The response from the image generation endpoint.
+
+  - `created: number`
+
+    The Unix timestamp (in seconds) of when the image was created.
+
+  - `background: optional "transparent" or "opaque"`
+
+    The background parameter used for the image generation. Either `transparent` or `opaque`.
+
+    - `"transparent"`
+
+    - `"opaque"`
+
+  - `data: optional array of Image`
+
+    The list of generated images.
+
+    - `b64_json: optional string`
+
+      The base64-encoded JSON of the generated image. Returned by default for GPT image models, or when `response_format` is set to `b64_json` for models that support that parameter.
+
+    - `revised_prompt: optional string`
+
+      The revised prompt used to generate the image, for models that support prompt revision. Not returned by GPT image models.
+
+    - `url: optional string`
+
+      The URL of the generated image when `response_format` is set to `url` for models that support that parameter. Unsupported for GPT image models.
+
+  - `output_format: optional "png" or "webp" or "jpeg"`
+
+    The output format of the image generation. Either `png`, `webp`, or `jpeg`.
+
+    - `"png"`
+
+    - `"webp"`
+
+    - `"jpeg"`
+
+  - `quality: optional "low" or "medium" or "high" or 2 more`
+
+    The quality of the image generated. One of `low`, `medium`, `high`, `xhigh`, or `max`.
+
+    - `"low"`
+
+    - `"medium"`
+
+    - `"high"`
+
+    - `"xhigh"`
+
+    - `"max"`
+
+  - `size: optional string or "1024x1024" or "1024x1536" or "1536x1024"`
+
+    The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+    - `string`
+
+    - `"1024x1024" or "1024x1536" or "1536x1024"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `"1024x1024"`
+
+      - `"1024x1536"`
+
+      - `"1536x1024"`
+
+  - `usage: optional object { input_tokens, input_tokens_details, output_tokens, 2 more }`
+
+    For `gpt-image-1` only, the token usage information for the image generation.
+
+    - `input_tokens: number`
+
+      The number of tokens (images and text) in the input prompt.
+
+    - `input_tokens_details: object { image_tokens, text_tokens }`
+
+      The input tokens detailed information for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image tokens in the input prompt.
+
+      - `text_tokens: number`
+
+        The number of text tokens in the input prompt.
+
+    - `output_tokens: number`
+
+      The number of output tokens generated by the model.
+
+    - `total_tokens: number`
+
+      The total number of tokens (images and text) used for the image generation.
+
+    - `output_tokens_details: optional object { image_tokens, text_tokens }`
+
+      The output token details for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image output tokens generated by the model.
+
+      - `text_tokens: number`
+
+        The number of text output tokens generated by the model.
+
+#### Example
+
+```http
+curl https://api.openai.com/v1/images/edits \
+    -H 'Content-Type: application/json' \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -d '{
+          "images": [
+            {
+              "image_url": "https://example.com/source-image.png"
+            }
+          ],
+          "prompt": "Add a watercolor effect to this image",
+          "model": "gpt-image-1.5",
+          "quality": "high",
+          "size": "1024x1024"
+        }'
+```
+
+##### Response
+
+```json
+{
+  "created": 0,
+  "background": "transparent",
+  "data": [
+    {
+      "b64_json": "b64_json",
+      "revised_prompt": "revised_prompt",
+      "url": "https://example.com"
+    }
+  ],
+  "output_format": "png",
+  "quality": "low",
+  "size": "1024x1024",
+  "usage": {
+    "input_tokens": 0,
+    "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+    },
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "output_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+    }
+  }
+}
+```
+
+#### Edit image
+
+```http
+curl -s -D >(grep -i x-request-id >&2) \
+  -o >(jq -r '.data[0].b64_json' | base64 --decode > gift-basket.png) \
+  -X POST "https://api.openai.com/v1/images/edits" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -F "model=gpt-image-1.5" \
+  -F "image[]=@body-lotion.png" \
+  -F "image[]=@bath-bomb.png" \
+  -F "image[]=@incense-kit.png" \
+  -F "image[]=@soap.png" \
+  -F 'prompt=Create a lovely gift basket with these four items in it'
+```
+
+#### Streaming
+
+```http
+curl -s -N -X POST "https://api.openai.com/v1/images/edits" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -F "model=gpt-image-1.5" \
+  -F "image[]=@body-lotion.png" \
+  -F "image[]=@bath-bomb.png" \
+  -F "image[]=@incense-kit.png" \
+  -F "image[]=@soap.png" \
+  -F 'prompt=Create a lovely gift basket with these four items in it' \
+  -F "stream=true"
+```
+
+##### Response
+
+```json
+event: image_edit.partial_image
+data: {"type":"image_edit.partial_image","b64_json":"...","partial_image_index":0}
+
+event: image_edit.completed
+data: {"type":"image_edit.completed","b64_json":"...","usage":{"total_tokens":100,"input_tokens":50,"output_tokens":50,"input_tokens_details":{"text_tokens":10,"image_tokens":40}}}
+```
+
+### Create image
+
+**post** `/images/generations`
+
+Creates an image given a prompt using a GPT Image model. [Learn more](/api/docs/guides/images-vision).
+
+#### Body Parameters
+
+- `model: string or ImageModel`
+
+  The GPT image model to use for image generation. Specify a model explicitly. Supported models include `gpt-image-1`, `gpt-image-1-mini`, `gpt-image-1.5`, `gpt-image-2`, `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, `gpt-image-2.5-flare-2026-09-08`, and `chatgpt-image-latest`.
+
+  - `string`
+
+  - `ImageModel = "gpt-image-1.5" or "gpt-image-2" or "gpt-image-2-2026-04-21" or 9 more`
+
+    - `"gpt-image-1.5"`
+
+    - `"gpt-image-2"`
+
+    - `"gpt-image-2-2026-04-21"`
+
+    - `"gpt-image-2.5-sunburst"`
+
+    - `"gpt-image-2.5-sunburst-2026-09-08"`
+
+    - `"gpt-image-2.5-flare"`
+
+    - `"gpt-image-2.5-flare-2026-09-08"`
+
+    - `"gpt-image-1"`
+
+    - `"gpt-image-1-mini"`
+
+    - `"chatgpt-image-latest"`
+
+    - `"dall-e-2"`
+
+    - `"dall-e-3"`
+
+- `prompt: string`
+
+  A text description of the desired image(s). The maximum length is 32000 characters.
+
+- `background: optional "transparent" or "opaque" or "auto" or null`
+
+  Set the background of the generated image(s). This parameter is only supported for
+  the GPT image models. Must be one of `transparent`, `opaque`, or `auto` (default
+  value). When `auto` is used, the model will automatically determine the best
+  background for the image.
+
+  `gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`, including their `2026-09-08`
+  snapshots, support `opaque` and `transparent` backgrounds. Transparent backgrounds
+  are available for supported GPT Image models. For `gpt-image-2` and
+  `gpt-image-2-2026-04-21`, this support is in preview. When using `transparent`,
+  set the output format to `png` or `webp`.
+
+  - `"transparent"`
+
+  - `"opaque"`
+
+  - `"auto"`
+
+- `moderation: optional "low" or "auto" or null`
+
+  Control the content-moderation level for images generated by the GPT image models. Must be either `low` for less restrictive filtering or `auto` (default value).
+
+  - `"low"`
+
+  - `"auto"`
+
+- `n: optional number or null`
+
+  The number of images to generate. Must be between 1 and 10.
+
+- `output_compression: optional number or null`
+
+  The compression level (0-100%) for the generated images. This parameter is only supported for the GPT image models with the `webp` or `jpeg` output formats, and defaults to 100.
+
+- `output_format: optional "png" or "jpeg" or "webp" or null`
+
+  The format in which the generated images are returned. This parameter is only supported for the GPT image models. Must be one of `png`, `jpeg`, or `webp`.
+
+  - `"png"`
+
+  - `"jpeg"`
+
+  - `"webp"`
+
+- `partial_images: optional number or null`
+
+  The number of partial images to generate. This parameter is used for
+  streaming responses that return partial images. Value must be between 0 and 3.
+  When set to 0, the response will be a single image sent in one streaming event.
+
+  Note that the final image may be sent before the full number of partial images
+  are generated if the full image is generated more quickly.
+
+- `quality: optional "low" or "medium" or "high" or 5 more or null`
+
+  The quality of the image that will be generated.
+
+  - `auto` (default value) will automatically select the best quality for the given
+    model.
+  - `high`, `medium` and `low` are supported for the GPT image models.
+  - `gpt-image-2.5-sunburst` and `gpt-image-2.5-flare`, including their `2026-09-08`
+    snapshots, also support `xhigh` and `max`.
+
+  - `"low"`
+
+  - `"medium"`
+
+  - `"high"`
+
+  - `"xhigh"`
+
+  - `"max"`
+
+  - `"auto"`
+
+  - `"standard"`
+
+  - `"hd"`
+
+- `response_format: optional "url" or "b64_json" or null`
+
+  Legacy response format parameter for retired image models. Unsupported for GPT image models, which always return base64-encoded images.
+
+  - `"url"`
+
+  - `"b64_json"`
+
+- `size: optional string or "auto" or "1024x1024" or "1536x1024" or 5 more or null`
+
+  The size of the generated images. For `gpt-image-2`, `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, and `gpt-image-2.5-flare-2026-09-08`, arbitrary resolutions are supported as `WIDTHxHEIGHT` strings, for example `1536x864`. Width and height must both be divisible by 16 and the requested aspect ratio must be between 1:3 and 3:1. Resolutions above `2560x1440` are experimental, and the maximum supported resolution is `3840x2160`. The requested size must also satisfy the model's current pixel and edge limits. The standard sizes `1024x1024`, `1536x1024`, and `1024x1536` are supported by the GPT image models; `auto` is supported for models that allow automatic sizing.
+
+  - `string`
+
+  - `"auto" or "1024x1024" or "1536x1024" or 5 more`
+
+    The size of the generated images. For `gpt-image-2`, `gpt-image-2-2026-04-21`, `gpt-image-2.5-sunburst`, `gpt-image-2.5-sunburst-2026-09-08`, `gpt-image-2.5-flare`, and `gpt-image-2.5-flare-2026-09-08`, arbitrary resolutions are supported as `WIDTHxHEIGHT` strings, for example `1536x864`. Width and height must both be divisible by 16 and the requested aspect ratio must be between 1:3 and 3:1. Resolutions above `2560x1440` are experimental, and the maximum supported resolution is `3840x2160`. The requested size must also satisfy the model's current pixel and edge limits. The standard sizes `1024x1024`, `1536x1024`, and `1024x1536` are supported by the GPT image models; `auto` is supported for models that allow automatic sizing.
+
+    - `"auto"`
+
+    - `"1024x1024"`
+
+    - `"1536x1024"`
+
+    - `"1024x1536"`
+
+    - `"256x256"`
+
+    - `"512x512"`
+
+    - `"1792x1024"`
+
+    - `"1024x1792"`
+
+- `stream: optional boolean or null`
+
+  Generate the image in streaming mode. Defaults to `false`. See the
+  [Image generation guide](/api/docs/guides/image-generation) for more information.
+  This parameter is only supported for the GPT image models.
+
+- `style: optional "vivid" or "natural" or null`
+
+  Legacy style parameter for retired image models. Unsupported for GPT image models; describe the desired style in the prompt instead.
+
+  - `"vivid"`
+
+  - `"natural"`
+
+- `user: optional string`
+
+  A unique identifier representing your end-user, which can help OpenAI to monitor and detect abuse. [Learn more](/api/docs/guides/safety-best-practices#implement-safety-identifiers).
+
+#### Returns
+
+- `ImagesResponse object { created, background, data, 4 more }`
+
+  The response from the image generation endpoint.
+
+  - `created: number`
+
+    The Unix timestamp (in seconds) of when the image was created.
+
+  - `background: optional "transparent" or "opaque"`
+
+    The background parameter used for the image generation. Either `transparent` or `opaque`.
+
+    - `"transparent"`
+
+    - `"opaque"`
+
+  - `data: optional array of Image`
+
+    The list of generated images.
+
+    - `b64_json: optional string`
+
+      The base64-encoded JSON of the generated image. Returned by default for GPT image models, or when `response_format` is set to `b64_json` for models that support that parameter.
+
+    - `revised_prompt: optional string`
+
+      The revised prompt used to generate the image, for models that support prompt revision. Not returned by GPT image models.
+
+    - `url: optional string`
+
+      The URL of the generated image when `response_format` is set to `url` for models that support that parameter. Unsupported for GPT image models.
+
+  - `output_format: optional "png" or "webp" or "jpeg"`
+
+    The output format of the image generation. Either `png`, `webp`, or `jpeg`.
+
+    - `"png"`
+
+    - `"webp"`
+
+    - `"jpeg"`
+
+  - `quality: optional "low" or "medium" or "high" or 2 more`
+
+    The quality of the image generated. One of `low`, `medium`, `high`, `xhigh`, or `max`.
+
+    - `"low"`
+
+    - `"medium"`
+
+    - `"high"`
+
+    - `"xhigh"`
+
+    - `"max"`
+
+  - `size: optional string or "1024x1024" or "1024x1536" or "1536x1024"`
+
+    The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+    - `string`
+
+    - `"1024x1024" or "1024x1536" or "1536x1024"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `"1024x1024"`
+
+      - `"1024x1536"`
+
+      - `"1536x1024"`
+
+  - `usage: optional object { input_tokens, input_tokens_details, output_tokens, 2 more }`
+
+    For `gpt-image-1` only, the token usage information for the image generation.
+
+    - `input_tokens: number`
+
+      The number of tokens (images and text) in the input prompt.
+
+    - `input_tokens_details: object { image_tokens, text_tokens }`
+
+      The input tokens detailed information for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image tokens in the input prompt.
+
+      - `text_tokens: number`
+
+        The number of text tokens in the input prompt.
+
+    - `output_tokens: number`
+
+      The number of output tokens generated by the model.
+
+    - `total_tokens: number`
+
+      The total number of tokens (images and text) used for the image generation.
+
+    - `output_tokens_details: optional object { image_tokens, text_tokens }`
+
+      The output token details for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image output tokens generated by the model.
+
+      - `text_tokens: number`
+
+        The number of text output tokens generated by the model.
+
+#### Example
+
+```http
+curl https://api.openai.com/v1/images/generations \
+    -H 'Content-Type: application/json' \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -d '{
+          "model": "gpt-image-2.5-flare",
+          "prompt": "A cute baby sea otter",
+          "background": "transparent",
+          "moderation": "low",
+          "n": 1,
+          "output_compression": 100,
+          "output_format": "png",
+          "partial_images": 1,
+          "quality": "medium",
+          "style": "vivid",
+          "user": "user-1234"
+        }'
+```
+
+##### Response
+
+```json
+{
+  "created": 0,
+  "background": "transparent",
+  "data": [
+    {
+      "b64_json": "b64_json",
+      "revised_prompt": "revised_prompt",
+      "url": "https://example.com"
+    }
+  ],
+  "output_format": "png",
+  "quality": "low",
+  "size": "1024x1024",
+  "usage": {
+    "input_tokens": 0,
+    "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+    },
+    "output_tokens": 0,
+    "total_tokens": 0,
+    "output_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+    }
+  }
+}
+```
+
+#### Generate image
+
+```http
+curl https://api.openai.com/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{
+    "model": "gpt-image-2.5-flare",
+    "prompt": "A cute baby sea otter",
+    "n": 1,
+    "size": "1024x1024"
+  }'
+```
+
+##### Response
+
+```json
+{
+  "created": 1713833628,
+  "data": [
+    {
+      "b64_json": "..."
+    }
+  ],
+  "usage": {
+    "total_tokens": 100,
+    "input_tokens": 50,
+    "output_tokens": 50,
+    "input_tokens_details": {
+      "text_tokens": 10,
+      "image_tokens": 40
+    }
+  }
+}
+```
+
+#### Streaming
+
+```http
+curl https://api.openai.com/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -d '{
+    "model": "gpt-image-2.5-flare",
+    "prompt": "A cute baby sea otter",
+    "n": 1,
+    "size": "1024x1024",
+    "stream": true
+  }' \
+  --no-buffer
+```
+
+##### Response
+
+```json
+event: image_generation.partial_image
+data: {"type":"image_generation.partial_image","b64_json":"...","partial_image_index":0}
+
+event: image_generation.completed
+data: {"type":"image_generation.completed","b64_json":"...","usage":{"total_tokens":100,"input_tokens":50,"output_tokens":50,"input_tokens_details":{"text_tokens":10,"image_tokens":40}}}
+```
+
+### Domain Types
+
+#### Image
+
+- `Image object { b64_json, revised_prompt, url }`
+
+  Represents the content or the URL of an image generated by the OpenAI API.
+
+  - `b64_json: optional string`
+
+    The base64-encoded JSON of the generated image. Returned by default for GPT image models, or when `response_format` is set to `b64_json` for models that support that parameter.
+
+  - `revised_prompt: optional string`
+
+    The revised prompt used to generate the image, for models that support prompt revision. Not returned by GPT image models.
+
+  - `url: optional string`
+
+    The URL of the generated image when `response_format` is set to `url` for models that support that parameter. Unsupported for GPT image models.
+
+#### Image Edit Completed Event
+
+- `ImageEditCompletedEvent object { b64_json, background, created_at, 5 more }`
+
+  Emitted when image editing has completed and the final image is available.
+
+  - `b64_json: string`
+
+    Base64-encoded final edited image data, suitable for rendering as an image.
+
+  - `background: "transparent" or "opaque" or "auto"`
+
+    The background setting for the edited image.
+
+    - `"transparent"`
+
+    - `"opaque"`
+
+    - `"auto"`
+
+  - `created_at: number`
+
+    The Unix timestamp when the event was created.
+
+  - `output_format: "png" or "webp" or "jpeg"`
+
+    The output format for the edited image.
+
+    - `"png"`
+
+    - `"webp"`
+
+    - `"jpeg"`
+
+  - `quality: "low" or "medium" or "high" or 3 more`
+
+    The quality setting for the edited image.
+
+    - `"low"`
+
+    - `"medium"`
+
+    - `"high"`
+
+    - `"xhigh"`
+
+    - `"max"`
+
+    - `"auto"`
+
+  - `size: string or "1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+    The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+    - `string`
+
+    - `"1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `"1024x1024"`
+
+      - `"1024x1536"`
+
+      - `"1536x1024"`
+
+      - `"auto"`
+
+  - `type: "image_edit.completed"`
+
+    The type of the event. Always `image_edit.completed`.
+
+    - `"image_edit.completed"`
+
+  - `usage: object { input_tokens, input_tokens_details, output_tokens, total_tokens }`
+
+    For the GPT image models only, the token usage information for the image generation.
+
+    - `input_tokens: number`
+
+      The number of tokens (images and text) in the input prompt.
+
+    - `input_tokens_details: object { image_tokens, text_tokens }`
+
+      The input tokens detailed information for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image tokens in the input prompt.
+
+      - `text_tokens: number`
+
+        The number of text tokens in the input prompt.
+
+    - `output_tokens: number`
+
+      The number of image tokens in the output image.
+
+    - `total_tokens: number`
+
+      The total number of tokens (images and text) used for the image generation.
+
+#### Image Edit Partial Image Event
+
+- `ImageEditPartialImageEvent object { b64_json, background, created_at, 5 more }`
+
+  Emitted when a partial image is available during image editing streaming.
+
+  - `b64_json: string`
+
+    Base64-encoded partial image data, suitable for rendering as an image.
+
+  - `background: "transparent" or "opaque" or "auto"`
+
+    The background setting for the requested edited image.
+
+    - `"transparent"`
+
+    - `"opaque"`
+
+    - `"auto"`
+
+  - `created_at: number`
+
+    The Unix timestamp when the event was created.
+
+  - `output_format: "png" or "webp" or "jpeg"`
+
+    The output format for the requested edited image.
+
+    - `"png"`
+
+    - `"webp"`
+
+    - `"jpeg"`
+
+  - `partial_image_index: number`
+
+    0-based index for the partial image (streaming).
+
+  - `quality: "low" or "medium" or "high" or 3 more`
+
+    The quality setting for the requested edited image.
+
+    - `"low"`
+
+    - `"medium"`
+
+    - `"high"`
+
+    - `"xhigh"`
+
+    - `"max"`
+
+    - `"auto"`
+
+  - `size: string or "1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+    The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+    - `string`
+
+    - `"1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `"1024x1024"`
+
+      - `"1024x1536"`
+
+      - `"1536x1024"`
+
+      - `"auto"`
+
+  - `type: "image_edit.partial_image"`
+
+    The type of the event. Always `image_edit.partial_image`.
+
+    - `"image_edit.partial_image"`
+
+#### Image Edit Stream Event
+
+- `ImageEditStreamEvent = ImageEditPartialImageEvent or ImageEditCompletedEvent`
+
+  Emitted when a partial image is available during image editing streaming.
+
+  - `ImageEditPartialImageEvent object { b64_json, background, created_at, 5 more }`
+
+    Emitted when a partial image is available during image editing streaming.
+
+    - `b64_json: string`
+
+      Base64-encoded partial image data, suitable for rendering as an image.
+
+    - `background: "transparent" or "opaque" or "auto"`
+
+      The background setting for the requested edited image.
+
+      - `"transparent"`
+
+      - `"opaque"`
+
+      - `"auto"`
+
+    - `created_at: number`
+
+      The Unix timestamp when the event was created.
+
+    - `output_format: "png" or "webp" or "jpeg"`
+
+      The output format for the requested edited image.
+
+      - `"png"`
+
+      - `"webp"`
+
+      - `"jpeg"`
+
+    - `partial_image_index: number`
+
+      0-based index for the partial image (streaming).
+
+    - `quality: "low" or "medium" or "high" or 3 more`
+
+      The quality setting for the requested edited image.
+
+      - `"low"`
+
+      - `"medium"`
+
+      - `"high"`
+
+      - `"xhigh"`
+
+      - `"max"`
+
+      - `"auto"`
+
+    - `size: string or "1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `string`
+
+      - `"1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+        The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+        - `"1024x1024"`
+
+        - `"1024x1536"`
+
+        - `"1536x1024"`
+
+        - `"auto"`
+
+    - `type: "image_edit.partial_image"`
+
+      The type of the event. Always `image_edit.partial_image`.
+
+      - `"image_edit.partial_image"`
+
+  - `ImageEditCompletedEvent object { b64_json, background, created_at, 5 more }`
+
+    Emitted when image editing has completed and the final image is available.
+
+    - `b64_json: string`
+
+      Base64-encoded final edited image data, suitable for rendering as an image.
+
+    - `background: "transparent" or "opaque" or "auto"`
+
+      The background setting for the edited image.
+
+      - `"transparent"`
+
+      - `"opaque"`
+
+      - `"auto"`
+
+    - `created_at: number`
+
+      The Unix timestamp when the event was created.
+
+    - `output_format: "png" or "webp" or "jpeg"`
+
+      The output format for the edited image.
+
+      - `"png"`
+
+      - `"webp"`
+
+      - `"jpeg"`
+
+    - `quality: "low" or "medium" or "high" or 3 more`
+
+      The quality setting for the edited image.
+
+      - `"low"`
+
+      - `"medium"`
+
+      - `"high"`
+
+      - `"xhigh"`
+
+      - `"max"`
+
+      - `"auto"`
+
+    - `size: string or "1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `string`
+
+      - `"1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+        The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+        - `"1024x1024"`
+
+        - `"1024x1536"`
+
+        - `"1536x1024"`
+
+        - `"auto"`
+
+    - `type: "image_edit.completed"`
+
+      The type of the event. Always `image_edit.completed`.
+
+      - `"image_edit.completed"`
+
+    - `usage: object { input_tokens, input_tokens_details, output_tokens, total_tokens }`
+
+      For the GPT image models only, the token usage information for the image generation.
+
+      - `input_tokens: number`
+
+        The number of tokens (images and text) in the input prompt.
+
+      - `input_tokens_details: object { image_tokens, text_tokens }`
+
+        The input tokens detailed information for the image generation.
+
+        - `image_tokens: number`
+
+          The number of image tokens in the input prompt.
+
+        - `text_tokens: number`
+
+          The number of text tokens in the input prompt.
+
+      - `output_tokens: number`
+
+        The number of image tokens in the output image.
+
+      - `total_tokens: number`
+
+        The total number of tokens (images and text) used for the image generation.
+
+#### Image Gen Completed Event
+
+- `ImageGenCompletedEvent object { b64_json, background, created_at, 5 more }`
+
+  Emitted when image generation has completed and the final image is available.
+
+  - `b64_json: string`
+
+    Base64-encoded image data, suitable for rendering as an image.
+
+  - `background: "transparent" or "opaque" or "auto"`
+
+    The background setting for the generated image.
+
+    - `"transparent"`
+
+    - `"opaque"`
+
+    - `"auto"`
+
+  - `created_at: number`
+
+    The Unix timestamp when the event was created.
+
+  - `output_format: "png" or "webp" or "jpeg"`
+
+    The output format for the generated image.
+
+    - `"png"`
+
+    - `"webp"`
+
+    - `"jpeg"`
+
+  - `quality: "low" or "medium" or "high" or 3 more`
+
+    The quality setting for the generated image.
+
+    - `"low"`
+
+    - `"medium"`
+
+    - `"high"`
+
+    - `"xhigh"`
+
+    - `"max"`
+
+    - `"auto"`
+
+  - `size: string or "1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+    The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+    - `string`
+
+    - `"1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `"1024x1024"`
+
+      - `"1024x1536"`
+
+      - `"1536x1024"`
+
+      - `"auto"`
+
+  - `type: "image_generation.completed"`
+
+    The type of the event. Always `image_generation.completed`.
+
+    - `"image_generation.completed"`
+
+  - `usage: object { input_tokens, input_tokens_details, output_tokens, total_tokens }`
+
+    For the GPT image models only, the token usage information for the image generation.
+
+    - `input_tokens: number`
+
+      The number of tokens (images and text) in the input prompt.
+
+    - `input_tokens_details: object { image_tokens, text_tokens }`
+
+      The input tokens detailed information for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image tokens in the input prompt.
+
+      - `text_tokens: number`
+
+        The number of text tokens in the input prompt.
+
+    - `output_tokens: number`
+
+      The number of image tokens in the output image.
+
+    - `total_tokens: number`
+
+      The total number of tokens (images and text) used for the image generation.
+
+#### Image Gen Partial Image Event
+
+- `ImageGenPartialImageEvent object { b64_json, background, created_at, 5 more }`
+
+  Emitted when a partial image is available during image generation streaming.
+
+  - `b64_json: string`
+
+    Base64-encoded partial image data, suitable for rendering as an image.
+
+  - `background: "transparent" or "opaque" or "auto"`
+
+    The background setting for the requested image.
+
+    - `"transparent"`
+
+    - `"opaque"`
+
+    - `"auto"`
+
+  - `created_at: number`
+
+    The Unix timestamp when the event was created.
+
+  - `output_format: "png" or "webp" or "jpeg"`
+
+    The output format for the requested image.
+
+    - `"png"`
+
+    - `"webp"`
+
+    - `"jpeg"`
+
+  - `partial_image_index: number`
+
+    0-based index for the partial image (streaming).
+
+  - `quality: "low" or "medium" or "high" or 3 more`
+
+    The quality setting for the requested image.
+
+    - `"low"`
+
+    - `"medium"`
+
+    - `"high"`
+
+    - `"xhigh"`
+
+    - `"max"`
+
+    - `"auto"`
+
+  - `size: string or "1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+    The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+    - `string`
+
+    - `"1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `"1024x1024"`
+
+      - `"1024x1536"`
+
+      - `"1536x1024"`
+
+      - `"auto"`
+
+  - `type: "image_generation.partial_image"`
+
+    The type of the event. Always `image_generation.partial_image`.
+
+    - `"image_generation.partial_image"`
+
+#### Image Gen Stream Event
+
+- `ImageGenStreamEvent = ImageGenPartialImageEvent or ImageGenCompletedEvent`
+
+  Emitted when a partial image is available during image generation streaming.
+
+  - `ImageGenPartialImageEvent object { b64_json, background, created_at, 5 more }`
+
+    Emitted when a partial image is available during image generation streaming.
+
+    - `b64_json: string`
+
+      Base64-encoded partial image data, suitable for rendering as an image.
+
+    - `background: "transparent" or "opaque" or "auto"`
+
+      The background setting for the requested image.
+
+      - `"transparent"`
+
+      - `"opaque"`
+
+      - `"auto"`
+
+    - `created_at: number`
+
+      The Unix timestamp when the event was created.
+
+    - `output_format: "png" or "webp" or "jpeg"`
+
+      The output format for the requested image.
+
+      - `"png"`
+
+      - `"webp"`
+
+      - `"jpeg"`
+
+    - `partial_image_index: number`
+
+      0-based index for the partial image (streaming).
+
+    - `quality: "low" or "medium" or "high" or 3 more`
+
+      The quality setting for the requested image.
+
+      - `"low"`
+
+      - `"medium"`
+
+      - `"high"`
+
+      - `"xhigh"`
+
+      - `"max"`
+
+      - `"auto"`
+
+    - `size: string or "1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `string`
+
+      - `"1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+        The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+        - `"1024x1024"`
+
+        - `"1024x1536"`
+
+        - `"1536x1024"`
+
+        - `"auto"`
+
+    - `type: "image_generation.partial_image"`
+
+      The type of the event. Always `image_generation.partial_image`.
+
+      - `"image_generation.partial_image"`
+
+  - `ImageGenCompletedEvent object { b64_json, background, created_at, 5 more }`
+
+    Emitted when image generation has completed and the final image is available.
+
+    - `b64_json: string`
+
+      Base64-encoded image data, suitable for rendering as an image.
+
+    - `background: "transparent" or "opaque" or "auto"`
+
+      The background setting for the generated image.
+
+      - `"transparent"`
+
+      - `"opaque"`
+
+      - `"auto"`
+
+    - `created_at: number`
+
+      The Unix timestamp when the event was created.
+
+    - `output_format: "png" or "webp" or "jpeg"`
+
+      The output format for the generated image.
+
+      - `"png"`
+
+      - `"webp"`
+
+      - `"jpeg"`
+
+    - `quality: "low" or "medium" or "high" or 3 more`
+
+      The quality setting for the generated image.
+
+      - `"low"`
+
+      - `"medium"`
+
+      - `"high"`
+
+      - `"xhigh"`
+
+      - `"max"`
+
+      - `"auto"`
+
+    - `size: string or "1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `string`
+
+      - `"1024x1024" or "1024x1536" or "1536x1024" or "auto"`
+
+        The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+        - `"1024x1024"`
+
+        - `"1024x1536"`
+
+        - `"1536x1024"`
+
+        - `"auto"`
+
+    - `type: "image_generation.completed"`
+
+      The type of the event. Always `image_generation.completed`.
+
+      - `"image_generation.completed"`
+
+    - `usage: object { input_tokens, input_tokens_details, output_tokens, total_tokens }`
+
+      For the GPT image models only, the token usage information for the image generation.
+
+      - `input_tokens: number`
+
+        The number of tokens (images and text) in the input prompt.
+
+      - `input_tokens_details: object { image_tokens, text_tokens }`
+
+        The input tokens detailed information for the image generation.
+
+        - `image_tokens: number`
+
+          The number of image tokens in the input prompt.
+
+        - `text_tokens: number`
+
+          The number of text tokens in the input prompt.
+
+      - `output_tokens: number`
+
+        The number of image tokens in the output image.
+
+      - `total_tokens: number`
+
+        The total number of tokens (images and text) used for the image generation.
+
+#### Image Model
+
+- `ImageModel = "gpt-image-1.5" or "gpt-image-2" or "gpt-image-2-2026-04-21" or 9 more`
+
+  - `"gpt-image-1.5"`
+
+  - `"gpt-image-2"`
+
+  - `"gpt-image-2-2026-04-21"`
+
+  - `"gpt-image-2.5-sunburst"`
+
+  - `"gpt-image-2.5-sunburst-2026-09-08"`
+
+  - `"gpt-image-2.5-flare"`
+
+  - `"gpt-image-2.5-flare-2026-09-08"`
+
+  - `"gpt-image-1"`
+
+  - `"gpt-image-1-mini"`
+
+  - `"chatgpt-image-latest"`
+
+  - `"dall-e-2"`
+
+  - `"dall-e-3"`
+
+#### Images Response
+
+- `ImagesResponse object { created, background, data, 4 more }`
+
+  The response from the image generation endpoint.
+
+  - `created: number`
+
+    The Unix timestamp (in seconds) of when the image was created.
+
+  - `background: optional "transparent" or "opaque"`
+
+    The background parameter used for the image generation. Either `transparent` or `opaque`.
+
+    - `"transparent"`
+
+    - `"opaque"`
+
+  - `data: optional array of Image`
+
+    The list of generated images.
+
+    - `b64_json: optional string`
+
+      The base64-encoded JSON of the generated image. Returned by default for GPT image models, or when `response_format` is set to `b64_json` for models that support that parameter.
+
+    - `revised_prompt: optional string`
+
+      The revised prompt used to generate the image, for models that support prompt revision. Not returned by GPT image models.
+
+    - `url: optional string`
+
+      The URL of the generated image when `response_format` is set to `url` for models that support that parameter. Unsupported for GPT image models.
+
+  - `output_format: optional "png" or "webp" or "jpeg"`
+
+    The output format of the image generation. Either `png`, `webp`, or `jpeg`.
+
+    - `"png"`
+
+    - `"webp"`
+
+    - `"jpeg"`
+
+  - `quality: optional "low" or "medium" or "high" or 2 more`
+
+    The quality of the image generated. One of `low`, `medium`, `high`, `xhigh`, or `max`.
+
+    - `"low"`
+
+    - `"medium"`
+
+    - `"high"`
+
+    - `"xhigh"`
+
+    - `"max"`
+
+  - `size: optional string or "1024x1024" or "1024x1536" or "1536x1024"`
+
+    The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+    - `string`
+
+    - `"1024x1024" or "1024x1536" or "1536x1024"`
+
+      The image dimensions as a `WIDTHxHEIGHT` string, for example `1536x864`.
+
+      - `"1024x1024"`
+
+      - `"1024x1536"`
+
+      - `"1536x1024"`
+
+  - `usage: optional object { input_tokens, input_tokens_details, output_tokens, 2 more }`
+
+    For `gpt-image-1` only, the token usage information for the image generation.
+
+    - `input_tokens: number`
+
+      The number of tokens (images and text) in the input prompt.
+
+    - `input_tokens_details: object { image_tokens, text_tokens }`
+
+      The input tokens detailed information for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image tokens in the input prompt.
+
+      - `text_tokens: number`
+
+        The number of text tokens in the input prompt.
+
+    - `output_tokens: number`
+
+      The number of output tokens generated by the model.
+
+    - `total_tokens: number`
+
+      The total number of tokens (images and text) used for the image generation.
+
+    - `output_tokens_details: optional object { image_tokens, text_tokens }`
+
+      The output token details for the image generation.
+
+      - `image_tokens: number`
+
+        The number of image output tokens generated by the model.
+
+      - `text_tokens: number`
+
+        The number of text output tokens generated by the model.
