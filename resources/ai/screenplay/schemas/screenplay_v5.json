@@ -492,7 +492,14 @@
                 "required": [
                     "id",
                     "name",
-                    "description"
+                    "description",
+                    "story_use",
+                    "spatial_relation",
+                    "subject_id",
+                    "layout",
+                    "connections",
+                    "fixed_features",
+                    "light_sources"
                 ],
                 "properties": {
                     "id": {
@@ -508,6 +515,71 @@
                         "type": "string",
                         "minLength": 20,
                         "maxLength": 600
+                    },
+                    "story_use": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 400
+                    },
+                    "spatial_relation": {
+                        "type": "string",
+                        "enum": [
+                            "external",
+                            "subject_part"
+                        ]
+                    },
+                    "subject_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^ch_[a-z0-9_]{2,40}$"
+                    },
+                    "layout": {
+                        "type": "string",
+                        "minLength": 40,
+                        "maxLength": 1200
+                    },
+                    "connections": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "target_location_id",
+                                "via"
+                            ],
+                            "properties": {
+                                "target_location_id": {
+                                    "type": "string",
+                                    "pattern": "^lo_[a-z0-9_]{2,40}$"
+                                },
+                                "via": {
+                                    "type": "string",
+                                    "minLength": 10,
+                                    "maxLength": 300
+                                }
+                            }
+                        }
+                    },
+                    "fixed_features": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 200
+                        }
+                    },
+                    "light_sources": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 200
+                        }
                     }
                 }
             }
@@ -531,7 +603,9 @@
                     "duration_estimate_ms",
                     "why_it_cannot_be_cut",
                     "leads_to",
-                    "build_state"
+                    "build_state",
+                    "light_and_weather",
+                    "props"
                 ],
                 "properties": {
                     "id": {
@@ -642,6 +716,20 @@
                                 "minLength": 3,
                                 "maxLength": 300
                             }
+                        }
+                    },
+                    "light_and_weather": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 300
+                    },
+                    "props": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 150
                         }
                     }
                 }

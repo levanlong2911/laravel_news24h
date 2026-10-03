@@ -1,0 +1,224 @@
+{
+    "design": {
+        "vessel": {
+            "name": "The ferry",
+            "description": "A harbour ferry built as one long covered hall with two identical working ends, gates along both sides and benches across its width.",
+            "appearance": "A low, even body with the same profile at both ends, one continuous roof, and a long band of sliding gates along each side; a small glazed helm cabin sits on the roof at mid-length, above a crew stair."
+        },
+        "design_thesis": {
+            "central_idea": "The ferry is one long covered hall with two identical working ends. Each side opens along almost its full length through a row of sliding gates, so passengers board across the width all at once and the vessel departs in whichever direction its next pier lies. Closed, each gate sits flush between two posts; opened, it slides toward one end along a track just outside the hull plating and stacks behind its neighbour, leaving the side clear from post to post.",
+            "visible_difference": "The vessel reads as a low, even body with the same profile at both ends, one continuous roof, and a long band of gates along each side. A small glazed helm cabin sits on the roof at mid-length, facing both ends, reached from the hall by a crew stair beneath it.",
+            "spatial_consequence": "Benches run across the hall from one side to the other, so every passenger sits a few steps from a gate. Boarding and leaving happen across the width, and the whole hall empties toward the pier together.",
+            "coherence": "The identical ends, the side gates and the cross benches all serve one rule: people move on and off across the ferry's width. Each depends on the other two, and together they turn a stop into a single movement of the whole crowd.",
+            "realization": "The film must show the hull built with matching ends, each side framed as a row of openings with posts between them, every gate hung and adjusted to meet its neighbours, and the helm cabin set on the roof at mid-length."
+        },
+        "principal_dimensions": {
+            "length_m": 48,
+            "beam_m": 14.5,
+            "rationale": "Length is set by how much of a waiting crowd must reach a gate at the same moment, so the hull is long enough for a full pier queue to board side by side. Beam is set by the cross benches and the standing space inside each row of gates, and ends where those bands end."
+        },
+        "protagonist_profile": {
+            "size_and_dimensions": "The hull keeps the foundation's length and beam. It is long enough for a full pier queue to reach a gate at the same moment and no wider than the cross benches and the standing band inside each row of gates. The draft is proposed in the figures; nothing else about its size is decided yet.",
+            "form_and_proportions": "The hull is a low, even body with a flat sheer and square ends of the same shape, so the profile reads the same whichever way the ferry is travelling; as a proposal, its freeboard is a short band of plating below the gate tracks. As a proposal, in plan the hull keeps its full width along almost its whole length, its sides running parallel from end to end and meeting each square end at a firm corner, so the rows of gates can run nearly the full length. The hall stands directly on the hull sides, its posts rising straight from the plating, and one continuous roof runs over it from end to end, broken only by the small helm cabin at mid-length. As a proposal, each end closes in a raked bulwark that rises a step above the main deck, square in plan, with a mooring station in its port and starboard corners and a clear strip of deck between them. Nothing at either end moves and neither end has a way down to the water; people only board through the side gates.",
+            "spatial_layout": "One passenger hall fills the main deck between the two ends. Structurally the hall is one open span under the roof, carried by the posts along its port and starboard sides. Passengers board and leave through the gates on whichever side lies against the pier. The crew reach the crew spaces inside the hull and the helm cabin above the roof by one stair at mid-length, and walk along the hall to the mooring stations at both ends. Nothing divides the hall along its length.",
+            "deck_organization": "The main deck is the hall, level from end to end and a short step above the pier, with the cross benches and a clear standing band inside each row of gates. The crew spaces lie below it, inside the hull. The roof carries the helm cabin at mid-length, reached from the hall through the hatch in its floor, and, as a proposal, a narrow walkway around the cabin for cleaning its glazing; passengers never go up there.",
+            "materials_and_finishes": "All finishes here are proposals. A painted steel hull in a dark working colour, an aluminium roof in a lighter grey, and gate leaves framed in the hull colour with clear glazing in their upper halves. Benches are plain timber slats on steel frames.",
+            "amenities": "Benches run across the hall from the port row of gates to the starboard row, each within a few steps of a gate. As a proposal, racks for bicycles stand against the bulwark at both ends of the hall, where they do not block a gate.",
+            "windows_and_glazing": "The upper half of every gate leaf is glazed, so with the gates closed the port and starboard sides each read as a band of windows along the whole hall. The helm cabin is glazed on all four sides so it can see both ends over the roof.",
+            "wellness_and_relaxation": "The only place to rest is the hall itself. The closed gates keep the wind out while passengers sit on the benches beside them, with the harbour visible through the glazed upper halves.",
+            "transformable_spaces": "The port or the starboard side changes from a closed glazed wall to an open edge between slim posts when its gates slide toward one end. A waist-height rail folds up inside each opening while the ferry is underway and drops flat for boarding. With one side open at a pier, the whole hall is aired across its width.",
+            "capacity": "The hall seats a full pier queue at once and has standing room inside each row of gates. There are no cabins. A crew of three runs the ferry. The seated and crew figures are proposed; the standing figure is not decided.",
+            "construction_new_build_and_refit": "A new build. The steel hull is framed from one template used at both ends, each side is framed as a row of openings with posts between them, and the aluminium roof is lifted on after the gates are hung and adjusted.",
+            "figures": [
+                {
+                    "quantity": "length_overall",
+                    "value": "48",
+                    "unit": "m",
+                    "origin": "inherited",
+                    "source_path": "principal_dimensions.length_m",
+                    "note": "Set by the length of a full pier queue."
+                },
+                {
+                    "quantity": "beam",
+                    "value": "14.5",
+                    "unit": "m",
+                    "origin": "inherited",
+                    "source_path": "principal_dimensions.beam_m",
+                    "note": "Set by the cross benches and the standing bands."
+                },
+                {
+                    "quantity": "draft",
+                    "value": "2.2",
+                    "unit": "m",
+                    "origin": "proposed",
+                    "source_path": "",
+                    "note": "Shallow enough for harbour piers."
+                },
+                {
+                    "quantity": "deck_count",
+                    "value": "1",
+                    "unit": "decks",
+                    "origin": "proposed",
+                    "source_path": "",
+                    "note": "One passenger deck under one roof."
+                },
+                {
+                    "quantity": "guest_count",
+                    "value": "240",
+                    "unit": "guests",
+                    "origin": "proposed",
+                    "source_path": "",
+                    "note": "Seated on the cross benches."
+                },
+                {
+                    "quantity": "crew_count",
+                    "value": "3",
+                    "unit": "crew",
+                    "origin": "proposed",
+                    "source_path": "",
+                    "note": ""
+                },
+                {
+                    "quantity": "max_speed",
+                    "value": "",
+                    "unit": "kn",
+                    "origin": "undetermined",
+                    "source_path": "",
+                    "note": "Not decided by the foundation."
+                }
+            ],
+            "signature_features": [
+                {
+                    "name": "Full-length sliding side gates",
+                    "origin": "inherited",
+                    "kind": "transforming",
+                    "region": "port_and_starboard",
+                    "location": "Along almost the whole length of the port and starboard sides of the main deck, between slim posts under the roof edge.",
+                    "visual_difference": "A closed side reads as one continuous glazed wall; an open side leaves a clear run from pier to bench with no door frames.",
+                    "fixed_and_moving_parts": "The posts and the upper and lower runner tracks are fixed; the gate leaves move.",
+                    "standard_state": "closed",
+                    "standard_geometry": "Each leaf sits in its own opening, flush with the posts, so the port and starboard sides each read as one glazed wall from end to end under the roof edge.",
+                    "other_states": "Open on one side: every leaf on that side has slid toward the same end over its neighbour into a stack behind a post; the other side stays closed.",
+                    "motion_and_clearance": "The leaves unlatch together, slide along the outer track and stack behind their posts, inside a narrow band just outside the hull plating.",
+                    "access_and_furniture": "Passengers step straight from the pier across the open side to the benches; the folding rail drops flat before boarding.",
+                    "verification": "Weathertight seal of closed leaves in a seaway; locking of stacked leaves under wind load."
+                },
+                {
+                    "name": "Mid-length helm cabin facing both ends",
+                    "origin": "inherited",
+                    "kind": "fixed",
+                    "region": "roof",
+                    "location": "On the roof at mid-length, on the centreline, directly above the crew stair.",
+                    "visual_difference": "A small glazed box stands alone in the middle of the long roof instead of a wheelhouse at one end, so the ferry has no front or back.",
+                    "fixed_and_moving_parts": "Entirely fixed.",
+                    "standard_state": "installed",
+                    "standard_geometry": "A low box standing on the roof at mid-length on the centreline, square in plan and glazed on all four sides, its floor a step above the roof and its flat top the highest point of the ferry. In profile it rises from the long roof line like a small lantern and looks the same from either end. A hatch in its floor opens over the crew stair.",
+                    "other_states": "None.",
+                    "motion_and_clearance": "None.",
+                    "access_and_furniture": "Reached from the hall by the crew stair at mid-length, which rises through the roof to the floor hatch; a door on its port side opens onto the roof walkway. One helm console faces each end.",
+                    "verification": "Sight lines to both ends over the roof."
+                },
+                {
+                    "name": "Folding boarding rail inside each opening",
+                    "origin": "proposed",
+                    "kind": "transforming",
+                    "region": "port_and_starboard",
+                    "location": "Inside every gate opening along the port and starboard sides, at the inner edge of the standing band.",
+                    "visual_difference": "With the gates open the side still has a guard line while the ferry is underway, and nothing at all when it is boarding.",
+                    "fixed_and_moving_parts": "The hinge brackets on each post are fixed; the rail sections fold.",
+                    "standard_state": "raised",
+                    "standard_geometry": "A waist-height rail spans each opening between its posts, just inside the closed gate leaves, so from outside it shows only through the glazing.",
+                    "other_states": "Lowered: each rail section folds down flat against the deck edge to leave the opening clear for boarding.",
+                    "motion_and_clearance": "Each section swings down about its lower hinge into a recess in the deck edge; the standing band beside it must be clear.",
+                    "access_and_furniture": "Raised underway beside the benches; lowered only while the ferry lies at a pier.",
+                    "verification": "Holding load of a raised rail; trip risk of the recess when lowered."
+                }
+            ],
+            "interior_spaces": [
+                {
+                    "space": "passenger_hall",
+                    "deck": "Main deck",
+                    "position": "The whole main deck between the two working ends, on the centreline, with the port row of gates on one side, the starboard row on the other, the crew spaces below it inside the hull and the helm cabin above it on the roof at mid-length.",
+                    "layout": "One long open room with nothing dividing it along its length. Cross benches run from the port standing band to the starboard one, each a few steps from a gate, with a clear standing band inside each row of gates. As a proposal, bicycle racks stand against the bulwark at both ends, clear of every gate.",
+                    "access": "Passengers enter and leave through the gates on whichever side lies against the pier. The crew reach it from the crew spaces below and from the helm cabin by the crew stair at mid-length, and walk along it to the mooring stations at both ends.",
+                    "materials_and_light": "As proposals, plain timber benches on steel frames, a painted steel floor and the underside of the aluminium roof left plain. Daylight comes through the glazed upper halves of the gate leaves along both sides; as a proposal, a line of fixed lights runs under the roof along the centreline.",
+                    "fixed_furniture": "The cross benches, the folding rails hinged inside every opening, and, as a proposal, the bicycle racks at both ends.",
+                    "identity": "Rows of benches running across the width between two long bands of glazed gates, so the whole room faces the pier side at every stop.",
+                    "undetermined": "The foundation does not decide the standing capacity of the hall."
+                }
+            ]
+        }
+    },
+    "profile": {
+        "contract_version": "screenplay_foundation_story_v1",
+        "subject_class": "harbour ferry",
+        "arc_stages": [
+            "design",
+            "construction",
+            "finishing",
+            "completion",
+            "operation"
+        ],
+        "arc_required_stages": [
+            "design",
+            "construction",
+            "completion",
+            "operation"
+        ],
+        "people_policy": {
+            "design": [
+                "design team",
+                "operator representatives"
+            ],
+            "construction": [
+                "yard crews",
+                "site engineers"
+            ],
+            "finishing": [
+                "fitting-out crews"
+            ],
+            "completion": [
+                "operator representatives",
+                "master",
+                "fitting-out crews"
+            ],
+            "operation": [
+                "crew",
+                "passengers"
+            ],
+            "group_counts_as_one_subject": true
+        },
+        "film_brief_spaces": [
+            "passenger_hall"
+        ]
+    },
+    "film_requirements": {
+        "aspect_ratio": "9:16",
+        "film_brief": {
+            "format": "film_brief_v1",
+            "revision": 1,
+            "spaces": [
+                {
+                    "key": "passenger_hall",
+                    "label": "Passenger hall",
+                    "note": "The benches and the gates belong to one room."
+                }
+            ],
+            "highlights": [
+                "The side gates that open the hall across its width"
+            ],
+            "off_screen": [
+                {
+                    "text": "Engine room work and refuelling",
+                    "coverage_ids": []
+                }
+            ],
+            "storytelling": [
+                "Passengers use the hall as one room; the crossing is lived, not toured."
+            ],
+            "limits": [
+                "Do not claim that the closed gates are proven weathertight."
+            ]
+        }
+    }
+}

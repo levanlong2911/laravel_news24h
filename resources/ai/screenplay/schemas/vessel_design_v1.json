@@ -1,0 +1,1542 @@
+{
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "vessel",
+        "design_thesis",
+        "principal_dimensions",
+        "protagonist_profile",
+        "canonical_design"
+    ],
+    "properties": {
+        "vessel": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "name",
+                "description",
+                "appearance"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                },
+                "description": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 600
+                },
+                "appearance": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 800
+                }
+            }
+        },
+        "design_thesis": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "central_idea",
+                "visible_difference",
+                "spatial_consequence",
+                "coherence",
+                "realization"
+            ],
+            "properties": {
+                "central_idea": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 600
+                },
+                "visible_difference": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 600
+                },
+                "spatial_consequence": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 600
+                },
+                "coherence": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 600
+                },
+                "realization": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 600
+                }
+            }
+        },
+        "principal_dimensions": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "length_m",
+                "beam_m",
+                "rationale"
+            ],
+            "properties": {
+                "length_m": {
+                    "type": "integer"
+                },
+                "beam_m": {
+                    "type": "number"
+                },
+                "rationale": {
+                    "type": "string",
+                    "minLength": 60,
+                    "maxLength": 500
+                }
+            }
+        },
+        "protagonist_profile": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "size_and_dimensions",
+                "form_and_proportions",
+                "spatial_layout",
+                "deck_organization",
+                "materials_and_finishes",
+                "amenities",
+                "windows_and_glazing",
+                "wellness_and_relaxation",
+                "transformable_spaces",
+                "capacity",
+                "construction_new_build_and_refit",
+                "figures",
+                "signature_features",
+                "interior_spaces"
+            ],
+            "properties": {
+                "size_and_dimensions": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "form_and_proportions": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "spatial_layout": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "deck_organization": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "materials_and_finishes": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "amenities": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "windows_and_glazing": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "wellness_and_relaxation": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "transformable_spaces": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "capacity": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "construction_new_build_and_refit": {
+                    "type": "string",
+                    "minLength": 40,
+                    "maxLength": 2000
+                },
+                "figures": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "quantity",
+                            "value",
+                            "unit",
+                            "origin",
+                            "source_path",
+                            "note"
+                        ],
+                        "properties": {
+                            "quantity": {
+                                "type": "string",
+                                "enum": [
+                                    "length_overall",
+                                    "beam",
+                                    "draft",
+                                    "air_draft",
+                                    "deck_count",
+                                    "guest_count",
+                                    "guest_cabin_count",
+                                    "crew_count",
+                                    "tender_count",
+                                    "max_speed",
+                                    "cruising_speed",
+                                    "range",
+                                    "gross_tonnage",
+                                    "displacement"
+                                ]
+                            },
+                            "value": {
+                                "type": "string",
+                                "maxLength": 20
+                            },
+                            "unit": {
+                                "type": "string",
+                                "enum": [
+                                    "m",
+                                    "decks",
+                                    "guests",
+                                    "cabins",
+                                    "crew",
+                                    "tenders",
+                                    "kn",
+                                    "nm",
+                                    "GT",
+                                    "t"
+                                ]
+                            },
+                            "origin": {
+                                "type": "string",
+                                "enum": [
+                                    "inherited",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            },
+                            "source_path": {
+                                "type": "string",
+                                "maxLength": 80
+                            },
+                            "note": {
+                                "type": "string",
+                                "maxLength": 200
+                            }
+                        }
+                    }
+                },
+                "signature_features": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "origin",
+                            "kind",
+                            "region",
+                            "location",
+                            "visual_difference",
+                            "fixed_and_moving_parts",
+                            "standard_state",
+                            "standard_geometry",
+                            "other_states",
+                            "motion_and_clearance",
+                            "access_and_furniture",
+                            "verification"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 80
+                            },
+                            "origin": {
+                                "type": "string",
+                                "enum": [
+                                    "inherited",
+                                    "proposed"
+                                ]
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "fixed",
+                                    "transforming"
+                                ]
+                            },
+                            "region": {
+                                "type": "string",
+                                "enum": [
+                                    "bow",
+                                    "forward",
+                                    "midship",
+                                    "aft",
+                                    "stern",
+                                    "port",
+                                    "starboard",
+                                    "port_and_starboard",
+                                    "roof",
+                                    "whole_vessel"
+                                ]
+                            },
+                            "location": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 2000
+                            },
+                            "visual_difference": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 2000
+                            },
+                            "fixed_and_moving_parts": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 2000
+                            },
+                            "standard_state": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 120
+                            },
+                            "standard_geometry": {
+                                "type": "string",
+                                "minLength": 20,
+                                "maxLength": 2000
+                            },
+                            "other_states": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 2000
+                            },
+                            "motion_and_clearance": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 2000
+                            },
+                            "access_and_furniture": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 2000
+                            },
+                            "verification": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 2000
+                            }
+                        }
+                    }
+                },
+                "interior_spaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "space",
+                            "deck",
+                            "position",
+                            "layout",
+                            "access",
+                            "materials_and_light",
+                            "fixed_furniture",
+                            "identity",
+                            "undetermined"
+                        ],
+                        "properties": {
+                            "space": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,29}$"
+                            },
+                            "deck": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 120
+                            },
+                            "position": {
+                                "type": "string",
+                                "minLength": 40,
+                                "maxLength": 600
+                            },
+                            "layout": {
+                                "type": "string",
+                                "minLength": 40,
+                                "maxLength": 1500
+                            },
+                            "access": {
+                                "type": "string",
+                                "minLength": 20,
+                                "maxLength": 600
+                            },
+                            "materials_and_light": {
+                                "type": "string",
+                                "minLength": 40,
+                                "maxLength": 1200
+                            },
+                            "fixed_furniture": {
+                                "type": "string",
+                                "minLength": 20,
+                                "maxLength": 800
+                            },
+                            "identity": {
+                                "type": "string",
+                                "minLength": 20,
+                                "maxLength": 600
+                            },
+                            "undetermined": {
+                                "type": "string",
+                                "maxLength": 600
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "canonical_design": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "design_identity",
+                "proportion_system",
+                "global_silhouette",
+                "governing_lines",
+                "primary_masses",
+                "primary_voids",
+                "hull_geometry",
+                "superstructure_geometry",
+                "stern_geometry",
+                "bow_geometry",
+                "signature_regions",
+                "spatial_topology",
+                "geometric_relationships",
+                "transitions",
+                "permanent_secondary_geometry",
+                "appearance_identity",
+                "configuration_states",
+                "must_preserve",
+                "must_not_introduce",
+                "reference_proof_requirements"
+            ],
+            "properties": {
+                "design_identity": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "novelty_thesis",
+                        "conventional_patterns",
+                        "replacement_principle",
+                        "superyacht_reading",
+                        "status"
+                    ],
+                    "properties": {
+                        "novelty_thesis": {
+                            "type": "string",
+                            "minLength": 40,
+                            "maxLength": 800
+                        },
+                        "conventional_patterns": {
+                            "type": "string",
+                            "minLength": 40,
+                            "maxLength": 800
+                        },
+                        "replacement_principle": {
+                            "type": "string",
+                            "minLength": 40,
+                            "maxLength": 800
+                        },
+                        "superyacht_reading": {
+                            "type": "string",
+                            "minLength": 40,
+                            "maxLength": 800
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": [
+                                "locked",
+                                "proposed",
+                                "undetermined"
+                            ]
+                        }
+                    }
+                },
+                "proportion_system": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "overall",
+                        "masses",
+                        "signature_regions",
+                        "status"
+                    ],
+                    "properties": {
+                        "overall": {
+                            "type": "string",
+                            "minLength": 20,
+                            "maxLength": 800
+                        },
+                        "masses": {
+                            "type": "string",
+                            "minLength": 20,
+                            "maxLength": 800
+                        },
+                        "signature_regions": {
+                            "type": "string",
+                            "minLength": 20,
+                            "maxLength": 800
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": [
+                                "locked",
+                                "proposed",
+                                "undetermined"
+                            ]
+                        }
+                    }
+                },
+                "global_silhouette": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "profile_view",
+                        "plan_view",
+                        "silhouette_test",
+                        "status"
+                    ],
+                    "properties": {
+                        "profile_view": {
+                            "type": "string",
+                            "minLength": 20,
+                            "maxLength": 800
+                        },
+                        "plan_view": {
+                            "type": "string",
+                            "minLength": 20,
+                            "maxLength": 800
+                        },
+                        "silhouette_test": {
+                            "type": "string",
+                            "minLength": 20,
+                            "maxLength": 600
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": [
+                                "locked",
+                                "proposed",
+                                "undetermined"
+                            ]
+                        }
+                    }
+                },
+                "governing_lines": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "line",
+                            "runs_from",
+                            "runs_to",
+                            "governs",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "line": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "runs_from": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 200
+                            },
+                            "runs_to": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 200
+                            },
+                            "governs": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "primary_masses": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "role",
+                            "position",
+                            "relative_length",
+                            "relative_width",
+                            "relative_height",
+                            "connections",
+                            "transition_to_adjacent_geometry",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "role": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 300
+                            },
+                            "position": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "relative_length": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 200
+                            },
+                            "relative_width": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 200
+                            },
+                            "relative_height": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 200
+                            },
+                            "connections": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "transition_to_adjacent_geometry": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "primary_voids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "role",
+                            "position",
+                            "relative_extent",
+                            "boundaries",
+                            "open_or_enclosed_state",
+                            "relationship_to_surrounding_masses",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "role": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 300
+                            },
+                            "position": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "relative_extent": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 300
+                            },
+                            "boundaries": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "open_or_enclosed_state": {
+                                "type": "string",
+                                "enum": [
+                                    "open",
+                                    "enclosed",
+                                    "partly_enclosed"
+                                ]
+                            },
+                            "relationship_to_surrounding_masses": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "hull_geometry": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "stem_and_bow",
+                        "waterline_entry",
+                        "forefoot",
+                        "sheer",
+                        "freeboard_distribution",
+                        "midbody",
+                        "hull_side_organization",
+                        "stern_and_transom",
+                        "hull_superstructure_relationship",
+                        "status"
+                    ],
+                    "properties": {
+                        "stem_and_bow": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 600
+                        },
+                        "waterline_entry": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 400
+                        },
+                        "forefoot": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 400
+                        },
+                        "sheer": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "freeboard_distribution": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "midbody": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "hull_side_organization": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 400
+                        },
+                        "stern_and_transom": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 600
+                        },
+                        "hull_superstructure_relationship": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 600
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": [
+                                "locked",
+                                "proposed",
+                                "undetermined"
+                            ]
+                        }
+                    }
+                },
+                "superstructure_geometry": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "primary_mass_organization",
+                        "forward_to_aft_massing",
+                        "rooflines",
+                        "setbacks_or_transitions",
+                        "relationship_to_hull",
+                        "glazing_topology",
+                        "status"
+                    ],
+                    "properties": {
+                        "primary_mass_organization": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 600
+                        },
+                        "forward_to_aft_massing": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 600
+                        },
+                        "rooflines": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "setbacks_or_transitions": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "relationship_to_hull": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "glazing_topology": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 400
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": [
+                                "locked",
+                                "proposed",
+                                "undetermined"
+                            ]
+                        }
+                    }
+                },
+                "stern_geometry": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "aft_silhouette",
+                        "transom_closure",
+                        "stern_shoulders",
+                        "platform_terrace_or_recess_topology",
+                        "relationship_to_waterline",
+                        "relationship_to_superstructure",
+                        "forbidden_conventional_interpretations",
+                        "status"
+                    ],
+                    "properties": {
+                        "aft_silhouette": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 600
+                        },
+                        "transom_closure": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "stern_shoulders": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 400
+                        },
+                        "platform_terrace_or_recess_topology": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 600
+                        },
+                        "relationship_to_waterline": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "relationship_to_superstructure": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "forbidden_conventional_interpretations": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 400
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": [
+                                "locked",
+                                "proposed",
+                                "undetermined"
+                            ]
+                        }
+                    }
+                },
+                "bow_geometry": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "stem_type",
+                        "rake_or_plumb",
+                        "bow_volume",
+                        "relationship_to_forward_superstructure",
+                        "status"
+                    ],
+                    "properties": {
+                        "stem_type": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 300
+                        },
+                        "rake_or_plumb": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 300
+                        },
+                        "bow_volume": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "relationship_to_forward_superstructure": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": [
+                                "locked",
+                                "proposed",
+                                "undetermined"
+                            ]
+                        }
+                    }
+                },
+                "signature_regions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "feature_id",
+                            "feature",
+                            "priority",
+                            "description",
+                            "topology",
+                            "relationships",
+                            "must_preserve",
+                            "forbidden_interpretations",
+                            "proof_conditions",
+                            "proof_views",
+                            "status"
+                        ],
+                        "properties": {
+                            "feature_id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "feature": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 80
+                            },
+                            "priority": {
+                                "type": "string",
+                                "enum": [
+                                    "P0",
+                                    "P1",
+                                    "P2"
+                                ]
+                            },
+                            "description": {
+                                "type": "string",
+                                "minLength": 20,
+                                "maxLength": 800
+                            },
+                            "topology": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "fore",
+                                    "aft",
+                                    "port",
+                                    "starboard",
+                                    "top",
+                                    "bottom"
+                                ],
+                                "properties": {
+                                    "fore": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 300
+                                    },
+                                    "aft": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 300
+                                    },
+                                    "port": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 300
+                                    },
+                                    "starboard": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 300
+                                    },
+                                    "top": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 300
+                                    },
+                                    "bottom": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 300
+                                    }
+                                }
+                            },
+                            "relationships": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 600
+                            },
+                            "must_preserve": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 600
+                            },
+                            "forbidden_interpretations": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 600
+                            },
+                            "proof_conditions": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 600
+                            },
+                            "proof_views": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "string",
+                                    "enum": [
+                                        "bow_three_quarter_port",
+                                        "bow_three_quarter_starboard",
+                                        "stern_three_quarter_port",
+                                        "stern_three_quarter_starboard",
+                                        "profile_port",
+                                        "profile_starboard",
+                                        "head_on_bow",
+                                        "head_on_stern",
+                                        "plan_above"
+                                    ]
+                                }
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "spatial_topology": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "region",
+                            "deck",
+                            "boundaries",
+                            "connections",
+                            "circulation",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "region": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 200
+                            },
+                            "deck": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 120
+                            },
+                            "boundaries": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "connections": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "circulation": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 400
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "geometric_relationships": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "subject",
+                            "relation",
+                            "object",
+                            "statement",
+                            "status"
+                        ],
+                        "properties": {
+                            "subject": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "relation": {
+                                "type": "string",
+                                "enum": [
+                                    "forward_of",
+                                    "aft_of",
+                                    "port_of",
+                                    "starboard_of",
+                                    "above",
+                                    "below",
+                                    "inside",
+                                    "outside",
+                                    "contains",
+                                    "contained_by",
+                                    "contained_between",
+                                    "between",
+                                    "connects_to",
+                                    "intersects",
+                                    "terminates_at",
+                                    "continues_into",
+                                    "opens_to",
+                                    "integrated_with",
+                                    "supports",
+                                    "spans",
+                                    "closes",
+                                    "aligned_with",
+                                    "offset_from"
+                                ]
+                            },
+                            "object": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "statement": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "transitions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "kind",
+                            "between",
+                            "description",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "hull_superstructure",
+                                    "bow_midbody",
+                                    "midbody_stern",
+                                    "mass_to_mass",
+                                    "signature_region",
+                                    "other"
+                                ]
+                            },
+                            "between": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 2,
+                                "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                                }
+                            },
+                            "description": {
+                                "type": "string",
+                                "minLength": 20,
+                                "maxLength": 600
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "permanent_secondary_geometry": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "element",
+                            "position",
+                            "description",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "element": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 120
+                            },
+                            "position": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 300
+                            },
+                            "description": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "appearance_identity": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "hull",
+                        "superstructure",
+                        "glazing",
+                        "materials",
+                        "status"
+                    ],
+                    "properties": {
+                        "hull": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 300
+                        },
+                        "superstructure": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 300
+                        },
+                        "glazing": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 300
+                        },
+                        "materials": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 300
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": [
+                                "locked",
+                                "proposed",
+                                "undetermined"
+                            ]
+                        }
+                    }
+                },
+                "configuration_states": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "component_id",
+                            "feature_id",
+                            "fixed_geometry",
+                            "canonical_state",
+                            "alternate_states",
+                            "mechanism_location",
+                            "stowage",
+                            "swept_volume",
+                            "human_use_by_state"
+                        ],
+                        "properties": {
+                            "component_id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "feature_id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "fixed_geometry": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "canonical_state": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 120
+                            },
+                            "alternate_states": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 3,
+                                    "maxLength": 120
+                                }
+                            },
+                            "mechanism_location": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 300
+                            },
+                            "stowage": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 300
+                            },
+                            "swept_volume": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 300
+                            },
+                            "human_use_by_state": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 600
+                            }
+                        }
+                    }
+                },
+                "must_preserve": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "priority",
+                            "statement",
+                            "refs"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "priority": {
+                                "type": "string",
+                                "enum": [
+                                    "P0",
+                                    "P1"
+                                ]
+                            },
+                            "statement": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "refs": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                                }
+                            }
+                        }
+                    }
+                },
+                "must_not_introduce": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "interpretation",
+                            "instead",
+                            "refs"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "interpretation": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 300
+                            },
+                            "instead": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "refs": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                                }
+                            }
+                        }
+                    }
+                },
+                "reference_proof_requirements": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "target",
+                            "proof_condition",
+                            "views"
+                        ],
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "proof_condition": {
+                                "type": "string",
+                                "minLength": 10,
+                                "maxLength": 400
+                            },
+                            "views": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "string",
+                                    "enum": [
+                                        "bow_three_quarter_port",
+                                        "bow_three_quarter_starboard",
+                                        "stern_three_quarter_port",
+                                        "stern_three_quarter_starboard",
+                                        "profile_port",
+                                        "profile_starboard",
+                                        "head_on_bow",
+                                        "head_on_stern",
+                                        "plan_above"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

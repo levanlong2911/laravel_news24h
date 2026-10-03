@@ -47,6 +47,10 @@ Translate abstract design ideas into geometry only when a physically meaningful 
 
 DESIGN COMPLETION
 
+When the source declares source_kind production_character or vessel_design, it is a settled design, with or without a profile: do not design. Describe only what the participant, its profile when it has one, and the design context state, as precisely as they state it. An aspect they leave open stays unspecified in the prompt, and their figures are never changed. A source without that declaration is raw inspiration; the rest of this section applies only to raw inspiration.
+
+When the design context carries canonical_design, it is the approved structured geometry of this subject and every item in it is canonical: its silhouette, governing lines, masses, voids, hull, superstructure, stern and bow geometry, signature regions with their six-sided topology, relationships, transitions, secondary geometry, must_preserve and must_not_introduce. Every P0 must_preserve entry appears in the prompt. Anything canonical_design does not contain is not part of the identity: never add it to make the subject look complete.
+
 Source material will often be incomplete. You may design the geometry the image needs to be specific rather than generic, but anything you design is rendering support, not identity: never state it as an exact dimension, an exact count, a material or a required feature anywhere in the prompt, and describe it through qualitative relationships only. Exact figures, counts and materials come only from the source. Do not introduce identity-defining position, extent or symmetry constraints unless explicitly stated or unambiguously implied by the source; otherwise leave them unspecified.
 
 A prompt that fills its gaps with the typical example of the object class has FAILED, however plausible it reads. The typical example is what the image model already produces without you. This is a reason to describe the source's own features precisely, never a reason to invent identity features.
@@ -83,6 +87,8 @@ Exact counts come only from the source. Once a source count is used, preserve it
 
 TOPOLOGY BEFORE DECORATION
 
+Describe the whole subject's exterior form first: for a vessel, the hull in profile and in plan, the bow, the sides, the stern, and how the upper volumes stand on the hull; for another object, its overall body and how its main parts attach to it. Only then describe courts, decks, openings and moving parts. Use what the source states about that form; where it says little, say little rather than invent.
+
 Always establish what components exist; how many exist; where they are; what connects to what; what contains what; what overlaps what; what is recessed; what projects; what is continuous; what terminates; what is symmetrical - before describing finish or aesthetic appearance.
 
 Describe each connecting element by its endpoints. Any axis term must use the object's coordinate system and agree with those endpoints.
@@ -95,13 +101,15 @@ Use dimensions and ratios whenever the source supports them. Prefer relational c
 
 State the source's canonical length as one exact figure. Do not state inferred secondary dimensions as figures; express them as proportion relationships. Do not generate false precision. Use dimensions primarily to control the silhouette.
 
-Superyacht: overall length is ALWAYS between 100 and 180 metres. A length stated in the source outside that band describes a DIFFERENT vessel - it is context, not a constraint on yours. Choose one exact length inside the band and derive every other proportion from it.
+Superyacht from a production character or a vessel design: its profile figures, when it has them, and the design context's principal dimensions belong to this vessel. State them exactly as given and never replace or adjust them. When the design context gives length_beam_ratio, state that ratio in PROPORTION and keep the silhouette to it; take the relative proportions of masses and signature regions from canonical_design's proportion_system and masses.
+
+Superyacht from raw inspiration: overall length is ALWAYS between 100 and 180 metres. A length stated in the source outside that band describes a DIFFERENT vessel - it is context, not a constraint on yours. Choose one exact length inside the band and derive every other proportion from it.
 
 OBJECT-SPECIFIC ADAPTATION
 
 Adapt terminology to the object. Do NOT mechanically use yacht vocabulary for another object.
 
-Superyacht: hull; bow; stern; sheer; waterline; beam; draft; superstructure; decks; transom; keel; frames; girders; deck edges; open apertures; open terraces.
+Superyacht: hull; bow; stern; sheer; waterline; beam; draft; superstructure; decks; transom; keel; frames; girders; deck edges; open apertures; open terraces; wheelhouse. The navigation position is always the wheelhouse, even where the source calls it the bridge. A structure spanning between two parts, when one must be named, is a cross-court bridge or footbridge; state an open space affirmatively, such as "open to the sky along its full length", rather than naming what does not cross it.
 Vehicle: body; wheelbase; track; front overhang; rear overhang; greenhouse; roofline; beltline; fenders; wheel arches; front/rear fascia.
 Aircraft: fuselage; wing; empennage; engine placement; landing gear; control surfaces; span; sweep; taper.
 Architecture: primary masses; structural grid; floor count; setbacks; facade openings; cores; cantilevers; terraces; roof geometry.
@@ -114,17 +122,25 @@ REFERENCE STATE
 
 Choose the visual state that exposes permanent geometry most clearly.
 
-Superyacht: ALWAYS show the source-defined permanent geometry in a bare-metal reference presentation. This is not a snapshot of a particular construction milestone: every permanent structural component the source describes is present, whenever it would be fitted during the build. Plating is bare unpainted metal (the source's material when it names one), matte and light-absorbing, with restrained surface marking, broad weak highlights and visible weld seams and frame lines. Apertures are open cut-outs with internal frames, girders and deck edges visible through them. Deck edges terminate in bare plating. No water, planting, loose items or applied finish; permanent structure appears as the source describes it. This is a rule, not a preference, and it overrides any mention of glazing, railings or applied finish elsewhere in this document.
+Superyacht: ALWAYS show the source-defined permanent geometry in a bare-metal reference presentation. This is not a snapshot of a particular construction milestone: every permanent structural component the source describes is present, whenever it would be fitted during the build. Plating is bare unpainted metal (the source's material when it names one), matte and light-absorbing, with restrained surface marking, broad weak highlights and visible weld seams and frame lines. Apertures are open cut-outs with internal frames, girders and deck edges visible through them. An opening the source sets inside a recess keeps both parts: the recess cuts only as deep into the wall as the source says, its back and side walls are solid plating, and the opening is a cut-out through the wall that remains behind the recess. Deck edges terminate in bare plating. No water, planting, loose items or applied finish; permanent structure appears as the source describes it. This is a rule, not a preference, and it overrides any mention of glazing, railings or applied finish elsewhere in this document.
 
 For other fabricated industrial objects, vehicles, aircraft or machines, an unfinished fabrication-state or neutral prototype-state may be preferable. For architecture, a neutral completed shell, structural model or materially simplified architectural state may be preferable. For products where unfinished construction would obscure rather than clarify identity, use a neutral finished prototype.
+
+When the participant carries a profile, it is the detailed design of this subject. Take form, decks, glazing and openings visible from outside from its sections, and scale from its figures or, when they are absent, from the design context's principal dimensions. Each signature feature appears exactly as its standard_geometry describes, never in another state and never between states, at the place its region and location give on the subject's own axes. Where descriptions disagree, canonical_design governs when the design context carries it, then the profile: a signature feature's standard_geometry, then the profile's sections, over the description, the appearance, the visual_difference and the rest of the design context. Never blend disagreeing statements into a compromise shape; when the profile itself contradicts itself on a point, leave that point out of the prompt. When it names the face or side of a part that carries a treatment - ribs, treads, glazing, openings - put the treatment on exactly that face and on no other, and let the chosen view show or hide it as that face's orientation dictates. When no governing description names that face, leave the treatment out of the prompt entirely rather than leaving the image to choose where it goes; the source must settle it first.
+
+A part that moves appears only in its standard state. Do not mention its other states, its motion or what it becomes, not even to rule them out; source text about other states is context for you, never content for the prompt. A pool, garden or planter the profile describes appears only as the empty recess or bare bed that holds it. Amenities, interiors and capacity are context: use them only where they shape the exterior. Its materials and finishes do not override the reference presentation above.
 
 The state must serve geometry inspection. Do not select a fabrication state merely because fabrication imagery looks dramatic. A fabrication state describes the SUBJECT's own construction - its plating, seams, frames and open apertures - and never the yard equipment around it. The subject is always shown alone.
 
 CAMERA STRATEGY
 
-Choose ONE master view that reveals the greatest amount of identity-critical geometry. Default preference for elongated objects: front three-quarter view. Use a side/profile view instead when longitudinal proportion is substantially more important than depth information. Use an elevated three-quarter view only when upper-surface topology is identity-critical.
+The master view is always ONE oblique view: a three-quarter view or a side profile. Never use a plan view from above or a head-on view of either end as the master view, even when the source's proof views list them; those belong to later reference views.
 
-Every constrained feature stays described in the geometry sections. CAMERA, FRAMING and LIGHTING must not require a feature to be visible when the chosen view would naturally occlude it. Prioritize silhouette and identity-critical relationships; do not distort or relocate geometry to expose hidden features. Integrated structure is described as integrated, not as a separate visible element.
+Superyacht: the master view is an elevated three-quarter view from the bow, high enough to read the deck levels, the fine entry and how the superstructure stands on the hull, with moderate telephoto perspective. When the design context gives reference_proof_requirements, use them only to choose the side: take the port or starboard bow three-quarter view that proves more P0 targets, and port when they are equal. Name in CAMERA only the P0 targets that view proves; the rest are left to later reference views and are never forced into this one.
+
+Other subjects: choose ONE oblique master view from the subject's silhouette and identity-critical geometry; do not default to either end of the subject. Use a side/profile view when longitudinal proportion is substantially more important than depth information. Use an elevated three-quarter view only when upper-surface topology is identity-critical.
+
+Every constrained feature stays described in the geometry sections. CAMERA, FRAMING and LIGHTING must not require a feature to be visible when the chosen view would naturally occlude it. In CAMERA, name only the faces and features the chosen view shows, each identified by its side (port or starboard, forward or aft); natural occlusion of the rest is accepted and needs no compensation. CAMERA, FRAMING and LIGHTING refer only to shapes the geometry sections already state: they never introduce a new shape, such as a hull curvature the source does not describe, and never ask to clarify a feature the chosen view cannot see. Prioritize silhouette and identity-critical relationships; do not distort or relocate geometry to expose hidden features. Integrated structure is described as integrated, not as a separate visible element.
 
 Avoid extreme perspective. Prefer moderate telephoto or normal perspective; low optical distortion; sufficient camera distance; full-object visibility; comparable scale between near and far ends.
 
@@ -134,7 +150,7 @@ Camera composition must reveal geometry, not dramatize it.
 
 FRAMING
 
-Keep the entire object inside the frame. Require clear negative space around all extremities. Do not allow the model to crop identity-critical geometry merely to make the image more cinematic. For elongated subjects, generally use landscape framing unless the downstream pipeline explicitly requires portrait orientation. If an output aspect ratio is supplied by the source or caller, preserve it.
+Keep the entire object inside the frame. Require clear negative space around all extremities. Do not allow the model to crop identity-critical geometry merely to make the image more cinematic. For elongated subjects, generally use landscape framing unless the downstream pipeline explicitly requires portrait orientation. When OPTIONAL DOWNSTREAM REQUIREMENTS follow the source material and give an aspect ratio and orientation, compose for exactly that frame and state it in FRAMING.
 
 BACKGROUND
 
@@ -158,7 +174,7 @@ Do not turn the reference into concept art; illustration; blueprint; CAD screens
 
 NEGATIVE GEOMETRY
 
-Explicitly prohibit likely identity failures. Derive these prohibitions from the object and source. Examples: wrong number of levels; extra volumes; missing components; blunt shape where a sharp termination is required; incorrect symmetry; detached components; random openings; compressed proportions; overly tall massing; incorrect orientation; decorative geometry not present in the canonical design.
+Explicitly prohibit likely identity failures. When the design context gives must_not_introduce, those are the likely failures of this design: write each entry's instead as the state that must be true, and add others only when the sections above leave a likely failure open. Otherwise derive these prohibitions from the object and source. Examples: wrong number of levels; extra volumes; missing components; blunt shape where a sharp termination is required; incorrect symmetry; detached components; random openings; compressed proportions; overly tall massing; incorrect orientation; decorative geometry not present in the canonical design.
 
 Write each prohibition as the COMPLETE STATE THAT MUST BE TRUE INSTEAD, never as a negation. The target model has no negative-prompt channel and treats the words you write as things to draw: "no blunt bow" places a blunt bow in the description, while "the bow terminates in a fine edge meeting the waterline at an acute angle" places the correct shape there.
 
@@ -171,7 +187,7 @@ Before producing the final answer, silently verify:
 2. Is there exactly one canonical design?
 3. Are all dimensions mutually compatible?
 4. Are all declared counts consistent?
-5. Are P0 identity statements repeated consistently in lower-priority sections?
+5. Is every geometric relationship stated fully once, with the other sections agreeing with it rather than restating it?
 6. Does the camera expose the geometry it can physically see, without demanding features that face away from it?
 7. Does the subject state expose rather than hide geometry?
 8. Have invisible source facts been prevented from becoming arbitrary visible features?
@@ -181,6 +197,12 @@ Before producing the final answer, silently verify:
 12. Are there any contradictions between silhouette, topology, proportions and camera instructions?
 13. Are exact figures, counts and materials traceable to the source, and are identity-defining position, extent and symmetry constraints explicitly stated or unambiguously implied by it?
 14. Do CAMERA, FRAMING or LIGHTING require a feature that the chosen view would naturally occlude?
+15. Does every moving part appear only in its standard state, with no mention of another state?
+16. Does every name refer to exactly one component, and is no component's name used for something that must be absent?
+17. With a production character or a vessel design: is every figure exactly as given, and is nothing designed that the source leaves open?
+18. Is every face-specific treatment on the face its standard_geometry names, and is a treatment whose face no governing description names left out?
+19. With canonical_design: is every P0 must_preserve entry stated, does every relationship and transition agree with it, and is nothing added that it does not contain?
+20. With compilation_policy: does the prompt include what include_for_identity_anchor lists, leave out what exclude_unless_visually_relevant lists, and rank PRIORITY ORDER by conflict_priority?
 
 Before output, resolve contradictions your own prompt introduces. Do not reconcile conflicts that exist in the source; handle them as the source interpretation rules require.
 
@@ -210,9 +232,13 @@ PRIORITY ORDER
 
 Sections that genuinely do not apply may be omitted. Object-specific sections may be introduced when they improve geometric control.
 
+State each geometric relationship fully once, in the section where it belongs. The FORM DESIGN THESIS is at most three sentences. P0 names the identity invariants briefly; NEGATIVE GEOMETRY covers only likely failures that the sections above do not already secure, in at most five lines; PRIORITY ORDER ranks constraints by short name without restating their geometry.
+
 PRIORITY ORDER REQUIREMENT
 
-End every generated prompt with a PRIORITY ORDER section. Rank the most important constraints from highest to lowest. The first priorities must always concern coherent physical identity; canonical silhouette; topology/count; primary proportions; major component relationships. Appearance, lighting and photographic styling must rank below geometry.
+End every generated prompt with a PRIORITY ORDER section. Rank the most important constraints from highest to lowest. When the design context gives compilation_policy, its conflict_priority is the ranking: follow its order exactly, naming this subject's own constraints under each entry. Otherwise, the first priorities must always concern coherent physical identity; canonical silhouette; topology/count; primary proportions; major component relationships. Appearance, lighting and photographic styling must rank below geometry.
+
+When the design context gives compilation_policy, include what its include_for_identity_anchor lists and leave out what its exclude_unless_visually_relevant lists unless it changes visible geometry.
 
 End with an instruction equivalent to: If composition, styling, materials, lighting or surface detail conflicts with canonical geometry, preserve canonical geometry.
 
@@ -222,14 +248,10 @@ Write the final image prompt in precise professional English. Use concrete physi
 
 Avoid vague language such as beautiful; amazing; stunning; luxurious; incredible; futuristic - unless translated into an observable physical property.
 
+Give every component one name and use it for nothing else. When the source uses one word for two different things - for example "bridge" for the navigation bridge and for a structure spanning a gap - give each a distinct name in the prompt. Never use a component's name to describe something that must be absent.
+
 CRITICAL RULE
 
 Do not merely expand the source text. DESIGN THE GEOMETRY PROMPT. Transform semantic ideas into a controlled, permanent, physically coherent visual identity suitable for downstream identity-preserving generation.
 
 SOURCE MATERIAL:
-
-{{SOURCE_MATERIAL}}
-
-OPTIONAL DOWNSTREAM REQUIREMENTS:
-
-{{DOWNSTREAM_REQUIREMENTS}}

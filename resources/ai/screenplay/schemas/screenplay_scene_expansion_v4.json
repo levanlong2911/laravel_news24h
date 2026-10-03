@@ -1,0 +1,322 @@
+{
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "scenes",
+        "coverage"
+    ],
+    "properties": {
+        "scenes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "stage",
+                    "location_id",
+                    "int_ext",
+                    "time",
+                    "character_ids",
+                    "action",
+                    "dialogue",
+                    "sound",
+                    "duration_estimate_ms",
+                    "why_it_cannot_be_cut",
+                    "leads_to",
+                    "scene_mode",
+                    "beats",
+                    "subject_state",
+                    "light_and_weather",
+                    "props"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "pattern": "^sc_[0-9]{2}$"
+                    },
+                    "stage": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 40
+                    },
+                    "location_id": {
+                        "type": "string",
+                        "pattern": "^lo_[a-z0-9_]{2,40}$"
+                    },
+                    "int_ext": {
+                        "type": "string",
+                        "enum": [
+                            "INT",
+                            "EXT"
+                        ]
+                    },
+                    "time": {
+                        "type": "string",
+                        "enum": [
+                            "DAY",
+                            "NIGHT",
+                            "DAWN",
+                            "DUSK",
+                            "CONTINUOUS"
+                        ]
+                    },
+                    "character_ids": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "string",
+                            "pattern": "^ch_[a-z0-9_]{2,40}$"
+                        }
+                    },
+                    "action": {
+                        "type": "string",
+                        "minLength": 60,
+                        "maxLength": 1200
+                    },
+                    "dialogue": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "character_id",
+                                "line"
+                            ],
+                            "properties": {
+                                "character_id": {
+                                    "type": "string",
+                                    "pattern": "^ch_[a-z0-9_]{2,40}$"
+                                },
+                                "line": {
+                                    "type": "string",
+                                    "minLength": 2,
+                                    "maxLength": 300
+                                }
+                            }
+                        }
+                    },
+                    "sound": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 300
+                    },
+                    "duration_estimate_ms": {
+                        "type": "integer"
+                    },
+                    "why_it_cannot_be_cut": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 300
+                    },
+                    "leads_to": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "maxLength": 300
+                    },
+                    "scene_mode": {
+                        "type": "string",
+                        "enum": [
+                            "continuous",
+                            "montage"
+                        ]
+                    },
+                    "beats": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "action",
+                                "visible_result",
+                                "time_jump"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "pattern": "^b[0-9]{1,2}$"
+                                },
+                                "action": {
+                                    "type": "string",
+                                    "minLength": 10,
+                                    "maxLength": 400
+                                },
+                                "visible_result": {
+                                    "type": "string",
+                                    "minLength": 10,
+                                    "maxLength": 300
+                                },
+                                "time_jump": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 200
+                                }
+                            }
+                        }
+                    },
+                    "subject_state": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": false,
+                        "required": [
+                            "subject_id",
+                            "start",
+                            "end"
+                        ],
+                        "properties": {
+                            "subject_id": {
+                                "type": "string",
+                                "pattern": "^ch_[a-z0-9_]{2,40}$"
+                            },
+                            "start": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "progress",
+                                    "configuration"
+                                ],
+                                "properties": {
+                                    "progress": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 600
+                                    },
+                                    "configuration": {
+                                        "type": "array",
+                                        "minItems": 0,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "part",
+                                                "state"
+                                            ],
+                                            "properties": {
+                                                "part": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 80
+                                                },
+                                                "state": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 120
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "end": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "progress",
+                                    "configuration"
+                                ],
+                                "properties": {
+                                    "progress": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 600
+                                    },
+                                    "configuration": {
+                                        "type": "array",
+                                        "minItems": 0,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "part",
+                                                "state"
+                                            ],
+                                            "properties": {
+                                                "part": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 80
+                                                },
+                                                "state": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 120
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "light_and_weather": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 300
+                    },
+                    "props": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 150
+                        }
+                    }
+                }
+            }
+        },
+        "coverage": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "coverage_id",
+                    "mode",
+                    "scene_ids",
+                    "evidence"
+                ],
+                "properties": {
+                    "coverage_id": {
+                        "type": "string",
+                        "pattern": "^cov_[a-z0-9_]{3,40}$"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "shown",
+                            "transition",
+                            "not_applicable"
+                        ]
+                    },
+                    "scene_ids": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "string",
+                            "pattern": "^sc_[0-9]{2}$"
+                        }
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 600
+                    }
+                }
+            }
+        }
+    }
+}

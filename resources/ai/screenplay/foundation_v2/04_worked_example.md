@@ -6,10 +6,12 @@ sentences.
 
 WHAT WAS SET ASIDE FROM THE INSPIRATION
 
-Every concrete element of the source ferry was listed first and then
-excluded: its length, beam and passenger count, the aluminium catamaran
-hull, the enclosed saloon and its bar, and the open upper deck at the
-stern. None of them appears in the answer, renamed or otherwise.
+Everything that made the source ferry's design its own was listed first
+and then excluded: its length, beam and passenger count, the aluminium
+catamaran hull, the enclosed saloon and its bar, and the open upper deck at
+the stern. None of them appears in the answer, renamed or otherwise. The
+answer still has benches, a roof and a crew stair: common parts of any
+ferry, there for their ordinary purpose, not taken from the source.
 
 Only one abstract question was kept: how can each stop take less of the
 crossing? The design was worked out from that question, not from the
@@ -28,6 +30,70 @@ WHAT THE THESIS DECIDED
 central_idea states one rule: people move on and off across the ferry's
 width. The other four fields are that rule seen
 from four sides, which is why they can be checked against each other.
+
+HOW THE DESIGN REQUIREMENTS WERE MET
+
+The profile asked for sides that transform at architectural scale. The
+answer is not a door added to a saloon: the whole side of the hull opens,
+and that opening is the central idea itself. central_idea says what is fixed
+and what moves, what each gate slides on and which way, how it sits when
+closed, what it is in each state (a wall when closed, an open edge when
+stacked), where it goes when opened and the band it slides through, so
+nothing about the motion is left for a later step to invent.
+
+The requirement then runs through the film. The design stage marks the
+gates along both edges of the paper strip, construction frames each side as
+a row of openings, finishing hangs and adjusts every gate, completion has
+the operator's people work them and hands their controls to the master, and
+operation shows a crowd boarding through them. Each stage that shows the
+gates says whether they are open or closed.
+
+THE PROJECT BRIEF AND THE SPACE PLAN
+
+The film_brief for this ferry lists one space, the passenger hall,
+keeps the side gates as the highlight, leaves engine room work and
+refuelling off screen, and asks for a crossing that is lived rather than
+toured. space_plan answers the listed space once, by its key: its deck and
+neighbours, what people do there, and the decision that holds it. The hall
+fits the arrangement without a change, and the plan says where it fits. A
+brief space that forced the arrangement to change would say what moved and
+why.
+
+The brief is followed, not decorated. Nothing in the answer adds a room to
+fill the hull, the engine room never becomes an event, and the hall is
+shown in use by the people it was made for, not toured. A larger brief asks
+for more spaces; the film then follows life on board through them, in an
+order with a reason, and does not show each one the same way.
+
+The gates also show the cycle rule. Finishing checks a closed side by hand
+and runs no cycle; completion runs one, step by step, as the handover;
+operation opens and closes them as part of a boarding, not as another
+demonstration.
+
+WHO MOVES THE GATES, AND WHEN
+
+Every use of the gates keeps one order: they open, people pass through,
+everyone is clear of the gate line, and only then do they close. Completion
+writes it that way, step by step, and operation closes the gates only when
+the last passenger is clear. People step out only where there is somewhere
+to step: on the side against the quay. The side facing the water is only
+opened and closed from inside the hall. The text names who works them: the operator's
+people at completion, the master from the helm cabin in service.
+
+COMPLETION, OPERATION AND THE ENDING
+
+Each does something the others do not. Completion hands the controls and
+the routine to the people who will run the ferry. Operation shows the
+boarding the design was made for. The ending does not board anyone again:
+it stays with the crossing, where the premise asked its question, and ends
+on passengers who sit beside the closed side in open water without looking
+up and stand at the gates before the far pier stops them. The premise
+answer describes that same moment.
+
+The premise asks about shelter, something the film can show; it does not
+ask whether the ferry is strong or safe. Nothing in the answer says the
+gates were proven weathertight, and no sentence tells the reader what the
+film avoids claiming.
 
 PRINCIPAL DIMENSIONS
 

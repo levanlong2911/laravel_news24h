@@ -80,6 +80,40 @@
                 }
             }
         },
+        "space_plan": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "space",
+                    "placement",
+                    "role",
+                    "layout_decision"
+                ],
+                "properties": {
+                    "space": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{1,29}$"
+                    },
+                    "placement": {
+                        "type": "string",
+                        "minLength": 40,
+                        "maxLength": 400
+                    },
+                    "role": {
+                        "type": "string",
+                        "minLength": 40,
+                        "maxLength": 400
+                    },
+                    "layout_decision": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 400
+                    }
+                }
+            }
+        },
         "premise": {
             "type": "object",
             "additionalProperties": false,
@@ -121,7 +155,7 @@
         "synopsis": {
             "type": "string",
             "minLength": 200,
-            "maxLength": 2500
+            "maxLength": 3000
         },
         "stage_treatments": {
             "type": "array",
@@ -150,7 +184,7 @@
                     "observable_development": {
                         "type": "string",
                         "minLength": 40,
-                        "maxLength": 900
+                        "maxLength": 1400
                     },
                     "participants": {
                         "type": "string",
@@ -244,7 +278,8 @@
                             "capacity",
                             "construction_new_build_and_refit",
                             "figures",
-                            "signature_features"
+                            "signature_features",
+                            "interior_spaces"
                         ],
                         "properties": {
                             "size_and_dimensions": {
@@ -477,6 +512,69 @@
                                         }
                                     }
                                 }
+                            },
+                            "interior_spaces": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "space",
+                                        "deck",
+                                        "position",
+                                        "layout",
+                                        "access",
+                                        "materials_and_light",
+                                        "fixed_furniture",
+                                        "identity",
+                                        "undetermined"
+                                    ],
+                                    "properties": {
+                                        "space": {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9_]{1,29}$"
+                                        },
+                                        "deck": {
+                                            "type": "string",
+                                            "minLength": 3,
+                                            "maxLength": 120
+                                        },
+                                        "position": {
+                                            "type": "string",
+                                            "minLength": 40,
+                                            "maxLength": 600
+                                        },
+                                        "layout": {
+                                            "type": "string",
+                                            "minLength": 40,
+                                            "maxLength": 1500
+                                        },
+                                        "access": {
+                                            "type": "string",
+                                            "minLength": 20,
+                                            "maxLength": 600
+                                        },
+                                        "materials_and_light": {
+                                            "type": "string",
+                                            "minLength": 40,
+                                            "maxLength": 1200
+                                        },
+                                        "fixed_furniture": {
+                                            "type": "string",
+                                            "minLength": 20,
+                                            "maxLength": 800
+                                        },
+                                        "identity": {
+                                            "type": "string",
+                                            "minLength": 20,
+                                            "maxLength": 600
+                                        },
+                                        "undetermined": {
+                                            "type": "string",
+                                            "maxLength": 600
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -492,7 +590,16 @@
                 "required": [
                     "id",
                     "name",
-                    "description"
+                    "description",
+                    "story_use",
+                    "spatial_relation",
+                    "subject_id",
+                    "brief_space",
+                    "enclosure",
+                    "layout",
+                    "connections",
+                    "fixed_features",
+                    "light_sources"
                 ],
                 "properties": {
                     "id": {
@@ -508,6 +615,85 @@
                         "type": "string",
                         "minLength": 20,
                         "maxLength": 600
+                    },
+                    "story_use": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 400
+                    },
+                    "spatial_relation": {
+                        "type": "string",
+                        "enum": [
+                            "external",
+                            "subject_part"
+                        ]
+                    },
+                    "subject_id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^ch_[a-z0-9_]{2,40}$"
+                    },
+                    "brief_space": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[a-z][a-z0-9_]{1,29}$"
+                    },
+                    "enclosure": {
+                        "type": "string",
+                        "enum": [
+                            "interior",
+                            "open_air"
+                        ]
+                    },
+                    "layout": {
+                        "type": "string",
+                        "minLength": 40,
+                        "maxLength": 1200
+                    },
+                    "connections": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "target_location_id",
+                                "via"
+                            ],
+                            "properties": {
+                                "target_location_id": {
+                                    "type": "string",
+                                    "pattern": "^lo_[a-z0-9_]{2,40}$"
+                                },
+                                "via": {
+                                    "type": "string",
+                                    "minLength": 10,
+                                    "maxLength": 300
+                                }
+                            }
+                        }
+                    },
+                    "fixed_features": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 200
+                        }
+                    },
+                    "light_sources": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 200
+                        }
                     }
                 }
             }
@@ -531,7 +717,11 @@
                     "duration_estimate_ms",
                     "why_it_cannot_be_cut",
                     "leads_to",
-                    "build_state"
+                    "scene_mode",
+                    "beats",
+                    "subject_state",
+                    "light_and_weather",
+                    "props"
                 ],
                 "properties": {
                     "id": {
@@ -622,7 +812,51 @@
                         ],
                         "maxLength": 300
                     },
-                    "build_state": {
+                    "scene_mode": {
+                        "type": "string",
+                        "enum": [
+                            "continuous",
+                            "montage"
+                        ]
+                    },
+                    "beats": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "id",
+                                "action",
+                                "visible_result",
+                                "time_jump"
+                            ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "pattern": "^b[0-9]{1,2}$"
+                                },
+                                "action": {
+                                    "type": "string",
+                                    "minLength": 10,
+                                    "maxLength": 400
+                                },
+                                "visible_result": {
+                                    "type": "string",
+                                    "minLength": 10,
+                                    "maxLength": 300
+                                },
+                                "time_jump": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "maxLength": 200
+                                }
+                            }
+                        }
+                    },
+                    "subject_state": {
                         "type": [
                             "object",
                             "null"
@@ -630,18 +864,106 @@
                         "additionalProperties": false,
                         "required": [
                             "subject_id",
-                            "state"
+                            "start",
+                            "end"
                         ],
                         "properties": {
                             "subject_id": {
                                 "type": "string",
                                 "pattern": "^ch_[a-z0-9_]{2,40}$"
                             },
-                            "state": {
-                                "type": "string",
-                                "minLength": 3,
-                                "maxLength": 300
+                            "start": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "progress",
+                                    "configuration"
+                                ],
+                                "properties": {
+                                    "progress": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 600
+                                    },
+                                    "configuration": {
+                                        "type": "array",
+                                        "minItems": 0,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "part",
+                                                "state"
+                                            ],
+                                            "properties": {
+                                                "part": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 80
+                                                },
+                                                "state": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 120
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "end": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "progress",
+                                    "configuration"
+                                ],
+                                "properties": {
+                                    "progress": {
+                                        "type": "string",
+                                        "minLength": 3,
+                                        "maxLength": 600
+                                    },
+                                    "configuration": {
+                                        "type": "array",
+                                        "minItems": 0,
+                                        "items": {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "required": [
+                                                "part",
+                                                "state"
+                                            ],
+                                            "properties": {
+                                                "part": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 80
+                                                },
+                                                "state": {
+                                                    "type": "string",
+                                                    "minLength": 2,
+                                                    "maxLength": 120
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    },
+                    "light_and_weather": {
+                        "type": "string",
+                        "minLength": 10,
+                        "maxLength": 300
+                    },
+                    "props": {
+                        "type": "array",
+                        "minItems": 0,
+                        "items": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 150
                         }
                     }
                 }

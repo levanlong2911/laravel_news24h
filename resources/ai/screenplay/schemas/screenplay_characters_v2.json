@@ -83,7 +83,8 @@
                 "capacity",
                 "construction_new_build_and_refit",
                 "figures",
-                "signature_features"
+                "signature_features",
+                "interior_spaces"
             ],
             "properties": {
                 "size_and_dimensions": {
@@ -313,6 +314,69 @@
                                 "type": "string",
                                 "minLength": 3,
                                 "maxLength": 2000
+                            }
+                        }
+                    }
+                },
+                "interior_spaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "space",
+                            "deck",
+                            "position",
+                            "layout",
+                            "access",
+                            "materials_and_light",
+                            "fixed_furniture",
+                            "identity",
+                            "undetermined"
+                        ],
+                        "properties": {
+                            "space": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,29}$"
+                            },
+                            "deck": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 120
+                            },
+                            "position": {
+                                "type": "string",
+                                "minLength": 40,
+                                "maxLength": 600
+                            },
+                            "layout": {
+                                "type": "string",
+                                "minLength": 40,
+                                "maxLength": 1500
+                            },
+                            "access": {
+                                "type": "string",
+                                "minLength": 20,
+                                "maxLength": 600
+                            },
+                            "materials_and_light": {
+                                "type": "string",
+                                "minLength": 40,
+                                "maxLength": 1200
+                            },
+                            "fixed_furniture": {
+                                "type": "string",
+                                "minLength": 20,
+                                "maxLength": 800
+                            },
+                            "identity": {
+                                "type": "string",
+                                "minLength": 20,
+                                "maxLength": 600
+                            },
+                            "undetermined": {
+                                "type": "string",
+                                "maxLength": 600
                             }
                         }
                     }

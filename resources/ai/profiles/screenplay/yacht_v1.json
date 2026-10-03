@@ -3,11 +3,94 @@
     "contract_version": "screenplay_v3",
     "subject_class": "superyacht",
     "scope": "full_lifecycle",
-    "objective": "Create an original, physically credible documentary-style film about a distinctive fictional superyacht, from collaborative design through construction, finishing, delivery and guest experience.",
-    "min_scenes": 3,
-    "max_scenes": 30,
+    "objective": "Create an original, physically credible documentary-style film about a fictional superyacht with a distinctive contemporary design, recognizable in its form and in the way its spaces are organized, from collaborative design through construction, finishing, delivery and guest experience.",
+    "min_scenes": 5,
+    "max_scenes": 22,
     "max_subjects": 12,
     "max_locations": 12,
+    "film_brief": {
+        "format": "film_brief_v1",
+        "revision": 1,
+        "spaces": [
+            {
+                "key": "main_salon",
+                "label": "Main salon",
+                "note": "Where guests gather indoors and the group first comes together."
+            },
+            {
+                "key": "indoor_dining",
+                "label": "Indoor dining room",
+                "note": "A dining room inside, distinct from any open-air dining the design has."
+            },
+            {
+                "key": "owner_suite",
+                "label": "Owner's suite",
+                "note": "The most private space aboard: sleeping, bathing and a place to withdraw."
+            },
+            {
+                "key": "guest_cabin",
+                "label": "Representative guest cabin",
+                "note": "One guest cabin standing for the others, not every cabin."
+            },
+            {
+                "key": "gym",
+                "label": "Gym",
+                "note": ""
+            },
+            {
+                "key": "sauna",
+                "label": "Sauna",
+                "note": ""
+            },
+            {
+                "key": "indoor_pool",
+                "label": "Indoor pool",
+                "note": ""
+            },
+            {
+                "key": "outdoor_pool",
+                "label": "Outdoor pool",
+                "note": "Open to the sky."
+            }
+        ],
+        "highlights": [
+            "The signature features the foundation designs, shown as part of life on board rather than in place of it.",
+            "The way from the sheltered spaces down to the sea, when the design has one."
+        ],
+        "off_screen": [
+            {
+                "text": "Resupply by a small boat or tender.",
+                "coverage_ids": []
+            },
+            {
+                "text": "Machinery work inside the service and technical decks.",
+                "coverage_ids": [
+                    "cov_build_machinery"
+                ]
+            }
+        ],
+        "storytelling": [
+            "Life on board moves from private space, to meeting others, to movement and rest, to the open-air spaces, to the sea.",
+            "People use each space for what it was made for, and moving from one space to the next has a reason.",
+            "Spaces are not shown to one formula, and no single guest uses every space.",
+            "Construction, checks and handover keep to work whose result is later seen in use; a moving part does not run its whole cycle again and again."
+        ],
+        "limits": [
+            "Do not claim that the design or any of its parts has been verified as technically feasible.",
+            "Do not give up the design's signature, or redesign it, to fit the list of spaces."
+        ]
+    },
+    "protagonist_profile": true,
+    "cast": "protagonist_only",
+    "design_requirements": [
+        "One central idea organizes the whole vessel: its proportions, silhouette, massing and the way its spaces are arranged.",
+        "The hull, bow, superstructure, glazing, stern and the relationship between the decks speak one design language. Not every part needs to be unusual: a few strong features lead, and the other parts support them in that language.",
+        "The design stays recognizable when paint, branding, loose furniture and decoration are removed.",
+        "The stern is a superyacht stern: the aft decks step down toward the sea and end at a transom close to the waterline that opens onto the water. The design may reshape the steps, the terraces and the opening to serve its central idea, but never replaces them with a closed, solid or shouldered stern around a narrow opening.",
+        "The design decides for itself how many volumes it has and how they are arranged, the form of its bow, its open spaces and whether any part moves; none of these is prescribed.",
+        "A part that changes position is optional. When the design has one, say which parts are fixed and which move, how each lies in its standard state and in each other state, where moving parts are stowed, the space they sweep while moving, and how people use it in each state.",
+        "Do not claim that the vessel or any of its parts is unique in the market or that its engineering has been proven."
+    ],
     "min_shots_per_scene": 1,
     "max_shots_per_scene": 10,
     "arc_stages": [
@@ -63,7 +146,7 @@
             "guest group"
         ],
         "recurring_representatives": true,
-        "declare_visible_participants": true,
+        "declare_visible_participants": false,
         "background_groups_allowed": true,
         "fixed_people_count_per_scene": false,
         "group_counts_as_one_subject": true,
@@ -237,5 +320,402 @@
             "level": "required",
             "label": "A guest group experiences the specific spatial qualities promised by the design."
         }
-    ]
+    ],
+    "design_contract_version": "superyacht_design_v1",
+    "design_development": {
+        "purpose": "Define and freeze the yacht as a coherent canonical design before screenplay generation. The design stage may create an original architectural solution, but once approved the screenplay, scene, shot and image stages must treat the frozen design as design truth rather than redesigning it.",
+        "sequence": [
+            "design_intent",
+            "novelty_thesis",
+            "architectural_concept",
+            "mass_void_system",
+            "canonical_proportions",
+            "hull_and_superstructure_geometry",
+            "signature_geometry",
+            "spatial_topology",
+            "geometric_relationships",
+            "transitions",
+            "configuration_states",
+            "anti_regression",
+            "design_validation",
+            "design_approval",
+            "design_freeze"
+        ],
+        "screenplay_dependency": "The screenplay is authored from the approved frozen canonical design. It may dramatize or select design facts for storytelling, but it must not invent permanent yacht geometry that is absent from the canonical design.",
+        "visual_asset_dependency": "Identity anchors and reference images are generated after the frozen design exists. Reference requirements may be refined after screenplay and scene breakdown so generated views prove the geometry actually needed by production."
+    },
+    "novelty_requirements": {
+        "design_thesis_required": true,
+        "novelty_thesis_required": true,
+        "conventional_patterns_rejected_required": true,
+        "replacement_principles_required": true,
+        "signature_geometry_required": true,
+        "novelty_must_be_geometric_spatial_or_organizational": true,
+        "decorative_novelty_alone_is_insufficient": true,
+        "whole_vessel_coherence_required": true,
+        "recognition_without_branding_or_decoration_required": true,
+        "unverified_market_novelty_claims_forbidden": true,
+        "guidance": [
+            "Describe what conventional architectural pattern is being rejected or transformed.",
+            "Describe the geometric, spatial or organizational principle that replaces it.",
+            "Define how the new principle changes silhouette, massing, voids, circulation or major spatial relationships.",
+            "Do not use words such as unique, revolutionary, unprecedented or first-of-its-kind as substitutes for observable design definition."
+        ]
+    },
+    "canonical_design_contract": {
+        "status_model": [
+            "locked",
+            "proposed",
+            "undetermined"
+        ],
+        "status_meaning": {
+            "locked": "Approved canonical design truth. Downstream stages must preserve it.",
+            "proposed": "A developed but not yet canonical choice. It cannot silently become locked through image generation.",
+            "undetermined": "Not designed yet. Downstream prompt authors must not invent a visually dominant permanent feature and treat it as canonical."
+        },
+        "required_sections": [
+            "design_identity",
+            "principal_dimensions",
+            "proportion_system",
+            "global_silhouette",
+            "governing_lines",
+            "primary_masses",
+            "primary_voids",
+            "hull_geometry",
+            "superstructure_geometry",
+            "stern_geometry",
+            "signature_regions",
+            "spatial_topology",
+            "geometric_relationships",
+            "transitions",
+            "permanent_secondary_geometry",
+            "appearance_identity",
+            "configuration_states",
+            "must_preserve",
+            "must_not_introduce",
+            "reference_proof_requirements"
+        ],
+        "geometry_filter": [
+            "Only facts that change visible permanent form, topology, proportions, openings, spatial boundaries or structural relationships become canonical visual geometry.",
+            "Accommodation counts, performance figures, amenities and narrative facts do not automatically imply exterior geometry.",
+            "A cabin count must not imply a window count.",
+            "A deck count must not automatically imply the same number of exterior glazing bands.",
+            "A functional requirement must not silently create a permanent exterior feature."
+        ]
+    },
+    "coordinate_and_orientation": {
+        "required": true,
+        "canonical_axes": {
+            "longitudinal": "bow_to_stern",
+            "transverse": "port_to_starboard",
+            "vertical": "keel_to_top"
+        },
+        "allowed_relationship_language": [
+            "forward_of",
+            "aft_of",
+            "port_of",
+            "starboard_of",
+            "above",
+            "below",
+            "inside",
+            "outside",
+            "contains",
+            "contained_by",
+            "between",
+            "connects_to",
+            "intersects",
+            "terminates_at",
+            "continues_into",
+            "opens_to"
+        ],
+        "rule": "Major geometry must be described relative to the canonical vessel axes rather than only with subjective visual adjectives."
+    },
+    "form_system_requirements": {
+        "primary_masses_required": true,
+        "primary_voids_required": true,
+        "governing_lines_required": true,
+        "mass_void_relationships_required": true,
+        "global_massing_required": true,
+        "silhouette_test_required": true,
+        "silhouette_test": "The principal design identity should remain recognizable when surface color, branding, loose furniture, decorative dressing and fine material detail are removed.",
+        "each_primary_mass_should_define": [
+            "id",
+            "role",
+            "position",
+            "relative_length",
+            "relative_width",
+            "relative_height",
+            "connections",
+            "transition_to_adjacent_geometry"
+        ],
+        "each_primary_void_should_define": [
+            "id",
+            "role",
+            "position",
+            "relative_extent",
+            "boundaries",
+            "open_or_enclosed_state",
+            "relationship_to_surrounding_masses"
+        ]
+    },
+    "proportion_requirements": {
+        "principal_dimensions_required": true,
+        "length_beam_ratio_required": true,
+        "global_proportions_required": true,
+        "major_mass_relative_proportions_required": true,
+        "signature_region_relative_proportions_required": true,
+        "visual_ratio_preservation_required": true,
+        "avoid_false_precision": true,
+        "rule": "Use exact numeric dimensions only when established by the design. Use explicit relative proportions where exact dimensions are not established. Image prompts must preserve the visual ratios implied by the canonical dimensions."
+    },
+    "geometry_requirements": {
+        "hull": [
+            "stem and bow geometry",
+            "waterline entry when defined",
+            "forefoot when visually relevant",
+            "sheer",
+            "freeboard distribution",
+            "midbody character",
+            "chine or hull-side organization when defined",
+            "stern and transom geometry",
+            "relationship between hull and superstructure"
+        ],
+        "superstructure": [
+            "number and organization of primary masses",
+            "forward-to-aft massing",
+            "governing roofline or rooflines",
+            "setbacks or continuous transitions",
+            "relationship to hull",
+            "major openings and glazing topology only when design-defining"
+        ],
+        "stern": [
+            "overall aft silhouette",
+            "transom or stern closure",
+            "stern shoulders",
+            "platform, court, terrace or recessed-volume topology when present",
+            "relationship to waterline",
+            "relationship to adjacent superstructure",
+            "forbidden conventional interpretations when the stern is signature geometry"
+        ],
+        "bow": [
+            "stem type",
+            "rake or plumb relationship when defined",
+            "bow volume and integration with hull",
+            "relationship to forward superstructure"
+        ]
+    },
+    "topology_requirements": {
+        "major_regions_must_define_boundaries": true,
+        "major_regions_must_define_connections": true,
+        "signature_regions_require_axis_topology": true,
+        "signature_region_axes": [
+            "fore",
+            "aft",
+            "port",
+            "starboard",
+            "top",
+            "bottom"
+        ],
+        "containment_relationships_required": true,
+        "adjacency_relationships_required": true,
+        "circulation_relationships_required_when_visible_or_design_defining": true,
+        "rule": "A shape label alone is insufficient for signature geometry. The design must state what bounds it, what it connects to and where it sits in the vessel."
+    },
+    "geometric_relationship_requirements": {
+        "required": true,
+        "relationship_types": [
+            "integrated_with",
+            "contained_between",
+            "contained_by",
+            "supports",
+            "spans",
+            "closes",
+            "opens_to",
+            "continues_into",
+            "terminates_at",
+            "aligned_with",
+            "offset_from",
+            "above",
+            "below",
+            "forward_of",
+            "aft_of"
+        ],
+        "rule": "Canonical identity is defined by relationships between geometry as well as by the geometry of individual parts."
+    },
+    "transition_requirements": {
+        "major_mass_transitions_required": true,
+        "hull_superstructure_transition_required": true,
+        "bow_to_midbody_transition_required_when_design_defining": true,
+        "midbody_to_stern_transition_required_when_design_defining": true,
+        "signature_region_transition_required": true,
+        "rule": "The design must explain how adjacent masses, voids and governing lines become one coherent vessel. Do not leave the image model to invent the connection between separately described features."
+    },
+    "signature_geometry_requirements": {
+        "at_least_one_signature_system_required": true,
+        "signature_may_be": [
+            "mass",
+            "void",
+            "governing_line",
+            "spatial_region",
+            "stern_architecture",
+            "bow_architecture",
+            "opening_system",
+            "circulation_element",
+            "transforming_component",
+            "relationship_between_multiple_features"
+        ],
+        "each_signature_feature_requires": [
+            "feature_id",
+            "priority",
+            "description",
+            "topology",
+            "relationships",
+            "must_preserve",
+            "forbidden_interpretations",
+            "proof_conditions",
+            "proof_views"
+        ],
+        "rule": "Signature identity must be observable in geometry or spatial organization and must not depend only on color, branding or decorative styling."
+    },
+    "configuration_state_requirements": {
+        "separate_identity_from_state": true,
+        "permanent_geometry": "Defines what physically exists and remains part of the yacht across scenes and production states.",
+        "appearance_identity": "Defines stable material, color, glazing and finish decisions when they have been approved.",
+        "configuration_state": "Defines the current position or operating state of movable or transformable permanent components.",
+        "production_state": "Defines fabrication, outfitting, finished or operational condition without changing canonical geometry.",
+        "movable_component_fields": [
+            "component_id",
+            "fixed_geometry",
+            "canonical_state",
+            "alternate_states",
+            "pivot_track_or_mechanism_location_when_defined",
+            "stowage",
+            "swept_volume",
+            "human_use_by_state"
+        ],
+        "rule": "A component's existence and hinge, track or attachment geometry belong to identity; its current open, closed, raised, lowered or deployed condition belongs to state."
+    },
+    "anti_regression": {
+        "required": true,
+        "purpose": "Prevent generative models from normalizing an approved original design back toward familiar contemporary superyacht patterns.",
+        "must_define_design_specific_forbidden_interpretations": true,
+        "generic_examples_not_automatically_forbidden": [
+            "stacked wedding-cake superstructure",
+            "generic cascading aft terraces",
+            "conventional full-beam swim platform",
+            "generic beach-club opening",
+            "detached raised pilothouse volume",
+            "decorative fins or wings added only to appear futuristic"
+        ],
+        "rule": "Only forbid a conventional pattern when it conflicts with the approved design. Anti-regression constraints protect the design; they must not prescribe the same unconventional solution for every yacht."
+    },
+    "physical_credibility_policy": {
+        "required": true,
+        "goal": "The design should be physically plausible as a large vessel concept without claiming engineering verification, classification approval or certified feasibility.",
+        "check": [
+            "major masses and voids form one connected vessel",
+            "circulation is not obviously impossible",
+            "major openings do not erase required supporting geometry without an expressed structural concept",
+            "movable parts have a defined attachment and swept region when present",
+            "deck and spatial relationships do not contradict each other",
+            "construction-stage descriptions remain compatible with the final canonical geometry"
+        ],
+        "forbidden_claims": [
+            "certified",
+            "class-approved",
+            "engineering-proven",
+            "technically verified",
+            "market-first"
+        ]
+    },
+    "design_completeness_gate": {
+        "required_before_design_freeze": true,
+        "checks": [
+            "design_thesis_defined",
+            "novelty_thesis_defined",
+            "principal_dimensions_defined",
+            "length_beam_ratio_defined",
+            "global_silhouette_defined",
+            "governing_lines_defined",
+            "bow_topology_defined",
+            "stern_topology_defined",
+            "primary_masses_defined",
+            "primary_voids_defined",
+            "signature_geometry_defined",
+            "major_topology_relationships_complete",
+            "major_transitions_defined",
+            "configuration_state_separated_from_permanent_geometry",
+            "P0_must_preserve_defined",
+            "design_specific_forbidden_interpretations_defined",
+            "reference_proof_requirements_defined"
+        ],
+        "blocking_rule": "If a P0 identity feature, major topology relationship or required signature geometry is undetermined, block canonical design freeze rather than allowing an image model to invent it.",
+        "non_blocking_rule": "Secondary details may remain proposed or undetermined when they do not alter P0 identity, topology or the proof requirements of the planned reference images."
+    },
+    "design_freeze_policy": {
+        "approval_required": true,
+        "freeze_is_immutable_per_revision": true,
+        "changes_require_new_revision": true,
+        "screenplay_cannot_mutate_frozen_design": true,
+        "scene_planner_cannot_mutate_frozen_design": true,
+        "shot_planner_cannot_mutate_frozen_design": true,
+        "prompt_author_cannot_mutate_frozen_design": true,
+        "image_provider_cannot_establish_new_canonical_geometry": true,
+        "canonical_invariant": "The approved normalized design, validated design, hashed design and frozen design must represent the same canonical content for that revision."
+    },
+    "reference_proof_policy": {
+        "reference_views_are_evidence_not_a_fixed_checklist": true,
+        "proof_plan_generated_from_P0_features": true,
+        "one_view_need_not_prove_every_feature": true,
+        "multiple_views_required_when_occlusion_or_perspective_prevents_reliable_proof": true,
+        "each_P0_feature_requires_at_least_one_proof_view": true,
+        "proof_condition_required_per_signature_feature": true,
+        "reference_generation_occurs_after_design_freeze": true,
+        "reference_requirements_may_be_refined_after_screenplay_scene_breakdown": true,
+        "identity_lock_requires_approved_visual_evidence": true
+    },
+    "prompt_compilation_policy": {
+        "design_spec_is_source_of_truth": true,
+        "prompt_author_role": "Translate approved structured design truth into provider-appropriate visual instructions without redesigning the yacht.",
+        "include_for_identity_anchor": [
+            "asset_intent",
+            "canonical_identity",
+            "P0_geometry",
+            "canonical_proportions",
+            "signature_topology",
+            "requested_reference_state",
+            "view_proof_objective",
+            "camera_and_composition",
+            "presentation_constraints",
+            "design_specific_failure_modes",
+            "conflict_priority"
+        ],
+        "exclude_unless_visually_relevant": [
+            "screenplay prose",
+            "dialogue",
+            "guest count",
+            "cabin count",
+            "range",
+            "speed",
+            "amenity list",
+            "story beats",
+            "provider-independent facts that do not affect visible geometry"
+        ],
+        "conflict_priority": [
+            "canonical_topology",
+            "signature_geometry_relationships",
+            "global_silhouette",
+            "canonical_proportions",
+            "secondary_permanent_geometry",
+            "reference_state",
+            "camera_and_composition",
+            "lighting",
+            "surface_detail_and_style"
+        ]
+    },
+    "subject_policy": {
+        "protagonist": "The superyacht is the hero subject unless the film brief explicitly establishes another narrative structure.",
+        "human_participants": "Humans are supporting participants used for design, construction, completion, operation, scale and lived experience.",
+        "legacy_cast_field": "The existing cast field is retained for screenplay_v3 compatibility and must not be interpreted as making a human the protagonist."
+    }
 }

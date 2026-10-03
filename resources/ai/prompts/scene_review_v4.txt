@@ -81,7 +81,11 @@ coverage_basis
   screenplay scene. Every shot is source_supported: it must film action its screenplay
   scene states and add no process step, event or outcome of its own. Its visible
   progress must match the build_state of that screenplay scene; staging around the
-  stated action is always the model's own.
+  stated action is always the model's own. When the screenplay scenes carry beats and
+  a subject_state instead of a build_state, each shot's delta must match its own
+  keyframe_state, its clip must lead from keyframe_state to end_state, its beat_ids
+  must move forward through its scene's beats, and every shot must lie between the
+  scene's start and end; the scene's subject_state is context, not the state of a frame.
 
 continuity
   A continuity group is a run of consecutive scenes shot from one viewpoint; every scene
@@ -120,13 +124,29 @@ Every finding carries one to three evidence items, and every quote must appear w
 word in the field it names. Quote what you actually read; do not paraphrase, and do not
 describe something a scene does not contain.
 
-source        "scene" or "screenplay"
-scene_code    the shot the quote comes from, or "" when source is "screenplay"
-field         for a scene: delta, title, purpose, basis, state_before, scene_state,
+source        "scene" for a shot of the plan, "screenplay" for the whole screenplay,
+              "screenplay_scene" for one scene or one beat of the screenplay
+scene_code    for "scene": the shot's scene_code
+              for "screenplay": ""
+              for "screenplay_scene": the screenplay scene id, such as sc_05, or for
+              a beat the scene id and the beat id joined by #, such as sc_05#b2
+field         for "scene": delta, title, purpose, basis, state_before, scene_state,
               transition_mode, continuity_group, source_scene_code, camera_change_reason,
-              video.action, video.preserve, video.end_state
-              for the screenplay: logline, synopsis, ending
+              video.action, video.preserve, video.end_state, beat_ids,
+              keyframe_state.progress, keyframe_state.configuration,
+              end_state.progress, end_state.configuration
+              for "screenplay": logline, synopsis, ending
+              for "screenplay_scene" with a scene id: action,
+              subject_state.start.progress, subject_state.start.configuration,
+              subject_state.end.progress, subject_state.end.configuration
+              for "screenplay_scene" with a beat: beat.action, beat.visible_result,
+              beat.time_jump
 quote         the exact words, at most 300 characters
+
+A configuration field reads as its items joined in order, each written as the part, a
+space, an em dash, a space and its state, with "; " between items, for example
+"port gates — closed; folding rails — raised to waist height". Quote a part, a state,
+or a whole item as written there. beat_ids reads as the ids joined by ", ".
 
 The evidence may come from any scene, not only the one the finding is about and not
 only the scene immediately before it. When you argue that a shot adds a step its
@@ -148,6 +168,11 @@ revise            at least one blocking finding, and a patch that fixes it
 requires_replan   at least one blocking finding that cannot be fixed by editing existing
                   scenes, for example when coverage needs a scene that does not exist.
                   Report it with no patch.
+
+A shot whose purpose starts with "UNRESOLVED:" says the screenplay leaves open how its
+action can be shown. Report it as a blocking finding quoting that purpose. Do not patch
+it by turning the stated action into its result or by inventing a way in; when nothing
+in the screenplay settles it, the verdict is requires_replan.
 
 THE PATCH
 

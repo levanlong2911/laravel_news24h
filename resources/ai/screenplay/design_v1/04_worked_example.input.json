@@ -1,0 +1,73 @@
+{
+    "inspiration": {
+        "ideas": [
+            {
+                "aspect": "size_and_dimensions",
+                "idea": "The ferry is 42 metres long with a 10-metre beam and carries 300 passengers."
+            },
+            {
+                "aspect": "hull_and_structure",
+                "idea": "The hull is an aluminium catamaran."
+            },
+            {
+                "aspect": "passenger_spaces",
+                "idea": "Passengers sit in an enclosed saloon on the main deck, which has a bar at one end."
+            },
+            {
+                "aspect": "open_spaces",
+                "idea": "An open upper deck at the stern looks back toward the city."
+            },
+            {
+                "aspect": "operations",
+                "idea": "The operator wants each stop to take less of the crossing."
+            }
+        ]
+    },
+    "profile": {
+        "contract_version": "vessel_design_v1",
+        "subject_class": "harbour ferry",
+        "design_requirements": [
+            "The sides physically transform at architectural scale: the hull's side opens along its length and changes how the hall is entered and left. A door, a seat or lighting does not meet this requirement.",
+            "Say which parts of the sides are fixed and which move, the closed and open states, where the moving parts are stowed, the space they sweep while moving, and how people pass through in each state."
+        ],
+        "anti_regression": {
+            "generic_examples_not_automatically_forbidden": [
+                "a wheelhouse at one end",
+                "a single boarding door at one end"
+            ],
+            "rule": "Only forbid a conventional pattern when it conflicts with the approved design."
+        },
+        "protagonist_profile": true,
+        "protagonist_profile_focus": [
+            "roof"
+        ],
+        "dimension_bounds": {
+            "length_m": {
+                "min": 30,
+                "max": 60
+            }
+        },
+        "film_brief_spaces": [
+            "passenger_hall"
+        ]
+    },
+    "film_requirements": {
+        "film_brief": {
+            "format": "film_brief_v1",
+            "revision": 1,
+            "spaces": [
+                {
+                    "key": "passenger_hall",
+                    "label": "Passenger hall",
+                    "note": "The benches and the gates belong to one room."
+                }
+            ],
+            "highlights": [
+                "The side gates that open the hall across its width"
+            ],
+            "limits": [
+                "Do not claim that the closed gates are proven weathertight."
+            ]
+        }
+    }
+}

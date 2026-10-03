@@ -1,0 +1,108 @@
+{
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "logline",
+        "premise",
+        "synopsis",
+        "stage_treatments",
+        "ending"
+    ],
+    "properties": {
+        "logline": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 300
+        },
+        "premise": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "question",
+                "force",
+                "device",
+                "change",
+                "answer"
+            ],
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 400
+                },
+                "force": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 400
+                },
+                "device": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 400
+                },
+                "change": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 400
+                },
+                "answer": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 400
+                }
+            }
+        },
+        "synopsis": {
+            "type": "string",
+            "minLength": 200,
+            "maxLength": 3000
+        },
+        "stage_treatments": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "stage",
+                    "dramatic_purpose",
+                    "observable_development",
+                    "participants",
+                    "handover_to_next"
+                ],
+                "properties": {
+                    "stage": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 40
+                    },
+                    "dramatic_purpose": {
+                        "type": "string",
+                        "minLength": 40,
+                        "maxLength": 600
+                    },
+                    "observable_development": {
+                        "type": "string",
+                        "minLength": 40,
+                        "maxLength": 1400
+                    },
+                    "participants": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 400
+                    },
+                    "handover_to_next": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 400
+                    }
+                }
+            }
+        },
+        "ending": {
+            "type": "string",
+            "minLength": 60,
+            "maxLength": 900
+        }
+    }
+}

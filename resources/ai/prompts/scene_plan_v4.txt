@@ -23,13 +23,16 @@ Every output item is one production shot, although the legacy storage field is n
 scene_code. `screenplay_scene_code` must be the id of one scene in the selected
 screenplay. `shot_index` starts at 1 inside that scene and increases without gaps.
 Each selected screenplay scene has between 1 and 10 shots. Keep its shots together and
-preserve screenplay order. A shot may show only people and locations declared by that
-screenplay scene. Several shots may cover one action from useful viewpoints, but they
-must not add a new event, participant, place or outcome.
+preserve screenplay order. A shot may show only the characters and location declared by
+that screenplay scene and the people its action describes. Several shots may cover one
+action from useful viewpoints, but they must not add a new event, participant, place or
+outcome.
 
 Copy the screenplay scene's `location_id` into every shot. Set `character_ids` to the
 subset of that scene's declared characters who are actually visible in this shot. Never
 name a character or location only in prose while omitting its id from these fields.
+People the screenplay action describes by role have no id: describe them in the shot
+the way the action does, by role, dress and what they do, and never invent an id for them.
 
 The application copies the screenplay scene's `stage` and `build_state` onto every shot
 of that scene. Do not return them. Every delta must agree with that build_state: the
@@ -125,6 +128,8 @@ THE KEYFRAME AND THE CLIP
 
 Each scene produces one still keyframe, and then one clip that starts from that keyframe.
 
+A part that opens or closes a space, such as a door, a wall, a cover or a platform that folds out, appears in a keyframe in exactly one stopped state, the one the screenplay scene gives at that instant: never two shapes of the same part in one delta. Its standard state is the one the subject's design gives, not always closed. In a state people cannot walk on it is a wall or a cover, not a floor. When `video.action` moves such a part, nobody is on it or in its sweep in the delta, the action, or the end state; people step onto it only in a later shot, after it has stopped. A part built to carry people while it moves, such as a lift, is the exception: people ride it. Keep the method the location settles for launching, lifting and bringing equipment in. Equipment enters a space formed by the subject only through a route the location names or a part the build_state records as still open. When neither exists, never invent a way in, and never change what the screenplay scene says happens either: an action the screenplay states stays that action, not its result. Show only the part of it the sources support, such as the equipment held at the opening the build state records or the crew working at its seat. If no shot can show the action faithfully, start that shot's purpose with "UNRESOLVED:" and say what the screenplay leaves open, so the plan is reviewed before it is rendered.
+
 `delta` describes the keyframe: the complete visible state at one instant, as a camera would see it. Write no motion in it. "The crane lowers the frame onto its supports" is a clip; "the frame hangs above its supports, the lifting chains taut" is a keyframe.
 
 `video` describes what moves onward from that keyframe. It never repeats work the keyframe already shows as finished, and it never asks for a different camera: the clip is shot from exactly where the keyframe was taken.
@@ -156,6 +161,8 @@ THE DELTA
 Write it in the present tense as the complete state that must be true in this frame. Two to four short sentences read better than one long one. At most 1000 characters, and shorter when the change is simple.
 
 The delta must be self-contained relative to its declared transition mode and the renderer input defined by that mode. It may not depend on planning context that the application does not store or supply at render time.
+
+When the screenplay location carries a layout, fixed_features and light_sources, a hard cut builds its setting from them and adds no fixed equipment they do not name. When the screenplay scene carries light_and_weather and props, the application appends both to every keyframe and clip of that scene itself: never contradict them, and do not add another loose object to the frame. A location whose spatial_relation is subject_part is a space formed by the subject. It has no environment image: its structure comes only from the subject's identity and reference images, and the application appends its layout to the keyframe itself. Never describe a structure there that the subject's design does not have.
 
 For a hard cut, organize the description as setting, visible subject/state, useful material details, viewpoint and lighting. For a continuation, describe the visible changes and their local placement without restating the inherited scene. Use concise labeled lines if they improve clarity; a change-only instruction is acceptable when the requested result is one still state.
 
@@ -204,6 +211,7 @@ Before returning, verify silently:
 12. Read in order, do the scenes show this subject being made without a gap a viewer would notice?
 13. Is omitted work explained in purpose rather than compressed into a short clip, and can the chosen camera see the operation through real access?
 14. Are inputs limited to the declared source contract, and are cutaways and unrelated invented features absent?
+15. Does every keyframe show each part that opens or closes a space in one stopped state, with nobody on it while it moves (people still ride a lift), and does every shot keep the method its location settles for launching, lifting and bringing equipment in, never inventing a way in and never turning a stated action into its result?
 
 PLANNING INPUT:
 

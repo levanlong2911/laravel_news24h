@@ -21,20 +21,25 @@ Read the supplied inspiration, profile and production requirements.
 inspiration        source material used only to identify broad creative
                    tensions, audience interests and types of design questions.
                    It is not a catalogue of features for the new vessel.
-profile            design guidance, prohibited features, dimension bounds,
-                   the ordered stages this film moves through, and the
-                   people expected at each stage.
-film_requirements  production constraints supplied by the application.
+profile            design guidance, design requirements, prohibited
+                   features, dimension bounds, the ordered stages this film
+                   moves through, and the people expected at each stage.
+film_requirements  production constraints supplied by the application, and,
+                   when this line of films has one, a film_brief: the scope
+                   of the film, which you follow.
 
 The vessel in the source and the vessel created here are different designs.
 
-Do not transfer any concrete element from the inspiration into the new
-vessel. This prohibition includes dimensions, proportions, hull form,
-deck arrangement, circulation, room placement, named amenities, material
-combinations, structural devices and relationships between spaces.
+Do not reproduce the source vessel's distinctive design or recognizable
+arrangement: its dimensions, proportions, hull form, deck arrangement,
+circulation, room placement, material combinations, structural devices and
+the relationships between its spaces.
 
-A feature remains prohibited when renamed, moved to another deck or
-described in different words.
+Common vessel elements, such as a stair, a pool, a tender or a glazed wall,
+may share ordinary functions and conventional placements with the source;
+their presence alone is not copying. Changing a name, moving a feature to
+another deck or making a superficial alteration does not make a copied
+design original.
 
 You may retain only an abstract question, such as how privacy and openness
 can coexist, how circulation shapes experience, or how one architectural
@@ -61,21 +66,45 @@ Do not begin with a conventional yacht and add one unusual amenity.
 Establish a design identity apparent in the whole vessel:
 its silhouette, proportions, architectural massing and spatial organization.
 
+The design is contemporary, and its form shows it: its massing, its
+proportions and lines, the way one surface turns into the next and the way
+its spaces are organized. An adjective does not make a design contemporary.
+
 The creative ambition is a design unlike familiar superyacht offerings.
 This is a design objective, not a verified claim of market novelty.
 Do not claim that no comparable vessel has ever existed without independent
 evidence establishing that fact.
 
-Do not merely call the vessel "unique", "futuristic" or "never seen before".
-Describe differences that a viewer could recognize without those words.
+Do not merely call the vessel "modern", "unique", "futuristic" or "never
+seen before". Describe differences that a viewer could recognize without
+those words.
 
 A pool, window, terrace or lighting effect may demonstrate the design.
 It must not replace the whole vessel as the film's subject.
 
+THE ORDER OF THE WORK
+
+Design the vessel before writing its story, in this order:
+
+1. Take a design question from the inspiration, never its arrangement
+   (SOURCE DISTANCE).
+2. Settle the one idea that organizes the whole vessel (central_idea).
+3. Describe the overall form that idea produces: the hull, the bow, the
+   superstructure, the stern and the open spaces, and how they meet
+   (visible_difference).
+4. Arrange the decks, the spaces and the routes between them inside that
+   form, and choose the principal dimensions. When an arrangement does not
+   fit the form or the dimensions, change the design until they agree;
+   never leave a contradiction for a later field to explain.
+5. Only then write the premise, the synopsis, the stage treatments and the
+   ending, each built on the settled design.
+
 SOURCE DISTANCE
 
-Before conceiving the vessel, identify internally every concrete feature
-present in the inspiration. Exclude all of them from the new design.
+Before conceiving the vessel, identify internally what makes the source's
+design distinctive: its particular elements and the way it arranges them.
+Exclude all of that from the new design. Common vessel elements may remain
+where they serve their ordinary purpose.
 
 The new design must have its own:
 - overall proportions and silhouette;
@@ -139,6 +168,81 @@ Follow the profile's design constraints. Apart from principal_dimensions,
 do not invent specifications, certification or engineering claims to make
 the design sound credible.
 
+DESIGN REQUIREMENTS
+
+When the profile carries design_requirements, the design meets every one
+of them. A requirement that asks for a feature is met by designing it, not
+naming it: say what the part is, where it sits, what it does and why the
+central idea needs it. A requirement that sets a quality or a boundary is
+met by the design itself, never by a sentence claiming it.
+
+A required feature runs through the whole film. The synopsis and the stage
+treatments show why it appears in the design, how it is built and set to
+work, and what it changes for the people who use it. A feature mentioned
+once in the thesis and never seen again does not meet the requirement.
+
+A design need not have a part that moves; never add one to make the design
+or the film more eventful. When it has one, the part is designed in each of
+its states. For every moving part say:
+- what it turns or slides on: the edge, line or track, and which way it
+  runs;
+- how it lies in each state: upright, flat, sloping or partly in the water;
+- what it is in each state: a wall, a deck people stand on, a step, a roof
+  or a cover. A part that changes role, such as a wall that becomes a deck,
+  says so; a part that keeps one role keeps it in every field;
+- where it is stowed, and the space it sweeps while it moves;
+- which parts stay fixed, and how people reach it or pass through it in
+  each state;
+- how it travels between states, in terms that agree with where it lies in
+  each of them. A part hinged above the water that turns through a quarter
+  turn ends level at the height of its hinge; to reach the water it turns
+  further, or its hinge sits lower. When the design does not settle a
+  figure, say what it intends without inventing one.
+
+The design never claims that the vessel or any of its parts is unique in
+the market or that its engineering has been proven.
+
+THE PROJECT BRIEF
+
+When film_requirements carries a film_brief, it is the scope of the film.
+It is not source material: follow it.
+
+The brief names kinds of space and kinds of feature, never this vessel's
+design. Its highlights point at what your design makes signature; they do
+not hand you a feature to add.
+
+spaces        the spaces this film designs and shows. Each one becomes part
+              of the design and is recorded once in space_plan by its key.
+highlights    the features the film keeps as its signature.
+off_screen    places and work the film does not show. An item may still be
+              part of the arrangement, such as the route stores take aboard;
+              it is never an event of the film. When an item names coverage,
+              that work happens between stages and is never shown.
+storytelling  how the film is told.
+limits        boundaries the design and the film respect.
+
+space_plan holds one entry per brief space:
+
+space            the brief key, exactly as given.
+placement        the deck the space is on and where it sits: forward or aft,
+                 port, starboard or on the centreline, and what lies beside,
+                 above and below it.
+role             what people do there, and where it falls in the life on
+                 board the film follows.
+layout_decision  what the arrangement does to hold it. When a space changes
+                 an arrangement the design would otherwise have, such as a
+                 pool taking a deck that held cabins, say what moved and why.
+                 When it fits without a change, say where it fits.
+
+Placing a space is designing it, not naming it. Do not squeeze a space into
+whatever room is left, never leave one unplaced, and never give up the
+design's signature to make room. Write the arrangement as intended; do not
+claim that its area, structure or systems have been checked to hold every
+space. Do not add spaces the brief does not ask for merely to fill the
+vessel.
+
+When there is no film_brief, space_plan is [].
+
 PRINCIPAL DIMENSIONS
 
 Choose the vessel's principal dimensions within the profile's bounds after
@@ -154,6 +258,11 @@ dimensions prove stability, performance, capacity or regulatory compliance.
 Record dimensions only in principal_dimensions. Do not repeat measurements
 in logline, premise, synopsis, stage treatments or ending. The rationale
 explains the choice in words and does not restate the numbers.
+
+The rationale explains each dimension from what it actually governs:
+length from what must fit along the vessel, beam from what must fit across
+it. A height, a slope or a number of decks is not explained by length or
+beam alone.
 
 THE PREMISE
 
@@ -175,7 +284,12 @@ Do not hide the entire yacht merely to manufacture suspense.
 A reveal is valuable when it adds understanding or emotional weight.
 
 Do not let the opening promise a film about one thing while the rest of
-the film delivers something else.
+the film delivers something else. Every quality the question names, such
+as privacy, shelter or calm, is shown happening later in the film.
+
+The question asks about the arrangement and the experience the film can
+show. It never asks whether the vessel is strong, safe or seaworthy: no
+scene can show that.
 
 THE DESIGN DRIVES THE FILM
 
@@ -188,6 +302,18 @@ Operation must demonstrate the experience that motivated the design.
 
 A human subplot, amenity or visual effect may support the story.
 None of them may turn the yacht into a backdrop.
+
+When the brief lists spaces, the film follows life on board through them.
+The order in which people come to the spaces carries operation, each space
+is seen in use by people doing what it was made for, and moving from one
+to the next has a reason. The signature features are part of that life, not
+a replacement for it. Do not show every space the same way, and do not make
+one guest use every space.
+
+Design and construction explain what makes that life possible. Choose
+construction work whose result the viewer later sees in use, and leave out
+work that nothing later pays off. A space need not appear while it is
+built and again when it is finished.
 
 THE FIVE STAGES
 
@@ -208,14 +334,31 @@ the design intention.
 Do not confuse finishing with adding decoration.
 
 COMPLETION
-Reveal the vessel as a coherent whole.
+Reveal the vessel as a coherent whole, finished and handed over to the
+people who will run it.
 Allow the viewer to recognize how the earlier decisions belong together.
 Do not invent inspection results or certification claims.
 
 OPERATION
-Show the vessel and its spaces being used.
+Show the vessel and its spaces being used for what they were designed for.
 Demonstrate the consequences of earlier design decisions rather than
 ending with an unrelated beauty shot.
+
+COMPLETION, OPERATION AND THE ENDING
+Each of these adds something the other two do not:
+
+completion   the vessel is finished, and the people who will run it take
+             over its controls and its routines;
+operation    the vessel is used for what it was designed for;
+the ending   one moment that shows what that use has come to mean.
+
+Do not retell the same route or the same operation in two of them, even
+with other people doing it. A later stretch may return to an earlier action
+only for what it now means, in a sentence, never as its whole content.
+
+The same holds before them. A moving part runs its whole cycle in at most
+one check before operation uses it; a later check or a handover shows only
+what is new, such as who works it, from where, or what they watch.
 
 Stages are not equal-length chapters. Describe each one as a stretch of
 the film, not as a single moment, and say what carries the film from
@@ -236,6 +379,43 @@ story explicitly shows that change.
 Check that descriptions of centerline, port, starboard, bow, stern, upper
 and lower decks agree throughout the response.
 
+Name the decks the vessel has and use those names throughout. Give every
+fixed floor, bridge, landing, recess, opening and water surface the deck it
+belongs to, and keep that deck the same wherever it appears. Anything said
+to pass over or be suspended over a space sits higher than that space's
+floor; when it crosses at the same deck, say that what lies beneath it is
+recessed, and say what room is left beneath it. Say how far every opening
+reaches, from which deck to which, and whether a vertical opening is open
+to the sky or covered.
+
+Write "every", "only", "never" or "no ... at all" about the arrangement only
+when there is truly no exception. Even when guests follow one route, say
+how crew, service and supplies move.
+
+Name the side of every gallery, passage and landing: port, starboard,
+forward or aft. For every route that joins two levels, name the stair,
+ramp or lift that joins them.
+
+Once installed, a fixed part keeps its place and its relation to its
+neighbours in every later stage. A moving part may change level between its
+states: give its level and its relation to the fixed parts in each state,
+and describe each state the same way wherever it appears. The stage
+treatments say which state a moving part is in whenever it appears.
+
+PEOPLE AND MOVING PARTS
+
+A part that moves to open or reveal a space, such as a door, a hull panel
+or a fold-out platform, keeps this order when people use it: it opens;
+people use it; everyone returns to a fixed surface and clears the space it
+sweeps; it closes. It moves only when nobody is on it or in its sweep.
+
+A part built to carry people while it moves, such as a lift or a rising
+platform, is described on its own terms: people step on, it moves, they
+step off. Do not claim it has been proven safe.
+
+Write the actions in the order they happen, in every field that shows
+them, and say who operates each part and from where.
+
 OBSERVATION IS NOT TECHNICAL PROOF
 
 Show people inspecting, measuring, recording, adjusting, testing or
@@ -247,6 +427,15 @@ certified or structurally sound.
 
 A fictional design may describe an intended structural response, but must
 not claim that calculations, trials or inspections have validated it.
+
+A structural idea is a design intention. Write what it is meant to do,
+such as "is designed to carry" or "is meant to stiffen", never that it
+holds, strengthens, keeps anything safe or opens without weakening the
+hull.
+
+Write what people do. Do not narrate the rules of this contract inside the
+story, such as "without claiming it watertight" or "without asserting the
+structure proven".
 
 FOUNDATION, NOT COVERAGE
 
@@ -277,6 +466,7 @@ logline               one sentence naming the film's subject and its tension.
 design_thesis         the five decisions above.
 principal_dimensions  length and beam chosen within the profile's bounds,
                       and why they follow from the design thesis.
+space_plan            one entry per space the film_brief lists, or [].
 premise               the five fields above.
 synopsis              the whole film in a few paragraphs, told as it unfolds.
 stage_treatments      one entry per stage, in the profile's order, each saying
@@ -297,11 +487,53 @@ FINAL CHECK
 
 Before returning the JSON, verify:
 
-1. No concrete source feature appears in the new vessel.
+1. The new vessel reproduces neither the source's distinctive design nor
+   its recognizable arrangement; any common element it shares with the
+   source is there for its ordinary purpose.
 2. The design remains distinctive after all amenities are removed.
 3. Every stated route is possible in the described arrangement.
 4. Spatial descriptions remain consistent across all five stages.
-5. Inspections are actions, not claims of technical proof.
+5. Inspections are actions, not claims of technical proof; every structural
+   idea is written as what it is meant to do, and no field narrates the
+   rules of this contract.
 6. No field contains camera, shot or editing instructions.
 7. Principal dimensions are invented within the profile bounds and appear
-   only in principal_dimensions.
+   only in principal_dimensions, and the rationale explains each from what
+   it actually governs.
+8. The design meets every design requirement; every required feature is
+   designed in the thesis, and the synopsis and stage treatments show why it
+   appears, how it is built and set to work, and what it changes in use.
+9. The decks are named, every fixed floor, bridge, landing, opening and
+   water surface keeps one deck wherever it appears, every vertical opening
+   says how far it reaches and whether it is open to the sky, every moving
+   part keeps the same level and relations wherever the same state appears,
+   every gallery and landing names its side, and every route between levels
+   names its stair, ramp or lift.
+10. Any moving part is there because the design needs it, and says what it
+    turns or slides on, how it lies and what it is in each state, where it
+    is stowed and what it sweeps; each stage treatment that shows it says
+    which state it is in.
+11. Completion hands over the controls and routines, operation shows the
+    use the design was made for, and the ending is one moment of what that
+    use has come to mean; no route or operation is retold in two of them.
+12. Wherever people use a part that opens a space, it opens, they use it,
+    everyone returns to a fixed surface clear of its sweep, and only then
+    does it close; wherever a part carries people, they step on, it moves
+    and they step off; both are written in that order with who operates
+    them.
+13. Every quality the premise question names is shown later in the film,
+    the question asks nothing the film cannot show, and "every", "only" or
+    "never" appear only where there is no exception, with the crew's and
+    the supplies' routes stated.
+14. When there is a film_brief, every space it lists has one space_plan
+    entry with its deck, its neighbours, its role and the layout decision
+    that holds it; operation follows life on board through those spaces;
+    construction shows work whose result is later seen in use; nothing in
+    off_screen is an event of the film; and no moving part runs its whole
+    cycle in more than one check.
+15. Every moving part travels between its states in a way that agrees with
+    where it lies in each of them.
+16. The work followed its order: one idea organizes the whole vessel, the
+    arrangement and the dimensions agree with the form it produces, the
+    story is built on that settled design, and the design is contemporary
+    in its form rather than in its adjectives.

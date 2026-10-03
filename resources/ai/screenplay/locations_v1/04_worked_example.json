@@ -3,32 +3,150 @@
         {
             "id": "lo_studio",
             "name": "The studio",
-            "description": "A long table under daylight, covered with a paper strip, card benches and a small card cabin."
+            "description": "A design studio where new designs are worked out on paper and card before any steel is cut.",
+            "story_use": "The design treatment happens here: the team lays the ferry out as a strip of paper with card benches and slides the card helm cabin into place.",
+            "spatial_relation": "external",
+            "subject_id": null,
+            "brief_space": null,
+            "enclosure": "interior",
+            "layout": "One long room with a single long table down its middle and a clear walkway around it on every side. Tall windows run along one long wall and a pinboard covers the wall opposite them.",
+            "connections": [],
+            "fixed_features": [
+                "a long work table down the middle of the room",
+                "a pinboard covering the wall opposite the windows"
+            ],
+            "light_sources": [
+                "tall windows along one long wall",
+                "a row of pendant lamps over the table"
+            ]
         },
         {
             "id": "lo_building_hall",
             "name": "The building hall",
-            "description": "A covered yard hall with building blocks set out along its floor and a steel template leaning against the wall."
+            "description": "A covered yard hall built for framing and roofing large vessels under cover.",
+            "story_use": "The construction treatment happens here: the framing for both ends is set out from one template, the sides rise as posts and openings, and the roof goes on.",
+            "spatial_relation": "external",
+            "subject_id": null,
+            "brief_space": null,
+            "enclosure": "interior",
+            "layout": "One tall, long covered hall with a level concrete floor. A large door fills one gable end, staging towers stand along both long walls, and crane rails run the length of the hall overhead.",
+            "connections": [],
+            "fixed_features": [
+                "a line of building blocks along the floor",
+                "staging towers along both long walls",
+                "an overhead crane on rails running the length of the hall"
+            ],
+            "light_sources": [
+                "a band of roof lights along the ridge",
+                "floodlights fixed to the staging towers"
+            ]
         },
         {
             "id": "lo_ferry_hall",
             "name": "The ferry's hall",
-            "description": "The covered passenger hall inside the ferry, one long space under its roof, its sides a row of openings between posts and its floor clear from side to side."
+            "description": "The covered passenger hall that fills the ferry's main deck from one end to the other.",
+            "story_use": "Finishing, completion and the crossing happen here: the gates are hung and the benches fixed, the operators test both sides, and the passengers ride across the harbour.",
+            "spatial_relation": "subject_part",
+            "subject_id": "ch_ferry",
+            "brief_space": "passenger_hall",
+            "enclosure": "interior",
+            "layout":"One long open space on the main deck under the roof, between the raked bulwarks at the two ends, its floor level from end to end and a short step above the pier. Its port and starboard sides are each a row of openings between posts, nothing divides it along its length, and the crew stair opens through it on the centreline at mid-length, rising to the hatch in the helm cabin floor and going down to the crew spaces in the hull.",
+            "connections": [
+                {
+                    "target_location_id": "lo_fitting_quay",
+                    "via": "the side openings facing the quay and the quay's gangway, while the ferry lies at the fitting-out berth"
+                },
+                {
+                    "target_location_id": "lo_pier",
+                    "via": "the side openings along whichever side lies against the home pier"
+                },
+                {
+                    "target_location_id": "lo_far_pier",
+                    "via": "the side openings along whichever side lies against the far pier"
+                }
+            ],
+            "fixed_features": [
+                "a row of openings between posts along the port side",
+                "a row of openings between posts along the starboard side",
+                "a raked bulwark closing each end",
+                "the crew stair on the centreline at mid-length"
+            ],
+            "light_sources": [
+                "the side openings along both sides of the hall"
+            ]
         },
         {
             "id": "lo_fitting_quay",
             "name": "The fitting-out quay",
-            "description": "A working quay with bollards along its edge and a gangway landing beside the berth."
+            "description": "A working quay with a deep berth where vessels lie alongside to be fitted out and tested.",
+            "story_use": "The ferry lies here through finishing and completion, and in completion the operators step out through an opening onto the quay and back aboard.",
+            "spatial_relation": "external",
+            "subject_id": null,
+            "brief_space": null,
+            "enclosure": "open_air",
+            "layout": "A long straight quay edge beside a deep berth, with an open paved apron behind it and a gangway landing at mid-length.",
+            "connections": [
+                {
+                    "target_location_id": "lo_ferry_hall",
+                    "via": "the gangway landing and the ferry's side openings, while the ferry lies in the berth"
+                }
+            ],
+            "fixed_features": [
+                "bollards along the quay edge",
+                "a gangway landing at mid-length",
+                "a hoist standing on the apron"
+            ],
+            "light_sources": [
+                "floodlight masts along the back of the apron"
+            ]
         },
         {
             "id": "lo_pier",
             "name": "The home pier",
-            "description": "A public pier with a long boarding edge and a waiting area beside it."
+            "description": "The public pier on the home side of the harbour.",
+            "story_use": "The operation treatment happens here: the gates open along the pier side and the waiting crowd steps aboard across the width.",
+            "spatial_relation": "external",
+            "subject_id": null,
+            "brief_space": null,
+            "enclosure": "open_air",
+            "layout": "A long boarding edge along the water, with a roofed waiting area set back from the edge and an open walk between them.",
+            "connections": [
+                {
+                    "target_location_id": "lo_ferry_hall",
+                    "via": "the boarding edge and the ferry's side openings, while the ferry lies alongside"
+                }
+            ],
+            "fixed_features": [
+                "a long boarding edge along the water",
+                "a roofed waiting area set back from the edge"
+            ],
+            "light_sources": [
+                "lamp posts along the boarding edge"
+            ]
         },
         {
             "id": "lo_far_pier",
             "name": "The far pier",
-            "description": "The pier across the harbour, with its own boarding edge and waiting area."
+            "description": "The pier across the harbour, where the crossing ends.",
+            "story_use": "The ending happens here: the ferry comes alongside and the passengers wait at the closed gates for the side to open.",
+            "spatial_relation": "external",
+            "subject_id": null,
+            "brief_space": null,
+            "enclosure": "open_air",
+            "layout": "A boarding edge along the water across the harbour from the home pier, with its own roofed waiting area set back from the edge.",
+            "connections": [
+                {
+                    "target_location_id": "lo_ferry_hall",
+                    "via": "the boarding edge and the ferry's side openings, while the ferry lies alongside"
+                }
+            ],
+            "fixed_features": [
+                "a boarding edge along the water",
+                "a roofed waiting area set back from the edge"
+            ],
+            "light_sources": [
+                "lamp posts along the boarding edge"
+            ]
         }
     ]
 }

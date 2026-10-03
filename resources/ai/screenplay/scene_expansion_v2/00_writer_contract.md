@@ -11,7 +11,7 @@ The yacht and its story are fictional. Its spatial relationships, materials,
 human actions and progression toward completion must nevertheless be
 physically credible.
 
-Write something a real film crew could observe, not a promotional montage,
+Write something a real film crew could observe, not a promotional reel,
 a catalogue of amenities or instructions for an image generator.
 
 INPUT AND OUTPUT
@@ -20,15 +20,23 @@ Read the supplied foundation, characters, locations, profile and
 production requirements.
 
 foundation         the selected narrative foundation: design thesis,
-                   principal dimensions, premise, synopsis, stage treatments
-                   and ending.
+                   principal dimensions, space plan, premise, synopsis,
+                   stage treatments and ending.
 characters         every participant of the film, already declared with its
-                   kind; the vessel is the one protagonist.
-locations          every place a scene happens, already declared.
+                   kind; the vessel is the one protagonist, and when the
+                   film has one it carries its detailed design in profile.
+locations          every place a scene happens, already declared; a place
+                   that is one of the film_brief's spaces names it in
+                   brief_space.
 profile            ordered stages, required stages, scene-count limits,
                    subject and location limits, the people expected at each
-                   stage, and the coverage this film must answer.
-film_requirements  production constraints supplied by the application.
+                   stage, and the coverage this film must answer. When the
+                   vessel was designed before the film, it also carries
+                   design_geometry, the vessel's approved and locked
+                   geometry, and configuration_components, its moving
+                   components.
+film_requirements  production constraints supplied by the application, and
+                   the film_brief of this line of films when it has one.
 
 There is no source article in this step.
 
@@ -61,11 +69,57 @@ appearances in a scene: name who and where, and write what happens.
 
 principal_dimensions give the vessel's scale. Use them to judge what a
 person can see and reach. Do not write any measurement in names,
-descriptions, actions, sound, dialogue, build states or coverage evidence.
+descriptions, actions, sound, dialogue, subject states or coverage evidence.
 
 Where the foundation places a space, a route or an opening, keep it there.
 A scene may show less than the foundation describes, never something that
 contradicts it.
+
+THE VESSEL'S DESIGN
+
+When the protagonist carries a profile, every scene keeps to it: the
+positions, levels and routes it gives, and the standard state of each
+signature feature. Where the film shows a signature feature, show it in
+visible action: its parts set in place, fitted, operated or used, and for a
+feature that transforms, its movement from one state to another. Naming a
+feature is not showing it. A feature leaves its standard state only in a
+scene whose action operates it; a later scene may open with it still
+stopped where that operation left it. Do not repeat the profile's figures or
+its descriptions; write what happens.
+
+When the profile carries design_geometry, it is the approved geometry of
+the vessel and governs over every other description of it. Every scene
+keeps its silhouette, masses, voids, spatial regions, relationships,
+transitions and must_preserve invariants; construction builds toward
+exactly that geometry and never toward another arrangement.
+
+A feature the foundation makes central, such as a part of the vessel that
+transforms, keeps its events in the film: the design decision that brings
+it in, the work that builds it and sets it moving, and its use by the
+people it was designed for. Do not redesign it, change the way it moves,
+fold it into another feature or drop it.
+
+When people use a part that moves to open a space, such as a door or a
+fold-out platform, write the action in the order it happens: it opens,
+people use it, everyone returns to a fixed surface clear of its sweep, and
+only then does it close; it moves only with nobody on it or in its sweep.
+A scene may show only part of that order, as long as what it shows keeps it.
+A part built to carry people, such as a lift, is written as people stepping
+on, the part moving and people stepping off. The action says who operates
+each part.
+
+A part that opens or closes a space, such as a door, a wall, a cover or a
+platform that folds out, is used only once it has stopped. Every scene
+that shows such a part says which state it is in, in its action and in the
+configuration of its subject_state: its standard state as
+the profile gives it, which is not always closed, moving between states, or
+stopped in another state. In a state people cannot walk on, it is a wall or
+a cover, never a floor. While it moves, nobody is on it or in its sweep;
+people use it as a floor or a route only once it has stopped in a state
+they can walk on. When it moves during a scene, the action says the state
+it starts in and the state it stops in, and the scene never shows two
+shapes of it at once. A part built to carry people while it moves, such as
+a lift, is not such a part: people ride it as written above.
 
 REAL-WORLD CAUSALITY
 
@@ -82,6 +136,13 @@ Before writing an action, consider:
 Do not describe unsupported loads, people beneath suspended objects,
 inaccessible work areas or parts passing through completed structures.
 
+Do not take a part to be held steady merely because it has been set in
+place or hung on its hinge. Before anything is released, moved or used,
+what holds, powers or supports it is established by the sources and by the
+progress already recorded. Show a preparatory step only when the viewer
+needs it to follow what happens. When the sources do not establish the
+condition, simplify the depiction rather than design the mechanism.
+
 Do not treat a complex operation as instantaneous.
 Select a legible part of the operation and acknowledge omitted work
 between scenes when necessary.
@@ -94,7 +155,7 @@ CONSTRUCTION CONTINUITY
 
 Maintain a consistent record of what is present, unfinished and complete.
 
-A new location or viewpoint does not reset the build state.
+A new location or viewpoint does not reset the vessel's progress.
 Installed elements do not disappear to make later work convenient.
 
 Launch belongs to the same record. Show or account for the launch before
@@ -102,9 +163,25 @@ the first scene in which the vessel is afloat, either as its own scene or as
 work omitted between the scene before it and the first scene afloat. Once
 the vessel has been afloat, no later scene returns it to an unlaunched state
 or shows a first launch; bringing it ashore again needs its own explained
-event. The action, build_state and leads_to of every scene agree with this,
+event. The action, subject_state and leads_to of every scene agree with this,
 and coverage for the launch names the scenes that actually bracket it,
 whichever stage the profile lists that coverage under.
+
+When a location's layout or fixed features settle how a piece of work is
+done, such as how the vessel goes into the water, how loads are lifted or
+how equipment enters a space, every scene there uses that method. Never
+switch to another method in a later scene.
+
+Equipment enters a space formed by the vessel only through a route its
+location names, or through a part the subject_state progress records as
+still open.
+When the location says the supplied sources do not establish a permanent
+access route for large equipment, show the equipment entering through a
+part still open only where the established construction order leaves that
+part open at that point, and name it in the subject_state progress. Where nothing
+established supports it, simplify the depiction: show the work already in
+place inside the space, or leave the delivery between scenes. Never invent
+a door, hatch or route, and nothing passes through closed structure.
 
 Distinguish placement from fastening, fastening from sealing, and assembly
 from readiness for operation wherever those distinctions matter.
@@ -115,34 +192,51 @@ vessel ready for launch or use.
 Progress may occur between scenes. Make that passage legible without
 pretending the film documents every operation.
 
-Keep permanent design identity separate from temporary build state.
+Keep permanent design identity separate from temporary progress.
 The unfinished structure need not have the silhouette of the finished yacht,
 but the parts already present must remain consistent with its design.
 
-BUILD STATE
+SUBJECT STATE
 
-Every scene must include build_state.
-When the object's build state is shown, provide subject_id and state.
-Otherwise use null. Never omit the field.
+Every scene includes subject_state. When the vessel is shown, it names the
+vessel and records two moments: start, as the scene opens, and end, as it
+closes. When the vessel is not shown, use null. Never omit the field.
 
-subject_id names a declared character whose kind is object.
-state says what is present, unfinished and complete at that scene.
-A scene whose build_state names an object lists that object in its
-character_ids, even when the scene takes place inside it.
+subject_id names a declared character whose kind is object. A scene whose
+subject_state names an object lists that object in its character_ids, even
+when the scene takes place inside it.
 
-Write the state at the scene, not the change since the last one.
+Each moment holds two separate things:
+
+progress        what of the vessel exists at that moment, what is
+                unfinished and what is complete. Write the state at that
+                moment, not the change since the last scene.
+configuration   each part that opens or closes a space and matters in this
+                scene, with the state it is in at that moment: its standard
+                state, moving, or stopped in another state. [] when no such
+                part matters. When the profile carries
+                configuration_components, part is exactly one of their
+                component_id values and state is its canonical_state, one
+                of its alternate_states, or moving between two of them;
+                when that list is empty, configuration is always [].
+
+The vessel's permanent design is neither of these: it comes from its
+profile and its images, never from subject_state.
+
 Two scenes over the same unfinished structure both carry it, so continuity
-stays checkable without replaying the film from the beginning.
-
-An unchanged state is still recorded. Null never means unchanged, and never
+stays checkable without replaying the film from the beginning. An
+unchanged progress is still recorded. Null never means unchanged, and never
 means inherited from the preceding scene.
 
-Build state must agree with the scene's action and established prior
-progress, including explicitly accounted-for off-screen work. Do not claim
-completed work merely because it is expected at this stage.
+A scene's start agrees with the end of the scene before it, plus any work
+its action, leads_to or coverage accounts for between them. Its end agrees
+with what its beats establish. Neither claims work the action and
+accounted-for progress do not establish, and neither reverses work already
+done. Do not claim completed work merely because it is expected at this
+stage.
 
-The state describes the build. It is not a delta, a mood, a camera note or
-an instruction to a renderer.
+subject_state describes the vessel. It is not a delta, a mood, a camera
+note or an instruction to a renderer.
 
 THE FIVE STAGES
 
@@ -192,8 +286,9 @@ not_applicable    name no scenes, and explain the reason in evidence.
 Required items accept only shown.
 
 One scene can support several related items. One item can need several
-scenes. Never create one scene per item merely to complete the list, and
-never stretch a scene to reach an item.
+scenes. Never create one scene per item merely to complete the list, never
+add a scene only because an item is not yet mentioned, and never stretch a
+scene to reach an item.
 
 Evidence must identify what the scenes actually support. It must not invent
 actions, approvals or capabilities absent from them. State it in one short
@@ -208,6 +303,27 @@ missing.
 
 A not_applicable claim asks for human review. It is not permission to omit
 required content, and it does not authorise production.
+
+THE PROJECT BRIEF
+
+When film_requirements carries a film_brief, the profile adds one required
+coverage item for each space it lists, carrying that space's key in
+brief_space. It is shown only by a scene whose location carries the same
+brief_space: a passage, a stair or a neighbouring room never stands in for
+it. In that scene the room's layout reads, people use it for what it was
+made for, and what they do there has a part in the course of the film.
+
+A space does not need its own introduction, a scene while it is finished
+and another while it is used; show it where the film gains most. Moments
+of use at different times in one room can be one montage. Do not send one
+guest through every space, and do not show every room the same way: the
+order in which people come to the rooms, and the reason they move on,
+carry the film.
+
+A coverage item the profile marks off_screen is never shown: account for it
+as a transition between the scenes before and after the omitted work, or as
+not_applicable, and never make it an event in a scene. A place or activity
+the brief leaves off screen has no scene.
 
 PEOPLE AS PARTICIPANTS
 
@@ -231,8 +347,17 @@ When the profile's people_policy.dialogue_allowed is false, no scene carries
 spoken lines: do not move a line into action or sound as quoted or reported
 speech. Indistinct background talk may stay in sound.
 
-Every participant is already declared in characters, with its kind.
-Choose the ones each scene needs from the work or experience being shown.
+When characters holds only the vessel, no person or group is declared.
+People still do the work and use the vessel: write them into the action by
+role, taken from the profile's people_policy, with the dress or the things
+they carry that make them recognizable, and describe a role the same way
+each time it returns. They carry no id, never appear in character_ids and
+do not speak. character_ids then holds the vessel wherever it is present
+and is empty where it is not.
+
+Otherwise every participant is already declared in characters, with its
+kind. Choose the ones each scene needs from the work or experience being
+shown.
 
 A speaking character must be a declared person present in that scene; a
 group does not speak as a single character.
@@ -273,6 +398,18 @@ Do not use poetic language to conceal contradictory geometry.
 
 OBSERVABLE SCENES
 
+Before writing the scenes, consider each candidate:
+
+WHAT: Which development in the foundation needs to become observable?
+WHY: What worthwhile information, feeling or experience does it give the viewer?
+WHO: Which subjects and participants are needed?
+WHERE: Where can the action happen without contradicting the established layout?
+CHANGE: What changes in the situation, the viewer's understanding or experience?
+
+Use these questions to select and shape scenes, not as additional output
+fields. A pause or contemplative scene may earn its place without changing
+the subject's physical state. Do not invent a change merely to justify it.
+
 A scene normally follows one coherent situation unfolding continuously
 in an established location and time.
 
@@ -280,8 +417,8 @@ Keep closely connected actions together while that situation remains
 continuous. Several actions, a pause, a change of viewpoint, a move from a
 wide view to a close one, or another person taking over the same work do
 not by themselves require a new scene. Small progress within one continuous
-situation stays in that scene; begin a new one when the build state has
-changed enough that the viewer must recognise it as different.
+situation stays in that scene; begin a new one when the vessel's progress
+has changed enough that the viewer must recognise it as different.
 
 Begin a new scene when a meaningful change of location or a time jump
 establishes a different situation. The same DAY or NIGHT label does not
@@ -300,13 +437,70 @@ scenes.
 
 A short wait inside one situation stays in that scene. A jump that makes the
 situation different does not: repeated crossings through a whole day, or
-morning and evening of the same routine, are not one scene. When the
-foundation describes something that spans a day, choose one continuous
-moment that stands for it, or give each moment its own scene when the jump
-itself matters.
+morning and evening of the same routine, are not one continuous scene.
+When the foundation describes something that spans a day or a stretch of
+work in one place, write it as one montage whose beats name each step and
+the time between them, or give each moment its own scene when the jump
+itself changes the situation.
 
 Do not split scenes merely to vary framing, and do not combine unrelated
 events merely because they occur in the same location.
+
+The place a subject stands in is not the location of a scene that happens
+on or inside it: a scene aboard takes the location of the space where its
+action happens. Every beat happens at the scene's own location, in the
+positions, facings and connections that location allows; once the action
+reaches another location, that part belongs to the next scene.
+
+What can be seen from there across a boundary, through an opening, through
+glazing or across open water, may be part of the scene while the scene's
+main action stays where the scene is. A part worked from elsewhere is named
+with who works it, without moving the scene there. When what happens beyond
+the boundary is the point, it is a scene in that place.
+
+Show a space through its most telling moment of use. Arriving and leaving
+are shown only when they carry something themselves, and neighbouring
+scenes do not open and close the same way.
+
+CONTINUOUS SCENES, MONTAGES AND BEATS
+
+scene_mode says how time runs inside the scene.
+
+continuous   one situation unfolding without a gap. No beat carries a time
+             jump. It holds only work that can happen while the viewer
+             watches; work that takes days to finish is a montage, or the
+             scene shows one part of it and progress records the rest as
+             unfinished. It does not pass over routines that take long,
+             such as washing and dressing, a long rest or many repetitions
+             of an exercise: choose one telling moment of them, or make a
+             montage.
+montage      several moments of one purpose in one location with time
+             passing between them, such as a part fabricated and then set
+             in place. Each step of progress is its own beat, and a beat
+             that follows a gap says in time_jump how much time or work
+             passed. A montage carries at least two beats. It never spans
+             two locations; a move to another place is a new scene.
+
+beats are the scene's developments in order. Each beat holds:
+
+id              b1 for the first, then b2, b3 and onward in order.
+action          what happens in that development, observably.
+visible_result  what a camera could see once it has happened.
+time_jump       null, or, for a montage beat after a gap, the time or work
+                that passed before it. The first beat never carries one.
+                It names only work done in the gap, never the work its own
+                beat goes on to do: "Days later, with the roof closed"
+                before a beat in which the roof goes on shows the same work
+                twice. No later beat begins again work a time_jump has
+                called done.
+
+A beat is a development of the story, not a shot. "The crane lowers the
+collar into the hull" is one beat, however many shots later show it. Do not
+make every small operation its own beat, and never write camera, framing
+or cuts into a beat. A simple scene may carry a single beat.
+
+action is the scene's summary. Its beats are the same events in order,
+never new ones. The end of subject_state is what the last beat leaves.
 
 Each scene identifies:
 - Its location and interior/exterior setting.
@@ -337,7 +531,7 @@ If a scene contributes nothing distinct, revise or remove it.
 
 IDENTITY BOUNDARY
 
-Scenes may describe changing build states without redefining the vessel.
+Scenes may describe changing progress without redefining the vessel.
 Supporting characters retain their established appearance.
 
 Character descriptions and personalities guide storytelling.
@@ -355,6 +549,30 @@ Do not add dirt, damage or wear merely to make an image appear real.
 Light must agree with the location, openings, time and activity.
 Do not demand beautiful lighting at the expense of coherent space.
 
+LIGHT, WEATHER AND PROPS
+
+Every scene carries light_and_weather and props. Each location already
+declares its layout, its fixed features and its permanent light sources;
+the scene adds only what changes from scene to scene.
+
+light_and_weather  the light and the weather in this scene, in one or two
+                   plain sentences: where the light comes from among the
+                   location's light sources and openings, and, where the
+                   place is open to the sky, the weather. It agrees with
+                   time and int_ext.
+props              the loose objects the action handles or needs in frame,
+                   one item each, such as a template, a toolbox or a
+                   bicycle. [] when the action needs none.
+
+A prop is never a person, a fixed feature the location already declares,
+a part of the subject, or work the subject_state progress records. A scene inside the
+subject does not invent a light source the location does not declare.
+
+A location inside the subject describes the finished space. While the
+progress still leaves a deck or a side open, light and weather come through
+that opening, and the space reads as enclosed and lit by its own lamps only
+once the progress closes it and installs them.
+
 Avoid empty quality claims such as "ultra-realistic" or "award-winning".
 Specify the observable detail that matters instead.
 
@@ -371,20 +589,47 @@ Do not rely on music or narration to supply a story absent from the scenes.
 RHYTHM AND DURATION
 
 Do not repeat the same fact through several locations or angles
-unless the changed context adds meaning.
+unless the changed context adds meaning. When an operation the film has
+already shown returns for a new purpose, such as use after a test or a
+handover after a check, show the part of it that serves that purpose; do
+not retell the whole cycle. Two checks of the same feature need different
+things to look at.
 
 Give important moments time.
 Keep connective material economical.
 Let pauses, actions and consequences create variation.
 
 Estimate each scene's duration from its action, including necessary waiting
-and reactions. Do not match scene lengths to provider clip durations.
+and reactions. Decide what happens first and estimate the duration from it;
+never compress action to fit a number of seconds already chosen. Do not
+match scene lengths to provider clip durations.
 
 SCENE COUNT, COMPLETENESS AND FLOW
 
 Determine the scene count from this film's content, within the profile's
 limits. Do not copy the example's count or allocate an equal number
 to every stage.
+
+First work out the situations and developments the stage treatments need,
+in the order the film shows them. Only then choose, for each one, the
+location that suits its action. Begin a new scene when the situation or
+the location changes, or when a change of time makes the situation a new
+one. Time passing within one development at one location may stay in one
+montage, as its rules allow. Never take the location list or the coverage
+list as a list of scenes. One scene usually carries several coverage items.
+A stretch of work in one place is one montage, not one scene per operation.
+
+The locations are the spaces available to the film, not a list to film in
+full. A location may go unused, or return in several scenes when the story
+brings new developments there. Never change an established arrangement to
+make a development convenient, never invent a location id, and never hide
+several places inside one scene.
+
+Do not make a scene in a passage, a stair, a lobby or a lift core only to
+record people moving between two places. The film may cut straight to the
+next place when the viewer still understands what happens. Keep a scene of
+movement when the journey itself brings information, a change or an
+experience worth showing.
 
 Merely assigning a scene to each stage does not establish a story.
 Each scene must contribute specific, observable content to this design's
@@ -409,10 +654,21 @@ or a deliberate passage of time.
 Do not assume that a written leads_to explanation makes the relationship
 visible in the film. The action and transition must support it.
 
+Each scene begins from what the scene before it left: the subject's state,
+who is present, where they are, what condition they are in and what they
+hold. A change that happens off screen and matters to what follows is
+accounted for in the action or in leads_to.
+
 NECESSITY
 
-For each scene, identify what the film loses without it, and record that
-in why_it_cannot_be_cut.
+A scene earns its place by giving the viewer new information, a
+meaningful change or a new experience. A deliberate pause that lets a
+feeling land earns it too; not every answer is a physical change.
+
+For each scene, ask what the film loses without it, and whether it repeats
+something the viewer already understands. Record in why_it_cannot_be_cut
+what the viewer would lose; that a space or a coverage item needs a scene
+is not a reason. Revise, merge or remove a scene that only repeats.
 
 Separately identify any necessary information or development still missing.
 
@@ -459,7 +715,7 @@ Before returning the JSON, check:
 
 3. Are actions physically credible without unsupported engineering claims?
 
-4. Do spaces, routes, materials and build states stay where the foundation
+4. Do spaces, routes, materials and progress stay where the foundation
    put them, does each scene hold one continuous situation rather than
    several moments of a day, and does every scene stay in its one declared
    location?
@@ -472,11 +728,13 @@ Before returning the JSON, check:
    point at a scene that shows it, and does each evidence line say only
    what those scenes support?
 
-8. Does every scene carry build_state, does each one describe the object
-   at that scene, is null used only where build state does not apply or is
-   not shown, does every scene with a build_state list its object in
-   character_ids, and does any build_state claim work that neither the
-   action nor accounted-for progress establishes?
+8. Does every scene carry subject_state, is null used only where the
+   vessel is not shown, does every scene with a subject_state list its
+   object in character_ids, does each start follow the end of the scene
+   before it, does each end follow from the scene's beats, and does any
+   moment claim work that neither the action nor accounted-for progress
+   establishes? Does configuration name only parts that open or close a
+   space, each in the state it is in at that moment?
 
 9. Do the participants in each stage match the work that stage contains,
    does every line of dialogue belong to a declared person listed in that
@@ -485,7 +743,65 @@ Before returning the JSON, check:
    location ids?
 
 10. Is every text free of measurements, dates, camera instructions and
-    claims of technical proof?
+    claims of technical proof? Does every scene's light_and_weather agree
+    with its time, its int_ext, the light sources and openings of its
+    location and, while the vessel is unfinished, the openings its progress
+    still leaves, and does every prop name a loose object the action handles,
+    never a person, a fixed feature or a part of the subject?
+
+11. When only the vessel is declared, is every person written into the
+    action by role and dress, without an id or a line?
+
+12. When the vessel carries a profile, does every scene keep its
+    positions, levels and routes, is each signature feature the film shows
+    seen in action rather than named, and does a feature leave its standard
+    state only where the action operates it?
+
+13. Does every feature the foundation makes central keep its design
+    decision, its building and setting to work, and its use, moving the
+    way the foundation says?
+
+14. Does every scene with a part that opens or closes a space say which
+    state that part is in, keep people off it while it moves, and use it as
+    a floor only once it has stopped in a walkable state, while people still
+    ride a lift? Does every scene keep the method its location settles for
+    launching, lifting and bringing equipment in, and does equipment reach a
+    space only through a named route or a part the established construction
+    order leaves open, with the depiction simplified where neither exists?
+
+15. Is every scene continuous or a montage as its time actually runs, with
+    every continuous scene holding only work that can happen while it is
+    watched, beats numbered from b1, a time jump only on a montage beat
+    after a gap and naming only work done in that gap, every beat a
+    development of the story rather than a shot, and no camera, framing or
+    cut in any beat? Was the scene count taken from the situations the
+    stage treatments need rather than from the coverage list?
+
+16. For each scene, what does the film lose without it, and does it repeat
+    something the viewer already understands, in a principal room or in a
+    secondary place? Is any scene there only for a coverage item, a change
+    of who does the work or one more operation in the same situation, and
+    does any scene retell a whole operating cycle when its new purpose
+    needs only part of it? Were the scenes taken from the developments the
+    film needs, with each location chosen for its action, rather than from
+    the location list?
+
+17. When there is a film_brief, is every space it lists shown by a scene at
+    the location carrying its brief_space, with its layout readable and
+    people using it for what it was made for; does the film move between
+    the rooms for a reason rather than tour them; and is every off_screen
+    coverage item a transition or not_applicable, never an event? Does any
+    scene only record people passing through a connecting place without
+    adding anything?
+
+18. Does every beat happen at its own scene's location, in positions and
+    facings that location allows? Does each scene begin from what the one
+    before it left: the subject, who is present, where and in what
+    condition? Does the main action of every scene stay at its location,
+    with anything beyond the boundary only seen? Is anything released,
+    moved or used before what holds or powers it is established? Does any continuous scene pass over a long
+    routine, does any scene open and close the way its neighbour does, and
+    was each duration estimated after its action was settled?
 
 A structurally valid set of scenes can still be incomplete or unconvincing.
 Revise failures before returning the JSON.

@@ -24,7 +24,7 @@
         ]
     },
     "profile": {
-        "contract_version": "screenplay_foundation_v2",
+        "contract_version": "screenplay_foundation_v3",
         "subject_class": "harbour ferry",
         "dimension_bounds": {
             "length_m": {
@@ -67,9 +67,39 @@
                 "passengers"
             ],
             "group_counts_as_one_subject": true
-        }
+        },
+        "design_requirements": [
+            "The sides physically transform at architectural scale: the hull's side opens along its length and changes how the hall is entered and left. A door, a seat or lighting does not meet this requirement.",
+            "Say which parts of the sides are fixed and which move, the closed and open states, where the moving parts are stowed, the space they sweep while moving, and how people pass through in each state."
+        ]
     },
     "film_requirements": {
-        "aspect_ratio": "9:16"
+        "aspect_ratio": "9:16",
+        "film_brief": {
+            "format": "film_brief_v1",
+            "revision": 1,
+            "spaces": [
+                {
+                    "key": "passenger_hall",
+                    "label": "Passenger hall",
+                    "note": "The benches and the gates belong to one room."
+                }
+            ],
+            "highlights": [
+                "The side gates that open the hall across its width"
+            ],
+            "off_screen": [
+                {
+                    "text": "Engine room work and refuelling",
+                    "coverage_ids": []
+                }
+            ],
+            "storytelling": [
+                "Passengers use the hall as one room; the crossing is lived, not toured."
+            ],
+            "limits": [
+                "Do not claim that the closed gates are proven weathertight."
+            ]
+        }
     }
 }
