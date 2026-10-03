@@ -259,9 +259,12 @@ canonical_design
            element, signature region (feature_id) and moving component
            (component_id) has one lowercase id, used for nothing else.
            hull and waterline are reserved for the hull as a whole and the
-           design waterline. Relationships, transitions, must_preserve,
-           must_not_introduce and proof requirements refer only to these
-           ids.
+           design waterline. A relationship's subject and object, a
+           transition's between and a proof requirement's target name only
+           these part ids. Every transition also has its own id, used for
+           nothing else: must_preserve and must_not_introduce may name
+           part ids and locked transition ids, so an invariant can protect
+           a joint; a transition never names a transition.
 
   design_identity       novelty_thesis; conventional_patterns, the patterns
                         rejected or transformed; replacement_principle;

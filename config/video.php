@@ -840,7 +840,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/vessel_design_v1.json'),
 
-            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v1-r4'),
+            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v1-r5'),
 
             'model' => env('SCREENPLAY_DESIGN_MODEL', 'gpt-5.6-sol'),
 

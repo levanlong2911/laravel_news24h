@@ -139,6 +139,8 @@ final class VesselDesign
         'design_identity', 'must_not_introduce', 'reference_proof_requirements', 'configuration_states',
     ];
 
+    private const TRANSITIONS_KEY = 'transitions';
+
     /** @var array<string, string> */
     private const ID_LISTS = [
         'governing_lines' => 'id',
@@ -538,10 +540,15 @@ final class VesselDesign
             }
         }
 
-        $missing = static function (mixed $id, string $where) use (&$violations, $present): void {
-            if (! is_string($id) || ! isset($present[$id])) {
-                $violations[] = "{$where} names ".self::label($id).', which the extract does not contain';
+        $keptJoints = self::transitionIds($kept);
+        $missing = static function (mixed $id, string $where, bool $jointAllowed = false) use (&$violations, $present, $keptJoints): void {
+            if (is_string($id) && (isset($present[$id]) || ($jointAllowed && isset($keptJoints[$id])))) {
+                return;
             }
+
+            $violations[] = is_string($id) && isset($keptJoints[$id])
+                ? "{$where} names {$id}, a transition where a part is required"
+                : "{$where} names ".self::label($id).', which the extract does not contain';
         };
 
         foreach (self::CORE_SECTIONS as $key) {
@@ -555,7 +562,7 @@ final class VesselDesign
             $missing($row['object'] ?? null, "geometric_relationships[{$index}].object");
         }
 
-        foreach (self::rows($kept['transitions'] ?? null) as $index => $row) {
+        foreach (self::rows($kept[self::TRANSITIONS_KEY] ?? null) as $index => $row) {
             foreach ((array) ($row['between'] ?? []) as $id) {
                 $missing($id, "transitions[{$index}].between");
             }
@@ -564,7 +571,7 @@ final class VesselDesign
         foreach (['must_preserve', 'must_not_introduce'] as $key) {
             foreach (self::rows($kept[$key] ?? null) as $index => $row) {
                 foreach ((array) ($row['refs'] ?? []) as $ref) {
-                    $missing($ref, "{$key}[{$index}].refs");
+                    $missing($ref, "{$key}[{$index}].refs", true);
                 }
             }
         }
@@ -786,6 +793,7 @@ final class VesselDesign
     private static function relationshipViolations(array $canonical): array
     {
         [$known, $violations] = self::knownIds($canonical);
+        $joints = self::transitionIds($canonical);
         $locked = self::lockedId($canonical);
         $related = [];
 
@@ -801,9 +809,10 @@ final class VesselDesign
 
             foreach (['subject', 'object'] as $side) {
                 $id = $relation[$side] ?? null;
+                $wrong = self::partViolation($id, $known, $joints, "{$path}.{$side}");
 
-                if (! is_string($id) || ! isset($known[$id])) {
-                    $violations[] = "{$path}.{$side}: ".self::label($id).' is not a declared id';
+                if ($wrong !== null) {
+                    $violations[] = $wrong;
                 } elseif ($status === self::LOCKED && ! $locked($id)) {
                     $violations[] = "{$path}.{$side}: a locked relationship names {$id}, which is not locked";
                 } elseif ($status === self::LOCKED) {
@@ -830,6 +839,7 @@ final class VesselDesign
     private static function transitionViolations(array $canonical): array
     {
         [$known] = self::knownIds($canonical);
+        $joints = self::transitionIds($canonical);
         $locked = self::lockedId($canonical);
         $violations = [];
         $joined = [];
@@ -851,8 +861,10 @@ final class VesselDesign
             }
 
             foreach ((array) ($transition['between'] ?? []) as $id) {
-                if (! is_string($id) || ! isset($known[$id])) {
-                    $violations[] = "{$path}.between: ".self::label($id).' is not a declared id';
+                $wrong = self::partViolation($id, $known, $joints, "{$path}.between");
+
+                if ($wrong !== null) {
+                    $violations[] = $wrong;
                 } elseif ($status === self::LOCKED && ! $locked($id)) {
                     $violations[] = "{$path}.between: a locked transition joins {$id}, which is not locked";
                 } else {
@@ -926,7 +938,7 @@ final class VesselDesign
      */
     private static function mustPreserveViolations(array $canonical): array
     {
-        [$known] = self::knownIds($canonical);
+        $known = self::protectableIds($canonical);
         $locked = self::lockedId($canonical);
         $violations = [];
         $hasP0 = false;
@@ -957,7 +969,7 @@ final class VesselDesign
      */
     private static function forbiddenInterpretationViolations(array $canonical): array
     {
-        [$known] = self::knownIds($canonical);
+        $known = self::protectableIds($canonical);
         $locked = self::lockedId($canonical);
         $rows = self::rows($canonical['must_not_introduce'] ?? null);
         $violations = $rows === [] ? [self::CANONICAL_KEY.'.must_not_introduce: is empty'] : [];
@@ -1062,7 +1074,60 @@ final class VesselDesign
             }
         }
 
+        $joints = [];
+
+        foreach (array_keys(self::transitionIds($canonical)) as $id) {
+            if (isset($known[$id]) || isset($joints[$id])) {
+                $violations[] = self::CANONICAL_KEY.": id {$id} is used for more than one part";
+            }
+
+            $joints[$id] = true;
+        }
+
         return [$known, $violations];
+    }
+
+    /**
+     * @param  array<string, mixed>  $canonical
+     * @return array<string, true>
+     */
+    private static function transitionIds(array $canonical): array
+    {
+        $ids = [];
+
+        foreach (self::rows($canonical[self::TRANSITIONS_KEY] ?? null) as $row) {
+            if (is_string($row['id'] ?? null)) {
+                $ids[$row['id']] = true;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param  array<string, mixed>  $canonical
+     * @return array<string, true>
+     */
+    private static function protectableIds(array $canonical): array
+    {
+        [$known] = self::knownIds($canonical);
+
+        return $known + self::transitionIds($canonical);
+    }
+
+    /**
+     * @param  array<string, true>  $known
+     * @param  array<string, true>  $joints
+     */
+    private static function partViolation(mixed $id, array $known, array $joints, string $where): ?string
+    {
+        if (is_string($id) && isset($known[$id])) {
+            return null;
+        }
+
+        return is_string($id) && isset($joints[$id])
+            ? "{$where}: {$id} is a transition, which joins parts and cannot itself be a part"
+            : "{$where}: ".self::label($id).' is not a declared id';
     }
 
     /**
@@ -1084,6 +1149,12 @@ final class VesselDesign
         foreach (self::rows($canonical['configuration_states'] ?? null) as $row) {
             if (is_string($row['component_id'] ?? null) && is_string($row['feature_id'] ?? null)) {
                 $statuses[$row['component_id']] = $statuses[$row['feature_id']] ?? self::UNDETERMINED;
+            }
+        }
+
+        foreach (self::rows($canonical[self::TRANSITIONS_KEY] ?? null) as $row) {
+            if (is_string($row['id'] ?? null) && is_string($row['status'] ?? null) && ! isset($statuses[$row['id']])) {
+                $statuses[$row['id']] = $row['status'];
             }
         }
 

@@ -15,7 +15,7 @@ class PlanningStageStore
 {
     private const LEASE_SECONDS = 1900;
 
-    private const METADATA_KEY = '_meta';
+    public const METADATA_KEY = '_meta';
 
     private const PRICING_METADATA_KEYS = ['pricing', 'pricing_version'];
 

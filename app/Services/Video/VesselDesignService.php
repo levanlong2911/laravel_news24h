@@ -144,6 +144,109 @@ final class VesselDesignService
         );
     }
 
+    /**
+     * @return array{0: ?VideoPlanningStage, 1: string, 2: list<string>}
+     */
+    public function recoverFailed(string $stageId, bool $write = false): array
+    {
+        $failed = VideoPlanningStage::query()
+            ->whereKey($stageId)
+            ->where('stage', PlanningStageName::VESSEL_DESIGN->value)
+            ->where('status', VideoPlanningStageStatus::FAILED->value)
+            ->first();
+
+        if ($failed === null) {
+            return [null, 'stage_not_a_failed_design', []];
+        }
+
+        $design = json_decode((string) $failed->raw_response, true);
+        $meta = PlanningStageStore::metadataOf($failed->input_json);
+        $profile = $meta['profile'] ?? null;
+        $snapshot = $meta[ScreenplayExpansionService::PROFILE_SNAPSHOT_KEY] ?? null;
+
+        if (! is_array($design) || $design === []) {
+            return [null, 'raw_response_unusable', []];
+        }
+
+        if (! is_array($profile) || ! is_array($snapshot)) {
+            return [null, 'screenplay_profile_unknown', []];
+        }
+
+        $newer = VideoPlanningStage::query()
+            ->where('project_id', $failed->project_id)
+            ->where('stage', PlanningStageName::VESSEL_DESIGN->value)
+            ->whereIn('status', [VideoPlanningStageStatus::SUCCEEDED->value, VideoPlanningStageStatus::RUNNING->value])
+            ->where('created_at', '>', $failed->created_at)
+            ->exists();
+
+        if ($newer) {
+            return [null, 'newer_design_exists', []];
+        }
+
+        if ($this->lock(VideoProject::query()->find($failed->project_id)) !== null) {
+            return [null, 'design_anchor_already_locked', []];
+        }
+
+        $inspiration = VideoPlanningStage::query()
+            ->where('project_id', $failed->project_id)
+            ->where('stage', PlanningStageName::INSPIRATION->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->where('created_at', '<=', $failed->created_at)
+            ->orderByDesc('created_at')
+            ->first();
+        $excluded = self::excludedNames(is_array($inspiration?->output_json) ? $inspiration->output_json : []);
+
+        $violations = array_values(array_unique(array_merge(
+            (new ScreenplayValidator)->structural($design, $profile, VesselDesign::CONTRACT, $excluded),
+            VesselDesign::extractIntegrityViolations(
+                $design,
+                VesselDesign::anchorDesign($design, is_array($snapshot['prompt_compilation_policy'] ?? null) ? $snapshot['prompt_compilation_policy'] : null),
+            ),
+        )));
+
+        if ($violations !== []) {
+            return [null, 'still_invalid', $violations];
+        }
+
+        if (! $write) {
+            return [null, 'valid_dry_run', []];
+        }
+
+        $input = array_diff_key((array) $failed->input_json, [PlanningStageStore::METADATA_KEY => true]);
+        $recoveredMeta = $meta + [
+            'recovered_from_stage_id' => (string) $failed->id,
+            'recovered_at' => now()->toIso8601String(),
+        ];
+
+        [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
+            (string) $failed->project_id, PlanningStageName::VESSEL_DESIGN, $input, true, $recoveredMeta,
+        );
+
+        if ($token === null) {
+            return [null, $reason === 'claimed_by_other' ? 'screenplay_running' : $reason, []];
+        }
+
+        $recorded = $this->stageStore->finishSucceeded(
+            $claimed->id,
+            $token,
+            (string) $failed->raw_response,
+            $design + [
+                'schema_version' => VesselDesign::CONTRACT,
+                'author_model' => (string) ($failed->provider_model ?? $failed->model),
+            ],
+            [
+                'model' => $failed->model,
+                'provider_model' => $failed->provider_model,
+                'instruction_version' => $failed->instruction_version,
+                'tokens_in' => 0,
+                'tokens_out' => 0,
+                'cost_usd' => 0,
+            ],
+        );
+
+        return $recorded ? [$claimed->refresh(), 'recovered', []] : [null, 'screenplay_claim_lost', []];
+    }
+
     /** @return list<array{name: string, central_idea: string, visible_difference: string}> */
     public function previousDesigns(VideoProject $project): array
     {
