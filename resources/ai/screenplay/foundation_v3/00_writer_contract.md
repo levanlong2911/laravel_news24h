@@ -133,6 +133,10 @@ and the ending is one moment that shows what that use has come to mean. Do
 not retell the same route or the same operation in two of them. A moving
 part runs its whole cycle in at most one check before operation uses it.
 
+The ending is not a stage. It is written only in the ending field, never
+as an entry of stage_treatments, and the last stage's handover_to_next
+leads into it.
+
 Stages are not equal-length chapters. Describe each one as a stretch of
 the film and say what carries the film from each stage into the next.
 
@@ -181,16 +185,19 @@ WHAT THIS STEP RETURNS
 logline           one sentence naming the film's subject and its tension.
 premise           the five fields above.
 synopsis          the whole film in a few paragraphs, told as it unfolds.
-stage_treatments  one entry per stage, in the profile's order, each saying
-                  what the stage is dramatically for, what becomes
-                  observable in it, who takes part, and what carries the
-                  film into the next stage.
+stage_treatments  one entry for each stage of the profile's arc_stages,
+                  keyed by that stage's name, in that order, with no stage
+                  added, repeated or left out; each says what the stage is
+                  dramatically for, what becomes observable in it, who
+                  takes part, and what carries the film into the next
+                  stage.
 ending            what the last moments of the film show, and how they
                   answer the premise's question.
 
 Write stage_treatments as prose a scene designer can work from, not as a
 list of shots and not as a scene breakdown. handover_to_next on the final
-stage describes what the film leaves the viewer with.
+stage leads into the ending; what the film leaves the viewer with belongs
+in the ending field.
 
 FINAL CHECK
 
@@ -201,9 +208,11 @@ FINAL CHECK
 3. Inspections are actions, not claims of technical proof, and no field
    contains camera, shot or editing instructions.
 4. Completion hands over the controls and routines, operation shows the
-   use the design was made for, the ending is one moment, and no route or
-   operation is retold in two of them.
-5. Every quality the premise question names is shown later in the film,
+   use the design was made for, the ending is one moment written only in
+   the ending field, and no route or operation is retold in two of them.
+5. stage_treatments holds exactly the profile's arc_stages, each once, in
+   order, and nothing else.
+6. Every quality the premise question names is shown later in the film,
    and the hours of the day run in order.
-6. When there is a film_brief, every space it lists is seen in use where
+7. When there is a film_brief, every space it lists is seen in use where
    the design places it, and nothing in off_screen is an event of the film.

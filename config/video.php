@@ -840,7 +840,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/vessel_design_v1.json'),
 
-            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v1-r5'),
+            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v1-r6'),
 
             'model' => env('SCREENPLAY_DESIGN_MODEL', 'gpt-5.6-sol'),
 
@@ -865,7 +865,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/screenplay_foundation_story_v1.json'),
 
-            'prompt_version' => env('SCREENPLAY_STORY_PROMPT_VERSION', 'foundation-story-v1-r2'),
+            'prompt_version' => env('SCREENPLAY_STORY_PROMPT_VERSION', 'foundation-story-v1-r4'),
 
             'model' => env('SCREENPLAY_STORY_MODEL', 'claude-sonnet-5-5'),
 

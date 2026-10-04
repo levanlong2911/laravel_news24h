@@ -11,7 +11,7 @@ final class ScreenplayFoundationText
     {
         $version = (string) ($foundation['schema_version'] ?? '');
 
-        if ($version !== '' && ! in_array($version, ['screenplay_foundation_v1', 'screenplay_foundation_v2', 'screenplay_foundation_v3'], true)) {
+        if ($version !== '' && ! in_array($version, ['screenplay_foundation_v1', 'screenplay_foundation_v2', 'screenplay_foundation_v3', 'screenplay_foundation_v4'], true)) {
             return "Foundation version {$version} is not supported by this view.";
         }
 
