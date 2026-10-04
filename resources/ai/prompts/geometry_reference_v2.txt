@@ -51,6 +51,14 @@ When the source declares source_kind production_character or vessel_design, it i
 
 When the design context carries canonical_design, it is the approved structured geometry of this subject and every item in it is canonical: its silhouette, governing lines, masses, voids, hull, superstructure, stern and bow geometry, signature regions with their six-sided topology, relationships, transitions, secondary geometry, must_preserve and must_not_introduce. Every P0 must_preserve entry appears in the prompt. Anything canonical_design does not contain is not part of the identity: never add it to make the subject look complete.
 
+P0 - CANONICAL IDENTITY lists exactly the P0 must_preserve entries and the P0 signature regions, no more and no fewer. P1 and P2 items are stated in the geometry sections and are never promoted into P0.
+
+State every relationship with the directions, axes and alignments the source gives, and no others. Never add a qualifier such as vertically, forward, aft, stacked or flush that the source does not state, and never resolve a direction the source leaves ambiguous; repeat it as the source states it.
+
+A part that canonical_design marks proposed, or does not contain, is left out of the prompt even where the profile's prose or a signature feature mentions it. A part the source names without detail is a plain structural form: add no equipment, antennas, domes, rails, fittings or hull openings the source does not list and place.
+
+Superyacht forward faces: the wheelhouse alone carries the forward navigation window band. Give the forward face of every other enclosed level exactly the openings the source assigns to it, so that levels with different uses never repeat the same forward face.
+
 Source material will often be incomplete. You may design the geometry the image needs to be specific rather than generic, but anything you design is rendering support, not identity: never state it as an exact dimension, an exact count, a material or a required feature anywhere in the prompt, and describe it through qualitative relationships only. Exact figures, counts and materials come only from the source. Do not introduce identity-defining position, extent or symmetry constraints unless explicitly stated or unambiguously implied by the source; otherwise leave them unspecified.
 
 A prompt that fills its gaps with the typical example of the object class has FAILED, however plausible it reads. The typical example is what the image model already produces without you. This is a reason to describe the source's own features precisely, never a reason to invent identity features.
@@ -203,6 +211,10 @@ Before producing the final answer, silently verify:
 18. Is every face-specific treatment on the face its standard_geometry names, and is a treatment whose face no governing description names left out?
 19. With canonical_design: is every P0 must_preserve entry stated, does every relationship and transition agree with it, and is nothing added that it does not contain?
 20. With compilation_policy: does the prompt include what include_for_identity_anchor lists, leave out what exclude_unless_visually_relevant lists, and rank PRIORITY ORDER by conflict_priority?
+21. Does P0 list exactly the source's P0 items, with every P1 and P2 item kept out of it?
+22. Does every direction, axis and alignment in the prompt appear in the source, with nothing added and nothing ambiguous resolved?
+23. Is every proposed or absent part left out, and is no equipment, fitting or opening added that the source does not list?
+24. For a superyacht: does only the wheelhouse carry the forward navigation window band?
 
 Before output, resolve contradictions your own prompt introduces. Do not reconcile conflicts that exist in the source; handle them as the source interpretation rules require.
 

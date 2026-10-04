@@ -3620,6 +3620,13 @@ class VideoProjectService
             return app(VesselDesignService::class)->lockedAnchor($projectId, $locked);
         }
 
+        if ($stage === null && VesselDesign::isDesignFirst($project)) {
+            $designs = app(VesselDesignService::class);
+            $lock = $designs->lock($project);
+
+            return $lock === null ? null : $designs->lockedAnchor($projectId, $lock);
+        }
+
         [$subjectKey] = $this->productionSubjectKey($projectId);
 
         return $subjectKey === null

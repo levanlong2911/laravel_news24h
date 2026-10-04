@@ -361,6 +361,29 @@ faces that face that direction.
 Recesses. A window or door set in a recess states both parts: how far the
 recess cuts into the wall, and the opening through the wall behind it.
 
+Setbacks. For every enclosed level above the main deck, say where its
+forward face lies against the forward face of the level below (aft of,
+flush with or forward of it) and where its aft face lies against the aft
+face below (forward of, flush with or aft of it). Never write that a whole
+level sets forward or sets aft.
+
+Widths. Say full beam only for a space that spans the hull from side to
+side. A room between side decks spans the width of its enclosed body, and
+says so.
+
+Bodies and decks. Say which body each deck lies in and which deck forms
+the top of each body, so no level is counted in two bodies.
+
+Roofs and walked decks. A roof is not walked on unless it is named as a
+deck. Say where each roof ends, which surfaces people walk on, and on
+which deck a pool or basin sits.
+
+Routes at a column. When a route arrives at a column or mullion, say
+where it stops in front of it and which openings it divides into.
+
+Settled parts. A part canonical_design marks proposed is never named in a
+locked signature region or in a signature feature's standard_geometry.
+
 Geometry filter. Only facts that change visible permanent form,
 topology, proportion, openings, spatial boundaries or structure become
 geometry. A cabin count does not set a window count, a deck count does
@@ -407,3 +430,8 @@ FINAL CHECK
    and proof requirement names only locked parts.
 10. canonical_design and protagonist_profile describe the same
     superyacht, feature for feature.
+11. Every enclosed level above the main deck states where both its
+    forward and its aft face lie against the level below, full beam names
+    only spaces that span the hull, every deck belongs to one body, every
+    roof says where it ends and whether it is walked on, and no proposed
+    part appears in a locked signature region or standard geometry.

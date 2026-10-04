@@ -28,7 +28,7 @@ return [
 
     'prompt_version' => env(
         'IMAGE_PROMPT_VERSION',
-        'geometry-reference-v2-r8'
+        'geometry-reference-v2-r9'
     ),
 
     'character_prompt_path' => resource_path(

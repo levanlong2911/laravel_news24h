@@ -16,6 +16,7 @@ use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceView;
 use App\Video\Screenplay\LocationProfile;
 use App\Video\Screenplay\ProtagonistProfile;
+use App\Video\Screenplay\VesselDesign;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -712,7 +713,9 @@ final class ReferencePromptWriter
         }
 
         $spec = is_array($anchor->prompt_spec_json) ? $anchor->prompt_spec_json : [];
-        $stageId = $spec['screenplay_stage_id'] ?? null;
+        $designId = $spec['design_stage_id'] ?? null;
+        $fromDesign = is_string($designId) && trim($designId) !== '';
+        $stageId = $fromDesign ? $designId : ($spec['screenplay_stage_id'] ?? null);
         $subjectId = $spec['character_id'] ?? null;
 
         if (! is_string($stageId) || trim($stageId) === '' || ! is_string($subjectId) || trim($subjectId) === '') {
@@ -722,11 +725,19 @@ final class ReferencePromptWriter
         $stage = VideoPlanningStage::query()
             ->whereKey($stageId)
             ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::SCREENPLAY->value)
+            ->where('stage', $fromDesign ? PlanningStageName::VESSEL_DESIGN->value : PlanningStageName::SCREENPLAY->value)
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->first();
 
         $screenplay = is_array($stage?->output_json) ? $stage->output_json : null;
+
+        if ($fromDesign && $screenplay !== null) {
+            $screenplay = [
+                'design_thesis' => $screenplay['design_thesis'] ?? null,
+                'principal_dimensions' => $screenplay['principal_dimensions'] ?? null,
+                'characters' => [VesselDesign::vesselRow($screenplay)],
+            ];
+        }
 
         if ($stage === null || $screenplay === null) {
             return [null, 'reference_screenplay_unavailable'];
