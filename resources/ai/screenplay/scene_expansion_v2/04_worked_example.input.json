@@ -78,8 +78,6 @@
             "personality": null,
             "appearance": "A low, even body with the same profile at both ends, one continuous roof, and a long band of sliding gates along each side; a small glazed helm cabin sits on the roof at mid-length, above a crew stair.",
             "profile": {
-                "size_and_dimensions": "The hull keeps the foundation's length and beam. It is long enough for a full pier queue to reach a gate at the same moment and no wider than the cross benches and the standing band inside each row of gates. The draft is proposed in the figures; nothing else about its size is decided yet.",
-                "form_and_proportions": "The hull is a low, even body with a flat sheer and square ends of the same shape, so the profile reads the same whichever way the ferry is travelling; as a proposal, its freeboard is a short band of plating below the gate tracks. As a proposal, in plan the hull keeps its full width along almost its whole length, its sides running parallel from end to end and meeting each square end at a firm corner, so the rows of gates can run nearly the full length. The hall stands directly on the hull sides, its posts rising straight from the plating, and one continuous roof runs over it from end to end, broken only by the small helm cabin at mid-length. As a proposal, each end closes in a raked bulwark that rises a step above the main deck, square in plan, with a mooring station in its port and starboard corners and a clear strip of deck between them. Nothing at either end moves and neither end has a way down to the water; people only board through the side gates.",
                 "spatial_layout": "One passenger hall fills the main deck between the two ends. Structurally the hall is one open span under the roof, carried by the posts along its port and starboard sides. Passengers board and leave through the gates on whichever side lies against the pier. The crew reach the crew spaces inside the hull and the helm cabin above the roof by one stair at mid-length, and walk along the hall to the mooring stations at both ends. Nothing divides the hall along its length.",
                 "deck_organization": "The main deck is the hall, level from end to end and a short step above the pier, with the cross benches and a clear standing band inside each row of gates. The crew spaces lie below it, inside the hull. The roof carries the helm cabin at mid-length, reached from the hall through the hatch in its floor, and, as a proposal, a narrow walkway around the cabin for cleaning its glazing; passengers never go up there.",
                 "materials_and_finishes": "All finishes here are proposals. A painted steel hull in a dark working colour, an aluminium roof in a lighter grey, and gate leaves framed in the hull colour with clear glazing in their upper halves. Benches are plain timber slats on steel frames.",
@@ -89,15 +87,6 @@
                 "transformable_spaces": "The port or the starboard side changes from a closed glazed wall to an open edge between slim posts when its gates slide toward one end. A waist-height rail folds up inside each opening while the ferry is underway and drops flat for boarding. With one side open at a pier, the whole hall is aired across its width.",
                 "capacity": "The hall seats a full pier queue at once and has standing room inside each row of gates. There are no cabins. A crew of three runs the ferry. The seated and crew figures are proposed; the standing figure is not decided.",
                 "construction_new_build_and_refit": "A new build. The steel hull is framed from one template used at both ends, each side is framed as a row of openings with posts between them, and the aluminium roof is lifted on after the gates are hung and adjusted.",
-                "figures": [
-                    {"quantity": "length_overall", "value": "48", "unit": "m", "origin": "inherited", "source_path": "principal_dimensions.length_m", "note": "Set by the length of a full pier queue."},
-                    {"quantity": "beam", "value": "14.5", "unit": "m", "origin": "inherited", "source_path": "principal_dimensions.beam_m", "note": "Set by the cross benches and the standing bands."},
-                    {"quantity": "draft", "value": "2.2", "unit": "m", "origin": "proposed", "source_path": "", "note": "Shallow enough for harbour piers."},
-                    {"quantity": "deck_count", "value": "1", "unit": "decks", "origin": "proposed", "source_path": "", "note": "One passenger deck under one roof."},
-                    {"quantity": "guest_count", "value": "240", "unit": "guests", "origin": "proposed", "source_path": "", "note": "Seated on the cross benches."},
-                    {"quantity": "crew_count", "value": "3", "unit": "crew", "origin": "proposed", "source_path": "", "note": ""},
-                    {"quantity": "max_speed", "value": "", "unit": "kn", "origin": "undetermined", "source_path": "", "note": "Not decided by the foundation."}
-                ],
                 "signature_features": [
                     {
                         "name": "Full-length sliding side gates",
@@ -212,7 +201,7 @@
             "subject_id": "ch_ferry",
             "brief_space": "passenger_hall",
             "enclosure": "interior",
-            "layout":"One long open space on the main deck under the roof, between the raked bulwarks at the two ends, its floor level from end to end and a short step above the pier. Its port and starboard sides are each a row of openings between posts, nothing divides it along its length, and the crew stair opens through it on the centreline at mid-length, rising to the hatch in the helm cabin floor and going down to the crew spaces in the hull.",
+            "layout":"One long open space on the main deck under the roof, between the bulwarks at the two ends, its floor level from end to end and a short step above the pier. Its port and starboard sides are each a row of openings between posts, nothing divides it along its length, and the crew stair opens through it on the centreline at mid-length, rising to the hatch in the helm cabin floor and going down to the crew spaces in the hull.",
             "connections": [
                 {
                     "target_location_id": "lo_fitting_quay",
@@ -230,7 +219,7 @@
             "fixed_features": [
                 "a row of openings between posts along the port side",
                 "a row of openings between posts along the starboard side",
-                "a raked bulwark closing each end",
+                "a bulwark closing each end",
                 "the crew stair on the centreline at mid-length"
             ],
             "light_sources": [

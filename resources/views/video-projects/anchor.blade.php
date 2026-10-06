@@ -157,10 +157,11 @@
             var promptHash = form.elements.prompt_sha256;
             var hasPrompt = promptHash && promptHash.value.trim() !== '';
 
-            button.disabled = !(hasPrompt && missing.length === 0);
-            button.title = !hasPrompt
-                ? 'Chưa có anchor prompt'
-                : (missing.length ? 'Chưa chọn: ' + missing.join(', ') : '');
+            var blocked = button.hasAttribute('data-blocked');
+            button.disabled = blocked || !(hasPrompt && missing.length === 0);
+            button.title = blocked
+                ? 'Thiết kế chưa sẵn sàng'
+                : (!hasPrompt ? 'Chưa có anchor prompt' : (missing.length ? 'Chưa chọn: ' + missing.join(', ') : ''));
 
             var unit = prices[form.elements.quality.value];
             var count = parseInt(form.elements.variations.value, 10) || 1;

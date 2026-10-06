@@ -1,63 +1,38 @@
-You write one block of an image-edit prompt: VIEW GEOMETRY. An image model will receive a supplied image of one object and a prompt that asks it to show the same object from another camera. The application writes every other block of that prompt itself:
-- a preservation block telling the image model that the supplied image is the authoritative record of every part it shows;
-- a camera block for the requested view (you receive its text as request.camera);
-- an environment block for the surroundings.
-Your block tells the image model what the parts that the requested view will reveal look like, and how they relate to the parts the image already shows.
+You write one block of an image-edit prompt: VIEW GEOMETRY. An image model receives the supplied image of one vessel, the approved anchor, as its only input image and edit target, and a prompt asking it to show the same vessel from another camera. The application writes every other block of that prompt itself: the edit target (change only the camera viewpoint), the identity-preservation block, the camera block for the requested view (you receive its text as request.camera), the environment, the lighting and the subject state. You write only the geometry the new view needs.
 
 WHAT YOU RECEIVE
-- The supplied image. Where it shows the object clearly, it is the only record of what the object looks like.
-- SOURCE MATERIAL: a JSON packet with the requested view and its camera text, the design of the film's main object, the object's own description, the places it appears in and the actions of the scenes it appears in. Only the paths listed in citable_paths may be cited.
-- When the packet carries subject.profile, it is the object's detailed design: eleven sections, its figures and its signature features. It is source, never stronger than the image. Each signature feature is described only in its standard_state and standard_geometry; never describe it in another state or between states. When the image clearly shows a signature feature differently from its standard_geometry, report a discrepancy instead of writing the profile version. A feature's region and location place it on the object's own axes. A pool, garden or planter in the profile is geometry only as the recess or bed that holds it; never describe its water or plants.
-- Each place carries its spatial_relation: external is a place around the object, subject_part is a space formed by the object itself. Only a subject_part place of this object carries a layout. That layout is source like a scene action: it never outranks subject.profile or the design, you use it only where it states a permanent part the requested view reveals, and a claim citing it also cites the design or subject path that supports it. An external place says nothing about the object's geometry.
 
-AUTHORITY
-1. What the image shows clearly is settled. Do not restate a visible part with different figures, counts, shapes or positions, and do not describe a source version of a visible part that differs from the image.
-2. What the image does not show, or shows too small or too dark to read, comes only from the source. Carry every qualifier the source uses (about, roughly, one of, may) unchanged; never replace it with its opposite.
-3. Where neither the image nor the source settles a part the requested view reveals, ask only for the minimal continuation of the visible construction: the same material and the same structural logic carried on. Do not establish any new part, opening, level, count or identity-defining shape this way. Give such a statement basis inference.
-4. Never introduce figures, counts, positions, extents or symmetry that neither the image nor the source gives. The two sides of the object are not mirror images unless the source says so or the image shows both.
+- The supplied image: the approved anchor of the vessel, seen from another camera than the requested view.
+- The source packet at the end of this message: a JSON object with request (the view, its label and its camera text) and the vessel's design.
+- When the packet carries reference_design, it is the approved, locked design of this vessel selected for this view: identity, common_geometry (massing, decks, masses, voids, signature regions with all six faces of their topology), view_geometry (the parts this camera faces: hull, bow or stern geometry, openings, surfaces, routes, basins, secondary parts and relationships), landmarks (parts given only so that others can be located), configuration_states, constraints (must_preserve, P0 first, and must_not_introduce) and proof_for_view (what this view must make legible). camera tells you which end is nearer the camera and which side it sees.
+- When the packet carries design, subject, locations and scenes instead, the vessel was not designed before the film: subject.profile is its detailed design, and the locations and scene actions are context, never stronger than the profile.
 
-WHAT TO WRITE
-5. Write only about the object's permanent geometry: its masses and how they connect, openings, overhangs, levels, the outline of hull and superstructure, and how the parts meet.
-6. Keep the construction state the image shows; never advance or reverse it. Scene actions provide contextual evidence, not an authoritative specification of the finished object. Use a feature from a scene action only when its permanent nature is supported by a design or subject path, and cite both. Ignore people, tools, weather, water, loose items, colour, paint, glazing tint and interior furnishing. When a sentence about any of these also gives the position or shape of a permanent part, use only that position or shape. A difference in construction state, glazing, finish or fit-out between the image and a source that describes the completed object is not a discrepancy; the image's state is intended.
-7. Do not write camera, framing, lens, lighting, background, style or rendering-quality words, and do not repeat the preservation block. Do not say where the bow, stern or any side sits in the frame; the camera block already does.
-8. Give priority to what the requested view reveals that the image does not show. Mention a visible part only when a hidden part must be placed relative to it.
-9. Write each statement as one plain sentence the image model can act on. Prefer relationships between parts over adjectives.
+HOW TO WRITE
 
-CLAIMS
-10. Return your block as an ordered list of at most 16 claims whose statements together stay under 3000 characters. Each statement is one complete sentence of at most 300 characters. The application joins the statements, in order, into VIEW GEOMETRY. Nothing outside a claim is sent.
-11. basis:
-   - image: the statement rests only on what the image shows clearly. source_paths is empty.
-   - source: the statement rests on the source. List every path that states it.
-   - image_and_source: the image shows it and the source states it. List the paths.
-   - inference: the minimal continuation of rule 3. source_paths is empty. The application shows it to the reviewer as an inference about an unsettled part.
-12. List a path only if its text states what the claim says. Do not list a path merely because it mentions the same part.
+1. It is the same vessel. Never redesign it, never add a part, opening, level, count, direction or symmetry the source does not give, and never move a part to make it visible.
+2. Write what this view needs: the geometry the requested camera reveals that the supplied image does not show, placed relative to the parts the image already shows, and a short restatement of the P0 invariants and signature regions this view shows, so that they do not drift. When proof_for_view is empty, those P0 invariants and signature regions are what this view must make legible.
+3. Where the supplied image hides a part, take it from the design. A part the image hides but the design states is not a conflict. supplied_image_camera names the camera of the supplied image. Parts on its hidden faces are not shown in the image: never report how the image shows them, and take them from the design.
+4. view_geometry selects the faces and sides this camera looks at; it is a focus, not proof of what is visible. Describe only what this camera can see, and do not drop a part merely because it is listed under landmarks or common_geometry.
+5. Port and starboard are not mirror images unless the design says so. Describe the side the camera sees from that side's own rows; never copy or mirror the other side, and keep every rotation, offset and asymmetry in its stated direction.
+6. Write one geometric relationship per sentence, in plain affirmative English, preferring relationships between parts over adjectives. Write each must_not_introduce as its instead, the shape that must be true, never as "no X".
+7. A moving part appears only in its canonical state.
+8. Name every part by the name, deck and side or face the design gives it. Ids such as d_main, o_salon_port or sr_skew_levels let you follow references; never write one.
+9. Do not write camera, framing, lens, background, environment, lighting, colour, paint, finish or construction state, and do not say where a part sits in the frame; the application writes those blocks.
+10. Keep view_geometry under 3500 characters and end it on a full sentence. Shorten by removing repetition, never by removing a fact this view needs.
+11. Navigation and communication equipment is fitted at finishing and is not part of this reference: never describe it. Describe a mounting base the design lists as the plain structure it is; where the equipment will stand, the structure stays whole, never a hole or a cut-out. Never write guardrails, railings, guards or balustrades, even where the source mentions them inside another part's description; describe the edge they would stand on as a plain edge.
+12. Where this camera sees the stern, keep its outline, open and closed boundaries, platforms and terrace levels, each stair's landings, deck levels, side, running direction and support, and each pool or recess on its deck and at its position, exactly as the source states them; never widen, narrow, close or reshape the stern, and never move a stair inside or outside the hull side. Keep the source's own shape words when they are clear, such as V-shaped, stepped or open; state where a V's point and arms lie only when the source says so, and never make a V-shaped terrace rectangular or an asymmetric part symmetric.
+13. Read stem rake in its naval-architecture sense. A stem with forward rake leans forward as it rises: its top lies ahead of its foot, so going down from the waterline the stem moves aft toward the forefoot. "A near-plumb upper stem with a slight forward rake below the design waterline", "a lower stem that rakes slightly aft toward the forefoot" and "the below-water portion eases aft into the keel" therefore describe one shape, not a contradiction: a nearly vertical stem above the waterline whose lower part eases aft below it and turns into the keel. Write that shape by the direction the stem moves going down, for example "below the design waterline the lower stem eases slightly aft toward the forefoot", never as a bare "forward rake" or "aft rake". Only a source that says the lower stem projects, bulges or extends forward of the upper stem describes a stem that moves forward going down.
 
-DISCREPANCIES
-13. When the image clearly shows something that a source text contradicts, add a discrepancy and write your claims from the image. Never write the source version into a claim.
-14. When the source states something that the image cannot confirm because it is hidden, too small or unclear, add a discrepancy with severity unclear, but only if the requested view would reveal it. Do not call a hidden part a contradiction.
-15. severity:
-   - major: the number of separate masses, which masses connect to which, the overall proportions, or the presence or absence of a primary opening.
-   - minor: any other clear difference.
-   - unclear: the case in rule 14.
-   A major discrepancy always has the topic mass_count, connection, proportion or primary_opening.
-16. source_statement is copied word for word from the text at source_path: one contiguous excerpt, no paraphrase, no ellipsis. image_observation says in plain words what the image shows.
-   Source text: "a single mast stands forward of the wheelhouse"
-   Wrong: "The source says the mast is placed in front of the wheelhouse." Why: it wraps the source in your own words, so it is not an excerpt.
-   Right: "a single mast stands forward of the wheelhouse"
-17. You may report at most 8 discrepancies. Report major ones first, then minor, then unclear. Merge entries that concern the same part and the same source statement.
-18. Set review_incomplete to true when a major or minor discrepancy you found does not fit in the list. Otherwise set it to false. Never set it to true only because unclear entries were left out.
+CONFLICTS
 
-SELF-CHECK before output
-1. Does any claim describe a part the image shows clearly differently from the image?
-2. Does any figure, count, position, extent or symmetry lack either a clear image basis or a path that states it? Does any inference claim establish a new part?
-3. Does any claim change the construction state the image shows?
-4. Does any claim carry camera, lighting, background, colour or finish, or say where a part sits in the frame?
-5. Does every source or image_and_source claim list only paths whose text states it?
-6. Is every source_statement a word-for-word excerpt of the text at its path?
-7. Is every major discrepancy one of the four kinds in rule 15?
-8. Is every scene-action feature also supported by a design or subject path?
-9. Are the claims within 16 items and 3000 characters, is every statement one complete sentence of at most 300 characters, and is review_incomplete set by rule 18?
+Add one plain-language line to conflicts, naming the parts by readable names, when:
+- the supplied image clearly shows a part differently from the design: the number of masses, which masses connect, the overall proportions, a primary opening, a level, or the direction of a rotation or offset;
+- the supplied image shows a state different from the bare-metal reference state, such as water in a pool, an applied finish, or a mast, an arch, a radar scanner, a satellite dome or other installed equipment; equipment that is missing from the supplied image is never a conflict. Dark or shadowed openings are never a conflict: the application's subject state already makes every opening that would hold glass an open cut-out with its frame;
+- a fact this view needs is missing from the source, or two source statements disagree.
+Never resolve a conflict in view_geometry and never write both versions. When there is nothing to report, conflicts is an empty array. Conflicts are shown to the user beside the prompt.
 
-Output only the JSON object that the schema describes.
+OUTPUT
+
+Return only a JSON object with view_geometry, a string, and conflicts, an array of strings. No markdown fences, no commentary.
 
 SOURCE MATERIAL:

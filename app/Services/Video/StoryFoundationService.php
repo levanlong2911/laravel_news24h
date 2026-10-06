@@ -44,13 +44,17 @@ final class StoryFoundationService
             return [null, 'workflow_not_design_first'];
         }
 
-        $lock = $this->designs->lock($project);
+        $lock = $this->designs->anchorSelection($project);
 
         if ($lock === null) {
             return [null, 'design_anchor_not_approved'];
         }
 
-        [$design, , $reason] = $this->designs->lockedSource($projectId, $lock);
+        if ($this->designs->referenceSelection($project) === null) {
+            return [null, 'design_references_not_approved'];
+        }
+
+        [$design, , $reason] = $this->designs->selectedSource($projectId, $lock);
 
         if ($design === null) {
             return [null, $reason];
@@ -92,7 +96,20 @@ final class StoryFoundationService
         $merged['dimension_bounds'] = PlanningStageStore::metadataOf($design->input_json)['profile']['dimension_bounds']
             ?? config('video.screenplay.foundation.dimension_bounds');
 
-        $source = VesselDesign::content((array) $design->output_json);
+        $fullSource = VesselDesign::content((array) $design->output_json);
+        $gaps = VesselDesign::storyReferenceGaps((array) $design->output_json);
+
+        if ($gaps !== []) {
+            Log::error('story foundation: the story extract references parts the design does not hold, no model call made', [
+                'project_id' => $projectId,
+                'design_stage_id' => $design->id,
+                'gaps' => $gaps,
+            ]);
+
+            return [null, 'story_design_reference_missing'];
+        }
+
+        $storySource = VesselDesign::storyDesign((array) $design->output_json);
         $requirements = ['aspect_ratio' => (string) config('video.screenplay.aspect_ratio', '9:16')]
             + ($filmBrief === null ? [] : [FilmBrief::REQUIREMENT_KEY => $filmBrief]);
         $brief = $this->stageStore->latestOutputForProject($projectId, PlanningStageName::INSPIRATION);
@@ -113,7 +130,7 @@ final class StoryFoundationService
             'design_content_hash' => $sourceDesign['content_hash'],
             'anchor_artifact_sha256' => (string) ($lock['artifact_sha256'] ?? ''),
             'anchor_prompt_sha256' => (string) ($lock['prompt_sha256'] ?? ''),
-            'fingerprint' => $author->fingerprint($source, $profile, $requirements),
+            'fingerprint' => $author->fingerprint($storySource, $profile, $requirements),
         ];
 
         $meta = [
@@ -124,6 +141,7 @@ final class StoryFoundationService
             'output_schema_sha256' => hash('sha256', (string) json_encode($schema)),
             VesselDesign::SOURCE_DESIGN_KEY => $sourceDesign,
             VesselDesign::SOURCE_ANCHOR_KEY => $sourceAnchor,
+            VesselDesign::STORY_SOURCE_KEY => $storySource,
         ];
 
         [$output, $reason] = $this->runner->run(
@@ -131,7 +149,7 @@ final class StoryFoundationService
             PlanningStageName::SCREENPLAY_FOUNDATION,
             'story foundation',
             $author,
-            $source,
+            $storySource,
             $profile,
             $requirements,
             [],
@@ -140,7 +158,7 @@ final class StoryFoundationService
             $force,
             static fn (ScreenplayResult $result): array => self::assemble(
                 self::listTreatments($result->screenplay, $profile),
-                $result->authorModel, $validator, $profile, $merged, $source, $excluded, $sourceDesign, $sourceAnchor,
+                $result->authorModel, $validator, $profile, $merged, $fullSource, $excluded, $sourceDesign, $sourceAnchor,
             ),
             $schema,
         );
@@ -263,7 +281,7 @@ final class StoryFoundationService
         $merged = $meta['profile'] ?? null;
         $sourceDesign = $meta[VesselDesign::SOURCE_DESIGN_KEY] ?? null;
         $sourceAnchor = $meta[VesselDesign::SOURCE_ANCHOR_KEY] ?? null;
-        $lock = $this->designs->lock($project);
+        $lock = $this->designs->anchorSelection($project);
 
         if (! VesselDesign::isDesignFirst($project)) {
             return [null, 'workflow_not_design_first', []];
@@ -279,7 +297,7 @@ final class StoryFoundationService
             return [null, 'design_changed_since_anchor', []];
         }
 
-        [$design, , $reason] = $this->designs->lockedSource($projectId, $lock);
+        [$design, , $reason] = $this->designs->selectedSource($projectId, $lock);
 
         if ($design === null) {
             return [null, $reason, []];

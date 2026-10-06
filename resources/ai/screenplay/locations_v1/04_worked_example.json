@@ -50,7 +50,7 @@
             "subject_id": "ch_ferry",
             "brief_space": "passenger_hall",
             "enclosure": "interior",
-            "layout":"One long open space on the main deck under the roof, between the raked bulwarks at the two ends, its floor level from end to end and a short step above the pier. Its port and starboard sides are each a row of openings between posts, nothing divides it along its length, and the crew stair opens through it on the centreline at mid-length, rising to the hatch in the helm cabin floor and going down to the crew spaces in the hull.",
+            "layout":"One long open space on the main deck under the roof, between the bulwarks at the two ends, its floor level from end to end and a short step above the pier. Its port and starboard sides are each a row of openings between posts, nothing divides it along its length, and the crew stair opens through it on the centreline at mid-length, rising to the hatch in the helm cabin floor and going down to the crew spaces in the hull.",
             "connections": [
                 {
                     "target_location_id": "lo_fitting_quay",
@@ -68,7 +68,7 @@
             "fixed_features": [
                 "a row of openings between posts along the port side",
                 "a row of openings between posts along the starboard side",
-                "a raked bulwark closing each end",
+                "a bulwark closing each end",
                 "the crew stair on the centreline at mid-length"
             ],
             "light_sources": [

@@ -19,7 +19,7 @@ it, and the scenes keep it where it was.
 WHAT THE PROFILE ADDS
 
 The ferry arrives with its profile. The hall is described the way the
-profile builds it: on the main deck, between the raked bulwarks at the two
+profile builds it: on the main deck, between the bulwarks at the two
 ends, its port and starboard sides named, its floor a short step above the
 pier, the crew stair on the centreline at mid-length. The profile adds no
 place: the helm cabin and the roof walkway are not declared, because no
@@ -38,7 +38,7 @@ who waits and what arrives belong to the scenes.
 
 The ferry's hall is aboard, so it is subject_part with the ferry's id, and
 its layout keeps the shell the profile gives it: one long space under a
-roof, between the raked bulwarks, its sides a row of openings between
+roof, between the bulwarks, its sides a row of openings between
 posts, the crew stair at mid-length. The gates and benches are not among
 its fixed features, because the finishing treatment hangs the gates and
 fixes the benches; the scenes before that need the hall without them, and

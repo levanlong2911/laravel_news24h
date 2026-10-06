@@ -82,14 +82,20 @@
     },
     "protagonist_profile": true,
     "cast": "protagonist_only",
+    "design_equipment_policy": {
+        "version": 1,
+        "interdeck_elevators": "forbidden"
+    },
     "design_requirements": [
         "One central idea organizes the whole vessel: its proportions, silhouette, massing and the way its spaces are arranged.",
         "The hull, bow, superstructure, glazing, stern and the relationship between the decks speak one design language. Not every part needs to be unusual: a few strong features lead, and the other parts support them in that language.",
         "The design stays recognizable when paint, branding, loose furniture and decoration are removed.",
         "The stern is a superyacht stern: the aft decks step down toward the sea and end at a transom close to the waterline that opens onto the water. The design may reshape the steps, the terraces and the opening to serve its central idea, but never replaces them with a closed, solid or shouldered stern around a narrow opening.",
-        "The design decides for itself how many volumes it has and how they are arranged, the form of its bow, its open spaces and whether any part moves; none of these is prescribed.",
+        "Within the exclusions below, the design decides for itself how many volumes it has and how they are arranged, the form of its bow, its open spaces and whether any part moves.",
+        "Excluded organizing principle: two separate forward and aft accommodation blocks facing across a central open court, gap or waist, with or without a connecting gallery, glazed hall or bridge. Do not reuse this principle by offsetting the blocks to port and starboard, rotating the court diagonally, mirroring the arrangement or changing the number of bridges. Choose a different whole-vessel organization. Ordinary deck setbacks, local recesses and stairs are not themselves excluded.",
         "A part that changes position is optional. When the design has one, say which parts are fixed and which move, how each lies in its standard state and in each other state, where moving parts are stowed, the space they sweep while moving, and how people use it in each state.",
-        "Do not claim that the vessel or any of its parts is unique in the market or that its engineering has been proven."
+        "Do not claim that the vessel or any of its parts is unique in the market or that its engineering has been proven.",
+        "The vessel has no equipment that carries people or goods between decks: no guest, crew, service, goods or food carrier, and no such system under another name. Every deck that people reach has a declared stair or ramp route; never claim access that the routes do not design. Cranes, anchor handling and lifting during construction are not affected."
     ],
     "min_shots_per_scene": 1,
     "max_shots_per_scene": 10,
@@ -478,7 +484,9 @@
             "midbody character",
             "chine or hull-side organization when defined",
             "stern and transom geometry",
-            "relationship between hull and superstructure"
+            "relationship between hull and superstructure",
+            "design waterline",
+            "underbody and appendages"
         ],
         "superstructure": [
             "number and organization of primary masses",

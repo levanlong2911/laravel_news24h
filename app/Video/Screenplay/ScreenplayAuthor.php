@@ -127,6 +127,27 @@ final class ScreenplayAuthor
         if ($constrainedSchema !== null) {
             $outputSchema = $constrainedSchema;
         }
+
+        return $this->request($system, $userMessage, $outputSchema);
+    }
+
+    /**
+     * @param  array<string, mixed>  $outputSchema
+     *
+     * @throws ScreenplayFailure
+     */
+    public function repair(string $system, string $userMessage, array $outputSchema): ScreenplayResult
+    {
+        return $this->request($system, $userMessage, $outputSchema);
+    }
+
+    /**
+     * @param  array<string, mixed>  $outputSchema
+     *
+     * @throws ScreenplayFailure
+     */
+    private function request(string $system, string $userMessage, array $outputSchema): ScreenplayResult
+    {
         $startedAt = microtime(true);
 
         Log::info('screenplay: request started', [

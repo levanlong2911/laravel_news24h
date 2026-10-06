@@ -24,7 +24,8 @@ foundation         the selected narrative foundation: design thesis,
                    stage treatments and ending.
 characters         every participant of the film, already declared with its
                    kind; the vessel is the one protagonist, and when the
-                   film has one it carries its detailed design in profile.
+                   film has one it carries in profile the parts of its
+                   detailed design that scenes need.
 locations          every place a scene happens, already declared; a place
                    that is one of the film_brief's spaces names it in
                    brief_space.
@@ -32,9 +33,9 @@ profile            ordered stages, required stages, scene-count limits,
                    subject and location limits, the people expected at each
                    stage, and the coverage this film must answer. When the
                    vessel was designed before the film, it also carries
-                   design_geometry, the vessel's approved and locked
-                   geometry, and configuration_components, its moving
-                   components.
+                   design_geometry, the extract of the vessel's approved
+                   and locked geometry that scenes need, and
+                   configuration_components, its moving components.
 film_requirements  production constraints supplied by the application, and
                    the film_brief of this line of films when it has one.
 
@@ -88,10 +89,33 @@ stopped where that operation left it. Do not repeat the profile's figures or
 its descriptions; write what happens.
 
 When the profile carries design_geometry, it is the approved geometry of
-the vessel and governs over every other description of it. Every scene
-keeps its silhouette, masses, voids, spatial regions, relationships,
-transitions and must_preserve invariants; construction builds toward
-exactly that geometry and never toward another arrangement.
+the vessel and governs over every other description of it, the
+protagonist's profile included. Every scene keeps the masses, voids,
+spatial regions, relationships, transitions and must_preserve invariants
+it carries, and its decks, openings, surfaces, basins and routes;
+construction builds toward exactly that geometry and never toward another
+arrangement.
+
+design_geometry is an extract of the approved design, not the whole
+record. A part that is absent from it still exists; never conclude that
+the vessel lacks it, and never add a door, a stair, a piece of equipment or
+a mechanism to make up for what the extract does not give. A row marked
+landmark is there only so that the parts referring to it can be located.
+Ids such as d_main, o_salon_aft_door or r_stern_main_lower let you follow
+references; call every part by the name, deck and position the design
+gives it. When the profile and design_geometry disagree, do not pick a side
+and do not blend them: show the scene without that detail.
+
+The design describes the finished vessel. Each scene decides, through its
+subject_state progress, which parts have been built at that moment; an
+unfinished vessel is shown by leaving parts out of the progress, never by
+changing the design. Navigation and communication equipment, the rows of
+permanent_secondary_geometry with an equipment_kind, is fitted at
+finishing: a scene shows it only when its progress records it installed,
+and before that the highest deck carries only its mounting bases. The
+profile's capacity is not a number of people any
+scene must show, and its construction description is not a complete
+technical sequence: it says what the build is, not every step of it.
 
 A feature the foundation makes central, such as a part of the vessel that
 transforms, keeps its events in the film: the design decision that brings
@@ -106,7 +130,9 @@ only then does it close; it moves only with nobody on it or in its sweep.
 A scene may show only part of that order, as long as what it shows keeps it.
 A part built to carry people, such as a lift, is written as people stepping
 on, the part moving and people stepping off. The action says who operates
-each part.
+each part. People move between decks only by the stairs, ramps and lifts the
+design names; never add equipment that carries people or goods between decks
+that the design does not name.
 
 A part that opens or closes a space, such as a door, a wall, a cover or a
 platform that folds out, is used only once it has stopped. Every scene
@@ -494,6 +520,13 @@ time_jump       null, or, for a montage beat after a gap, the time or work
                 twice. No later beat begins again work a time_jump has
                 called done.
 
+The first beat of every scene has time_jump: null, including montages.
+time_jump describes only a gap after the preceding beat in the same scene.
+
+If time passed before the scene opens, establish that interval in the
+scene's opening action when relevant. Record completed off-screen work
+in subject_state.start.progress. Do not place it in b1.time_jump.
+
 A beat is a development of the story, not a shot. "The crane lowers the
 collar into the hull" is one beat, however many shots later show it. Do not
 make every small operation its own beat, and never write camera, framing
@@ -802,6 +835,8 @@ Before returning the JSON, check:
     moved or used before what holds or powers it is established? Does any continuous scene pass over a long
     routine, does any scene open and close the way its neighbour does, and
     was each duration estimated after its action was settled?
+
+19. Is beats[0].time_jump null in every scene, montages included?
 
 A structurally valid set of scenes can still be incomplete or unconvincing.
 Revise failures before returning the JSON.

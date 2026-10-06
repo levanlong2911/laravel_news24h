@@ -750,9 +750,25 @@ class VideoProjectService
         }
 
         if ($image->image_type === DesignImageStore::REFERENCE_TYPE) {
-            [$retryable, $why] = app(ReferencePromptWriter::class)->retryable($image);
+            [$retryable, $why] = app(ReferencePromptWriter::class)->retryable($image, $this->referenceAnchor($projectId));
 
             if (! $retryable) {
+                return [null, $why];
+            }
+        }
+
+        $spec = is_array($image->prompt_spec_json) ? $image->prompt_spec_json : [];
+
+        if ($image->image_type === DesignImageStore::ANCHOR_TYPE && is_string($spec['design_stage_id'] ?? null)) {
+            $size = ImageSize::tryFrom((string) ($spec['size'] ?? ''));
+
+            if ($size === null) {
+                return [null, 'anchor_prompt_unstamped'];
+            }
+
+            [$design, $why] = app(CharacterAnchorPromptService::class)->designPromptCheck($projectId, $spec, $size);
+
+            if ($design === null) {
                 return [null, $why];
             }
         }
@@ -795,18 +811,22 @@ class VideoProjectService
         $designFirst = VesselDesign::isDesignFirst(VideoProject::query()->find($projectId));
 
         if ($characterId !== null && $designFirst) {
-            $designs = app(VesselDesignService::class);
-            [$designStage, $designReason] = $designs->stageForSpec($projectId, $preview);
+            [$designStage, $designReason] = app(CharacterAnchorPromptService::class)->designPromptCheck(
+                $projectId, $preview + ['prompt_size' => $preview['size']], $size,
+            );
 
             if ($designStage === null) {
                 return [null, $designReason];
             }
 
             $subjectKey = VesselDesign::subjectKey((string) $designStage->id);
-            $designs->ensureIdentity($designStage);
+            app(VesselDesignService::class)->ensureIdentity($designStage);
             $source = [
                 'design_stage_id' => (string) $designStage->id,
                 'design_content_hash' => VesselDesign::contentHash((array) $designStage->output_json),
+                'anchor_prompt_stage_id' => (string) $preview['anchor_prompt_stage_id'],
+                'prompt_sha256' => $preview['prompt_sha256'],
+                'prompt_size' => $preview['size'],
             ];
         } elseif ($characterId !== null) {
             $screenplayStage = app(CharacterAnchorPromptService::class)->screenplayStage($projectId);
@@ -2394,16 +2414,23 @@ class VideoProjectService
             return null;
         }
 
-        $anchor = $this->productionAnchor($projectId);
+        $anchor = $this->referenceAnchor($projectId);
+        $designs = app(\App\Services\Video\VesselDesignService::class);
+        $designFirst = VesselDesign::isDesignFirst($project);
+        $anchorLock = $designFirst ? $designs->anchorSelection($project) : null;
 
         return [
             'id' => $projectId,
             'project' => $project,
+            'designFirst' => $designFirst,
+            'referenceLock' => $designFirst ? $designs->referenceSelection($project) : null,
+            'lockableReferences' => $anchorLock === null ? [] : $designs->approvedReferences($projectId, $anchorLock),
             'approvedAnchor' => $anchor,
             'referenceViews' => $this->designImageStore->referenceCellsFor($projectId),
             'referenceViewCases' => ReferenceView::menu(),
             'referenceEnvironmentCases' => ReferenceEnvironment::cases(),
             'referencePrompts' => app(ReferencePromptWriter::class)->previews($projectId, $anchor),
+            'referenceSource' => app(ReferencePromptWriter::class)->source($projectId, $anchor),
         ];
     }
 
@@ -2413,12 +2440,11 @@ class VideoProjectService
      */
     public function writeReferencePrompt(string $projectId, array $data): array
     {
-        $result = $this->productionAnchor($projectId);
+        $result = $this->referenceAnchor($projectId);
         return app(ReferencePromptWriter::class)->write(
             $projectId,
             $result,
             ReferenceView::from((string) $data['view']),
-            (bool) ($data['force'] ?? false),
         );
     }
 
@@ -2426,20 +2452,18 @@ class VideoProjectService
      * @param  array<string, mixed>  $data
      * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
      */
-    public function renderReferenceDirect(string $projectId, string $creator, array $data, ?string $actorId = null): array
+    public function renderReferenceDirect(string $projectId, string $creator, array $data): array
     {
         $view = ReferenceView::from((string) $data['view']);
         $environment = ReferenceEnvironment::from((string) $data['environment']);
 
         [$ready, $why] = app(ReferencePromptWriter::class)->renderable(
             $projectId,
-            $this->productionAnchor($projectId),
+            $this->referenceAnchor($projectId),
             (string) $data['reference_prompt_stage_id'],
             $view,
             $environment,
             (string) $data['prompt_sha256'],
-            (bool) ($data['acknowledge_discrepancies'] ?? false),
-            $actorId,
         );
 
         if ($ready === null) {
@@ -2469,7 +2493,7 @@ class VideoProjectService
             'model' => (string) $data['model'],
             'quality' => (string) $data['quality'],
             'size' => (string) $data['size'],
-        ] + ($ready['discrepancy_ack'] === null ? [] : ['discrepancy_ack' => $ready['discrepancy_ack']]));
+        ]);
 
         if ($image === null) {
             return [null, $reason];
@@ -3610,6 +3634,20 @@ class VideoProjectService
             : [$subjectKey, 'ok']);
     }
 
+    private function referenceAnchor(string $projectId): ?VideoDesignImage
+    {
+        $project = VideoProject::query()->find($projectId);
+
+        if (! VesselDesign::isDesignFirst($project)) {
+            return $this->productionAnchor($projectId);
+        }
+
+        $designs = app(VesselDesignService::class);
+        $lock = $designs->anchorSelection($project);
+
+        return $lock === null ? null : $designs->anchorBySource($projectId, $lock);
+    }
+
     private function productionAnchor(string $projectId): ?VideoDesignImage
     {
         $project = VideoProject::query()->find($projectId);
@@ -3617,14 +3655,14 @@ class VideoProjectService
         $locked = is_array($stage?->output_json) ? ($stage->output_json[VesselDesign::SOURCE_ANCHOR_KEY] ?? null) : null;
 
         if (is_array($locked)) {
-            return app(VesselDesignService::class)->lockedAnchor($projectId, $locked);
+            return app(VesselDesignService::class)->anchorBySource($projectId, $locked);
         }
 
         if ($stage === null && VesselDesign::isDesignFirst($project)) {
             $designs = app(VesselDesignService::class);
-            $lock = $designs->lock($project);
+            $lock = $designs->anchorSelection($project);
 
-            return $lock === null ? null : $designs->lockedAnchor($projectId, $lock);
+            return $lock === null ? null : $designs->anchorBySource($projectId, $lock);
         }
 
         [$subjectKey] = $this->productionSubjectKey($projectId);
@@ -4023,6 +4061,11 @@ class VideoProjectService
                 'design_content_hash' => isset($character['design_content_hash'])
                     ? (string) $character['design_content_hash']
                     : null,
+                'anchor_prompt_stage_id' => isset($character['anchor_prompt_stage_id'])
+                    ? (string) $character['anchor_prompt_stage_id']
+                    : null,
+                'source_hash' => isset($character['source_hash']) ? (string) $character['source_hash'] : null,
+                'skill_hash' => isset($character['skill_hash']) ? (string) $character['skill_hash'] : null,
                 'stage' => $stage->value,
                 'viewpoint' => $viewpoint->value,
                 'size' => $size->value,

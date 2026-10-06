@@ -6,7 +6,8 @@
         "design_thesis",
         "principal_dimensions",
         "protagonist_profile",
-        "canonical_design"
+        "canonical_design",
+        "geometry_links"
     ],
     "properties": {
         "vessel": {
@@ -133,7 +134,7 @@
                 "deck_organization": {
                     "type": "string",
                     "minLength": 40,
-                    "maxLength": 2000
+                    "maxLength": 4000
                 },
                 "materials_and_finishes": {
                     "type": "string",
@@ -434,7 +435,13 @@
                 "configuration_states",
                 "must_preserve",
                 "must_not_introduce",
-                "reference_proof_requirements"
+                "reference_proof_requirements",
+                "geometry_model",
+                "decks",
+                "openings",
+                "surfaces",
+                "basins",
+                "routes"
             ],
             "properties": {
                 "design_identity": {
@@ -484,6 +491,7 @@
                     "required": [
                         "overall",
                         "masses",
+                        "vertical",
                         "signature_regions",
                         "status"
                     ],
@@ -497,6 +505,11 @@
                             "type": "string",
                             "minLength": 20,
                             "maxLength": 800
+                        },
+                        "vertical": {
+                            "type": "string",
+                            "minLength": 60,
+                            "maxLength": 600
                         },
                         "signature_regions": {
                             "type": "string",
@@ -744,6 +757,8 @@
                         "hull_side_organization",
                         "stern_and_transom",
                         "hull_superstructure_relationship",
+                        "design_waterline",
+                        "underbody_and_appendages",
                         "status"
                     ],
                     "properties": {
@@ -788,6 +803,16 @@
                             "maxLength": 600
                         },
                         "hull_superstructure_relationship": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 600
+                        },
+                        "design_waterline": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 600
+                        },
+                        "underbody_and_appendages": {
                             "type": "string",
                             "minLength": 10,
                             "maxLength": 600
@@ -964,6 +989,7 @@
                         "required": [
                             "feature_id",
                             "feature",
+                            "kind",
                             "priority",
                             "description",
                             "topology",
@@ -983,6 +1009,13 @@
                                 "type": "string",
                                 "minLength": 3,
                                 "maxLength": 80
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "fixed",
+                                    "transforming"
+                                ]
                             },
                             "priority": {
                                 "type": "string",
@@ -1075,7 +1108,9 @@
                                         "profile_starboard",
                                         "head_on_bow",
                                         "head_on_stern",
-                                        "plan_above"
+                                        "plan_above",
+                                        "low_angle_bow_port",
+                                        "high_angle_bow_port"
                                     ]
                                 }
                             },
@@ -1102,6 +1137,7 @@
                             "boundaries",
                             "connections",
                             "circulation",
+                            "exterior_role",
                             "status"
                         ],
                         "properties": {
@@ -1133,6 +1169,15 @@
                                 "type": "string",
                                 "minLength": 3,
                                 "maxLength": 400
+                            },
+                            "exterior_role": {
+                                "type": "string",
+                                "enum": [
+                                    "exterior",
+                                    "interior_affects_exterior",
+                                    "interior_only",
+                                    "undetermined"
+                                ]
                             },
                             "status": {
                                 "type": "string",
@@ -1275,6 +1320,8 @@
                             "element",
                             "position",
                             "description",
+                            "form",
+                            "equipment_kind",
                             "status"
                         ],
                         "properties": {
@@ -1296,6 +1343,29 @@
                                 "type": "string",
                                 "minLength": 10,
                                 "maxLength": 400
+                            },
+                            "form": {
+                                "type": "string",
+                                "enum": [
+                                    "enclosure",
+                                    "open_structure",
+                                    "surface_detail"
+                                ]
+                            },
+                            "equipment_kind": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "enum": [
+                                    "radar_scanner",
+                                    "satellite_dome",
+                                    "navigation_light",
+                                    "horn",
+                                    "whip_antenna",
+                                    "other",
+                                    null
+                                ]
                             },
                             "status": {
                                 "type": "string",
@@ -1529,10 +1599,462 @@
                                         "profile_starboard",
                                         "head_on_bow",
                                         "head_on_stern",
-                                        "plan_above"
+                                        "plan_above",
+                                        "low_angle_bow_port",
+                                        "high_angle_bow_port"
                                     ]
                                 }
                             }
+                        }
+                    }
+                },
+                "geometry_model": {
+                    "type": "string",
+                    "enum": [
+                        "typed"
+                    ]
+                },
+                "decks": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "name",
+                            "level",
+                            "body",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "name": {
+                                "type": "string",
+                                "minLength": 2,
+                                "maxLength": 60
+                            },
+                            "level": {
+                                "type": "integer"
+                            },
+                            "body": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "openings": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "deck",
+                            "face",
+                            "kind",
+                            "host",
+                            "serves",
+                            "exterior_role",
+                            "profile_paths",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "profile_paths": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z_]+(\\.[a-z0-9_]+)*$"
+                                }
+                            },
+                            "deck": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "face": {
+                                "type": "string",
+                                "enum": [
+                                    "forward",
+                                    "aft",
+                                    "port",
+                                    "starboard",
+                                    "upward",
+                                    "downward"
+                                ]
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "glazing",
+                                    "doorway",
+                                    "hatch",
+                                    "open_void",
+                                    "movable_closure"
+                                ]
+                            },
+                            "host": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "serves": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "exterior_role": {
+                                "type": "string",
+                                "enum": [
+                                    "exterior",
+                                    "interior_affects_exterior",
+                                    "interior_only",
+                                    "undetermined"
+                                ]
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "surfaces": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "deck",
+                            "kind",
+                            "relative_to",
+                            "relation",
+                            "side",
+                            "exterior_role",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "deck": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "deck_floor",
+                                    "open_deck",
+                                    "terrace",
+                                    "landing",
+                                    "walkway",
+                                    "platform"
+                                ]
+                            },
+                            "relative_to": {
+                                "description": "ID of a surface, primary mass, primary void, spatial topology region, basin, or reserved hull; null only with relation none.",
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "relation": {
+                                "type": "string",
+                                "enum": [
+                                    "none",
+                                    "forward_of",
+                                    "aft_of",
+                                    "above",
+                                    "below",
+                                    "beside",
+                                    "within",
+                                    "around"
+                                ]
+                            },
+                            "side": {
+                                "type": "string",
+                                "enum": [
+                                    "port",
+                                    "starboard",
+                                    "centerline",
+                                    "both",
+                                    "unspecified"
+                                ]
+                            },
+                            "exterior_role": {
+                                "type": "string",
+                                "enum": [
+                                    "exterior",
+                                    "interior_affects_exterior",
+                                    "interior_only",
+                                    "undetermined"
+                                ]
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "basins": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "surface",
+                            "orientation",
+                            "water_level",
+                            "access_routes",
+                            "exterior_role",
+                            "profile_paths",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "profile_paths": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z_]+(\\.[a-z0-9_]+)*$"
+                                }
+                            },
+                            "surface": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "orientation": {
+                                "type": "string",
+                                "enum": [
+                                    "fore_and_aft",
+                                    "athwartships",
+                                    "square_or_round"
+                                ]
+                            },
+                            "water_level": {
+                                "type": "string",
+                                "enum": [
+                                    "below_surface",
+                                    "flush_with_surface",
+                                    "raised_above_surface"
+                                ]
+                            },
+                            "access_routes": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                                }
+                            },
+                            "exterior_role": {
+                                "type": "string",
+                                "enum": [
+                                    "exterior",
+                                    "interior_affects_exterior",
+                                    "interior_only",
+                                    "undetermined"
+                                ]
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "id",
+                            "kind",
+                            "from",
+                            "to",
+                            "direction",
+                            "support",
+                            "exterior_role",
+                            "profile_paths",
+                            "status"
+                        ],
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "stair",
+                                    "ramp",
+                                    "lift",
+                                    "walkway"
+                                ]
+                            },
+                            "from": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "deck",
+                                    "place"
+                                ],
+                                "properties": {
+                                    "deck": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                                    },
+                                    "place": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                                    }
+                                }
+                            },
+                            "to": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "deck",
+                                    "place"
+                                ],
+                                "properties": {
+                                    "deck": {
+                                        "type": "string",
+                                        "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                                    },
+                                    "place": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                                    }
+                                }
+                            },
+                            "direction": {
+                                "type": "string",
+                                "enum": [
+                                    "forward",
+                                    "aft",
+                                    "port",
+                                    "starboard",
+                                    "inboard",
+                                    "outboard",
+                                    "vertical"
+                                ]
+                            },
+                            "support": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 300
+                            },
+                            "profile_paths": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z_]+(\\.[a-z0-9_]+)*$"
+                                }
+                            },
+                            "exterior_role": {
+                                "type": "string",
+                                "enum": [
+                                    "exterior",
+                                    "interior_affects_exterior",
+                                    "interior_only",
+                                    "undetermined"
+                                ]
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "locked",
+                                    "proposed",
+                                    "undetermined"
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "geometry_links": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "profile_path",
+                    "role",
+                    "refs"
+                ],
+                "properties": {
+                    "profile_path": {
+                        "type": "string",
+                        "pattern": "^[a-z_]+(\\.[a-z0-9_]+)*$"
+                    },
+                    "role": {
+                        "type": "string",
+                        "enum": [
+                            "deck",
+                            "opening",
+                            "surface",
+                            "basin",
+                            "route",
+                            "region",
+                            "mass",
+                            "void",
+                            "space"
+                        ]
+                    },
+                    "refs": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_]{1,39}$"
                         }
                     }
                 }

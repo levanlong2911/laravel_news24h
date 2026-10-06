@@ -158,6 +158,7 @@
         "proportion_system": {
             "overall": "Long and low: the hull is a little more than three times as long as it is wide, and the roof stands about one storey of headroom above the main deck.",
             "masses": "The hall runs almost the full length of the hull; the helm cabin is a small fraction of the hall's length and stands well under its own width above the roof.",
+            "vertical": "The freeboard is the same short band at both ends and amidships. The hall rises about three times that band above the sheer, the helm cabin adds about half the hall's height again, and the draft is a little deeper than the freeboard.",
             "signature_regions": "The gate band takes nearly the whole side between the end bulwarks; the helm cabin is the only volume above the roof line.",
             "status": "locked"
         },
@@ -231,6 +232,8 @@
             "hull_side_organization": "Plain plating below the gate band, which carries the outer track.",
             "stern_and_transom": "The aft end repeats the forward end exactly.",
             "hull_superstructure_relationship": "The hall stands directly on the hull sides with no setback, so the gate band continues the hull side upward.",
+            "design_waterline": "Level from end to end, a short band of plating below the gate track at both square ends and amidships.",
+            "underbody_and_appendages": "A flat-bottomed hull with one rudder and one propeller under each square end; it has no keel fin, no bulb, no stabiliser fins and no thruster tunnels.",
             "status": "locked"
         },
         "superstructure_geometry": {
@@ -263,6 +266,7 @@
             {
                 "feature_id": "sr_side_gates",
                 "feature": "Full-length sliding side gates",
+                "kind": "transforming",
                 "priority": "P0",
                 "description": "A row of glazed sliding gate leaves between slim posts along almost the whole length of each side of the hall.",
                 "topology": {
@@ -286,6 +290,7 @@
             {
                 "feature_id": "sr_helm_cabin",
                 "feature": "Mid-length helm cabin facing both ends",
+                "kind": "fixed",
                 "priority": "P0",
                 "description": "A small box glazed on all four sides standing on the roof at mid-length on the centreline.",
                 "topology": {
@@ -309,6 +314,7 @@
             {
                 "feature_id": "sr_boarding_rail",
                 "feature": "Folding boarding rail inside each opening",
+                "kind": "transforming",
                 "priority": "P2",
                 "description": "A waist-height rail spanning each gate opening just inside the leaves.",
                 "topology": {
@@ -337,6 +343,7 @@
                 "boundaries": "The gate bands port and starboard, the end bulwarks fore and aft.",
                 "connections": "The pier through an open side; the crew stair at mid-length.",
                 "circulation": "Passengers cross the width; crew go up the stair to the helm cabin.",
+                "exterior_role": "interior_affects_exterior",
                 "status": "locked"
             },
             {
@@ -346,6 +353,7 @@
                 "boundaries": "The helm cabin inside, the roof edge outside.",
                 "connections": "The helm cabin's port door.",
                 "circulation": "Crew only, for cleaning the cabin glazing.",
+                "exterior_role": "exterior",
                 "status": "proposed"
             }
         ],
@@ -444,6 +452,8 @@
                 "element": "End decks",
                 "position": "At both ends, between the hall and the raked bulwark.",
                 "description": "A short clear strip of deck across the full width at each end, open to the sky.",
+                "form": "surface_detail",
+                "equipment_kind": null,
                 "status": "proposed"
             },
             {
@@ -451,7 +461,63 @@
                 "element": "Mooring stations",
                 "position": "In the port and starboard corners of both end decks.",
                 "description": "A pair of bollards and a fairlead in each corner, inside the bulwark.",
+                "form": "open_structure",
+                "equipment_kind": null,
                 "status": "proposed"
+            },
+            {
+                "id": "s_helm_glazing_recess",
+                "element": "Helm cabin glazing recess",
+                "position": "Around the forward, aft, port and starboard faces of the Helm cabin, holding the four helm cabin glazing openings.",
+                "description": "A shallow recess cut a hand's width into each cabin wall, with a solid sill below the glazing and a narrow head above it.",
+                "form": "surface_detail",
+                "equipment_kind": null,
+                "status": "locked"
+            },
+            {
+                "id": "s_radar_base",
+                "element": "Radar mounting base",
+                "position": "On the centerline at the forward part of the Helm cabin roof.",
+                "description": "A short welded plinth, a small fraction of the cabin's width, that carries the radar.",
+                "form": "surface_detail",
+                "equipment_kind": null,
+                "status": "locked"
+            },
+            {
+                "id": "s_radar",
+                "element": "Radar scanner",
+                "position": "On the centerline at the forward part of the Helm cabin roof, on the radar mounting base.",
+                "description": "One slim horizontal bar antenna on a short pedestal, about the cabin's width, the highest piece of equipment so its sweep clears everything.",
+                "form": "open_structure",
+                "equipment_kind": "radar_scanner",
+                "status": "locked"
+            },
+            {
+                "id": "s_light_port",
+                "element": "Port side light",
+                "position": "On the port edge of the Helm cabin roof, at its forward corner.",
+                "description": "A small light box facing forward and to port.",
+                "form": "surface_detail",
+                "equipment_kind": "navigation_light",
+                "status": "locked"
+            },
+            {
+                "id": "s_light_starboard",
+                "element": "Starboard side light",
+                "position": "On the starboard edge of the Helm cabin roof, at its forward corner.",
+                "description": "A small light box facing forward and to starboard.",
+                "form": "surface_detail",
+                "equipment_kind": "navigation_light",
+                "status": "locked"
+            },
+            {
+                "id": "s_horn",
+                "element": "Horn",
+                "position": "On the centerline of the Helm cabin roof, aft of the radar mounting base.",
+                "description": "One short horn on a bracket, facing forward.",
+                "form": "open_structure",
+                "equipment_kind": "horn",
+                "status": "locked"
             }
         ],
         "appearance_identity": {
@@ -584,6 +650,41 @@
                     "profile_port"
                 ]
             }
+        ],
+        "geometry_model": "typed",
+        "decks": [
+            {"id": "d_crew", "name": "Crew spaces", "level": 0, "body": "hull", "status": "locked"},
+            {"id": "d_main", "name": "Main deck", "level": 1, "body": "m_hall", "status": "locked"},
+            {"id": "d_roof", "name": "Roof", "level": 2, "body": "m_hall", "status": "locked"},
+            {"id": "d_helm", "name": "Helm cabin", "level": 3, "body": "m_helm_cabin", "status": "locked"}
+        ],
+        "openings": [
+            {"id": "o_gates_port", "deck": "d_main", "face": "port", "kind": "movable_closure", "host": "m_hall", "serves": "v_hall", "exterior_role": "exterior", "profile_paths": ["windows_and_glazing", "interior_spaces.0.access"], "status": "locked"},
+            {"id": "o_gates_starboard", "deck": "d_main", "face": "starboard", "kind": "movable_closure", "host": "m_hall", "serves": "v_hall", "exterior_role": "exterior", "profile_paths": ["windows_and_glazing", "interior_spaces.0.access"], "status": "locked"},
+            {"id": "o_helm_forward", "deck": "d_helm", "face": "forward", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "exterior_role": "exterior", "profile_paths": ["windows_and_glazing"], "status": "locked"},
+            {"id": "o_helm_aft", "deck": "d_helm", "face": "aft", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "exterior_role": "exterior", "profile_paths": ["windows_and_glazing"], "status": "locked"},
+            {"id": "o_helm_port", "deck": "d_helm", "face": "port", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "exterior_role": "exterior", "profile_paths": ["windows_and_glazing"], "status": "locked"},
+            {"id": "o_helm_starboard", "deck": "d_helm", "face": "starboard", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "exterior_role": "exterior", "profile_paths": ["windows_and_glazing"], "status": "locked"},
+            {"id": "o_helm_hatch", "deck": "d_helm", "face": "downward", "kind": "hatch", "host": "m_helm_cabin", "serves": "v_hall", "exterior_role": "interior_only", "profile_paths": ["deck_organization"], "status": "locked"},
+            {"id": "o_walkway_door", "deck": "d_helm", "face": "port", "kind": "doorway", "host": "m_helm_cabin", "serves": "f_roof_walkway", "exterior_role": "exterior", "profile_paths": ["deck_organization"], "status": "proposed"}
+        ],
+        "surfaces": [
+            {"id": "f_crew_floor", "deck": "d_crew", "kind": "deck_floor", "relative_to": "hull", "relation": "within", "side": "both", "exterior_role": "interior_only", "status": "locked"},
+            {"id": "f_hall_floor", "deck": "d_main", "kind": "deck_floor", "relative_to": "v_hall", "relation": "within", "side": "both", "exterior_role": "interior_affects_exterior", "status": "locked"},
+            {"id": "f_helm_floor", "deck": "d_helm", "kind": "deck_floor", "relative_to": "m_helm_cabin", "relation": "within", "side": "both", "exterior_role": "interior_affects_exterior", "status": "locked"},
+            {"id": "f_roof_walkway", "deck": "d_roof", "kind": "walkway", "relative_to": "m_helm_cabin", "relation": "around", "side": "both", "exterior_role": "exterior", "status": "proposed"}
+        ],
+        "basins": [],
+        "routes": [
+            {"id": "r_crew_stair_lower", "kind": "stair", "from": {"deck": "d_crew", "place": "f_crew_floor"}, "to": {"deck": "d_main", "place": "f_hall_floor"}, "direction": "vertical", "support": "The crew stair at mid-length, inside the hull below the hall.", "exterior_role": "interior_only", "profile_paths": ["spatial_layout", "interior_spaces.0.access"], "status": "locked"},
+            {"id": "r_crew_stair_upper", "kind": "stair", "from": {"deck": "d_main", "place": "f_hall_floor"}, "to": {"deck": "d_helm", "place": "f_helm_floor"}, "direction": "vertical", "support": "The same crew stair rising through the roof to the hatch in the helm cabin floor.", "exterior_role": "interior_affects_exterior", "profile_paths": ["spatial_layout", "deck_organization", "interior_spaces.0.access"], "status": "locked"}
         ]
-    }
+    },
+    "geometry_links": [
+        {"profile_path": "deck_organization", "role": "deck", "refs": ["d_crew", "d_main", "d_roof", "d_helm"]},
+        {"profile_path": "interior_spaces.0", "role": "deck", "refs": ["d_main"]},
+        {"profile_path": "signature_features.0", "role": "region", "refs": ["sr_side_gates"]},
+        {"profile_path": "signature_features.1", "role": "region", "refs": ["sr_helm_cabin"]},
+        {"profile_path": "signature_features.2", "role": "region", "refs": ["sr_boarding_rail"]}
+    ]
 }

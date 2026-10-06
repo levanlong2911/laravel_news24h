@@ -156,7 +156,13 @@ final class ProtagonistProfile
 
     public const SECTION_MAX = 2000;
 
+    /** @var array<string, int> */
+    public const SECTION_MAXIMA = ['deck_organization' => 4000];
+
     public const FEATURE_FIELD_MAX = 2000;
+
+    /** @var list<string> */
+    public const FEATURE_PROSE_FIELDS = ['location', 'visual_difference', 'standard_geometry'];
 
     public const NOTE_MAX = 200;
 
@@ -179,6 +185,41 @@ final class ProtagonistProfile
     /**
      * @param  array<string, mixed>  $profile
      */
+    public static function endsAsSentence(string $text): bool
+    {
+        return preg_match('/[.!?]["\')\]]*$/u', rtrim($text)) === 1;
+    }
+
+    /** @return list<string> */
+    public static function incompleteTexts(mixed $profile, string $at): array
+    {
+        if (! is_array($profile)) {
+            return [];
+        }
+
+        $violations = [];
+
+        foreach (self::SECTIONS as $section) {
+            $text = $profile[$section] ?? null;
+
+            if (is_string($text) && trim($text) !== '' && ! self::endsAsSentence($text)) {
+                $violations[] = "{$at}.{$section}: ends mid-sentence, the text is incomplete";
+            }
+        }
+
+        foreach (is_array($profile['signature_features'] ?? null) ? $profile['signature_features'] : [] as $index => $feature) {
+            foreach (self::FEATURE_PROSE_FIELDS as $field) {
+                $text = is_array($feature) ? ($feature[$field] ?? null) : null;
+
+                if (is_string($text) && trim($text) !== '' && ! self::endsAsSentence($text)) {
+                    $violations[] = "{$at}.signature_features[{$index}].{$field}: ends mid-sentence, the text is incomplete";
+                }
+            }
+        }
+
+        return $violations;
+    }
+
     public static function enabled(array $profile): bool
     {
         return ($profile[self::PROFILE_FLAG] ?? false) === true;

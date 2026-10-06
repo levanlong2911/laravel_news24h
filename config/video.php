@@ -840,7 +840,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/vessel_design_v1.json'),
 
-            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v1-r6'),
+            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v1-r28'),
 
             'model' => env('SCREENPLAY_DESIGN_MODEL', 'gpt-5.6-sol'),
 
@@ -850,7 +850,21 @@ return [
 
             'effort' => env('SCREENPLAY_DESIGN_EFFORT', 'high'),
 
-            'timeout_seconds' => (int) env('SCREENPLAY_DESIGN_TIMEOUT_SECONDS', 900),
+            'timeout_seconds' => (int) env('SCREENPLAY_DESIGN_TIMEOUT_SECONDS', 1800),
+
+            'repair' => [
+                'enabled' => (bool) env('SCREENPLAY_DESIGN_REPAIR_ENABLED', true),
+
+                'max_openings' => (int) env('SCREENPLAY_DESIGN_REPAIR_MAX_OPENINGS', 8),
+
+                'max_tokens' => (int) env('SCREENPLAY_DESIGN_REPAIR_MAX_TOKENS', 8000),
+
+                'effort' => env('SCREENPLAY_DESIGN_REPAIR_EFFORT', 'medium'),
+
+                'timeout_seconds' => (int) env('SCREENPLAY_DESIGN_REPAIR_TIMEOUT_SECONDS', 300),
+
+                'lease_margin_seconds' => 60,
+            ],
 
             /** Attempt count, not retries: 1 means one HTTP request. */
             'retry_times' => (int) env('SCREENPLAY_DESIGN_RETRY_TIMES', 1),
@@ -865,7 +879,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/screenplay_foundation_story_v1.json'),
 
-            'prompt_version' => env('SCREENPLAY_STORY_PROMPT_VERSION', 'foundation-story-v1-r4'),
+            'prompt_version' => env('SCREENPLAY_STORY_PROMPT_VERSION', 'foundation-story-v1-r7'),
 
             'model' => env('SCREENPLAY_STORY_MODEL', 'claude-sonnet-5-5'),
 
@@ -911,7 +925,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/screenplay_locations_v3.json'),
 
-            'prompt_version' => env('SCREENPLAY_LOCATIONS_PROMPT_VERSION', 'locations-v3-r2'),
+            'prompt_version' => env('SCREENPLAY_LOCATIONS_PROMPT_VERSION', 'locations-v3-r4'),
 
             'model' => env('SCREENPLAY_LOCATIONS_MODEL', 'gpt-5.6-sol'),
 
@@ -942,7 +956,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/screenplay_scene_expansion_v4.json'),
 
-            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v4-r6'),
+            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v4-r9'),
 
             'model' => env('SCREENPLAY_SCENES_MODEL', 'claude-sonnet-5-5'),
 

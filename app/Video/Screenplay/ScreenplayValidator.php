@@ -607,6 +607,13 @@ final class ScreenplayValidator
                 FilmBrief::profileSpaces($profile),
             ),
             $this->sourceFactsIn($texts, $excludedNames),
+            VesselDesign::incompleteVesselTexts($design),
+            VesselDesign::typedGeometryViolations($design),
+            VesselDesign::equipmentViolations($design, $profile),
+            VesselDesign::extractIntegrityViolations(
+                $design,
+                VesselDesign::lockedDesign($design, is_array($profile[VesselDesign::POLICY_KEY] ?? null) ? $profile[VesselDesign::POLICY_KEY] : null),
+            ),
         )));
     }
 
@@ -1175,12 +1182,15 @@ final class ScreenplayValidator
 
         foreach (ProtagonistProfile::SECTIONS as $section) {
             $length = is_string($profile[$section] ?? null) ? mb_strlen(trim($profile[$section])) : null;
+            $max = ProtagonistProfile::SECTION_MAXIMA[$section] ?? ProtagonistProfile::SECTION_MAX;
 
-            if ($length === null || $length < ProtagonistProfile::SECTION_MIN || $length > ProtagonistProfile::SECTION_MAX) {
+            if ($length === null || $length < ProtagonistProfile::SECTION_MIN || $length > $max) {
                 $violations[] = "{$at}.{$section}: must be text of ".ProtagonistProfile::SECTION_MIN
-                    .' to '.ProtagonistProfile::SECTION_MAX.' characters';
+                    .' to '.$max.' characters';
             }
         }
+
+        $violations = array_merge($violations, ProtagonistProfile::incompleteTexts($profile, $at));
 
         $figures = $profile['figures'] ?? null;
 

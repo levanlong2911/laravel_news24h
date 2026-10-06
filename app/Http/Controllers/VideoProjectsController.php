@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AnchorStage;
+use App\Enums\DesignImageStatus;
 use App\Enums\ImageModel;
 use App\Enums\ImageQuality;
 use App\Enums\ImageSize;
@@ -117,9 +118,22 @@ class VideoProjectsController extends Controller
             $characterId = $character['id'] ?? null;
             $preview = $this->videoProjectService->anchorPromptPreview($project->id, $characterId);
             $submitted = $submittedFor === (string) $characterId;
+            $designed = is_string($character['design_stage_id'] ?? null);
+            $stalePrompt = $designed && $preview !== null && ! VesselDesign::stampedFor($preview, $character);
+            $preview = $stalePrompt ? null : $preview;
+            $rowCells = array_values(array_filter($cells, static fn(array $cell): bool => $character === null
+                || ($cell['character_id'] ?? null) === $characterId
+                || (($cell['character_id'] ?? null) === null && $characterId === $primaryObjectId)));
 
             $anchorRows[] = [
                 'character' => $character,
+                'stale_prompt' => $stalePrompt,
+                'conflicts' => $designed && $preview !== null
+                    ? $this->characterAnchorPromptService->promptConflicts($preview['anchor_prompt_stage_id'] ?? null)
+                    : [],
+                'blockers' => array_map(fn (string $reason): string => $this->anchorMessage($reason), $character['anchor_blockers'] ?? []),
+                'approved' => collect($rowCells)->contains(static fn(array $cell): bool => $cell['status'] === DesignImageStatus::APPROVED->value
+                    && (! $designed || VesselDesign::stampedFor($cell, $character))),
                 'prompt' => $preview['prompt'] ?? null,
                 'prompt_hash' => $preview['prompt_sha256'] ?? null,
                 'prompt_version' => $preview['lineage']['prompt_version'] ?? null,
@@ -127,9 +141,7 @@ class VideoProjectsController extends Controller
                 'model' => ImageModel::tryFrom((string) ($submitted ? old('model') : ($preview['lineage']['model'] ?? ''))),
                 'quality' => $submitted ? ImageQuality::tryFrom((string) old('quality', '')) : null,
                 'variations' => ImageVariations::tryFrom((int) ($submitted ? old('variations', 1) : 1)),
-                'cells' => array_values(array_filter($cells, static fn(array $cell): bool => $character === null
-                    || ($cell['character_id'] ?? null) === $characterId
-                    || (($cell['character_id'] ?? null) === null && $characterId === $primaryObjectId))),
+                'cells' => $rowCells,
             ];
         }
 
@@ -206,7 +218,6 @@ class VideoProjectsController extends Controller
         if ($characterId === '' && VesselDesign::isDesignFirst($project)) {
             return back()->with('error', $this->anchorMessage('character_prompt_no_design'));
         }
-
         if ($characterId !== '') {
             [$compiled, $reason, $character] = $this->characterAnchorPromptService->author(
                 $id,
@@ -518,8 +529,8 @@ class VideoProjectsController extends Controller
 
         if ($done && VesselDesign::isDesignFirst($project)) {
             return redirect()
-                ->route('video-projects.anchor', $id)
-                ->with('success', 'Đã duyệt ảnh anchor và khoá nguồn thiết kế. Bước tiếp theo: viết nội dung kịch bản.');
+                ->route('video-projects.reference', $id)
+                ->with('success', 'Đã duyệt ảnh anchor cho bản thiết kế. Bước tiếp theo: tạo, duyệt và chốt bộ ảnh Reference trước khi viết kịch bản.');
         }
 
         return $done
@@ -628,9 +639,23 @@ class VideoProjectsController extends Controller
             'workflow_not_design_first' => 'Dự án này chạy luồng cũ (kịch bản trước, thiết kế sau). Luồng thiết kế trước chỉ áp dụng cho dự án mới.',
             'character_prompt_no_design' => 'Chưa có bản thiết kế tàu — bấm Thiết kế tàu trước khi viết prompt anchor.',
             'anchor_prompt_other_design' => 'Prompt hoặc ảnh này thuộc một bản thiết kế khác bản thiết kế hiện hành — viết lại prompt anchor từ bản thiết kế mới.',
+            'anchor_design_unresolved' => 'Bản thiết kế hiện hành còn quyết định thiết kế chưa chốt — chốt các quyết định đó trước khi viết prompt hoặc render anchor. Không gọi model.',
+            'anchor_prompt_unstamped' => 'Prompt anchor này viết trước khi có dấu nguồn (bước viết, nguồn, skill, khung hình) — viết lại prompt anchor. Không render.',
+            'anchor_prompt_size_mismatch' => 'Size đang chọn khác khung hình prompt đã viết — chọn đúng Size của prompt hoặc viết lại prompt. Không render.',
+            'anchor_design_incomplete_text' => 'Bản thiết kế hiện hành có đoạn văn bị cắt giữa câu (xem log để biết mục nào) — hiệu chỉnh hoặc tạo lại thiết kế trước khi viết prompt hay render anchor. Không gọi model.',
+            'anchor_design_placement_ambiguous' => 'Bản thiết kế có hai sàn cùng tầng, cùng loại mà lời văn không phân biệt được (mốc là khối/khoảng trống không có tên) — thiếu dữ kiện định vị, cần bổ sung trước khi viết prompt hay render anchor (xem log). Không gọi model.',
+            'anchor_source_conflict' => 'AI viết prompt đã báo nguồn thiết kế tự mâu thuẫn ở phần P0, vùng đặc trưng hoặc quan hệ hình học bắt buộc (xem log) — sửa nguồn thiết kế rồi viết lại prompt. Không render.',
+            'anchor_prompt_malformed' => 'AI trả kết quả sai định dạng (thiếu geometry_prompt hoặc conflicts) — nguyên văn và chi phí đã lưu. Không render.',
+            'anchor_prompt_source_changed' => 'Nguồn thiết kế hoặc skill đã đổi so với lúc viết prompt — viết lại prompt anchor. Không render.',
             'design_anchor_not_approved' => 'Chưa có ảnh anchor được duyệt cho bản thiết kế — duyệt ảnh anchor trước khi viết kịch bản. Không gọi model.',
+            'design_references_not_approved' => 'Chưa chốt bộ ảnh Reference cho ảnh anchor và bản thiết kế hiện hành (hoặc anchor/thiết kế đã đổi sau khi chốt) — duyệt ít nhất một ảnh Reference và bấm "Chốt bộ Reference" trước khi viết kịch bản. Không gọi model.',
+            'design_references_none_approved' => 'Chưa có ảnh Reference nào được duyệt từ ảnh anchor hiện hành — duyệt ít nhất một ảnh Reference rồi mới chốt.',
+            'design_references_locked' => 'Đã chốt bộ ảnh Reference. Bước tiếp theo: viết nội dung kịch bản.',
             'design_changed_since_anchor' => 'Bản thiết kế đã đổi so với lúc duyệt ảnh anchor — viết prompt, render và duyệt lại ảnh. Không gọi model.',
             'anchor_design_incomplete' => 'Phần hình học đã chốt của bản thiết kế không toàn vẹn (có tham chiếu tới phần chưa chốt hoặc thiếu P0) — thiết kế lại tàu. Không gọi model, xem log để biết mục nào.',
+            'scene_design_reference_missing' => 'Bản trích thiết kế cho phân cảnh tham chiếu tới bộ phận không có hoặc chưa chốt trong thiết kế (xem log) — sửa hoặc tạo lại thiết kế. Không gọi model.',
+            'location_design_reference_missing' => 'Bản trích thiết kế cho địa điểm tham chiếu tới bộ phận không có hoặc chưa chốt trong thiết kế (xem log) — sửa hoặc tạo lại thiết kế. Không gọi model.',
+            'story_design_reference_missing' => 'Bản trích thiết kế cho kịch bản tham chiếu tới bộ phận không có hoặc chưa chốt trong thiết kế (xem log) — sửa hoặc tạo lại thiết kế. Không gọi model.',
             'design_geometry_incomplete' => 'Phần hình học đã chốt của bản thiết kế không toàn vẹn — không thể giao cho bước địa điểm/phân cảnh. Không gọi model, xem log.',
             'artifact_not_verified' =>'Ảnh này chưa có mã kiểm tra (sha256) — không thể khoá làm nguồn cho kịch bản.',
             'foundation_not_design_first' => 'Bản nội dung này không dựng trên bản thiết kế tàu.',
@@ -651,6 +676,17 @@ class VideoProjectsController extends Controller
         );
 
         return back()->with($done ? 'success' : 'error', $this->anchorMessage($reason));
+    }
+
+    public function lockReferences(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = app(VesselDesignService::class)->lockReferences($id, auth()->id());
+
+        return $done
+            ? redirect()->to(route('video-projects.anchor', $id).'#screenplay-panel')->with('success', $this->anchorMessage($reason))
+            : back()->with('error', $this->anchorMessage($reason));
     }
 
     public function reference(Request $request, string $id)
@@ -701,7 +737,6 @@ class VideoProjectsController extends Controller
             $id,
             (string) auth()->user()?->name,
             $data,
-            auth()->id() === null ? null : (string) auth()->id(),
         );
 
         if ($image === null) {
@@ -727,8 +762,11 @@ class VideoProjectsController extends Controller
             'reference_prompt_not_found' => 'Không tìm thấy prompt AI đã viết cho góc này.',
             'reference_prompt_stale' => 'Prompt AI không còn khớp ảnh anchor, gói nguồn hoặc góc đang chọn — viết lại prompt.',
             'reference_needs_ai_prompt' => 'Ô reference này tạo bằng prompt PHP cũ hoặc lật ngang — không render lại được. Hãy bấm "AI viết prompt" rồi Generate Reference.',
-            'reference_review_incomplete' => 'Báo cáo mâu thuẫn chưa đầy đủ — không render được. Viết lại (trả phí) hoặc xem lại ảnh anchor.',
-            'reference_discrepancy_unacknowledged' => 'Có mâu thuẫn quan trọng — tick xác nhận giữ theo ảnh trước khi render.',
+            'reference_design_reference_missing' => 'Bản trích thiết kế cho góc này tham chiếu tới bộ phận không có hoặc chưa chốt (xem log) — sửa hoặc tạo lại thiết kế. Không gọi model.',
+            'reference_anchor_foreign' => 'Ảnh anchor hoặc artifact không thuộc dự án này. Không gọi model.',
+            'reference_anchor_design_changed' => 'Bản thiết kế đã đổi so với lúc tạo ảnh anchor — tạo và duyệt lại anchor. Không gọi model.',
+            'reference_anchor_other_design' => 'Ảnh anchor đang dùng thuộc bản thiết kế khác bản thiết kế đang khoá — chọn lại bộ nguồn khớp (anchor của đúng bản thiết kế). Không gọi model.',
+            'reference_design_extract_invalid' => 'Phần hình học đã chốt của bản thiết kế không toàn vẹn — không viết được prompt Reference. Không gọi model, xem log.',
             'reference_preview_stale' => 'Prompt đã khác bản đang xem trước — tải lại trang.',
             'reference_anchor_source_unknown' => 'Ảnh anchor không ghi kịch bản và nhân vật nguồn — không ghép với kịch bản đang chọn.',
             'reference_screenplay_unavailable' => 'Bản kịch bản mà ảnh anchor được tạo từ đó không còn đọc được.',

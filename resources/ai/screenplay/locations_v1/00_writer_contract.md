@@ -24,15 +24,16 @@ foundation         the selected narrative foundation: design thesis,
                    stage treatments and ending.
 characters         the characters already declared for this film. The
                    subject is the protagonist, and when the film has one it
-                   carries its detailed design in profile, with its interior
-                   spaces.
+                   carries in profile the parts of its detailed design that
+                   places need: its interior spaces, materials, glazing and
+                   the arrangement of its spaces.
 profile            the subject class, ordered stages, required stages,
                    scene-count limits, subject and location limits, the
                    people expected at each stage, and the coverage this film
                    must answer. When the subject was designed before the
-                   film, it also carries design_geometry, the subject's
-                   approved and locked geometry, and
-                   configuration_components, its moving components.
+                   film, it also carries design_geometry, the extract of the
+                   subject's approved and locked geometry that places need,
+                   and configuration_components, its moving components.
 film_requirements  production constraints supplied by the application, and
                    the film_brief of this line of films when it has one.
 
@@ -72,16 +73,33 @@ water around the subject, its openings and where its connections land.
 Take every part in its standard state. Declare a place formed by the
 subject only where the foundation or the profile describes it and a
 scene's work or use happens there; never invent one that neither
-describes. Do not repeat the profile's figures, materials or features in a
-description; name only what makes the shell.
+describes. Do not repeat the profile's materials or features in a
+description, which names only what makes the shell; the finished materials
+and glazing of a place belong in its layout, fixed_features and
+light_sources where they form it. A construction or completion state is
+never part of a place: it belongs to the scenes.
 
 When the profile carries design_geometry, it is the approved geometry of
 the subject and governs over every other description of it. A place
-formed by the subject keeps its global silhouette, masses, voids, spatial
-regions, relationships, transitions and must_preserve invariants: it lies
-where they put it, is bounded by what they say bounds it, and connects
-only where they connect it. A place the subject forms that design_geometry
-does not contain is not declared.
+formed by the subject keeps the masses, voids, spatial regions,
+relationships, signature regions and must_preserve invariants it carries,
+and its decks, openings, surfaces, basins and routes: it lies where they
+put it, is bounded by what they say bounds it, and connects only where they
+connect it. A place the subject forms that design_geometry does not
+contain is not declared.
+
+design_geometry is an extract of the approved design, not the whole
+record. A part that is absent from it still exists; never conclude that
+the subject lacks it, and never add a door, a room, an opening or a route to
+make up for what the extract does not give. A row marked landmark is there
+only so that the parts referring to it can be located; it is never a
+location of its own unless the stage treatments place work or use there.
+Ids such as d_main, t_gym or r_stern_main_lower let you follow references;
+call every part by the name, deck and position the design gives it.
+
+The film_brief and the stage treatments decide which places appear. A
+place away from the subject, such as a studio, a workshop, a yard or a
+quay, comes from the foundation and the brief, never from the design.
 
 HOW PEOPLE AND EQUIPMENT GET IN
 
@@ -133,7 +151,9 @@ brief_space.
 
 Keep the passages, stairs, lifts and landings the scenes need to move
 between those rooms, with brief_space null. A passage never stands in for a
-room the brief lists.
+room the brief lists. Keep only the stairs, ramps and lifts the design names:
+never add equipment that carries people or goods between decks, or a shaft
+or lobby for it, that the design does not name.
 
 A place or activity the brief leaves off screen is not a location, even
 when the foundation keeps it as part of the arrangement: no scene happens

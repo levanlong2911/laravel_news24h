@@ -132,6 +132,11 @@ final class ScreenplayExpansionService
 
         $silence = self::silenceReason($context['profile'], $fixed['characters']);
         $constrained = self::sceneSchemaFor($author->contractSchema(), $fixed['characters'], $fixed['locations'], $silence === null);
+        [$sentContext, $sentFixed, $requestReason] = self::designRequest('scenes', $projectId, $context, $fixed);
+
+        if ($sentContext === null) {
+            return [null, $requestReason];
+        }
 
         $input = [
             'contract_version' => $contract,
@@ -140,86 +145,115 @@ final class ScreenplayExpansionService
             'characters_content_hash' => self::contentHash($fixed['characters']),
             'locations_content_hash' => self::contentHash($fixed['locations']),
             'output_schema_hash' => self::contentHash($constrained),
-            'fingerprint' => $author->fingerprint($context['foundation'], $context['profile'], $context['requirements'], $fixed),
+            'fingerprint' => $author->fingerprint($sentContext['foundation'], $sentContext['profile'], $sentContext['requirements'], $sentFixed),
         ];
 
         $meta = $context['meta'] + [
             'characters_stage_id' => $characters->id,
             'locations_stage_id' => $locations->id,
+            VesselDesign::SCENE_SOURCE_KEY => [
+                'foundation' => $sentContext['foundation'],
+                'characters' => $sentFixed['characters'],
+                'locations' => $sentFixed['locations'],
+                'profile' => $sentContext['profile'],
+                'film_requirements' => $sentContext['requirements'],
+            ],
         ];
-
-        $validator = new ScreenplayValidator;
 
         return $this->runStep(
             $projectId,
             PlanningStageName::SCREENPLAY,
             'scenes',
             $author,
-            $context,
-            $fixed,
+            $sentContext,
+            $sentFixed,
             $input,
             $meta,
             $force,
-            function (ScreenplayResult $result) use ($validator, $context, $contract, $assembledVersion, $fixed, $input, $characters, $locations, $silence): array {
-                $violations = [];
-
-                foreach (array_keys($fixed) as $supplied) {
-                    if (array_key_exists($supplied, $result->screenplay)) {
-                        $violations[] = "{$supplied}: this step does not produce it";
-                    }
-                }
-
-                $expansion = $fixed + $result->screenplay;
-
-                if ($silence !== null) {
-                    [$expansion, $silenced] = self::withoutDialogue($expansion, $silence);
-                    $violations = array_merge($violations, $silenced);
-                }
-
-                $violations = array_merge(
-                    $violations,
-                    $validator->structural($expansion, $context['profile'], $contract, $context['excluded']),
-                );
-
-                if ($violations !== []) {
-                    return ['Scene expansion failed validation: '.implode('; ', $violations), null, ''];
-                }
-
-                $assembled = $context['foundation'];
-
-                foreach (self::SCENE_SECTIONS as $section) {
-                    $assembled[$section] = $expansion[$section];
-                }
-
-                $assembledErrors = $validator->structural(
-                    $assembled, $context['assembled_profile'], $assembledVersion, $context['excluded'],
-                );
-
-                if ($assembledErrors !== []) {
-                    return ['Assembled screenplay failed validation: '.implode('; ', $assembledErrors), null, ''];
-                }
-
-                $warnings = $validator->editorial($assembled, $context['assembled_profile']);
-
-                return [null, $assembled + [
-                    'schema_version' => $assembledVersion,
-                    'author_model' => $result->authorModel,
-                    'source_foundation' => $context['source_foundation'],
-                    'source_characters' => [
-                        'stage_id' => $characters->id,
-                        'revision' => $characters->planning_revision,
-                        'content_hash' => $input['characters_content_hash'],
-                    ],
-                    'source_locations' => [
-                        'stage_id' => $locations->id,
-                        'revision' => $locations->planning_revision,
-                        'content_hash' => $input['locations_content_hash'],
-                    ],
-                    'warnings' => $warnings,
-                ] + $context['design_sources'], $warnings === [] ? 'ok' : 'ok_needs_review'];
-            },
+            static fn (ScreenplayResult $result): array => self::validateAndAssembleScenes(
+                $result->screenplay, $result->authorModel, $context, $contract, $assembledVersion,
+                $fixed, $input, $characters, $locations,
+            ),
             $constrained,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $fixed
+     * @param  array<string, mixed>  $input
+     * @return array{0: ?string, 1: ?array<string, mixed>, 2: string}
+     */
+    public static function validateAndAssembleScenes(
+        array $screenplay,
+        string $authorModel,
+        array $context,
+        string $contract,
+        string $assembledVersion,
+        array $fixed,
+        array $input,
+        VideoPlanningStage $characters,
+        VideoPlanningStage $locations,
+    ): array {
+        $validator = new ScreenplayValidator;
+        $silence = self::silenceReason($context['profile'], $fixed['characters']);
+        $violations = [];
+
+        foreach (array_keys($fixed) as $supplied) {
+            if (array_key_exists($supplied, $screenplay)) {
+                $violations[] = "{$supplied}: this step does not produce it";
+            }
+        }
+
+        $expansion = $fixed + $screenplay;
+
+        if ($silence !== null) {
+            [$expansion, $silenced] = self::withoutDialogue($expansion, $silence);
+            $violations = array_merge($violations, $silenced);
+        }
+
+        $violations = array_merge(
+            $violations,
+            $validator->structural($expansion, $context['profile'], $contract, $context['excluded']),
+        );
+
+        if ($violations !== []) {
+            return ['Scene expansion failed validation: '.implode('; ', $violations), null, ''];
+        }
+
+        $assembled = $context['foundation'];
+
+        foreach (self::SCENE_SECTIONS as $section) {
+            $assembled[$section] = $expansion[$section];
+        }
+
+        $assembledErrors = $validator->structural(
+            $assembled, $context['assembled_profile'], $assembledVersion, $context['excluded'],
+        );
+
+        if ($assembledErrors !== []) {
+            return ['Assembled screenplay failed validation: '.implode('; ', $assembledErrors), null, ''];
+        }
+
+        $warnings = $validator->editorial($assembled, $context['assembled_profile']);
+
+        return [null, $assembled + [
+            'schema_version' => $assembledVersion,
+            'author_model' => $authorModel,
+            'source_foundation' => $context['source_foundation'],
+            'source_characters' => [
+                'stage_id' => $characters->id,
+                'revision' => $characters->planning_revision,
+                'content_hash' => $input['characters_content_hash'],
+            ],
+            'source_locations' => [
+                'stage_id' => $locations->id,
+                'revision' => $locations->planning_revision,
+                'content_hash' => $input['locations_content_hash'],
+            ],
+            'warnings' => $warnings,
+        ] + $context['design_sources'], $warnings === [] ? 'ok' : 'ok_needs_review'];
     }
 
     /**
@@ -392,13 +426,31 @@ final class ScreenplayExpansionService
             ];
         }
 
+        $sentContext = $context;
+        $sentFixed = $fixed;
+
+        if ($part === 'locations') {
+            [$sentContext, $sentFixed, $requestReason] = self::locationRequest($projectId, $context, $fixed);
+
+            if ($sentContext === null) {
+                return [null, $requestReason];
+            }
+
+            $meta[VesselDesign::LOCATION_SOURCE_KEY] = [
+                'foundation' => $sentContext['foundation'],
+                'characters' => $sentFixed['characters'],
+                'profile' => $sentContext['profile'],
+                'film_requirements' => $sentContext['requirements'],
+            ];
+        }
+
         $input = [
             'contract_version' => $contract,
             'foundation_content_hash' => $context['foundation_hash'],
         ] + ($sourceCharacters === null ? [] : [
             'characters_content_hash' => $sourceCharacters['content_hash'],
         ]) + [
-            'fingerprint' => $author->fingerprint($context['foundation'], $context['profile'], $context['requirements'], $fixed),
+            'fingerprint' => $author->fingerprint($sentContext['foundation'], $sentContext['profile'], $sentContext['requirements'], $sentFixed),
         ];
 
         $validator = new ScreenplayValidator;
@@ -408,8 +460,8 @@ final class ScreenplayExpansionService
             self::CAST[$part]['stage'],
             $part,
             $author,
-            $context,
-            $fixed,
+            $sentContext,
+            $sentFixed,
             $input,
             $meta,
             $force,
@@ -451,6 +503,58 @@ final class ScreenplayExpansionService
             },
             $schema,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $fixed
+     * @return array{0: ?array<string, mixed>, 1: ?array<string, mixed>, 2: string}
+     */
+    private static function locationRequest(string $projectId, array $context, array $fixed): array
+    {
+        return self::designRequest('locations', $projectId, $context, $fixed);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $fixed
+     * @return array{0: ?array<string, mixed>, 1: ?array<string, mixed>, 2: string}
+     */
+    private static function designRequest(string $part, string $projectId, array $context, array $fixed): array
+    {
+        $designId = $context['design_sources'][VesselDesign::SOURCE_DESIGN_KEY]['stage_id'] ?? null;
+
+        if (! isset($context['profile'][VesselDesign::DESIGN_GEOMETRY_KEY]) || ! is_string($designId)) {
+            return [$context, $fixed, 'ok'];
+        }
+
+        $output = VideoPlanningStage::query()->whereKey($designId)->where('project_id', $projectId)->value('output_json');
+        $output = is_array($output) ? $output : [];
+        $scenes = $part === 'scenes';
+        $gaps = $scenes ? VesselDesign::sceneReferenceGaps($output) : VesselDesign::locationReferenceGaps($output);
+
+        if ($gaps !== []) {
+            Log::error("screenplay {$part}: the {$part} extract references parts the design does not hold, no model call made", [
+                'project_id' => $projectId,
+                'design_stage_id' => $designId,
+                'gaps' => $gaps,
+            ]);
+
+            return [null, null, $scenes ? 'scene_design_reference_missing' : 'location_design_reference_missing'];
+        }
+
+        $context['profile'][VesselDesign::DESIGN_GEOMETRY_KEY] = $scenes ? VesselDesign::sceneDesign($output) : VesselDesign::locationDesign($output);
+        $fixed['characters'] = array_map(static function (mixed $row) use ($scenes): mixed {
+            if (is_array($row) && ($row['id'] ?? null) === VesselDesign::VESSEL_ID && is_array($row[ProtagonistProfile::CHARACTER_KEY] ?? null)) {
+                $row[ProtagonistProfile::CHARACTER_KEY] = $scenes
+                    ? VesselDesign::sceneProfile($row[ProtagonistProfile::CHARACTER_KEY])
+                    : VesselDesign::locationProfile($row[ProtagonistProfile::CHARACTER_KEY]);
+            }
+
+            return $row;
+        }, $fixed['characters']);
+
+        return [$context, $fixed, 'ok'];
     }
 
     /**
@@ -869,7 +973,7 @@ final class ScreenplayExpansionService
             return [[], 'ok'];
         }
 
-        $broken = VesselDesign::extractIntegrityViolations($output, VesselDesign::anchorDesign($output, null));
+        $broken = VesselDesign::extractIntegrityViolations($output, VesselDesign::lockedDesign($output, null));
 
         if ($broken !== []) {
             Log::error('screenplay expansion: the locked design extract is incomplete, no model call made', [

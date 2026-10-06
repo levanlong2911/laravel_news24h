@@ -30,6 +30,41 @@
         </div>
     </div>
 
+    @if($designFirst ?? false)
+        <div class="vp-panel" id="referenceLockPanel">
+            <div class="va-head">
+                <b>CHỐT BỘ REFERENCE</b>
+                <em>bắt buộc trước khi viết kịch bản</em>
+                <span class="grow"></span>
+                @if($referenceLock)
+                    <span class="va-tag ok">ĐÃ CHỐT {{ count($referenceLock['references']) }} ẢNH</span>
+                @else
+                    <span class="va-tag dg">CHƯA CHỐT</span>
+                @endif
+                <form method="POST" action="{{ route('video-projects.reference-lock', $id) }}" onsubmit="return vpLockForm(this)">
+                    @csrf
+                    <button class="vp-btn sm pri" @disabled($lockableReferences === [])
+                            title="{{ $lockableReferences === [] ? 'Duyệt ít nhất một ảnh Reference từ ảnh anchor hiện hành trước' : '' }}">
+                        {{ $referenceLock ? 'Chốt lại bộ Reference → Viết kịch bản' : 'Chốt bộ Reference → Viết kịch bản' }}
+                    </button>
+                </form>
+            </div>
+            <div class="va-body">
+                <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">
+                    Ảnh Reference đã duyệt từ ảnh anchor hiện hành ({{ count($lockableReferences) }}):
+                    @forelse($lockableReferences as $row)
+                        <br>{{ \App\Video\Reference\ReferenceView::tryFrom($row['view'])?->displayLabel() ?? $row['view'] }} — {{ $row['image_id'] }}
+                    @empty
+                        <br>chưa có — duyệt ít nhất một ảnh rồi bấm Chốt.
+                    @endforelse
+                    @if($referenceLock)
+                        <br>Đã chốt lúc {{ $referenceLock['approved_at'] }}. Khi duyệt lại anchor hoặc đổi thiết kế, bộ chốt này mất hiệu lực.
+                    @endif
+                </div>
+            </div>
+        </div>
+    @endif
+
     <div class="va-grid">
 
         <div class="va-col">
@@ -62,6 +97,20 @@
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">
                             SHA256: {{ $approvedAnchor->artifact->sha256 }}
                         </div>
+                        @php
+                            $source = $referenceSource ?? [];
+                        @endphp
+                        @if(($source['error'] ?? null) !== null)
+                            <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Nguồn thiết kế: {{ $source['error'] }}</div>
+                        @elseif(($source['kind'] ?? null) === \App\Services\Video\ReferencePromptWriter::SOURCE_DESIGN)
+                            <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">
+                                Nguồn: bản thiết kế tàu rev {{ $source['design_revision'] ?? '—' }}
+                                · {{ $source['canonical'] ? 'có hình học chuẩn (canonical)' : 'chưa có canonical — dùng gói cũ' }}
+                                · hash {{ substr((string) ($source['design_content_hash'] ?? ''), 0, 12) }}
+                            </div>
+                        @elseif(($source['kind'] ?? null) !== null)
+                            <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Nguồn: kịch bản (luồng cũ)</div>
+                        @endif
                     @else
                         <div class="va-lbl" style="color:var(--vp-red);font-weight:400">
                             {{ __('messages.no_approved_anchor') }}
@@ -156,28 +205,15 @@
                         </div>
                     </div>
 
-                    <div class="va-lbl">PROMPT GỬI ĐI <span>(AI viết VIEW GEOMETRY · khối bảo toàn + góc máy + môi trường do PHP ghép)</span></div>
+                    <div class="va-lbl">PROMPT GỬI ĐI <span>(AI viết VIEW GEOMETRY · mục tiêu edit + giữ nhận dạng + góc máy + môi trường + trạng thái do PHP ghép)</span></div>
                     <textarea class="va-ta" id="referencePrompt" readonly></textarea>
                     <div class="va-count"><span data-c="r">0</span> ký tự</div>
 
-                    <div class="va-lbl" id="referenceClaimsTitle" hidden>CÁC CÂU AI VIẾT <span>(nhãn và nguồn của từng câu)</span></div>
-                    <div id="referenceClaims"></div>
-
-                    <div id="referenceDiscrepancies"></div>
-
-                    <div class="va-lbl" id="referenceIncomplete" hidden style="color:var(--vp-red);font-weight:400">
-                        Báo cáo mâu thuẫn chưa đầy đủ — không render được. Viết lại (bạn tự bấm, có trả phí) hoặc xem lại ảnh anchor.
+                    <div class="va-lbl" id="referenceBlocked" hidden style="color:var(--vp-red);font-weight:400">
+                        AI báo nguồn thiết kế hoặc ảnh anchor còn mâu thuẫn hoặc thiếu dữ kiện cho góc này (vẫn cho render):
                     </div>
-
-                    <label class="va-lbl" id="referenceAckRow" hidden style="font-weight:400;color:var(--vp-red)">
-                        <input type="checkbox" name="acknowledge_discrepancies" value="1" form="referenceForm">
-                        Tôi đã xem các mâu thuẫn quan trọng và giữ theo ảnh cho lượt render này (không phải duyệt production)
-                    </label>
-
-                    <label class="va-lbl" style="font-weight:400">
-                        <input type="checkbox" name="force" value="1" form="referencePromptForm">
-                        Viết lại dù đã có prompt cho đúng ảnh, nguồn và cấu hình này (trả phí)
-                    </label>
+                    <div id="referenceConflicts"></div>
+                    <div id="referenceWarnings"></div>
 
                     <div class="va-foot">
                         <button type="button" class="vp-btn" data-toggle="modal" data-target="#confirmReferencePrompt"
@@ -190,7 +226,7 @@
                     @include('modal.confirm_action', [
                         'id' => 'confirmReferencePrompt',
                         'form' => 'referencePromptForm',
-                        'content' => 'Gửi ảnh anchor và gói kịch bản cho model viết VIEW GEOMETRY của góc đang chọn — TÁC VỤ NÀY TÍNH TIỀN.',
+                        'content' => 'Gửi ảnh anchor và gói thiết kế của góc đang chọn cho model viết VIEW GEOMETRY — TÁC VỤ NÀY TÍNH TIỀN.',
                         'detail' => 'Ảnh, nguồn và cấu hình không đổi thì dùng lại prompt đã viết, không gọi model.',
                     ])
 
@@ -332,18 +368,9 @@
     var stage = document.getElementById('referencePromptStage');
     var sha = document.getElementById('referencePromptSha');
     var promptView = document.getElementById('referencePromptView');
-    var list = document.getElementById('referenceDiscrepancies');
-    var claims = document.getElementById('referenceClaims');
-    var claimsTitle = document.getElementById('referenceClaimsTitle');
-    var ackBox = document.querySelector('#referenceAckRow input[type="checkbox"]');
-    var bases = {
-        image: 'thấy trong ảnh',
-        source: 'theo nguồn',
-        image_and_source: 'ảnh + nguồn',
-        inference: 'suy diễn phần chưa xác định'
-    };
-    var incomplete = document.getElementById('referenceIncomplete');
-    var ack = document.getElementById('referenceAckRow');
+    var blocked = document.getElementById('referenceBlocked');
+    var conflicts = document.getElementById('referenceConflicts');
+    var warnings = document.getElementById('referenceWarnings');
     var render = document.getElementById('generateReferenceButton');
     var count = document.querySelector('[data-c="r"]');
     if (!view || !environment || !box) { return; }
@@ -357,39 +384,30 @@
         sha.value = prompt ? prompt.prompt_sha256 : '';
         promptView.value = view.value;
 
-        claims.innerHTML = '';
-        (entry ? entry.claims : []).forEach(function (claim, index) {
+        conflicts.innerHTML = '';
+        var conflictRows = entry && entry.conflicts ? entry.conflicts : [];
+        conflictRows.forEach(function (line) {
             var item = document.createElement('div');
             item.className = 'va-lbl';
             item.style.fontWeight = '400';
-            item.textContent = (index + 1) + '. [' + (bases[claim.basis] || claim.basis) + '] ' + claim.statement;
-            claim.sources.forEach(function (source) {
-                var cite = document.createElement('div');
-                cite.style.color = 'var(--vp-dim)';
-                cite.style.paddingLeft = '14px';
-                cite.textContent = source.path + ': "' + source.text + '"';
-                item.appendChild(cite);
-            });
-            claims.appendChild(item);
+            item.style.color = 'var(--vp-red)';
+            item.textContent = line;
+            conflicts.appendChild(item);
         });
-        claimsTitle.hidden = !entry;
 
-        if (ackBox) { ackBox.checked = false; }
-
-        list.innerHTML = '';
-        (entry ? entry.discrepancies : []).forEach(function (row) {
+        warnings.innerHTML = '';
+        (entry && entry.warnings ? entry.warnings : []).forEach(function (line) {
             var item = document.createElement('div');
             item.className = 'va-lbl';
             item.style.fontWeight = '400';
-            item.textContent = '[' + row.severity + ' · ' + row.topic + '] Ảnh: ' + row.image_observation
-                + ' — Nguồn (' + row.source_path + '): "' + row.source_statement + '"';
-            list.appendChild(item);
+            item.style.color = 'var(--vp-red)';
+            item.textContent = 'Cảnh báo (vẫn cho render): ' + line;
+            warnings.appendChild(item);
         });
 
-        incomplete.hidden = !(entry && entry.review_incomplete);
-        ack.hidden = !(entry && entry.has_major && !entry.review_incomplete);
+        blocked.hidden = conflictRows.length === 0;
         if (render && {{ $approvedAnchor === null ? 'false' : 'true' }}) {
-            render.disabled = !prompt || entry.review_incomplete;
+            render.disabled = !prompt;
         }
         if (count) { count.textContent = prompt ? box.value.length : 0; }
     }

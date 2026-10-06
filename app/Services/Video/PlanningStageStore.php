@@ -17,7 +17,7 @@ class PlanningStageStore
 
     public const METADATA_KEY = '_meta';
 
-    private const PRICING_METADATA_KEYS = ['pricing', 'pricing_version'];
+    private const PRICING_METADATA_KEYS = ['pricing', 'pricing_version', 'design_repair'];
 
     /**
      * @param  array<string, mixed>|null  $inputJson

@@ -28,7 +28,7 @@ return [
 
     'prompt_version' => env(
         'IMAGE_PROMPT_VERSION',
-        'geometry-reference-v2-r9'
+        'geometry-reference-v2-r16'
     ),
 
     'character_prompt_path' => resource_path(
@@ -40,7 +40,20 @@ return [
         'character-reference-v1'
     ),
 
+    'design_anchor' => [
+        'prompt_path' => resource_path('ai/prompts/anchor_from_design_v1.txt'),
+        'prompt_version' => 'anchor-from-design-v1-r10',
+    ],
+
     'anchor_model' => env('IMAGE_ANCHOR_MODEL', 'gpt-image-2.5-flare'),
+
+    'text_pricing' => [
+        'model' => 'gpt-5.6-sol',
+        'version' => 'openai-gpt-5.6-sol-2026-09-29',
+        'input_per_million' => 2.0,
+        'cached_input_per_million' => 0.2,
+        'output_per_million' => 12.0,
+    ],
 
     'anchor_author' => [
         'model' => env('IMAGE_ANCHOR_PROMPT_MODEL', 'gpt-5.6-sol'),
@@ -49,16 +62,10 @@ return [
 
     'reference' => [
         'prompt_path' => resource_path('ai/prompts/reference_view_v1.txt'),
-        'prompt_version' => 'reference-view-v1-r4',
+        'prompt_version' => 'reference-view-v1-r15',
         'model' => env('IMAGE_REFERENCE_PROMPT_MODEL', 'gpt-5.6-sol'),
         'reasoning_effort' => env('IMAGE_REFERENCE_PROMPT_REASONING', 'medium'),
         'max_tokens' => (int) env('IMAGE_REFERENCE_PROMPT_MAX_TOKENS', 32000),
-        'pricing' => [
-            'version' => 'openai-gpt-5.6-sol-2026-09-29',
-            'input_per_million' => 2.0,
-            'cached_input_per_million' => 0.2,
-            'output_per_million' => 12.0,
-        ],
     ],
 
     'anthropic' => [

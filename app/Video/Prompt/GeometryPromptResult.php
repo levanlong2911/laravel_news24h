@@ -13,6 +13,9 @@ final class GeometryPromptResult
         public readonly string $authorModel,
         public readonly int $inputTokens,
         public readonly int $outputTokens,
+        public readonly ?string $rawResponse = null,
+        public readonly array $audit = [],
+        public readonly array $usage = [],
     ) {}
 
     /**
@@ -22,11 +25,12 @@ final class GeometryPromptResult
      */
     public function toStorage(): array
     {
-        return [
+        return $this->audit + [
             'prompt' => $this->compiled->prompt,
             'prompt_sha256' => $this->compiled->promptHash,
             'prompt_version' => $this->compiled->promptVersion,
             'author_model' => $this->authorModel,
+            'usage' => $this->usage,
         ];
     }
 }

@@ -166,6 +166,7 @@ Route::group(
             Route::post('/{id}/anchor/approve', [VideoProjectsController::class, 'approveAnchor'])->name('video-projects.anchor-approve');
             Route::post('/{id}/reference/approve', [VideoProjectsController::class, 'approveReference'])->name('video-projects.reference-approve');
             Route::post('/{id}/reference/prompt', [VideoProjectsController::class, 'writeReferencePrompt'])->name('video-projects.reference-prompt');
+            Route::post('/{id}/reference/lock', [VideoProjectsController::class, 'lockReferences'])->name('video-projects.reference-lock');
             Route::match(['get', 'post'], '/{id}/reference', [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
             Route::post('/{id}/environment/approve', [VideoProjectsController::class, 'approveEnvironment'])->name('video-projects.environment-approve');
             Route::match(['get', 'post'], '/{id}/environment', [VideoProjectsController::class, 'environment'])->name('video-projects.environment');

@@ -15,8 +15,8 @@ INPUT AND OUTPUT
 
 inspiration        source material. Use it for the question it raises,
                    never as a catalogue of features for the new superyacht.
-previous_designs   when present, superyachts already designed from this
-                   source, newest first: each one's name, central idea and
+previous_designs   when present, recent designs across this administrator's
+                   projects of the same type, newest first: name, central idea and
                    visible difference.
 profile            design requirements, prohibited terms, dimension
                    bounds, the rules of the protagonist profile, and the
@@ -77,8 +77,20 @@ this order.
    inside that form, and choose the principal dimensions. When an
    arrangement does not fit the form or the dimensions, change the design
    until they agree.
-9. Only then write the protagonist profile and canonical_design. Both
-   describe this one design; neither adds anything the other contradicts.
+9. Only then write canonical_design, complete, including its decks,
+   openings, surfaces, basins and routes. Then write the protagonist
+   profile as an interpretation of that canonical_design, and last the
+   geometry_links that tie the profile to it. Both describe this one
+   design; neither adds anything the other contradicts.
+   Every permanent exterior fact in profile sections, signature features
+   or interior-room descriptions must have a corresponding canonical
+   definition: glazing on a named face, fixed basin geometry, exterior
+   stairs and landing connections included. An interior description is
+   not an exception. Do not leave exterior facts only in room prose.
+   Use the same deck, side, direction, endpoints and open/enclosed state
+   in both representations. Identify an existing circulation core by the
+   same role everywhere rather than implying an extra stair. Proposed
+   geometry must not become settled geometry in another section.
 10. Validate against the completeness gate in FINAL CHECK. Approval and
     freeze happen after you, by a person; never mark the design approved.
 
@@ -93,6 +105,10 @@ behaviour does not create an independent design. Common superyacht elements,
 such as a stair, a pool or a glazed wall, may serve their ordinary purpose.
 
 PREVIOUS DESIGNS
+
+The profile's excluded organizing principles apply even when there are no
+previous designs. They are constraints, not examples to copy. Never adopt
+an excluded principle and merely add it to must_not_introduce afterwards.
 
 When previous_designs is present, the new superyacht shares no
 organizing principle with any of them. Read each central idea for its
@@ -237,8 +253,9 @@ protagonist_profile
 
 canonical_design
   The same design as structured geometry, for the person who approves it
-  and for every image made of it afterwards. It adds no feature the
-  protagonist profile does not describe and contradicts nothing there.
+  and for every image made of it afterwards. It defines the geometry; the
+  protagonist profile interprets it, adds no geometry it does not define
+  and contradicts nothing in it.
 
   status   every section and every row with a status carries one. locked:
            you settle it, and it becomes canonical when a person approves
@@ -266,6 +283,14 @@ canonical_design
            part ids and locked transition ids, so an invariant can protect
            a joint; a transition never names a transition.
 
+           must_preserve entry ids identify rules, not geometry parts.
+           Never use those rule ids in must_preserve.refs or
+           must_not_introduce.refs. For example, ["m_shell", "sr_shell"]
+           is valid when those parts are declared and locked;
+           ["m_shell", "sr_shell", "p_one_shell"] is invalid when
+           p_one_shell is a must_preserve rule. Check actual declarations
+           and status, never infer validity from an id prefix.
+
   design_identity       novelty_thesis; conventional_patterns, the patterns
                         rejected or transformed; replacement_principle;
                         superyacht_reading, how the whole still reads at
@@ -273,7 +298,12 @@ canonical_design
   proportion_system     overall proportion, the masses against one another
                         and the signature regions against the superyacht,
                         in relative terms; length and beam figures stay in
-                        principal_dimensions.
+                        principal_dimensions. vertical gives the heights in
+                        relative terms, never in units: the freeboard at
+                        bow, midships and stern against one another, each
+                        enclosed level against the hull freeboard, the
+                        whole superstructure against the hull depth, and
+                        the draft against the freeboard.
   global_silhouette     the profile view, the plan view, and why the
                         identity survives when colour, branding, furniture
                         and fine detail are removed.
@@ -293,7 +323,13 @@ canonical_design
   hull_geometry, superstructure_geometry, stern_geometry, bow_geometry
                         the parts the profile's geometry_requirements name,
                         one field each. A part the design does not have
-                        says so in its field.
+                        says so in its field. design_waterline says where
+                        the waterline crosses the stem, midships and the
+                        transom; underbody_and_appendages names every part
+                        below it, such as the keel line, propellers or
+                        pods, rudders, stabiliser fins, thruster tunnels
+                        or a bulb, and says plainly which the hull does
+                        not have.
   signature_regions     one per signature feature, feature naming it
                         exactly as in signature_features: priority (P0
                         when losing it makes another design), description,
@@ -316,7 +352,16 @@ canonical_design
                         signature region has one.
   permanent_secondary_geometry
                         permanent elements below the signature level that
-                        an image must keep.
+                        an image must keep. form says what the element is:
+                        enclosure for a closed or roofed volume that can
+                        carry doors or windows, such as a stair hood or a
+                        small deckhouse; open_structure for frames,
+                        railings and other open supports; surface_detail
+                        for trim, recesses, seams and marks on a surface.
+                        equipment_kind is null for every structural
+                        element and names the kind of each piece of
+                        navigation and communication equipment (see
+                        Navigation and communication equipment below).
   appearance_identity   stable hull, superstructure, glazing and material
                         decisions.
   configuration_states  one row per moving component of a transforming
@@ -336,7 +381,171 @@ canonical_design
   reference_proof_requirements
                         for every P0 signature region and every P0
                         must_preserve entry, what an image must show to
-                        prove it and the views that can.
+                        prove it and the views that can. A view is named
+                        only where its camera actually sees what the
+                        condition asks; a part hidden from a view is not
+                        proved there. A signature region's proof_views and
+                        the requirements that target it may name different
+                        views that complement one another, never views
+                        that contradict one another, and never repeat a
+                        condition the region already states.
+                        low_angle_bow_port and high_angle_bow_port are the
+                        low and the high oblique views from forward of the
+                        port bow.
+  geometry_model        always "typed".
+  decks                 every deck from the lowest to the highest: id, the
+                        name the profile uses for it, level (an integer,
+                        higher above lower, one deck per level) and body,
+                        the primary mass that holds it or hull for a deck
+                        inside the hull.
+  openings              every window, glazed field, doorway, hatch and
+                        permanent open void the exterior shows: its deck,
+                        the face it is in (forward, aft, port, starboard,
+                        upward or downward), its kind, the mass, the hull or
+                        the secondary enclosure whose structure holds it
+                        (host) and the room, spatial region, surface or void
+                        the opening serves: the space behind it, the room it
+                        lights or the surface it opens onto (serves). serves
+                        never names the recess, frame or band the opening
+                        sits in; that relation belongs to the recess row's
+                        position. serves is null only when the opening
+                        truly serves no space, never to avoid a check.
+                        Only a permanent_secondary_geometry row of form
+                        enclosure holds an opening; a railing or a trim
+                        line never does. kind is the permanent
+                        opening, never its finish: glazing is an opening
+                        filled with fixed glass, movable_closure an opening
+                        a moving part closes.
+  profile_paths         on every opening, route and basin row: the
+                        protagonist_profile passages that describe that
+                        part, written as you declare the row, for example
+                        ["windows_and_glazing", "interior_spaces.3.access"].
+                        Name every passage that really describes it, each
+                        once; several parts may share one passage, and a
+                        part that serves several spaces names each space's
+                        passage. A path inside an interior space entry,
+                        such as interior_spaces.3.access, ties the part to
+                        that space. Each entry is a text passage, one whole
+                        interior space (interior_spaces.3) or one whole
+                        signature feature (signature_features.1); never a
+                        whole list such as interior_spaces or figures, and
+                        never a label such as space, deck, name or kind.
+  surfaces              every floor, open deck, terrace, landing and walkway
+                        people stand on: its deck, its kind, and where it
+                        lies as relation (forward_of, aft_of, above, below,
+                        beside, within or around) to relative_to, another
+                        surface, a mass, a void, a spatial_topology region,
+                        a basin, a permanent_secondary_geometry element
+                        such as a stair hood, or hull for the hull as a
+                        whole; none with null when no other part places
+                        it. side says which side of the superyacht it lies
+                        on: port, starboard, centerline, both for one
+                        surface that really spans both sides, or
+                        unspecified when the design does not settle it.
+                        Declare side from the design's intent; never guess
+                        it, and never create a mirrored pair the design
+                        does not state. Two surfaces of the same
+                        kind on the same deck differ in that placement or
+                        in their side: a port and a starboard walkway
+                        within one void are two rows with sides port and
+                        starboard, not two rows that only their ids tell
+                        apart. A side deck along a mass is one walkway
+                        row per side; a roof shoulder beside a narrower
+                        mass above is one open_deck or terrace row per
+                        side; every exposed roof people walk on is a
+                        surface.
+  A surface within a spatial_topology region stays on a deck of that
+  region. A multi-deck region remains multi-deck; never invent one deck
+  to replace it. Basin references locate surrounding surfaces (for example
+  a landing aft_of a basin), not a surface within the water basin itself.
+  All referenced parts must be declared, and locked parts reference only
+  locked parts. Keep region names and basin placement in anchor descriptions.
+  Example: {"id":"f_salon_floor","deck":"d_main","kind":"deck_floor",
+  "relative_to":"t_salon","relation":"within","status":"locked"}
+  names an existing locked salon region t_salon. A stern landing can instead
+  use "relative_to":"b_outdoor_pool","relation":"aft_of", provided that
+  basin is declared and locked. Do not rename the region or basin into a mass.
+
+  basins                every pool or water basin: the surface it is set
+                        into, its orientation, where its water lies against
+                        that surface, and the routes by which people reach
+                        it. An empty list when the design has none.
+  routes                every stair, ramp and walkway between places, and
+                        every lift where the profile allows one: its kind,
+                        where it starts (from: deck and surface, or null)
+                        and where it arrives (to), the way it runs from
+                        start to arrival, and what carries it. A stair,
+                        ramp or lift joins two different decks; a walkway
+                        stays on one.
+
+  Equipment policy. When the profile's design_equipment_policy sets
+  interdeck_elevators to forbidden, the vessel has no equipment that carries
+  people or goods between decks, for guests, crew, service, goods or food,
+  under any name. Create no lift route, cabin, shaft, landing door, lobby
+  or room that depends on one. Do not disguise such equipment as a hoist or
+  as a route of kind stair: a stair is a flight people climb on their feet.
+  Every deck people reach is reached by a declared stair or ramp route, and
+  no passage claims access the routes do not design. Cranes, anchor handling
+  and lifting during construction are not affected.
+
+  exterior_role     every spatial_topology, opening, surface, basin and
+                    route row says how it stands to the exterior: exterior
+                    when it lies on or forms the outside of the superyacht;
+                    interior_affects_exterior when it lies inside but
+                    changes the outside form or is seen from outside, for
+                    example through an opening, a glazed face or an open
+                    void; interior_only when it lies inside and neither
+                    shapes nor shows on the outside; undetermined when the
+                    design has not settled it. Decide it from where the part
+                    lies and what the outside shows, never from its name and
+                    never from an image state: an empty pool is still its
+                    basin, an unglazed opening is still an opening, and a
+                    space without furniture keeps its floors, landings and
+                    stairs.
+
+  A signature region's kind is fixed or transforming, the same as its
+  signature feature's kind. Every row of these lists carries status as
+  every other row does. status says whether the design has settled a part;
+  kind, face, relation and water_level say what the part physically is.
+  Never use one for the other. A locked row names only locked parts.
+
+geometry_links
+  Ties the protagonist profile to canonical_design. One row per profile
+  path and role: profile_path is a path inside protagonist_profile, such as
+  windows_and_glazing or interior_spaces.0; role is deck, opening,
+  surface, basin, route, region, mass, void or space; refs are the
+  canonical ids of that role the text at that path describes. A link holds
+  only references; deck, face, state and endpoints stay in canonical_design.
+  Each role links ids of exactly one list:
+    deck      decks
+    opening   openings
+    surface   surfaces
+    basin     basins
+    route     routes
+    region    signature_regions (their feature_id)
+    mass      primary_masses
+    void      primary_voids
+    space     spatial_topology
+  The word region in a spatial_topology row's field, or in "salon region",
+  never makes it a region link: a spatial_topology row is always linked with
+  role space. Right: {"profile_path":"amenities","role":"space",
+  "refs":["t_gym","t_indoor_pool"]}. Wrong: the same refs with role region.
+  Right: {"profile_path":"signature_features.1","role":"region",
+  "refs":["sr_crescent_decks"]}. A link whose ids belong to two lists is two
+  links, one per role.
+  Openings, routes and basins are linked by their own profile_paths;
+  geometry_links need not repeat them, and every other role is linked here.
+  Every interior space links its deck here, and its openings, basins and
+  routes on that deck name it in their profile_paths; a pool space is named
+  in its basin's profile_paths. A route lies on a space's deck when it
+  starts or arrives on that deck. When a space's access continues along a
+  route that neither starts nor arrives on its deck, that route does not
+  name the space; it names the passage that describes it on its own decks,
+  such as deck_organization or the space on that deck. Every signature
+  feature links
+  its signature region. Every opening, route and basin names in its
+  profile_paths at least one profile passage that describes it. A surface placed above or
+  below another surface lies on a deck whose level is higher or lower.
 
 WRITING A DESIGN THAT CAN BE BUILT AND DRAWN
 
@@ -350,7 +559,20 @@ below that deck, and anything passing over it sits above it.
 
 Circulation. Keep apart how the structure connects the parts, how guests
 move and how crew and service move. Every route between levels names its
-stair, ramp or lift.
+stair or ramp, or its lift where the profile allows one.
+
+Routes between levels. A route that links levels, such as a promenade,
+gallery or exterior stair, lists its landings and the flights or ramps
+between them in order, and says which way each part runs and what carries
+it, as far as the design decides them. A part of the route the design
+leaves open is named as open.
+
+Length. Every profile section has a length limit in the schema. Write
+concisely so that each section is complete within it and ends on a full
+sentence. In deck_organization, cover every deck from the lowest to the
+highest before adding route detail, and keep each route's landing-by-landing
+detail brief; a route repeated on several decks is described once and then
+named.
 
 Faces. A part with two faces names each by the way it faces in the
 standard state: forward, aft, port, starboard, outboard, upward. A
@@ -359,7 +581,21 @@ sentence that describes the superyacht as seen from a direction mentions only
 faces that face that direction.
 
 Recesses. A window or door set in a recess states both parts: how far the
-recess cuts into the wall, and the opening through the wall behind it.
+recess cuts into the wall, and the opening through the wall behind it. In
+canonical_design the recess is a permanent_secondary_geometry row (form
+surface_detail) whose position names the deck and face of the openings it
+holds; each of those openings keeps the room or surface behind it in
+serves.
+
+Openings at a route. A window or doorway beside a route says which landing
+or flight it belongs to, where its floor or sill sits against that
+landing, and which wall holds it.
+
+One geometry. canonical_design's topology, its transitions and the profile
+describe the same geometry with the same relationships. Information the
+design has not settled is an open decision and is named as open; two
+statements that disagree are a contradiction and are rewritten into one
+before you answer. Never settle either by an assumption you do not state.
 
 Setbacks. For every enclosed level above the main deck, say where its
 forward face lies against the forward face of the level below (aft of,
@@ -373,6 +609,49 @@ says so.
 
 Bodies and decks. Say which body each deck lies in and which deck forms
 the top of each body, so no level is counted in two bodies.
+
+Enclosed levels. Every deck whose body is a primary mass holds at least
+one spatial_topology region on that deck. A level the film brief gives no
+space to holds one guest room the design chooses for it, such as a VIP
+lounge or a cinema. Each exterior face of an enclosed level, forward, aft,
+port and starboard, either carries opening rows or is named solid in
+superstructure_geometry.glazing_topology.
+
+Both sides. A space that reaches both sides of the hull or of its mass and
+has glazing on one side has an opening row on the other side too, unless
+windows_and_glazing names that face solid and says why. A space on one
+side only names that side in its boundaries.
+
+Navigation and communication equipment. The superyacht carries no mast,
+radar arch or signal arch. Its equipment stands directly on top of the
+highest deck, on its open deck surface or on its roof when that deck is
+enclosed, each piece on a mounting base, and every piece is one
+permanent_secondary_geometry row with its equipment_kind:
+  radar_scanner      exactly one, locked: a slim horizontal bar antenna on
+                     a short pedestal, standing on the highest deck itself
+                     (never on a stair hood), on the centerline at the
+                     forward part of that deck, forward of any stair hood
+                     there, higher than every other piece so that its
+                     sweep circle clears every rail, dome and structure.
+  satellite_dome     spherical domes on short cylindrical pedestals, below
+                     the radar's sweep.
+  navigation_light   each light on the face or edge that carries it.
+  horn               on the highest deck.
+  whip_antenna       slim vertical rods, each named by its side.
+  other              any further piece the finished superyacht needs,
+                     named plainly.
+Give the finished superyacht everything it needs to navigate and
+communicate; the number of each kind follows from the design. position
+names the deck, the side or centerline and the fore-and-aft place, and
+the radar's position also names the stair hood when there is one;
+description names the size against the deck and the mounting. Each
+mounting base the structure carries is its own row with equipment_kind
+null, and the equipment row's position names the base it stands on. The
+equipment is fitted at finishing: no must_preserve, must_not_introduce,
+transition, proof requirement or configuration state names a piece of
+equipment, no opening is held by one and no surface is placed against one.
+A geometric relationship may place a piece of equipment against the
+structure.
 
 Roofs and walked decks. A roof is not walked on unless it is named as a
 deck. Say where each roof ends, which surfaces people walk on, and on
@@ -418,8 +697,8 @@ FINAL CHECK
 6. Three to five signature features, each with a standard geometry that
    can coexist with the others; every brief space has one interior entry.
 7. Every position names its side and deck, every route between levels
-   names its stair, ramp or lift, and every face-specific treatment sits on
-   a named face.
+   names its stair or ramp (or its lift where the profile allows one), and
+   every face-specific treatment sits on a named face.
 8. No sentence calls the superyacht the first, the only or unprecedented.
 9. canonical_design passes the completeness gate: every id it refers to is
    declared, every mass and void takes part in a relationship, there is a
@@ -435,3 +714,45 @@ FINAL CHECK
     only spaces that span the hull, every deck belongs to one body, every
     roof says where it ends and whether it is walked on, and no proposed
     part appears in a locked signature region or standard geometry.
+12. Every route between levels lists its landings and flights in order
+    with their direction and support, every opening beside a route names
+    its landing, level and wall, canonical_design and the profile describe
+    one geometry, and every unsettled point is named as open.
+13. Every profile section ends on a full sentence within its length limit,
+    and deck_organization reaches the highest deck.
+14. geometry_model is "typed"; every deck, opening, surface, basin and route
+    the profile describes has its canonical row; every id a row or a
+    geometry link names is declared and of the right kind; every route
+    ends on the decks it joins; every geometry link and every
+    profile_paths entry points at a passage that describes those rows;
+    every opening, route and basin row carries profile_paths; and every
+    interior space is tied only to routes that start or arrive on its deck.
+15. Every spatial_topology, opening, surface, basin and route row carries
+    exterior_role, decided from where the part lies and what the outside
+    shows, never from its name or an image state.
+16. Every surface carries side, unspecified when the design does not settle
+    it; no two surfaces share deck, kind, relation, reference and side; and
+    every geometry link uses the role of the list its ids belong to, space
+    for every spatial_topology row.
+17. Every access a room or passage describes uses a declared route, and
+    under a design_equipment_policy that forbids interdeck elevators no
+    route, room, cabin, shaft or lobby carries or serves equipment that
+    moves people or goods between decks, under any name.
+18. Every permanent_secondary_geometry row carries form, every opening
+    held by a secondary element names an element of form enclosure, and
+    every opening's serves names the room, region, surface or void behind
+    it, never a recess or other secondary element.
+19. Every enclosed level holds a space and states each exterior face as
+    glazed or solid; a space reaching both sides is glazed on both or names
+    the solid face; side decks, roof shoulders and walked roofs are
+    surfaces.
+20. proportion_system.vertical, hull_geometry.design_waterline and
+    hull_geometry.underbody_and_appendages are written, and no figure
+    measures to a mast.
+21. No mast, radar arch or signal arch exists; exactly one radar_scanner
+    stands on the centerline at the forward part of the highest deck,
+    every piece of equipment and its mounting base is its own row, and no
+    rule, transition, proof, opening or surface names a piece of
+    equipment.
+22. Every proof view is named only where its camera sees what the
+    condition asks.

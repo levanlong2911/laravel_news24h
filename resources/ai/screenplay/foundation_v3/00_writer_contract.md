@@ -15,9 +15,11 @@ physical vessel and then a lived experience.
 
 INPUT AND OUTPUT
 
-design             the approved design of the vessel: its name, description
-                   and appearance, its design thesis, its principal
-                   dimensions and its detailed protagonist profile.
+design             an extract of the approved design of the vessel: its
+                   name, description and appearance, its design thesis,
+                   its principal dimensions, the parts of its protagonist
+                   profile a story needs and, when the design has one,
+                   the parts of its canonical_design a story needs.
 profile            the ordered stages this film moves through, the required
                    stages and the people expected at each stage.
 film_requirements  production constraints and the film_brief: the spaces
@@ -44,6 +46,26 @@ they are. Do not restate measurements anywhere in the story.
 When the story seems to need something the design does not have, tell the
 story with what the design has. Never solve an action by inventing a
 stair, a door, a platform or a route the design does not describe.
+
+THE DESIGN EXTRACT
+
+The design you receive is an extract of the approved design, not the whole
+record. A part that is absent from it still exists; it is simply not given
+to you, so never conclude that the vessel lacks it and never describe it.
+A canonical_design row marked landmark is there only so that the parts
+referring to it can be located: name it where those parts need it, never
+as a feature of its own.
+
+Ids such as d_main, t_gym or r_stern_main_lower identify parts so that you
+can follow references; they never appear in the story. Call every part by
+the name, deck and position the design gives it.
+
+Do not add amenities, materials, finishes, counts or operating abilities
+that the design does not state. The design describes the finished vessel;
+during construction and finishing a part is shown only in the state that
+stage has reached, and the finished design is never changed to show it.
+When the profile and canonical_design disagree, do not pick a side and do
+not blend them: tell the story without that detail.
 
 When the profile carries screenplay_dependency, it states the same rule
 in the profile's words: the story may select and dramatize design facts,
@@ -116,7 +138,11 @@ Show selected structural work that realizes the defining form.
 
 FINISHING
 Show how materials, junctions, surfaces and usable spaces complete the
-design intention. Do not confuse finishing with adding decoration.
+design intention. Do not confuse finishing with adding decoration. The
+navigation and communication equipment, the rows of
+permanent_secondary_geometry with an equipment_kind, is fitted during
+finishing onto the mounting bases the design names; before that the
+highest deck carries only those bases.
 
 COMPLETION
 Reveal the vessel as a coherent whole, finished and handed over to the
@@ -144,7 +170,9 @@ SPATIAL CONSISTENCY
 
 Every space keeps the deck and position the design gives it, in every
 stage. Every route described must be possible within the design's
-arrangement, using the stairs, ramps and lifts the design names. A moving
+arrangement, using the stairs, ramps and lifts the design names. Never add
+equipment that carries people or goods between decks, such as a lift or a
+shaft, that the design does not name. A moving
 part is in one of the states the design describes whenever it appears, and
 the stage treatments say which. Write "every", "only" or "never" about the
 arrangement only when there is truly no exception, and say how crew,

@@ -320,6 +320,32 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(
+            'video.screenplay.design_repair_author',
+            static function (Application $app): ScreenplayAuthor {
+                return new ScreenplayAuthor(
+                    client: new \App\Video\Concept\OpenAi\TextClientStructuredAdapter(
+                        new \App\Video\Prompt\OpenAiTextClient(
+                            http: $app->make(HttpFactory::class),
+                            apiKey: (string) config('canonical_concept.openai.api_key'),
+                            baseUrl: (string) config('canonical_concept.openai.base_url'),
+                            reasoningEffort: (string) config('video.screenplay.design.repair.effort'),
+                            timeoutSeconds: (int) config('video.screenplay.design.repair.timeout_seconds'),
+                            retryTimes: 1,
+                            retrySleepMs: 0,
+                            stream: (bool) config('video.screenplay.design.stream'),
+                        ),
+                    ),
+                    promptDir: (string) config('video.screenplay.design.prompt_dir'),
+                    schemaPath: (string) config('video.screenplay.design.schema_path'),
+                    promptVersion: (string) config('video.screenplay.design.prompt_version'),
+                    model: (string) config('video.screenplay.design.model'),
+                    maxTokens: (int) config('video.screenplay.design.repair.max_tokens'),
+                    contractVersion: (string) config('video.screenplay.design.contract_version'),
+                );
+            }
+        );
+
+        $this->app->singleton(
             'video.screenplay.story_author',
             static function (Application $app): ScreenplayAuthor {
                 return new ScreenplayAuthor(
@@ -499,6 +525,19 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(
+            'video.design_anchor_prompt_author',
+            static function (Application $app): GeometryPromptAuthor {
+                return new GeometryPromptAuthor(
+                    client: $app->make('video.anchor_prompt.client'),
+                    promptPath: (string) config('image_prompt.design_anchor.prompt_path'),
+                    promptVersion: (string) config('image_prompt.design_anchor.prompt_version'),
+                    model: (string) config('image_prompt.anchor_author.model'),
+                    maxTokens: (int) config('image_prompt.'.config('canonical_concept.provider').'.max_tokens'),
+                );
+            }
+        );
+
+        $this->app->singleton(
             \App\Services\Video\CharacterAnchorPromptService::class,
             static fn (Application $app): \App\Services\Video\CharacterAnchorPromptService => new \App\Services\Video\CharacterAnchorPromptService(
                 $app->make(\App\Services\Video\PlanningStageStore::class),
@@ -507,6 +546,7 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(\App\Services\Video\ProductionSelectionService::class),
                 $app->make(\App\Services\Video\ScreenplaySubjectService::class),
                 $app->make(\App\Services\Video\VesselDesignService::class),
+                $app->make('video.design_anchor_prompt_author'),
             ),
         );
 

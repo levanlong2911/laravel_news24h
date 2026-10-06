@@ -24,7 +24,7 @@ final class ScreenplayStepRunner
      * @param  array<string, mixed>  $fixed
      * @param  array<string, mixed>  $input
      * @param  array<string, mixed>  $meta
-     * @param  callable(ScreenplayResult): array{0: ?string, 1: ?array<string, mixed>, 2: string}  $finish
+     * @param  callable(ScreenplayResult, array{stage_id: string, lease_expires_at: mixed}): array{0: ?string, 1: ?array<string, mixed>, 2: string, 3?: array{usage?: array<string, mixed>, metadata?: array<string, mixed>}}  $finish
      * @param  array<string, mixed>|null  $constrainedSchema
      * @return array{0: ?array<string, mixed>, 1: string}
      */
@@ -55,10 +55,10 @@ final class ScreenplayStepRunner
             return [null, 'screenplay_running'];
         }
 
-        $fail = function (string $error, string $reason, array $usage = [], string $raw = '') use (
+        $fail = function (string $error, string $reason, array $usage = [], string $raw = '', array $metadata = []) use (
             $projectId, $stage, $label, $input, $meta, $claimed, $token,
         ): string {
-            $recorded = $this->recordFailure($projectId, $claimed->id, $token, $error, $reason, $usage, $raw);
+            $recorded = $this->recordFailure($projectId, $claimed->id, $token, $error, $reason, $usage, $raw, $metadata);
 
             return $recorded === 'screenplay_claim_lost' && ($usage !== [] || $raw !== '')
                 ? $this->keepLostAttempt($projectId, $stage, $label, $input, $meta, $claimed->id, $token, $error, $usage, $raw)
@@ -112,7 +112,9 @@ final class ScreenplayStepRunner
         }
 
         try {
-            [$error, $output, $okReason] = $finish($result);
+            $finished = $finish($result, ['stage_id' => (string) $claimed->id, 'lease_expires_at' => $claimed->lease_expires_at]);
+            [$error, $output, $okReason] = $finished;
+            $extra = is_array($finished[3] ?? null) ? $finished[3] : [];
         } catch (\Throwable $e) {
             Log::error("screenplay {$label}: failed after a paid response", [
                 'project_id' => $projectId,
@@ -125,13 +127,16 @@ final class ScreenplayStepRunner
             )];
         }
 
+        $usage = self::combinedUsage($result->usage, is_array($extra['usage'] ?? null) ? $extra['usage'] : []);
+        $metadata = is_array($extra['metadata'] ?? null) ? $extra['metadata'] : [];
+
         if ($error !== null || $output === null) {
-            return [null, $fail((string) $error, 'screenplay_invalid', $result->usage, $result->rawResponse)];
+            return [null, $fail((string) $error, 'screenplay_invalid', $usage, $result->rawResponse, $metadata)];
         }
 
         try {
             $recorded = $this->stageStore->finishSucceeded(
-                $claimed->id, $token, $result->rawResponse, $output, $result->usage,
+                $claimed->id, $token, $result->rawResponse, $output, $usage, $metadata,
             );
         } catch (\Throwable $e) {
             Log::error("screenplay {$label}: writing the paid result threw, stored state unknown", [
@@ -146,7 +151,7 @@ final class ScreenplayStepRunner
         if (! $recorded) {
             return [null, $this->keepLostAttempt(
                 $projectId, $stage, $label, $input, $meta, $claimed->id, $token,
-                'claim_lost', $result->usage, $result->rawResponse, $output,
+                'claim_lost', $usage, $result->rawResponse, $output,
             )];
         }
 
@@ -154,7 +159,26 @@ final class ScreenplayStepRunner
     }
 
     /**
+     * @param  array<string, mixed>  $primary
+     * @param  array<string, mixed>  $added
+     * @return array<string, mixed>
+     */
+    public static function combinedUsage(array $primary, array $added): array
+    {
+        if ($added === []) {
+            return $primary;
+        }
+
+        foreach (['tokens_in', 'tokens_out', 'cost_usd'] as $key) {
+            $primary[$key] = ($primary[$key] ?? 0) + ($added[$key] ?? 0);
+        }
+
+        return $primary;
+    }
+
+    /**
      * @param  array<string, mixed>  $usage
+     * @param  array<string, mixed>  $metadata
      */
     public function recordFailure(
         string $projectId,
@@ -164,9 +188,10 @@ final class ScreenplayStepRunner
         string $reason,
         array $usage = [],
         string $rawResponse = '',
+        array $metadata = [],
     ): string {
         try {
-            $written = $this->stageStore->finishFailed($stageId, $token, $error, $usage, $rawResponse);
+            $written = $this->stageStore->finishFailed($stageId, $token, $error, $usage, $rawResponse, [], $metadata);
         } catch (\Throwable $storage) {
             Log::error('screenplay: writing the failed attempt threw, stored state unknown', [
                 'project_id' => $projectId,

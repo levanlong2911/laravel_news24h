@@ -50,7 +50,7 @@
                         <b>{{ $name }}</b>
                         <span class="m">{{ $character !== null ? $character['kind'].' · nhân vật chính' : 'từ brief Haiku' }}</span>
                         <span class="va-tag {{ $hasPrompt ? 'ok' : '' }}">{{ $hasPrompt ? 'Đã có prompt' : 'Chưa có prompt' }}</span>
-                        @if(collect($row['cells'])->contains('status', \App\Enums\DesignImageStatus::APPROVED->value))
+                        @if($row['approved'])
                             <span class="va-tag ok">Đã duyệt anchor</span>
                         @endif
                     </div>
@@ -61,11 +61,15 @@
                                 <div class="m">Viết bởi <b>{{ $row['prompt_version'] ?? '—' }}</b></div>
                             @else
                                 <div class="m" style="color:var(--vp-red)">
-                                    {{ $character !== null ? 'Chưa có prompt cho '.$name.' — bấm Creat Prompt.' : $compileReason }}
+                                    {{ $row['stale_prompt']
+                                        ? 'Prompt đang lưu thuộc bản thiết kế khác — chỉ còn trong lịch sử. Chưa có prompt cho bản thiết kế hiện hành của '.$name.' — bấm Creat Prompt.'
+                                        : ($character !== null ? 'Chưa có prompt cho '.$name.' — bấm Creat Prompt.' : $compileReason) }}
                                 </div>
                             @endif
 
-                            @if(! $brief['analysed'])
+                            @if(($row['blockers'] ?? []) !== [])
+                                <button class="vp-btn sm" disabled title="Thiết kế chưa sẵn sàng">Creat Prompt</button>
+                            @elseif(! $brief['analysed'])
                                 <button class="vp-btn sm" disabled title="Cần brief Haiku trước">Creat Prompt</button>
                             @elseif(($designFirst ?? false) && $character === null)
                                 <button class="vp-btn sm" disabled title="Cần bản thiết kế tàu trước">Creat Prompt</button>
@@ -98,6 +102,22 @@
                                 ])
                             @endif
                         </div>
+                        @if(($row['blockers'] ?? []) !== [])
+                            <div class="va-lbl" style="color:var(--vp-red);font-weight:400">
+                                Chưa sẵn sàng viết prompt hay render anchor:
+                                @foreach($row['blockers'] as $blocker)
+                                    <div>{{ $blocker }}</div>
+                                @endforeach
+                            </div>
+                        @endif
+                        @if(($row['conflicts'] ?? []) !== [])
+                            <div class="va-lbl" style="color:var(--vp-red);font-weight:400">
+                                AI báo nguồn thiết kế còn mâu thuẫn hoặc thiếu dữ kiện (vẫn cho render):
+                                @foreach($row['conflicts'] as $conflict)
+                                    <div>{{ $conflict }}</div>
+                                @endforeach
+                            </div>
+                        @endif
                         <div class="va-lbl">PROMPT GỬI ĐI</div>
                         <textarea class="va-ta" readonly>{{ $row['prompt'] ?? '' }}</textarea>
                         <div class="va-count"><span>{{ mb_strlen($row['prompt'] ?? '') }}</span> ký tự</div>
@@ -161,6 +181,7 @@
                         <div class="va-foot">
                             <button type="button" class="vp-btn pri" data-anchor-form="anchorImageForm{{ $n }}"
                                     data-toggle="modal" data-target="#confirmAnchorImage{{ $n }}"
+                                    @if(($row['blockers'] ?? []) !== []) disabled data-blocked="1" @endif
                                     data-busy="Đang render…">Render Image</button>
                             @include('modal.confirm_action', [
                                 'id' => 'confirmAnchorImage'.$n,

@@ -637,6 +637,8 @@ class DesignImageStore
             'view_key' => $spec['view_key'] ?? null,
             'character_id' => $spec['character_id'] ?? null,
             'character_name' => $spec['character_name'] ?? null,
+            'design_stage_id' => $spec['design_stage_id'] ?? null,
+            'design_content_hash' => $spec['design_content_hash'] ?? null,
             'environment' => $spec['environment'] ?? null,
             'quality' => (string) ($spec['quality'] ?? ''),
             'size' => (string) ($spec['size'] ?? ''),

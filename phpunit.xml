@@ -5,11 +5,11 @@
          colors="true"
 >
     <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
-        </testsuite>
-        <testsuite name="Video">
-            <directory>tests/Video</directory>
         </testsuite>
     </testsuites>
     <!-- Nhom `smoke` doc DU LIEU THAT tren may dang chay, nen ket qua khac nhau giua

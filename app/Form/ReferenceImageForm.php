@@ -24,12 +24,10 @@ class ReferenceImageForm
             return Validator::make($request->all(),
                 [
                     'view' => ['required', Rule::enum(ReferenceView::class)],
-                    'force' => ['nullable', 'boolean'],
                 ],
                 [
                     'view.required' => __('messages.anchor_setting_required', ['field' => 'View']),
                     'view.*' => __('messages.anchor_setting_invalid', ['field' => 'View']),
-                    'force.*' => 'Giá trị "viết lại" không hợp lệ.',
                 ])->validate();
         }
 
@@ -37,7 +35,6 @@ class ReferenceImageForm
             [
                 'reference_prompt_stage_id' => ['required', 'string', 'max:64'],
                 'prompt_sha256' => ['required', 'string', 'regex:/^[0-9a-f]{64}$/'],
-                'acknowledge_discrepancies' => ['nullable', 'boolean'],
                 'view' => ['required', Rule::enum(ReferenceView::class)],
                 'environment' => ['required', Rule::enum(ReferenceEnvironment::class)],
                 'model' => ['required', Rule::enum(ImageModel::class)],
@@ -57,7 +54,6 @@ class ReferenceImageForm
                 'reference_prompt_stage_id.*' => 'Mã prompt reference không hợp lệ.',
                 'prompt_sha256.required' => 'Thiếu mã băm của prompt đang xem trước.',
                 'prompt_sha256.*' => 'Mã băm của prompt đang xem trước không hợp lệ.',
-                'acknowledge_discrepancies.*' => 'Giá trị xác nhận mâu thuẫn không hợp lệ.',
                 'view.required' => __('messages.anchor_setting_required', ['field' => 'View']),
                 'view.*' => __('messages.anchor_setting_invalid', ['field' => 'View']),
                 'environment.required' => __('messages.anchor_setting_required', ['field' => 'Environment']),
