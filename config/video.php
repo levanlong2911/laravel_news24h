@@ -56,11 +56,47 @@ return [
         'image' => [
             'environment_plate' => [
                 [
+                    'id' => 'openai:gpt-image-2.5-flare',
+                    'provider' => 'openai',
+                    'model' => 'gpt-image-2.5-flare',
+                    'label' => 'GPT Image 2.5 Flare — tạo ảnh nhanh',
+                    'default' => true,
+                    'pricing' => 'estimated',
+                    'max_variations' => 2,
+                    'controls' => [
+                        'sizes' => [
+                            '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152',
+                            '3840x2160', '720x1280', '1152x2048', '2160x3840',
+                        ],
+                        'default_size' => '1152x2048',
+                        'qualities' => ['low', 'medium', 'high'],
+                        'default_quality' => 'low',
+                    ],
+                ],
+                [
+                    'id' => 'openai:gpt-image-2.5-sunburst',
+                    'provider' => 'openai',
+                    'model' => 'gpt-image-2.5-sunburst',
+                    'label' => 'GPT Image 2.5 Sunburst — sửa ảnh chính xác',
+                    'default' => false,
+                    'pricing' => 'estimated',
+                    'max_variations' => 2,
+                    'controls' => [
+                        'sizes' => [
+                            '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152',
+                            '3840x2160', '720x1280', '1152x2048', '2160x3840',
+                        ],
+                        'default_size' => '1152x2048',
+                        'qualities' => ['low', 'medium', 'high'],
+                        'default_quality' => 'low',
+                    ],
+                ],
+                [
                     'id' => 'openai:gpt-image-2',
                     'provider' => 'openai',
                     'model' => 'gpt-image-2',
                     'label' => 'GPT Image 2',
-                    'default' => true,
+                    'default' => false,
                     'pricing' => 'estimated',
                     'max_variations' => 2,
                     'controls' => [
@@ -705,6 +741,10 @@ return [
     'environment' => [
         'profiles' => [
             'yacht' => 'vessel_v2',
+        ],
+
+        'fitted_from_stage' => [
+            'yacht' => 'completion',
         ],
     ],
 

@@ -580,7 +580,7 @@
         source.options.forEach(function (option) {
             spaceOption(
                 option.artifact_id,
-                option.title + ' · ' + (option.kind === 'anchor' ? 'ảnh neo' : 'reference') + ' · ' + option.sha
+                option.title + ' · ' + (option.kind === 'anchor' ? 'ảnh neo' : (option.kind === 'environment' ? 'tấm nền phòng' : 'reference')) + ' · ' + option.sha
                     + (option.suggested ? ' · đã chọn ở lần trước (chưa xác nhận)' : ''),
                 spaceChoice === option.artifact_id && source.chosen === option.artifact_id,
                 option.url

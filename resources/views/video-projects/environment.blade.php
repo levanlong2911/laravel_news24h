@@ -114,7 +114,15 @@
     <div class="va-page">
         <div>
             <h1>Environment Library</h1>
-            <p>Render tấm nền sạch cho từng môi trường — không có con tàu nào trong khung hình</p>
+            <p>Sinh tấm nền từ chữ cho từng địa điểm và giai đoạn — bên ngoài không có chủ thể, phòng trong là căn phòng trống không người</p>
+            <p style="margin:0;color:var(--vp-dim)">
+                Nguồn:
+                @switch($environmentSource)
+                    @case(\App\Services\VideoProjectService::ENVIRONMENT_FROM_SCENE_PLAN) Scene Plan đã duyệt @break
+                    @case(\App\Services\VideoProjectService::ENVIRONMENT_FROM_SCREENPLAY) kịch bản production đã duyệt @break
+                    @default danh sách mẫu theo danh mục (chưa có kịch bản production)
+                @endswitch
+            </p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
             <span class="va-tag {{ $approvedKeys->count() === count($environments) && $environments !== [] ? 'ok' : 'mute' }}">
@@ -153,7 +161,18 @@
             <div class="vs-h"><b>2</b> Render settings</div>
             <div class="vs-h"><b>3</b> Rendered plates</div>
 
-            @foreach($environments as $environment)
+            @foreach(collect($environments)->sortBy(fn (array $row): int => ($row['kind'] ?? null) === \App\Services\VideoProjectService::ENVIRONMENT_ROOM ? 1 : 0) as $environment)
+                @php
+                    $kind = $environment['kind'] ?? \App\Services\VideoProjectService::ENVIRONMENT_EXTERNAL;
+                @endphp
+                @if($environmentSource !== \App\Services\VideoProjectService::ENVIRONMENT_FROM_PROFILE && $kind !== ($previousKind ?? null))
+                    <div class="vs-h" style="grid-column:1/-1">
+                        {{ $kind === \App\Services\VideoProjectService::ENVIRONMENT_ROOM ? 'Phòng trong — căn phòng trống, không người' : 'Bên ngoài — địa điểm, không có chủ thể' }}
+                    </div>
+                    @php
+                        $previousKind = $kind;
+                    @endphp
+                @endif
                 @php
                     $key = $environment['key'];
                     $rowCells = $byKey->get($key, collect());
@@ -166,6 +185,9 @@
                     <div class="vs-c">
                         <span class="ve-name">{{ $environment['label'] }}</span>
                         <span class="ve-key">{{ $key }}</span>
+                        @if(($environment['scenes'] ?? []) !== [])
+                            <span class="ve-key">Scene: {{ implode(', ', $environment['scenes']) }}</span>
+                        @endif
                         @if($approvedKeys->contains($key))
                             <span class="va-tag ok" style="margin-left:6px">ĐÃ DUYỆT</span>
                         @endif
@@ -274,6 +296,7 @@
                                 <button type="button" class="vp-btn pri" data-toggle="modal"
                                         data-target="#{{ $modal }}" data-busy="Đang render…">Render Plate</button>
                             </div>
+                            <div class="ve-locked" id="msg_{{ $key }}" hidden></div>
 
                             <div class="ve-locked">
                                 Mặc định {{ $defaultMediaModel['label'] }} · {{ $defaultMediaModel['controls']['default_size'] ?? '' }}
@@ -293,7 +316,7 @@
                         @endif
                     </div>
 
-                    <div class="vs-c">
+                    <div class="vs-c" id="plates_{{ $key }}">
                         @php
                             $cards = $rowCells
                                 ->flatMap(fn ($cell) => collect($cell['candidates'])->map(fn ($candidate) => [
@@ -393,8 +416,22 @@
 
         </div>
 
+        @if($environmentsWithoutPlate !== [])
+            <div class="vp-panel" style="margin-top:10px">
+                <div class="va-head">
+                    <b>KHU NGOÀI TRỜI TRÊN CHỦ THỂ</b>
+                    <em>không có tấm nền — render ở bước keyframe từ anchor và Reference</em>
+                </div>
+                <div class="va-body">
+                    @foreach($environmentsWithoutPlate as $row)
+                        <div class="va-lbl" style="font-weight:400">{{ $row['label'] }} &middot; Scene: {{ implode(', ', $row['scenes']) }}</div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
         <div class="va-lbl" style="margin-top:10px;font-weight:400;color:var(--vp-dim)">
-            Profile {{ $profileVersion }} &middot; {{ $plateVersion }}
+            Profile {{ $profileVersion }} &middot; {{ $plateVersion }} &middot; {{ \App\Video\Environment\EnvironmentPlatePrompt::LOCATION_VERSION }} &middot; {{ \App\Video\Environment\EnvironmentPlatePrompt::ROOM_VERSION }}
         </div>
     @endif
 </div>
@@ -479,6 +516,93 @@
         });
 
         sync();
+    });
+})();
+
+(function () {
+    function refresh(key) {
+        return fetch(window.location.href, { credentials: 'same-origin', headers: { 'Accept': 'text/html' } })
+            .then(function (response) { return response.text(); })
+            .then(function (html) {
+                var fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('plates_' + key);
+                var current = document.getElementById('plates_' + key);
+                if (fresh && current) { current.innerHTML = fresh.innerHTML; }
+            });
+    }
+
+    function notify(text, ok) {
+        if (window.toastr) {
+            window.toastr[ok ? 'success' : 'error'](text);
+        }
+    }
+
+    document.querySelectorAll('form[id^="envForm_"]').forEach(function (form) {
+        var idleTrigger = document.querySelector('[data-target="#' + form.dataset.modal + '"]');
+        if (idleTrigger) { idleTrigger.dataset.idle = idleTrigger.textContent.trim(); }
+
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            var key = form.querySelector('[name="environment_key"]').value;
+            var controls = document.querySelectorAll('[form="' + form.id + '"]');
+            var wasDisabled = Array.prototype.map.call(controls, function (el) { return el.disabled; });
+            var trigger = idleTrigger;
+            var message = document.getElementById('msg_' + key);
+            var body = new FormData(form);
+
+            function show(text, ok) {
+                if (!message) { return; }
+                message.hidden = false;
+                message.textContent = text;
+                message.style.color = ok ? 'var(--vp-green)' : 'var(--vp-red)';
+            }
+
+            function clear() {
+                if (!message) { return; }
+                message.hidden = true;
+                message.textContent = '';
+            }
+
+            if (window.jQuery) { window.jQuery('#' + form.dataset.modal).modal('hide'); }
+            show('Đang render… trang không tải lại, kết quả sẽ hiện ở cột Rendered plates.', true);
+
+            fetch(form.action, {
+                method: 'POST',
+                body: body,
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(function (response) {
+                    return response.json().then(function (payload) { return { status: response.status, payload: payload }; });
+                })
+                .then(function (result) {
+                    var ok = result.payload.ok === true;
+                    var errors = result.payload.errors ? Object.values(result.payload.errors).flat().join(' ') : '';
+                    var text = errors || result.payload.message || 'Không render được.';
+
+                    return refresh(key).then(function () {
+                        if (ok) {
+                            clear();
+                            notify('Render xong — ảnh đã hiện ở cột Rendered plates.', true);
+                        } else {
+                            show(text, false);
+                            notify(text, false);
+                        }
+                    });
+                })
+                .catch(function () {
+                    var text = 'Không gửi được yêu cầu render hoặc không đọc được kết quả. Tải lại trang để xem trạng thái.';
+                    show(text, false);
+                    notify(text, false);
+                })
+                .finally(function () {
+                    Array.prototype.forEach.call(controls, function (el, index) { el.disabled = wasDisabled[index]; });
+                    if (trigger) {
+                        trigger.disabled = false;
+                        trigger.textContent = trigger.dataset.idle || 'Render Plate';
+                    }
+                });
+        });
     });
 })();
 </script>

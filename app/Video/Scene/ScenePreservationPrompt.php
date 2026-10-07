@@ -4,7 +4,9 @@ namespace App\Video\Scene;
 
 final class ScenePreservationPrompt
 {
-    public const VERSION = 'scene-preservation-v3';
+    public const VERSION = 'scene-preservation-v4';
+
+    public const MANIFEST_V3_VERSION = 'scene-preservation-v3';
 
     public const SINGLE_SOURCE_VERSION = 'scene-preservation-v2';
 
@@ -23,7 +25,7 @@ final class ScenePreservationPrompt
     /** @return list<string> */
     public static function versions(): array
     {
-        return [self::LEGACY_VERSION, self::SINGLE_SOURCE_VERSION, self::VERSION];
+        return [self::LEGACY_VERSION, self::SINGLE_SOURCE_VERSION, self::MANIFEST_V3_VERSION, self::VERSION];
     }
 
     public static function forMode(string $mode, ?string $version = null): string
@@ -31,8 +33,8 @@ final class ScenePreservationPrompt
         $version ??= self::SINGLE_SOURCE_VERSION;
 
         return match (true) {
-            $version === self::VERSION && $mode === self::CONTINUATION => self::continuation(),
-            $version === self::VERSION && $mode === self::HARD_CUT => self::hardCut(),
+            in_array($version, [self::VERSION, self::MANIFEST_V3_VERSION], true) && $mode === self::CONTINUATION => self::continuation(),
+            in_array($version, [self::VERSION, self::MANIFEST_V3_VERSION], true) && $mode === self::HARD_CUT => self::hardCut(),
             $version === self::SINGLE_SOURCE_VERSION && $mode === self::CONTINUATION => self::continuation(),
             $version === self::SINGLE_SOURCE_VERSION && $mode === self::HARD_CUT => self::hardCut(),
             $version === self::LEGACY_VERSION && $mode === self::CONTINUATION => self::continuationV1(),
@@ -50,14 +52,14 @@ final class ScenePreservationPrompt
     {
         $version ??= self::VERSION;
 
-        if ($version !== self::VERSION || count($roles) < 2) {
+        if (! in_array($version, [self::VERSION, self::MANIFEST_V3_VERSION], true) || count($roles) < 2) {
             return self::forMode($mode, $version);
         }
 
-        $blocks = ['IMAGE 1 is the editable primary source. '.self::forMode($mode, self::VERSION)];
+        $blocks = ['IMAGE 1 is the editable primary source. '.self::forMode($mode, $version)];
 
         foreach (array_slice($roles, 1) as $index => $role) {
-            $blocks[] = 'IMAGE '.($index + 2).' '.self::referenceLine($role);
+            $blocks[] = 'IMAGE '.($index + 2).' '.self::referenceLine($role, $version);
         }
 
         $blocks[] = 'Only IMAGE 1 is edited. The other images are read, never copied wholesale. '
@@ -67,8 +69,15 @@ final class ScenePreservationPrompt
         return implode("\n\n", $blocks);
     }
 
-    private static function referenceLine(string $role): string
+    private static function referenceLine(string $role, string $version): string
     {
+        if ($role === 'environment' && $version === self::VERSION) {
+            return 'is an environment reference only: it shows the permanent place this frame takes place in, '
+                .'in a neutral state. Take the structure, layout and fixed features of the place from it. The state '
+                .'of the place in this frame, such as water, gates and doors, fit-out, furniture, props, people and '
+                .'light, follows the description below, not this reference. Do not take the subject\'s geometry from it.';
+        }
+
         return match ($role) {
             'identity' => 'is an identity reference only: it shows the same subject from another '
                 .'viewpoint so its proportions and permanent features stay right. Do not take its '

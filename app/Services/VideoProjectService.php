@@ -97,6 +97,22 @@ class VideoProjectService
 
     private const NO_PLATE = 'subject_part_without_plate';
 
+    public const ENVIRONMENT_FROM_SCENE_PLAN = 'scene_plan';
+
+    public const ENVIRONMENT_FROM_SCREENPLAY = 'screenplay';
+
+    public const ENVIRONMENT_FROM_PROFILE = 'profile';
+
+    public const ENVIRONMENT_EXTERNAL = 'external';
+
+    public const ENVIRONMENT_ROOM = 'room';
+
+    private const ROOM_ENVIRONMENT_CONTRACT = 'screenplay-environment-room-v3';
+
+    private const LOCATION_ENVIRONMENT_CONTRACT = 'screenplay-environment-v3';
+
+    private const LEGACY_ENVIRONMENT_CONTRACT = 'screenplay-environment-legacy-v2';
+
     private const UNRESOLVED_MARK = 'UNRESOLVED:';
 
     private const FRAME_LEAD = 'STATE OF THE SUBJECT IN THIS FRAME (what is built and how each moving part stands at this instant; the subject\'s design comes from the images):';
@@ -2021,6 +2037,22 @@ class VideoProjectService
             }
         }
 
+        $requirement = $this->screenplayEnvironmentRequirement($scene);
+        $roomPlate = ($requirement['kind'] ?? null) === self::ENVIRONMENT_ROOM
+            ? ($this->approvedPlates($projectId)[$requirement['key']] ?? null)
+            : null;
+
+        if ($roomPlate !== null) {
+            $options[] = [
+                'artifact_id' => (string) $roomPlate['artifact_id'],
+                'candidate_id' => (string) $roomPlate['candidate_id'],
+                'sha256' => (string) $roomPlate['sha256'],
+                'title' => 'Tấm nền phòng: '.$requirement['label'],
+                'kind' => 'environment',
+                'shows' => LocationProfile::INTERIOR,
+            ];
+        }
+
         if ($interior) {
             $options = array_values(array_filter(
                 $options,
@@ -2203,86 +2235,152 @@ class VideoProjectService
             return $this->rememberSource($memoKey, null);
         }
 
+        return $this->rememberSource($memoKey, $this->sceneEnvironmentRequirement($screenplay, $screenplayScene, $this->environmentContext((string) $scene->project_id)));
+    }
+
+    /**
+     * @return array{stages: list<string>, fitted_from: ?string, spaces: array<string, array<string, mixed>>}
+     */
+    private function environmentContext(string $projectId): array
+    {
+        $memoKey = 'environment_context:'.$projectId;
+
+        if ($this->sourceMemo !== null && array_key_exists($memoKey, $this->sourceMemo)) {
+            return $this->sourceMemo[$memoKey];
+        }
+
+        $project = VideoProject::query()->with('article.category')->find($projectId);
+        $category = (string) ($project?->article?->category?->slug ?? '');
+        $profile = $category === '' ? null : $this->screenplayExpansion->screenplayProfile($category);
+        $stages = array_values(array_filter((array) ($profile['arc_stages'] ?? []), 'is_string'));
+        $fittedFrom = config("video.environment.fitted_from_stage.{$category}");
+        $design = $project === null ? null : app(VesselDesignService::class)->currentStage($projectId);
+        $spaces = [];
+
+        foreach ((array) ($design?->output_json[\App\Video\Screenplay\ProtagonistProfile::OUTPUT_KEY][\App\Video\Screenplay\ProtagonistProfile::INTERIOR_KEY] ?? []) as $space) {
+            if (is_array($space) && is_string($space['space'] ?? null)) {
+                $spaces[$space['space']] = $space;
+            }
+        }
+
+        return $this->rememberSource($memoKey, [
+            'stages' => $stages,
+            'fitted_from' => is_string($fittedFrom) && in_array($fittedFrom, $stages, true) ? $fittedFrom : null,
+            'spaces' => $spaces,
+        ]);
+    }
+
+    /**
+     * @param  array{stages: list<string>, fitted_from: ?string, spaces: array<string, array<string, mixed>>}  $context
+     * @param  array<string, mixed>  $screenplayScene
+     */
+    private function roomPhase(array $context, array $screenplayScene): ?string
+    {
+        $stage = array_search((string) ($screenplayScene['stage'] ?? ''), $context['stages'], true);
+        $fittedFrom = $context['fitted_from'] === null ? false : array_search($context['fitted_from'], $context['stages'], true);
+
+        if ($stage === false || $fittedFrom === false) {
+            return null;
+        }
+
+        return $stage < $fittedFrom ? EnvironmentPlatePrompt::ROOM_UNFITTED : EnvironmentPlatePrompt::ROOM_FITTED;
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @param  array<string, mixed>  $screenplayScene
+     * @param  array{stages: list<string>, fitted_from: ?string, spaces: array<string, array<string, mixed>>}  $context
+     * @return array<string, mixed>|null
+     */
+    private function sceneEnvironmentRequirement(array $screenplay, array $screenplayScene, array $context): ?array
+    {
         $locationId = (string) ($screenplayScene['location_id'] ?? '');
         $location = collect((array) ($screenplay['locations'] ?? []))->firstWhere('id', $locationId);
 
         if (! is_array($location)
             || trim((string) ($location['name'] ?? '')) === ''
             || trim((string) ($location['description'] ?? '')) === '') {
-            return $this->rememberSource($memoKey, null);
+            return null;
         }
 
-        $buildState = \App\Video\Screenplay\SceneBeats::progressView($screenplayScene);
-
         if (\App\Video\Screenplay\LocationProfile::isProfiled($location)) {
-            return $this->rememberSource($memoKey, $this->profiledEnvironmentRequirement(
-                $screenplay, $location, $buildState,
-            ));
+            return $this->profiledEnvironmentRequirement($screenplay, $location, $this->roomPhase($context, $screenplayScene), $context['spaces']);
         }
 
         $identity = [
-            'contract' => 'screenplay-environment-v1',
+            'contract' => self::LEGACY_ENVIRONMENT_CONTRACT,
             'location_id' => $locationId,
             'location_description' => trim((string) $location['description']),
-            'build_state' => $buildState,
         ];
         $sha = $this->digest($identity);
-        $state = trim((string) ($buildState['state'] ?? ''));
-        $label = trim((string) $location['name']).($state === '' ? '' : ' · '.$state);
-        $place = trim((string) $location['description']);
 
-        if ($state !== '') {
-            $place .= "\nProduction context: {$state}. Show only the surrounding workspace, access, supports and tools appropriate to this state; keep the main subject absent.";
-        }
-
-        return $this->rememberSource($memoKey, [
+        return [
+            'kind' => self::ENVIRONMENT_EXTERNAL,
+            'location_id' => $locationId,
             'key' => 'story_'.substr($sha, 0, 24),
-            'label' => $label,
-            'place' => $place,
-            'version' => 'screenplay-environment-v1',
+            'label' => trim((string) $location['name']),
+            'place' => trim((string) $location['description']),
+            'version' => self::LEGACY_ENVIRONMENT_CONTRACT,
             'sha256' => $sha,
-        ]);
+        ];
     }
 
     /**
      * @param  array<string, mixed>  $screenplay
      * @param  array<string, mixed>  $location
-     * @param  array{subject_id: string, state: string}|null  $buildState
-     * @return array{plate:bool,label:string,spatial_relation:string,key?:string,place?:string,prompt?:string,plate_version?:string,version?:string,sha256?:string}
+     * @param  array<string, array<string, mixed>>  $spaces
+     * @return array<string, mixed>
      */
-    private function profiledEnvironmentRequirement(array $screenplay, array $location, ?array $buildState): array
+    private function profiledEnvironmentRequirement(array $screenplay, array $location, ?string $phase, array $spaces): array
     {
         $place = \App\Video\Screenplay\LocationProfile::forPrompt($location, (array) ($screenplay['locations'] ?? []));
+        $room = $place['spatial_relation'] === \App\Video\Screenplay\LocationProfile::SUBJECT_PART
+            && ($location[\App\Video\Screenplay\LocationProfile::ENCLOSURE_KEY] ?? null) === \App\Video\Screenplay\LocationProfile::INTERIOR;
 
-        if ($place['spatial_relation'] !== \App\Video\Screenplay\LocationProfile::EXTERNAL) {
-            return ['plate' => false, 'label' => $place['name'], 'spatial_relation' => $place['spatial_relation']];
+        if ($place['spatial_relation'] !== \App\Video\Screenplay\LocationProfile::EXTERNAL && ! $room) {
+            return [
+                'plate' => false,
+                'location_id' => $place['id'],
+                'label' => $place['name'],
+                'spatial_relation' => $place['spatial_relation'],
+            ];
         }
 
         $characters = collect((array) ($screenplay['characters'] ?? []));
-        $subjectId = $place['subject_id']
-            ?? (($buildState['subject_id'] ?? '') !== '' ? $buildState['subject_id'] : null)
-            ?? ($characters->firstWhere('role', 'protagonist')['id'] ?? null);
+        $subjectId = $place['subject_id'] ?? ($characters->firstWhere('role', 'protagonist')['id'] ?? null);
         $subject = $characters->firstWhere('id', $subjectId);
         $subjectName = is_array($subject) ? trim((string) ($subject['name'] ?? '')) : '';
-        $state = trim((string) ($buildState['state'] ?? ''));
+        $contract = $room ? self::ROOM_ENVIRONMENT_CONTRACT : self::LOCATION_ENVIRONMENT_CONTRACT;
+        $space = $spaces[(string) ($location['brief_space'] ?? '')] ?? null;
+        $fitted = $room && $phase === EnvironmentPlatePrompt::ROOM_FITTED && is_array($space)
+            ? array_intersect_key($space, array_flip(['materials_and_light', 'fixed_furniture']))
+            : null;
 
         $identity = [
-            'contract' => 'screenplay-environment-v2',
+            'contract' => $contract,
             'place' => $place,
             'subject_name' => $subjectName,
-            'build_state' => $buildState,
-        ];
+        ] + ($room ? ['phase' => $phase, 'fitted' => $fitted] : []);
         $sha = $this->digest($identity);
 
         return [
             'plate' => true,
+            'kind' => $room ? self::ENVIRONMENT_ROOM : self::ENVIRONMENT_EXTERNAL,
+            'location_id' => $place['id'],
+            'phase' => $room ? $phase : null,
             'key' => 'story_'.substr($sha, 0, 24),
-            'label' => $place['name'].($state === '' ? '' : ' · '.$state),
-            'place' => EnvironmentPlatePrompt::placeBlock($place),
-            'prompt' => EnvironmentPlatePrompt::forLocation($place, $subjectName, $state),
-            'plate_version' => EnvironmentPlatePrompt::LOCATION_VERSION,
+            'label' => $place['name'].match ($room ? $phase : null) {
+                EnvironmentPlatePrompt::ROOM_UNFITTED => ' · trước hoàn thiện',
+                EnvironmentPlatePrompt::ROOM_FITTED => ' · đã hoàn thiện',
+                default => '',
+            },
+            'place' => EnvironmentPlatePrompt::placeBlock($place, $room),
+            'prompt' => $room
+                ? EnvironmentPlatePrompt::forRoom($place, $subjectName, (string) $phase, $fitted)
+                : EnvironmentPlatePrompt::forLocation($place, $subjectName),
+            'plate_version' => $room ? EnvironmentPlatePrompt::ROOM_VERSION : EnvironmentPlatePrompt::LOCATION_VERSION,
             'spatial_relation' => $place['spatial_relation'],
-            'version' => 'screenplay-environment-v2',
+            'version' => $contract,
             'sha256' => $sha,
         ];
     }
@@ -2518,7 +2616,7 @@ class VideoProjectService
             return null;
         }
 
-        [$linkedPlan, $requirements, $requirementsError] = $this->selectedEnvironmentRequirements($project);
+        [$linkedPlan, $requirements, $requirementsError, $environmentSource, $withoutPlate] = $this->selectedEnvironmentRequirements($project);
         $profile = $linkedPlan ? null : $this->environmentProfile($project);
         $environments = [];
 
@@ -2563,6 +2661,8 @@ class VideoProjectService
             'defaultMediaModel' => $defaultMediaModel,
             'mediaModelsError' => $mediaModelsError,
             'environmentRequirementsError' => $requirementsError,
+            'environmentSource' => $environmentSource,
+            'environmentsWithoutPlate' => $withoutPlate,
             'renderedModels' => $this->modelsWithAnEnvironmentRender(),
             'qualityCosts' => collect(ImageQuality::cases())
                 ->mapWithKeys(fn (ImageQuality $quality) => [
@@ -2573,7 +2673,7 @@ class VideoProjectService
     }
 
     /**
-     * @return array{0: bool, 1: list<array{key:string,label:string,place:string,version:string,sha256:string}>, 2: ?string}
+     * @return array{0: bool, 1: list<array<string, mixed>>, 2: ?string, 3: string, 4: list<array{label: string, scenes: list<string>}>}
      */
     private function selectedEnvironmentRequirements(VideoProject $project): array
     {
@@ -2586,51 +2686,99 @@ class VideoProjectService
             ? (int) ($stage->output_json['revision'] ?? 0)
             : 0;
 
-        if ($revision < 1 || $this->reviewForRevision($stage)['status'] !== 'passed') {
-            return [false, [], null];
-        }
+        if ($revision >= 1 && $this->reviewForRevision($stage)['status'] === 'passed') {
+            $scenes = VideoRenderScene::query()
+                ->where('project_id', $project->id)
+                ->where('revision', $revision)
+                ->where('screenplay_stage_id', $project->selected_screenplay_stage_id)
+                ->orderBy('scene_index')
+                ->get();
+            $linked = $scenes->contains(
+                static fn (VideoRenderScene $scene): bool => $scene->screenplay_stage_id !== null,
+            );
 
-        $scenes = VideoRenderScene::query()
-            ->where('project_id', $project->id)
-            ->where('revision', $revision)
-            ->where('screenplay_stage_id', $project->selected_screenplay_stage_id)
-            ->orderBy('scene_index')
-            ->get();
-        $linked = $scenes->contains(
-            static fn (VideoRenderScene $scene): bool => $scene->screenplay_stage_id !== null,
-        );
-
-        if (! $linked) {
-            return [false, [], null];
-        }
-
-        $previousMemo = $this->sourceMemo;
-        $this->sourceMemo ??= [];
-        $requirements = [];
-        $unreadable = false;
-
-        try {
-            foreach ($scenes as $scene) {
-                $requirement = $this->screenplayEnvironmentRequirement($scene);
-
-                if ($requirement !== null && ($requirement['plate'] ?? true) === false) {
-                    continue;
-                }
-
-                if ($requirement !== null) {
-                    $requirements[$requirement['key']] = $requirement;
-                } else {
-                    $unreadable = true;
-                }
+            if (! $linked) {
+                return [false, [], null, self::ENVIRONMENT_FROM_PROFILE, []];
             }
-        } finally {
-            $this->sourceMemo = $previousMemo;
+
+            $previousMemo = $this->sourceMemo;
+            $this->sourceMemo ??= [];
+
+            try {
+                $entries = $scenes->map(fn (VideoRenderScene $scene): array => [
+                    (string) $scene->screenplay_scene_code,
+                    $this->screenplayEnvironmentRequirement($scene),
+                ])->all();
+            } finally {
+                $this->sourceMemo = $previousMemo;
+            }
+
+            return $this->environmentRequirementsOf($entries, self::ENVIRONMENT_FROM_SCENE_PLAN);
+        }
+
+        $screenplayStage = $this->selectedProductionScreenplay($project);
+
+        if ($screenplayStage === null || ! is_array($screenplayStage->output_json)) {
+            return [false, [], null, self::ENVIRONMENT_FROM_PROFILE, []];
+        }
+
+        $screenplay = $this->productionScreenplayContent($screenplayStage->output_json);
+        $entries = [];
+
+        foreach ((array) ($screenplay['scenes'] ?? []) as $screenplayScene) {
+            if (is_array($screenplayScene)) {
+                $entries[] = [(string) ($screenplayScene['id'] ?? ''), $this->sceneEnvironmentRequirement($screenplay, $screenplayScene, $this->environmentContext((string) $project->id))];
+            }
+        }
+
+        return $this->environmentRequirementsOf($entries, self::ENVIRONMENT_FROM_SCREENPLAY);
+    }
+
+    /**
+     * @param  list<array{0: string, 1: array<string, mixed>|null}>  $entries
+     * @return array{0: bool, 1: list<array<string, mixed>>, 2: ?string, 3: string, 4: list<array{label: string, scenes: list<string>}>}
+     */
+    private function environmentRequirementsOf(array $entries, string $source): array
+    {
+        $requirements = [];
+        $withoutPlate = [];
+        $keyOfLocation = [];
+        $error = null;
+
+        foreach ($entries as [$code, $requirement]) {
+            if ($requirement === null) {
+                $error ??= 'environment_requirement_unreadable';
+
+                continue;
+            }
+
+            $location = (string) ($requirement['location_id'] ?? '');
+            $setting = $location.'|'.(string) ($requirement['phase'] ?? '');
+
+            if (($requirement['plate'] ?? true) === false) {
+                $withoutPlate[$location] ??= ['label' => (string) $requirement['label'], 'scenes' => []];
+                $withoutPlate[$location]['scenes'] = array_values(array_unique([...$withoutPlate[$location]['scenes'], $code]));
+
+                continue;
+            }
+
+            if (isset($keyOfLocation[$setting]) && $keyOfLocation[$setting] !== $requirement['key']) {
+                $error = 'environment_location_conflict';
+
+                continue;
+            }
+
+            $keyOfLocation[$setting] = $requirement['key'];
+            $requirements[$requirement['key']] ??= $requirement + ['scenes' => []];
+            $requirements[$requirement['key']]['scenes'] = array_values(array_unique([...$requirements[$requirement['key']]['scenes'], $code]));
         }
 
         return [
             true,
             array_values($requirements),
-            $unreadable ? 'environment_requirement_unreadable' : null,
+            $error,
+            $source,
+            array_values($withoutPlate),
         ];
     }
 
@@ -2648,7 +2796,7 @@ class VideoProjectService
 
         $profile = $this->environmentProfile($project);
         $key = (string) ($data['environment_key'] ?? '');
-        [$linkedPlan, $requirements, $requirementsError] = $this->selectedEnvironmentRequirements($project);
+        [$linkedPlan, $requirements, $requirementsError, $environmentSource] = $this->selectedEnvironmentRequirements($project);
 
         if ($requirementsError !== null) {
             return [null, $requirementsError];
@@ -2695,6 +2843,11 @@ class VideoProjectService
             (string) ($requirement['plate_version'] ?? EnvironmentPlatePrompt::VERSION),
             $entry,
             $data,
+            $linkedPlan ? [
+                'location_id' => (string) ($requirement['location_id'] ?? ''),
+                'plate_kind' => (string) ($requirement['kind'] ?? self::ENVIRONMENT_EXTERNAL),
+                'environment_source' => $environmentSource,
+            ] : [],
         );
 
         if ($spec === null) {
@@ -2738,6 +2891,7 @@ class VideoProjectService
     /**
      * @param  array<string, mixed>  $entry
      * @param  array<string, mixed>  $data
+     * @param  array<string, string>  $source
      * @return array{0: ?array<string, mixed>, 1: string} [$spec, $reason]
      */
     private function environmentSpec(
@@ -2749,6 +2903,7 @@ class VideoProjectService
         string $plateVersion,
         array $entry,
         array $data,
+        array $source = [],
     ): array {
         $invalid = [null, 'environment_media_setting_invalid'];
         $controls = $entry['controls'];
@@ -2770,7 +2925,7 @@ class VideoProjectService
             'model' => $entry['model'],
             'pricing' => $entry['pricing'],
             'variations' => $variations,
-        ];
+        ] + $source;
 
         if ($entry['provider'] === 'openai') {
             $size = $this->choice($data, 'size', $controls['sizes']);

@@ -154,6 +154,7 @@ return [
     'environment_unknown_key' => 'Profile không khai môi trường này',
     'environment_media_models_broken' => 'Danh sách model của Environment Library đang lỗi cấu hình — chưa render được. Xem log.',
     'environment_requirement_unreadable' => 'Không thể đối chiếu môi trường của scene với kịch bản production đang chọn. Chưa render để tránh dùng sai bối cảnh.',
+    'environment_location_conflict' => 'Cùng một địa điểm nhưng các scene đọc ra nội dung địa điểm khác nhau. Kiểm tra lại liên kết scene và hồ sơ địa điểm của kịch bản production.',
     'environment_unknown_media_model' => 'Model không có trong danh sách của Environment Library',
     'environment_media_setting_invalid' => 'Thiết lập không còn hợp lệ với danh sách model của Environment Library — tải lại trang rồi chọn lại.',
     'environment_setting_not_allowed' => 'Trường :attribute không áp dụng cho model đã chọn',

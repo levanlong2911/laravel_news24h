@@ -815,7 +815,9 @@ class VideoProjectsController extends Controller
         } catch (InvalidArgumentException $e) {
             Log::error('environment: registry model hong khi validate', ['error' => $e->getMessage()]);
 
-            return back()->with('error', $this->anchorMessage('environment_media_models_broken'));
+            return $request->expectsJson()
+                ? response()->json(['ok' => false, 'message' => $this->anchorMessage('environment_media_models_broken')])
+                : back()->with('error', $this->anchorMessage('environment_media_models_broken'));
         }
 
         [$image, $reason] = $this->videoProjectService->renderEnvironmentDirect(
@@ -825,10 +827,16 @@ class VideoProjectsController extends Controller
         );
 
         if ($image === null) {
-            return back()->with('error', $this->anchorMessage($reason));
+            return $request->expectsJson()
+                ? response()->json(['ok' => false, 'message' => $this->anchorMessage($reason)])
+                : back()->with('error', $this->anchorMessage($reason));
         }
 
         $level = in_array($reason, ['rendered', 'already_exists'], true) ? 'success' : 'error';
+
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => $level === 'success', 'message' => $this->renderOutcome($reason, $image)]);
+        }
 
         return redirect()
             ->route('video-projects.environment', $id)
