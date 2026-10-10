@@ -57,8 +57,6 @@ use App\Video\Reference\ReferenceView;
 use App\Video\Render\Video\SceneClipDispatchService;
 use App\Video\Scene\ScenePlanAuthor;
 use App\Video\Scene\ScenePlanException;
-use App\Video\Scene\ScenePlanReviewer;
-use App\Video\Scene\ScenePlanReviewResult;
 use App\Video\Scene\ScenePreservationPrompt;
 use App\Video\Scene\SceneProfile;
 use App\Video\Scene\Services\ShotSelectionReconciler;
@@ -115,6 +113,31 @@ class VideoProjectService
 
     private const UNRESOLVED_MARK = 'UNRESOLVED:';
 
+    /** @var list<string> */
+    private const STORED_REVIEW_VERDICTS = ['pass', 'revise', 'requires_replan'];
+
+    /** @var list<string> */
+    private const STORED_REVIEW_RULES = [
+        'progress', 'source_image', 'end_state', 'preserve',
+        'camera', 'coverage_basis', 'content', 'duration', 'continuity', 'milestone_basis',
+    ];
+
+    /** @var list<string> */
+    private const STORED_REVIEW_SEVERITIES = ['blocking', 'advisory'];
+
+    private const STORYBOARD_PRESERVE = 'The camera, framing, lighting, setting and everything the action does not name '
+        .'stay as they are in the supplied frame.';
+
+    private const CAMERA_LEAD = 'CAMERA FOR THIS FRAME:';
+
+    /** @var list<string> */
+    private const SHOT_SHAPE_STATE_KEYS = [
+        'beat_coverage', 'objects_start', 'objects_end', 'objects_visible', 'objects_first_frame', 'objects_last_frame',
+        'reference_requirements',
+    ];
+
+    private const OBJECTS_LEAD ='TRACKED OBJECTS IN THIS FRAME (each shows exactly this state, no later one):';
+
     private const FRAME_LEAD = 'STATE OF THE SUBJECT IN THIS FRAME (what is built and how each moving part stands at this instant; the subject\'s design comes from the images):';
 
     private const SCENE_IDENTITY_KEYS = [
@@ -123,6 +146,7 @@ class VideoProjectService
 
     private const MANIFEST_ROLES = [
         'anchor', 'source_keyframe', 'identity', 'environment', 'geometry', 'space_geometry',
+        'continuity', 'design_reference',
     ];
 
     private const ROLE_IMAGE_TYPES = [
@@ -132,7 +156,14 @@ class VideoProjectService
         'environment' => [DesignImageStore::ENVIRONMENT_TYPE],
         'geometry' => [DesignImageStore::REFERENCE_TYPE, DesignImageStore::SCENE_KEYFRAME_TYPE],
         'space_geometry' => [DesignImageStore::ANCHOR_TYPE, DesignImageStore::REFERENCE_TYPE],
+        'continuity' => [DesignImageStore::SCENE_KEYFRAME_TYPE],
+        'design_reference' => [DesignImageStore::ANCHOR_TYPE, DesignImageStore::REFERENCE_TYPE],
     ];
+
+    /** @var list<string> */
+    private const SINGLE_ROLES = ['anchor', 'source_keyframe', 'environment', 'space_geometry', 'continuity'];
+
+    private const REFERENCE_CHOICE_KEY = 'reference_choice';
 
     /** Lua chon san pham, khong phai tran cua provider — tai lieu cho toi 16. */
     public const SCENE_MAX_SOURCE_IMAGES = 4;
@@ -971,6 +1002,14 @@ class VideoProjectService
 
     /**
      * @return array{0: bool, 1: string}
+     */
+    public function deleteReference(string $projectId, string $artifactId): array
+    {
+        return $this->designImageStore->deleteCandidate($projectId, $artifactId, DesignImageStore::REFERENCE_TYPE);
+    }
+
+    /**
+     * @return array{0: bool, 1: string}
      *                                   reason: approved|image_type_mismatch|artifact_not_found|
      *                                   image_not_found|not_approvable|project_not_found
      */
@@ -1010,6 +1049,10 @@ class VideoProjectService
             return [false, 'candidate_outside_scene'];
         }
 
+        if ($this->keyframeNeedsReview($candidate) !== null) {
+            return [false, 'sources_changed'];
+        }
+
         return $this->designImageStore->approve(
             $projectId,
             $artifactId,
@@ -1042,6 +1085,7 @@ class VideoProjectService
         );
 
         $cells = [];
+        $memo = [];
 
         foreach ($rows as $row) {
             $status = (string) $row->status;
@@ -1049,7 +1093,8 @@ class VideoProjectService
             $cells[$key] ??= ['approved' => null, 'candidate' => null];
 
             if ($status === DesignImageStatus::APPROVED->value) {
-                $cells[$key]['approved'] = $this->keyframeCellView($row, $cost);
+                $cells[$key]['approved'] = $this->keyframeCellView($row, $cost)
+                    + ['needs_review' => $this->keyframeReviewReason($row, $memo)];
 
                 continue;
             }
@@ -1849,17 +1894,35 @@ class VideoProjectService
         [$slots, $why] = $this->sceneManifestSlots($projectId, $scene, $stage, $views);
 
         if ($slots === null) {
-            return ['slots' => [], 'prompt' => null, 'blocked_reason' => $why];
+            return [
+                'slots' => [],
+                'prompt' => null,
+                'blocked_reason' => $why,
+                'references' => null,
+                'reference_reset' => str_starts_with($why, 'reference') ? [
+                    'version' => $this->referenceChoice($scene)['version'],
+                    'url' => route('video-projects.scene-references', [$projectId, (string) $scene->id]),
+                ] : null,
+            ];
         }
 
         [$preservation] = $this->preservationForRevision($stage);
 
         return [
+            'references' => $this->referencePanel($scene, $stage) + [
+                'room' => max(0, self::SCENE_MAX_SOURCE_IMAGES - count($slots)),
+                'extras' => array_values(array_map(
+                    static fn (array $slot): array => ['artifact_id' => (string) $slot['artifact_id'], 'role' => (string) $slot['role']],
+                    array_filter($slots, static fn (array $slot): bool => ($slot['group'] ?? null) === 'extra'),
+                )),
+            ],
             'slots' => array_map(fn (array $slot): array => [
                 'position' => $slot['position'],
                 'role' => $slot['role'],
                 'title' => $slot['title'],
                 'primary' => $slot['position'] === 0,
+                'group' => $slot['group'] ?? 'extra',
+                'artifact_id' => (string) $slot['artifact_id'],
                 'url' => route('video-artifacts.show', $slot['artifact_id']),
                 'sha' => substr((string) $slot['sha256'], 0, 12),
                 'state' => $this->sourceState($projectId, $this->manifestEntry($slot)),
@@ -1908,27 +1971,23 @@ class VideoProjectService
         array $views,
         ?array $spaceSource = null,
     ): array {
-        [$primary, $why] = $this->resolveSource($scene, $stage, null, false);
+        $basis = $this->manifestBasis($projectId, $scene, $stage, $views);
 
-        if ($primary === null) {
-            return [null, $why];
+        if ($basis['primary'] === null) {
+            return [null, $basis['why']];
         }
 
-        $continues = $primary['role'] === 'source_keyframe';
-        [$anchor] = $continues ? $this->anchorForDisplay($projectId, $scene, $stage) : [null];
-        $identity = $continues ? $anchor : $primary;
-        $views = array_values(array_filter($views, static fn (array $view): bool => $identity !== null
-            && ($view['anchor_artifact_id'] ?? null) === (string) $identity['artifact_id']
-            && ($view['anchor_sha256'] ?? null) === (string) $identity['sha256']));
+        ['primary' => $primary, 'continues' => $continues, 'place' => $place, 'views' => $views] = $basis;
 
-        $used =[$primary['artifact_id'] => true];
+        $used = [$primary['artifact_id'] => true];
         $slots = [array_replace($primary, [
-            'title' => $continues ? 'Từ '.$scene->source_scene_code : 'Ảnh neo',
+            'title' => $continues ? 'Từ '.$scene->source_scene_code : ($place ? $primary['title'] : 'Ảnh neo'),
+            'group' => 'primary',
         ])];
+        $required = [];
 
-        if ($spaceSource !== null && ! array_key_exists($spaceSource['artifact_id'], $used)) {
-            $used[$spaceSource['artifact_id']] = true;
-            $slots[] = [
+        if ($spaceSource !== null) {
+            $required[] = [
                 'artifact_id' => $spaceSource['artifact_id'],
                 'candidate_id' => $spaceSource['candidate_id'],
                 'sha256' => $spaceSource['sha256'],
@@ -1937,32 +1996,51 @@ class VideoProjectService
             ];
         }
 
+        if (! $continues) {
+            [$previous, $previousWhy] = $this->previousShotKeyframe($scene);
+
+            if ($previousWhy !== null) {
+                return [null, $previousWhy];
+            }
+
+            if ($previous !== null && $previous['location_id'] === (string) ($scene->state_json['location_id'] ?? '')) {
+                $required[] = array_replace($previous, ['role' => 'continuity', 'title' => 'Liền mạch: '.$previous['title']]);
+            }
+        }
+
         [$plate, $plateWhy] = $this->approvedPlate($projectId, $scene);
 
         if ($plate === null && $plateWhy !== self::NO_PLATE) {
             return [null, $plateWhy];
         }
 
-        foreach (['identity', 'environment', 'geometry'] as $role) {
-            if (count($slots) >= self::SCENE_MAX_SOURCE_IMAGES) {
-                break;
-            }
+        if ($plate !== null) {
+            $required[] = array_replace($plate, ['role' => 'environment']);
+        }
 
-            $entry = match ($role) {
-                'identity' => $continues ? $anchor : $this->pickView($views, $used),
-                'environment' => $plate,
-                default => $this->pickView($views, $used),
-            };
-
-            if ($entry === null || array_key_exists($entry['artifact_id'], $used)) {
+        foreach ($required as $entry) {
+            if (array_key_exists($entry['artifact_id'], $used)) {
                 continue;
             }
 
             $used[$entry['artifact_id']] = true;
-            $slots[] = array_replace($entry, [
-                'role' => $role,
-                'title' => $entry['title'] ?? 'Ảnh neo',
-            ]);
+            $slots[] = array_replace($entry, ['group' => 'required']);
+        }
+
+        if (count($slots) > self::SCENE_MAX_SOURCE_IMAGES) {
+            return [null, 'references_over_limit'];
+        }
+
+        [$extras, $extrasWhy] = $this->referenceExtras(
+            $projectId, $scene, $place, $continues, $basis['identity'], $views, $slots,
+        );
+
+        if ($extras === null) {
+            return [null, $extrasWhy];
+        }
+
+        foreach ($extras as $entry) {
+            $slots[] = array_replace($entry, ['group' => 'extra']);
         }
 
         foreach ($slots as $position => $slot) {
@@ -1974,6 +2052,294 @@ class VideoProjectService
         }
 
         return [$slots, 'ok'];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $views
+     * @return array{primary: ?array<string, mixed>, why: string, continues: bool, place: bool, anchor: ?array<string, mixed>,
+     *               identity: ?array<string, mixed>, views: list<array<string, mixed>>}
+     */
+    private function manifestBasis(string $projectId, VideoRenderScene $scene, ?VideoPlanningStage $stage, array $views): array
+    {
+        [$primary, $why] = $this->resolveSource($scene, $stage, null, false);
+        $continues = ($primary['role'] ?? null) === 'source_keyframe';
+        $place = $this->isPlaceShot($scene);
+        [$anchor] = $primary !== null && $continues && ! $place ? $this->anchorForDisplay($projectId, $scene, $stage) : [null];
+        $identity = $place ? null : ($continues ? $anchor : $primary);
+
+        return [
+            'primary' => $primary,
+            'why' => $why,
+            'continues' => $continues,
+            'place' => $place,
+            'anchor' => $anchor,
+            'identity' => $identity,
+            'views' => array_values(array_filter($views, static fn (array $view): bool => $identity !== null
+                && ($view['anchor_artifact_id'] ?? null) === (string) $identity['artifact_id']
+                && ($view['anchor_sha256'] ?? null) === (string) $identity['sha256'])),
+        ];
+    }
+
+    /** @return array{version: int, customized: bool, options: list<array<string, mixed>>} */
+    private function referencePanel(VideoRenderScene $scene, ?VideoPlanningStage $stage): array
+    {
+        $projectId = (string) $scene->project_id;
+        $basis = $this->manifestBasis($projectId, $scene, $stage, $this->approvedReferenceViews($projectId));
+        $choice = $this->referenceChoice($scene);
+
+        return [
+            'version' => $choice['version'],
+            'customized' => $choice['items'] !== null,
+            'options' => $basis['primary'] === null ? [] : array_map(static fn (array $option): array => [
+                'artifact_id' => $option['artifact_id'],
+                'title' => $option['title'],
+                'kind' => $option['kind'],
+                'roles' => $option['roles'],
+                'url' => route('video-artifacts.show', $option['artifact_id']),
+            ], $this->referenceOptions($projectId, $scene, $basis['place'], $basis['identity'], $basis['views'])),
+        ];
+    }
+
+    /**
+     * @return array{0: ?array<string, mixed>, 1: ?string} [$entry, $blockedReason]; [null, null] for the first shot
+     */
+    private function previousShotKeyframe(VideoRenderScene $scene): array
+    {
+        $previous = VideoRenderScene::query()
+            ->where('project_id', $scene->project_id)
+            ->where('revision', $scene->revision)
+            ->where('scene_index', (int) $scene->scene_index - 1)
+            ->first(['id', 'title', 'state_json']);
+
+        if ($previous === null) {
+            return [null, null];
+        }
+
+        $keyframe = VideoDesignImage::query()
+            ->where('project_id', $scene->project_id)
+            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
+            ->where('render_scene_id', $previous->id)
+            ->where('status', DesignImageStatus::APPROVED->value)
+            ->whereNotNull('selected_artifact_id')
+            ->orderByDesc('approved_at')
+            ->first();
+
+        if ($keyframe === null) {
+            return [null, 'previous_keyframe_missing|'.$previous->title];
+        }
+
+        if ($this->keyframeNeedsReview($keyframe) !== null) {
+            return [null, 'previous_keyframe_needs_review|'.$previous->title];
+        }
+
+        [$entry, $why] = $this->freshApprovedSource(
+            (string) $scene->project_id, (string) $keyframe->selected_artifact_id, [DesignImageStore::SCENE_KEYFRAME_TYPE], 'continuity',
+        );
+
+        return $entry === null
+            ? [null, $why]
+            : [$entry + ['title' => (string) $previous->title, 'location_id' => (string) ($previous->state_json['location_id'] ?? '')], null];
+    }
+
+    /** @return array{version: int, items: ?list<array{artifact_id: string, role: string}>} */
+    private function referenceChoice(VideoRenderScene $scene): array
+    {
+        $choice = is_array($scene->state_json) ? ($scene->state_json[self::REFERENCE_CHOICE_KEY] ?? null) : null;
+
+        return [
+            'version' => is_array($choice) ? (int) ($choice['version'] ?? 0) : 0,
+            'items' => is_array($choice) && is_array($choice['items'] ?? null) ? array_values($choice['items']) : null,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $views
+     * @return list<array{artifact_id: string, candidate_id: string, sha256: string, title: string, kind: string, roles: list<string>}>
+     */
+    private function referenceOptions(string $projectId, VideoRenderScene $scene, bool $place, ?array $identity, array $views): array
+    {
+        if ($place) {
+            $options = array_map(
+                static fn (array $option): array => $option + ['roles' => ['design_reference']],
+                $this->designReferenceOptions($projectId),
+            );
+        } else {
+            $options = $identity === null ? [] : [[
+                'artifact_id' => (string) $identity['artifact_id'],
+                'candidate_id' => (string) ($identity['candidate_id'] ?? ''),
+                'sha256' => (string) $identity['sha256'],
+                'title' => 'Ảnh neo',
+                'kind' => 'anchor',
+                'roles' => ['identity'],
+            ]];
+
+            foreach ($views as $view) {
+                $options[] = [
+                    'artifact_id' => (string) $view['artifact_id'],
+                    'candidate_id' => (string) $view['candidate_id'],
+                    'sha256' => (string) $view['sha256'],
+                    'title' => (string) $view['title'],
+                    'kind' => 'reference',
+                    'roles' => ['identity', 'geometry'],
+                ];
+            }
+        }
+
+        if ((string) $scene->transition_mode !== ScenePreservationPrompt::HARD_CUT) {
+            return $options;
+        }
+
+        $earlier = VideoRenderScene::query()
+            ->where('project_id', $scene->project_id)
+            ->where('revision', $scene->revision)
+            ->where('scene_index', '<', (int) $scene->scene_index)
+            ->orderBy('scene_index')
+            ->get(['id', 'title', 'state_json'])
+            ->filter(static fn (VideoRenderScene $row): bool => ($row->state_json['location_id'] ?? null) === ($scene->state_json['location_id'] ?? null));
+        $keyframes = VideoDesignImage::query()
+            ->whereIn('render_scene_id', $earlier->pluck('id'))
+            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
+            ->where('status', DesignImageStatus::APPROVED->value)
+            ->whereNotNull('selected_artifact_id')
+            ->with('artifact')
+            ->get()
+            ->keyBy('render_scene_id');
+        $memo = [];
+
+        foreach ($earlier as $row) {
+            $keyframe = $keyframes->get((string) $row->id);
+
+            if ($keyframe === null || $keyframe->artifact === null || $this->keyframeReviewReason($keyframe, $memo) !== null) {
+                continue;
+            }
+
+            $options[] = [
+                'artifact_id' => (string) $keyframe->selected_artifact_id,
+                'candidate_id' => (string) $keyframe->id,
+                'sha256' => (string) $keyframe->artifact->sha256,
+                'title' => (string) $row->title,
+                'kind' => 'keyframe',
+                'roles' => ['continuity'],
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $views
+     * @param  list<array<string, mixed>>  $slots
+     * @return array{0: ?list<array<string, mixed>>, 1: string}
+     */
+    private function referenceExtras(
+        string $projectId,
+        VideoRenderScene $scene,
+        bool $place,
+        bool $continues,
+        ?array $identity,
+        array $views,
+        array $slots,
+    ): array {
+        $room = self::SCENE_MAX_SOURCE_IMAGES - count($slots);
+        $used = array_flip(array_column($slots, 'artifact_id'));
+        $items = $this->referenceChoice($scene)['items'];
+
+        if ($items === null) {
+            $auto = [];
+            $needs = $this->referenceNeedKinds($scene);
+            $roles = match (true) {
+                $needs === null => $place ? [] : ['identity', 'geometry'],
+                $place => in_array('design', $needs, true) ? ['design_reference'] : [],
+                default => array_intersect($needs, ['identity', 'design']) === [] ? [] : ['identity', 'geometry'],
+            };
+
+            foreach ($roles as $role) {
+                $entry = match (true) {
+                    $role === 'design_reference' => collect($this->designReferenceOptions($projectId))
+                        ->first(static fn (array $option): bool => ! array_key_exists($option['artifact_id'], $used)),
+                    $role === 'identity' && $continues => $identity,
+                    default => $this->pickView($views, $used),
+                };
+
+                if ($entry === null || array_key_exists($entry['artifact_id'], $used) || count($auto) >= $room) {
+                    continue;
+                }
+
+                $used[$entry['artifact_id']] = true;
+                $auto[] = array_replace($entry, ['role' => $role, 'title' => $entry['title'] ?? 'Ảnh neo']);
+            }
+
+            $designRequired = $needs !== null
+                && ($place ? in_array('design', $needs, true) : array_intersect($needs, ['identity', 'design']) !== []);
+
+            if ($designRequired) {
+                $design = array_column($this->designReferenceOptions($projectId), 'artifact_id');
+
+                if ($design === []) {
+                    return [null, 'design_reference_missing'];
+                }
+
+                if (array_intersect($design, array_map('strval', array_keys($used))) === []) {
+                    return [null, 'design_reference_no_room'];
+                }
+            }
+
+            return [$auto, 'ok'];
+        }
+
+        if (count($items) > $room) {
+            return [null, 'references_over_limit'];
+        }
+
+        $options = [];
+
+        foreach ($this->referenceOptions($projectId, $scene, $place, $identity, $views) as $option) {
+            $options[$option['artifact_id']] = $option;
+        }
+
+        $singles = array_flip(array_intersect(array_column($slots, 'role'), self::SINGLE_ROLES));
+        $extras = [];
+
+        foreach ($items as $item) {
+            $option = is_array($item) ? ($options[(string) ($item['artifact_id'] ?? '')] ?? null) : null;
+            $role = is_array($item) ? (string) ($item['role'] ?? '') : '';
+
+            if ($option === null || ! in_array($role, $option['roles'], true)) {
+                return [null, 'reference_choice_invalid'];
+            }
+
+            if (array_key_exists($option['artifact_id'], $used)
+                || (in_array($role, self::SINGLE_ROLES, true) && array_key_exists($role, $singles))) {
+                return [null, 'reference_choice_duplicated|'.$option['title']];
+            }
+
+            $used[$option['artifact_id']] = true;
+            $singles[$role] = true;
+            $extras[] = [
+                'artifact_id' => $option['artifact_id'],
+                'candidate_id' => $option['candidate_id'],
+                'sha256' => $option['sha256'],
+                'role' => $role,
+                'title' => $option['title'],
+            ];
+        }
+
+        return [$extras, 'ok'];
+    }
+
+    /** @return list<string>|null */
+    private function referenceNeedKinds(VideoRenderScene $scene): ?array
+    {
+        $state = is_array($scene->state_json) ? $scene->state_json : [];
+
+        if (($state['storyboard_shape'] ?? null) !== ScenePlanAuthor::SHOT_SHAPE) {
+            return null;
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn (mixed $need): ?string => is_array($need) && is_string($need['kind'] ?? null) ? $need['kind'] : null,
+            (array) ($state['reference_requirements'] ?? []),
+        ))));
     }
 
     private function spaceSha(VideoRenderScene $scene): ?string
@@ -2239,7 +2605,7 @@ class VideoProjectService
     }
 
     /**
-     * @return array{stages: list<string>, fitted_from: ?string, spaces: array<string, array<string, mixed>>}
+     * @return array{stages: list<string>, fitted_from: ?string, spaces: array<string, array<string, mixed>>, furnished: bool}
      */
     private function environmentContext(string $projectId): array
     {
@@ -2267,11 +2633,13 @@ class VideoProjectService
             'stages' => $stages,
             'fitted_from' => is_string($fittedFrom) && in_array($fittedFrom, $stages, true) ? $fittedFrom : null,
             'spaces' => $spaces,
+            'furnished' => $design !== null
+                && (PlanningStageStore::metadataOf($design->input_json)[VesselDesign::INTERIOR_POLICY_KEY] ?? null) === VesselDesign::FURNISHED_ROOMS_POLICY,
         ]);
     }
 
     /**
-     * @param  array{stages: list<string>, fitted_from: ?string, spaces: array<string, array<string, mixed>>}  $context
+     * @param  array{stages: list<string>, fitted_from: ?string, spaces: array<string, array<string, mixed>>, furnished: bool}  $context
      * @param  array<string, mixed>  $screenplayScene
      */
     private function roomPhase(array $context, array $screenplayScene): ?string
@@ -2289,7 +2657,7 @@ class VideoProjectService
     /**
      * @param  array<string, mixed>  $screenplay
      * @param  array<string, mixed>  $screenplayScene
-     * @param  array{stages: list<string>, fitted_from: ?string, spaces: array<string, array<string, mixed>>}  $context
+     * @param  array{stages: list<string>, fitted_from: ?string, spaces: array<string, array<string, mixed>>, furnished: bool}  $context
      * @return array<string, mixed>|null
      */
     private function sceneEnvironmentRequirement(array $screenplay, array $screenplayScene, array $context): ?array
@@ -2304,7 +2672,9 @@ class VideoProjectService
         }
 
         if (\App\Video\Screenplay\LocationProfile::isProfiled($location)) {
-            return $this->profiledEnvironmentRequirement($screenplay, $location, $this->roomPhase($context, $screenplayScene), $context['spaces']);
+            return $this->profiledEnvironmentRequirement(
+                $screenplay, $location, $this->roomPhase($context, $screenplayScene), $context['spaces'], $context['furnished'],
+            );
         }
 
         $identity = [
@@ -2329,9 +2699,10 @@ class VideoProjectService
      * @param  array<string, mixed>  $screenplay
      * @param  array<string, mixed>  $location
      * @param  array<string, array<string, mixed>>  $spaces
+     * @param  bool  $furnished  the design was written under the furnished-rooms interior policy
      * @return array<string, mixed>
      */
-    private function profiledEnvironmentRequirement(array $screenplay, array $location, ?string $phase, array $spaces): array
+    private function profiledEnvironmentRequirement(array $screenplay, array $location, ?string $phase, array $spaces, bool $furnished = false): array
     {
         $place = \App\Video\Screenplay\LocationProfile::forPrompt($location, (array) ($screenplay['locations'] ?? []));
         $room = $place['spatial_relation'] === \App\Video\Screenplay\LocationProfile::SUBJECT_PART
@@ -2353,7 +2724,9 @@ class VideoProjectService
         $contract = $room ? self::ROOM_ENVIRONMENT_CONTRACT : self::LOCATION_ENVIRONMENT_CONTRACT;
         $space = $spaces[(string) ($location['brief_space'] ?? '')] ?? null;
         $fitted = $room && $phase === EnvironmentPlatePrompt::ROOM_FITTED && is_array($space)
-            ? array_intersect_key($space, array_flip(['materials_and_light', 'fixed_furniture']))
+            ? array_intersect_key($space, array_flip($furnished
+                ? ['materials_and_light', 'fixed_furniture', 'layout']
+                : ['materials_and_light', 'fixed_furniture']))
             : null;
 
         $identity = [
@@ -2377,7 +2750,11 @@ class VideoProjectService
             'place' => EnvironmentPlatePrompt::placeBlock($place, $room),
             'prompt' => $room
                 ? EnvironmentPlatePrompt::forRoom($place, $subjectName, (string) $phase, $fitted)
-                : EnvironmentPlatePrompt::forLocation($place, $subjectName),
+                : EnvironmentPlatePrompt::forLocation(
+                    $place,
+                    $subjectName,
+                    ($location[\App\Video\Screenplay\LocationProfile::ENCLOSURE_KEY] ?? null) === \App\Video\Screenplay\LocationProfile::INTERIOR,
+                ),
             'plate_version' => $room ? EnvironmentPlatePrompt::ROOM_VERSION : EnvironmentPlatePrompt::LOCATION_VERSION,
             'spatial_relation' => $place['spatial_relation'],
             'version' => $contract,
@@ -2501,6 +2878,40 @@ class VideoProjectService
         }
 
         return $views;
+    }
+
+    /** @return list<array{artifact_id: string, candidate_id: string, sha256: string, title: string, kind: string}> */
+    private function designReferenceOptions(string $projectId): array
+    {
+        $anchor = $this->productionAnchor($projectId);
+        $artifact = $anchor?->selected_artifact_id === null ? null : VideoArtifact::query()->whereKey($anchor->selected_artifact_id)->first();
+
+        if ($artifact === null) {
+            return [];
+        }
+
+        $options = [[
+            'artifact_id' => (string) $artifact->id,
+            'candidate_id' => (string) $anchor->id,
+            'sha256' => (string) $artifact->sha256,
+            'title' => 'Ảnh neo',
+            'kind' => 'anchor',
+        ]];
+
+        foreach ($this->approvedReferenceViews($projectId) as $view) {
+            if (($view['anchor_artifact_id'] ?? null) === (string) $artifact->id
+                && ($view['anchor_sha256'] ?? null) === (string) $artifact->sha256) {
+                $options[] = [
+                    'artifact_id' => (string) $view['artifact_id'],
+                    'candidate_id' => (string) $view['candidate_id'],
+                    'sha256' => (string) $view['sha256'],
+                    'title' => (string) $view['title'],
+                    'kind' => 'reference',
+                ];
+            }
+        }
+
+        return $options;
     }
 
     /** @return array<string, mixed>|null */
@@ -4431,13 +4842,9 @@ class VideoProjectService
         return $this->creativeProfileResolver->resolve((string) ($project->article->category?->slug ?? ''));
     }
 
-    /** @return array{0: ?int, 1: string} [$sceneCount, $reason] */
-    public function planScenes(
-        string $projectId,
-        ?string $actorId,
-        bool $force = false,
-        ?array $scope = null,
-    ): array {
+    /** @return array{0: ?int, 1: string} [$shotCount, $reason] */
+    public function generateStoryboard(string $projectId, ?string $actorId, bool $force = false): array
+    {
         $actor = $actorId === null ? null : Admin::find($actorId);
 
         if ($actor === null) {
@@ -4457,19 +4864,13 @@ class VideoProjectService
         }
 
         $screenplay = $this->productionScreenplayContent($screenplayStage->output_json);
-        $screenplayHash = \App\Video\Screenplay\ScreenplayContentHash::of($screenplay);
-        $trialScope = $scope === null ? null : $this->trialScope($screenplay, $scope);
 
-        if ($scope !== null && $trialScope === null) {
-            return [null, 'scene_plan_trial_scope_invalid'];
+        if (! \App\Video\Screenplay\SceneBeats::usesBeats($screenplay)) {
+            return [null, 'storyboard_needs_beats'];
         }
 
-        $validationScreenplay = $trialScope === null
-            ? $screenplay
-            : $this->screenplayForPlanScope($screenplay, $trialScope);
-        $stageName = $trialScope === null
-            ? PlanningStageName::SCENE_PLAN
-            : PlanningStageName::SCENE_PLAN_TRIAL;
+        $screenplayHash = \App\Video\Screenplay\ScreenplayContentHash::of($screenplay);
+        $stageName = PlanningStageName::SCENE_PLAN;
 
         [$subjectKey, $subjectReason] = $this->productionSubjectKey($projectId);
 
@@ -4502,75 +4903,18 @@ class VideoProjectService
         }
 
         $author = app(ScenePlanAuthor::class);
-        $beats = \App\Video\Screenplay\SceneBeats::usesBeats($screenplay);
-
-        if ($beats) {
-            try {
-                $author = $author->forBeats();
-            } catch (ScenePlanException $e) {
-                $this->quietLog('scene-plan: beat skill not configured', $e, ['project_id' => $projectId]);
-
-                return [null, 'scene_plan_misconfigured'];
-            }
-        }
-
-        $provider = (string) config('canonical_concept.provider');
-        $max = $author->maxShots();
-        $screenplaySceneCount = count((array) ($validationScreenplay['scenes'] ?? []));
-        $minShotsPerScene = (int) config('video.scene_plan.min_shots_per_scene', 1);
-        $maxShotsPerScene = (int) config('video.scene_plan.max_shots_per_scene', 10);
-
-        if ($minShotsPerScene < 1 || $maxShotsPerScene < $minShotsPerScene
-            || $maxShotsPerScene > 255 || $screenplaySceneCount * $minShotsPerScene > $max) {
-            return [null, 'scene_plan_misconfigured'];
-        }
-
-        $reviewEnabled = (bool) config('video.scene_plan.review.enabled');
-        $maxRounds = (int) config('video.scene_plan.review.max_rounds');
-        $reviewer = null;
-
-        if ($reviewEnabled) {
-            if ($maxRounds < 1) {
-                return [null, 'scene_review_misconfigured'];
-            }
-
-            $reviewer = app(ScenePlanReviewer::class);
-
-            if ($reviewer->maxTokens() < 1) {
-                return [null, 'scene_review_misconfigured'];
-            }
-        }
-
-        $effectiveMax = $trialScope === null
-            ? $max
-            : min($max, $screenplaySceneCount * $maxShotsPerScene);
-        $minimumPlannedScenes = $trialScope === null ? $profile->minScenes : $screenplaySceneCount;
-        $requirements = $this->planningRequirements($profile, $effectiveMax, $minimumPlannedScenes);
-
-        if ($trialScope !== null) {
-            $requirements['plan_scope'] = $trialScope;
-        }
-
-        $coverageIds = ScenePlanAuthor::shownCoverageIds($validationScreenplay);
 
         try {
             $skillHash = $author->skillHash();
+            $schemaHash = $author->schemaHash();
         } catch (ScenePlanException $e) {
-            $this->quietLog('scene-plan: author skill unreadable', $e, ['project_id' => $projectId]);
+            $this->quietLog('storyboard: author skill unreadable', $e, ['project_id' => $projectId]);
 
             return [null, 'scene_plan_misconfigured'];
         }
 
-        $reviewSkill = null;
-
-        try {
-            $reviewSkill = $reviewer?->preflight();
-            $reviewSkillHash = $reviewSkill === null ? null : $reviewer->skillHash($reviewSkill);
-        } catch (ScenePlanException $e) {
-            $this->quietLog('scene-plan: review skill unreadable', $e, ['project_id' => $projectId]);
-
-            return [null, 'scene_review_misconfigured'];
-        }
+        $packet = $this->storyboardPacket($screenplay, $summary);
+        $provider = (string) config('canonical_concept.provider');
 
         $claimInput = [
             'screenplay_stage_id' => $screenplayStage->id,
@@ -4581,25 +4925,15 @@ class VideoProjectService
             'anchor_identity_sha256' => (string) $anchor->prompt_sha256,
             'profile_version' => $profile->version,
             'profile_sha256' => $profile->sha256,
-            'requirements' => $requirements,
-            'requirements_hash' => $this->digest($requirements),
+            'packet_hash' => $this->digest($packet),
             'skill_hash' => $skillHash,
+            'schema_hash' => $schemaHash,
             'prompt_version' => $author->promptVersion(),
             'scene_contract_version' => $author->contractVersion(),
             'preservation_version' => ScenePreservationPrompt::VERSION,
             'provider' => $provider,
             'model' => $author->model(),
-            'review_enabled' => $reviewEnabled,
-            'review_max_rounds' => $reviewEnabled ? $maxRounds : null,
-            'review_prompt_version' => $reviewer?->promptVersion(),
-            'review_skill_hash' => $reviewSkillHash,
-            'review_model' => $reviewer?->model(),
         ];
-        $expectedProductionSelectionVersion = (int) $project->production_selection_version;
-
-        if ($trialScope !== null) {
-            $claimInput['plan_scope'] = $trialScope;
-        }
 
         $claimMeta = ['pricing' => 'unpriced'];
 
@@ -4608,28 +4942,23 @@ class VideoProjectService
         );
 
         if ($token === null) {
-            return [null, $reason === 'already_succeeded' ? 'scene_plan_unchanged' : 'scene_plan_running'];
+            return [null, $reason === 'already_succeeded' ? 'storyboard_unchanged' : 'storyboard_running'];
         }
 
         $raw = '';
         $totals = [];
         $authorUsage = [];
         $authorModel = null;
-        $trail = null;
-        $current = [];
+        $shots = [];
         $warnings = [];
 
         try {
             $authorAttempted = false;
 
             try {
-                $result = $author->plan([
-                    'selected_screenplay' => $screenplay,
-                    'identity_summary' => $summary,
-                    'planning_requirements' => $requirements,
-                ], $profile, $coverageIds, static function () use (&$authorAttempted): void {
+                $result = $author->plan($packet, static function () use (&$authorAttempted): void {
                     $authorAttempted = true;
-                }, $minimumPlannedScenes, $effectiveMax);
+                });
 
                 $raw = $result->raw;
                 $authorModel = $result->authorModel;
@@ -4655,157 +4984,19 @@ class VideoProjectService
 
             $totals = $this->addUsage($totals, $authorUsage, $authorAttempted);
 
-            [$current, $warnings] = $this->validatedScenes(
-                $result->scenes, $profile, $requirements, $effectiveMax, $validationScreenplay,
+            [$shots, $warnings] = $this->storyboardShots($result->scenes, $screenplay);
+
+            $usageColumn = $this->usageColumn($totals, $provider, $author->promptVersion(), $authorModel);
+            $committed = $this->commitScenePlan(
+                $projectId, $shots, $warnings, $authorUsage, $totals,
+                $author->promptVersion(), $claimed->id, $token, $raw, $usageColumn,
+                $screenplayStage, $screenplayHash,
             );
 
-            $trail = [
-                'status' => $reviewEnabled ? 'needs_review' : 'unreviewed',
-                'reason' => $reviewEnabled ? 'rounds_exhausted' : 'review_disabled',
-                'reviewed_plan_sha256' => null,
-                'plan_hashes' => [$this->planHash($current)],
-                'rounds' => [],
-            ];
-
-            $claimLost = ! $this->stageStore->recordProgress(
-                $claimed->id, $token,
-                $this->planOutput($current, $warnings, $trail, $authorUsage, $totals, $raw),
-            );
-
-            for ($round = 1; ! $claimLost && $reviewEnabled && $round <= $maxRounds; $round++) {
-                $startedAt = microtime(true);
-                $planIn = $this->planHash($current);
-                $record = ['round' => $round, 'plan_sha256_in' => $planIn];
-                $review = null;
-                $stop = null;
-                $attempted = false;
-                $usage = [];
-
-                try {
-                    $review = $reviewer->review(
-                        $this->reviewInput(
-                            $screenplay, $summary, $profile, $requirements, $current, $warnings,
-                        ),
-                        $coverageIds,
-                        $effectiveMax,
-                        (string) $reviewSkill,
-                        static function () use (&$attempted): void {
-                            $attempted = true;
-                        },
-                        $beats,
-                    );
-
-                    $usage = [
-                        'provider_model' => $review->reviewerModel,
-                        'tokens_in' => $review->inputTokens,
-                        'tokens_out' => $review->outputTokens,
-                        'thinking_tokens' => $review->reasoningTokens,
-                    ];
-
-                    $record += [
-                        'completion_attempted' => true,
-                        'verdict' => $review->verdict,
-                        'findings' => $review->findings,
-                        'raw' => $this->storableText($review->raw),
-                        'usage' => $usage,
-                    ];
-                } catch (\Throwable $e) {
-                    $usage = $e instanceof ScenePlanException ? $e->usage : [];
-
-                    $record += [
-                        'completion_attempted' => $attempted,
-                        'error' => [
-                            'class' => $e::class,
-                            'message' => $this->storableText($e->getMessage()),
-                        ],
-                        'raw' => $e instanceof ScenePlanException && $e->raw !== ''
-                            ? $this->storableText($e->raw)
-                            : null,
-                        'usage' => $usage === [] ? null : $usage,
-                    ];
-
-                    $stop = $attempted ? 'review_call_failed' : 'review_not_attempted';
-                }
-
-                $totals = $this->addUsage($totals, $usage, $attempted);
-
-                if ($review !== null) {
-                    try {
-                        [$stop, $current, $warnings, $record] = $this->applyReview(
-                            $review, $current, $warnings, $record,
-                            $profile, $requirements, $effectiveMax, $round, $maxRounds,
-                            $trail['plan_hashes'], $validationScreenplay,
-                        );
-                    } catch (\Throwable $e) {
-                        $record['apply_error'] = [
-                            'class' => $e::class,
-                            'message' => $this->storableText($e->getMessage()),
-                        ];
-                        $record['duration_ms'] = $this->elapsed($startedAt);
-                        $trail['rounds'][] = $record;
-                        $trail['status'] = 'needs_review';
-                        $trail['reason'] = 'review_apply_failed';
-                        $trail['reviewed_plan_sha256'] = null;
-
-                        $this->bestEffortProgress($claimed->id, $token, fn (): array => $this->planOutput(
-                            $current, $warnings, $trail, $authorUsage, $totals, $raw,
-                        ));
-
-                        throw $e;
-                    }
-                }
-
-                $record['duration_ms'] = $this->elapsed($startedAt);
-                $trail['rounds'][] = $record;
-
-                if (isset($record['plan_sha256_out'])) {
-                    $trail['plan_hashes'][] = $record['plan_sha256_out'];
-                }
-
-                if ($stop !== null) {
-                    $this->settle($trail, $stop, $planIn);
-                }
-
-                if (! $this->stageStore->recordProgress(
-                    $claimed->id, $token,
-                    $this->planOutput($current, $warnings, $trail, $authorUsage, $totals, $raw),
-                )) {
-                    $claimLost = true;
-
-                    break;
-                }
-
-                if ($stop !== null) {
-                    break;
-                }
-            }
-
-            if ($claimLost) {
-                $revision = null;
-            } elseif ($trialScope !== null) {
-                $revision = $this->stageStore->finishSucceeded(
-                    $claimed->id,
-                    $token,
-                    $raw,
-                    $this->planOutput($current, $warnings, $trail, $authorUsage, $totals, $raw),
-                    $this->usageColumn($totals, $provider, $author->promptVersion(), $authorModel),
-                ) ? 0 : null;
-            } else {
-                $revision = $this->commitScenePlan(
-                    $projectId, $current, $warnings, $trail, $authorUsage, $totals,
-                    $author->promptVersion(), $claimed->id, $token, $raw,
-                    $this->usageColumn($totals, $provider, $author->promptVersion(), $authorModel),
-                    $screenplayStage, $screenplayHash,
-                    $expectedProductionSelectionVersion,
-                );
-            }
-
-            if ($revision === null) {
+            if ($committed === null) {
                 return $this->orphanScenePlan(
                     $projectId, $claimInput, $claimMeta, $claimed->id, $token,
-                    $current, $warnings, $trail, $authorUsage,
-                    $this->usageColumn($totals, $provider, $author->promptVersion(), $authorModel),
-                    $totals, $raw, $stageName,
+                    $shots, $warnings, $authorUsage, $usageColumn, $totals, $raw, $stageName,
                 );
             }
         } catch (\Throwable $e) {
@@ -4813,26 +5004,19 @@ class VideoProjectService
                 $raw = $e->raw;
             }
 
-            if ($trail !== null) {
-                $trail['status'] = 'needs_review';
-                $trail['reason'] = 'planning_failed';
-                $trail['reviewed_plan_sha256'] = null;
-
-                $this->bestEffortProgress($claimed->id, $token, fn (): array => $this->planOutput(
-                    $current, $warnings, $trail, $authorUsage, $totals, $raw,
-                ));
-            }
-
             $usageColumn = $this->usageColumn($totals, $provider, $author->promptVersion(), $authorModel);
+            $output = $this->safeOutput(fn (): array => $this->storyboardOutput(
+                $shots, $warnings, $authorUsage, $totals, $raw,
+            ));
             $wrote = null;
             $orphaned = null;
 
             try {
                 $wrote = $this->stageStore->finishFailed(
-                    $claimed->id, $token, $e->getMessage(), $usageColumn, $raw,
+                    $claimed->id, $token, $e->getMessage(), $usageColumn, $raw, $output,
                 );
             } catch (\Throwable $ledgerError) {
-                $this->quietLog('scene-plan: finishFailed threw', $ledgerError);
+                $this->quietLog('storyboard: finishFailed threw', $ledgerError);
             }
 
             if ($wrote !== true) {
@@ -4841,38 +5025,140 @@ class VideoProjectService
                         $projectId, $stageName,
                         $claimInput, $claimMeta,
                         $claimed->id, $token,
-                        $e->getMessage(), $usageColumn, $raw,
-                        $trail === null ? [] : $this->safeOutput(fn (): array => $this->planOutput(
-                            $current, $warnings, $trail, $authorUsage, $totals, $raw,
-                        )),
+                        $e->getMessage(), $usageColumn, $raw, $output,
                     );
                 } catch (\Throwable $orphanError) {
-                    $this->quietLog('scene-plan: recordOrphanAttempt threw', $orphanError);
+                    $this->quietLog('storyboard: recordOrphanAttempt threw', $orphanError);
                 }
             }
 
-            $this->quietLog('scene-plan: failed', $e, [
+            $this->quietLog('storyboard: failed', $e, [
                 'project_id' => $projectId,
                 'claim_kept' => $wrote,
-                'rounds' => $trail === null ? 0 : count($trail['rounds']),
             ]);
 
             return [null, $wrote === true || $orphaned !== null
-                ? 'scene_plan_failed'
-                : 'scene_plan_failed_unrecorded'];
+                ? 'storyboard_failed'
+                : 'storyboard_failed_unrecorded'];
         }
 
-        Log::info('scene-plan: written', [
+        Log::info('storyboard: written', [
             'project_id' => $projectId,
-            'revision' => $revision,
-            'scenes' => count($current),
+            'revision' => $committed,
+            'shots' => count($shots),
             'warnings' => count($warnings),
-            'review_status' => $trail['status'],
-            'review_reason' => $trail['reason'],
             'calls' => $totals['calls'] ?? 0,
         ]);
 
-        return [count($current), $trail['status'] === 'passed' ? 'ok' : 'ok_needs_review'];
+        return [count($shots), 'storyboard_draft'];
+    }
+
+    /**
+     * @return array{revision: int, shot_board: bool, approved: bool, selected_revision: int}
+     */
+    public function storyboardApproval(string $projectId, int $revision): array
+    {
+        $project = VideoProject::query()->whereKey($projectId)->first();
+        $selected = $project?->selectedScenePlanStage()->first();
+        $selectedRevision = is_array($selected?->output_json) ? (int) ($selected->output_json['revision'] ?? 0) : 0;
+        $stage = $revision < 1 ? null : $this->stageStore->stageForProjectRevision($projectId, PlanningStageName::SCENE_PLAN, $revision);
+
+        return [
+            'revision' => $revision,
+            'shot_board' => $stage !== null
+                && ($stage->input_json['scene_contract_version'] ?? null) === ScenePlanAuthor::STORYBOARD_CONTRACT_VERSION,
+            'approved' => $stage !== null && (string) $project?->selected_scene_plan_stage_id === (string) $stage->id,
+            'selected_revision' => $selectedRevision,
+        ];
+    }
+
+    /**
+     * @return array{0: ?int, 1: string}
+     */
+    public function approveStoryboard(string $projectId, ?string $actorId, int $revision): array
+    {
+        $actor = $actorId === null ? null : Admin::find($actorId);
+
+        if ($actor === null) {
+            return [null, 'project_not_found'];
+        }
+
+        $project = $this->videoProjectRepository->getById($projectId);
+
+        if ($project === null || Gate::forUser($actor)->denies('update', $project)) {
+            return [null, 'project_not_found'];
+        }
+
+        return DB::transaction(function () use ($projectId, $actorId, $revision): array {
+            $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->first();
+
+            if ($project === null) {
+                return [null, 'project_not_found'];
+            }
+
+            $latest = (int) VideoRenderScene::query()->where('project_id', $projectId)->max('revision');
+
+            if ($revision < 1 || $revision !== $latest) {
+                return [null, 'storyboard_not_latest'];
+            }
+
+            $stage = $this->stageStore->stageForProjectRevision($projectId, PlanningStageName::SCENE_PLAN, $revision);
+
+            if ($stage === null
+                || ($stage->input_json['scene_contract_version'] ?? null) !== ScenePlanAuthor::STORYBOARD_CONTRACT_VERSION) {
+                return [null, 'scene_contract_unsupported'];
+            }
+
+            if ((string) $project->selected_scene_plan_stage_id === (string) $stage->id) {
+                return [$revision, 'storyboard_already_approved'];
+            }
+
+            $review = $this->reviewForRevision($stage);
+            $rows = VideoRenderScene::query()
+                ->where('project_id', $projectId)
+                ->where('revision', $revision)
+                ->orderBy('scene_index')
+                ->get();
+
+            if ($review['status'] !== 'passed' || $rows->isEmpty()) {
+                return [null, 'scene_plan_not_reviewed'];
+            }
+
+            if ($rows->contains(static fn (VideoRenderScene $row): bool => (string) $row->screenplay_stage_id
+                !== (string) $project->selected_screenplay_stage_id)) {
+                return [null, 'screenplay_selection_changed'];
+            }
+
+            $live = $rows->map(fn (VideoRenderScene $row): array => $this->planShapeOf($row))->all();
+
+            if (! hash_equals((string) $review['reviewed_plan_sha256'], $this->planHash($live))) {
+                return [null, 'scene_plan_changed_since_review'];
+            }
+
+            $metadata = is_array($project->metadata_json) ? $project->metadata_json : [];
+            $history = is_array($metadata['production_selection_history'] ?? null)
+                ? $metadata['production_selection_history']
+                : [];
+            $nextSelectionVersion = (int) $project->production_selection_version + 1;
+            $history[] = [
+                'version' => $nextSelectionVersion,
+                'screenplay_stage_id' => $project->selected_screenplay_stage_id,
+                'scene_plan_stage_id' => $stage->id,
+                'scene_plan_revision' => $revision,
+                'plan_sha256' => $review['reviewed_plan_sha256'],
+                'approved_by' => $actorId,
+                'selected_at' => now()->toIso8601String(),
+            ];
+            $metadata['production_selection_history'] = $history;
+
+            $project->forceFill([
+                'selected_scene_plan_stage_id' => $stage->id,
+                'production_selection_version' => $nextSelectionVersion,
+                'metadata_json' => $metadata,
+            ])->save();
+
+            return [$revision, 'ok'];
+        });
     }
 
     /**
@@ -4924,6 +5210,60 @@ class VideoProjectService
         ] + $ledger;
     }
 
+    /** @return array{status: string, error: ?string, at: ?string}|null */
+    public function storyboardRun(string $projectId): ?array
+    {
+        $latest = VideoPlanningStage::query()
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::SCENE_PLAN->value)
+            ->orderByDesc('updated_at')
+            ->first(['status', 'error_message', 'lease_expires_at', 'updated_at']);
+
+        if ($latest === null) {
+            return null;
+        }
+
+        $status = (string) $latest->status;
+
+        if ($status === VideoPlanningStageStatus::RUNNING->value && ! ($latest->lease_expires_at?->isFuture() ?? false)) {
+            $status = 'interrupted';
+        }
+
+        return [
+            'status' => $status,
+            'error' => $status === VideoPlanningStageStatus::FAILED->value ? (string) $latest->error_message : null,
+            'at' => $latest->updated_at?->format('d/m H:i'),
+        ];
+    }
+
+    /** @return array{scenes: list<array{id: string, location: string}>} */
+    public function storyboardScenes(string $projectId): array
+    {
+        $project = VideoProject::query()->find($projectId);
+        $stage = $project === null ? null : $this->selectedProductionScreenplay($project);
+        $output = is_array($stage?->output_json) ? $stage->output_json : [];
+        $locationNames = [];
+
+        foreach ((array) ($output['locations'] ?? []) as $location) {
+            if (is_array($location) && is_string($location['id'] ?? null) && is_string($location['name'] ?? null)) {
+                $locationNames[$location['id']] = $location['name'];
+            }
+        }
+
+        $scenes = [];
+
+        foreach ((array) ($output['scenes'] ?? []) as $scene) {
+            if (! is_array($scene) || ! is_string($scene['id'] ?? null)) {
+                continue;
+            }
+
+            $locationId = (string) ($scene['location_id'] ?? '');
+            $scenes[] = ['id' => $scene['id'], 'location' => $locationNames[$locationId] ?? $locationId];
+        }
+
+        return ['scenes' => $scenes];
+    }
+
     /**
      * Production readers must follow the explicit selection, never the newest draft.
      *
@@ -4973,21 +5313,17 @@ class VideoProjectService
     }
 
     /**
-     * Tra `null` khi claim mat giua chung: scene da chen bi rollback, va nguoi
-     * goi phai di duong orphan. Moi `ScenePlanException` khac van noi len.
-     *
      * @param  list<array<string, mixed>>  $scenes
      * @param  list<string>  $warnings
-     * @param  array<string, mixed>  $trail
      * @param  array<string, mixed>  $authorUsage
      * @param  array<string, mixed>  $totals
      * @param  array<string, mixed>  $usageColumn
+     * @return int|null the draft revision; null when the claim was lost
      */
     private function commitScenePlan(
         string $projectId,
         array $scenes,
         array $warnings,
-        array $trail,
         array $authorUsage,
         array $totals,
         string $promptVersion,
@@ -4997,7 +5333,6 @@ class VideoProjectService
         array $usageColumn,
         VideoPlanningStage $screenplayStage,
         string $screenplayHash,
-        int $expectedSelectionVersion,
     ): ?int {
         $lost = false;
         $screenplayScenes = collect((array) ($screenplayStage->output_json['scenes'] ?? []))
@@ -5007,11 +5342,11 @@ class VideoProjectService
 
         try {
             return DB::transaction(function () use (
-                $projectId, $scenes, $warnings, $trail, $authorUsage, $totals,
+                $projectId, $scenes, $warnings, $authorUsage, $totals,
                 $promptVersion, $stageId, $claimToken, $raw, $usageColumn,
-                $screenplayStage, $screenplayHash, $expectedSelectionVersion, $screenplayScenes, &$lost
+                $screenplayStage, $screenplayHash, $screenplayScenes, &$lost
             ) {
-                $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
                 $revision = ((int) VideoRenderScene::query()
                     ->where('project_id', $projectId)
@@ -5047,8 +5382,18 @@ class VideoProjectService
                             'end_state' => $scene['end_state'],
                         ] : [
                             'build_state' => $source['build_state'] ?? null,
-                        ]) + (array_key_exists('light_and_weather', $source) ? [
-                            'setting' => \App\Video\Screenplay\LocationProfile::sceneSetting($source),
+                        ]) + (array_key_exists('beat_coverage', $scene) ? [
+                            'storyboard_shape' => ScenePlanAuthor::SHOT_SHAPE,
+                            'beat_coverage' => $scene['beat_coverage'],
+                            'objects_start' => $scene['objects_start'],
+                            'objects_end' => $scene['objects_end'],
+                            'objects_first_frame' => $scene['objects_first_frame'],
+                            'objects_last_frame' => $scene['objects_last_frame'],
+                            'reference_requirements' => $scene['reference_requirements'],
+                        ] : []) + (array_key_exists('light_and_weather', $source) ? [
+                            'setting' => array_key_exists('beat_coverage', $scene)
+                                ? array_replace(\App\Video\Screenplay\LocationProfile::sceneSetting($source), ['props' => []])
+                                : \App\Video\Screenplay\LocationProfile::sceneSetting($source),
                         ] : []) + (($space = $this->spaceOfScene($screenplayStage, $scene['location_id'])) === null ? [] : [
                             'space' => $space,
                         ]),
@@ -5059,18 +5404,29 @@ class VideoProjectService
                         'source_scene_code' => $scene['source_scene_code'] !== ''
                             ? $scene['source_scene_code']
                             : null,
-                        'camera_change_reason' => $scene['camera_change_reason'] !== ''
-                            ? $scene['camera_change_reason']
-                            : null,
-                        'video_plan_json' => $scene['video'] + ['camera_mode' => $scene['camera_mode']],
+                        'camera_change_reason' => null,
+                        'video_plan_json' => $scene['video'] + [
+                            'camera_mode' => 'locked',
+                            'camera' => $scene['camera'],
+                        ],
                     ]);
                 }
+
+                $stored = VideoRenderScene::query()
+                    ->where('project_id', $projectId)
+                    ->where('revision', $revision)
+                    ->orderBy('scene_index')
+                    ->get()
+                    ->map(fn (VideoRenderScene $row): array => $this->planShapeOf($row))
+                    ->all();
 
                 $recorded = $this->stageStore->finishSucceeded(
                     $stageId,
                     $claimToken,
                     $raw,
-                    $this->planOutput($scenes, $warnings, $trail, $authorUsage, $totals, $raw, $revision),
+                    $this->storyboardOutput(
+                        $scenes, $warnings, $authorUsage, $totals, $raw, $revision, $this->planHash($stored),
+                    ),
                     $usageColumn,
                 );
 
@@ -5078,31 +5434,8 @@ class VideoProjectService
                     $lost = true;
 
                     throw new ScenePlanException(
-                        'Scene plan claim was lost before the ledger could record it.'
+                        'Storyboard claim was lost before the ledger could record it.'
                     );
-                }
-
-                if (($trail['status'] ?? null) === 'passed'
-                    && (string) $project->selected_screenplay_stage_id === (string) $screenplayStage->id
-                    && (int) $project->production_selection_version === $expectedSelectionVersion) {
-                    $metadata = is_array($project->metadata_json) ? $project->metadata_json : [];
-                    $history = is_array($metadata['production_selection_history'] ?? null)
-                        ? $metadata['production_selection_history']
-                        : [];
-                    $nextSelectionVersion = $expectedSelectionVersion + 1;
-                    $history[] = [
-                        'version' => $nextSelectionVersion,
-                        'screenplay_stage_id' => $screenplayStage->id,
-                        'scene_plan_stage_id' => $stageId,
-                        'selected_at' => now()->toIso8601String(),
-                    ];
-                    $metadata['production_selection_history'] = $history;
-
-                    $project->forceFill([
-                        'selected_scene_plan_stage_id' => $stageId,
-                        'production_selection_version' => $nextSelectionVersion,
-                        'metadata_json' => $metadata,
-                    ])->save();
                 }
 
                 return $revision;
@@ -5121,7 +5454,6 @@ class VideoProjectService
      * @param  array<string, mixed>  $claimMeta
      * @param  list<array<string, mixed>>  $scenes
      * @param  list<string>  $warnings
-     * @param  array<string, mixed>  $trail
      * @param  array<string, mixed>  $authorUsage
      * @param  array<string, mixed>  $usageColumn
      * @param  array<string, mixed>  $totals
@@ -5135,438 +5467,612 @@ class VideoProjectService
         string $claimToken,
         array $scenes,
         array $warnings,
-        array $trail,
         array $authorUsage,
         array $usageColumn,
         array $totals,
         string $raw,
         PlanningStageName $stageName = PlanningStageName::SCENE_PLAN,
     ): array {
-        $trail['status'] = 'needs_review';
-        $trail['reason'] = 'claim_lost';
-        $trail['reviewed_plan_sha256'] = null;
-
         $orphaned = null;
 
         try {
             $orphaned = $this->stageStore->recordOrphanAttempt(
                 $projectId, $stageName, $claimInput, $claimMeta,
-                $stageId, $claimToken, 'Scene plan claim was lost.',
+                $stageId, $claimToken, 'Storyboard claim was lost.',
                 $usageColumn, $raw,
-                $this->safeOutput(fn (): array => $this->planOutput(
-                    $scenes, $warnings, $trail, $authorUsage, $totals, $raw,
+                $this->safeOutput(fn (): array => $this->storyboardOutput(
+                    $scenes, $warnings, $authorUsage, $totals, $raw,
                 )),
             );
         } catch (\Throwable $e) {
-            $this->quietLog('scene-plan: orphan write threw', $e, ['stage_id' => $stageId]);
+            $this->quietLog('storyboard: orphan write threw', $e, ['stage_id' => $stageId]);
         }
 
-        return [null, $orphaned !== null ? 'scene_plan_claim_lost' : 'scene_plan_failed_unrecorded'];
+        return [null, $orphaned !== null ? 'storyboard_claim_lost' : 'storyboard_failed_unrecorded'];
     }
 
     /**
-     * Muc patch TRUNG MA nhung GIONG HET (sau khi sap khoa object, giu nguyen
-     * thu tu array va noi dung chuoi) duoc gop lam mot va dem vao
-     * `merged_duplicate_patches`. Trung ma ma KHAC noi dung thi tu choi ca
-     * phan hoi — do la mau thuan that, khong duoc chon ban dau hay ban cuoi.
-     * Gop xong van chay du validator: gop trung khong lam ban va hop le.
-     *
-     * `plan_sha256_out` chi duoc dat tren duong NHAN patch, nen no la co duy
-     * nhat de noi lich su hash. `patch_invalid`, `no_progress` va `oscillated`
-     * khong bao gio cham toi no.
-     *
-     * @param  list<array<string, mixed>>  $current
-     * @param  list<string>  $warnings
-     * @param  array<string, mixed>  $record
-     * @param  array<string, mixed>  $requirements
-     * @param  list<string>  $seen
-     * @return array{0: ?string, 1: list<array<string, mixed>>, 2: list<string>, 3: array<string, mixed>}
+     * @param  array<string, mixed>  $screenplay
+     * @return list<array<string, mixed>>
      */
-    private function applyReview(
-        ScenePlanReviewResult $review,
-        array $current,
-        array $warnings,
-        array $record,
-        SceneProfile $profile,
-        array $requirements,
-        int $maxScenes,
-        int $round,
-        int $maxRounds,
-        array $seen,
-        array $screenplay,
-    ): array {
-        $codes = array_map(static fn (array $scene) => (string) $scene['scene_code'], $current);
+    private function screenplayScenesOf(array $screenplay): array
+    {
+        return array_values(array_filter(
+            (array) ($screenplay['scenes'] ?? []),
+            static fn (mixed $scene): bool => is_array($scene) && is_string($scene['id'] ?? null),
+        ));
+    }
 
-        [$sound, $blocking] = $this->checkedFindings($review->findings, $codes, $current, $screenplay);
+    /**
+     * @param  list<array<string, mixed>>  $scenes
+     * @return array<string, bool>
+     */
+    private function continuableScenes(array $scenes): array
+    {
+        $continuable = [];
+        $previous = null;
 
-        if (! $sound) {
-            return ['review_response_incoherent', $current, $warnings, $record];
-        }
+        foreach ($scenes as $scene) {
+            $firstBeat = is_array($scene['beats'][0] ?? null) ? $scene['beats'][0] : [];
+            $sameCast = static function (array $a, array $b): bool {
+                $a = array_values(array_filter((array) ($a['character_ids'] ?? []), 'is_string'));
+                $b = array_values(array_filter((array) ($b['character_ids'] ?? []), 'is_string'));
+                sort($a);
+                sort($b);
 
-        $seenPatch = [];
-        $patch = [];
-        $merged = 0;
+                return $a === $b;
+            };
 
-        foreach ($review->patch as $item) {
-            $code = is_array($item) ? ($item['scene_code'] ?? null) : null;
+            $continuable[$scene['id']] = $previous !== null
+                && trim((string) ($firstBeat['time_jump'] ?? '')) === ''
+                && $sameCast($previous, $scene)
+                && $this->canonical(($previous['subject_state'] ?? null)['end'] ?? null)
+                    === $this->canonical(($scene['subject_state'] ?? null)['start'] ?? null);
 
-            if (! is_string($code) || ! in_array($code, $codes, true)) {
-                return ['review_response_incoherent', $current, $warnings, $record];
-            }
-
-            $digest = $this->digest((array) $this->canonical($item));
-
-            if (array_key_exists($code, $seenPatch)) {
-                if ($seenPatch[$code] !== $digest) {
-                    return ['review_response_incoherent', $current, $warnings, $record];
+            foreach (['location_id', 'stage', 'int_ext', 'time', 'light_and_weather'] as $field) {
+                if ($previous !== null && ($previous[$field] ?? null) !== ($scene[$field] ?? null)) {
+                    $continuable[$scene['id']] = false;
                 }
-
-                $merged++;
-
-                continue;
             }
 
-            $seenPatch[$code] = $digest;
-            $patch[] = $item;
+            $previous = $scene;
         }
 
-        if ($merged > 0) {
-            $record['merged_duplicate_patches'] = $merged;
-        }
+        return $continuable;
+    }
 
-        $empty = $patch === [];
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @param  array<string, string>  $summary
+     * @return array<string, mixed>
+     */
+    private function storyboardPacket(array $screenplay, array $summary): array
+    {
+        $sources = $this->screenplayScenesOf($screenplay);
+        $continuable = $this->continuableScenes($sources);
+        $pick = static fn (array $row, array $keys): array => array_combine(
+            $keys,
+            array_map(static fn (string $key): mixed => $row[$key] ?? null, $keys),
+        );
+        $scenes = [];
+        $characterIds = [];
+        $locationIds = [];
+        $sceneIds = [];
 
-        $incoherent = match ($review->verdict) {
-            'pass' => $blocking > 0 || ! $empty,
-            'requires_replan' => $blocking < 1 || ! $empty,
-            'revise' => $blocking < 1 || $empty,
-            default => true,
-        };
+        foreach ($sources as $source) {
+            $sceneIds[] = $source['id'];
+            $locationIds[(string) ($source['location_id'] ?? '')] = true;
 
-        if ($incoherent) {
-            return ['review_response_incoherent', $current, $warnings, $record];
-        }
+            foreach ((array) ($source['character_ids'] ?? []) as $characterId) {
+                $characterIds[(string) $characterId] = true;
+            }
 
-        $unresolved = $this->unresolvedShotCodes($current);
-
-        if ($review->verdict === 'pass' && $unresolved !== []) {
-            return ['unresolved_shots', $current, $warnings, $record + ['unresolved_shots' => $unresolved]];
-        }
-
-        if ($review->verdict !== 'revise') {
-            return [
-                $review->verdict === 'pass' ? 'passed' : 'requires_replan',
-                $current,
-                $warnings,
-                $record,
+            $scenes[] = $pick($source, [
+                'id', 'stage', 'location_id', 'character_ids', 'int_ext', 'time', 'light_and_weather', 'action', 'props',
+            ]) + [
+                'beats' => array_map(
+                    static fn (array $beat): array => $pick($beat, ['id', 'action', 'visible_result', 'time_jump']),
+                    array_values(array_filter((array) ($source['beats'] ?? []), 'is_array')),
+                ),
+                'subject_state' => is_array($source['subject_state'] ?? null) ? $source['subject_state'] : null,
+                'may_continue_previous_scene' => $continuable[$source['id']],
             ];
         }
 
-        $next = $this->applyPatch($current, $patch);
+        $listed = static fn (string $key, array $ids, array $fields): array => array_values(array_map(
+            static fn (array $row): array => $pick($row, $fields),
+            array_filter(
+                (array) ($screenplay[$key] ?? []),
+                static fn (mixed $row): bool => is_array($row) && isset($ids[(string) ($row['id'] ?? '')]),
+            ),
+        ));
 
-        try {
-            [$next, $nextWarnings] = $this->validatedScenes(
-                $next, $profile, $requirements, $maxScenes, $screenplay,
-            );
-        } catch (ScenePlanException $e) {
-            $record['patch_error'] = $this->storableText($e->getMessage());
+        $coverage = [];
 
-            return ['patch_invalid', $current, $warnings, $record];
+        foreach ((array) ($screenplay['coverage'] ?? []) as $item) {
+            if (! is_array($item) || ($item['mode'] ?? null) !== 'shown' || ! is_string($item['coverage_id'] ?? null)) {
+                continue;
+            }
+
+            $carriers = array_values(array_intersect((array) ($item['scene_ids'] ?? []), $sceneIds));
+
+            if ($carriers !== []) {
+                $coverage[] = ['coverage_id' => $item['coverage_id'], 'scene_ids' => $carriers];
+            }
         }
-
-        $out = $this->planHash($next);
-
-        if ($out === $this->planHash($current)) {
-            return ['no_progress', $current, $warnings, $record];
-        }
-
-        if (in_array($out, $seen, true)) {
-            return ['oscillated', $current, $warnings, $record];
-        }
-
-        $record['plan_sha256_out'] = $out;
-        $record['patched_codes'] = $this->changedCodes($current, $next);
 
         return [
-            $round >= $maxRounds ? 'patched_but_unreviewed' : null,
-            $next,
-            $nextWarnings,
-            $record,
+            'identity' => array_intersect_key($summary, array_flip(['subject_class', 'identity', 'proportion'])),
+            'characters' => $listed('characters', $characterIds, ['id', 'name', 'description']),
+            'locations' => $listed('locations', $locationIds, [
+                'id', 'name', 'description', 'spatial_relation', 'subject_id', 'enclosure',
+                'layout', 'fixed_features', 'light_sources', 'connections',
+            ]),
+            'coverage' => $coverage,
+            'clip_durations_ms' => $this->clipDurationsMs(),
+            'scenes' => $scenes,
         ];
     }
 
     /**
-     * Khong tin `additionalProperties: false` cua provider: mot `severity` la
-     * chuoi la se khong bang 'blocking' va lam `pass` lot qua.
-     *
-     * @param  list<mixed>  $findings
-     * @param  list<string>  $codes
-     * @return array{0: bool, 1: int}
-     */
-    private function checkedFindings(array $findings, array $codes, array $scenes, array $screenplay): array
-    {
-        if (count($findings) > ScenePlanReviewer::MAX_FINDINGS) {
-            return [false, 0];
-        }
-
-        $blocking = 0;
-
-        foreach ($findings as $finding) {
-            if (! is_array($finding) || array_is_list($finding)) {
-                return [false, 0];
-            }
-
-            $keys = array_keys($finding);
-            sort($keys);
-
-            if ($keys !== ['evidence', 'fix', 'problem', 'rule', 'scene_code', 'severity']) {
-                return [false, 0];
-            }
-
-            foreach (['fix', 'problem', 'rule', 'scene_code', 'severity'] as $field) {
-                if (! is_string($finding[$field])) {
-                    return [false, 0];
-                }
-            }
-
-            if (! $this->checkedEvidence($finding['evidence'], $scenes, $screenplay)) {
-                return [false, 0];
-            }
-
-            if (! in_array($finding['scene_code'], $codes, true)
-                || ! in_array($finding['rule'], ScenePlanReviewer::RULES, true)
-                || ! in_array($finding['severity'], ScenePlanReviewer::SEVERITIES, true)) {
-                return [false, 0];
-            }
-
-            foreach (['problem', 'fix'] as $field) {
-                $length = mb_strlen(trim($finding[$field]));
-
-                if ($length < 3 || $length > 500) {
-                    return [false, 0];
-                }
-            }
-
-            $blocking += $finding['severity'] === 'blocking' ? 1 : 0;
-        }
-
-        return [true, $blocking];
-    }
-
-    /**
-     * Moi quote phai la CHUOI CON THAT cua truong no khai. Phep nay chi nang
-     * nguong: reviewer khai dung ma ma mo ta sai noi dung van lot duoc. No chan
-     * duoc mot thu cu the — vien dan mot cau khong ton tai.
-     *
-     * Quote rong bi tu choi: chuoi rong la chuoi con cua moi thu, de lot thi
-     * chot nay mat tac dung hoan toan.
-     *
-     * @param  mixed  $evidence
-     * @param  list<array<string, mixed>>  $scenes
+     * @param  list<mixed>  $answer
      * @param  array<string, mixed>  $screenplay
+     * @return array{0: list<array<string, mixed>>, 1: list<string>}
      */
-    private function checkedEvidence($evidence, array $scenes, array $screenplay): bool
+    private function storyboardShots(array $answer, array $screenplay): array
     {
-        if (! is_array($evidence)
-            || ! array_is_list($evidence)
-            || $evidence === []
-            || count($evidence) > ScenePlanReviewer::MAX_EVIDENCE) {
-            return false;
+        $sources = $this->screenplayScenesOf($screenplay);
+
+        if ($sources === []) {
+            throw new ScenePlanException('The selected screenplay has no scenes to break down.');
         }
 
-        $byCode = [];
-
-        foreach ($scenes as $scene) {
-            $byCode[(string) $scene['scene_code']] = $scene;
+        if (count($answer) !== count($sources)) {
+            throw new ScenePlanException(
+                'Storyboard returned '.count($answer).' scenes; the screenplay has '.count($sources).'.'
+            );
         }
 
-        foreach ($evidence as $item) {
-            if (! is_array($item) || array_is_list($item)) {
-                return false;
-            }
+        $continuable = $this->continuableScenes($sources);
+        $coverage = [];
 
-            $keys = array_keys($item);
-            sort($keys);
-
-            if ($keys !== ['field', 'quote', 'scene_code', 'source']) {
-                return false;
-            }
-
-            foreach ($keys as $key) {
-                if (! is_string($item[$key])) {
-                    return false;
+        foreach ((array) ($screenplay['coverage'] ?? []) as $item) {
+            if (is_array($item) && ($item['mode'] ?? null) === 'shown' && is_string($item['coverage_id'] ?? null)) {
+                foreach ((array) ($item['scene_ids'] ?? []) as $sceneId) {
+                    $coverage[(string) $sceneId][$item['coverage_id']] = true;
                 }
             }
+        }
 
-            $quote = $this->squashed($item['quote']);
+        $durations = $this->clipDurationsMs();
 
-            if (mb_strlen($quote) < ScenePlanReviewer::MIN_QUOTE
-                || mb_strlen($item['quote']) > ScenePlanReviewer::MAX_QUOTE) {
-                return false;
+        if ($durations === []) {
+            throw new ScenePlanException('No clip duration is configured for video.media_models.video.scene_clip.');
+        }
+
+        $empty = ['progress' => null, 'configuration' => []];
+        $shots = [];
+        $warnings = [];
+        $previous = null;
+        $carried = [];
+
+        foreach ($sources as $index => $source) {
+            $sceneId = (string) $source['id'];
+            $answered = $answer[$index] ?? null;
+
+            if (! is_array($answered) || ($answered['scene_id'] ?? null) !== $sceneId) {
+                throw new ScenePlanException('storyboard scene '.($index + 1).': expected '.$sceneId.'.');
             }
 
-            if ($item['source'] === 'screenplay') {
-                if ($item['scene_code'] !== ''
-                    || ! in_array($item['field'], ScenePlanReviewer::SCREENPLAY_FIELDS, true)
-                    || ! is_string($screenplay[$item['field']] ?? null)
-                    || ! str_contains($this->squashed($screenplay[$item['field']]), $quote)) {
-                    return false;
+            [$objects, $objectWarnings] = $this->storyboardObjects($sceneId, $answered['tracked_objects'] ?? null, $carried);
+            $warnings = array_merge($warnings, $objectWarnings);
+            $beatIds = \App\Video\Screenplay\SceneBeats::beatIds($source);
+            $answeredShots = $answered['shots'] ?? null;
+
+            if (! is_array($answeredShots) || ! array_is_list($answeredShots) || $answeredShots === []) {
+                throw new ScenePlanException($sceneId.': shots must be a nonempty list.');
+            }
+
+            $shown = is_array($source['subject_state'] ?? null);
+            $state = $shown ? $source['subject_state']['start'] : $empty;
+            $cursor = ['next' => 0, 'open' => null];
+
+            foreach ($answeredShots as $position => $item) {
+                $number = sprintf('s%02d', $position + 1);
+                $at = $sceneId.'.'.$number;
+
+                if (! is_array($item)) {
+                    throw new ScenePlanException($at.': the shot must be an object.');
                 }
 
-                continue;
-            }
+                [$cursor, $coverageItems] = $this->storyboardCoverage($at, $item['beat_coverage'] ?? null, $beatIds, $cursor);
+                $relation = $item['camera_relation'] ?? null;
 
-            if ($item['source'] === 'screenplay_scene') {
-                $value = $this->screenplaySceneField($screenplay, $item['scene_code'], $item['field']);
-
-                if ($value === null || ! str_contains($this->squashed($value), $quote)) {
-                    return false;
+                if (! in_array($relation, [ScenePlanAuthor::NEW_CAMERA, ScenePlanAuthor::SAME_CAMERA], true)) {
+                    throw new ScenePlanException($at.': camera_relation '.var_export($relation, true).' is unknown.');
                 }
 
-                continue;
+                $mode = $relation === ScenePlanAuthor::SAME_CAMERA ? ScenePreservationPrompt::CONTINUATION : ScenePreservationPrompt::HARD_CUT;
+
+                if ($previous === null && $mode !== ScenePreservationPrompt::HARD_CUT) {
+                    throw new ScenePlanException($at.': the first shot of the film must use '.ScenePlanAuthor::NEW_CAMERA.'.');
+                }
+
+                if ($position === 0 && $previous !== null && $mode === ScenePreservationPrompt::CONTINUATION
+                    && ! $continuable[$sceneId]) {
+                    throw new ScenePlanException(
+                        $at.': '.$sceneId.' cannot keep the previous scene\'s camera; place, time, light, cast or subject state differ.'
+                    );
+                }
+
+                $duration = $item['duration_ms'] ?? null;
+
+                if (! is_int($duration) || ! in_array($duration, $durations, true)) {
+                    throw new ScenePlanException(
+                        $at.': duration_ms '.var_export($duration, true).' is not a clip length the renderer makes ('.implode(', ', $durations).').'
+                    );
+                }
+
+                $purpose = is_string($item['visual_purpose'] ?? null) ? trim($item['visual_purpose']) : '';
+
+                if (mb_strlen($purpose) < 3 || mb_strlen($purpose) > 300) {
+                    throw new ScenePlanException($at.': visual_purpose must be 3 to 300 characters.');
+                }
+
+                $last = $position === count($answeredShots) - 1;
+                $end = $item['subject_end_state'] ?? null;
+
+                if (($last || ! $shown) && $end !== null) {
+                    throw new ScenePlanException($last
+                        ? $at.': the last shot of a scene takes the scene\'s end state, so subject_end_state is null.'
+                        : $at.': '.$sceneId.' does not show the subject, so subject_end_state is null.');
+                }
+
+                if (! $last && $shown && ! is_array($end)) {
+                    throw new ScenePlanException($at.': subject_end_state is required before the last shot of the scene.');
+                }
+
+                $endState = $last ? ($shown ? $source['subject_state']['end'] : $empty) : ($shown ? $end : $empty);
+                $objectsStart = $objects;
+                $firstFrame = $this->storyboardVisibleObjects($at, 'first_frame_object_ids', $item['first_frame_object_ids'] ?? null, $objects);
+                $lastFrame = $this->storyboardVisibleObjects($at, 'last_frame_object_ids', $item['last_frame_object_ids'] ?? null, $objects);
+                $objects = $this->storyboardStateChanges(
+                    $at, $item['state_changes'] ?? null, $objects, array_values(array_unique([...$firstFrame, ...$lastFrame])),
+                );
+                $continues = $mode === ScenePreservationPrompt::CONTINUATION;
+                $code = $sceneId.'_'.$number;
+                $keyframe = $this->storyboardText($at, 'keyframe', $item['keyframe'] ?? null);
+
+                $shot = [
+                    'scene_code' => $code,
+                    'screenplay_scene_code' => $sceneId,
+                    'shot_index' => $position + 1,
+                    'location_id' => (string) ($source['location_id'] ?? ''),
+                    'character_ids' => array_values(array_filter((array) ($source['character_ids'] ?? []), 'is_string')),
+                    'title' => strtoupper($sceneId).' · '.$number,
+                    'purpose' => $purpose,
+                    'coverage_ids' => array_keys($coverage[$sceneId] ?? []),
+                    'basis' => 'source_supported',
+                    'state_before' => $previous === null
+                        ? 'film_start'
+                        : ($continues ? $previous['scene_state'] : $previous['video']['end_state']),
+                    'scene_state' => $code.'_keyframe',
+                    'transition_mode' => $mode,
+                    'continuity_group' => $continues ? $previous['continuity_group'] : $code,
+                    'source_scene_code' => $continues ? $previous['scene_code'] : '',
+                    'camera' => $this->storyboardCamera($at, $mode, $item['camera'] ?? null),
+                    'delta' => $keyframe,
+                    'video' => [
+                        'action' => $this->storyboardText($at, 'action', $item['action'] ?? null),
+                        'preserve' => self::STORYBOARD_PRESERVE,
+                        'end_state' => $code.'_end',
+                        'camera_relation' => $relation,
+                        'duration_ms' => $duration,
+                    ],
+                    'beat_ids' => array_values(array_unique(array_column($coverageItems, 'beat_id'))),
+                    'beat_coverage' => $coverageItems,
+                    'keyframe_state' => $state,
+                    'end_state' => $endState,
+                    'objects_start' => array_values($objectsStart),
+                    'objects_end' => array_values($objects),
+                    'objects_first_frame' => $firstFrame,
+                    'objects_last_frame' => $lastFrame,
+                    'reference_requirements' => $this->storyboardReferenceNeeds($at, $item['reference_requirements'] ?? null),
+                ];
+
+                $this->checkShotStates($at, $shot, $source);
+
+                if ($shot['camera'] !== null && preg_match('/^(wide|medium|close-up)\b/i', $shot['camera']['framing']) !== 1) {
+                    $warnings[] = $at.': camera.framing does not begin with a shot size (wide, medium, close-up).';
+                }
+
+                $warnings = array_merge($warnings, $this->sceneWarnings($at, $keyframe));
+                $shots[] = $shot;
+                $previous = $shot;
+                $state = $endState;
             }
 
-            if ($item['source'] !== 'scene'
-                || ! in_array($item['field'], ScenePlanReviewer::SCENE_FIELDS, true)
-                || ! isset($byCode[$item['scene_code']])) {
-                return false;
+            if ($cursor['open'] !== null || $cursor['next'] !== count($beatIds)) {
+                throw new ScenePlanException(
+                    $sceneId.': the shots do not cover every beat in order; '.($beatIds[$cursor['next']] ?? $cursor['open']).' is not finished.'
+                );
             }
 
-            $value = $this->sceneField($byCode[$item['scene_code']], $item['field']);
-
-            if ($value === null || ! str_contains($this->squashed($value), $quote)) {
-                return false;
+            foreach ($objects as $objectId => $object) {
+                $carried[$objectId] = $object;
             }
         }
 
-        return true;
+        return [$shots, $warnings];
     }
 
-    /** @param array<string, mixed> $scene */
-    private function sceneField(array $scene, string $field): ?string
+    /** @return list<int> */
+    private function clipDurationsMs(): array
     {
-        if ($field === 'beat_ids') {
-            return is_array($scene['beat_ids'] ?? null) ? implode(', ', array_filter($scene['beat_ids'], 'is_string')) : null;
+        $seconds = [];
+
+        foreach ((array) config('video.media_models.video.scene_clip', []) as $entry) {
+            foreach ((array) ($entry['controls']['durations'] ?? []) as $value) {
+                if (is_int($value) && $value > 0) {
+                    $seconds[$value] = true;
+                }
+            }
         }
 
-        if (preg_match('/^(keyframe_state|end_state)\.(progress|configuration)$/', $field, $path) === 1) {
-            return $this->momentField($scene[$path[1]] ?? null, $path[2]);
-        }
+        ksort($seconds);
 
-        $value = str_starts_with($field, 'video.')
-            ? ($scene['video'][substr($field, 6)] ?? null)
-            : ($scene[$field] ?? null);
-
-        return is_string($value) ? $value : null;
-    }
-
-    private function momentField(mixed $moment, string $part): ?string
-    {
-        if (! is_array($moment)) {
-            return null;
-        }
-
-        if ($part === 'configuration') {
-            return is_array($moment['configuration'] ?? null)
-                ? \App\Video\Screenplay\SceneBeats::configurationText($moment['configuration'])
-                : null;
-        }
-
-        return is_string($moment['progress'] ?? null) ? $moment['progress'] : null;
-    }
-
-    /** @param array<string, mixed> $screenplay */
-    private function screenplaySceneField(array $screenplay, string $locator, string $field): ?string
-    {
-        $beatField = in_array($field, ScenePlanReviewer::BEAT_FIELDS, true);
-
-        if (! $beatField && ! in_array($field, ScenePlanReviewer::SCREENPLAY_SCENE_FIELDS, true)) {
-            return null;
-        }
-
-        [$sceneId, $beatId] = array_pad(explode('#', $locator, 2), 2, null);
-
-        if ($beatField !== ($beatId !== null)) {
-            return null;
-        }
-
-        $scene = collect((array) ($screenplay['scenes'] ?? []))
-            ->first(static fn (mixed $row): bool => is_array($row) && ($row['id'] ?? null) === $sceneId);
-
-        if (! is_array($scene)) {
-            return null;
-        }
-
-        if ($beatField) {
-            $beat = collect((array) ($scene['beats'] ?? []))
-                ->first(static fn (mixed $row): bool => is_array($row) && ($row['id'] ?? null) === $beatId);
-            $value = is_array($beat) ? ($beat[substr($field, 5)] ?? null) : null;
-
-            return is_string($value) ? $value : null;
-        }
-
-        if ($field === 'action') {
-            return is_string($scene['action'] ?? null) ? $scene['action'] : null;
-        }
-
-        [, $side, $part] = explode('.', $field);
-        $state = $scene['subject_state'] ?? null;
-
-        return is_array($state) ? $this->momentField($state[$side] ?? null, $part) : null;
+        return array_map(static fn (int $value): int => $value * 1000, array_keys($seconds));
     }
 
     /**
-     * Chi go khac biet ve khoang trang. KHONG ha chu thuong: hop dong doi
-     * trich NGUYEN VAN, ha chu thuong la lang le noi long chinh dieu do.
+     * @param  array<string, array{object_id: string, name: string, state: string}>  $carried
+     * @return array{0: array<string, array{object_id: string, name: string, state: string}>, 1: list<string>}
      */
-    private function squashed(string $value): string
+    private function storyboardObjects(string $sceneId, mixed $tracked, array $carried): array
     {
-        return trim((string) preg_replace('/\s+/u', ' ', $value));
-    }
-
-    /**
-     * Thay TAI CHO theo chi so, nen so scene va thu tu bat bien — khong phai
-     * nho mot luat, ma nho vong lap khong co duong chen phan tu.
-     *
-     * @param  list<array<string, mixed>>  $current
-     * @param  list<array<string, mixed>>  $patch
-     * @return list<array<string, mixed>>
-     */
-    private function applyPatch(array $current, array $patch): array
-    {
-        $byCode = [];
-
-        foreach ($patch as $item) {
-            $byCode[(string) $item['scene_code']] = $item;
+        if (! is_array($tracked) || ! array_is_list($tracked)) {
+            throw new ScenePlanException($sceneId.': tracked_objects must be a list.');
         }
 
-        foreach ($current as $index => $scene) {
-            $code = (string) $scene['scene_code'];
+        $objects = [];
+        $warnings = [];
 
-            if (isset($byCode[$code])) {
-                $current[$index] = $byCode[$code];
+        foreach ($tracked as $item) {
+            $objectId = is_array($item) ? (string) ($item['object_id'] ?? '') : '';
+            $name = is_array($item) && is_string($item['name'] ?? null) ? trim($item['name']) : '';
+            $start = is_array($item) ? ($item['start_state'] ?? null) : null;
+
+            if (preg_match('/^[a-z][a-z0-9_]{1,40}$/', $objectId) !== 1 || $name === '' || array_key_exists($objectId, $objects)) {
+                throw new ScenePlanException($sceneId.': tracked object '.var_export($objectId, true).' is malformed or repeated.');
             }
+
+            if ($start === null) {
+                if (! array_key_exists($objectId, $carried)) {
+                    throw new ScenePlanException(
+                        $sceneId.': tracked object '.$objectId.' has no start_state and no earlier scene tracked it.'
+                    );
+                }
+
+                $start = $carried[$objectId]['state'];
+            } elseif (! is_string($start) || trim($start) === '') {
+                throw new ScenePlanException($sceneId.': tracked object '.$objectId.' has an empty start_state.');
+            } elseif (array_key_exists($objectId, $carried) && trim($start) !== $carried[$objectId]['state']) {
+                $warnings[] = $sceneId.': '.$objectId.' starts as "'.trim($start).'" but the previous scene left it as "'
+                    .$carried[$objectId]['state'].'" — check that the screenplay allows the change.';
+            }
+
+            $objects[$objectId] = ['object_id' => $objectId, 'name' => $name, 'state' => trim($start)];
         }
 
-        return $current;
+        return [$objects, $warnings];
     }
 
     /**
-     * @param  list<array<string, mixed>>  $before
-     * @param  list<array<string, mixed>>  $after
+     * @param  list<string>  $beatIds
+     * @param  array{next: int, open: ?string}  $cursor
+     * @return array{0: array{next: int, open: ?string}, 1: list<array{beat_id: string, part: string}>}
+     */
+    private function storyboardCoverage(string $at, mixed $coverage, array $beatIds, array $cursor): array
+    {
+        if (! is_array($coverage) || ! array_is_list($coverage) || $coverage === []) {
+            throw new ScenePlanException($at.': beat_coverage must be a nonempty list.');
+        }
+
+        $items = [];
+
+        foreach ($coverage as $entry) {
+            $beatId = is_array($entry) ? (string) ($entry['beat_id'] ?? '') : '';
+            $part = is_array($entry) ? (string) ($entry['part'] ?? '') : '';
+
+            if ($cursor['open'] !== null) {
+                if ($beatId !== $cursor['open'] || ! in_array($part, ['middle', 'closing'], true)) {
+                    throw new ScenePlanException($at.': '.$cursor['open'].' was opened and must continue with middle or closing before any other beat.');
+                }
+
+                if ($part === 'closing') {
+                    $cursor = ['next' => $cursor['next'] + 1, 'open' => null];
+                }
+            } else {
+                $expected = $beatIds[$cursor['next']] ?? null;
+
+                if ($beatId !== $expected || ! in_array($part, ['whole', 'opening'], true)) {
+                    throw new ScenePlanException(
+                        $at.': expected '.($expected ?? 'no further beat').' as whole or opening, got '.$beatId.' '.$part.'.'
+                    );
+                }
+
+                $cursor = $part === 'whole'
+                    ? ['next' => $cursor['next'] + 1, 'open' => null]
+                    : ['next' => $cursor['next'], 'open' => $beatId];
+            }
+
+            $items[] = ['beat_id' => $beatId, 'part' => $part];
+        }
+
+        return [$cursor, $items];
+    }
+
+    /**
+     * @param  array<string, array{object_id: string, name: string, state: string}>  $objects
      * @return list<string>
      */
-    private function changedCodes(array $before, array $after): array
+    private function storyboardVisibleObjects(string $at, string $field, mixed $ids, array $objects): array
     {
-        $changed = [];
-
-        foreach ($before as $index => $scene) {
-            if ($this->digest($this->canonical($scene)) !== $this->digest($this->canonical($after[$index]))) {
-                $changed[] = (string) $scene['scene_code'];
-            }
+        if (! is_array($ids) || ! array_is_list($ids)) {
+            throw new ScenePlanException($at.': '.$field.' must be a list.');
         }
 
-        return $changed;
+        $visible = [];
+
+        foreach ($ids as $objectId) {
+            if (! is_string($objectId) || ! array_key_exists($objectId, $objects) || in_array($objectId, $visible, true)) {
+                throw new ScenePlanException($at.': '.$field.' names '.var_export($objectId, true).', which the scene does not track, or repeats it.');
+            }
+
+            $visible[] = $objectId;
+        }
+
+        return $visible;
+    }
+
+    /**
+     * @param  array<string, array{object_id: string, name: string, state: string}>  $objects
+     * @param  list<string>  $visible
+     * @return array<string, array{object_id: string, name: string, state: string}>
+     */
+    private function storyboardStateChanges(string $at, mixed $changes, array $objects, array $visible): array
+    {
+        if (! is_array($changes) || ! array_is_list($changes)) {
+            throw new ScenePlanException($at.': state_changes must be a list.');
+        }
+
+        $seen = [];
+
+        foreach ($changes as $change) {
+            $objectId = is_array($change) ? (string) ($change['object_id'] ?? '') : '';
+            $state = is_array($change) && is_string($change['state'] ?? null) ? trim($change['state']) : '';
+
+            if (! array_key_exists($objectId, $objects)) {
+                throw new ScenePlanException($at.': state change names '.var_export($objectId, true).', which the scene does not track.');
+            }
+
+            if (! in_array($objectId, $visible, true)) {
+                throw new ScenePlanException($at.': '.$objectId.' changes in the clip but is in neither first_frame_object_ids nor last_frame_object_ids.');
+            }
+
+            if ($state === '' || array_key_exists($objectId, $seen)) {
+                throw new ScenePlanException($at.': state change for '.$objectId.' is empty or repeated.');
+            }
+
+            $seen[$objectId] = true;
+            $objects[$objectId]['state'] = $state;
+        }
+
+        return $objects;
+    }
+
+    /** @return list<array{kind: string, purpose: string}> */
+    private function storyboardReferenceNeeds(string $at, mixed $needs): array
+    {
+        if (! is_array($needs) || ! array_is_list($needs)) {
+            throw new ScenePlanException($at.': reference_requirements must be a list.');
+        }
+
+        $out = [];
+
+        foreach ($needs as $need) {
+            $kind = is_array($need) ? (string) ($need['kind'] ?? '') : '';
+            $purpose = is_array($need) && is_string($need['purpose'] ?? null) ? trim($need['purpose']) : '';
+
+            if (! in_array($kind, ScenePlanAuthor::REFERENCE_KINDS, true) || $purpose === '') {
+                throw new ScenePlanException($at.': reference requirement '.var_export($kind, true).' is unknown or has no purpose.');
+            }
+
+            $out[] = ['kind' => $kind, 'purpose' => $purpose];
+        }
+
+        return $out;
+    }
+
+    /** @return array{position: string, elevation: string, framing: string, subject_side: ?string}|null */
+    private function storyboardCamera(string $at, string $mode, mixed $camera): ?array
+    {
+        if ($mode === ScenePreservationPrompt::CONTINUATION) {
+            if ($camera !== null) {
+                throw new ScenePlanException($at.': a continuation keeps the previous camera, so camera is null.');
+            }
+
+            return null;
+        }
+
+        if (! is_array($camera) || array_is_list($camera)
+            || array_diff(array_keys($camera), ScenePlanAuthor::CAMERA_FIELDS) !== []
+            || array_diff(ScenePlanAuthor::CAMERA_FIELDS, array_keys($camera)) !== []) {
+            throw new ScenePlanException($at.': a hard cut needs a camera with '.implode(', ', ScenePlanAuthor::CAMERA_FIELDS).'.');
+        }
+
+        $out = [];
+
+        foreach (['position', 'elevation', 'framing'] as $field) {
+            $value = is_string($camera[$field]) ? trim($camera[$field]) : '';
+
+            if (mb_strlen($value) < 3 || mb_strlen($value) > ScenePlanAuthor::CAMERA_TEXT_LIMIT) {
+                throw new ScenePlanException(
+                    $at.': camera.'.$field.' must be 3 to '.ScenePlanAuthor::CAMERA_TEXT_LIMIT.' characters.'
+                );
+            }
+
+            $out[$field] = $value;
+        }
+
+        $side = $camera['subject_side'];
+
+        if ($side !== null && ! in_array($side, ScenePlanAuthor::SUBJECT_SIDES, true)) {
+            throw new ScenePlanException($at.': camera.subject_side '.var_export($side, true).' is unknown.');
+        }
+
+        return $out + ['subject_side' => $side];
+    }
+
+    private function storyboardText(string $at, string $field, mixed $value): string
+    {
+        $text = is_string($value) ? trim($value) : '';
+
+        if ($text === '' || mb_strlen($text) > ScenePlanAuthor::TEXT_LIMIT) {
+            throw new ScenePlanException($at.': '.$field.' must be 1 to '.ScenePlanAuthor::TEXT_LIMIT.' characters.');
+        }
+
+        if (preg_match('/\bimage\s+\d+\s*:/i', $text) === 1) {
+            throw new ScenePlanException($at.': '.$field.' carries a numbered image label.');
+        }
+
+        return $text;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots
+     * @param  list<string>  $warnings
+     * @param  array<string, mixed>  $authorUsage
+     * @param  array<string, mixed>  $totals
+     * @return array<string, mixed>
+     */
+    private function storyboardOutput(
+        array $shots,
+        array $warnings,
+        array $authorUsage,
+        array $totals,
+        string $authorRaw,
+        ?int $revision = null,
+        ?string $planHash = null,
+    ): array {
+        return [
+            'revision' => $revision,
+            'scenes' => $shots,
+            'warnings' => $warnings,
+            'raw' => ['author' => $this->storableText($authorRaw)],
+            'usage' => ['author' => $authorUsage, 'total' => $totals],
+            'validation' => $planHash === null ? null : ['status' => 'passed', 'plan_sha256' => $planHash],
+        ];
     }
 
     /**
@@ -5627,7 +6133,13 @@ class VideoProjectService
             'beat_ids' => array_values((array) $state['beat_ids']),
             'keyframe_state' => $state['keyframe_state'] ?? null,
             'end_state' => $state['end_state'] ?? null,
-        ] : []);
+        ] : []) + (array_key_exists('camera', $video) ? [
+            'camera' => $video['camera'],
+        ] : []) + (($state['storyboard_shape'] ?? null) === ScenePlanAuthor::SHOT_SHAPE ? [
+            'storyboard_shape' => ScenePlanAuthor::SHOT_SHAPE,
+            'camera_relation' => $video['camera_relation'] ?? null,
+            'duration_ms' => $video['duration_ms'] ?? null,
+        ] + array_intersect_key($state, array_flip(self::SHOT_SHAPE_STATE_KEYS)) : []);
     }
 
     /**
@@ -5742,6 +6254,15 @@ class VideoProjectService
             ->whereKey($sceneId)
             ->where('project_id', $projectId)
             ->first();
+    }
+
+    private function isPlaceShot(VideoRenderScene $scene): bool
+    {
+        $state = is_array($scene->state_json) ? $scene->state_json : [];
+
+        return array_key_exists('scene_subject_state', $state)
+            && $state['scene_subject_state'] === null
+            && ! is_array($state['space'] ?? null);
     }
 
     private function sourceRoleForMode(string $mode): string
@@ -5920,7 +6441,7 @@ class VideoProjectService
      */
     private function readLockedAnchor(string $projectId, int $revision): array
     {
-        $carrier = VideoRenderScene::query()
+        $carriers = VideoRenderScene::query()
             ->where('project_id', $projectId)
             ->where('revision', $revision)
             ->where('transition_mode', ScenePreservationPrompt::HARD_CUT)
@@ -5930,22 +6451,32 @@ class VideoProjectService
                 ->whereNotNull('render_scene_id')
                 ->select('render_scene_id'))
             ->orderBy('scene_index')
-            ->first();
+            ->get();
 
-        if ($carrier === null) {
-            return [null, 'no_lock'];
+        $entry = null;
+
+        foreach ($carriers as $carrier) {
+            $candidate = VideoDesignImage::query()
+                ->where('project_id', $projectId)
+                ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
+                ->where('render_scene_id', $carrier->id)
+                ->orderBy('created_at')
+                ->orderBy('id')
+                ->first();
+
+            $spec = is_array($candidate?->prompt_spec_json) ? $candidate->prompt_spec_json : [];
+            $entry = $spec['sources'][0] ?? null;
+
+            if (! is_array($entry) || ($entry['role'] ?? null) !== 'environment') {
+                break;
+            }
+
+            $entry = null;
         }
 
-        $candidate = VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->where('render_scene_id', $carrier->id)
-            ->orderBy('created_at')
-            ->orderBy('id')
-            ->first();
-
-        $spec = is_array($candidate?->prompt_spec_json) ? $candidate->prompt_spec_json : [];
-        $entry = $spec['sources'][0] ?? null;
+        if ($entry === null && $carriers->every(fn (VideoRenderScene $carrier): bool => $this->isPlaceShot($carrier))) {
+            return [null, 'no_lock'];
+        }
 
         if (! $this->manifestEntryShaped($entry)
             || $entry['role'] !== 'anchor'
@@ -6051,6 +6582,14 @@ class VideoProjectService
             return [null, 'scene_transition_mode_unsupported'];
         }
 
+        if ($role === 'anchor' && $this->isPlaceShot($scene)) {
+            [$plate, $plateWhy] = $this->approvedPlate($projectId, $scene);
+
+            return $plate === null
+                ? [null, $plateWhy === self::NO_PLATE ? 'environment_requirement_unreadable' : $plateWhy]
+                : [array_replace($plate, ['role' => 'environment']), 'ok'];
+        }
+
         if ($role === 'source_keyframe') {
             $key = 'cont:'.$projectId.':'.$scene->revision.':'.$scene->source_scene_code;
 
@@ -6077,14 +6616,16 @@ class VideoProjectService
                 ->orderByDesc('approved_at')
                 ->first();
 
-            $found = $candidate === null
-                ? [null, 'source_keyframe_not_approved']
-                : $this->freshApprovedSource(
+            $found = match (true) {
+                $candidate === null => [null, 'source_keyframe_not_approved'],
+                $this->keyframeNeedsReview($candidate) !== null => [null, 'previous_keyframe_needs_review|'.$previous->title],
+                default => $this->freshApprovedSource(
                     $projectId,
                     (string) $candidate->selected_artifact_id,
                     [DesignImageStore::SCENE_KEYFRAME_TYPE],
                     'source_keyframe',
-                );
+                ),
+            };
 
             if ($this->sourceMemo !== null) {
                 $this->sourceMemo[$key] = $found;
@@ -6126,11 +6667,64 @@ class VideoProjectService
             ->value('render_scene_id') === (string) $previous->id;
     }
 
+    /** @return array{0: list<array<string, mixed>>, 1: ?string} [$models, $error] */
+    public function sceneKeyframeModels(): array
+    {
+        try {
+            $models = app(MediaModelRegistry::class)->forTask(EnvironmentPlatePrompt::TASK);
+        } catch (InvalidArgumentException $e) {
+            Log::error('scene-keyframe: registry model hong', ['error' => $e->getMessage()]);
+
+            return [[], 'environment_media_models_broken'];
+        }
+
+        return [array_values(array_filter(
+            $models,
+            static fn (array $entry): bool => $entry['provider'] === 'openai',
+        )), null];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $choice
+     * @return array{0: ?array{provider_model: string, model: string, size: string, quality: string}, 1: string}
+     */
+    private function sceneKeyframeMedia(?array $choice): array
+    {
+        [$models, $error] = $this->sceneKeyframeModels();
+
+        if ($models === []) {
+            return [null, $error ?? 'media_invalid'];
+        }
+
+        $entry = $choice === null
+            ? (collect($models)->firstWhere('default', true) ?? $models[0])
+            : collect($models)->first(static fn (array $row): bool => $row['id'] === ($choice['provider_model'] ?? null));
+
+        if ($entry === null) {
+            return [null, 'media_invalid'];
+        }
+
+        $size = $choice['size'] ?? $entry['controls']['default_size'];
+        $quality = $choice['quality'] ?? $entry['controls']['default_quality'];
+
+        if (! in_array($size, $entry['controls']['sizes'], true) || ! in_array($quality, $entry['controls']['qualities'], true)) {
+            return [null, 'media_invalid'];
+        }
+
+        return [[
+            'provider_model' => (string) $entry['id'],
+            'model' => (string) $entry['model'],
+            'size' => (string) $size,
+            'quality' => (string) $quality,
+        ], 'ok'];
+    }
+
     /**
      * @param  list<array<string, mixed>>  $manifest
+     * @param  array{provider_model: string, model: string, size: string, quality: string}  $media
      * @return array<string, mixed>
      */
-    private function sceneImageSpec(VideoRenderScene $scene, string $preservation, array $manifest): array
+    private function sceneImageSpec(VideoRenderScene $scene, string $preservation, array $manifest, array $media): array
     {
         return [
             'operation' => 'scene_keyframe',
@@ -6140,16 +6734,17 @@ class VideoProjectService
                 array_column($manifest, 'role'),
                 $preservation,
             )."\n\n".$this->keyframeDelta($scene),
-            'model' => self::SCENE_IMAGE_MODEL->value,
-            'quality' => self::SCENE_IMAGE_QUALITY->value,
-            'size' => self::SCENE_IMAGE_SIZE->value,
+            'provider_model' => $media['provider_model'],
+            'model' => $media['model'],
+            'quality' => $media['quality'],
+            'size' => $media['size'],
             'variations' => 1,
             'pricing' => 'unpriced',
             'render_scene_id' => (string) $scene->id,
             'scene_code' => (string) $scene->scene_code,
             'revision' => (int) $scene->revision,
             'transition_mode' => (string) $scene->transition_mode,
-            'preservation_version' => $preservation,
+            'preservation_version' => ScenePreservationPrompt::versionFor(array_column($manifest, 'role'), $preservation),
             'sources' => $manifest,
             'reference_manifest_hash' => $this->digest((array) $this->canonical($manifest)),
             'source_artifact_id' => $manifest[0]['artifact_id'],
@@ -6166,11 +6761,23 @@ class VideoProjectService
         ?string $confirmAnchorArtifactId,
         bool $requireConfirmedAnchor,
         ?string $spaceSourceId = null,
+        ?array $media = null,
+        ?int $choiceVersion = null,
     ): array {
         [$preservation] = $this->preservationForRevision($stage);
 
         if ($preservation === null) {
             return [null, 'preservation_unknown'];
+        }
+
+        if ($choiceVersion !== null && $choiceVersion !== $this->referenceChoice($scene)['version']) {
+            return [null, 'reference_choice_stale'];
+        }
+
+        [$chosenMedia, $mediaWhy] = $this->sceneKeyframeMedia($media);
+
+        if ($chosenMedia === null) {
+            return [null, $mediaWhy];
         }
 
         $projectId = (string) $scene->project_id;
@@ -6208,7 +6815,7 @@ class VideoProjectService
         }
 
         $manifest = array_map(fn (array $slot) => $this->manifestEntry($slot), $slots);
-        $spec = $this->sceneImageSpec($scene, $preservation, $manifest);
+        $spec = $this->sceneImageSpec($scene, $preservation, $manifest, $chosenMedia);
 
         if (($space['chosen'] ?? null) !== null) {
             $position = array_search($space['chosen']['artifact_id'], array_column($manifest, 'artifact_id'), true);
@@ -6230,6 +6837,7 @@ class VideoProjectService
             'hash' => $this->designImageStore->identityHash($spec, $this->sceneIdentityKeys($spec)),
             'manifest_hash' => $spec['reference_manifest_hash'],
             'space' => $space,
+            'slots' => $slots,
         ], 'ok'];
     }
 
@@ -6268,15 +6876,18 @@ class VideoProjectService
             $seen[$entry['artifact_id']] = true;
 
             $allowed = $position === 0
-                ? [$this->sourceRoleForMode((string) $scene->transition_mode)]
-                : ['identity', 'environment', 'geometry', 'space_geometry'];
+                ? [
+                    $this->sourceRoleForMode((string) $scene->transition_mode),
+                    ...((string) $scene->transition_mode === ScenePreservationPrompt::HARD_CUT ? ['environment'] : []),
+                ]
+                : ['identity', 'environment', 'geometry', 'space_geometry', 'continuity', 'design_reference'];
 
             if (! in_array($entry['role'], $allowed, true)) {
                 return [null, 'candidate_snapshot_role_mismatch'];
             }
         }
 
-        $roles = array_column($manifest, 'role');
+        $roles = array_values(array_intersect(array_column($manifest, 'role'), self::SINGLE_ROLES));
 
         if (count($roles) !== count(array_unique($roles))) {
             return [null, 'candidate_snapshot_duplicated_role'];
@@ -6364,6 +6975,110 @@ class VideoProjectService
         return [true, 'ok'];
     }
 
+    public function clipSourcesNeedReview(VideoRenderScene $scene): ?string
+    {
+        $successor = VideoRenderScene::query()
+            ->where('project_id', $scene->project_id)
+            ->where('revision', $scene->revision)
+            ->where('source_scene_code', $scene->scene_code)
+            ->where('transition_mode', ScenePreservationPrompt::CONTINUATION)
+            ->where(fn ($query) => $scene->continuity_group === null
+                ? $query->whereNull('continuity_group')
+                : $query->where('continuity_group', $scene->continuity_group))
+            ->orderBy('scene_index')
+            ->first(['id', 'title']);
+
+        foreach (array_filter([$scene, $successor]) as $row) {
+            $keyframe = VideoDesignImage::query()
+                ->where('render_scene_id', $row->id)
+                ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
+                ->where('status', DesignImageStatus::APPROVED->value)
+                ->first();
+            $reason = $keyframe === null ? null : $this->keyframeNeedsReview($keyframe);
+
+            if ($reason !== null) {
+                return (string) $row->title.' cần kiểm tra lại: nguồn '.$reason.' đã đổi';
+            }
+        }
+
+        return null;
+    }
+
+    public function keyframeNeedsReview(VideoDesignImage $keyframe): ?string
+    {
+        $memo = [];
+
+        return $this->keyframeReviewReason($keyframe, $memo);
+    }
+
+    /** @param array<string, ?string> $memo */
+    private function keyframeReviewReason(VideoDesignImage $keyframe, array &$memo): ?string
+    {
+        $id = (string) $keyframe->id;
+
+        if (array_key_exists($id, $memo)) {
+            return $memo[$id];
+        }
+
+        $memo[$id] = null;
+        $spec = is_array($keyframe->prompt_spec_json) ? $keyframe->prompt_spec_json : [];
+        $sources = $spec['sources'] ?? null;
+
+        if (! is_array($sources)) {
+            return null;
+        }
+
+        $projectId = (string) $keyframe->project_id;
+        $scene = VideoRenderScene::query()->whereKey($keyframe->render_scene_id)->first(['id', 'revision']);
+        $design = null;
+
+        foreach ($sources as $entry) {
+            if (! is_array($entry) || ! is_string($entry['role'] ?? null) || ! is_string($entry['artifact_id'] ?? null)) {
+                continue;
+            }
+
+            $label = $this->sourceLabel($entry);
+
+            if ($this->sourceState($projectId, $entry) !== 'current') {
+                return $memo[$id] = $label;
+            }
+
+            if ($entry['role'] === 'design_reference') {
+                $design ??= array_column($this->designReferenceOptions($projectId), 'artifact_id');
+
+                if (! in_array($entry['artifact_id'], $design, true)) {
+                    return $memo[$id] = $label;
+                }
+            }
+
+            if (! in_array($entry['role'], ['source_keyframe', 'continuity'], true)) {
+                continue;
+            }
+
+            $source = VideoDesignImage::query()->whereKey($entry['candidate_id'] ?? null)->first();
+            $sourceScene = $source === null ? null : VideoRenderScene::query()->whereKey($source->render_scene_id)->first(['id', 'revision']);
+
+            if ($source === null || $sourceScene === null || $scene === null
+                || (int) $sourceScene->revision !== (int) $scene->revision
+                || $this->keyframeReviewReason($source, $memo) !== null) {
+                return $memo[$id] = $label;
+            }
+        }
+
+        return null;
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function sourceLabel(array $entry): string
+    {
+        $candidate = VideoDesignImage::query()->whereKey($entry['candidate_id'] ?? null)->first(['id', 'render_scene_id']);
+        $scene = $candidate?->render_scene_id === null
+            ? null
+            : VideoRenderScene::query()->whereKey($candidate->render_scene_id)->first(['title']);
+
+        return $scene !== null ? (string) $scene->title : (string) $entry['role'];
+    }
+
     /** @param array<string, mixed> $entry */
     private function sourceState(string $projectId, array $entry): string
     {
@@ -6428,7 +7143,11 @@ class VideoProjectService
                 'artifact_id' => $entry['artifact_id'],
                 'sha' => substr($entry['sha256'], 0, 12),
                 'state' => $this->sourceState($projectId, $entry),
+                'group' => $built['slots'][$entry['position']]['group'] ?? ($entry['position'] === 0 ? 'primary' : 'extra'),
+                'title' => (string) ($built['slots'][$entry['position']]['title'] ?? $entry['role']),
+                'url' => route('video-artifacts.show', $entry['artifact_id']),
             ], $spec['sources']),
+            'references' => $built['references'] ?? null,
         ], $blocked ?? 'ok'];
     }
 
@@ -6471,6 +7190,7 @@ class VideoProjectService
         ?string $actorId,
         string $sceneId,
         ?string $spaceSourceId = null,
+        ?array $media = null,
     ): array {
         $scene = $this->ownedScene($projectId, $actorId, $sceneId);
 
@@ -6484,9 +7204,23 @@ class VideoProjectService
             return [null, $gate];
         }
 
-        [$built, $why] = $this->buildSceneImageRequest($verified, $stage, null, false, $spaceSourceId);
+        [$built, $why] = $this->buildSceneImageRequest($verified, $stage, null, false, $spaceSourceId, $media);
 
-        return $built === null ? [null, $why] : $this->sceneImageView($verified, $built, false);
+        if ($built === null) {
+            return [null, $why];
+        }
+
+        $approved = VideoDesignImage::query()
+            ->where('render_scene_id', $verified->id)
+            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
+            ->where('status', DesignImageStatus::APPROVED->value)
+            ->first(['prompt_spec_json']);
+        $built['references'] = $this->referencePanel($verified, $stage) + [
+            'approved_differs' => $approved !== null
+                && ($approved->prompt_spec_json['reference_manifest_hash'] ?? null) !== $built['manifest_hash'],
+        ];
+
+        return $this->sceneImageView($verified, $built, false);
     }
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
@@ -6539,11 +7273,13 @@ class VideoProjectService
         ?string $confirmAnchorArtifactId,
         string $verifiedManifestHash,
         ?string $spaceSourceId = null,
+        ?array $media = null,
+        ?int $choiceVersion = null,
     ): array {
         try {
             return DB::transaction(function () use (
                 $projectId, $actorId, $sceneId, $previewHash,
-                $confirmAnchorArtifactId, $verifiedManifestHash, $spaceSourceId
+                $confirmAnchorArtifactId, $verifiedManifestHash, $spaceSourceId, $media, $choiceVersion
             ) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
@@ -6560,7 +7296,7 @@ class VideoProjectService
                 }
 
                 [$built, $buildWhy] = $this->buildSceneImageRequest(
-                    $verified, $stage, $confirmAnchorArtifactId, true, $spaceSourceId,
+                    $verified, $stage, $confirmAnchorArtifactId, true, $spaceSourceId, $media, $choiceVersion,
                 );
 
                 if ($built === null) {
@@ -6649,6 +7385,8 @@ class VideoProjectService
         string $previewHash,
         ?string $confirmAnchorArtifactId,
         ?string $spaceSourceId = null,
+        ?array $media = null,
+        ?int $choiceVersion = null,
     ): array {
         $scene = $this->ownedScene($projectId, $actorId, $sceneId);
 
@@ -6663,7 +7401,7 @@ class VideoProjectService
         }
 
         [$built, $why] = $this->buildSceneImageRequest(
-            $verified, $stage, $confirmAnchorArtifactId, true, $spaceSourceId,
+            $verified, $stage, $confirmAnchorArtifactId, true, $spaceSourceId, $media, $choiceVersion,
         );
 
         if ($built === null) {
@@ -6682,12 +7420,101 @@ class VideoProjectService
 
         [$candidate, $reason] = $this->claimSceneRender(
             $projectId, $actorId, $sceneId, $previewHash,
-            $confirmAnchorArtifactId, $built['manifest_hash'], $spaceSourceId,
+            $confirmAnchorArtifactId, $built['manifest_hash'], $spaceSourceId, $media, $choiceVersion,
         );
 
         return $candidate === null
             ? [null, $reason]
             : $this->dispatchSceneCandidate($candidate, false);
+    }
+
+    /**
+     * @param  list<mixed>|null  $items  null returns the shot to the automatic suggestion; [] removes every extra image
+     * @return array{0: ?int, 1: string} [$newVersion, $reason]
+     */
+    public function saveReferenceChoice(
+        string $projectId,
+        ?string $actorId,
+        string $sceneId,
+        int $expectedVersion,
+        ?array $items,
+    ): array {
+        $scene = $this->ownedScene($projectId, $actorId, $sceneId);
+
+        if ($scene === null) {
+            return [null, 'scene_not_found'];
+        }
+
+        $clean = null;
+
+        if ($items !== null) {
+            if (! array_is_list($items) || count($items) > self::SCENE_MAX_SOURCE_IMAGES - 1) {
+                return [null, 'references_over_limit'];
+            }
+
+            $stage = $this->stageStore->stageForProjectRevision($projectId, PlanningStageName::SCENE_PLAN, (int) $scene->revision);
+            $basis = $this->manifestBasis($projectId, $scene, $stage, $this->approvedReferenceViews($projectId));
+            $options = [];
+
+            foreach ($this->referenceOptions($projectId, $scene, $basis['place'], $basis['identity'], $basis['views']) as $option) {
+                $options[$option['artifact_id']] = $option;
+            }
+
+            $clean = [];
+            $seen = [(string) ($basis['primary']['artifact_id'] ?? '') => true];
+            $singles = [];
+
+            foreach ($items as $item) {
+                $artifactId = is_array($item) ? (string) ($item['artifact_id'] ?? '') : '';
+                $role = is_array($item) ? (string) ($item['role'] ?? '') : '';
+                $option = $options[$artifactId] ?? null;
+
+                if ($option === null || ! in_array($role, $option['roles'], true)) {
+                    return [null, 'reference_choice_invalid'];
+                }
+
+                if (array_key_exists($artifactId, $seen) || array_key_exists($role, $singles)) {
+                    return [null, 'reference_choice_duplicated|'.$option['title']];
+                }
+
+                $seen[$artifactId] = true;
+
+                if (in_array($role, self::SINGLE_ROLES, true)) {
+                    $singles[$role] = true;
+                }
+
+                $clean[] = ['artifact_id' => $artifactId, 'role' => $role];
+            }
+
+            $probe = clone $scene;
+            $probe->state_json = array_replace((array) $scene->state_json, [
+                self::REFERENCE_CHOICE_KEY => ['version' => 0, 'items' => $clean],
+            ]);
+
+            if ($this->sceneManifestSlots($projectId, $probe, $stage, $this->approvedReferenceViews($projectId))[1] === 'references_over_limit') {
+                return [null, 'references_over_limit'];
+            }
+        }
+
+        return DB::transaction(function () use ($scene, $expectedVersion, $clean): array {
+            $row = VideoRenderScene::query()->whereKey($scene->id)->lockForUpdate()->first();
+            $current = $row === null ? null : $this->referenceChoice($row)['version'];
+
+            if ($current === null) {
+                return [null, 'scene_not_found'];
+            }
+
+            if ($current !== $expectedVersion) {
+                return [null, 'reference_choice_conflict'];
+            }
+
+            DB::update(
+                "UPDATE video_render_scenes SET state_json = JSON_SET(state_json, '$.".self::REFERENCE_CHOICE_KEY."', JSON_EXTRACT(?, '$')), updated_at = ? WHERE id = ?",
+                [json_encode(['version' => $current + 1, 'items' => $clean], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE), now(), $row->id],
+            );
+
+            return [$current + 1, 'ok'];
+        });
     }
 
     /** @return array{0: ?VideoDesignImage, 1: string} */
@@ -6790,14 +7617,6 @@ class VideoProjectService
         ];
     }
 
-    /** @param array<string, mixed> $trail */
-    private function settle(array &$trail, string $stop, string $planIn): void
-    {
-        $trail['status'] = $stop === 'passed' ? 'passed' : 'needs_review';
-        $trail['reason'] = $stop;
-        $trail['reviewed_plan_sha256'] = $stop === 'passed' ? $planIn : null;
-    }
-
     /**
      * @return array{encoding: string, text: string}
      */
@@ -6806,23 +7625,6 @@ class VideoProjectService
         return mb_check_encoding($value, 'UTF-8')
             ? ['encoding' => 'utf8', 'text' => $value]
             : ['encoding' => 'base64', 'text' => base64_encode($value)];
-    }
-
-    private function elapsed(float $startedAt): int
-    {
-        return (int) round((microtime(true) - $startedAt) * 1000);
-    }
-
-    /**
-     * @param  callable(): array<string, mixed>  $output
-     */
-    private function bestEffortProgress(string $stageId, string $claimToken, callable $output): void
-    {
-        try {
-            $this->stageStore->recordProgress($stageId, $claimToken, $output());
-        } catch (\Throwable $e) {
-            $this->quietLog('scene-plan: progress checkpoint failed', $e, ['stage_id' => $stageId]);
-        }
     }
 
     /**
@@ -6852,432 +7654,6 @@ class VideoProjectService
     }
 
     /**
-     * @param  array<string, mixed>  $screenplay
-     * @param  array<string, string>  $summary
-     * @param  array<string, mixed>  $requirements
-     * @param  list<array<string, mixed>>  $scenes
-     * @param  list<string>  $warnings
-     * @return array<string, mixed>
-     */
-    private function reviewInput(
-        array $screenplay,
-        array $summary,
-        SceneProfile $profile,
-        array $requirements,
-        array $scenes,
-        array $warnings,
-    ): array {
-        return [
-            'selected_screenplay' => $screenplay,
-            'identity_summary' => $summary,
-            'profile' => array_replace($profile->toPlanningPayload(), [
-                'min_scenes' => (int) ($requirements['min_scenes'] ?? $profile->minScenes),
-            ]),
-            'planning_requirements' => $requirements,
-            'plan' => ['scenes' => $this->positioned($scenes)],
-            'heuristic_warnings' => $warnings,
-        ];
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $scenes
-     * @return list<array<string, mixed>>
-     */
-    private function positioned(array $scenes): array
-    {
-        $out = [];
-
-        foreach ($scenes as $index => $scene) {
-            $previous = $index === 0 ? null : $scenes[$index - 1];
-
-            $out[] = array_replace($scene, [
-                'index' => $index + 1,
-                'previous_scene_code' => $previous['scene_code'] ?? null,
-                'source_keyframe_scene_code' => ($scene['source_scene_code'] ?? '') !== ''
-                    ? $scene['source_scene_code']
-                    : null,
-                'previous_clip_action' => $previous['video']['action'] ?? null,
-            ]);
-        }
-
-        return $out;
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $scenes
-     * @param  list<string>  $warnings
-     * @param  array<string, mixed>  $trail
-     * @param  array<string, mixed>  $authorUsage
-     * @param  array<string, mixed>  $totals
-     * @return array<string, mixed>
-     */
-    private function planOutput(
-        array $scenes,
-        array $warnings,
-        array $trail,
-        array $authorUsage,
-        array $totals,
-        string $authorRaw,
-        ?int $revision = null,
-    ): array {
-        return [
-            'revision' => $revision,
-            'scenes' => $scenes,
-            'warnings' => $warnings,
-            'raw' => ['author' => $this->storableText($authorRaw)],
-            'usage' => [
-                'author' => $authorUsage,
-                'reviews' => array_map(
-                    static fn (array $round) => $round['usage'] ?? null,
-                    $trail['rounds'],
-                ),
-                'total' => $totals,
-            ],
-            'review' => $trail,
-        ];
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $scenes
-     * @param  array<string, mixed>  $requirements
-     * @return array{0: list<array<string, mixed>>, 1: list<string>}
-     */
-    private function validatedScenes(
-        array $scenes,
-        SceneProfile $profile,
-        array $requirements,
-        int $maxScenes,
-        array $screenplay,
-    ): array {
-        $minimumScenes = (int) ($requirements['min_scenes'] ?? $profile->minScenes);
-
-        if (count($scenes) < $minimumScenes) {
-            throw new ScenePlanException('Plan returned '.count($scenes)
-                .' scenes; the plan requires at least '.$minimumScenes.'.');
-        }
-
-        if (count($scenes) > $maxScenes) {
-            throw new ScenePlanException('Plan returned '.count($scenes)
-                .' scenes; the ceiling is '.$maxScenes.'.');
-        }
-
-        $seen = [];
-        $previousSceneState = null;
-        $previousGroup = null;
-        $previousCode = '';
-        $closedGroups = [];
-        $warnings = [];
-        $screenplayScenes = [];
-
-        foreach ($screenplay['scenes'] ?? [] as $screenplayScene) {
-            if (is_array($screenplayScene) && is_string($screenplayScene['id'] ?? null)) {
-                $screenplayScenes[$screenplayScene['id']] = $screenplayScene;
-            }
-        }
-
-        if ($screenplayScenes === []) {
-            throw new ScenePlanException('The selected screenplay has no scenes to break down.');
-        }
-
-        $shownCoverage = [];
-        $carriedCoverage = [];
-
-        foreach ((array) ($screenplay['coverage'] ?? []) as $item) {
-            if (! is_array($item)
-                || ($item['mode'] ?? null) !== 'shown'
-                || ! is_string($item['coverage_id'] ?? null)) {
-                continue;
-            }
-
-            foreach ((array) ($item['scene_ids'] ?? []) as $sceneId) {
-                if (is_string($sceneId) && array_key_exists($sceneId, $screenplayScenes)) {
-                    $shownCoverage[$sceneId][$item['coverage_id']] = true;
-                }
-            }
-        }
-
-        $screenplayOrder = array_flip(array_keys($screenplayScenes));
-        $previousScreenplayOrder = -1;
-        $shotCounts = [];
-        $beats = \App\Video\Screenplay\SceneBeats::usesBeats($screenplay);
-        $beatReached = [];
-
-        foreach ($scenes as $index => $scene) {
-            $at = 'scene '.($index + 1);
-
-            if (! is_array($scene) || array_is_list($scene)) {
-                throw new ScenePlanException($at.': scene must be an object.');
-            }
-
-            foreach ([
-                'scene_code', 'screenplay_scene_code', 'transition_mode', 'title', 'purpose', 'delta',
-                'location_id', 'continuity_group', 'source_scene_code', 'camera_change_reason',
-            ] as $field) {
-                if (! is_string($scene[$field] ?? null)) {
-                    throw new ScenePlanException($at.': '.$field.' must be a string.');
-                }
-            }
-
-            $code = (string) ($scene['scene_code'] ?? '');
-            $screenplaySceneCode = (string) ($scene['screenplay_scene_code'] ?? '');
-            $shotIndex = $scene['shot_index'] ?? null;
-            $locationId = (string) ($scene['location_id'] ?? '');
-            $characterIds = $scene['character_ids'] ?? null;
-            $coverageIds = $scene['coverage_ids'] ?? null;
-            $mode = (string) ($scene['transition_mode'] ?? '');
-            $title = trim((string) ($scene['title'] ?? ''));
-            $purpose = trim((string) ($scene['purpose'] ?? ''));
-            $delta = trim((string) ($scene['delta'] ?? ''));
-
-            if (preg_match('/^[a-z][a-z0-9_]{2,59}$/', $code) !== 1) {
-                throw new ScenePlanException($at.': scene_code "'.$code.'" is malformed.');
-            }
-
-            if (isset($seen[$code])) {
-                throw new ScenePlanException($at.': scene_code "'.$code.'" repeats.');
-            }
-
-            $seen[$code] = true;
-
-            if (! array_key_exists($screenplaySceneCode, $screenplayScenes)) {
-                throw new ScenePlanException(
-                    $at.': screenplay_scene_code "'.$screenplaySceneCode.'" is outside the selected screenplay.'
-                );
-            }
-
-            $currentScreenplayOrder = (int) $screenplayOrder[$screenplaySceneCode];
-
-            if ($currentScreenplayOrder < $previousScreenplayOrder) {
-                throw new ScenePlanException($at.': screenplay scenes move backwards.');
-            }
-
-            $minShotsPerScene = (int) config('video.scene_plan.min_shots_per_scene', 1);
-            $maxShotsPerScene = (int) config('video.scene_plan.max_shots_per_scene', 10);
-
-            if (! is_int($shotIndex)
-                || $shotIndex < $minShotsPerScene
-                || $shotIndex > $maxShotsPerScene) {
-                throw new ScenePlanException(
-                    $at.': shot_index must be an integer from '
-                    .$minShotsPerScene.' to '.$maxShotsPerScene.'.'
-                );
-            }
-
-            $expectedShotIndex = 1 + ($shotCounts[$screenplaySceneCode] ?? 0);
-
-            if ($shotIndex !== $expectedShotIndex) {
-                throw new ScenePlanException(
-                    $at.': shot_index must be '.$expectedShotIndex.' inside '.$screenplaySceneCode.'.'
-                );
-            }
-
-            $shotCounts[$screenplaySceneCode] = $expectedShotIndex;
-            $previousScreenplayOrder = $currentScreenplayOrder;
-
-            $sourceScene = $screenplayScenes[$screenplaySceneCode];
-
-            if ($locationId !== (string) ($sourceScene['location_id'] ?? '')) {
-                throw new ScenePlanException(
-                    $at.': location_id must match '.$screenplaySceneCode.'.'
-                );
-            }
-
-            if (! is_array($characterIds) || ! array_is_list($characterIds)) {
-                throw new ScenePlanException($at.': character_ids must be a list.');
-            }
-
-            if (count($characterIds) !== count(array_unique($characterIds))) {
-                throw new ScenePlanException($at.': character_ids must not repeat.');
-            }
-
-            $allowedCharacters = array_values((array) ($sourceScene['character_ids'] ?? []));
-
-            foreach ($characterIds as $characterId) {
-                if (! is_string($characterId) || ! in_array($characterId, $allowedCharacters, true)) {
-                    throw new ScenePlanException(
-                        $at.': character_id '.var_export($characterId, true)
-                        .' is outside '.$screenplaySceneCode.'.'
-                    );
-                }
-            }
-
-            if ($beats) {
-                $beatReached[$screenplaySceneCode] = $this->checkShotBeats(
-                    $at, $scene, $sourceScene, $beatReached[$screenplaySceneCode] ?? 0,
-                );
-                $this->checkShotStates($at, $scene, $sourceScene);
-            }
-
-            if (! is_array($coverageIds) || ! array_is_list($coverageIds)) {
-                throw new ScenePlanException($at.': coverage_ids must be a list.');
-            }
-
-            foreach ($coverageIds as $coverageId) {
-                if (! is_string($coverageId)
-                    || ! isset($shownCoverage[$screenplaySceneCode][$coverageId])) {
-                    throw new ScenePlanException(
-                        $at.': coverage_id '.var_export($coverageId, true)
-                        .' is not shown in '.$screenplaySceneCode.'.'
-                    );
-                }
-
-                $carriedCoverage[$screenplaySceneCode][$coverageId] = true;
-            }
-
-            if (count($coverageIds) !== count(array_unique($coverageIds))) {
-                throw new ScenePlanException($at.': coverage_ids must not repeat.');
-            }
-
-            if (($scene['basis'] ?? null) !== 'source_supported') {
-                throw new ScenePlanException($at.': basis must be source_supported.');
-            }
-
-            $words = count(preg_split('/\s+/', $title, -1, PREG_SPLIT_NO_EMPTY) ?: []);
-
-            if ($words < 2 || $words > 4) {
-                throw new ScenePlanException($at.': title must be two to four words.');
-            }
-
-            if (mb_strlen($title) > 120) {
-                throw new ScenePlanException($at.': title must be at most 120 characters.');
-            }
-
-            if (mb_strlen($purpose) < 3 || mb_strlen($purpose) > 500) {
-                throw new ScenePlanException($at.': purpose must be 3 to 500 characters.');
-            }
-
-            if (str_starts_with($purpose, self::UNRESOLVED_MARK)) {
-                $warnings[] = $at.': the planner could not show '.$screenplaySceneCode.' faithfully — '.$purpose;
-            }
-
-            foreach (['state_before', 'scene_state'] as $field) {
-                if (! $this->isStateToken($scene[$field] ?? null)) {
-                    throw new ScenePlanException($at.': '.$field.' must be a lowercase token.');
-                }
-            }
-
-            if (! in_array($mode, ScenePreservationPrompt::modes(), true)) {
-                throw new ScenePlanException($at.': transition_mode "'.$mode.'" is unknown.');
-            }
-
-            if ($index === 0 && $mode !== ScenePreservationPrompt::HARD_CUT) {
-                throw new ScenePlanException('scene 1 must be '.ScenePreservationPrompt::HARD_CUT.'.');
-            }
-
-            $group = (string) ($scene['continuity_group'] ?? '');
-            $source = (string) ($scene['source_scene_code'] ?? '');
-            $reason = trim((string) ($scene['camera_change_reason'] ?? ''));
-
-            if (preg_match('/^[a-z][a-z0-9_]{2,59}$/', $group) !== 1) {
-                throw new ScenePlanException($at.': continuity_group "'.$group.'" is malformed.');
-            }
-
-            $opensGroup = $index === 0 || $group !== $previousGroup;
-
-            if ($opensGroup && isset($closedGroups[$group])) {
-                throw new ScenePlanException(
-                    $at.': continuity_group "'.$group.'" reopens after it closed; a group must be one run.'
-                );
-            }
-
-            if ($opensGroup && $previousGroup !== null) {
-                $closedGroups[$previousGroup] = true;
-            }
-
-            if ($opensGroup) {
-                if ($mode !== ScenePreservationPrompt::HARD_CUT) {
-                    throw new ScenePlanException($at.': a scene that opens a group must be a hard cut.');
-                }
-
-                if ($source !== '') {
-                    throw new ScenePlanException(
-                        $at.': a scene that opens a group takes no source_scene_code.'
-                    );
-                }
-
-                if (mb_strlen($reason) < 3 || mb_strlen($reason) > 300) {
-                    throw new ScenePlanException(
-                        $at.': a scene that opens a group must say why this viewpoint.'
-                    );
-                }
-            } else {
-                if ($mode !== ScenePreservationPrompt::CONTINUATION) {
-                    throw new ScenePlanException(
-                        $at.': a scene that continues a group must be a continuation.'
-                    );
-                }
-
-                if ($source !== $previousCode) {
-                    throw new ScenePlanException(
-                        $at.': source_scene_code must be the scene before it, "'.$previousCode.'".'
-                    );
-                }
-
-                if ($reason !== '') {
-                    throw new ScenePlanException(
-                        $at.': a scene that continues a group does not change the viewpoint.'
-                    );
-                }
-            }
-
-            $previousGroup = $group;
-            $previousCode = $code;
-
-            if (($scene['camera_mode'] ?? null) !== 'locked') {
-                throw new ScenePlanException($at.': camera_mode must be locked.');
-            }
-
-            if ($delta === '' || mb_strlen($delta) > 1000) {
-                throw new ScenePlanException($at.': delta must be 1 to 1000 characters.');
-            }
-
-            if (preg_match('/\bimage\s+\d+\s*:/i', $delta) === 1) {
-                throw new ScenePlanException($at.': delta carries a numbered image label.');
-            }
-
-            $this->checkVideoPlan($at, $scene['video'] ?? null);
-
-            if ($mode === ScenePreservationPrompt::CONTINUATION
-                && $previousSceneState !== null
-                && $scene['state_before'] !== $previousSceneState) {
-                $warnings[] = $at.': state_before does not continue the previous keyframe state.';
-            }
-
-            $previousSceneState = (string) $scene['scene_state'];
-            $warnings = array_merge($warnings, $this->sceneWarnings($at, $delta));
-        }
-
-        foreach (array_keys($screenplayScenes) as $screenplaySceneCode) {
-            $count = $shotCounts[$screenplaySceneCode] ?? 0;
-
-            if ($count < $minShotsPerScene || $count > $maxShotsPerScene) {
-                throw new ScenePlanException(
-                    'Screenplay scene '.$screenplaySceneCode.' must have between '
-                    .$minShotsPerScene.' and '.$maxShotsPerScene.' shots.'
-                );
-            }
-        }
-
-        $missing = [];
-
-        foreach ($shownCoverage as $screenplaySceneCode => $items) {
-            foreach (array_keys($items) as $coverageId) {
-                if (! isset($carriedCoverage[$screenplaySceneCode][$coverageId])) {
-                    $missing[] = $coverageId.' in '.$screenplaySceneCode;
-                }
-            }
-        }
-
-        if ($missing !== []) {
-            throw new ScenePlanException(
-                'Plan does not carry shown coverage: '.implode(', ', $missing)
-            );
-        }
-
-        return [$scenes, array_merge($warnings, $this->sceneCountWarnings(count($scenes), $requirements))];
-    }
-
-    /**
      * @param  list<array<string, mixed>>  $shots
      * @return list<string>
      */
@@ -7294,47 +7670,6 @@ class VideoProjectService
         }
 
         return $codes;
-    }
-
-    /**
-     * @param  array<string, mixed>  $shot
-     * @param  array<string, mixed>  $sourceScene
-     */
-    private function checkShotBeats(string $at, array $shot, array $sourceScene, int $reached): int
-    {
-        $order = array_flip(\App\Video\Screenplay\SceneBeats::beatIds($sourceScene));
-        $ids = $shot['beat_ids'] ?? null;
-
-        if (! is_array($ids) || ! array_is_list($ids) || $ids === []) {
-            throw new ScenePlanException($at.': beat_ids must be a nonempty list.');
-        }
-
-        $positions = [];
-
-        foreach ($ids as $id) {
-            if (! is_string($id) || ! array_key_exists($id, $order)) {
-                throw new ScenePlanException(
-                    $at.': beat '.var_export($id, true).' is not a beat of '.($sourceScene['id'] ?? '?').'.'
-                );
-            }
-
-            $positions[] = $order[$id] + 1;
-        }
-
-        $sorted = $positions;
-        sort($sorted);
-
-        if ($positions !== $sorted || count($positions) !== count(array_unique($positions))) {
-            throw new ScenePlanException($at.': beat_ids must name each beat once, in order.');
-        }
-
-        if ($positions[0] < $reached) {
-            throw new ScenePlanException(
-                $at.': beat_ids go back to an earlier beat of '.($sourceScene['id'] ?? '?').'.'
-            );
-        }
-
-        return (int) end($positions);
     }
 
     /**
@@ -7369,60 +7704,6 @@ class VideoProjectService
                 }
             }
         }
-    }
-
-    private function checkVideoPlan(string $at, mixed $video): void
-    {
-        if (! is_array($video) || array_is_list($video)) {
-            throw new ScenePlanException($at.': video must be an object.');
-        }
-
-        if (array_diff(array_keys($video), ['action', 'preserve', 'end_state']) !== []) {
-            throw new ScenePlanException($at.': video carries unexpected keys.');
-        }
-
-        foreach (['action' => 1000, 'preserve' => 500] as $field => $max) {
-            $value = $video[$field] ?? null;
-
-            if (! is_string($value) || trim($value) === '' || mb_strlen($value) > $max) {
-                throw new ScenePlanException($at.': video.'.$field.' must be 1 to '.$max.' characters.');
-            }
-        }
-
-        if (! $this->isStateToken($video['end_state'] ?? null)) {
-            throw new ScenePlanException($at.': video.end_state must be a lowercase token.');
-        }
-    }
-
-    private function isStateToken(mixed $value): bool
-    {
-        return is_string($value) && preg_match('/^[a-z][a-z0-9_]{1,119}$/', $value) === 1;
-    }
-
-    /**
-     * @param  array<string, mixed>  $requirements
-     * @return list<string>
-     */
-    private function sceneCountWarnings(int $count, array $requirements): array
-    {
-        $target = $requirements['target_duration_seconds'] ?? null;
-        $perClip = $requirements['seconds_per_clip'] ?? null;
-
-        if (! is_int($target) || $target < 1 || ! is_int($perClip) || $perClip < 1) {
-            return [];
-        }
-
-        $expected = intdiv($target, $perClip);
-
-        if ($expected < 1) {
-            return [];
-        }
-
-        $tolerance = max(2, (int) round($expected * 0.25));
-
-        return abs($count - $expected) > $tolerance
-            ? ['plan returned '.$count.' scenes for a target of about '.$expected.'.']
-            : [];
     }
 
     /** @return list<string> */
@@ -7463,184 +7744,6 @@ class VideoProjectService
         }
 
         return false;
-    }
-
-    /**
-     * @param  array<string, mixed>  $screenplay
-     * @param  list<mixed>  $scope
-     * @return ?list<string>
-     */
-    private function trialScope(array $screenplay, array $scope): ?array
-    {
-        $order = [];
-
-        foreach ((array) ($screenplay['scenes'] ?? []) as $index => $scene) {
-            if (is_array($scene) && is_string($scene['id'] ?? null)) {
-                $order[$scene['id']] = $index;
-            }
-        }
-
-        $positions = [];
-
-        foreach ($scope as $sceneId) {
-            if (! is_string($sceneId) || ! array_key_exists($sceneId, $order) || isset($positions[$sceneId])) {
-                return null;
-            }
-
-            $positions[$sceneId] = $order[$sceneId];
-        }
-
-        $count = count($positions);
-
-        if ($count < (int) config('video.scene_plan.trial.min_scenes', 2)
-            || $count > (int) config('video.scene_plan.trial.max_scenes', 4)
-            || $positions === []
-            || max($positions) - min($positions) !== $count - 1) {
-            return null;
-        }
-
-        asort($positions);
-
-        return array_keys($positions);
-    }
-
-    /**
-     * @param  array<string, mixed>  $screenplay
-     * @param  list<string>  $scope
-     * @return array<string, mixed>
-     */
-    private function screenplayForPlanScope(array $screenplay, array $scope): array
-    {
-        $selected = array_fill_keys($scope, true);
-        $screenplay['scenes'] = array_values(array_filter(
-            (array) ($screenplay['scenes'] ?? []),
-            static fn (mixed $scene): bool => is_array($scene)
-                && is_string($scene['id'] ?? null)
-                && isset($selected[$scene['id']]),
-        ));
-        $screenplay['coverage'] = array_values(array_filter(
-            (array) ($screenplay['coverage'] ?? []),
-            static function (mixed $item) use ($selected): bool {
-                if (! is_array($item) || ($item['mode'] ?? null) !== 'shown') {
-                    return false;
-                }
-
-                $sceneIds = $item['scene_ids'] ?? null;
-
-                return is_array($sceneIds)
-                    && $sceneIds !== []
-                    && count(array_filter(
-                        $sceneIds,
-                        static fn (mixed $id): bool => is_string($id) && isset($selected[$id]),
-                    )) === count($sceneIds);
-            },
-        ));
-
-        return $screenplay;
-    }
-
-    /** @return list<array{id: string, stage: string, location_id: string}> */
-    public function productionScreenplayScenes(string $projectId): array
-    {
-        $project = VideoProject::query()->find($projectId);
-        $stage = $project === null ? null : $this->selectedProductionScreenplay($project);
-        $scenes = [];
-
-        foreach ((array) ($stage?->output_json['scenes'] ?? []) as $scene) {
-            if (is_array($scene) && is_string($scene['id'] ?? null)) {
-                $scenes[] = [
-                    'id' => $scene['id'],
-                    'stage' => (string) ($scene['stage'] ?? ''),
-                    'location_id' => (string) ($scene['location_id'] ?? ''),
-                ];
-            }
-        }
-
-        return $scenes;
-    }
-
-    /** @return ?list<string> */
-    public function trialScopeBetween(string $projectId, string $from, string $to): ?array
-    {
-        $ids = array_column($this->productionScreenplayScenes($projectId), 'id');
-        $start = array_search($from, $ids, true);
-        $end = array_search($to, $ids, true);
-
-        return $start === false || $end === false || $end < $start
-            ? null
-            : $this->trialScope(
-                ['scenes' => array_map(static fn (string $id): array => ['id' => $id], $ids)],
-                array_slice($ids, (int) $start, (int) $end - (int) $start + 1),
-            );
-    }
-
-    /**
-     * @return array{status: ?string, scope: list<string>, shots: list<array<string, mixed>>,
-     *               warnings: list<string>, review: ?array<string, mixed>, usage: array<string, mixed>,
-     *               error: ?string, written_at: ?string}
-     */
-    public function latestScenePlanTrial(string $projectId): array
-    {
-        $selectedScreenplayStageId = VideoProject::query()
-            ->whereKey($projectId)
-            ->value('selected_screenplay_stage_id');
-        $stage = $selectedScreenplayStageId === null
-            ? null
-            : VideoPlanningStage::query()
-                ->where('project_id', $projectId)
-                ->where('stage', PlanningStageName::SCENE_PLAN_TRIAL->value)
-                ->where('input_json->screenplay_stage_id', $selectedScreenplayStageId)
-                ->orderByDesc('planning_revision')
-                ->orderByDesc('created_at')
-                ->first();
-        $output = is_array($stage?->output_json) ? $stage->output_json : [];
-        $review = is_array($output['review'] ?? null) ? $output['review'] : null;
-
-        return [
-            'status' => $stage?->status,
-            'scope' => array_values((array) ($stage?->input_json['plan_scope'] ?? [])),
-            'shots' => array_values(array_filter((array) ($output['scenes'] ?? []), 'is_array')),
-            'warnings' => array_values(array_filter((array) ($output['warnings'] ?? []), 'is_string')),
-            'review' => $review === null ? null : [
-                'status' => $review['status'] ?? null,
-                'reason' => $review['reason'] ?? null,
-                'rounds' => count((array) ($review['rounds'] ?? [])),
-            ],
-            'usage' => is_array($output['usage']['total'] ?? null) ? $output['usage']['total'] : [],
-            'error' => $stage?->status === VideoPlanningStageStatus::FAILED->value ? $stage->error_message : null,
-            'written_at' => ($stage?->finished_at ?? $stage?->updated_at)?->format('d/m/Y H:i'),
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function planningRequirements(
-        SceneProfile $profile,
-        int $maxShots,
-        ?int $minScenes = null,
-    ): array {
-        $requirements = [
-            'scope' => $profile->scope,
-            'detail_level' => $profile->detailLevel,
-            'min_scenes' => $minScenes ?? $profile->minScenes,
-            'max_shots' => $maxShots,
-            'min_shots_per_scene' => (int) config('video.scene_plan.min_shots_per_scene', 1),
-            'max_shots_per_scene' => (int) config('video.scene_plan.max_shots_per_scene', 10),
-            'allow_inferred_process' => false,
-            'output_medium' => 'image_keyframe_plus_clip_draft',
-        ];
-
-        $target = config('video.scene_plan.target_duration_seconds');
-        $perClip = config('video.scene_plan.seconds_per_clip');
-
-        if (is_int($target) && $target > 0) {
-            $requirements['target_duration_seconds'] = $target;
-        }
-
-        if (is_int($perClip) && $perClip > 0) {
-            $requirements['seconds_per_clip'] = $perClip;
-        }
-
-        return $requirements;
     }
 
     /**
@@ -7689,6 +7792,18 @@ class VideoProjectService
             'beat_ids' => array_values(array_filter((array) ($state['beat_ids'] ?? []), 'is_string')),
             'keyframe_state' => is_array($state['keyframe_state'] ?? null) ? $state['keyframe_state'] : null,
             'shot_end_state' => is_array($state['end_state'] ?? null) ? $state['end_state'] : null,
+            'camera' => $this->cameraLines(is_array($video['camera'] ?? null) ? $video['camera'] : []),
+            'storyboard' => is_array($video) && array_key_exists('camera', $video),
+            'shot_board' => ($state['storyboard_shape'] ?? null) === ScenePlanAuthor::SHOT_SHAPE,
+            'camera_relation' => is_string($video['camera_relation'] ?? null) ? $video['camera_relation'] : null,
+            'duration_seconds' => is_int($video['duration_ms'] ?? null) && $video['duration_ms'] % 1000 === 0
+                ? intdiv($video['duration_ms'], 1000)
+                : null,
+            'beat_coverage' => array_values(array_filter((array) ($state['beat_coverage'] ?? []), 'is_array')),
+            'objects_start' => $this->visibleObjects($state, 'objects_start', ['objects_first_frame']),
+            'objects_end' => $this->visibleObjects($state, 'objects_end', ['objects_last_frame']),
+            'object_moves' => $this->framedObjectMoves($state),
+            'reference_requirements' => array_values(array_filter((array) ($state['reference_requirements'] ?? []), 'is_array')),
         ];
     }
 
@@ -7776,7 +7891,7 @@ class VideoProjectService
         }
 
         if (array_key_exists('verdict', $round)
-            && ! in_array($round['verdict'], ScenePlanReviewer::VERDICTS, true)) {
+            && ! in_array($round['verdict'], self::STORED_REVIEW_VERDICTS, true)) {
             return false;
         }
 
@@ -7815,8 +7930,8 @@ class VideoProjectService
                 }
             }
 
-            if (! in_array($finding['rule'], [...ScenePlanReviewer::RULES, ...ScenePlanReviewer::RETIRED_RULES], true)
-                || ! in_array($finding['severity'], ScenePlanReviewer::SEVERITIES, true)) {
+            if (! in_array($finding['rule'], self::STORED_REVIEW_RULES, true)
+                || ! in_array($finding['severity'], self::STORED_REVIEW_SEVERITIES, true)) {
                 return false;
             }
 
@@ -7902,6 +8017,27 @@ class VideoProjectService
 
         if ($stage === null || ! is_array($stage->output_json)) {
             return $unreviewed('unverifiable');
+        }
+
+        if ((is_array($stage->input_json) ? $stage->input_json['scene_contract_version'] ?? null : null)
+            === ScenePlanAuthor::STORYBOARD_CONTRACT_VERSION) {
+            $validation = $stage->output_json['validation'] ?? null;
+            $hash = is_array($validation) ? $validation['plan_sha256'] ?? null : null;
+
+            if (($validation['status'] ?? null) !== 'passed'
+                || ! is_string($hash) || preg_match('/^[0-9a-f]{64}$/', $hash) !== 1) {
+                return $unreviewed('not_validated');
+            }
+
+            return [
+                'status' => 'passed',
+                'reason' => 'validated',
+                'reviewed_plan_sha256' => $hash,
+                'open_findings' => [],
+                'patched_but_unverified' => false,
+                'rounds' => [],
+                'usage' => $this->readableUsage($stage->output_json['usage'] ?? null),
+            ];
         }
 
         if (! array_key_exists('review', $stage->output_json)) {
@@ -7993,6 +8129,13 @@ class VideoProjectService
     {
         $start = \App\Video\Screenplay\SceneBeats::stateLines((array) ($moments['keyframe_state'] ?? []), 'STARTS WITH');
         $end = \App\Video\Screenplay\SceneBeats::stateLines((array) ($moments['end_state'] ?? []), 'ENDS WITH');
+        $changed = $this->changedObjectLines(
+            (array) ($moments['objects_start'] ?? []),
+            (array) ($moments['objects_end'] ?? []),
+            (array) ($moments['object_moves']['leaving_ids'] ?? []),
+        );
+        $entering = (array) ($moments['object_moves']['entering'] ?? []);
+        $leaving = (array) ($moments['object_moves']['leaving'] ?? []);
 
         return implode("\n\n", [
             'The supplied image is the first frame of this shot and is already correct; the shot begins from exactly that state.',
@@ -8000,8 +8143,11 @@ class VideoProjectService
             'ACTION: '.$video['action'],
             'CAMERA: '.self::LOCKED_CAMERA,
             'PRESERVE: '.$video['preserve'],
-            'END STATE: '.$video['end_state'],
+            ...(array_key_exists('camera', $video) ? [] : ['END STATE: '.$video['end_state']]),
             ...($end === [] ? [] : [implode("\n", $end)]),
+            ...($entering === [] ? [] : ['ENTERS THE FRAME DURING THE CLIP: '.implode('; ', $entering)]),
+            ...($leaving === [] ? [] : ['LEAVES THE FRAME DURING THE CLIP: '.implode('; ', $leaving)]),
+            ...($changed === [] ? [] : ["OBJECTS WHEN THE CLIP ENDS:\n".implode("\n", $changed)]),
             ...\App\Video\Screenplay\LocationProfile::settingLines($setting),
         ]);
     }
@@ -8011,7 +8157,117 @@ class VideoProjectService
     {
         $state = is_array($scene->state_json) ? $scene->state_json : [];
 
-        return array_intersect_key($state, array_flip(['keyframe_state', 'end_state']));
+        return array_intersect_key($state, array_flip(['keyframe_state', 'end_state'])) + [
+            'objects_start' => $this->visibleObjects($state, 'objects_start', ['objects_first_frame']),
+            'objects_end' => $this->visibleObjects($state, 'objects_end', ['objects_first_frame', 'objects_last_frame']),
+            'object_moves' => $this->framedObjectMoves($state),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @param  list<string>  $frames
+     * @return list<array<string, mixed>>
+     */
+    private function visibleObjects(array $state, string $key, array $frames): array
+    {
+        $objects = array_values(array_filter((array) ($state[$key] ?? []), 'is_array'));
+        $listed = array_values(array_filter($frames, static fn (string $frame): bool => array_key_exists($frame, $state)));
+        $ids = $listed === []
+            ? ($state['objects_visible'] ?? null)
+            : array_merge(...array_map(static fn (string $frame): array => (array) $state[$frame], $listed));
+
+        if ($ids === null) {
+            return $objects;
+        }
+
+        $visible = array_values(array_filter((array) $ids, 'is_string'));
+
+        return array_values(array_filter(
+            $objects,
+            static fn (array $object): bool => in_array($object['object_id'] ?? null, $visible, true),
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return array{entering: list<string>, leaving: list<string>, leaving_ids: list<string>}
+     */
+    private function framedObjectMoves(array $state): array
+    {
+        $first = $this->objectNames($this->visibleObjects($state, 'objects_start', ['objects_first_frame']));
+        $last = $this->objectNames($this->visibleObjects($state, 'objects_end', ['objects_last_frame']));
+        $leaving = array_diff_key($first, $last);
+
+        return [
+            'entering' => array_values(array_diff_key($last, $first)),
+            'leaving' => array_values($leaving),
+            'leaving_ids' => array_map('strval', array_keys($leaving)),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $objects
+     * @return array<string, string>
+     */
+    private function objectNames(array $objects): array
+    {
+        $names = [];
+
+        foreach ($objects as $object) {
+            if (is_string($object['object_id'] ?? null) && is_string($object['name'] ?? null)) {
+                $names[$object['object_id']] = $object['name'];
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param  array<mixed>  $objects
+     * @return list<string>
+     */
+    private function objectLines(array $objects): array
+    {
+        $lines = [];
+
+        foreach ($objects as $object) {
+            if (is_array($object) && is_string($object['name'] ?? null) && is_string($object['state'] ?? null)) {
+                $lines[] = '- '.$object['name'].': '.$object['state'];
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param  array<mixed>  $start
+     * @param  array<mixed>  $end
+     * @param  list<string>  $leavingIds
+     * @return list<string>
+     */
+    private function changedObjectLines(array $start, array $end, array $leavingIds = []): array
+    {
+        $before = [];
+
+        foreach ($start as $object) {
+            if (is_array($object) && is_string($object['object_id'] ?? null)) {
+                $before[$object['object_id']] = $object['state'] ?? null;
+            }
+        }
+
+        $changed = array_values(array_filter(
+            $end,
+            static fn (mixed $object): bool => is_array($object)
+                && ($before[$object['object_id'] ?? ''] ?? null) !== ($object['state'] ?? null),
+        ));
+
+        return $this->objectLines(array_map(
+            static fn (array $object): array => in_array($object['object_id'] ?? null, $leavingIds, true)
+                ? array_replace($object, ['state' => $object['state'].' (reached before it leaves the frame)'])
+                : $object,
+            $changed,
+        ));
     }
 
     /** @return array<string, mixed> */
@@ -8030,13 +8286,39 @@ class VideoProjectService
         $frame = \App\Video\Screenplay\SceneBeats::stateLines(
             is_array($state['keyframe_state'] ?? null) ? $state['keyframe_state'] : [], 'FRAME',
         );
+        $video = is_array($scene->video_plan_json) ? $scene->video_plan_json : [];
+        $camera = $this->cameraLines(is_array($video['camera'] ?? null) ? $video['camera'] : []);
+        $objects = $this->objectLines($this->visibleObjects($state, 'objects_start', ['objects_first_frame']));
 
         return implode("\n\n", [
             (string) $scene->delta_prompt,
+            ...($camera === [] ? [] : [self::CAMERA_LEAD."\n".implode("\n", $camera)]),
             ...($frame === [] ? [] : [self::FRAME_LEAD."\n".implode("\n", $frame)]),
+            ...($objects === [] ? [] : [self::OBJECTS_LEAD."\n".implode("\n", $objects)]),
             ...($space === [] ? [] : [self::SPACE_LEAD."\n".implode("\n", $space)]),
             ...($setting === [] ? [] : [self::SETTING_LEAD."\n".implode("\n", $setting)]),
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $camera
+     * @return list<string>
+     */
+    private function cameraLines(array $camera): array
+    {
+        $lines = [];
+
+        foreach (['position' => 'Position', 'elevation' => 'Height', 'framing' => 'Framing'] as $field => $label) {
+            if (is_string($camera[$field] ?? null) && trim($camera[$field]) !== '') {
+                $lines[] = $label.': '.trim($camera[$field]);
+            }
+        }
+
+        if (is_string($camera['subject_side'] ?? null)) {
+            $lines[] = 'Side of the subject facing the camera: '.$camera['subject_side'];
+        }
+
+        return $lines;
     }
 
     /**

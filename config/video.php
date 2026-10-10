@@ -749,14 +749,9 @@ return [
     ],
 
     'scene_plan' => [
-        'prompt_path' => resource_path('ai/prompts/scene_plan_v4.txt'),
+        'prompt_path' => resource_path('ai/prompts/storyboard_v1.txt'),
 
-        'prompt_version' => env('SCENE_PLAN_PROMPT_VERSION', 'scene-plan-v4-r3'),
-
-        /** Skill for a screenplay whose scenes carry beats and subject states (screenplay_v6). */
-        'beat_prompt_path' => resource_path('ai/prompts/scene_plan_v5.txt'),
-
-        'beat_prompt_version' => env('SCENE_PLAN_BEAT_PROMPT_VERSION', 'scene-plan-v5-r3'),
+        'prompt_version' => env('STORYBOARD_PROMPT_VERSION', 'storyboard-v1-r4'),
 
         'model' => env('SCENE_PLAN_MODEL'),
 
@@ -773,48 +768,11 @@ return [
             'retry_times' => (int) env('SCENE_PLAN_RETRY_TIMES', 1),
         ],
 
-        // Moi item cua scene plan v3 la MOT shot. Truong cu `max_scenes` khong
-        // con dung nghia va lam screenplay 25-30 scene bat kha thi.
-        'max_shots' => (int) env('SCENE_PLAN_MAX_SHOTS', 300),
-        'min_shots_per_scene' => 1,
-        'max_shots_per_scene' => 10,
-
-        'trial' => [
-            'min_scenes' => 2,
-            'max_scenes' => 4,
-        ],
-
         'profile_dir' => resource_path('ai/profiles/scene_planning'),
 
         'profiles' => [
             'yacht' => 'vessel_v1',
         ],
-
-        /*
-         * Ca hai deu nullable. `seconds_per_clip` la do dai clip nha cung cap
-         * that su sinh ra, nen chua chon provider thi chua co so. Thieu ca hai
-         * thi planner van quyet N bang san + coverage + muc chi tiet.
-         */
-        /*
-         * `model` de trong thi reviewer dung dung model cua author. Cung model
-         * KHONG phai kiem dinh doc lap — no chi la mot luot doc lai.
-         */
-        'review' => [
-            'enabled' => (bool) env('SCENE_REVIEW_ENABLED', true),
-            'prompt_path' => resource_path('ai/prompts/scene_review_v4.txt'),
-            'prompt_version' => env('SCENE_REVIEW_PROMPT_VERSION', 'scene-review-v4-r3'),
-            'model' => env('SCENE_REVIEW_MODEL'),
-            'max_tokens' => (int) env('SCENE_REVIEW_MAX_TOKENS', 32000),
-            'max_rounds' => (int) env('SCENE_REVIEW_MAX_ROUNDS', 2),
-        ],
-
-        'target_duration_seconds' => is_numeric(env('SCENE_PLAN_TARGET_DURATION_SECONDS'))
-            ? (int) env('SCENE_PLAN_TARGET_DURATION_SECONDS')
-            : null,
-
-        'seconds_per_clip' => is_numeric(env('SCENE_PLAN_SECONDS_PER_CLIP'))
-            ? (int) env('SCENE_PLAN_SECONDS_PER_CLIP')
-            : null,
     ],
 
     'screenplay' => [
@@ -880,7 +838,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/vessel_design_v1.json'),
 
-            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v1-r28'),
+            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v1-r30'),
 
             'model' => env('SCREENPLAY_DESIGN_MODEL', 'gpt-5.6-sol'),
 

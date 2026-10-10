@@ -118,6 +118,10 @@ final class ShotSelectionReconciler
             $reasons[] = 'source_artifact_changed';
         }
 
+        if ($scene !== null && app(\App\Services\VideoProjectService::class)->clipSourcesNeedReview($scene) !== null) {
+            $reasons[] = 'keyframe_sources_changed';
+        }
+
         $snapshotEnd = is_array($request['end_frame'] ?? null)
             ? (string) ($request['end_frame']['artifact_id'] ?? '')
             : null;
@@ -181,11 +185,16 @@ final class ShotSelectionReconciler
         $screenplayHash = $screenplayOutput !== []
             ? ScreenplayContentHash::of($screenplayOutput)
             : null;
+        $storyboard = (is_array($plan?->input_json) ? ($plan->input_json['scene_contract_version'] ?? null) : null)
+            === \App\Video\Scene\ScenePlanAuthor::STORYBOARD_CONTRACT_VERSION;
+        $planPassed = $storyboard
+            ? ($planOutput['validation']['status'] ?? null) === 'passed'
+            : ($planOutput['review']['status'] ?? null) === 'passed';
         $valid = $project !== null
             && (string) $project->selected_screenplay_stage_id === (string) $scene->screenplay_stage_id
             && $plan !== null
             && $plan->status === VideoPlanningStageStatus::SUCCEEDED->value
-            && ($planOutput['review']['status'] ?? null) === 'passed'
+            && $planPassed
             && (int) ($planOutput['revision'] ?? 0) === (int) $scene->revision
             && $screenplay !== null
             && $approval !== null
@@ -211,6 +220,7 @@ final class ShotSelectionReconciler
                 'status' => (string) $plan->status,
                 'revision' => (int) ($planOutput['revision'] ?? 0),
                 'review_status' => $planOutput['review']['status'] ?? null,
+                'validation_status' => $planOutput['validation']['status'] ?? null,
             ],
             'screenplay' => $screenplay === null ? null : [
                 'id' => (string) $screenplay->id,

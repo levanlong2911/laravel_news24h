@@ -15,42 +15,42 @@
             {
                 "key": "main_salon",
                 "label": "Main salon",
-                "note": "Where guests gather indoors and the group first comes together."
+                "note": "Where guests gather indoors and the group first comes together: a welcoming arrival, conversation groups around a clear focal view, and an easy way out to the shared aft terrace."
             },
             {
                 "key": "indoor_dining",
                 "label": "Indoor dining room",
-                "note": "A dining room inside, distinct from any open-air dining the design has."
+                "note": "A dining room inside, distinct from any open-air dining the design has. One designed table is the heart of the room, lit for the meal, with service arriving discreetly and a direct way out to the shared terrace."
             },
             {
                 "key": "owner_suite",
                 "label": "Owner's suite",
-                "note": "The most private space aboard: sleeping, bathing and a place to withdraw."
+                "note": "The most private space aboard: sleeping, bathing and a place to withdraw. Rest, dressing and bathing form one calm sequence, with privacy and the view of the sea balanced for the suite's position."
             },
             {
                 "key": "guest_cabin",
                 "label": "Representative guest cabin",
-                "note": "One guest cabin standing for the others, not every cabin."
+                "note": "One guest cabin standing for the others, not every cabin. Complete comfort in a compact room: storage built in, a clear place to rest and to sit, and a character of its own within the vessel's interior language."
             },
             {
                 "key": "gym",
                 "label": "Gym",
-                "note": ""
+                "note": "A clear floor for movement, equipment and storage kept orderly, and surfaces suited to hard use, with daylight or a view of the sea where the room's position allows."
             },
             {
                 "key": "sauna",
                 "label": "Sauna",
-                "note": ""
+                "note": "A warm, quiet room of tiered benches and soft light, with an easy passage to a place to cool down and rest."
             },
             {
                 "key": "indoor_pool",
                 "label": "Indoor pool",
-                "note": ""
+                "note": "A room composed around the water: its ceiling, light and surrounding surfaces frame the pool, with a calm place to rest beside it."
             },
             {
                 "key": "outdoor_pool",
                 "label": "Outdoor pool",
-                "note": "Open to the sky."
+                "note": "Open to the sky. Part of the shared aft terrace joined to the main salon and the dining room, with places to lounge, clear routes around the water and an open view of the sea."
             }
         ],
         "highlights": [
@@ -90,7 +90,11 @@
         "One central idea organizes the whole vessel: its proportions, silhouette, massing and the way its spaces are arranged.",
         "The hull, bow, superstructure, glazing, stern and the relationship between the decks speak one design language. Not every part needs to be unusual: a few strong features lead, and the other parts support them in that language.",
         "The design stays recognizable when paint, branding, loose furniture and decoration are removed.",
-        "The stern is a superyacht stern: the aft decks step down toward the sea and end at a transom close to the waterline that opens onto the water. The design may reshape the steps, the terraces and the opening to serve its central idea, but never replaces them with a closed, solid or shouldered stern around a narrow opening.",
+        "The stern has exactly two exterior access stairs, one integrated into the port aft corner and one into the starboard aft corner. Each connects the lowest aft guest deck to the fixed swim platform close to the waterline. The centreline transom area between them remains free of stairs and central descent routes.",
+        "Design the shape, alignment and integration of these stairs as part of the vessel's own design language. Their required positions do not prescribe curved stairs, identical detailing, a particular terrace shape or the vessel's overall massing.",
+        "Interdeck stairs are enclosed within the superstructure. Upper aft terraces are reached through those interior routes rather than by exterior stair cascades down the stern.",
+        "The central transom area between the two stairs is a resolved part of the whole-vessel design. It may be fixed or transforming; a moving closure is not required. Any moving part must have fully defined states, motion, clearance and access.",
+        "The outdoor pool belongs to an open-air aft terrace directly connected to both the main salon and indoor dining room on the same deck. Both rooms have direct glazed-door access to that shared terrace. Define their adjacency, thresholds and circulation without routing access through the pool basin or obstructing either stern stair.",
         "Within the exclusions below, the design decides for itself how many volumes it has and how they are arranged, the form of its bow, its open spaces and whether any part moves.",
         "Excluded organizing principle: two separate forward and aft accommodation blocks facing across a central open court, gap or waist, with or without a connecting gallery, glazed hall or bridge. Do not reuse this principle by offsetting the blocks to port and starboard, rotating the court diagonally, mirroring the arrangement or changing the number of bridges. Choose a different whole-vessel organization. Ordinary deck setbacks, local recesses and stairs are not themselves excluded.",
         "A part that changes position is optional. When the design has one, say which parts are fixed and which move, how each lies in its standard state and in each other state, where moving parts are stowed, the space they sweep while moving, and how people use it in each state.",
@@ -325,6 +329,12 @@
             "stage": "operation",
             "level": "required",
             "label": "A guest group experiences the specific spatial qualities promised by the design."
+        },
+        {
+            "id": "cov_op_underway",
+            "stage": "operation",
+            "level": "required",
+            "label": "Show the finished vessel underway in open sea, with its whole exterior silhouette and signature features observable from outside as it moves through the water and leaves a wake. Do not invent speed, performance or certification claims."
         }
     ],
     "design_contract_version": "superyacht_design_v1",

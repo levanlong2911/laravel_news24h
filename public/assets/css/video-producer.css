@@ -1612,3 +1612,132 @@ a.vp-btn[disabled] {
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+.kf-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px 10px;
+    align-items: end;
+    margin-top: 8px;
+}
+
+.kf-grid [data-kf-group]:not([hidden]) {
+    display: contents;
+}
+
+.kf-grid .va-field {
+    min-width: 0;
+}
+
+.kf-grid .ctl {
+    width: 100%;
+}
+
+.kf-grid .kf-wide {
+    grid-column: 1 / -1;
+}
+
+.kf-slot-tools {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    gap: 4px;
+}
+
+.kf-slot-tool {
+    padding: 2px 5px;
+    font-size: .8rem;
+    line-height: 1;
+    cursor: pointer;
+    background: rgba(255, 255, 255, .92);
+    border: 1px solid var(--vp-line);
+    border-radius: 4px;
+}
+
+.kf-slot-tool:hover {
+    background: #fff;
+    border-color: var(--vp-faint);
+}
+
+.kf-slot-add {
+    cursor: pointer;
+    border-style: dashed;
+}
+
+.kf-slot-add:hover {
+    color: var(--vp-green);
+    border-color: var(--vp-green);
+}
+
+.kf-pick-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.kf-pick-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    cursor: pointer;
+    border: 2px solid var(--vp-line);
+    border-radius: 6px;
+}
+
+.kf-pick-card img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.kf-pick-card.chosen {
+    border-color: var(--vp-green);
+    box-shadow: 0 0 0 2px var(--vp-green-bg);
+}
+
+.kf-pick-check {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    background: var(--vp-green);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+}
+
+.kf-pick-card.taken {
+    cursor: not-allowed;
+    opacity: .45;
+}
+
+.kf-pick-title {
+    font-size: .78rem;
+    font-weight: 600;
+}
+
+.kf-ref-thumb {
+    width: 64px;
+    height: auto;
+    border: 1px solid var(--vp-line);
+}
+
+.kf-ref-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    background: var(--vp-line);
+}

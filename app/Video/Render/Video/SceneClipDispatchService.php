@@ -308,10 +308,36 @@ final class SceneClipDispatchService
             'motion_spec_hash' => ShotSelectionReconciler::motionSpecHash($shot),
         ];
 
+        $this->assertPlannedDuration($shot, $entry, $request);
         $this->assertCombination($entry, $request, $purpose);
         $this->assertFramesAgree($request);
 
         return [$entry, $keyframe, $request];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @param  array<string, mixed>  $request
+     */
+    private function assertPlannedDuration(VideoShot $shot, array $entry, array $request): void
+    {
+        $planned = is_array($shot->spec_json) ? ($shot->spec_json['duration_seconds'] ?? null) : null;
+
+        if (! is_int($planned) || $request['duration_seconds'] === $planned) {
+            return;
+        }
+
+        if (! in_array($planned, (array) ($entry['controls']['durations'] ?? []), true)) {
+            throw new RuntimeException(sprintf(
+                'storyboard_duration_unsupported: storyboard đã duyệt %ds cho shot này nhưng model %s không làm được %ds — chọn model khác hoặc lập lại storyboard.',
+                $planned, (string) $entry['model'], $planned,
+            ));
+        }
+
+        throw new RuntimeException(sprintf(
+            'storyboard_duration_mismatch: storyboard đã duyệt %ds cho shot này, lượt render đang chọn %ds — chọn đúng %ds hoặc lập lại storyboard.',
+            $planned, (int) $request['duration_seconds'], $planned,
+        ));
     }
 
     /**

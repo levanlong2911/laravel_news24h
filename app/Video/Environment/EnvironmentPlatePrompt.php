@@ -28,7 +28,12 @@ final class EnvironmentPlatePrompt
     private const LOCATION_FRAME = 'A location plate. The place itself is the subject of this image. '
         .'Eye-level camera, wide framing, natural perspective, the full depth of the space visible.';
 
-    private const LOCATION_LIGHT = 'Light the space evenly and neutrally. This plate does not choose a time of day '
+    private const LOCATION_ROOM_FRAME = 'A location plate. The place itself is the subject of this image: an enclosed space. '
+        .'Eye-level camera standing in one corner and looking diagonally across the room, wide framing, natural perspective, '
+        .'the full width and the full depth of the room visible, the room reads broad, not as a corridor. '
+        .'The camera does not look straight down the long axis of the room.';
+
+    private const LOCATION_LIGHT ='Light the space evenly and neutrally. This plate does not choose a time of day '
         .'or a weather; show neither sunrise, sunset, night, rain, fog nor snow.';
 
     private const LOCATION_LOOSE = 'Only the fixed features named above stand in the space: no vehicle, no crane load, '
@@ -55,6 +60,12 @@ final class EnvironmentPlatePrompt
     private const ROOM_FITTED_LOOSE = 'Only the fixed features and fitted furniture named above stand in the room: no loose props, '
         .'no luggage, no tools and no other object.';
 
+    private const ROOM_FURNISHED_LOOSE = 'Only the fixed features, fitted furniture and designed furnishing named above stand in the room: '
+        .'no luggage, no tools, no personal items, no props and no other object.';
+
+    private const ROOM_FURNISHING_PRIORITY = 'The shape of the room, its openings and its connections follow PLACE and LAYOUT; '
+        .'its furniture follows DESIGNED FURNISHING, which wins wherever the two disagree about furniture.';
+
     private const ROOM_EMPTY = 'No person is in the room.';
 
     /**
@@ -62,7 +73,7 @@ final class EnvironmentPlatePrompt
      *               connections: list<array{to: string, via: string, into_subject: bool}>,
      *               fixed_features: list<string>, light_sources: list<string>}  $place
      */
-    public static function forLocation(array $place, string $subjectName): string
+    public static function forLocation(array $place, string $subjectName, bool $enclosed = false): string
     {
         if ($place['spatial_relation'] !== 'external') {
             throw new \InvalidArgumentException('EnvironmentPlatePrompt: only an external location gets a plate');
@@ -71,7 +82,7 @@ final class EnvironmentPlatePrompt
         $subject = trim($subjectName) === '' ? 'The main subject' : trim($subjectName);
 
         return implode("\n\n", [
-            self::LOCATION_FRAME,
+            $enclosed ? self::LOCATION_ROOM_FRAME : self::LOCATION_FRAME,
             self::placeBlock($place),
             "{$subject} is not in this image — neither finished nor under construction, neither whole nor "
                 .'in part, neither near nor far.',
@@ -83,7 +94,7 @@ final class EnvironmentPlatePrompt
      * @param  array{name: string, description: string, spatial_relation: string, layout: string,
      *               connections: list<array{to: string, via: string, into_subject: bool}>,
      *               fixed_features: list<string>, light_sources: list<string>}  $place
-     * @param  array{materials_and_light?: string, fixed_furniture?: string}|null  $fitted
+     * @param  array{materials_and_light?: string, fixed_furniture?: string, layout?: string}|null  $fitted  layout is present only under the furnished-rooms policy
      */
     public static function forRoom(array $place, string $subjectName, string $phase, ?array $fitted = null): string
     {
@@ -93,13 +104,15 @@ final class EnvironmentPlatePrompt
 
         $subject = trim($subjectName) === '' ? 'the main subject' : trim($subjectName);
         $design = [];
+        $furnished = false;
 
         if ($phase === self::ROOM_FITTED) {
-            foreach (['MATERIALS AND LIGHT' => 'materials_and_light', 'FITTED FURNITURE' => 'fixed_furniture'] as $heading => $field) {
+            foreach (['MATERIALS AND LIGHT' => 'materials_and_light', 'FITTED FURNITURE' => 'fixed_furniture', 'DESIGNED FURNISHING' => 'layout'] as $heading => $field) {
                 $text = trim((string) ($fitted[$field] ?? ''));
 
                 if ($text !== '') {
                     $design[] = $heading.': '.$text;
+                    $furnished = $furnished || $field === 'layout';
                 }
             }
         }
@@ -109,8 +122,13 @@ final class EnvironmentPlatePrompt
             self::placeBlock($place, true),
             $design === [] ? null : implode("\n", $design),
             $phase === self::ROOM_UNFITTED ? self::ROOM_BEFORE_FIT_OUT : null,
+            $furnished ? self::ROOM_FURNISHING_PRIORITY : null,
             implode(' ', [
-                $design === [] ? self::ROOM_LOOSE : self::ROOM_FITTED_LOOSE,
+                match (true) {
+                    $furnished => self::ROOM_FURNISHED_LOOSE,
+                    $design === [] => self::ROOM_LOOSE,
+                    default => self::ROOM_FITTED_LOOSE,
+                },
                 self::ROOM_THROUGH_OPENINGS,
                 self::LOCATION_LIGHT,
                 self::ROOM_EMPTY,

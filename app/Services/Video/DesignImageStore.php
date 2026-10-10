@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class DesignImageStore
@@ -562,6 +564,231 @@ class DesignImageStore
         } catch (ModelNotFoundException $e) {
             return [false, 'project_not_found'];
         }
+    }
+
+    /**
+     * @return array{0: bool, 1: string}
+     *          reason: deleted|project_not_found|artifact_not_found|image_not_found|
+     *                  image_type_mismatch|artifact_in_use|artifact_used_by|<places>|render_in_flight|file_not_deleted|
+     *                  delete_failed|file_left_in_trash|<disk:trash path>
+     */
+    public function deleteCandidate(string $projectId, string $artifactId, string $expectedImageType): array
+    {
+        $trashed = null;
+
+        try {
+            $result = DB::transaction(function () use ($projectId, $artifactId, $expectedImageType, &$trashed): array {
+                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+
+                $artifact = VideoArtifact::query()->whereKey($artifactId)->lockForUpdate()->first();
+
+                if ($artifact === null || $artifact->design_image_id === null) {
+                    return [false, 'artifact_not_found'];
+                }
+
+                $image = VideoDesignImage::query()
+                    ->where('project_id', $projectId)
+                    ->whereKey($artifact->design_image_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($image === null) {
+                    return [false, 'image_not_found'];
+                }
+
+                if ($image->image_type !== $expectedImageType) {
+                    return [false, 'image_type_mismatch'];
+                }
+
+                if ((string) $image->selected_artifact_id === (string) $artifact->id) {
+                    return [false, 'artifact_in_use'];
+                }
+
+                if (! in_array($image->status, [
+                    DesignImageStatus::RENDERED->value,
+                    DesignImageStatus::APPROVED->value,
+                    DesignImageStatus::SUPERSEDED->value,
+                    DesignImageStatus::FAILED->value,
+                ], true)) {
+                    return [false, 'render_in_flight'];
+                }
+
+                $users = $this->artifactUsers($projectId, (string) $artifact->id, (string) $image->id);
+
+                if ($users !== []) {
+                    return [false, 'artifact_used_by|'.implode(', ', $users)];
+                }
+
+                $disk = (string) $artifact->storage_disk;
+                $path = (string) $artifact->storage_path;
+                $shared = $path === '' || VideoArtifact::query()
+                    ->whereKeyNot($artifact->id)
+                    ->where('storage_disk', $disk)
+                    ->where('storage_path', $path)
+                    ->exists();
+
+                if (! $shared && ! $this->trashFile($disk, $path, (string) $artifact->id, $trashed)) {
+                    return [false, 'file_not_deleted'];
+                }
+
+                $artifact->delete();
+
+                if (! VideoArtifact::query()->where('design_image_id', $image->id)->exists()) {
+                    $image->delete();
+                }
+
+                return [true, 'deleted'];
+            });
+        } catch (ModelNotFoundException $e) {
+            $result = [false, 'project_not_found'];
+        } catch (\Throwable $e) {
+            Log::warning('design-image: candidate delete rolled back', ['artifact_id' => $artifactId, 'error' => $e->getMessage()]);
+
+            $result = [false, 'delete_failed'];
+        }
+
+        if ($trashed === null) {
+            return $result;
+        }
+
+        if ($result[0]) {
+            $this->purgeTrash($trashed, $artifactId);
+
+            return $result;
+        }
+
+        return $this->restoreFile($trashed, $artifactId)
+            ? $result
+            : [false, 'file_left_in_trash|'.$trashed['disk'].':'.$trashed['trash']];
+    }
+
+    /**
+     * @param  ?array{disk: string, path: string, trash: string}  $trashed  set as soon as the file has left its path
+     */
+    private function trashFile(string $disk, string $path, string $artifactId, ?array &$trashed): bool
+    {
+        $trash = 'trash/design-images/'.$artifactId.'/'.basename($path);
+        $storage = null;
+
+        try {
+            $storage = Storage::disk($disk);
+
+            if (! $storage->exists($path)) {
+                return true;
+            }
+
+            $moved = $storage->move($path, $trash);
+
+            if ($moved) {
+                $trashed = ['disk' => $disk, 'path' => $path, 'trash' => $trash];
+            }
+
+            if ($moved && ! $storage->exists($path)) {
+                return true;
+            }
+
+            $error = $moved ? 'the file is still at its path after the move' : 'move returned false';
+        } catch (\Throwable $e) {
+            $error = $e->getMessage();
+        }
+
+        if ($trashed === null) {
+            try {
+                if ($storage !== null && $storage->exists($trash)) {
+                    $trashed = ['disk' => $disk, 'path' => $path, 'trash' => $trash];
+                }
+            } catch (\Throwable $probe) {
+                Log::critical('design-image: cannot tell whether the candidate file reached trash', [
+                    'artifact_id' => $artifactId, 'disk' => $disk, 'path' => $path, 'trash' => $trash, 'error' => $probe->getMessage(),
+                ]);
+            }
+        }
+
+        Log::warning('design-image: candidate file could not be moved aside; the record is kept', [
+            'artifact_id' => $artifactId, 'disk' => $disk, 'path' => $path, 'error' => $error,
+        ]);
+
+        return false;
+    }
+
+    /** @param  array{disk: string, path: string, trash: string}  $trashed */
+    private function restoreFile(array $trashed, string $artifactId): bool
+    {
+        try {
+            if (Storage::disk($trashed['disk'])->move($trashed['trash'], $trashed['path'])) {
+                return true;
+            }
+
+            $error = 'move returned false';
+        } catch (\Throwable $e) {
+            $error = $e->getMessage();
+        }
+
+        Log::critical('design-image: delete rolled back but the file stayed in trash — move it back by hand', [
+            'artifact_id' => $artifactId, 'disk' => $trashed['disk'], 'trash' => $trashed['trash'], 'path' => $trashed['path'], 'error' => $error,
+        ]);
+
+        return false;
+    }
+
+    /** @param  array{disk: string, path: string, trash: string}  $trashed */
+    private function purgeTrash(array $trashed, string $artifactId): void
+    {
+        try {
+            $storage = Storage::disk($trashed['disk']);
+
+            if ($storage->delete($trashed['trash'])) {
+                $storage->deleteDirectory(dirname($trashed['trash']));
+
+                return;
+            }
+
+            $error = 'delete returned false';
+        } catch (\Throwable $e) {
+            $error = $e->getMessage();
+        }
+
+        Log::warning('design-image: deleted candidate left a file in trash', [
+            'artifact_id' => $artifactId, 'disk' => $trashed['disk'], 'trash' => $trashed['trash'], 'error' => $error,
+        ]);
+    }
+
+    /** @return list<string> */
+    private function artifactUsers(string $projectId, string $artifactId, string $ownImageId): array
+    {
+        $like = '%'.$artifactId.'%';
+        $users = [];
+
+        if (VideoProject::query()->whereKey($projectId)->where('metadata_json', 'like', $like)->exists()) {
+            $users[] = 'bộ chọn của dự án (Reference đã chốt / ảnh neo)';
+        }
+
+        if (VideoDesignImage::query()->where('project_id', $projectId)->whereKeyNot($ownImageId)
+            ->where(fn (Builder $query) => $query->where('prompt_spec_json', 'like', $like)->orWhere('metadata_json', 'like', $like))
+            ->exists()) {
+            $users[] = 'nguồn của ảnh khác (keyframe / reference / tấm nền)';
+        }
+
+        if (VideoRenderScene::query()->where('project_id', $projectId)->where('state_json', 'like', $like)->exists()) {
+            $users[] = 'ảnh tham chiếu đã chọn của shot';
+        }
+
+        if (DB::table('video_renders')
+            ->where(fn ($query) => $query->whereNull('design_image_id')->orWhere('design_image_id', '!=', $ownImageId))
+            ->where(fn ($query) => $query->where('request_json', 'like', $like)
+                ->orWhere('render_request_json', 'like', $like)
+                ->orWhere('artifact_manifest', 'like', $like))
+            ->exists()) {
+            $users[] = 'lượt render đã ghi';
+        }
+
+        foreach (['video_reference_assets', 'approved_anchors', 'reference_pack_assets', 'render_qa_runs'] as $table) {
+            if (DB::table($table)->where('artifact_id', $artifactId)->exists()) {
+                $users[] = $table;
+            }
+        }
+
+        return $users;
     }
 
     /**

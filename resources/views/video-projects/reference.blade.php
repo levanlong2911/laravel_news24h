@@ -26,7 +26,7 @@
         <div style="display:flex;gap:8px">
             <a class="vp-btn" href="{{ route('video-projects.anchor', $id) }}">← Ảnh neo</a>
             <a class="vp-btn" href="{{ route('video-projects.environment', $id) }}">Environment Library →</a>
-            <a class="vp-btn" href="{{ route('video-projects.scene', $id) }}">Scenes → Clip</a>
+            <a class="vp-btn" href="{{ route('video-projects.scene', $id) }}">Storyboard →</a>
         </div>
     </div>
 
@@ -284,9 +284,18 @@
                                                       action="{{ route('video-projects.reference-approve', $id) }}">
                                                     @csrf
                                                     <input type="hidden" name="artifact_id" value="{{ $candidate['id'] }}">
-                                                    <button class="vp-btn ok sm">✓ Duyệt</button>
+                                                    <button class="vp-btn ok sm" title="Duyệt" aria-label="Duyệt">✓</button>
                                                 </form>
                                             @endif
+                                        @endif
+
+                                        @if($cell['selected_artifact_id'] !== $candidate['id'] && ! $cell['is_live'])
+                                            <form method="POST" action="{{ route('video-projects.reference-delete', $id) }}"
+                                                  onsubmit="return confirm('Xoá hẳn ảnh reference này và file của nó? Không khôi phục được.')">
+                                                @csrf
+                                                <input type="hidden" name="artifact_id" value="{{ $candidate['id'] }}">
+                                                <button class="vp-btn dg sm" title="Xoá" aria-label="Xoá">🗑️</button>
+                                            </form>
                                         @endif
                                     </span>
                                 </div>

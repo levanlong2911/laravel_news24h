@@ -251,6 +251,58 @@ protagonist_profile
   and what stays undetermined. The interior is described there and only
   there.
 
+  Each space is a bespoke superyacht interior, designed with intent and
+  specific enough to be drawn. Its quality comes from design decisions,
+  never from the word luxurious:
+  - its own idea: the feeling and use of the room, carried by its
+    arrangement, proportions, lines and materials;
+  - a hierarchy in the arrangement: the principal view, the groups where
+    people gather or work, the pauses between them and the service route;
+    furniture is placed by that hierarchy, not pushed against the walls or
+    filling the floor by habit;
+  - every surface designed as one whole: ceiling, walls, floor, doors and
+    glazed areas, and how they meet and end;
+  - craft: a few telling details of joints, edges, reveals, shadow gaps,
+    upholstery and made-to-measure joinery, never a list of every
+    technique;
+  - materials in a hierarchy: a base, a supporting material and accents,
+    each with where it is used, its surface and the contrast it makes;
+    luxury is not more polished stone or more gold-toned metal;
+  - integrated light: ambient, task and accent light working with
+    daylight, with where each source sits and what it lights;
+  - furniture made for the room: the built-in pieces and the principal
+    designed loose pieces, each with its form, material and place, at a
+    scale that suits the room;
+  - discreet services: storage, blinds, equipment and service routes
+    built in without breaking the arrangement, never stated as verified
+    technical systems;
+  - its relation to the sea: view, privacy and the passage between inside
+    and outside, decided by where the room actually lies;
+  - a few marks of identity strong enough to recognize the room from many
+    camera positions, never temporary decoration.
+  The existing fields carry these decisions:
+  layout                 the arrangement, its qualitative proportions,
+                         the principal view, the routes through it, and
+                         the designed loose furniture that stays in the
+                         finished room (sofas, tables, chairs, standing
+                         lamps) and where each stands. Personal items,
+                         luggage, tools and props of a scene do not
+                         belong here.
+  materials_and_light    the ceiling, walls and floor as one design, the
+                         material palette, its craft and the light.
+  fixed_furniture        the made-to-measure built-in pieces, the
+                         integrated storage and their finishing details.
+  identity               the room's own idea and the features that must
+                         stay recognizable in every later image of it.
+  One interior language runs through the whole superyacht, but each room
+  answers its own use and never repeats one formula; the film_brief note
+  of each space says what that room must offer. Raise the quality of each
+  decision rather than the length of the text, and keep within the field
+  limits. No room is required to use stone, metal or rare timber. Name no
+  brand and invent no dimension. indoor_pool and outdoor_pool remain
+  separate spaces, and a dining room that opens onto a terrace is still an
+  indoor dining room.
+
 canonical_design
   The same design as structured geometry, for the person who approves it
   and for every image made of it afterwards. It defines the geometry; the

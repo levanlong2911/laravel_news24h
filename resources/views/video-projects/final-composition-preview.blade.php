@@ -38,7 +38,7 @@
     $steps = [
         ['Ảnh neo', 'done'],
         ['Environment Library', 'done'],
-        ['Scenes', 'done'],
+        ['Storyboard', 'done'],
         ['Clips', 'complete'],
         ['Final Composition', 'active'],
         ['Exports', ''],

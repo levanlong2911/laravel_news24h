@@ -16,7 +16,6 @@ enum PlanningStageName: string
     case SCREENPLAY_CHARACTERS = 'screenplay_characters';
     case SCREENPLAY_LOCATIONS = 'screenplay_locations';
     case SCENE_PLAN = 'scene_plan';
-    case SCENE_PLAN_TRIAL = 'scene_plan_trial';
     case FINALIZE = 'finalize';
     case REFERENCE_PROMPT = 'reference_prompt';
     case VESSEL_DESIGN = 'vessel_design';
@@ -38,7 +37,6 @@ enum PlanningStageName: string
             self::SCREENPLAY_LOCATIONS => self::SCREENPLAY,
             self::SCREENPLAY => self::SCENE_PLAN,
             self::SCENE_PLAN => self::FINALIZE,
-            self::SCENE_PLAN_TRIAL => null,
             self::FINALIZE => null,
             self::REFERENCE_PROMPT => null,
             self::VESSEL_DESIGN => self::ANCHOR_PROMPT,

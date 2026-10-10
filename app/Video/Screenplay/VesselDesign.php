@@ -45,6 +45,10 @@ final class VesselDesign
 
     public const GEOMETRY_LINKS_KEY = 'geometry_links';
 
+    public const INTERIOR_POLICY_KEY = 'interior_policy';
+
+    public const FURNISHED_ROOMS_POLICY = 'furnished_rooms_v1';
+
     public const PROFILE_PATHS_KEY = 'profile_paths';
 
     /** @var list<string> */

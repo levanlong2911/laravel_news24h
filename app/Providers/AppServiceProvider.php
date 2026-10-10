@@ -22,7 +22,6 @@ use App\Video\Prompt\GeometryPromptAuthor;
 use App\Video\Prompt\TextCompletionClient;
 use App\Video\Concept\Claude\AnthropicStructuredOutputClient;
 use App\Video\Scene\ScenePlanAuthor;
-use App\Video\Scene\ScenePlanReviewer;
 use App\Video\Screenplay\ScreenplayAuthor;
 use GuzzleHttp\Client;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
@@ -313,6 +312,8 @@ class AppServiceProvider extends ServiceProvider
                         'were made. Never copy its vessel, its arrangement or its sentences.',
                         'It shows how an abstract question from the inspiration becomes one',
                         'whole design described precisely enough to build and draw.',
+                        'Its finish level follows its own subject. The finish level of your',
+                        'design, inside and out, follows your profile.',
                     ],
                     sourceKey: 'inspiration',
                 );
@@ -560,24 +561,6 @@ class AppServiceProvider extends ServiceProvider
                     model: (string) (config('video.scene_plan.model')
                         ?: config('canonical_concept.'.config('canonical_concept.provider').'.model')),
                     maxTokens: (int) config('video.scene_plan.max_tokens'),
-                    maxShots: (int) config('video.scene_plan.max_shots'),
-                    beatPromptPath: (string) config('video.scene_plan.beat_prompt_path'),
-                    beatPromptVersion: (string) config('video.scene_plan.beat_prompt_version'),
-                );
-            }
-        );
-
-        $this->app->singleton(
-            ScenePlanReviewer::class,
-            static function (Application $app): ScenePlanReviewer {
-                return new ScenePlanReviewer(
-                    client: $app->make('video.scene_plan.client'),
-                    promptPath: (string) config('video.scene_plan.review.prompt_path'),
-                    promptVersion: (string) config('video.scene_plan.review.prompt_version'),
-                    model: (string) (config('video.scene_plan.review.model')
-                        ?: config('video.scene_plan.model')
-                        ?: config('canonical_concept.'.config('canonical_concept.provider').'.model')),
-                    maxTokens: (int) config('video.scene_plan.review.max_tokens'),
                 );
             }
         );

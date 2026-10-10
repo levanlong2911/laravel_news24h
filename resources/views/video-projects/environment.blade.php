@@ -129,7 +129,7 @@
                 {{ $approvedKeys->count() }} / {{ count($environments) }} ĐÃ DUYỆT
             </span>
             <a class="vp-btn" href="{{ route('video-projects.reference', $id) }}">← Reference Views</a>
-            <a class="vp-btn pri" href="{{ route('video-projects.scene', $id) }}">Scenes → Clip</a>
+            <a class="vp-btn pri" href="{{ route('video-projects.scene', $id) }}">Storyboard →</a>
         </div>
     </div>
 

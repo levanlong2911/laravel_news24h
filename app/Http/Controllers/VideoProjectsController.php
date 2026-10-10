@@ -583,13 +583,13 @@ class VideoProjectsController extends Controller
             'no_approved_anchor' => __('messages.no_approved_anchor'),
             'no_scene_profile' => __('messages.scene_no_profile'),
             'identity_summary_unreadable' => __('messages.scene_identity_unreadable'),
-            'scene_plan_running' => __('messages.scene_plan_running'),
-            'scene_plan_unchanged' => __('messages.scene_plan_unchanged'),
-            'scene_plan_failed' => __('messages.scene_plan_failed'),
-            'scene_plan_failed_unrecorded' => __('messages.scene_plan_failed_unrecorded'),
-            'scene_plan_claim_lost' => __('messages.scene_plan_claim_lost'),
+            'storyboard_running' => __('messages.storyboard_running'),
+            'storyboard_unchanged' => __('messages.storyboard_unchanged'),
+            'storyboard_failed' => __('messages.storyboard_failed'),
+            'storyboard_failed_unrecorded' => __('messages.storyboard_failed_unrecorded'),
+            'storyboard_claim_lost' => __('messages.storyboard_claim_lost'),
+            'storyboard_needs_beats' => __('messages.storyboard_needs_beats'),
             'scene_plan_misconfigured' => __('messages.scene_plan_misconfigured'),
-            'scene_review_misconfigured' => __('messages.scene_review_misconfigured'),
             'artifact_file_not_found' => __('messages.artifact_file_not_found'),
             'artifact_checksum_mismatch' => __('messages.artifact_checksum_mismatch'),
             'approved' => __('messages.reference_approved'),
@@ -676,6 +676,28 @@ class VideoProjectsController extends Controller
         );
 
         return back()->with($done ? 'success' : 'error', $this->anchorMessage($reason));
+    }
+
+    public function deleteReference(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $this->form->validate($request, 'AnchorApproveForm');
+
+        [$done, $reason] = $this->videoProjectService->deleteReference($id, (string) $data['artifact_id']);
+
+        [$code, $detail] = array_pad(explode('|', $reason, 2), 2, '');
+
+        return back()->with($done ? 'success' : 'error', match ($code) {
+            'deleted' => __('messages.reference_deleted'),
+            'artifact_in_use' => __('messages.reference_delete_in_use'),
+            'artifact_used_by' => __('messages.reference_delete_used_by', ['users' => $detail]),
+            'render_in_flight' => __('messages.reference_delete_in_flight'),
+            'file_not_deleted' => __('messages.reference_delete_file_failed'),
+            'delete_failed' => __('messages.reference_delete_rolled_back'),
+            'file_left_in_trash' => __('messages.reference_delete_file_in_trash', ['trash' => $detail]),
+            default => $this->anchorMessage($reason),
+        });
     }
 
     public function lockReferences(string $id)
@@ -852,7 +874,6 @@ class VideoProjectsController extends Controller
         abort_if($stage === null, 404);
 
         $plan = $this->videoProjectService->latestScenePlan($id);
-        $trial = $this->videoProjectService->latestScenePlanTrial($id);
         $scenes = $plan['scenes'];
         $current = $scene === null
             ? ($scenes[0] ?? null)
@@ -875,13 +896,20 @@ class VideoProjectsController extends Controller
             'profileNotice' => $plan['profile_notice'],
             'preservationNotice' => $plan['preservation_notice'],
             'review' => $plan['review'],
-            'trial' => $trial,
-            'productionScreenplayScenes' => $this->videoProjectService->productionScreenplayScenes($id),
+            'storyboard' => $this->videoProjectService->storyboardScenes($id),
+            'storyboardRun' => $this->videoProjectService->storyboardRun($id),
+            'approval' => $this->videoProjectService->storyboardApproval($id, (int) $plan['revision']),
+            'keyframeModels' => $this->videoProjectService->sceneKeyframeModels(),
             'keyframes' => $keyframes,
             'referenceRoles' => [
-                'identity' => 'Identity view',
-                'environment' => 'Environment',
-                'geometry' => 'Supporting view',
+                'anchor' => 'ảnh neo',
+                'source_keyframe' => 'keyframe trước',
+                'identity' => 'nhận dạng',
+                'environment' => 'tấm nền',
+                'geometry' => 'hình học',
+                'space_geometry' => 'nguồn hình học',
+                'continuity' => 'liền mạch',
+                'design_reference' => 'thiết kế',
             ],
             'sources' => collect($this->videoProjectService->sceneSourceCells($id, $plan['revision']))
                 ->map(fn(array $cell): array => array_replace($cell, [
@@ -901,50 +929,48 @@ class VideoProjectsController extends Controller
         ]);
     }
 
-    public function planScenes(Request $request, string $id)
+    public function generateStoryboard(Request $request, string $id)
     {
         $this->ownedProject($id);
 
-        [$count, $reason] = $this->videoProjectService->planScenes(
+        [$count, $reason] = $this->videoProjectService->generateStoryboard(
             $id,
             auth()->id(),
             $request->boolean('force'),
         );
 
         if ($count === null) {
-            return back()->with('error', $this->anchorMessage($reason));
+            return response()->json(['ok' => false, 'reason' => $reason, 'message' => $this->anchorMessage($reason)]);
         }
 
-        return $reason === 'ok_needs_review'
-            ? back()->with('warning', __('messages.scene_plan_needs_review', ['count' => $count]))
-            : back()->with('success', __('messages.scene_plan_done', ['count' => $count]));
+        return response()->json([
+            'ok' => true,
+            'reason' => $reason,
+            'message' => __('messages.'.$reason, ['count' => $count]),
+        ]);
     }
 
-    public function planSceneTrial(Request $request, string $id)
+    public function approveStoryboard(Request $request, string $id)
     {
         $this->ownedProject($id);
-        $from = trim((string) $request->input('from'));
-        $to = trim((string) $request->input('to'));
-        $scope = $this->videoProjectService->trialScopeBetween($id, $from, $to);
 
-        if ($scope === null) {
-            return back()->with('error', 'Chon mot nhom lien tiep tu 2 den 4 scene.');
-        }
-
-        [$count, $reason] = $this->videoProjectService->planScenes(
+        [$revision, $reason] = $this->videoProjectService->approveStoryboard(
             $id,
             auth()->id(),
-            false,
-            $scope,
+            (int) $request->input('revision'),
         );
 
-        if ($count === null) {
-            return back()->with('error', $this->anchorMessage($reason));
-        }
-
-        return $reason === 'ok_needs_review'
-            ? back()->with('warning', 'Ban thu da luu nhung can kiem tra lai.')
-            : back()->with('success', 'Da tao ban thu cho ' . implode(', ', $scope) . '.');
+        return response()->json([
+            'ok' => $revision !== null,
+            'reason' => $reason,
+            'message' => match ($reason) {
+                'ok' => __('messages.storyboard_approved', ['revision' => $revision]),
+                'storyboard_already_approved' => __('messages.storyboard_already_approved', ['revision' => $revision]),
+                'storyboard_not_latest' => __('messages.storyboard_not_latest'),
+                'project_not_found' => __('messages.project_not_found'),
+                default => $this->sceneKeyframeMessage($reason),
+            },
+        ]);
     }
 
     private function actor(): ?Admin
@@ -974,6 +1000,7 @@ class VideoProjectsController extends Controller
             $this->actorId(),
             $sceneId,
             is_string($source) && Str::isUuid($source) ? $source : null,
+            $request->filled('provider_model') ? $request->only(['provider_model', 'size', 'quality']) : null,
         );
 
         return $this->keyframeJson($preview, $reason);
@@ -1173,6 +1200,12 @@ class VideoProjectsController extends Controller
 
             if ($source === null) {
                 throw new RuntimeException('Khong tim thay file anh da duyet cua scene nay.');
+            }
+
+            $review = $this->videoProjectService->clipSourcesNeedReview($scene);
+
+            if ($review !== null) {
+                throw new RuntimeException($review.' — render và duyệt lại keyframe trước khi render clip.');
             }
 
             $shot = $this->shots->forScene($scene, $row);
@@ -1391,7 +1424,16 @@ class VideoProjectsController extends Controller
             (string) $data['prompt_sha256'],
             $data['anchor_artifact_id'] ?? null,
             $data['space_source_artifact_id'] ?? null,
+            isset($data['provider_model']) ? array_intersect_key($data, array_flip(['provider_model', 'size', 'quality'])) : null,
+            isset($data['reference_choice_version']) ? (int) $data['reference_choice_version'] : null,
         );
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => $this->keyframeOutcome($image, $reason) === 'success',
+                'message' => $this->sceneKeyframeMessage($reason),
+            ]);
+        }
 
         return back()->with(
             $this->keyframeOutcome($image, $reason),
@@ -1412,10 +1454,41 @@ class VideoProjectsController extends Controller
             (string) $data['prompt_sha256'],
         );
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => $this->keyframeOutcome($done, $reason) === 'success',
+                'message' => $this->sceneKeyframeMessage($reason),
+            ]);
+        }
+
         return back()->with(
             $this->keyframeOutcome($done, $reason),
             $this->sceneKeyframeMessage($reason),
         );
+    }
+
+    public function saveSceneReferences(Request $request, string $id, string $sceneId)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'expected_version' => ['required', 'integer', 'min:0'],
+            'items' => ['nullable', 'array', 'max:'.(VideoProjectService::SCENE_MAX_SOURCE_IMAGES - 1)],
+            'items.*.artifact_id' => ['required', 'uuid'],
+            'items.*.role' => ['required', 'string', 'max:40'],
+        ]);
+
+        [$version, $reason] = $this->videoProjectService->saveReferenceChoice(
+            $id,
+            $this->actorId(),
+            $sceneId,
+            (int) $data['expected_version'],
+            $request->boolean('reset') ? null : array_values((array) ($data['items'] ?? [])),
+        );
+
+        return $version === null
+            ? response()->json(['ok' => false, 'reason' => $reason, 'message' => $this->sceneKeyframeMessage($reason)], 422)
+            : response()->json(['ok' => true, 'version' => $version]);
     }
 
     public function approveSceneKeyframe(Request $request, string $id, string $image)
@@ -1430,6 +1503,10 @@ class VideoProjectsController extends Controller
             $image,
             (string) $data['artifact_id'],
         );
+
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => $done, 'message' => $this->sceneKeyframeMessage($reason)]);
+        }
 
         return back()->with($done ? 'success' : 'error', $this->sceneKeyframeMessage($reason));
     }

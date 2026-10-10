@@ -131,6 +131,7 @@ TEXT;
         ];
 
         $meta = [
+            VesselDesign::INTERIOR_POLICY_KEY => VesselDesign::FURNISHED_ROOMS_POLICY,
             'profile' => $profile,
             'requirements' => $requirements,
             VesselDesign::PREVIOUS_DESIGNS_KEY => $previous,

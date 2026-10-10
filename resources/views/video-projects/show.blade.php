@@ -12,7 +12,7 @@
     <div class="vp-crumb">
         <a href="{{ route('video-projects.index') }}">Video Projects</a>
         <span class="sep">/</span>
-        <a href="{{ route('video-projects.scene', $id) }}">Scenes</a>
+        <a href="{{ route('video-projects.scene', $id) }}">Storyboard</a>
         <span class="sep">·</span>
         <b>Render video</b>
         <span class="grow"></span>
@@ -77,7 +77,7 @@
                     @if($s['video_prompt'])
                         <div class="body">{{ $s['video_prompt'] }}</div>
                     @else
-                        <div class="m">chưa có prompt clip — sinh ở màn Scenes</div>
+                        <div class="m">chưa có prompt clip — sinh ở màn Storyboard</div>
                     @endif
                 </div>
 
@@ -131,11 +131,21 @@
                         </select>
 
                         <label>Thời lượng</label>
-                        <select name="duration_seconds" class="js-duration">
+                        @php($planned = $s['duration_seconds'] ?? null)
+                        <select name="duration_seconds" class="js-duration" data-planned="{{ $planned ?? '' }}">
                             @foreach($model['controls']['durations'] ?? [] as $value)
-                                <option value="{{ $value }}" @selected($value === ($model['controls']['default_duration'] ?? null))>{{ $value }}s</option>
+                                <option value="{{ $value }}"
+                                        @selected($value === ($planned ?? ($model['controls']['default_duration'] ?? null)))
+                                        @disabled($planned !== null && $value !== $planned)>{{ $value }}s</option>
                             @endforeach
                         </select>
+                        @if($planned !== null)
+                            <div class="m js-duration-note">Storyboard đã duyệt {{ $planned }}s
+                                @unless(in_array($planned, $model['controls']['durations'] ?? [], true))
+                                    — model này không làm được, chọn model khác
+                                @endunless
+                            </div>
+                        @endif
 
                         {{--
                           So luong khoa o 1: duong render ghi DUNG mot artifact va manifest
@@ -222,7 +232,7 @@
             </div>
         @empty
             <div class="vs-c" style="grid-column:1/-1;color:var(--vp-dim)">
-                Chưa có scene nào — sinh danh sách scene ở màn hình Scenes trước.
+                Chưa có shot nào — sinh danh sách shot ở màn Storyboard trước.
             </div>
         @endforelse
 
@@ -286,6 +296,22 @@
                     select.appendChild(el);
                 });
             });
+
+        var duration = form.querySelector('.js-duration');
+        var planned = duration ? duration.dataset.planned : '';
+        var note = form.querySelector('.js-duration-note');
+
+        if (!planned) { return; }
+
+        var supported = false;
+        Array.prototype.forEach.call(duration.options, function (o) {
+            o.disabled = o.value !== planned;
+            if (o.value === planned) { o.selected = true; supported = true; }
+        });
+
+        if (note) {
+            note.textContent = 'Storyboard đã duyệt ' + planned + 's' + (supported ? '' : ' — model này không làm được, chọn model khác');
+        }
     }
 
     // Luat cheo doc tu registry (data-long / data-longduration), KHONG viet lai o
@@ -305,12 +331,13 @@
         var resolution = form.querySelector('.js-resolution');
         var duration = form.querySelector('.js-duration');
         var mustLock = long.indexOf(resolution.value) !== -1;
+        var planned = duration.dataset.planned;
 
         Array.prototype.forEach.call(duration.options, function (o) {
-            o.disabled = mustLock && o.value !== String(locked);
+            o.disabled = (mustLock && o.value !== String(locked)) || (!!planned && o.value !== planned);
         });
 
-        if (mustLock) { duration.value = String(locked); }
+        if (mustLock && !planned) { duration.value = String(locked); }
     }
 
     function apply(row, data) {

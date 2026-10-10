@@ -17,6 +17,10 @@ class SceneKeyframeRenderForm
                 'prompt_sha256' => ['required', 'string', 'regex:/^[0-9a-f]{64}$/'],
                 'anchor_artifact_id' => ['nullable', 'uuid'],
                 'space_source_artifact_id' => ['nullable', 'uuid'],
+                'provider_model' => ['nullable', 'string', 'max:120'],
+                'size' => ['nullable', 'required_with:provider_model', 'string', 'max:40'],
+                'quality' => ['nullable', 'required_with:provider_model', 'string', 'max:40'],
+                'reference_choice_version' => ['nullable', 'integer', 'min:0'],
             ],
             [
                 'prompt_sha256.required' => __('messages.scene_keyframe_preview_stale'),

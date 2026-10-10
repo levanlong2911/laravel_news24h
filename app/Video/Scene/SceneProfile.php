@@ -298,19 +298,6 @@ final class SceneProfile
         ];
     }
 
-    /** @return array<string, mixed> */
-    public function toPlanningPayload(): array
-    {
-        return [
-            'profile_version' => $this->version,
-            'subject_class' => $this->subjectClass,
-            'objective' => $this->objective,
-            'detail_level' => $this->detailLevel,
-            'scope' => $this->scope,
-            'min_scenes' => $this->minScenes,
-        ];
-    }
-
     /**
      * @param  list<mixed>  $groups
      * @return array{0: array<string, array{index: int, phase: string, label: string, required: bool, environment: mixed}>, 1: int}

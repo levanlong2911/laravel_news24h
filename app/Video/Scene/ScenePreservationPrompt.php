@@ -6,6 +6,11 @@ final class ScenePreservationPrompt
 {
     public const VERSION = 'scene-preservation-v4';
 
+    public const PRIORITY_VERSION = 'scene-preservation-v5';
+
+    /** @var list<string> */
+    public const PRIORITY_ROLES = ['continuity', 'design_reference'];
+
     public const MANIFEST_V3_VERSION = 'scene-preservation-v3';
 
     public const SINGLE_SOURCE_VERSION = 'scene-preservation-v2';
@@ -25,16 +30,23 @@ final class ScenePreservationPrompt
     /** @return list<string> */
     public static function versions(): array
     {
-        return [self::LEGACY_VERSION, self::SINGLE_SOURCE_VERSION, self::MANIFEST_V3_VERSION, self::VERSION];
+        return [self::LEGACY_VERSION, self::SINGLE_SOURCE_VERSION, self::MANIFEST_V3_VERSION, self::VERSION, self::PRIORITY_VERSION];
+    }
+
+    /** @param list<string> $roles */
+    public static function versionFor(array $roles, string $version): string
+    {
+        return array_intersect($roles, self::PRIORITY_ROLES) === [] ? $version : self::PRIORITY_VERSION;
     }
 
     public static function forMode(string $mode, ?string $version = null): string
     {
         $version ??= self::SINGLE_SOURCE_VERSION;
+        $manifest = [self::VERSION, self::MANIFEST_V3_VERSION, self::PRIORITY_VERSION];
 
         return match (true) {
-            in_array($version, [self::VERSION, self::MANIFEST_V3_VERSION], true) && $mode === self::CONTINUATION => self::continuation(),
-            in_array($version, [self::VERSION, self::MANIFEST_V3_VERSION], true) && $mode === self::HARD_CUT => self::hardCut(),
+            in_array($version, $manifest, true) && $mode === self::CONTINUATION => self::continuation(),
+            in_array($version, $manifest, true) && $mode === self::HARD_CUT => self::hardCut(),
             $version === self::SINGLE_SOURCE_VERSION && $mode === self::CONTINUATION => self::continuation(),
             $version === self::SINGLE_SOURCE_VERSION && $mode === self::HARD_CUT => self::hardCut(),
             $version === self::LEGACY_VERSION && $mode === self::CONTINUATION => self::continuationV1(),
@@ -51,20 +63,73 @@ final class ScenePreservationPrompt
     public static function forManifest(string $mode, array $roles, ?string $version = null): string
     {
         $version ??= self::VERSION;
+        $place = ($roles[0] ?? null) === 'environment';
 
-        if (! in_array($version, [self::VERSION, self::MANIFEST_V3_VERSION], true) || count($roles) < 2) {
+        if (self::versionFor($roles, $version) === self::PRIORITY_VERSION) {
+            return self::priorityManifest($mode, $roles, $place);
+        }
+
+        if (! $place && (! in_array($version, [self::VERSION, self::MANIFEST_V3_VERSION], true) || count($roles) < 2)) {
             return self::forMode($mode, $version);
         }
 
-        $blocks = ['IMAGE 1 is the editable primary source. '.self::forMode($mode, $version)];
+        $blocks = ['IMAGE 1 is the editable primary source. '.($place ? self::place() : self::forMode($mode, $version))];
 
         foreach (array_slice($roles, 1) as $index => $role) {
             $blocks[] = 'IMAGE '.($index + 2).' '.self::referenceLine($role, $version);
         }
 
-        $blocks[] = 'Only IMAGE 1 is edited. The other images are read, never copied wholesale. '
-            .'Never merge geometry from two references that disagree; where any reference disagrees '
-            .'with IMAGE 1 about a part that is not being changed, IMAGE 1 wins.';
+        if (count($roles) > 1) {
+            $blocks[] = 'Only IMAGE 1 is edited. The other images are read, never copied wholesale. '
+                .'Never merge geometry from two references that disagree; where any reference disagrees '
+                .'with IMAGE 1 about a part that is not being changed, IMAGE 1 wins.';
+        }
+
+        return implode("\n\n", $blocks);
+    }
+
+    /** @param list<string> $roles */
+    private static function priorityManifest(string $mode, array $roles, bool $place): string
+    {
+        $continues = $mode === self::CONTINUATION;
+
+        $blocks = [match (true) {
+            $continues => 'IMAGE 1 is the previous frame of this shot and the image being edited. The render keeps its '
+                .'camera position, framing, lighting and setting exactly. Every structure it shows keeps its shape, '
+                .'proportion and placement, except the changes the description below states.',
+            $place => 'IMAGE 1 is the permanent place this frame takes place in and the image being edited. The camera, '
+                .'framing and composition of this frame follow the description below; keep the structure, layout and '
+                .'fixed features of the place. The main subject of this film is not in this frame: add no vessel, hull '
+                .'or model of one beyond what the description names.',
+            default => 'IMAGE 1 is the approved design of the subject and the image being edited. The camera, framing and '
+                .'composition of this frame follow the description below, not IMAGE 1. Whatever part of the subject '
+                .'appears keeps the shape, proportion, topology and permanent openings IMAGE 1 shows; which parts exist '
+                .'and how far the work has progressed follow the description.',
+        }];
+
+        foreach (array_slice($roles, 1) as $index => $role) {
+            $blocks[] = 'IMAGE '.($index + 2).' '.match ($role) {
+                'continuity' => 'is a continuity reference: the first frame of the previous shot in this same place, '
+                    .'taken before that shot\'s action. Keep what carries on from it: the people this frame shows, their '
+                    .'clothing, the props and the look of the place. Every change the description below states, including '
+                    .'what the previous shot\'s action did and anyone arriving or leaving, takes effect. Never take its '
+                    .'camera or framing.',
+                'design_reference' => 'is the approved design of the subject that the drawings and models in this frame '
+                    .'depict. Use it only for the lines of those drawings and models. The subject itself is not in this frame.',
+                default => self::referenceLine($role, self::VERSION),
+            };
+        }
+
+        $blocks[] = $continues
+            ? 'Priorities: the camera and framing stay those of IMAGE 1. The description decides every change of state. '
+                .'The approved design images decide the lines of every drawing and model of the subject, even where IMAGE 1 '
+                .'or a continuity image shows them differently. Everything else stays as IMAGE 1 shows it. Only IMAGE 1 is '
+                .'edited; the other images are read, never copied wholesale.'
+            : 'Priorities: the description decides the camera, the composition and every change of state. IMAGE 1 decides '
+                .'the permanent structure of the '.($place ? 'place' : 'subject').' it shows. The approved design images '
+                .'decide the lines of every drawing and model of the subject, even where IMAGE 1 or a continuity image shows '
+                .'them differently. A continuity image keeps only what carries on and never decides the camera. Only IMAGE 1 '
+                .'is edited; the other images are read, never copied wholesale.';
 
         return implode("\n\n", $blocks);
     }
@@ -107,6 +172,15 @@ final class ScenePreservationPrompt
             .'may add structure, or alter structure the description names, and the outline of the object '
             .'changes only as far as that change requires. Nothing else in the frame changes. Where a '
             .'part that is not being changed conflicts with the supplied image, the supplied image wins.';
+    }
+
+    public static function place(): string
+    {
+        return 'It shows the permanent place this frame takes place in, in a neutral state. Keep the structure, '
+            .'layout and fixed features of the place exactly as the image shows them. The camera, the framing, the '
+            .'light and the state of the place in this frame, such as its furniture, props and people, follow the '
+            .'description below. The main subject of this film is not in this frame: add no vessel, hull or model '
+            .'of one beyond what the description names.';
     }
 
     public static function hardCut(): string
