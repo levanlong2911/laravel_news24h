@@ -45,9 +45,4 @@ final class IdentityPreservationPrompt
             .'No water, planting, furniture, loose items or people.'
             ."\n".'Do not add new elements or text. Do not change anything else.';
     }
-
-    public static function derivationStatement(string $sourceSha256): string
-    {
-        return 'horizontal_flip of artifact '.$sourceSha256.' · '.self::VERSION;
-    }
 }

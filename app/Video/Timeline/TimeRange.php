@@ -17,9 +17,4 @@ final class TimeRange
         public readonly float $end,
     ) {
     }
-
-    public function duration(): float
-    {
-        return $this->end - $this->start;
-    }
 }

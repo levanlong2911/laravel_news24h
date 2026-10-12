@@ -17,9 +17,4 @@ final class Rejection
         public readonly string $detail = '',
     ) {
     }
-
-    public function describe(): string
-    {
-        return trim(sprintf('%s — %s. %s', $this->subject, $this->reason->explain(), $this->detail));
-    }
 }

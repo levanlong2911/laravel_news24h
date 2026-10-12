@@ -51,42 +51,6 @@ final class ShotIntentService
         }, attempts: 3);
     }
 
-    public function activateProduction(VideoShot $shot, VideoRender $render): VideoShot
-    {
-        return DB::transaction(function () use ($shot, $render): VideoShot {
-            $locked = VideoShot::query()->whereKey($shot->id)->lockForUpdate()->firstOrFail();
-            $render = VideoRender::query()->whereKey($render->id)->firstOrFail();
-            $this->assertProductionOwner($locked, $render);
-
-            // Retrying the same dispatch must not grant auto-selection again after
-            // a manual choice or a completed CAS has already consumed it.
-            if ((string) $locked->current_render_id === (string) $render->id) {
-                return $locked;
-            }
-
-            $next = (int) $locked->intent_version + 1;
-            $locked->forceFill([
-                'current_render_id' => $render->id,
-                'intent_version' => $next,
-                'auto_select_version' => $next,
-            ]);
-
-            if ($render->execution_status === RenderStatus::SUCCEEDED) {
-                $verdict = $this->reconciler->verdict($locked, $render);
-
-                if ($verdict['status'] === 'valid') {
-                    $this->applySelection($locked, $render, $this->motionHashFrom($render));
-                } else {
-                    $locked->auto_select_version = null;
-                }
-            }
-
-            $locked->save();
-
-            return $locked->refresh();
-        }, attempts: 3);
-    }
-
     /**
      * Record a user dispatch and grant its one-time auto-selection right in the
      * same transaction. The callback may only create/reuse the immutable render

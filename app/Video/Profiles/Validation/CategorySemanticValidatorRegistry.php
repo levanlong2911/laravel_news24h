@@ -76,9 +76,4 @@ final class CategorySemanticValidatorRegistry
             $profile->key
         );
     }
-
-    public function has(string $profileKey): bool
-    {
-        return isset($this->validators[trim($profileKey)]);
-    }
 }

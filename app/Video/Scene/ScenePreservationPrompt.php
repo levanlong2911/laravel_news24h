@@ -22,12 +22,6 @@ final class ScenePreservationPrompt
     public const HARD_CUT = 'hard_cut_edit';
 
     /** @return list<string> */
-    public static function modes(): array
-    {
-        return [self::CONTINUATION, self::HARD_CUT];
-    }
-
-    /** @return list<string> */
     public static function versions(): array
     {
         return [self::LEGACY_VERSION, self::SINGLE_SOURCE_VERSION, self::MANIFEST_V3_VERSION, self::VERSION, self::PRIORITY_VERSION];

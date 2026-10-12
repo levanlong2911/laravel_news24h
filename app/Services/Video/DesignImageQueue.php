@@ -9,7 +9,6 @@ use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
 use App\Video\Media\RenderPriceBackfill;
-use App\Video\Render\Enums\RenderStatus;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -230,87 +229,6 @@ class DesignImageQueue
 
                 foreach ($renders as $item) {
                     $this->record($image, $projectId, $item);
-                }
-
-                $this->finaliseImage($image, $success, $renderError);
-
-                return [$image->refresh(), 'recorded'];
-            });
-        } catch (ModelNotFoundException) {
-            return [null, 'image_not_found'];
-        }
-    }
-
-    /**
-     * Duong canonical: hang `video_renders` da do RenderDispatchService
-     * tao va may trang thai Phan 14 dan toi `succeeded`, nen o day KHONG duoc tao
-     * them hang nua — chi gan artifact vao hang do roi ket so o anh.
-     *
-     * @param  list<array<string, mixed>>  $artifacts
-     * @return array{0: ?VideoDesignImage, 1: string}
-     */
-    public function recordCanonicalResult(
-        string $imageId,
-        ?string $claimToken,
-        bool $success,
-        ?string $renderError,
-        ?VideoRender $render,
-        array $artifacts,
-    ): array {
-        if ($success && ($render === null || $artifacts === [])) {
-            return [null, 'result_success_without_renders'];
-        }
-
-        try {
-            return DB::transaction(function () use ($imageId, $claimToken, $success, $renderError, $render, $artifacts) {
-                $projectId = VideoDesignImage::query()->whereKey($imageId)->value('project_id');
-
-                if ($projectId === null) {
-                    return [null, 'image_not_found'];
-                }
-
-                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
-                $image = VideoDesignImage::query()->whereKey($imageId)->firstOrFail();
-
-                // `$claimToken === null` la che do HOA GIAI: khong con lease nao
-                // dang giu vi request truoc da chet. Bang chung thay the la hang
-                // render DA o `succeeded` — ma dua no toi do la `complete()`, von
-                // doi dung claim_token cua hang render va doi chieu ca manifest.
-                // Chuoi bang chung khong dut, chi doi chu the.
-                if ($claimToken === null) {
-                    if ($render === null || $render->execution_status !== RenderStatus::SUCCEEDED) {
-                        return [null, 'reconcile_requires_succeeded_render'];
-                    }
-                } elseif (! $this->ownsTheClaim($image, self::DIRECT_WORKER, $claimToken)) {
-                    return [null, 'claim_not_owned_or_expired'];
-                }
-
-                foreach ($artifacts as $artifact) {
-                    // Khoa phat lai la (render, sha256): mot chuoi byte chi duoc
-                    // ghi vao bang mot lan du tien trinh chay lai bao nhieu luot.
-                    $exists = VideoArtifact::query()
-                        ->where('render_id', $render->id)
-                        ->where('sha256', $artifact['sha256'])
-                        ->exists();
-
-                    if ($exists) {
-                        continue;
-                    }
-
-                    VideoArtifact::create([
-                        'project_id' => $projectId,
-                        'design_image_id' => $image->id,
-                        'render_id' => $render->id,
-                        'artifact_type' => 'image',
-                        'role' => 'candidate',
-                        'storage_disk' => $artifact['storage_disk'],
-                        'storage_path' => $artifact['storage_path'],
-                        'mime_type' => $artifact['mime_type'] ?? 'image/png',
-                        'file_size' => $artifact['file_size'] ?? null,
-                        'sha256' => $artifact['sha256'],
-                        'width' => $artifact['width'] ?? null,
-                        'height' => $artifact['height'] ?? null,
-                    ]);
                 }
 
                 $this->finaliseImage($image, $success, $renderError);

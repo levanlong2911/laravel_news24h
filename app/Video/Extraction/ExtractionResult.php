@@ -40,31 +40,4 @@ final class ExtractionResult
          */
         public readonly ?ParserDiagnostics $diagnostics = null,
     ) {}
-
-    public function candidateCount(): int
-    {
-        $claims = array_sum(array_map(
-            fn (CandidateEntity $e) => count($e->claims),
-            $this->candidates->entities,
-        ));
-
-        return count($this->candidates->entities)
-            + count($this->candidates->relations)
-            + count($this->candidates->events)
-            + $claims;
-    }
-
-    public function describe(): string
-    {
-        return sprintf(
-            '%d giả thuyết · %s (instruction %s) · %d/%d token · %dms · $%.4f',
-            $this->candidateCount(),
-            $this->model,
-            $this->instructionVersion,
-            $this->tokensIn,
-            $this->tokensOut,
-            $this->latencyMs,
-            $this->costUsd,
-        );
-    }
 }

@@ -161,15 +161,6 @@ enum ReferenceView: string
         };
     }
 
-    public function mirrorPartner(): ?self
-    {
-        return match ($this) {
-            self::PORT_SIDE => self::STARBOARD_SIDE,
-            self::STARBOARD_SIDE => self::PORT_SIDE,
-            default => null,
-        };
-    }
-
     public function label(): string
     {
         return match ($this) {

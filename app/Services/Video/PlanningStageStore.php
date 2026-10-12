@@ -277,29 +277,6 @@ class PlanningStageStore
     }
 
     /**
-     * Checkpoint giua chung: hang van RUNNING va claim van thuoc ve nguoi goi.
-     * Tra `false` nghia la claim da mat — dung truoc luot goi model ke tiep.
-     *
-     * Encode tuong minh de byte UTF-8 hong bi bat o day thay vi bi grammar
-     * `json_encode()` khong co cua nuot mat.
-     *
-     * @param  array<string, mixed>  $output
-     */
-    public function recordProgress(string $stageId, string $claimToken, array $output): bool
-    {
-        $encoded = json_encode(
-            $output,
-            JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
-        );
-
-        return VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('claim_token', $claimToken)
-            ->where('status', VideoPlanningStageStatus::RUNNING->value)
-            ->update(['output_json' => $encoded]) > 0;
-    }
-
-    /**
      * @param  array<string, mixed>  $input
      * @param  array<string, mixed>  $metadata
      * @param  array<string, mixed>  $usage

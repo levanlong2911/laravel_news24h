@@ -35,13 +35,6 @@ final class CategoryCreativeProfileResolver
             ->get($profileKey);
     }
 
-    public function isCompatible(
-        string $objectType,
-        CategoryCreativeProfile $profile
-    ): bool {
-        return $this->resolve($objectType)->key === $profile->key;
-    }
-
     private function normalizeObjectType(string $objectType): string
     {
         $value = strtolower(trim($objectType));

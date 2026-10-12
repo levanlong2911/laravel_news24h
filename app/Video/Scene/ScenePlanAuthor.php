@@ -145,25 +145,6 @@ final class ScenePlanAuthor
         return hash('sha256', (string) json_encode($this->schema(), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
     }
 
-    /**
-     * @param  array<string, mixed>  $screenplay
-     * @return list<string>
-     */
-    public static function shownCoverageIds(array $screenplay): array
-    {
-        $ids = [];
-
-        foreach ((array) ($screenplay['coverage'] ?? []) as $item) {
-            if (is_array($item)
-                && ($item['mode'] ?? null) === 'shown'
-                && is_string($item['coverage_id'] ?? null)) {
-                $ids[$item['coverage_id']] = true;
-            }
-        }
-
-        return array_keys($ids);
-    }
-
     private function skill(): string
     {
         if (! is_file($this->promptPath)) {

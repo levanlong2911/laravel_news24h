@@ -27,16 +27,4 @@ enum RejectionReason: string
      * tả thuộc tính nào của nó. Xem Entity::isAnchorOnly().
      */
     case NoVerifiedClaims = 'NO_VERIFIED_CLAIMS';
-
-    public function explain(): string
-    {
-        return match ($this) {
-            self::QuoteNotFound      => 'trích dẫn không có trong bài (LLM bịa quote)',
-            self::ValueNotSupported  => 'quote có thật nhưng không chống lưng cho giá trị này (LLM suy luận)',
-            self::NoEvidence         => 'không có bằng chứng nào',
-            self::UnknownEntityType  => 'entity type ngoài ontology chung',
-            self::DanglingReference  => 'trỏ tới entity không được verify',
-            self::NoVerifiedClaims   => 'không tên, không thuộc tính — không bằng chứng nào cho thấy nó tồn tại',
-        };
-    }
 }

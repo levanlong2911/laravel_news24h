@@ -118,37 +118,6 @@ final class RenderPlanAssembler
     }
 
     /**
-     * Sửa RenderPlan sau khi đã qua vòng lưu-đọc DB (Eloquent `array` cast decode
-     * JSON với assoc=true — {} object rỗng và [] array rỗng đều thành PHP []; khi
-     * encode lại, PHP không còn cách nào biết cái nào từng là object). Bug thật
-     * bắt được 2026-07-22 qua test nút 🎬 thật: `world.entities[].attributes` của
-     * entity anchor-only (Feadship, Pier 59...) rớt về `[]`, FAIL schema (đòi
-     * object). `assemble()` tươi KHÔNG cần hàm này — chỉ gọi khi đọc lại từ DB
-     * trước khi trả ra ngoài (API cho Python).
-     *
-     * @param array<string, mixed> $plan
-     * @return array<string, mixed>
-     */
-    public static function repairAfterDatabaseRoundTrip(array $plan): array
-    {
-        // KHÔNG dùng `$plan['world']['entities'] ?? []` trong foreach-by-reference
-        // — biểu thức `??` tạo giá trị tạm, `&$entity` sẽ không ghi ngược lại
-        // vào $plan (bug thật, bắt được khi viết test cho chính hàm này).
-        if (! isset($plan['world']['entities']) || ! is_array($plan['world']['entities'])) {
-            return $plan;
-        }
-
-        foreach ($plan['world']['entities'] as &$entity) {
-            if (($entity['attributes'] ?? null) === []) {
-                $entity['attributes'] = new \stdClass();
-            }
-        }
-        unset($entity);
-
-        return $plan;
-    }
-
-    /**
      * @return array<string, mixed>
      */
     private function entityDoc(Entity $entity): array

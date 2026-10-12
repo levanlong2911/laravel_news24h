@@ -48,11 +48,6 @@ final class ConfidenceAnalyzer
         'micro_physics', 'camera_path', 'negative',
     ];
 
-    public function totalLayers(): int
-    {
-        return count(self::LAYERS);
-    }
-
     /**
      * @param array<string, mixed> $renderPlan
      */

@@ -93,11 +93,6 @@ final class EvidenceIndex
         return implode(' ', $parts);
     }
 
-    public function fullText(): string
-    {
-        return implode(' ', array_column($this->segments, 'normalized'));
-    }
-
     /**
      * Văn bản THÔ kèm nguồn — đây là thứ cho Extractor xem.
      *

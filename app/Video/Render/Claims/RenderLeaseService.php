@@ -44,19 +44,6 @@ final class RenderLeaseService
         });
     }
 
-    public function assertValid(string $renderId, string $claimToken, string $workerId): VideoRender
-    {
-        $render = VideoRender::query()->findOrFail($renderId);
-        $this->assertOwner($render, $claimToken, $workerId);
-        $now = $this->clock->now();
-
-        if ($render->lease_expires_at === null || $render->lease_expires_at->lessThanOrEqualTo($now)) {
-            throw new RuntimeException('Render claim lease expired.');
-        }
-
-        return $render;
-    }
-
     private function assertOwner(VideoRender $render, string $claimToken, string $workerId): void
     {
         if (! hash_equals((string) $render->claim_token, $claimToken)) {

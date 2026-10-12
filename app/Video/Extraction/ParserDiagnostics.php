@@ -115,16 +115,6 @@ final class ParserDiagnostics
         $this->samples[] = ['reason' => $reason, 'path' => $path];
     }
 
-    /** Không mất gì và không có gì bất thường. */
-    public function isClean(): bool
-    {
-        return $this->entitiesDroppedInvalidShape === 0
-            && $this->claimsDroppedInvalidShape === 0
-            && $this->relationsDroppedInvalidShape === 0
-            && $this->eventsDroppedInvalidShape === 0
-            && $this->sectionsMalformed === [];
-    }
-
     /**
      * Lưu vào cột JSON của artifact — MỘT cột, không phải mười lăm cột. Đây là
      * instrumentation: hình dạng của nó sẽ đổi khi ta học thêm, và mỗi lần đổi

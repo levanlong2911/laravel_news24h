@@ -29,16 +29,4 @@ final class Evidence
     {
         return mb_strlen($this->quote);
     }
-
-    /** Chỉ để log/debug ở Laravel — không serialize sang RenderPlan. */
-    public function describe(): string
-    {
-        return sprintf(
-            '%s@%d [%s] "%s"',
-            $this->source->value,
-            $this->offset,
-            $this->level->value,
-            mb_strimwidth($this->quote, 0, 60, '…'),
-        );
-    }
 }

@@ -32,9 +32,4 @@ enum ProvenanceLevel: string
      * Tồn tại như một case để Gatekeeper gọi tên được lý do reject.
      */
     case Inferred = 'INFERRED';
-
-    public function isAcceptable(): bool
-    {
-        return $this !== self::Inferred;
-    }
 }

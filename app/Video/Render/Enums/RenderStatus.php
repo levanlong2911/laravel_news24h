@@ -30,13 +30,4 @@ enum RenderStatus: string
             default => false,
         };
     }
-
-    public function canBeClaimed(): bool
-    {
-        return match ($this) {
-            self::QUEUED,
-            self::RETRY_WAIT => true,
-            default => false,
-        };
-    }
 }

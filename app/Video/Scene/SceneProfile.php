@@ -250,52 +250,9 @@ final class SceneProfile
             : [null, 'ambiguous_environment'];
     }
 
-    /** @return list<string> */
-    public function phaseKeys(): array
-    {
-        return array_map(static fn (array $group) => (string) $group['key'], $this->groups);
-    }
-
-    /** @return list<string> */
-    public function milestoneKeys(): array
-    {
-        return array_keys($this->flat);
-    }
-
-    /** @return list<string> */
-    public function requiredMilestoneKeys(): array
-    {
-        return array_keys(array_filter($this->flat, static fn (array $entry) => $entry['required']));
-    }
-
-    public function indexOf(string $milestone): ?int
-    {
-        return $this->flat[$milestone]['index'] ?? null;
-    }
-
-    public function phaseOf(string $milestone): ?string
-    {
-        return $this->flat[$milestone]['phase'] ?? null;
-    }
-
     public function labelOf(string $milestone): ?string
     {
         return $this->flat[$milestone]['label'] ?? null;
-    }
-
-    /** @return array<string, mixed> */
-    public function toPayload(): array
-    {
-        return [
-            'profile_version' => $this->version,
-            'subject_class' => $this->subjectClass,
-            'objective' => $this->objective,
-            'detail_level' => $this->detailLevel,
-            'scope' => $this->scope,
-            'min_scenes' => $this->minScenes,
-            'max_milestones_per_scene' => $this->maxMilestonesPerScene,
-            'milestone_groups' => $this->groups,
-        ];
     }
 
     /**

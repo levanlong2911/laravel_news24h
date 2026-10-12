@@ -70,11 +70,6 @@ final class FfmpegBinary implements FfmpegRunner
         return $this->source;
     }
 
-    public function available(): bool
-    {
-        return $this->problem() === null;
-    }
-
     public function problem(): ?string
     {
         $result = $this->run(['-version']);
