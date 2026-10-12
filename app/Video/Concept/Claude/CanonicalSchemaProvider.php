@@ -90,9 +90,4 @@ final class CanonicalSchemaProvider
 
         return $json;
     }
-
-    public function path(): string
-    {
-        return $this->schemaPath;
-    }
 }

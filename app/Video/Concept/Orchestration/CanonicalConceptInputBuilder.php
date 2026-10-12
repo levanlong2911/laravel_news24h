@@ -9,7 +9,6 @@ use App\Video\Article\RawArticle;
 use App\Video\Concept\ConceptInput;
 use App\Video\Inspiration\CategoryCreativeProfile as InspirationProfile;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
-use App\Video\Inspiration\InspirationBrief;
 use App\Video\Inspiration\InspirationBuilder;
 use App\Video\Inspiration\InspirationResult;
 use App\Video\Inspiration\InvalidInspirationBrief;
@@ -36,23 +35,6 @@ final class CanonicalConceptInputBuilder
     ): ConceptInput {
         $brief = $this->buildInspiration($article, $inspirationProfile)->brief;
 
-        return new ConceptInput(
-            objectType: $objectType,
-            inspiration: $brief,
-            profile: $canonicalProfile,
-            projectRequirements: $projectRequirements,
-        );
-    }
-
-    /**
-     * @param  array<string,mixed>  $projectRequirements
-     */
-    public function fromBrief(
-        string $objectType,
-        InspirationBrief $brief,
-        CanonicalProfile $canonicalProfile,
-        array $projectRequirements = [],
-    ): ConceptInput {
         return new ConceptInput(
             objectType: $objectType,
             inspiration: $brief,

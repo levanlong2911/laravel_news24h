@@ -12,7 +12,6 @@ use App\Video\Concept\Canonical\CanonicalDesignSpec;
 use App\Video\Concept\ConceptDesignResult;
 use App\Video\Concept\ConceptInput;
 use App\Video\Concept\Exceptions\CanonicalValidationException;
-use App\Video\Concept\SonnetScreenConceptDesigner;
 use App\Video\Concept\Viewpoint;
 use App\Video\Profiles\CategoryCreativeProfileResolver as CanonicalProfileResolver;
 use App\Video\Inspiration\CategoryCreativeProfile;
@@ -436,37 +435,6 @@ class VideoRenderPlanService
      *
      * @return array<string, mixed>
      */
-    /**
-     * Concept cho man hinh /admin/video-projects/{id}/anchor.
-     *
-     * Chang nay chi goi Sonnet va luu creative_concept shape ma Python
-     * image_prompt compiler dang doc. Nut Compile Prompt moi goi Python.
-     *
-     * @return array<string, mixed>
-     */
-    public function renderScreenConceptStage(
-        Article $article,
-        InspirationBrief $brief,
-        ?string $videoSessionId = null,
-    ): array {
-        $category = (string) ($article->category?->slug ?? '');
-        $profile = $this->profileOrFail($category);
-
-        $accumulator = new CostAccumulatingLlmClient($this->spendingLlmClient());
-        $this->lastRun = $accumulator;
-
-        try {
-            return (new SonnetScreenConceptDesigner)->design(
-                llm: $accumulator,
-                brief: $brief,
-                profile: $profile,
-                objectType: $category,
-            );
-        } finally {
-            $this->recordUsage($article, $videoSessionId, self::STAGE_USAGE_ACTION);
-        }
-    }
-
     /** @return array{call_count:int,tokens_in:int,tokens_out:int,cost_usd:float,latency_ms:int,provider_model:string,thinking_tokens:?int}|null */
     public function lastUsage(): ?array
     {

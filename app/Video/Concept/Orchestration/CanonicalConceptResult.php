@@ -15,16 +15,6 @@ final class CanonicalConceptResult
         public readonly string $profileVersion,
     ) {}
 
-    public function revision(): int
-    {
-        return $this->frozen->revision;
-    }
-
-    public function hash(): string
-    {
-        return $this->frozen->hash;
-    }
-
     /**
      * @return array<string,mixed>
      */

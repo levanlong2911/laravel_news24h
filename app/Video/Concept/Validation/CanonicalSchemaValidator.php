@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Video\Concept\Validation;
 
 use App\Video\Concept\Claude\CanonicalSchemaProvider;
-use App\Video\Concept\Exceptions\CanonicalValidationException;
 use JsonException;
 use Opis\JsonSchema\Errors\ErrorFormatter;
 use Opis\JsonSchema\Validator;
@@ -171,23 +170,6 @@ final class CanonicalSchemaValidator
             $errors
         );
     }
-
-    public function validateJsonOrFail(
-        string $rawJson
-    ): void {
-        $result = $this->validateJson(
-            $rawJson
-        );
-
-        if ($result->fails()) {
-            throw new CanonicalValidationException(
-                errors: $result->errors,
-                message:
-                    'Canonical JSON Schema validation failed.',
-            );
-        }
-    }
-
 
     private function loadSchemaJson(): string
     {

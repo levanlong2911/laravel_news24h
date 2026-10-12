@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Video\Concept\Persistence\Models\CanonicalConceptRevision;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -66,10 +65,5 @@ class VideoProject extends Model
     public function selectedScenePlanStage()
     {
         return $this->belongsTo(VideoPlanningStage::class, 'selected_scene_plan_stage_id');
-    }
-
-    public function canonicalConceptRevisions()
-    {
-        return $this->hasMany(CanonicalConceptRevision::class, 'video_project_id');
     }
 }

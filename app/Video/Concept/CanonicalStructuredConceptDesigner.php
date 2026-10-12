@@ -22,21 +22,6 @@ final class CanonicalStructuredConceptDesigner
         private readonly CanonicalConceptLifecycle $lifecycle = new NullCanonicalConceptLifecycle,
     ) {}
 
-    public function withLifecycle(
-        CanonicalConceptLifecycle $lifecycle
-    ): self {
-        return new self(
-            client: $this->client,
-            schemaBuilder: $this->schemaBuilder,
-            schemaAdapter: $this->schemaAdapter,
-            payloadFactory: $this->payloadFactory,
-            model: $this->model,
-            systemPrompt: $this->systemPrompt,
-            maxTokens: $this->maxTokens,
-            lifecycle: $lifecycle,
-        );
-    }
-
     /**
      * @throws JsonException
      */

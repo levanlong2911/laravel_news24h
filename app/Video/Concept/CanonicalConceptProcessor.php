@@ -44,20 +44,6 @@ final class CanonicalConceptProcessor
         private readonly CanonicalConceptLifecycle $lifecycle = new NullCanonicalConceptLifecycle,
     ) {}
 
-    public function withLifecycle(
-        CanonicalConceptLifecycle $lifecycle
-    ): self {
-        return new self(
-            coreSchemaValidator: $this->coreSchemaValidator,
-            effectiveSchemaValidator: $this->effectiveSchemaValidator,
-            schemaBuilder: $this->schemaBuilder,
-            semanticValidator: $this->semanticValidator,
-            normalizer: $this->normalizer,
-            serializer: $this->serializer,
-            lifecycle: $lifecycle,
-        );
-    }
-
     public function process(
         string $rawJson,
         ConceptInput $input,
@@ -424,8 +410,6 @@ final class CanonicalConceptProcessor
             failedRawJson: $document,
 
             message: $message,
-
-            validationReports: $this->reports,
         );
     }
 

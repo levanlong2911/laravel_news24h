@@ -55,24 +55,4 @@ final class CanonicalDesignSpecValidator implements CanonicalSemanticValidator
             ...$categorySemanticErrors,
         ]);
     }
-
-    public function validateOrFail(
-        CanonicalDesignSpec $spec,
-        ConceptInput $input
-    ): void {
-        $result = $this->validate(
-            $spec,
-            $input
-        );
-
-        if ($result->fails()) {
-            throw new \App\Video\Concept\Exceptions\CanonicalValidationException(
-                errors:
-                    $result->errors,
-
-                message:
-                    'Canonical semantic validation failed.',
-            );
-        }
-    }
 }

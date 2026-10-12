@@ -61,15 +61,4 @@ final class ValidationStageReport
             );
         }
     }
-
-    /**
-     * @return list<array<string,mixed>>
-     */
-    public function errorPayload(): array
-    {
-        return array_map(
-            static fn (ValidationError $error): array => $error->toArray(),
-            $this->errors,
-        );
-    }
 }

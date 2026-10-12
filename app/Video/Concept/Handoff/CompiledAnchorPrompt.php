@@ -38,38 +38,6 @@ final class CompiledAnchorPrompt
     ) {}
 
     /**
-     * @param  array<string, mixed>  $decoded
-     */
-    public static function fromPython(array $decoded, string $sourceRevisionId): self
-    {
-        $controls = $decoded['native_controls'] ?? [];
-
-        return new self(
-            prompt: (string) ($decoded['prompt'] ?? ''),
-            negativePrompt: self::nullableString($decoded['negative_prompt'] ?? null),
-            nativeControls: is_array($controls) ? $controls : [],
-            promptVersion: (string) ($decoded['prompt_version'] ?? ''),
-            provider: (string) ($decoded['provider'] ?? ''),
-            model: (string) ($decoded['model'] ?? ''),
-            canonicalHash: (string) ($decoded['canonical_hash'] ?? ''),
-            projectionHash: (string) ($decoded['projection_hash'] ?? ''),
-            constraintSetHash: (string) ($decoded['constraint_set_hash'] ?? ''),
-            coalescedConstraintHash: (string) ($decoded['coalesced_constraint_hash'] ?? ''),
-            promptSpecHash: (string) ($decoded['prompt_spec_hash'] ?? ''),
-            providerPromptPlanHash: (string) ($decoded['provider_prompt_plan_hash'] ?? ''),
-            promptHash: (string) ($decoded['prompt_hash'] ?? ''),
-            negativePromptHash: self::nullableString($decoded['negative_prompt_hash'] ?? null),
-            promptManifestPath: self::nullableString($decoded['prompt_manifest_path'] ?? null),
-            sourceRevisionId: $sourceRevisionId,
-            assetRole: (string) ($decoded['asset_role'] ?? ''),
-            environmentPolicy: (string) ($decoded['environment_policy'] ?? ''),
-            environmentPolicyVersion: (string) ($decoded['environment_policy_version'] ?? ''),
-            subjectState: (string) ($decoded['subject_state'] ?? ''),
-            subjectStateVersion: (string) ($decoded['subject_state_version'] ?? ''),
-        );
-    }
-
-    /**
      * @return array<string, mixed>
      */
     public function lineage(): array
@@ -94,10 +62,5 @@ final class CompiledAnchorPrompt
             'negative_prompt_hash' => $this->negativePromptHash,
             'prompt_manifest_path' => $this->promptManifestPath,
         ];
-    }
-
-    private static function nullableString(mixed $value): ?string
-    {
-        return is_string($value) && $value !== '' ? $value : null;
     }
 }

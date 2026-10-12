@@ -19,18 +19,6 @@ final class BuildCanonicalConcept
         private readonly CanonicalConceptLifecycle $lifecycle = new NullCanonicalConceptLifecycle,
     ) {}
 
-    public function withLifecycle(
-        CanonicalConceptLifecycle $lifecycle
-    ): self {
-        return new self(
-            designer: $this->designer->withLifecycle($lifecycle),
-            repairer: $this->repairer->withLifecycle($lifecycle),
-            processor: $this->processor->withLifecycle($lifecycle),
-            freezer: $this->freezer,
-            lifecycle: $lifecycle,
-        );
-    }
-
     /**
      * @param  string|null  $resumeRawJson  raw output da checkpoint tu lan
      *                      chay truoc. Co gia tri thi KHONG goi Sonnet nua

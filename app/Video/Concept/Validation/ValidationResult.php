@@ -54,20 +54,4 @@ final class ValidationResult
             $this->errors,
         );
     }
-
-    /**
-     * @param list<ValidationResult> $results
-     */
-    public static function merge(array $results): self
-    {
-        $errors = [];
-
-        foreach ($results as $result) {
-            foreach ($result->errors as $error) {
-                $errors[] = $error;
-            }
-        }
-
-        return new self($errors);
-    }
 }

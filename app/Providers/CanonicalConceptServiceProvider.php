@@ -20,29 +20,6 @@ use App\Video\Concept\Normalize\CanonicalDesignSpecNormalizer;
 use App\Video\Concept\OpenAi\TextClientStructuredAdapter;
 use App\Video\Concept\Orchestration\CanonicalConceptOrchestrator;
 use App\Video\Concept\Orchestration\CanonicalConceptInputBuilder;
-use App\Video\Concept\Persistence\CanonicalAttemptWriter;
-use App\Video\Concept\Persistence\CanonicalCheckpointService;
-use App\Video\Concept\Persistence\CanonicalConceptExecutionCursor;
-use App\Video\Concept\Persistence\CanonicalConceptExecutionService;
-use App\Video\Concept\Persistence\CanonicalConceptInputLoader;
-use App\Video\Concept\Persistence\CanonicalConceptInputSnapshotter;
-use App\Video\Concept\Persistence\CanonicalConceptPersistenceService;
-use App\Video\Concept\Persistence\CanonicalConceptRevisionService;
-use App\Video\Concept\Persistence\CanonicalProcessingObserver;
-use App\Video\Concept\Persistence\CanonicalEventWriter;
-use App\Video\Concept\Persistence\CanonicalFailureService;
-use App\Video\Concept\Persistence\CanonicalFreezePersistenceService;
-use App\Video\Concept\Persistence\CanonicalRepairClaimService;
-use App\Video\Concept\Persistence\CanonicalSessionAttachmentService;
-use App\Video\Concept\Persistence\CanonicalStateTransitionService;
-use App\Video\Concept\Persistence\CanonicalValidationRecorder;
-use App\Video\Concept\Persistence\EloquentCanonicalProcessingObserver;
-use App\Video\Concept\Persistence\FrozenCanonicalConceptHydrator;
-use App\Video\Concept\Persistence\Ledger\CanonicalDecisionExtractor;
-use App\Video\Concept\Persistence\Ledger\DecisionLedgerWriter;
-use App\Video\Concept\Persistence\Repository\CanonicalConceptRepository;
-use App\Video\Concept\Persistence\Repository\EloquentCanonicalConceptRepository;
-use App\Video\Concept\Persistence\StateMachine\CanonicalConceptStateMachine;
 use App\Video\Concept\Schema\EffectiveConceptSchemaBuilder;
 use App\Video\Concept\Serialization\CanonicalJsonSerializer;
 use App\Video\Concept\Serialization\JsonSchemaTypeResolver;
@@ -67,7 +44,6 @@ use App\Video\Profiles\CategoryCreativeProfile;
 use App\Video\Profiles\CategoryCreativeProfileRegistry;
 use App\Video\Profiles\CategoryCreativeProfileResolver;
 use App\Video\Profiles\CategoryProfileSchemaProvider;
-use App\Video\Profiles\ProfileSystemIntegrityChecker;
 use App\Video\Profiles\Validation\AircraftSemanticValidator;
 use App\Video\Profiles\Validation\ArchitectureSemanticValidator;
 use App\Video\Profiles\Validation\CategorySemanticValidatorRegistry;
@@ -372,10 +348,6 @@ final class CanonicalConceptServiceProvider extends ServiceProvider
             }
         );
 
-        $this->app->singleton(
-            ProfileSystemIntegrityChecker::class
-        );
-
         /*
          * -----------------------------------------
          * JSON PAYLOAD
@@ -551,54 +523,6 @@ final class CanonicalConceptServiceProvider extends ServiceProvider
 
                     conceptModel: $this->model(),
 
-                    conceptPromptVersion: $this->promptVersion(),
-                );
-            }
-        );
-
-        /*
-         * -----------------------------------------
-         * PERSISTENCE
-         * -----------------------------------------
-         */
-        $this->app->singleton(CanonicalConceptInputSnapshotter::class);
-        $this->app->singleton(CanonicalConceptInputLoader::class);
-        $this->app->singleton(CanonicalConceptStateMachine::class);
-        $this->app->singleton(CanonicalEventWriter::class);
-        $this->app->singleton(CanonicalAttemptWriter::class);
-        $this->app->singleton(CanonicalValidationRecorder::class);
-        $this->app->singleton(CanonicalDecisionExtractor::class);
-        $this->app->singleton(DecisionLedgerWriter::class);
-        $this->app->singleton(CanonicalConceptExecutionCursor::class);
-        $this->app->singleton(FrozenCanonicalConceptHydrator::class);
-        $this->app->singleton(CanonicalSessionAttachmentService::class);
-
-        $this->app->singleton(
-            CanonicalConceptRepository::class,
-            EloquentCanonicalConceptRepository::class
-        );
-
-        $this->app->singleton(CanonicalStateTransitionService::class);
-        $this->app->singleton(EloquentCanonicalProcessingObserver::class);
-        $this->app->singleton(
-            CanonicalProcessingObserver::class,
-            EloquentCanonicalProcessingObserver::class
-        );
-        $this->app->singleton(CanonicalCheckpointService::class);
-        $this->app->singleton(CanonicalRepairClaimService::class);
-        $this->app->singleton(CanonicalFailureService::class);
-        $this->app->singleton(CanonicalFreezePersistenceService::class);
-        $this->app->singleton(CanonicalConceptPersistenceService::class);
-        $this->app->singleton(CanonicalConceptExecutionService::class);
-
-        $this->app->singleton(
-            CanonicalConceptRevisionService::class,
-            function (): CanonicalConceptRevisionService {
-                return new CanonicalConceptRevisionService(
-                    repository: $this->app->make(CanonicalConceptRepository::class),
-                    events: $this->app->make(CanonicalEventWriter::class),
-                    canonicalSchemaVersion: '1.0',
-                    conceptModel: $this->model(),
                     conceptPromptVersion: $this->promptVersion(),
                 );
             }
