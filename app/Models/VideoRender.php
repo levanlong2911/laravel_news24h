@@ -99,21 +99,6 @@ class VideoRender extends Model
         return $this->hasMany(VideoRenderAttempt::class, 'render_id');
     }
 
-    public function qaRuns()
-    {
-        return $this->hasMany(RenderQaRun::class, 'render_id');
-    }
-
-    public function latestQaRun()
-    {
-        return $this->belongsTo(RenderQaRun::class, 'latest_qa_run_id');
-    }
-
-    public function repairs()
-    {
-        return $this->hasMany(RenderRepair::class, 'parent_render_id');
-    }
-
     /** Tấm ảnh đã đẻ ra lượt render này — null nếu sinh từ chữ. */
     public function sourceRender()
     {

@@ -782,12 +782,6 @@ class DesignImageStore
             $users[] = 'lượt render đã ghi';
         }
 
-        foreach (['video_reference_assets', 'approved_anchors', 'reference_pack_assets', 'render_qa_runs'] as $table) {
-            if (DB::table($table)->where('artifact_id', $artifactId)->exists()) {
-                $users[] = $table;
-            }
-        }
-
         return $users;
     }
 

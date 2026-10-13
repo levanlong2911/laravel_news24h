@@ -3,7 +3,6 @@
 use App\Http\Controllers\Api\ApiAdvertisementController;
 use App\Http\Controllers\Api\PostApiController;
 use App\Http\Controllers\Api\RedditController;
-use App\Video\Render\Controllers\RenderQaController;
 use App\Video\Render\Controllers\RenderWorkerController;
 use Illuminate\Support\Facades\Route;
 
@@ -50,14 +49,4 @@ Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])
         Route::post('/{render}/ambiguous', [RenderWorkerController::class, 'ambiguous']);
         Route::post('/{render}/fail', [RenderWorkerController::class, 'fail']);
         Route::post('/{render}/recover-artifacts', [RenderWorkerController::class, 'recoverArtifacts']);
-    });
-
-Route::withoutMiddleware([\App\Http\Middleware\DomainContext::class])
-    ->prefix('internal/render-qa')
-    ->middleware([
-        'render.worker.auth',
-        'throttle:render-worker',
-    ])
-    ->group(function (): void {
-        Route::post('/{qaRun}/complete', [RenderQaController::class, 'complete']);
     });
