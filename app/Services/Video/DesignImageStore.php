@@ -634,6 +634,11 @@ class DesignImageStore
                 $artifact->delete();
 
                 if (! VideoArtifact::query()->where('design_image_id', $image->id)->exists()) {
+                    DB::table('video_renders')
+                        ->where('design_image_id', $image->id)
+                        ->whereNull('owner_deleted_at')
+                        ->update(['owner_deleted_at' => now()]);
+
                     $image->delete();
                 }
 

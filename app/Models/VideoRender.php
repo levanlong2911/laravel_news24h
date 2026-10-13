@@ -76,6 +76,7 @@ class VideoRender extends Model
         'execution_completed_at' => 'immutable_datetime',
         'provider_last_polled_at' => 'immutable_datetime',
         'provider_next_poll_at' => 'immutable_datetime',
+        'owner_deleted_at' => 'immutable_datetime',
     ];
 
     public function shot()
