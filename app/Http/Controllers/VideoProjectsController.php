@@ -540,11 +540,6 @@ class VideoProjectsController extends Controller
             : back()->with('error', $this->anchorMessage($reason));
     }
 
-    /**
-     * Mot bang cau chu dung chung cho ca hai nut. Nut khoi 1 tao o roi render,
-     * nut khoi 2 render mot o da co — nhung ket qua tra ve la cung mot tap ma,
-     * va hai bang cau chu song song thi som muon cung lech nhau.
-     */
     private function renderOutcome(string $reason, \App\Models\VideoDesignImage $image): string
     {
         return match ($reason) {
@@ -1006,11 +1001,6 @@ class VideoProjectsController extends Controller
         return $this->keyframeJson($preview, $reason);
     }
 
-    /**
-     * Man hinh render video: mot hang moi scene, khong lan voi luoi anh cua trang
-     * Scenes. Kem mot khoi xem truoc DAN NHAN dung la du lieu gia, de nhin duoc bo
-     * cuc khi DB chua co shot nao.
-     */
     public function clips(string $id)
     {
         $project = $this->ownedProject($id);
@@ -1032,11 +1022,6 @@ class VideoProjectsController extends Controller
         ]);
     }
 
-    /**
-     * Composition screen. It reads real clips and real finals, but still has no
-     * render or persistence action while the final-composition contract is being
-     * built — every control on it is inert on purpose.
-     */
     public function finalCompositionPreview(string $id)
     {
         $project = $this->ownedProject($id);

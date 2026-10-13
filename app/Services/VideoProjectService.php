@@ -24,10 +24,8 @@ use App\Services\Admin\ArticleService;
 use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\CreativeProfileResolver;
 use App\Services\Video\DesignImageDirectRenderer;
-use App\Services\Video\DesignImageQueue;
 use App\Services\Video\DesignImageStore;
 use App\Services\Video\FinalCompositionReconciler;
-use App\Services\Video\InspirationStageRunner;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\ProductionSelectionService;
 use App\Services\Video\ReferencePromptWriter;
@@ -50,7 +48,6 @@ use App\Video\FinalComposition\CompositionRun;
 use App\Video\FinalComposition\Deadline;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\Inspiration\CategoryCreativeProfile as InspirationProfile;
-use App\Video\Profiles\CategoryCreativeProfileResolver as CanonicalProfileResolver;
 use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceView;
 use App\Video\Render\Video\SceneClipDispatchService;
@@ -76,12 +73,6 @@ class VideoProjectService
 {
     private const LOCKED_CAMERA = 'The camera stays exactly where the supplied frame was taken from: '
         .'same position, same lens, same framing, for the whole shot.';
-
-    private const SCENE_IMAGE_MODEL = ImageModel::GPT_IMAGE_2;
-
-    private const SCENE_IMAGE_SIZE = ImageSize::VERTICAL_2K;
-
-    private const SCENE_IMAGE_QUALITY = ImageQuality::LOW;
 
     private const SCENE_SPEC_VERSION = 'scene-keyframe-v2';
 
@@ -198,11 +189,7 @@ class VideoProjectService
 
     private PlanningStageStore $stageStore;
 
-    private InspirationStageRunner $inspirationRunner;
-
     private DesignImageStore $designImageStore;
-
-    private DesignImageQueue $designImageQueue;
 
     private DesignImageDirectRenderer $designImageDirectRenderer;
 
@@ -213,8 +200,6 @@ class VideoProjectService
     private CanonicalConceptInputBuilder $canonicalConceptInputBuilder;
 
     private CreativeProfileResolver $creativeProfileResolver;
-
-    private CanonicalProfileResolver $canonicalProfileResolver;
 
     private GeometryPromptAuthor $geometryPromptAuthor;
 
@@ -228,15 +213,12 @@ class VideoProjectService
         VideoProjectRepositoryInterface $videoProjectRepository,
         ArticleService $articleService,
         PlanningStageStore $stageStore,
-        InspirationStageRunner $inspirationRunner,
         VideoRenderPlanService $renderPlanService,
         DesignImageStore $designImageStore,
-        DesignImageQueue $designImageQueue,
         DesignImageDirectRenderer $designImageDirectRenderer,
         VisualIdentityStore $identityStore,
         CanonicalConceptInputBuilder $canonicalConceptInputBuilder,
         CreativeProfileResolver $creativeProfileResolver,
-        CanonicalProfileResolver $canonicalProfileResolver,
         GeometryPromptAuthor $geometryPromptAuthor,
         ScreenplayApprovalService $screenplayApprovalService,
         ProductionSelectionService $productionSelectionService,
@@ -245,15 +227,12 @@ class VideoProjectService
         $this->videoProjectRepository = $videoProjectRepository;
         $this->articleService = $articleService;
         $this->stageStore = $stageStore;
-        $this->inspirationRunner = $inspirationRunner;
         $this->renderPlanService = $renderPlanService;
         $this->designImageStore = $designImageStore;
-        $this->designImageQueue = $designImageQueue;
         $this->designImageDirectRenderer = $designImageDirectRenderer;
         $this->identityStore = $identityStore;
         $this->canonicalConceptInputBuilder = $canonicalConceptInputBuilder;
         $this->creativeProfileResolver = $creativeProfileResolver;
-        $this->canonicalProfileResolver = $canonicalProfileResolver;
         $this->geometryPromptAuthor = $geometryPromptAuthor;
         $this->screenplayApprovalService = $screenplayApprovalService;
         $this->productionSelectionService = $productionSelectionService;
