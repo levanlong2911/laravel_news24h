@@ -23,7 +23,7 @@ return [
     */
 
     'prompt_path' => resource_path(
-        'ai/prompts/geometry_reference_v2.txt'
+        'ai/prompts/geometry_reference.txt'
     ),
 
     'prompt_version' => env(

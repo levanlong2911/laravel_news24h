@@ -69,23 +69,27 @@ final class ScreenplayValidator
         'screenplay_characters_v2',
         'screenplay_locations_v3',
         VesselDesign::CONTRACT,
+        VesselDesign::LEGACY_CONTRACT,
         VesselDesign::STORY_CONTRACT,
         VesselDesign::FOUNDATION_CONTRACT,
+        VesselDesign::LOCATIONS_CONTRACT,
+        VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var list<string> */
     public const EXPANSION_CONTRACTS = [
         'screenplay_scene_expansion_v1', 'screenplay_scene_expansion_v2', 'screenplay_scene_expansion_v3',
-        'screenplay_scene_expansion_v4',
+        'screenplay_scene_expansion_v4', VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var list<string> */
     private const LISTED_SUBJECT_CONTRACTS = [
         'screenplay_scene_expansion_v2', 'screenplay_scene_expansion_v3', 'screenplay_scene_expansion_v4',
+        VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var list<string> */
-    private const BEAT_CONTRACTS = ['screenplay_v6', 'screenplay_v7', 'screenplay_scene_expansion_v4'];
+    private const BEAT_CONTRACTS = ['screenplay_v6', 'screenplay_v7', 'screenplay_scene_expansion_v4', VesselDesign::SCENES_CONTRACT];
 
     /** @var array<string, array<string, string>> */
     private const BEAT_FIELD_TYPES = [
@@ -117,6 +121,7 @@ final class ScreenplayValidator
         'screenplay_locations_v1' => 'locations',
         'screenplay_locations_v2' => 'locations',
         'screenplay_locations_v3' => 'locations',
+        VesselDesign::LOCATIONS_CONTRACT => 'locations',
     ];
 
     /** @var list<string> */
@@ -125,7 +130,7 @@ final class ScreenplayValidator
     /** @var list<string> */
     private const DIMENSIONED_CONTRACTS = [
         'screenplay_foundation_v2', 'screenplay_foundation_v3', 'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7',
-        VesselDesign::CONTRACT, VesselDesign::FOUNDATION_CONTRACT,
+        VesselDesign::CONTRACT, VesselDesign::LEGACY_CONTRACT, VesselDesign::FOUNDATION_CONTRACT,
     ];
 
     /** @var list<string> */
@@ -150,7 +155,7 @@ final class ScreenplayValidator
     private const SCENE_CONTRACTS = [
         'screenplay_v3', 'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7',
         'screenplay_scene_expansion_v1', 'screenplay_scene_expansion_v2', 'screenplay_scene_expansion_v3',
-        'screenplay_scene_expansion_v4',
+        'screenplay_scene_expansion_v4', VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var list<string> */
@@ -239,7 +244,7 @@ final class ScreenplayValidator
     /** @var list<string> */
     private const PLACE_CONTRACTS = [
         'screenplay_v5', 'screenplay_v6', 'screenplay_v7', 'screenplay_locations_v2', 'screenplay_locations_v3',
-        'screenplay_scene_expansion_v3', 'screenplay_scene_expansion_v4',
+        'screenplay_scene_expansion_v3', 'screenplay_scene_expansion_v4', VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var array<string, array<string, string>> */
@@ -297,6 +302,7 @@ final class ScreenplayValidator
         'screenplay_scene_expansion_v2' => ['object', 'person', 'group'],
         'screenplay_scene_expansion_v3' => ['object', 'person', 'group'],
         'screenplay_scene_expansion_v4' => ['object', 'person', 'group'],
+        VesselDesign::SCENES_CONTRACT => ['object', 'person', 'group'],
         'screenplay_characters_v1' => ['object', 'person', 'group'],
         'screenplay_characters_v2' => ['object', 'person', 'group'],
     ];
@@ -328,7 +334,7 @@ final class ScreenplayValidator
         }
 
         $stages = ['arc_stages' => [], 'arc_required_stages' => []];
-        foreach ($contract === VesselDesign::CONTRACT ? [] : ['arc_stages', 'arc_required_stages'] as $key) {
+        foreach (in_array($contract, VesselDesign::CONTRACTS, true) ? [] : ['arc_stages', 'arc_required_stages'] as $key) {
             $rows = $profile[$key] ?? null;
             $stages[$key] = [];
             if (! is_array($rows) || ! array_is_list($rows) || $rows === []) {
@@ -380,7 +386,7 @@ final class ScreenplayValidator
                 .implode(', ', ProtagonistProfile::REGIONS);
         }
 
-        if ($contract === VesselDesign::CONTRACT) {
+        if (in_array($contract, VesselDesign::CONTRACTS, true)) {
             $errors = array_merge($errors, VesselDesign::profileRuleViolations(
                 $profile,
                 config('video.screenplay.design.profile_contract_version'),
@@ -446,8 +452,8 @@ final class ScreenplayValidator
             return ['contract_version: profile does not match the author contract'];
         }
 
-        if ($contract === VesselDesign::CONTRACT) {
-            return $this->designViolations($screenplay, $profile, $excludedNames);
+        if (in_array($contract, VesselDesign::CONTRACTS, true)) {
+            return $this->designViolations($screenplay, $profile, $contract, $excludedNames);
         }
 
         if ($contract === VesselDesign::STORY_CONTRACT) {
@@ -466,14 +472,14 @@ final class ScreenplayValidator
             return $this->foundationViolations($screenplay, $profile, $contract, $excludedNames);
         }
 
-        $shape = $this->shapeViolations($screenplay, $contract);
+        $shape = $this->shapeViolations($screenplay, $contract, $this->thesisFields($profile));
 
         if ($shape !== []) {
             return $shape;
         }
 
         $violations = array_merge(
-            $this->designThesisViolations($screenplay),
+            $this->designThesisViolations($screenplay, $this->thesisFields($profile)),
             $this->forbiddenTermViolations($screenplay, $profile),
             $this->identityViolations($screenplay),
             $this->linkViolations($screenplay, $profile),
@@ -530,7 +536,7 @@ final class ScreenplayValidator
      * @param  list<string>  $excludedNames
      * @return list<string>
      */
-    private function designViolations(array $design, array $profile, array $excludedNames): array
+    private function designViolations(array $design, array $profile, string $contract, array $excludedNames): array
     {
         $violations = [];
 
@@ -563,12 +569,18 @@ final class ScreenplayValidator
         if (! is_array($design['design_thesis'] ?? null)) {
             $violations[] = 'design_thesis: must be an object';
         } else {
-            foreach (self::THESIS_FIELDS as $field) {
+            $thesisFields = VesselDesign::thesisFields($contract);
+
+            foreach ($thesisFields as $field) {
                 if (! is_string($design['design_thesis'][$field] ?? null) || trim($design['design_thesis'][$field]) === '') {
                     $violations[] = "design_thesis.{$field}: must be a nonempty string";
                 } else {
                     $texts["design_thesis.{$field}"] = $design['design_thesis'][$field];
                 }
+            }
+
+            foreach (array_diff(array_keys($design['design_thesis']), $thesisFields) as $field) {
+                $violations[] = "design_thesis.{$field}: this contract does not produce it";
             }
         }
 
@@ -609,6 +621,7 @@ final class ScreenplayValidator
             $this->sourceFactsIn($texts, $excludedNames),
             VesselDesign::incompleteVesselTexts($design),
             VesselDesign::typedGeometryViolations($design),
+            $contract === VesselDesign::CONTRACT ? VesselDesign::openingSideViolations($design) : [],
             VesselDesign::equipmentViolations($design, $profile),
             VesselDesign::extractIntegrityViolations(
                 $design,
@@ -780,7 +793,7 @@ final class ScreenplayValidator
             }
         }
 
-        foreach (['design_thesis' => self::THESIS_FIELDS,
+        foreach (['design_thesis' => $this->thesisFields($profile),
             'premise' => ['question', 'force', 'device', 'change', 'answer']] as $group => $fields) {
             if (! is_array($foundation[$group] ?? null)) {
                 $violations[] = "{$group}: must be an object";
@@ -1765,9 +1778,10 @@ final class ScreenplayValidator
 
     /**
      * @param  array<string, mixed>  $screenplay
+     * @param  list<string>  $thesisFields
      * @return list<string>
      */
-    private function shapeViolations(array $screenplay, string $contract): array
+    private function shapeViolations(array $screenplay, string $contract, array $thesisFields): array
     {
         $violations = [];
 
@@ -1776,6 +1790,7 @@ final class ScreenplayValidator
         }
 
         foreach (self::NESTED_TEXT_FIELDS as $key => $fields) {
+            $fields = $key === 'design_thesis' ? array_intersect_key($fields, array_flip($thesisFields)) : $fields;
             $row = $screenplay[$key] ?? null;
 
             if (! is_array($row)) {
@@ -2147,15 +2162,27 @@ final class ScreenplayValidator
     }
 
     /**
-     * @param  array<string, mixed>  $screenplay
+     * @param  array<string, mixed>  $profile
      * @return list<string>
      */
-    private function designThesisViolations(array $screenplay): array
+    private function thesisFields(array $profile): array
+    {
+        $contract = $profile[VesselDesign::DESIGN_CONTRACT_KEY] ?? null;
+
+        return VesselDesign::thesisFields(is_string($contract) ? $contract : null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @param  list<string>  $fields
+     * @return list<string>
+     */
+    private function designThesisViolations(array $screenplay, array $fields): array
     {
         $thesis = $screenplay['design_thesis'] ?? [];
         $violations = [];
 
-        foreach (self::THESIS_FIELDS as $field) {
+        foreach ($fields as $field) {
             if (trim((string) ($thesis[$field] ?? '')) === '') {
                 $violations[] = "design_thesis.{$field} is empty";
             }

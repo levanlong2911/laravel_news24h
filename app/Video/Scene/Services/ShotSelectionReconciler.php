@@ -185,8 +185,11 @@ final class ShotSelectionReconciler
         $screenplayHash = $screenplayOutput !== []
             ? ScreenplayContentHash::of($screenplayOutput)
             : null;
-        $storyboard = (is_array($plan?->input_json) ? ($plan->input_json['scene_contract_version'] ?? null) : null)
-            === \App\Video\Scene\ScenePlanAuthor::STORYBOARD_CONTRACT_VERSION;
+        $storyboard = in_array(
+            is_array($plan?->input_json) ? ($plan->input_json['scene_contract_version'] ?? null) : null,
+            \App\Video\Scene\ScenePlanAuthor::STORYBOARD_CONTRACT_VERSIONS,
+            true,
+        );
         $planPassed = $storyboard
             ? ($planOutput['validation']['status'] ?? null) === 'passed'
             : ($planOutput['review']['status'] ?? null) === 'passed';

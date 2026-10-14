@@ -22,14 +22,26 @@ changes, this table changes in the same commit.
 
 | Layer | Contract | Prompt version | Reads | Notes |
 |---|---|---|---|---|
-| Screenplay foundation | `screenplay_foundation_v2` (`v1` frozen, manifest + checksums) | `foundation-v2-r1` | inspiration brief, profile `yacht_v1`, `dimension_bounds` 100–180 m | model does not reuse or reverse source features |
-| Scene expansion | `screenplay_scene_expansion_v1` | `scene-expansion-v1-r1` | the selected foundation v2 only, profile `yacht_v1` | streamed, effort `medium`, `max_tokens` 32000 |
+| Screenplay foundation | `screenplay_foundation_v1`–`v3`: read only; the author and its prompts were removed on 2026-10-13 | — | — | stored foundations stay readable; new foundations come only from the design-first story step |
+| Scene expansion, characters, locations, single-pass screenplay | `screenplay_scene_expansion_v1`–`v4`, `screenplay_characters_v1`–`v2`, `screenplay_locations_v1`–`v3`, `screenplay_v2`–`v3`: read only; their authors and prompts were removed on 2026-10-13 | — | — | stored stages stay readable; new runs use only the design-first rows below |
 | Assembled screenplay | `screenplay_v4` = foundation v2 fields + expansion fields | — (assembled by PHP) | foundation + expansion | validated with v3 scene rules and foundation rules |
 | Shot breakdown | `scene-contract-v5` (render gate accepts v5 only) | `scene-plan-v4`, review `scene-review-v4` (v3 files kept) | the approved and selected `screenplay_v4` | no milestones; `coverage_ids` per shot; PHP copies `stage` → `scene_type` and `build_state` → `state_json`, see §8.1. Author and reviewer: `gpt-5.6-terra`, streamed, 900 s, one attempt (`video.scene_plan.client`) || Anchor prompt | `geometry-reference-v1` (object), `character-reference-v1` (person, group) | same | the latest `screenplay_v4` characters | one prompt per character |
 | Anchor image | model `gpt-image-2.5-flare` (default), `gpt-image-2.5-sunburst`, `gpt-image-2` | — | the character's stored prompt | evidence `openai_models_2026_09_25.json` |
 
-Legacy contracts (`screenplay_v2`, `screenplay_v3`, profile `vessel_v1`
-milestones) stay readable under their own rules and are never reinterpreted.
+Legacy contracts (`screenplay_v2`, `screenplay_v3`) stay readable under their
+own rules and are never reinterpreted. The `vessel_v1` profile file was removed
+on 2026-10-13; plans stored with it show the profile notice (§7).
+
+Design-first workflow (`design_first_v1`):
+
+| Layer | Contract | Prompt version | Reads | Notes |
+|---|---|---|---|---|
+| Vessel design | `vessel_design_v2`; `vessel_design_v1` stays readable | `vessel-design-v2-r1` (`design`; earlier prompts only in git history) | inspiration, design keys of profile `yacht_v1` | v2 has no `design_thesis.realization` and rejects it; v1 still requires it. `spatial_consequence`, routes and `configuration_states` hold physical facts only |
+| Story foundation | `screenplay_foundation_story_v1`, assembled as `screenplay_foundation_v4` | `foundation-story-v1-r8` (`foundation`) | story extract of the anchored design | `design_thesis` and `principal_dimensions` are copied from the source design; `profile.design_contract` records its contract, which decides whether `realization` is required |
+| Characters | `screenplay_characters_v2`, built by code (`ensureCast`) | — | the anchored design and the foundation | no model call; the characters route only reports this |
+| Locations | model `screenplay_locations_v4`, built as `screenplay_locations_v3` | `locations-v4-r1` (`locations`) | design geometry, film brief, cast | places aboard return ids, `brief_space`, `design_refs` and connections only; `DesignLocationBuilder` writes the descriptive fields and `equipment_access` from the design |
+| Scenes | `screenplay_scene_expansion_v5`, assembled as `screenplay_v7` | `scene-expansion-v5-r1` (`scene_expansion`) | foundation, built locations, cast | every scene records `room_state` `{start, end}`, see §7.1 |
+| Storyboard | `storyboard-contract-v2`; `storyboard-contract-v1` stays readable | `storyboard-v2-r1` (`storyboard.txt`) | the approved screenplay | every shot but the last of a scene aboard returns `room_state_end`, see §7.1 |
 
 ---
 
@@ -235,7 +247,7 @@ Locations follow the same principle, but **build state is a variant of the same 
 **[VERIFIED — corrects an earlier wrong conclusion]** The `milestone_keys → environment` path is **live**, not dead:
 
 ```
-config  video.scene_plan.profiles.yacht  = vessel_v1   ← planning
+config  video.scene_plan.profiles.yacht  = vessel_v2   ← planning (vessel_v1 removed 2026-10-13)
 config  video.environment.profiles.yacht = vessel_v2   ← ENVIRONMENT
 
 VideoProjectService:2214-2226   environmentProfile() loads vessel_v2
@@ -243,6 +255,8 @@ vessel_v2.json                  5 environments; 20/20 milestones map to one
 ```
 
 The earlier "dead path" conclusion was wrong because it was tested against `vessel_v1` (0 environments) while the environment path loads `vessel_v2`.
+
+`vessel_v1.json` was removed on 2026-10-13: `vessel_v2` holds the same milestones plus the environments, so planning reads it too. Plans already stored with `profile_version` `vessel_v1` can no longer be verified against their file; their scene page shows the amber profile notice and milestone keys instead of labels. Nothing else reads the planning profile, and `vessel_v2.json` keeps its name and bytes so plates stamped with its version and sha still match.
 
 **Consequence:** `milestone_keys` **must not be removed** until the new path works and is proven.
 
@@ -264,6 +278,53 @@ For screenplay-linked plans, `VideoProjectService` derives an immutable
 environment key. The clean-plate prompt may describe surrounding access,
 supports and tools appropriate to that state, but explicitly excludes the main
 subject. Only plans without screenplay linkage use the legacy milestone bridge.
+
+### 7.1 Design-first source and room state [IMPLEMENTED 2026-10-13]
+
+- The environment of a design-first screenplay is read from the design its
+  `source_design` names. The stage must belong to the project, be a succeeded
+  vessel design and match the recorded `content_hash`; otherwise the
+  requirement is reported missing. There is no fallback to the current design.
+- A scene in a place aboard records `room_state.start` and `room_state.end`,
+  each `shell_only`, `in_fit_out` or `fitted`; an external place records
+  `null`. A state never moves backwards inside a scene, and a later scene in
+  the same place starts no earlier than the state the last scene there left.
+  Nothing becomes `fitted` on its own at completion. Progress and
+  configuration stay in the subject moments.
+- A scene whose room state changes must also change the subject's progress.
+- Storyboard `storyboard-contract-v2` (`storyboard-v2-r1`): the model returns
+  `room_state_end` for every shot but the last of a scene aboard, from the
+  work that shot completes. The first shot starts on the scene start, each
+  next shot starts where the previous one ended, and the last shot ends on
+  the scene end; the application assigns all three. A shot end never goes
+  back, never passes the scene end, and changes only when the shot's
+  progress changes. `storyboard-contract-v1` plans stay readable.
+- The keyframe states the shot's room state before the space block.
+- The room plate follows the shot's start state: `shell_only` is the bare
+  structure, `fitted` shows the finished interior from the source design,
+  and `in_fit_out` shows the structure plus only the work its start progress
+  records, never the finished interior and never the bare-room sentence. An
+  `in_fit_out` start with no recorded progress uses the bare plate. The plate
+  identity includes the source design `content_hash` and, in fit-out, the
+  recorded work. Screenplays without `room_state` keep the stage-based phase.
+- A route between two places is not proof that large equipment can pass:
+  built locations carry `equipment_access.large_equipment` as
+  `not_established` aboard and `not_applicable` elsewhere.
+- A connection between two places aboard needs design proof for both ends:
+  a route runs from one place to the other, or is one of them and reaches
+  the other; an opening names both places in `connects` (new in
+  `vessel_design_v2`, null for glazing or an undecided side; when `serves`
+  names a place, it is one of the two sides). Otherwise the build fails with
+  `connection_endpoint_unresolved`. A v1 design has no `connects`, so a
+  connection through an opening there stays unresolved until a reviewed
+  design correction adds it.
+- A place aboard connects to a place away from the subject only through an
+  opening whose `connects` names the place aboard and null for the outside.
+  A `via` sentence alone, or a route, is refused: moving between such
+  places in the story is a cut, not a connection. Two places away from the
+  subject are joined by `via` alone and never cite a part of the design.
+- Built location text is never cut to fit a limit; a layout, item or `via`
+  over its limit fails validation instead.
 
 ---
 
@@ -560,9 +621,10 @@ the foundation, scene-expansion and `screenplay_v4` validators read it, and a
 paid expansion run (rev16) answered all 26 coverage items. `vessel_v1` and
 `vessel_v2` are untouched.
 
-The shot layer does not read `yacht_v1` yet; it still loads `vessel_v1` through
-`SceneProfile`. §8.1 decides that screenplay-linked plans stop using the
-milestones of `vessel_v1` and take their coverage from the screenplay instead.
+The shot layer does not read `yacht_v1`; it loads `vessel_v2` through
+`SceneProfile` (`vessel_v1` was removed on 2026-10-13). §8.1 decides that
+screenplay-linked plans take their coverage from the screenplay instead of the
+profile milestones.
 
 ```json
 {

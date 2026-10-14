@@ -674,7 +674,9 @@ final class ReferencePromptWriter
         $design = ['logline' => $screenplay['logline'] ?? null, 'design_thesis' => [], 'principal_dimensions' => []];
 
         foreach (['central_idea', 'visible_difference', 'spatial_consequence', 'coherence', 'realization'] as $key) {
-            $design['design_thesis'][$key] = $thesis[$key] ?? null;
+            if ($key !== 'realization' || array_key_exists($key, $thesis)) {
+                $design['design_thesis'][$key] = $thesis[$key] ?? null;
+            }
         }
 
         foreach (['length_m', 'beam_m', 'rationale'] as $key) {

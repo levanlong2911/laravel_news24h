@@ -16,7 +16,23 @@ final class SceneBeats
     /** @var list<string> */
     public const MODES = [self::CONTINUOUS, self::MONTAGE];
 
-    public const BEAT_ID_PATTERN = '^b[0-9]{1,2}$';
+    public const ROOM_STATE_KEY = 'room_state';
+
+    public const SHELL_ONLY = 'shell_only';
+
+    public const IN_FIT_OUT = 'in_fit_out';
+
+    public const FITTED = 'fitted';
+
+    /** @var list<string> */
+    public const ROOM_STATES = [self::SHELL_ONLY, self::IN_FIT_OUT, self::FITTED];
+
+    /** @var array<string, string> */
+    private const ROOM_LINES = [
+        self::SHELL_ONLY => 'ROOM STATE: a bare shell. Only its structure, openings and stairs stand; no finishes, fitted furniture, lamps or loose items.',
+        self::IN_FIT_OUT => 'ROOM STATE: being fitted out. Only its structure and the work this frame\'s progress names are in place; nothing else of the finished room.',
+        self::FITTED => 'ROOM STATE: fitted. Its designed finishes and furniture are in place.',
+    ];
 
     /** @param  array<string, mixed>  $screenplay */
     public static function usesBeats(array $screenplay): bool
@@ -129,5 +145,89 @@ final class SceneBeats
         }
 
         return $lines;
+    }
+
+    public static function roomLine(mixed $state): ?string
+    {
+        return is_string($state) ? (self::ROOM_LINES[$state] ?? null) : null;
+    }
+
+    public static function progressChanges(mixed $state): bool
+    {
+        $start = is_array($state) && is_array($state['start'] ?? null) ? $state['start']['progress'] ?? null : null;
+        $end = is_array($state) && is_array($state['end'] ?? null) ? $state['end']['progress'] ?? null : null;
+
+        return is_string($end) && trim($end) !== '' && trim($end) !== trim((string) $start);
+    }
+
+    public static function roomOrder(?string $state): ?int
+    {
+        $order = array_search($state, self::ROOM_STATES, true);
+
+        return $order === false ? null : $order;
+    }
+
+    /**
+     * @param  list<mixed>  $scenes
+     * @param  list<array<string, mixed>>  $locations
+     * @return list<string>
+     */
+    public static function roomStateViolations(array $scenes, array $locations): array
+    {
+        $aboard = [];
+
+        foreach ($locations as $location) {
+            if (is_array($location) && is_string($location['id'] ?? null)) {
+                $aboard[$location['id']] = ($location['spatial_relation'] ?? null) === LocationProfile::SUBJECT_PART;
+            }
+        }
+
+        $order = array_flip(self::ROOM_STATES);
+        $last = [];
+        $violations = [];
+
+        foreach ($scenes as $index => $scene) {
+            if (! is_array($scene)) {
+                continue;
+            }
+
+            $where = is_string($scene['id'] ?? null) ? $scene['id'] : "scenes[{$index}]";
+            $location = (string) ($scene['location_id'] ?? '');
+            $room = $scene[self::ROOM_STATE_KEY] ?? null;
+
+            if (! is_array($room) || array_diff(array_keys($room), ['start', 'end']) !== [] || ! array_key_exists('start', $room) || ! array_key_exists('end', $room)) {
+                $violations[] = "{$where}.room_state: must be an object with start and end";
+
+                continue;
+            }
+
+            if (! ($aboard[$location] ?? false)) {
+                if ($room['start'] !== null || $room['end'] !== null) {
+                    $violations[] = "{$where}.room_state: the scene is not aboard the subject, so start and end are null";
+                }
+
+                continue;
+            }
+
+            if (! isset($order[$room['start']]) || ! isset($order[$room['end']])) {
+                $violations[] = "{$where}.room_state: a scene aboard gives start and end as one of ".implode(', ', self::ROOM_STATES);
+
+                continue;
+            }
+
+            if ($order[$room['end']] < $order[$room['start']]) {
+                $violations[] = "{$where}.room_state: {$location} goes back from {$room['start']} to {$room['end']}";
+            } elseif ($room['end'] !== $room['start'] && ! self::progressChanges($scene['subject_state'] ?? null)) {
+                $violations[] = "{$where}.room_state: {$location} becomes {$room['end']} but the subject's progress does not change in the scene";
+            }
+
+            if (isset($last[$location]) && $order[$room['start']] < $order[$last[$location]]) {
+                $violations[] = "{$where}.room_state: {$location} was left {$last[$location]} by an earlier scene and cannot start {$room['start']}";
+            }
+
+            $last[$location] = $room['end'];
+        }
+
+        return $violations;
     }
 }

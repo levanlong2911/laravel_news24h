@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Video\Scene;
 
 use App\Video\Prompt\TextCompletionClient;
+use App\Video\Screenplay\SceneBeats;
 use App\Video\Screenplay\ScreenplayValidator;
 use JsonException;
 
@@ -16,11 +17,16 @@ final class ScenePlanAuthor
 
     public const BEAT_CONTRACT_VERSION = 'scene-contract-v6';
 
-    public const STORYBOARD_CONTRACT_VERSION = 'storyboard-contract-v1';
+    public const STORYBOARD_CONTRACT_VERSION = 'storyboard-contract-v2';
+
+    public const LEGACY_STORYBOARD_CONTRACT_VERSION = 'storyboard-contract-v1';
+
+    /** @var list<string> */
+    public const STORYBOARD_CONTRACT_VERSIONS = [self::STORYBOARD_CONTRACT_VERSION, self::LEGACY_STORYBOARD_CONTRACT_VERSION];
 
     /** @var list<string> */
     public const CONTRACT_VERSIONS = [
-        self::SCENE_CONTRACT_VERSION, self::BEAT_CONTRACT_VERSION, self::STORYBOARD_CONTRACT_VERSION,
+        self::SCENE_CONTRACT_VERSION, self::BEAT_CONTRACT_VERSION, ...self::STORYBOARD_CONTRACT_VERSIONS,
     ];
 
     /** @var list<string> */
@@ -191,7 +197,7 @@ final class ScenePlanAuthor
                 'position' => $cameraText,
                 'elevation' => $cameraText,
                 'framing' => $cameraText,
-                'subject_side' => ['type' => ['string', 'null'], 'enum' => [...self::SUBJECT_SIDES, null]],
+                'subject_side' => ['anyOf' => [['type' => 'string', 'enum' => self::SUBJECT_SIDES], ['type' => 'null']]],
             ],
         ];
 
@@ -225,7 +231,7 @@ final class ScenePlanAuthor
             'required' => [
                 'beat_coverage', 'visual_purpose', 'camera_relation', 'camera', 'keyframe', 'action',
                 'duration_ms', 'first_frame_object_ids', 'last_frame_object_ids', 'state_changes', 'subject_end_state',
-                'reference_requirements',
+                'room_state_end', 'reference_requirements',
             ],
             'properties' => [
                 'beat_coverage' => [
@@ -259,6 +265,7 @@ final class ScenePlanAuthor
                     ],
                 ],
                 'subject_end_state' => ['anyOf' => [$moment, ['type' => 'null']]],
+                'room_state_end' => ['anyOf' => [['type' => 'string', 'enum' => SceneBeats::ROOM_STATES], ['type' => 'null']]],
                 'reference_requirements' => [
                     'type' => 'array',
                     'items' => [

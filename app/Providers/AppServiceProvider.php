@@ -235,56 +235,6 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(
-            'video.screenplay.llm_client',
-            static function (Application $app): AnthropicStructuredOutputClient {
-                return new AnthropicStructuredOutputClient(
-                    http: $app->make(HttpFactory::class),
-                    apiKey: (string) config('canonical_concept.anthropic.api_key'),
-                    baseUrl: (string) config('canonical_concept.anthropic.base_url'),
-                    apiVersion: (string) config('canonical_concept.anthropic.api_version'),
-                    timeoutSeconds: (int) config('video.screenplay.timeout_seconds'),
-                    retryTimes: (int) config('video.screenplay.retry_times'),
-                    retrySleepMs: 0,
-                );
-            }
-        );
-
-        $this->app->singleton(
-            'video.screenplay.foundation_author',
-            static function (Application $app): ScreenplayAuthor {
-                return new ScreenplayAuthor(
-                    client: new AnthropicStructuredOutputClient(
-                        http: $app->make(HttpFactory::class),
-                        apiKey: (string) config('canonical_concept.anthropic.api_key'),
-                        baseUrl: (string) config('canonical_concept.anthropic.base_url'),
-                        apiVersion: (string) config('canonical_concept.anthropic.api_version'),
-                        timeoutSeconds: (int) config('video.screenplay.foundation.timeout_seconds'),
-                        retryTimes: (int) config('video.screenplay.foundation.retry_times'),
-                        retrySleepMs: 0,
-                        stream: (bool) config('video.screenplay.foundation.stream'),
-                        effort: config('video.screenplay.foundation.effort'),
-                    ),
-                    promptDir: (string) config('video.screenplay.foundation.prompt_dir'),
-                    schemaPath: (string) config('video.screenplay.foundation.schema_path'),
-                    promptVersion: (string) config('video.screenplay.foundation.prompt_version'),
-                    model: (string) config('video.screenplay.foundation.model'),
-                    maxTokens: (int) config('video.screenplay.foundation.max_tokens'),
-                    contractVersion: (string) config('video.screenplay.foundation.contract_version'),
-                    exampleGuidance: [
-                        'A WORKED EXAMPLE',
-                        'Its subject is deliberately unlike yours. Copy the way the decisions',
-                        'were made. Never copy its story, its characters, its locations or its',
-                        'sentences.',
-                        'It shows how every concrete feature of the inspiration is set aside,',
-                        'how an abstract question is answered with a different physical design,',
-                        'and how each stage is described without writing any scenes.',
-                        'It does not stand in for the design work this assignment asks of you.',
-                    ],
-                );
-            }
-        );
-
-        $this->app->singleton(
             'video.screenplay.design_author',
             static function (Application $app): ScreenplayAuthor {
                 return new ScreenplayAuthor(
@@ -379,7 +329,7 @@ class AppServiceProvider extends ServiceProvider
             }
         );
 
-        foreach (['character_author' => 'characters', 'location_author' => 'locations'] as $key => $step) {
+        foreach (['location_author' => 'locations'] as $key => $step) {
             $this->app->singleton(
                 'video.screenplay.'.$key,
                 static function (Application $app) use ($step): ScreenplayAuthor {
@@ -407,7 +357,7 @@ class AppServiceProvider extends ServiceProvider
                             'Its subject is deliberately unlike yours. Copy the way the decisions',
                             'were made. Never copy its story, its characters, its locations or its',
                             'sentences.',
-                            "It shows how a selected foundation yields the {$step} its scenes will need.",
+                            'It shows how a selected foundation yields the '.strtok($step, '_').' its scenes will need.',
                         ],
                         sourceKey: 'foundation',
                     );
@@ -415,55 +365,42 @@ class AppServiceProvider extends ServiceProvider
             );
         }
 
-        $this->app->singleton(
-            'video.screenplay.scene_author',
-            static function (Application $app): ScreenplayAuthor {
-                return new ScreenplayAuthor(
-                    client: new AnthropicStructuredOutputClient(
-                        http: $app->make(HttpFactory::class),
-                        apiKey: (string) config('canonical_concept.anthropic.api_key'),
-                        baseUrl: (string) config('canonical_concept.anthropic.base_url'),
-                        apiVersion: (string) config('canonical_concept.anthropic.api_version'),
-                        timeoutSeconds: (int) config('video.screenplay.scenes.timeout_seconds'),
-                        retryTimes: (int) config('video.screenplay.scenes.retry_times'),
-                        retrySleepMs: 0,
-                        stream: (bool) config('video.screenplay.scenes.stream'),
-                        effort: config('video.screenplay.scenes.effort'),
-                    ),
-                    promptDir: (string) config('video.screenplay.scenes.prompt_dir'),
-                    schemaPath: (string) config('video.screenplay.scenes.schema_path'),
-                    promptVersion: (string) config('video.screenplay.scenes.prompt_version'),
-                    model: (string) config('video.screenplay.scenes.model'),
-                    maxTokens: (int) config('video.screenplay.scenes.max_tokens'),
-                    contractVersion: (string) config('video.screenplay.scenes.contract_version'),
-                    exampleGuidance: [
-                        'A WORKED EXAMPLE',
-                        'Its subject is deliberately unlike yours. Copy the way the decisions',
-                        'were made. Never copy its story, its characters, its locations or its',
-                        'sentences.',
-                        'It shows how a selected foundation becomes scenes without changing it,',
-                        'how coverage is accounted for, and how build state is written.',
-                        'Its scene count belongs to its own foundation and is not a target.',
-                    ],
-                    sourceKey: 'foundation',
-                );
-            }
-        );
-
-        $this->app->singleton(
-            ScreenplayAuthor::class,
-            static function (Application $app): ScreenplayAuthor {
-                return new ScreenplayAuthor(
-                    client: $app->make('video.screenplay.llm_client'),
-                    promptDir: (string) config('video.screenplay.prompt_dir'),
-                    schemaPath: (string) config('video.screenplay.schema_path'),
-                    promptVersion: (string) config('video.screenplay.prompt_version'),
-                    model: (string) config('video.screenplay.model'),
-                    maxTokens: (int) config('video.screenplay.max_tokens'),
-                    contractVersion: (string) config('video.screenplay.contract_version'),
-                );
-            }
-        );
+        foreach (['scene_author' => 'scenes'] as $key => $step) {
+            $this->app->singleton(
+                'video.screenplay.'.$key,
+                static function (Application $app) use ($step): ScreenplayAuthor {
+                    return new ScreenplayAuthor(
+                        client: new AnthropicStructuredOutputClient(
+                            http: $app->make(HttpFactory::class),
+                            apiKey: (string) config('canonical_concept.anthropic.api_key'),
+                            baseUrl: (string) config('canonical_concept.anthropic.base_url'),
+                            apiVersion: (string) config('canonical_concept.anthropic.api_version'),
+                            timeoutSeconds: (int) config("video.screenplay.{$step}.timeout_seconds"),
+                            retryTimes: (int) config("video.screenplay.{$step}.retry_times"),
+                            retrySleepMs: 0,
+                            stream: (bool) config("video.screenplay.{$step}.stream"),
+                            effort: config("video.screenplay.{$step}.effort"),
+                        ),
+                        promptDir: (string) config("video.screenplay.{$step}.prompt_dir"),
+                        schemaPath: (string) config("video.screenplay.{$step}.schema_path"),
+                        promptVersion: (string) config("video.screenplay.{$step}.prompt_version"),
+                        model: (string) config("video.screenplay.{$step}.model"),
+                        maxTokens: (int) config("video.screenplay.{$step}.max_tokens"),
+                        contractVersion: (string) config("video.screenplay.{$step}.contract_version"),
+                        exampleGuidance: [
+                            'A WORKED EXAMPLE',
+                            'Its subject is deliberately unlike yours. Copy the way the decisions',
+                            'were made. Never copy its story, its characters, its locations or its',
+                            'sentences.',
+                            'It shows how a selected foundation becomes scenes without changing it,',
+                            'how coverage is accounted for, and how build state is written.',
+                            'Its scene count belongs to its own foundation and is not a target.',
+                        ],
+                        sourceKey: 'foundation',
+                    );
+                }
+            );
+        }
 
         $this->app->bind(
             'video.anchor_prompt.client',

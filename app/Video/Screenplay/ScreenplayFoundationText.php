@@ -37,7 +37,9 @@ final class ScreenplayFoundationText
             '  Visible difference  : '.($foundation['design_thesis']['visible_difference'] ?? ''),
             '  Spatial consequence : '.($foundation['design_thesis']['spatial_consequence'] ?? ''),
             '  Coherence           : '.($foundation['design_thesis']['coherence'] ?? ''),
-            '  Realization         : '.($foundation['design_thesis']['realization'] ?? ''),
+            ...(array_key_exists('realization', (array) ($foundation['design_thesis'] ?? []))
+                ? ['  Realization         : '.$foundation['design_thesis']['realization']]
+                : []),
             '',
             ...self::dimensionLines($foundation['principal_dimensions'] ?? null),
             ...self::spacePlanLines($foundation['space_plan'] ?? null),

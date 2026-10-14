@@ -93,8 +93,9 @@ final class StoryFoundationService
 
         $merged = $profile;
         $merged['contract_version'] = VesselDesign::FOUNDATION_CONTRACT;
+        $merged[VesselDesign::DESIGN_CONTRACT_KEY] = $design->output_json['schema_version'];
         $merged['dimension_bounds'] = PlanningStageStore::metadataOf($design->input_json)['profile']['dimension_bounds']
-            ?? config('video.screenplay.foundation.dimension_bounds');
+            ?? config('video.screenplay.dimension_bounds');
 
         $fullSource = VesselDesign::content((array) $design->output_json);
         $gaps = VesselDesign::storyReferenceGaps((array) $design->output_json);
@@ -186,10 +187,9 @@ final class StoryFoundationService
             return [null, 'foundation_not_design_first'];
         }
 
-        $design = $this->designs->stageById($projectId, (string) ($sourceDesign['stage_id'] ?? ''));
+        $design = $this->designs->verifiedSource($projectId, $sourceDesign);
 
-        if ($design === null
-            || ! hash_equals((string) ($sourceDesign['content_hash'] ?? ''), VesselDesign::contentHash((array) $design->output_json))) {
+        if ($design === null) {
             return [null, 'design_changed_since_anchor'];
         }
 
@@ -257,150 +257,6 @@ final class StoryFoundationService
             ->get()
             ->first(static fn (VideoPlanningStage $stage): bool => is_array($stage->output_json)
                 && ($stage->output_json['schema_version'] ?? null) === VesselDesign::FOUNDATION_CONTRACT);
-    }
-
-    /**
-     * @return array{0: ?VideoPlanningStage, 1: string, 2: array<string, mixed>}
-     */
-    public function recoverFailed(string $stageId, bool $write = false): array
-    {
-        $failed = VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('stage', PlanningStageName::SCREENPLAY_FOUNDATION->value)
-            ->where('status', VideoPlanningStageStatus::FAILED->value)
-            ->first();
-
-        if ($failed === null) {
-            return [null, 'stage_not_a_failed_foundation', []];
-        }
-
-        $projectId = (string) $failed->project_id;
-        $project = $this->projects->getById($projectId);
-        $story = json_decode((string) $failed->raw_response, true);
-        $meta = PlanningStageStore::metadataOf($failed->input_json);
-        $merged = $meta['profile'] ?? null;
-        $sourceDesign = $meta[VesselDesign::SOURCE_DESIGN_KEY] ?? null;
-        $sourceAnchor = $meta[VesselDesign::SOURCE_ANCHOR_KEY] ?? null;
-        $lock = $this->designs->anchorSelection($project);
-
-        if (! VesselDesign::isDesignFirst($project)) {
-            return [null, 'workflow_not_design_first', []];
-        }
-
-        if (! is_array($story) || ! is_array($merged) || ! is_array($sourceDesign) || ! is_array($sourceAnchor)) {
-            return [null, 'raw_response_unusable', []];
-        }
-
-        if ($lock === null
-            || ($lock['design_stage_id'] ?? null) !== ($sourceDesign['stage_id'] ?? null)
-            || ($lock['artifact_id'] ?? null) !== ($sourceAnchor['artifact_id'] ?? null)) {
-            return [null, 'design_changed_since_anchor', []];
-        }
-
-        [$design, , $reason] = $this->designs->selectedSource($projectId, $lock);
-
-        if ($design === null) {
-            return [null, $reason, []];
-        }
-
-        $newer = VideoPlanningStage::query()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::SCREENPLAY_FOUNDATION->value)
-            ->whereIn('status', [VideoPlanningStageStatus::SUCCEEDED->value, VideoPlanningStageStatus::RUNNING->value])
-            ->where('created_at', '>', $failed->created_at)
-            ->exists();
-
-        if ($newer) {
-            return [null, 'newer_foundation_exists', []];
-        }
-
-        $profile = $merged;
-        $profile['contract_version'] = VesselDesign::STORY_CONTRACT;
-        unset($profile['dimension_bounds']);
-        $story = self::listTreatments($story, $profile);
-
-        $arcStages = array_values(array_filter((array) ($profile['arc_stages'] ?? []), 'is_string'));
-        $kept = [];
-        $dropped = [];
-
-        foreach ((array) ($story['stage_treatments'] ?? []) as $treatment) {
-            if (is_array($treatment) && in_array($treatment['stage'] ?? null, $arcStages, true)) {
-                $kept[] = $treatment;
-            } else {
-                $dropped[] = $treatment;
-            }
-        }
-
-        $story['stage_treatments'] = $kept;
-        $inspiration = VideoPlanningStage::query()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::INSPIRATION->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->where('created_at', '<=', $failed->created_at)
-            ->orderByDesc('created_at')
-            ->first();
-        $excluded = VesselDesignService::excludedNames(is_array($inspiration?->output_json) ? $inspiration->output_json : []);
-        $details = ['dropped_stage_treatments' => $dropped, 'ending' => $story['ending'] ?? null];
-
-        [$error, $output] = self::assemble(
-            $story,
-            (string) ($failed->provider_model ?? $failed->model),
-            new ScreenplayValidator,
-            $profile,
-            $merged,
-            VesselDesign::content((array) $design->output_json),
-            $excluded,
-            $sourceDesign,
-            $sourceAnchor,
-        );
-
-        if ($error !== null) {
-            return [null, 'still_invalid', $details + ['error' => $error]];
-        }
-
-        if (! $write) {
-            return [null, 'valid_dry_run', $details];
-        }
-
-        [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage(
-            $projectId,
-            PlanningStageName::SCREENPLAY_FOUNDATION,
-            array_diff_key((array) $failed->input_json, [PlanningStageStore::METADATA_KEY => true]),
-            true,
-            $meta + [
-                'recovered_from_stage_id' => (string) $failed->id,
-                'recovered_at' => now()->toIso8601String(),
-                'normalization' => ['dropped_stage_treatments' => $dropped],
-            ],
-        );
-
-        if ($token === null) {
-            return [null, $claimReason === 'claimed_by_other' ? 'screenplay_running' : $claimReason, $details];
-        }
-
-        $recorded = $this->stageStore->finishSucceeded(
-            $claimed->id,
-            $token,
-            (string) $failed->raw_response,
-            $output,
-            [
-                'model' => $failed->model,
-                'provider_model' => $failed->provider_model,
-                'instruction_version' => $failed->instruction_version,
-                'tokens_in' => 0,
-                'tokens_out' => 0,
-                'cost_usd' => 0,
-            ],
-        );
-
-        if (! $recorded) {
-            return [null, 'screenplay_claim_lost', $details];
-        }
-
-        $claimed->refresh();
-        $this->ensureCast($projectId, $claimed);
-
-        return [$claimed, 'recovered', $details];
     }
 
     /**

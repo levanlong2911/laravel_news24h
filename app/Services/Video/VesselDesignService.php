@@ -445,125 +445,6 @@ TEXT;
         return $problems === [] ? [array_values($accepted), [], $conflicts] : [[], $problems, $conflicts];
     }
 
-    /**
-     * @return array{0: ?VideoPlanningStage, 1: string, 2: list<string>}
-     */
-    public function recoverFailed(string $stageId, bool $write = false, ?array $patch = null): array
-    {
-        $failed = VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('stage', PlanningStageName::VESSEL_DESIGN->value)
-            ->where('status', VideoPlanningStageStatus::FAILED->value)
-            ->first();
-
-        if ($failed === null) {
-            return [null, 'stage_not_a_failed_design', []];
-        }
-
-        $design = json_decode((string) $failed->raw_response, true);
-        $meta = PlanningStageStore::metadataOf($failed->input_json);
-        $profile = $meta['profile'] ?? null;
-        $snapshot = $meta[ScreenplayExpansionService::PROFILE_SNAPSHOT_KEY] ?? null;
-
-        if (! is_array($design) || $design === []) {
-            return [null, 'raw_response_unusable', []];
-        }
-
-        if ($patch !== null) {
-            [$design, $patchProblem] = self::recoveryPatch($stageId, (string) $failed->raw_response, $patch);
-
-            if ($design === null) {
-                return [null, 'recovery_patch_invalid', [$patchProblem]];
-            }
-        }
-
-        if (! is_array($profile) || ! is_array($snapshot)) {
-            return [null, 'screenplay_profile_unknown', []];
-        }
-
-        $newer = static fn (?string $except = null): bool => VideoPlanningStage::query()
-            ->where('project_id', $failed->project_id)
-            ->where('stage', PlanningStageName::VESSEL_DESIGN->value)
-            ->whereIn('status', [VideoPlanningStageStatus::SUCCEEDED->value, VideoPlanningStageStatus::RUNNING->value])
-            ->where('planning_revision', '>', $failed->planning_revision)
-            ->when($except !== null, static fn ($query) => $query->whereKeyNot($except))
-            ->exists();
-
-        if ($newer()) {
-            return [null, 'newer_design_exists', []];
-        }
-
-        $inspiration = VideoPlanningStage::query()
-            ->where('project_id', $failed->project_id)
-            ->where('stage', PlanningStageName::INSPIRATION->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->where('created_at', '<=', $failed->created_at)
-            ->orderByDesc('created_at')
-            ->first();
-        $excluded = self::excludedNames(is_array($inspiration?->output_json) ? $inspiration->output_json : []);
-
-        $violations = (new ScreenplayValidator)->structural(
-            $design, VesselDesign::validationProfile($profile, $snapshot), VesselDesign::CONTRACT, $excluded,
-        );
-
-        if ($violations !== []) {
-            return [null, 'still_invalid', $violations];
-        }
-
-        $design = VesselDesign::withSystemDecisions($design, $profile);
-        $open = array_column(VesselDesign::unresolvedDecisions($design), 'question');
-
-        if (! $write) {
-            return [null, $open === [] ? 'valid_dry_run' : 'valid_with_open_decisions', $open];
-        }
-
-        $input = array_diff_key((array) $failed->input_json, [PlanningStageStore::METADATA_KEY => true]);
-        if ($patch !== null) {
-            $input['recovery_patch_hash'] = ScreenplayExpansionService::contentHash($patch);
-        }
-        $recoveredMeta = array_replace($meta, [
-            'recovered_from_stage_id' => (string) $failed->id,
-            'recovered_at' => now()->toIso8601String(),
-            'recovery_patch' => $patch,
-        ]);
-
-        [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
-            (string) $failed->project_id, PlanningStageName::VESSEL_DESIGN, $input, true, $recoveredMeta,
-        );
-
-        if ($token === null) {
-            return [null, $reason === 'claimed_by_other' ? 'screenplay_running' : $reason, []];
-        }
-
-        if ($newer((string) $claimed->id)) {
-            $this->stageStore->releaseClaim($claimed->id, 'A newer design revision appeared while recovering');
-
-            return [null, 'newer_design_exists', []];
-        }
-
-        $recorded = $this->stageStore->finishSucceeded(
-            $claimed->id,
-            $token,
-            (string) $failed->raw_response,
-            $design + [
-                'schema_version' => VesselDesign::CONTRACT,
-                'author_model' => (string) ($failed->provider_model ?? $failed->model),
-            ],
-            [
-                'model' => $failed->model,
-                'provider_model' => $failed->provider_model,
-                'instruction_version' => $failed->instruction_version,
-                'tokens_in' => 0,
-                'tokens_out' => 0,
-                'cost_usd' => 0,
-            ],
-        );
-
-        return $recorded
-            ? [$claimed->refresh(), $open === [] ? 'recovered' : 'recovered_with_open_decisions', $open]
-            : [null, 'screenplay_claim_lost', []];
-    }
-
     /** @return list<array{name: string, central_idea: string, visible_difference: string}> */
     public function previousDesigns(VideoProject $project): array
     {
@@ -617,8 +498,7 @@ TEXT;
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->orderByDesc('planning_revision')
             ->get()
-            ->first(static fn (VideoPlanningStage $stage): bool => is_array($stage->output_json)
-                && ($stage->output_json['schema_version'] ?? null) === VesselDesign::CONTRACT
+            ->first(static fn (VideoPlanningStage $stage): bool => VesselDesign::isDesign($stage->output_json)
                 && (! self::isCorrection($stage) || (string) $stage->id === $selected));
     }
 
@@ -662,8 +542,7 @@ TEXT;
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->first();
 
-        if ($source === null || ! is_array($source->output_json)
-            || ($source->output_json['schema_version'] ?? null) !== VesselDesign::CONTRACT) {
+        if ($source === null || ! VesselDesign::isDesign($source->output_json)) {
             return $stop('stage_not_a_design');
         }
 
@@ -736,7 +615,7 @@ TEXT;
 
         $report['gate'] = VesselDesign::hasCanonical($corrected) ? VesselDesign::gate($corrected, $snapshot) : null;
         $violations = (new ScreenplayValidator)->structural(
-            $body, VesselDesign::validationProfile($profile, $snapshot), VesselDesign::CONTRACT, $excluded,
+            $body, VesselDesign::validationProfile($profile, $snapshot), $output['schema_version'], $excluded,
         );
 
         if ($violations !== []) {
@@ -751,7 +630,7 @@ TEXT;
         }
 
         $input = [
-            'contract_version' => VesselDesign::CONTRACT,
+            'contract_version' => $output['schema_version'],
             VesselDesign::CORRECTION_INPUT_KEY => $correction['version'],
             'source_stage_id' => (string) $source->id,
             'source_output_hash' => (string) $source->output_hash,
@@ -813,63 +692,6 @@ TEXT;
         $report['revision'] = (int) $claimed->planning_revision;
 
         return $report;
-    }
-
-    /**
-     * @param  array<string, mixed>  $patch
-     * @return array{0: ?array<string, mixed>, 1: ?string}
-     */
-    public static function recoveryPatch(string $stageId, string $raw, array $patch): array
-    {
-        if (($patch['source_stage_id'] ?? null) !== $stageId
-            || ! is_string($patch['source_raw_sha256'] ?? null)
-            || ! hash_equals(hash('sha256', $raw), $patch['source_raw_sha256'])) {
-            return [null, 'recovery_source_changed'];
-        }
-
-        try {
-            $design = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            return [null, $e->getMessage()];
-        }
-
-        $changes = $patch['changes'] ?? [];
-        $extra = $patch['operations'] ?? [];
-
-        if (! is_array($design) || ! is_array($changes) || ! is_array($extra) || ($changes === [] && $extra === [])) {
-            return [null, 'recovery_patch_invalid'];
-        }
-
-        if ($extra !== [] && ($problem = self::operationsProblem($extra)) !== null) {
-            return [null, $problem];
-        }
-
-        $rules = array_column($design[VesselDesign::CANONICAL_KEY]['must_preserve'] ?? [], 'id');
-        $operations = [];
-
-        foreach ($changes as $change) {
-            $index = $change['index'] ?? null;
-            $before = $change['before'] ?? null;
-            $after = $change['after'] ?? null;
-
-            if (! is_int($index) || ! is_array($before) || ! is_array($after)
-                || ! array_is_list($before) || ! array_is_list($after) || $after === []
-                || ($design[VesselDesign::CANONICAL_KEY]['must_not_introduce'][$index]['refs'] ?? null) !== $before) {
-                return [null, 'recovery_before_mismatch'];
-            }
-
-            $expected = array_values(array_filter($before, static fn (mixed $ref): bool => ! in_array($ref, $rules, true)));
-
-            if ($after !== $expected || $before === $after) {
-                return [null, 'recovery_patch_must_only_remove_rule_refs'];
-            }
-
-            $operations[] = ['path' => VesselDesign::CANONICAL_KEY.".must_not_introduce.{$index}.refs", 'before' => $before, 'after' => $after];
-        }
-
-        [$patched, , $reason] = self::applyPatch($design, [...$operations, ...$extra]);
-
-        return $patched === null ? [null, $extra === [] ? 'recovery_before_mismatch' : (string) $reason] : [$patched, null];
     }
 
     /**
@@ -973,7 +795,7 @@ TEXT;
 
         $body = array_diff_key($design, array_flip(['schema_version', 'author_model', VesselDesign::UNRESOLVED_KEY]));
         $report['violations'] = (new ScreenplayValidator)->structural(
-            $body, VesselDesign::validationProfile($profile, $snapshot), VesselDesign::CONTRACT, $source['excluded'] ?? [],
+            $body, VesselDesign::validationProfile($profile, $snapshot), (string) ($profile['contract_version'] ?? ''), $source['excluded'] ?? [],
         );
 
         if ($model === VesselDesign::GEOMETRY_LEGACY) {
@@ -1022,8 +844,7 @@ TEXT;
                 ->where('planning_revision', '>', $stage->planning_revision)
                 ->get()
                 ->contains(static fn (VideoPlanningStage $later): bool => ! self::isCorrection($later)
-                    && is_array($later->output_json)
-                    && ($later->output_json['schema_version'] ?? null) === VesselDesign::CONTRACT);
+                    && VesselDesign::isDesign($later->output_json));
 
             if ($newer) {
                 return [false, 'newer_design_exists'];
@@ -1170,7 +991,23 @@ TEXT;
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->first();
 
-        return is_array($stage?->output_json) && ($stage->output_json['schema_version'] ?? null) === VesselDesign::CONTRACT
+        return VesselDesign::isDesign($stage?->output_json)
+            ? $stage
+            : null;
+    }
+
+    /**
+     * @param  mixed  $source  the `source_design` block a downstream stage recorded
+     */
+    public function verifiedSource(string $projectId, mixed $source): ?VideoPlanningStage
+    {
+        if (! is_array($source)) {
+            return null;
+        }
+
+        $stage = $this->stageById($projectId, is_string($source['stage_id'] ?? null) ? $source['stage_id'] : null);
+
+        return $stage !== null && hash_equals((string) ($source['content_hash'] ?? ''), VesselDesign::contentHash((array) $stage->output_json))
             ? $stage
             : null;
     }

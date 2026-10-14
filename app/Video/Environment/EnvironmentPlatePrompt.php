@@ -45,6 +45,12 @@ final class EnvironmentPlatePrompt
 
     public const ROOM_FITTED = 'fitted';
 
+    public const ROOM_IN_FIT_OUT = 'in_fit_out';
+
+    private const ROOM_DURING_FIT_OUT = 'The room is being fitted out. Its structure, openings and fixed structural features stand. '
+        .'Work recorded so far: %s Show in this room only the finishes and fittings that this work names for it; '
+        .'no other finish, fitted furniture or fitting of the finished room is in place yet.';
+
     private const ROOM_FRAME = 'A room plate. One room aboard %s is the subject of this image: its walls, floor, ceiling, '
         .'openings and fixed features. Eye-level camera, wide framing, natural perspective, the full depth of the room visible, '
         .'the full width between the port and starboard openings visible, the room reads broad, not as a corridor.';
@@ -56,6 +62,9 @@ final class EnvironmentPlatePrompt
 
     private const ROOM_LOOSE = 'Only the fixed features named above stand in the room: no loose props, no luggage, no tools '
         .'and no other object.';
+
+    private const ROOM_FIT_OUT_LOOSE = 'Only the fixed features named above and the work recorded above stand in the room: '
+        .'no loose props, no luggage, no tools and no other object.';
 
     private const ROOM_FITTED_LOOSE = 'Only the fixed features and fitted furniture named above stand in the room: no loose props, '
         .'no luggage, no tools and no other object.';
@@ -95,9 +104,14 @@ final class EnvironmentPlatePrompt
      *               connections: list<array{to: string, via: string, into_subject: bool}>,
      *               fixed_features: list<string>, light_sources: list<string>}  $place
      * @param  array{materials_and_light?: string, fixed_furniture?: string, layout?: string}|null  $fitted  layout is present only under the furnished-rooms policy
+     * @param  string|null  $installed  the recorded progress, required in the in-fit-out phase
      */
-    public static function forRoom(array $place, string $subjectName, string $phase, ?array $fitted = null): string
+    public static function forRoom(array $place, string $subjectName, string $phase, ?array $fitted = null, ?string $installed = null): string
     {
+        if ($phase === self::ROOM_IN_FIT_OUT && trim((string) $installed) === '') {
+            throw new \InvalidArgumentException('EnvironmentPlatePrompt: a room in fit-out needs the recorded progress');
+        }
+
         if ($place['spatial_relation'] !== 'subject_part') {
             throw new \InvalidArgumentException('EnvironmentPlatePrompt: only a room of the subject gets a room plate');
         }
@@ -121,10 +135,15 @@ final class EnvironmentPlatePrompt
             sprintf(self::ROOM_FRAME, $subject),
             self::placeBlock($place, true),
             $design === [] ? null : implode("\n", $design),
-            $phase === self::ROOM_UNFITTED ? self::ROOM_BEFORE_FIT_OUT : null,
+            match ($phase) {
+                self::ROOM_UNFITTED => self::ROOM_BEFORE_FIT_OUT,
+                self::ROOM_IN_FIT_OUT => sprintf(self::ROOM_DURING_FIT_OUT, rtrim(trim((string) $installed), '.').'.'),
+                default => null,
+            },
             $furnished ? self::ROOM_FURNISHING_PRIORITY : null,
             implode(' ', [
                 match (true) {
+                    $phase === self::ROOM_IN_FIT_OUT => self::ROOM_FIT_OUT_LOOSE,
                     $furnished => self::ROOM_FURNISHED_LOOSE,
                     $design === [] => self::ROOM_LOOSE,
                     default => self::ROOM_FITTED_LOOSE,

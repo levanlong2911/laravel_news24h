@@ -13,11 +13,24 @@ final class VesselDesign
 
     public const WORKFLOW = 'design_first_v1';
 
-    public const CONTRACT = 'vessel_design_v1';
+    public const CONTRACT = 'vessel_design_v2';
+
+    public const LEGACY_CONTRACT = 'vessel_design_v1';
+
+    /** @var list<string> */
+    public const CONTRACTS = [self::CONTRACT, self::LEGACY_CONTRACT];
+
+    public const DESIGN_CONTRACT_KEY = 'design_contract';
 
     public const STORY_CONTRACT = 'screenplay_foundation_story_v1';
 
     public const FOUNDATION_CONTRACT = 'screenplay_foundation_v4';
+
+    public const LOCATIONS_CONTRACT = 'screenplay_locations_v4';
+
+    public const BUILT_LOCATIONS_CONTRACT = 'screenplay_locations_v3';
+
+    public const SCENES_CONTRACT = 'screenplay_scene_expansion_v5';
 
     public const SOURCE_KIND = 'vessel_design';
 
@@ -53,6 +66,8 @@ final class VesselDesign
 
     /** @var list<string> */
     public const SERVES_TARGET_LISTS = ['surfaces', 'primary_voids', 'spatial_topology'];
+
+    public const CONNECTS_KEY = 'connects';
 
     public const SERVES_WRONG_KIND = 'opening_serves_wrong_kind';
 
@@ -101,8 +116,10 @@ final class VesselDesign
 
     public const OPENING_HOST_FORM = 'enclosure';
 
+    public const EQUIPMENT_FORM = 'equipment';
+
     /** @var list<string> */
-    public const SECONDARY_FORMS = [self::OPENING_HOST_FORM, 'open_structure', 'surface_detail'];
+    public const SECONDARY_FORMS = [self::OPENING_HOST_FORM, 'open_structure', 'surface_detail', self::EQUIPMENT_FORM];
 
     public const EQUIPMENT_KIND_KEY = 'equipment_kind';
 
@@ -136,7 +153,7 @@ final class VesselDesign
     /** @var list<string> */
     private const EQUIPMENT_SKIPPED_KEYS = [
         'id', 'status', 'kind', 'face', 'side', self::EXTERIOR_ROLE_KEY, 'relation', 'orientation', 'water_level', 'direction',
-        'priority', 'refs', 'between', 'subject', 'object', 'feature_id', 'component_id', 'host', 'serves', 'surface',
+        'priority', 'refs', 'between', 'subject', 'object', 'feature_id', 'component_id', 'host', 'serves', self::CONNECTS_KEY, 'surface',
         'relative_to', 'access_routes', 'place', 'body', 'level', self::GEOMETRY_MODEL_KEY, self::SECONDARY_FORM_KEY, self::EQUIPMENT_KIND_KEY,
         self::PROFILE_PATHS_KEY,
     ];
@@ -300,7 +317,10 @@ final class VesselDesign
     private const DESIGN_BRIEF_FIELDS = ['spaces', 'highlights', 'limits'];
 
     /** @var list<string> */
-    private const THESIS_FIELDS = ['central_idea', 'visible_difference', 'spatial_consequence', 'coherence', 'realization'];
+    private const THESIS_FIELDS = ['central_idea', 'visible_difference', 'spatial_consequence', 'coherence'];
+
+    /** @var list<string> */
+    private const LEGACY_THESIS_FIELDS = [...self::THESIS_FIELDS, 'realization'];
 
     /** @var array<string, list<string>> */
     private const SECTION_FIELDS = [
@@ -737,7 +757,15 @@ final class VesselDesign
         $violations = [];
 
         foreach ($rows as $index => $row) {
+            $form = $row[self::SECONDARY_FORM_KEY] ?? null;
+            $id = self::label($row['id'] ?? null);
+
             if (! is_string($row[self::EQUIPMENT_KIND_KEY] ?? null)) {
+                if ($form === self::EQUIPMENT_FORM) {
+                    $violations[] = "{$at}[{$index}].".self::SECONDARY_FORM_KEY.": {$id} is \"".self::EQUIPMENT_FORM.'" but has no '.self::EQUIPMENT_KIND_KEY
+                        .'; a structural element is '.implode(', ', array_diff(self::SECONDARY_FORMS, [self::EQUIPMENT_FORM]));
+                }
+
                 continue;
             }
 
@@ -745,8 +773,9 @@ final class VesselDesign
                 $equipment[$row['id']] = true;
             }
 
-            if (($row[self::SECONDARY_FORM_KEY] ?? null) === self::OPENING_HOST_FORM) {
-                $violations[] = "{$at}[{$index}].".self::SECONDARY_FORM_KEY.': a piece of equipment is never an enclosure';
+            if ($form !== self::EQUIPMENT_FORM) {
+                $violations[] = "{$at}[{$index}].".self::SECONDARY_FORM_KEY.": {$id} is ".(is_string($form) ? self::label($form) : 'not declared')
+                    .', but a piece of equipment ('.$row[self::EQUIPMENT_KIND_KEY].') is "'.self::EQUIPMENT_FORM.'"';
             }
 
             if ($row[self::EQUIPMENT_KIND_KEY] === self::RADAR_SCANNER) {
@@ -1063,6 +1092,26 @@ final class VesselDesign
                 ...$check("{$where}.host", $host, ['primary_masses', 'permanent_secondary_geometry'], $owner, false, true),
                 ...$check("{$where}.serves", $opening['serves'] ?? null, self::SERVES_TARGET_LISTS, $owner, true),
             ];
+            $connects = $opening[self::CONNECTS_KEY] ?? null;
+
+            if (is_array($connects)) {
+                $ends = array_values(array_filter($connects, static fn (mixed $end): bool => $end !== null));
+
+                foreach ($connects as $position => $end) {
+                    $violations = [...$violations, ...$check("{$where}.".self::CONNECTS_KEY."[{$position}]", $end, self::SERVES_TARGET_LISTS, $owner, true)];
+                }
+
+                if (! array_is_list($connects) || count($connects) !== 2 || $ends === [] || count(array_unique($ends)) !== count($ends)) {
+                    $violations[] = "{$where}.".self::CONNECTS_KEY.': names the two different sides of the opening, null for the side outside the vessel';
+                } elseif (($opening['kind'] ?? null) === 'glazing') {
+                    $violations[] = "{$where}.".self::CONNECTS_KEY.': glazing is not passed through, so it is null';
+                } elseif (is_string($opening['serves'] ?? null) && ! in_array($opening['serves'], $connects, true)) {
+                    $violations[] = "{$where}.".self::CONNECTS_KEY.': one side is '.self::label($opening['serves']).', the place the opening serves';
+                }
+            } elseif ($connects !== null) {
+                $violations[] = "{$where}.".self::CONNECTS_KEY.': must be a list of two sides or null';
+            }
+
             $secondary = is_string($host) ? ($rows['permanent_secondary_geometry'][$host] ?? null) : null;
 
             if ($secondary !== null && ($secondary[self::SECONDARY_FORM_KEY] ?? null) !== self::OPENING_HOST_FORM) {
@@ -1574,6 +1623,34 @@ final class VesselDesign
     }
 
     /**
+     * @param  array<string, mixed>  $design
+     * @return list<string>
+     */
+    public static function openingSideViolations(array $design): array
+    {
+        $violations = [];
+
+        foreach (self::rows($design[self::CANONICAL_KEY]['openings'] ?? null) as $index => $opening) {
+            if (! array_key_exists(self::CONNECTS_KEY, $opening)) {
+                $violations[] = self::CANONICAL_KEY.".openings[{$index}].".self::CONNECTS_KEY.': is required, null when the design does not record both sides';
+            }
+        }
+
+        return $violations;
+    }
+
+    public static function isDesign(mixed $output): bool
+    {
+        return is_array($output) && in_array($output['schema_version'] ?? null, self::CONTRACTS, true);
+    }
+
+    /** @return list<string> */
+    public static function thesisFields(?string $contract): array
+    {
+        return $contract === self::CONTRACT ? self::THESIS_FIELDS : self::LEGACY_THESIS_FIELDS;
+    }
+
+    /**
      * @param  array<string, mixed>  $profile
      * @return array<string, mixed>
      */
@@ -1581,7 +1658,7 @@ final class VesselDesign
     {
         $shape = array_intersect_key($profile, array_flip(self::DESIGN_PROFILE_KEYS));
         $shape['contract_version'] = self::CONTRACT;
-        $shape['dimension_bounds'] = config('video.screenplay.foundation.dimension_bounds');
+        $shape['dimension_bounds'] = config('video.screenplay.dimension_bounds');
 
         return $shape;
     }
@@ -1671,10 +1748,11 @@ final class VesselDesign
     public static function gate(array $design, array $profile): array
     {
         $canonical = is_array($design[self::CANONICAL_KEY] ?? null) ? $design[self::CANONICAL_KEY] : [];
+        $contract = $design['schema_version'] ?? $profile['contract_version'] ?? null;
         $results = [];
 
         foreach (self::gateChecks($profile) as $check) {
-            $results[$check] = self::checkViolations($check, $design, $canonical);
+            $results[$check] = self::checkViolations($check, $design, $canonical, is_string($contract) ? $contract : null);
         }
 
         return $results;
@@ -2719,10 +2797,10 @@ final class VesselDesign
      * @param  array<string, mixed>  $canonical
      * @return list<string>
      */
-    private static function checkViolations(string $check, array $design, array $canonical): array
+    private static function checkViolations(string $check, array $design, array $canonical, ?string $contract): array
     {
         return match ($check) {
-            'design_thesis_defined' => self::filledViolations('design_thesis', $design['design_thesis'] ?? null, self::THESIS_FIELDS),
+            'design_thesis_defined' => self::filledViolations('design_thesis', $design['design_thesis'] ?? null, self::thesisFields($contract)),
             'novelty_thesis_defined' => self::sectionViolations($canonical, 'design_identity'),
             'principal_dimensions_defined' => self::dimensionViolations($design),
             'length_beam_ratio_defined' => [
