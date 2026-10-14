@@ -119,8 +119,8 @@
                             </div>
                         @endif
                         <div class="va-lbl">PROMPT GỬI ĐI</div>
-                        <textarea class="va-ta" readonly>{{ $row['prompt'] ?? '' }}</textarea>
-                        <div class="va-count"><span>{{ mb_strlen($row['prompt'] ?? '') }}</span> ký tự</div>
+                        <textarea class="va-ta" readonly id="anchorPrompt{{ $n }}">{{ $row['prompt'] ?? '' }}</textarea>
+                        <div class="va-count"><span id="anchorPromptCount{{ $n }}">{{ mb_strlen($row['prompt'] ?? '') }}</span> ký tự</div>
                     </div>
 
                     <div class="va-row-set">
@@ -180,6 +180,8 @@
 
                         <div class="va-foot">
                             <button type="button" class="vp-btn pri" data-anchor-form="anchorImageForm{{ $n }}"
+                                    data-prompt-box="anchorPrompt{{ $n }}" data-prompt-count="anchorPromptCount{{ $n }}"
+                                    data-sized-prompts="{{ json_encode((object) ($row['sized_prompts'] ?? []), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}"
                                     data-toggle="modal" data-target="#confirmAnchorImage{{ $n }}"
                                     @if(($row['blockers'] ?? []) !== []) disabled data-blocked="1" @endif
                                     data-busy="Đang render…">Render Image</button>

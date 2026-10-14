@@ -175,6 +175,27 @@ final class GeometryPromptAuthor
     }
 
     /**
+     * @param  array<string, mixed>  $stored
+     * @param  array<string, mixed>  $brief
+     */
+    public function composeForSize(array $stored, array $brief, ImageSize $size): ?string
+    {
+        $geometry = $stored['geometry_prompt'] ?? null;
+
+        if (($stored['source_version'] ?? null) !== VesselDesign::ANCHOR_SOURCE_VERSION
+            || ! is_string($geometry) || trim($geometry) === ''
+            || ! isset($brief[VesselDesign::EXTERIOR_DESIGN_KEY])) {
+            return null;
+        }
+
+        try {
+            return trim($geometry)."\n\n".$this->presentation($brief, self::downstreamFor($size));
+        } catch (TextCompletionException) {
+            return null;
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $brief
      * @param  array<string, mixed>|null  $downstream
      */

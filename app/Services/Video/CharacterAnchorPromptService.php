@@ -478,14 +478,10 @@ final class CharacterAnchorPromptService
 
         $promptStageId = $stamp['anchor_prompt_stage_id'] ?? null;
         $prompt = $stamp['prompt'] ?? null;
-        $promptSize = $stamp['prompt_size'] ?? null;
+        $promptSize = ImageSize::tryFrom((string) ($stamp['prompt_size'] ?? ''));
 
-        if (! is_string($promptStageId) || $promptStageId === '' || ! is_string($prompt) || ! is_string($promptSize)) {
+        if (! is_string($promptStageId) || $promptStageId === '' || ! is_string($prompt) || $promptSize === null) {
             return [null, 'anchor_prompt_unstamped'];
-        }
-
-        if ($promptSize !== $size->value) {
-            return [null, 'anchor_prompt_size_mismatch'];
         }
 
         $promptHash = hash('sha256', $prompt);
@@ -503,15 +499,10 @@ final class CharacterAnchorPromptService
             self::designOrigin($design),
             $this->designs->anchorSource($design),
             $this->designAuthor,
-            GeometryPromptAuthor::downstreamFor($size),
+            GeometryPromptAuthor::downstreamFor($promptSize),
         );
 
-        $promptStage = VideoPlanningStage::query()
-            ->whereKey($promptStageId)
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::ANCHOR_PROMPT->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
+        $promptStage = $this->succeededPromptStage($projectId, $promptStageId);
         $stored = is_array($promptStage?->input_json) ? $promptStage->input_json : [];
 
         if ($promptStage === null
@@ -519,12 +510,88 @@ final class CharacterAnchorPromptService
             || ($stored['source_hash'] ?? null) !== $input['source_hash']
             || ($stored['skill_hash'] ?? null) !== $input['skill_hash']
             || ($stored['design_content_hash'] ?? null) !== $input['design_content_hash']
-            || ($stored['downstream'] ?? null) != $input['downstream']
-            || ! hash_equals($promptHash, hash('sha256', (string) ($promptStage->output_json['prompt'] ?? '')))) {
+            || ($stored['downstream'] ?? null) != $input['downstream']) {
+            return [null, 'anchor_prompt_source_changed'];
+        }
+
+        $expected = $this->promptsBySize($design, $promptStage, $promptSize)[$size->value] ?? null;
+
+        if ($expected === null) {
+            return [null, 'anchor_prompt_size_unsupported'];
+        }
+
+        if (! hash_equals($promptHash, hash('sha256', $expected))) {
             return [null, 'anchor_prompt_source_changed'];
         }
 
         return [$design, 'ok'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $preview
+     * @return array<string, string>
+     */
+    public function previewPrompts(string $projectId, array $preview): array
+    {
+        $written = ImageSize::tryFrom((string) ($preview['size'] ?? ''));
+        $promptStageId = $preview['anchor_prompt_stage_id'] ?? null;
+        $designStageId = $preview['design_stage_id'] ?? null;
+
+        if ($written === null || ! is_string($preview['prompt'] ?? null) || ! is_string($promptStageId) || ! is_string($designStageId)) {
+            return [];
+        }
+
+        $promptStage = $this->succeededPromptStage($projectId, $promptStageId);
+        $design = VideoPlanningStage::query()
+            ->whereKey($designStageId)
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::VESSEL_DESIGN->value)
+            ->first();
+
+        if ($promptStage === null || $design === null
+            || ! hash_equals(hash('sha256', (string) ($promptStage->output_json['prompt'] ?? '')), hash('sha256', $preview['prompt']))) {
+            return [];
+        }
+
+        return $this->promptsBySize($design, $promptStage, $written);
+    }
+
+    /** @return array<string, string> */
+    private function promptsBySize(VideoPlanningStage $design, VideoPlanningStage $promptStage, ImageSize $written): array
+    {
+        $stored = is_array($promptStage->output_json) ? $promptStage->output_json : [];
+        $source = null;
+        $composed = [];
+        $prompts = [];
+
+        foreach (ImageSize::cases() as $size) {
+            $downstream = GeometryPromptAuthor::downstreamFor($size);
+
+            if ($downstream === GeometryPromptAuthor::downstreamFor($written)) {
+                $prompt = (string) ($stored['prompt'] ?? '');
+            } else {
+                $key = $downstream['aspect_ratio'].' '.$downstream['orientation'];
+                $source ??= $this->designs->anchorSource($design);
+                $composed[$key] ??= $this->designAuthor->composeForSize($stored, $source, $size) ?? '';
+                $prompt = $composed[$key];
+            }
+
+            if (trim($prompt) !== '') {
+                $prompts[$size->value] = $prompt;
+            }
+        }
+
+        return $prompts;
+    }
+
+    private function succeededPromptStage(string $projectId, string $promptStageId): ?VideoPlanningStage
+    {
+        return VideoPlanningStage::query()
+            ->whereKey($promptStageId)
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::ANCHOR_PROMPT->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->first();
     }
 
     /**

@@ -136,6 +136,10 @@ class VideoProjectsController extends Controller
                     && (! $designed || VesselDesign::stampedFor($cell, $character))),
                 'prompt' => $preview['prompt'] ?? null,
                 'prompt_hash' => $preview['prompt_sha256'] ?? null,
+                'sized_prompts' => $designed && $preview !== null
+                    ? array_map(static fn (string $prompt): array => ['prompt' => $prompt, 'prompt_sha256' => hash('sha256', $prompt)],
+                        $this->characterAnchorPromptService->previewPrompts($project->id, $preview))
+                    : [],
                 'prompt_version' => $preview['lineage']['prompt_version'] ?? null,
                 'size' => ImageSize::tryFrom((string) ($submitted ? old('size') : ($preview['size'] ?? ''))),
                 'model' => ImageModel::tryFrom((string) ($submitted ? old('model') : ($preview['lineage']['model'] ?? ''))),
@@ -303,7 +307,7 @@ class VideoProjectsController extends Controller
 
         [$foundation, $reason] = VesselDesign::isDesignFirst($project)
             ? app(StoryFoundationService::class)->author($id, $force)
-            : $this->videoProjectService->authorScreenplayFoundation($id, $force);
+            : [null, 'workflow_not_design_first'];
 
         if ($foundation === null) {
             return back()->with('error', $this->anchorMessage($reason));
@@ -353,7 +357,7 @@ class VideoProjectsController extends Controller
         $force = $request->boolean('force');
 
         [$cast, $reason] = $part === 'characters'
-            ? $this->screenplayExpansion->authorCharacters($id, $foundationStageId, $force)
+            ? [null, 'screenplay_characters_from_design']
             : $this->screenplayExpansion->authorLocations(
                 $id, $foundationStageId, $request->string('characters_stage_id')->toString(), $force,
             );
@@ -548,7 +552,6 @@ class VideoProjectsController extends Controller
                 'code' => $image->image_code,
                 'reason' => (string) $image->render_error,
             ]),
-            'already_queued' => __('messages.anchor_render_already_queued', ['code' => $image->image_code]),
             'not_enqueueable' => __('messages.anchor_render_not_enqueueable', ['code' => $image->image_code]),
             'already_exists' => __('messages.reference_already_exists', ['code' => $image->image_code]),
             default => $reason,
@@ -560,8 +563,6 @@ class VideoProjectsController extends Controller
         return match ($reason) {
             'project_not_found' => __('messages.project_not_found'),
             'image_not_found' => __('messages.anchor_image_not_found'),
-            'no_category' => __('messages.anchor_no_category'),
-            'no_concept' => __('messages.anchor_no_concept'),
             'choose_prompt_settings' => __('messages.anchor_choose_prompt_settings'),
             'anchor_prompt_missing' => __('messages.anchor_prompt_missing'),
             'character_prompt_no_screenplay' => 'Chưa có bản phân cảnh được duyệt và chọn cho production — duyệt, chọn bản phân cảnh rồi mới viết prompt cho từng nhân vật.',
@@ -572,7 +573,6 @@ class VideoProjectsController extends Controller
             'character_prompt_running' => 'Đang có một lượt viết prompt chạy cho dự án này.',
             'anchor_prompt_stale' => __('messages.anchor_prompt_stale'),
             'no_inspiration_brief' => __('messages.anchor_no_inspiration_brief'),
-            'anchor_setting_required' => __('messages.anchor_setting_required', ['field' => 'Model']),
             'artifact_not_found' => __('messages.anchor_artifact_not_found'),
             'not_approvable' => __('messages.anchor_not_approvable'),
             'no_approved_anchor' => __('messages.no_approved_anchor'),
@@ -604,10 +604,6 @@ class VideoProjectsController extends Controller
             'screenplay_not_approved' => 'Bản phân cảnh chưa được duyệt hoặc quyết định duyệt không còn khớp nội dung.',
             'screenplay_not_selected' => __('messages.screenplay_not_selected'),
             'production_selection_conflict' => 'Bản production đã được thay đổi ở thao tác khác. Tải lại trang trước khi chọn.',
-            'subject_mapping_invalid' => 'Nhân vật hoặc khóa chủ thể không hợp lệ.',
-            'subject_mapping_foreign' => 'Chủ thể được chọn không thuộc dự án này.',
-            'subject_mapping_operation_conflict' => 'Mã thao tác xác nhận chủ thể đã được dùng cho một lựa chọn khác.',
-            'screenplay_profile_contract_mismatch' => __('messages.screenplay_profile_contract_mismatch'),
             'screenplay_profile_invalid' => __('messages.screenplay_profile_invalid'),
             'screenplay_profile_changed' => 'Nội dung kịch bản đang chọn được viết theo profile kịch bản khác với profile hiện hành — tạo lại nội dung kịch bản. Không gọi model.',
             'screenplay_profile_unknown' => 'Không xác định được profile kịch bản mà bản nội dung này đã dùng — tạo lại nội dung kịch bản. Không gọi model.',
@@ -632,11 +628,12 @@ class VideoProjectsController extends Controller
             'screenplay_film_brief_invalid' => 'Khối film_brief trong profile kịch bản không hợp lệ hoặc không khớp coverage của profile. Không gọi model — xem log để biết mục nào.',
             'screenplay_locations_unprofiled' =>'Danh sách địa điểm này tạo theo mẫu cũ (chỉ có tên và mô tả), thiếu bố cục, lối nối, thiết bị cố định và nguồn sáng — tạo lại địa điểm.',
             'workflow_not_design_first' => 'Dự án này chạy luồng cũ (kịch bản trước, thiết kế sau). Luồng thiết kế trước chỉ áp dụng cho dự án mới.',
+            'screenplay_characters_from_design' => 'Nhân vật được đóng gói tự động từ bản thiết kế tàu khi tạo nội dung kịch bản, không tạo bằng model.',
             'character_prompt_no_design' => 'Chưa có bản thiết kế tàu — bấm Thiết kế tàu trước khi viết prompt anchor.',
             'anchor_prompt_other_design' => 'Prompt hoặc ảnh này thuộc một bản thiết kế khác bản thiết kế hiện hành — viết lại prompt anchor từ bản thiết kế mới.',
             'anchor_design_unresolved' => 'Bản thiết kế hiện hành còn quyết định thiết kế chưa chốt — chốt các quyết định đó trước khi viết prompt hoặc render anchor. Không gọi model.',
             'anchor_prompt_unstamped' => 'Prompt anchor này viết trước khi có dấu nguồn (bước viết, nguồn, skill, khung hình) — viết lại prompt anchor. Không render.',
-            'anchor_prompt_size_mismatch' => 'Size đang chọn khác khung hình prompt đã viết — chọn đúng Size của prompt hoặc viết lại prompt. Không render.',
+            'anchor_prompt_size_unsupported' => 'Prompt này viết trước khi tách phần hình học khỏi khung hình, nên không ghép lại được cho tỷ lệ của Size đang chọn — chọn Size cùng tỷ lệ với prompt hoặc viết lại prompt anchor. Không render.',
             'anchor_design_incomplete_text' => 'Bản thiết kế hiện hành có đoạn văn bị cắt giữa câu (xem log để biết mục nào) — hiệu chỉnh hoặc tạo lại thiết kế trước khi viết prompt hay render anchor. Không gọi model.',
             'anchor_design_placement_ambiguous' => 'Bản thiết kế có hai sàn cùng tầng, cùng loại mà lời văn không phân biệt được (mốc là khối/khoảng trống không có tên) — thiếu dữ kiện định vị, cần bổ sung trước khi viết prompt hay render anchor (xem log). Không gọi model.',
             'anchor_source_conflict' => 'AI viết prompt đã báo nguồn thiết kế tự mâu thuẫn ở phần P0, vùng đặc trưng hoặc quan hệ hình học bắt buộc (xem log) — sửa nguồn thiết kế rồi viết lại prompt. Không render.',

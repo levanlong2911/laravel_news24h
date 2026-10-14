@@ -6,7 +6,9 @@
 @endsection
 
 @section('content')
-<div class="container-fluid vp">
+<div class="container-fluid vp" id="anchorPage">
+
+    <div id="anchorFlash" hidden data-ajax-flash data-success="{{ session('success') }}" data-error="{{ session('error') }}"></div>
 
     @if($errors->any())
         <div class="alert alert-danger">
@@ -135,64 +137,103 @@
     var prices = @json(collect(\App\Enums\ImageQuality::cases())
         ->mapWithKeys(fn ($q) => [$q->value => $q->estimatedCostUsd()]));
 
-    document.querySelectorAll('[data-anchor-form]').forEach(function (button) {
-        var form = document.getElementById(button.getAttribute('data-anchor-form'));
-        var box = document.querySelector(button.getAttribute('data-target') + ' .modal-body p:last-child');
-        if (!form || !box) { return; }
+    function init(root) {
+        root.querySelectorAll('[data-anchor-form]').forEach(function (button) {
+            var form = document.getElementById(button.getAttribute('data-anchor-form'));
+            var box = document.querySelector(button.getAttribute('data-target') + ' .modal-body p:last-child');
+            if (!form || !box) { return; }
 
-        function sync() {
-            var model = form.elements.model.value;
-            Array.from(form.elements.quality.options).forEach(function (option) {
-                var models = (option.getAttribute('data-models') || '').split(' ');
-                option.disabled = option.value !== '' && model !== '' && models.indexOf(model) === -1;
-            });
-            if (form.elements.quality.selectedOptions[0] && form.elements.quality.selectedOptions[0].disabled) {
-                form.elements.quality.value = '';
+            var promptBox = document.getElementById(button.getAttribute('data-prompt-box'));
+            var promptCount = document.getElementById(button.getAttribute('data-prompt-count'));
+            var sized = {};
+            try { sized = JSON.parse(button.getAttribute('data-sized-prompts') || '{}') || {}; } catch (e) { sized = {}; }
+            var sizedEnabled = Object.keys(sized).length > 0;
+            var written = {
+                prompt: promptBox ? promptBox.value : '',
+                hash: form.elements.prompt_sha256 ? form.elements.prompt_sha256.value : ''
+            };
+            var sizeUnsupported = false;
+
+            function syncPrompt() {
+                sizeUnsupported = false;
+                if (!sizedEnabled || !promptBox || !form.elements.prompt_sha256) { return; }
+                var size = form.elements.size.value;
+                var entry = size === '' ? null : sized[size];
+                if (size !== '' && !entry) {
+                    sizeUnsupported = true;
+                    form.elements.prompt_sha256.value = '';
+                    return;
+                }
+                var prompt = entry ? entry.prompt : written.prompt;
+                promptBox.value = prompt;
+                form.elements.prompt_sha256.value = entry ? entry.prompt_sha256 : written.hash;
+                if (promptCount) { promptCount.textContent = Array.from(prompt).length; }
             }
 
-            var missing = ['size', 'model', 'quality', 'variations'].filter(function (name) {
-                var el = form.elements[name];
-                return !el || el.value === '';
-            });
-            var promptHash = form.elements.prompt_sha256;
-            var hasPrompt = promptHash && promptHash.value.trim() !== '';
+            function sync() {
+                syncPrompt();
+                var model = form.elements.model.value;
+                Array.from(form.elements.quality.options).forEach(function (option) {
+                    var models = (option.getAttribute('data-models') || '').split(' ');
+                    option.disabled = option.value !== '' && model !== '' && models.indexOf(model) === -1;
+                });
+                if (form.elements.quality.selectedOptions[0] && form.elements.quality.selectedOptions[0].disabled) {
+                    form.elements.quality.value = '';
+                }
 
-            var blocked = button.hasAttribute('data-blocked');
-            button.disabled = blocked || !(hasPrompt && missing.length === 0);
-            button.title = blocked
-                ? 'Thiết kế chưa sẵn sàng'
-                : (!hasPrompt ? 'Chưa có anchor prompt' : (missing.length ? 'Chưa chọn: ' + missing.join(', ') : ''));
+                var missing = ['size', 'model', 'quality', 'variations'].filter(function (name) {
+                    var el = form.elements[name];
+                    return !el || el.value === '';
+                });
+                var promptHash = form.elements.prompt_sha256;
+                var hasPrompt = promptHash && promptHash.value.trim() !== '';
 
-            var unit = prices[form.elements.quality.value];
-            var count = parseInt(form.elements.variations.value, 10) || 1;
-            box.textContent = count + ' ảnh · ' + form.elements.quality.value
-                + ' · ' + form.elements.size.value
-                + (unit === null
-                    ? ' — chưa có ước tính giá cho mức này.'
-                    : ' — ước lượng $' + (unit || 0).toFixed(3) + ' × ' + count
-                        + ' = $' + ((unit || 0) * count).toFixed(3) + '.')
-                + ' Trang sẽ đứng đợi tới khi có ảnh.';
-        }
+                var blocked = button.hasAttribute('data-blocked');
+                button.disabled = blocked || !(hasPrompt && missing.length === 0);
+                button.title = blocked
+                    ? 'Thiết kế chưa sẵn sàng'
+                    : (sizeUnsupported
+                        ? 'Prompt này không ghép lại được cho tỷ lệ của Size đang chọn — chọn Size cùng tỷ lệ hoặc viết lại prompt'
+                        : (!hasPrompt ? 'Chưa có anchor prompt' : (missing.length ? 'Chưa chọn: ' + missing.join(', ') : '')));
 
-        Array.from(form.elements)
-            .filter(function (el) { return el.tagName === 'SELECT'; })
-            .forEach(function (el) { el.addEventListener('change', sync); });
-        sync();
-    });
+                var unit = prices[form.elements.quality.value];
+                var count = parseInt(form.elements.variations.value, 10) || 1;
+                box.textContent = count + ' ảnh · ' + form.elements.quality.value
+                    + ' · ' + form.elements.size.value
+                    + (unit === null
+                        ? ' — chưa có ước tính giá cho mức này.'
+                        : ' — ước lượng $' + (unit || 0).toFixed(3) + ' × ' + count
+                            + ' = $' + ((unit || 0) * count).toFixed(3) + '.')
+                    + ' Trang sẽ đứng đợi tới khi có ảnh.';
+            }
 
-    document.querySelectorAll('[data-approve-form]').forEach(function (button) {
-        var formId = button.getAttribute('data-approve-form');
-        var radios = document.querySelectorAll('input[type="radio"][form="' + formId + '"]');
+            Array.from(form.elements)
+                .filter(function (el) { return el.tagName === 'SELECT'; })
+                .forEach(function (el) { el.addEventListener('change', sync); });
+            sync();
+        });
 
-        function sync() {
-            var chosen = Array.from(radios).some(function (radio) { return radio.checked && !radio.disabled; });
-            button.disabled = !chosen;
-            button.title = chosen ? '' : 'Chọn một ảnh candidate trước';
-        }
+        root.querySelectorAll('[data-approve-form]').forEach(function (button) {
+            var formId = button.getAttribute('data-approve-form');
+            var radios = root.querySelectorAll('input[type="radio"][form="' + formId + '"]');
 
-        radios.forEach(function (radio) { radio.addEventListener('change', sync); });
-        sync();
-    });
+            function sync() {
+                var chosen = Array.from(radios).some(function (radio) { return radio.checked && !radio.disabled; });
+                button.disabled = !chosen;
+                button.title = chosen ? '' : 'Chọn một ảnh candidate trước';
+            }
+
+            radios.forEach(function (radio) { radio.addEventListener('change', sync); });
+            sync();
+        });
+    }
+
+    var page = document.getElementById('anchorPage');
+
+    if (page) {
+        init(page);
+        vpAjaxPage('anchorPage', init);
+    }
 })();
 </script>
 @endsection

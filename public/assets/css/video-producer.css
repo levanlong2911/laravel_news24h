@@ -1741,3 +1741,9 @@ a.vp-btn[disabled] {
     font-size: 11px;
     background: var(--vp-line);
 }
+
+.vp-ajax-status {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--vp-amber-fg);
+}
