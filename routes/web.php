@@ -21,7 +21,6 @@ use App\Http\Controllers\RawArticleController;
 use App\Http\Controllers\TagController;
 use App\Http\Controllers\VideoArtifactController;
 use App\Http\Controllers\VideoProjectsController;
-use App\Http\Controllers\VideoSessionController;
 use Illuminate\Support\Facades\Route;
 
 // Route::get('/', function () {
@@ -190,12 +189,6 @@ Route::group(
         });
 
         Route::get('/video-artifacts/{artifact}', [VideoArtifactController::class, 'show'])->name('video-artifacts.show');
-
-        // video sessions — approval gate: duyệt prompt trên màn hình rồi mới render (ADR v1.1)
-        Route::group(['prefix' => 'video-session'], function () {
-            Route::get('/', [VideoSessionController::class, 'index'])->name('video-session.index');
-            // 🔍 Thử render — không gọi vendor, không đổi dữ liệu
-        });
 
         // article
         Route::group(['prefix' => 'article'], function () {

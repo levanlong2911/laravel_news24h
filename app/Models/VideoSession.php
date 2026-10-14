@@ -26,11 +26,6 @@ class VideoSession extends Model
         return $this->belongsTo(VideoProject::class, 'project_id');
     }
 
-    public function renderPlans()
-    {
-        return $this->hasMany(VideoRenderPlan::class, 'session_id');
-    }
-
     public function latestRenderPlan()
     {
         return $this->hasOne(VideoRenderPlan::class, 'session_id')->latestOfMany('revision');

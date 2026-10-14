@@ -10,8 +10,6 @@ interface VideoProjectRepositoryInterface extends RepositoryInterface
 {
     public function findOrCreateByArticleId(Article $article, ?Admin $actor): VideoProject;
 
-    public function firstOrCreateByName(string $name, ?string $subjectId): VideoProject;
-
     public function listAllWithCounts(?Admin $actor): iterable;
 
     public function getById(string $id): ?VideoProject;

@@ -2,13 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\VideoSessionStatus;
 use App\Jobs\ProcessKeywordJob;
 use App\Models\Article;
 use App\Models\Domain;
 use App\Models\Keyword;
 use App\Models\Post;
-use App\Models\VideoSession;
 use App\Services\Admin\ArticlePipelineService;
 use App\Services\Admin\PostService;
 use App\Services\Admin\SerpApiService;
@@ -40,17 +38,6 @@ class ArticleController extends Controller
 
         $keywords = Keyword::where('is_active', true)->orderBy('sort_order')->get();
 
-        // Bai da co mot luot san xuat video CHUA XONG thi disable nut "Tao
-        // Video" — tinh MOT LAN o day, khong tinh trong Blade (cung quy uoc
-        // voi VideoSessionController::show()). Tinh trung voi guard that su
-        // chan viec tao trung o VideoSessionService::startVideoPlanning(),
-        // qua VideoSessionStatus::nonTerminalValues() dung chung.
-        // $articleIdsInVideoProgress = VideoSession::query()
-        //     ->whereIn('article_id', $articles->pluck('id'))
-        //     ->whereIn('status', VideoSessionStatus::nonTerminalValues())
-        //     ->pluck('article_id')
-        //     ->all();
-
         return view('admin.articles.index', [
             'route' => 'article',
             'action' => 'article-index',
@@ -60,7 +47,6 @@ class ArticleController extends Controller
             'keywords' => $keywords,
             'status' => $status,
             'keywordId' => $keywordId,
-            // 'articleIdsInVideoProgress' => $articleIdsInVideoProgress,
         ]);
     }
 

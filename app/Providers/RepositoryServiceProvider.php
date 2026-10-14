@@ -30,12 +30,8 @@ use App\Repositories\Interfaces\TagRepositoryInterface;
 use App\Repositories\Interfaces\WebsiteRepositoryInterface;
 use App\Repositories\Eloquent\ArticleRepository;
 use App\Repositories\Eloquent\VideoProjectRepository;
-use App\Repositories\Eloquent\VideoSessionRepository;
-use App\Repositories\Eloquent\VideoShotRepository;
 use App\Repositories\Interfaces\ArticleRepositoryInterface;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
-use App\Repositories\Interfaces\VideoSessionRepositoryInterface;
-use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use Illuminate\Support\ServiceProvider;
 
 class RepositoryServiceProvider extends ServiceProvider
@@ -105,14 +101,6 @@ class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(
             VideoProjectRepositoryInterface::class,
             VideoProjectRepository::class
-        );
-        $this->app->bind(
-            VideoSessionRepositoryInterface::class,
-            VideoSessionRepository::class
-        );
-        $this->app->bind(
-            VideoShotRepositoryInterface::class,
-            VideoShotRepository::class
         );
     }
 

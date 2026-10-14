@@ -24,10 +24,4 @@ final class LlmRequest
             throw new \InvalidArgumentException('temperature must be null or a finite value in [0.0, 1.0]');
         }
     }
-
-    /** Ước lượng thô để hiện chi phí trước khi xin duyệt. ~4 ký tự/token. */
-    public function estimatedInputTokens(): int
-    {
-        return (int) ceil((mb_strlen($this->instruction) + mb_strlen($this->input)) / 4);
-    }
 }

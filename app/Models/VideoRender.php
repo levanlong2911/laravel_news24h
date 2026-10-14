@@ -100,18 +100,6 @@ class VideoRender extends Model
         return $this->hasMany(VideoRenderAttempt::class, 'render_id');
     }
 
-    /** Tấm ảnh đã đẻ ra lượt render này — null nếu sinh từ chữ. */
-    public function sourceRender()
-    {
-        return $this->belongsTo(self::class, 'source_render_id');
-    }
-
-    /** Những lượt render đã dùng lượt này làm ảnh nguồn. */
-    public function derivedRenders()
-    {
-        return $this->hasMany(self::class, 'source_render_id');
-    }
-
     public function isTerminal(): bool
     {
         return $this->execution_status instanceof RenderStatus

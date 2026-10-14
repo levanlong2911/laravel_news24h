@@ -62,9 +62,4 @@ class VideoDesignImage extends Model
     {
         return $this->hasMany(self::class, 'source_image_id');
     }
-
-    public function approver()
-    {
-        return $this->belongsTo(Admin::class, 'approved_by');
-    }
 }

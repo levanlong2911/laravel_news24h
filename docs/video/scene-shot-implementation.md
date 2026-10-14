@@ -81,14 +81,14 @@ live defects.
 
 | | Entry point | State |
 |---|---|---|
-| `VideoPlanningPipeline` | `BuildVideoPlanJob` · `video:build-plan` · `video:benchmark` | wired; Truth Layer → Producer/Director → ScenePlanner → IntentPlanner → TimelinePlanner → RenderPlanAssembler |
-| `scene_plan` | the `/scenes/plan` button | **the path that renders today**; `ScenePlanAuthor` + `vessel_v1` milestones → `video_render_scenes` |
+| `VideoPlanningPipeline` | — | **removed 2026-10-13** with `VideoSessionService`, `VideoRenderPlanService`, its jobs, the `video:build-plan`, `video:benchmark`, `video:reset-planning-claim` and `video:reclaim-expired-leases` commands and the `/admin/video-session` page; stored sessions and shots stay in the database |
+| `scene_plan` | the storyboard action | **the path that renders today**; `ScenePlanAuthor` (`storyboard-contract-v2`) + profile `vessel_v2` → `video_render_scenes` |
 | `screenplay` | the screenplay action | connected through hash-bound approval and production selection to `scene_plan` |
 
 ### Profiles
 
 ```
-config video.scene_plan.profiles.yacht   = vessel_v1   planning · 0 environments
+config video.scene_plan.profiles.yacht   = vessel_v2   planning (vessel_v1 removed 2026-10-13)
 config video.environment.profiles.yacht  = vessel_v2   ENVIRONMENT · 5 environments
                                                        20/20 milestones map to one
 VideoProjectService:2214-2226   environmentProfile() loads vessel_v2

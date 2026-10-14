@@ -23,13 +23,6 @@ class Kernel extends ConsoleKernel
         $schedule->command('model:prune', ['--model' => \App\Models\Article::class])
             ->dailyAt('03:00');
 
-        // Shot claim/lease mặc định 600s (VideoSessionController::apiClaim) —
-        // 5 phút bắt kịp trong vòng một nửa chu kỳ lease, không quá dồn dập.
-        $schedule->command('video:reclaim-expired-leases')
-            ->everyFiveMinutes()
-            ->withoutOverlapping()
-            ->onFailure(fn () => \Log::error('Scheduler: video:reclaim-expired-leases failed'));
-
         // O thiet ke anh dung cung chu ky lease 600s, nen cung nhip thu hoi.
         $schedule->command('video:reclaim-expired-design-image-leases')
             ->everyFiveMinutes()

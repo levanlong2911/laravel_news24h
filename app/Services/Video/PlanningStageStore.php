@@ -355,21 +355,6 @@ class PlanningStageStore
     }
 
     /** @return array<string, mixed>|null */
-    public function outputOf(string $sessionId, int $planningRevision, PlanningStageName $stage): ?array
-    {
-        return $this->succeeded('session_id', $sessionId, $stage)
-            ->where('planning_revision', $planningRevision)
-            ->value('output_json');
-    }
-
-    public function rawResponseOf(string $sessionId, int $planningRevision, PlanningStageName $stage): ?string
-    {
-        return $this->succeeded('session_id', $sessionId, $stage)
-            ->where('planning_revision', $planningRevision)
-            ->value('raw_response');
-    }
-
-    /** @return array<string, mixed>|null */
     public function latestOutputForProject(string $projectId, PlanningStageName $stage): ?array
     {
         return $this->succeeded('project_id', $projectId, $stage)

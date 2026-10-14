@@ -51,12 +51,6 @@ class VideoProjectRepository extends BaseRepository implements VideoProjectRepos
         return $project;
     }
 
-    // Dung cho apiStore — Python tu dat ten project, khong can cat chuoi
-    public function firstOrCreateByName(string $name, ?string $subjectId): VideoProject
-    {
-        return VideoProject::firstOrCreate(['title' => $name], ['subject_id' => $subjectId]);
-    }
-
     // `latest_status` la subquery chu khong phai cot: suy tu luot moi nhat nen
     // luon khop thuc te, khong can code duy tri.
     public function listAllWithCounts(?Admin $actor): iterable

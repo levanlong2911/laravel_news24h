@@ -40,23 +40,8 @@ class VideoRenderScene extends Model
         return $this->belongsTo(VideoPlanningStage::class, 'screenplay_stage_id');
     }
 
-    public function renderPlan()
-    {
-        return $this->belongsTo(VideoRenderPlan::class, 'render_plan_id');
-    }
-
     public function designImage()
     {
         return $this->belongsTo(VideoDesignImage::class, 'design_image_id');
-    }
-
-    public function continuityFrom()
-    {
-        return $this->belongsTo(self::class, 'continuity_from_scene_id');
-    }
-
-    public function continuesInto()
-    {
-        return $this->hasMany(self::class, 'continuity_from_scene_id');
     }
 }

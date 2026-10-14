@@ -31,8 +31,6 @@ class DesignImageQueue
         private readonly RenderPriceBackfill $backfill = new RenderPriceBackfill,
     ) {}
 
-    public const COLLECTION = 'design-images';
-
     private const DIRECT_WORKER = 'laravel:direct';
 
     private const ENTITY_TYPE = 'design_image';

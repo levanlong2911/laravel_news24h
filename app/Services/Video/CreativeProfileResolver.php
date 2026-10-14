@@ -27,16 +27,11 @@ final class CreativeProfileResolver
             $profile['article_patterns'] ?? [],
             $profile['inspection_aspects'] ?? [],
             $profile['excluded_context_types'] ?? [],
-            $profile['identity_slots'] ?? [],
             (string) ($profile['concept_mission'] ?? ''),
-            $profile['viewpoint_guidance'] ?? [],
             $profile['arc_stages'] ?? [],
             $profile['arc_required_stages'] ?? [],
             $profile['concept_antipatterns'] ?? [],
             $profile['concept_forbidden_terms'] ?? [],
-            $profile['identity_cross_checks'] ?? [],
-            $profile['design_spec_export'] ?? [],
-            $profile['prose_count_guard'] ?? [],
         );
     }
 }

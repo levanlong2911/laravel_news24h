@@ -20,9 +20,4 @@ class ClaudeUsageLog extends Model
     {
         return $this->belongsTo(Article::class, 'article_id');
     }
-
-    public function videoSession()
-    {
-        return $this->belongsTo(VideoSession::class, 'video_session_id');
-    }
 }

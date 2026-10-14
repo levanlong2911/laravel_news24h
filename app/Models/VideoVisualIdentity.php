@@ -26,9 +26,4 @@ class VideoVisualIdentity extends Model
     {
         return $this->belongsTo(VideoProject::class, 'project_id');
     }
-
-    public function designImages()
-    {
-        return $this->hasMany(VideoDesignImage::class, 'identity_id');
-    }
 }

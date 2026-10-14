@@ -42,19 +42,9 @@ class VideoProject extends Model
         return $this->hasMany(VideoCostEntry::class, 'project_id');
     }
 
-    public function planningStages()
-    {
-        return $this->hasMany(VideoPlanningStage::class, 'project_id');
-    }
-
     public function designImages()
     {
         return $this->hasMany(VideoDesignImage::class, 'project_id');
-    }
-
-    public function activeSession()
-    {
-        return $this->belongsTo(VideoSession::class, 'active_session_id');
     }
 
     public function selectedScreenplayStage()
