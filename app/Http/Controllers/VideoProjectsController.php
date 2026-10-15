@@ -119,7 +119,16 @@ class VideoProjectsController extends Controller
             $preview = $this->videoProjectService->anchorPromptPreview($project->id, $characterId);
             $submitted = $submittedFor === (string) $characterId;
             $designed = is_string($character['design_stage_id'] ?? null);
-            $stalePrompt = $designed && $preview !== null && ! VesselDesign::stampedFor($preview, $character);
+            $promptError = null;
+
+            if ($designed && ($character['anchor_blockers'] ?? []) === []
+                && ($preview === null || ! VesselDesign::stampedFor($preview, $character) || ! $this->characterAnchorPromptService->isCurrentDesignPrompt($preview))) {
+                $promptError = $this->compileDesignAnchorPrompt($project->id, $character);
+                $preview = $this->videoProjectService->anchorPromptPreview($project->id, $characterId);
+            }
+
+            $stalePrompt = $designed && $preview !== null
+                && (! VesselDesign::stampedFor($preview, $character) || ! $this->characterAnchorPromptService->isCurrentDesignPrompt($preview));
             $preview = $stalePrompt ? null : $preview;
             $rowCells = array_values(array_filter($cells, static fn(array $cell): bool => $character === null
                 || ($cell['character_id'] ?? null) === $characterId
@@ -128,9 +137,8 @@ class VideoProjectsController extends Controller
             $anchorRows[] = [
                 'character' => $character,
                 'stale_prompt' => $stalePrompt,
-                'conflicts' => $designed && $preview !== null
-                    ? $this->characterAnchorPromptService->promptConflicts($preview['anchor_prompt_stage_id'] ?? null)
-                    : [],
+                'prompt_error' => $promptError === null ? null : $this->anchorMessage($promptError),
+                'prompt_author' => $preview['lineage']['subject_state_version'] ?? null,
                 'blockers' => array_map(fn (string $reason): string => $this->anchorMessage($reason), $character['anchor_blockers'] ?? []),
                 'approved' => collect($rowCells)->contains(static fn(array $cell): bool => $cell['status'] === DesignImageStatus::APPROVED->value
                     && (! $designed || VesselDesign::stampedFor($cell, $character))),
@@ -211,6 +219,34 @@ class VideoProjectsController extends Controller
         return $done
             ? back()->with('success', 'Đã reset — bấm Gọi Haiku để chạy lại.')
             : back()->with('error', $reason);
+    }
+
+    /** @param array<string, mixed> $character */
+    private function compileDesignAnchorPrompt(string $projectId, array $character): ?string
+    {
+        [$compiled, $reason, $stamped] = $this->characterAnchorPromptService->author(
+            $projectId,
+            (string) $character['id'],
+            AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
+            ImageSize::LANDSCAPE,
+            $this->characterAnchorPromptService->anchorModel(),
+        );
+
+        if ($compiled === null) {
+            return $reason;
+        }
+
+        $this->videoProjectService->storeAnchorPromptPreview(
+            $projectId,
+            AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
+            Viewpoint::FrontThreeQuarter,
+            ImageSize::LANDSCAPE,
+            $compiled,
+            [],
+            $stamped,
+        );
+
+        return null;
     }
 
     public function concept(Request $request, string $id)
@@ -560,6 +596,10 @@ class VideoProjectsController extends Controller
 
     private function anchorMessage(string $reason): string
     {
+        if (str_starts_with($reason, 'film_cut_screenplay_invalid|')) {
+            return __('messages.film_cut_screenplay_invalid', ['detail' => substr($reason, strlen('film_cut_screenplay_invalid|'))]);
+        }
+
         return match ($reason) {
             'project_not_found' => __('messages.project_not_found'),
             'image_not_found' => __('messages.anchor_image_not_found'),
@@ -585,6 +625,10 @@ class VideoProjectsController extends Controller
             'storyboard_claim_lost' => __('messages.storyboard_claim_lost'),
             'storyboard_needs_beats' => __('messages.storyboard_needs_beats'),
             'scene_plan_misconfigured' => __('messages.scene_plan_misconfigured'),
+            'film_cut_misconfigured' => __('messages.film_cut_misconfigured'),
+            'film_cut_design_missing' => __('messages.film_cut_design_missing'),
+            'film_cut_screenplay_outdated' => __('messages.film_cut_screenplay_outdated'),
+            'storyboard_mode_unknown' => __('messages.storyboard_mode_unknown'),
             'artifact_file_not_found' => __('messages.artifact_file_not_found'),
             'artifact_checksum_mismatch' => __('messages.artifact_checksum_mismatch'),
             'approved' => __('messages.reference_approved'),
@@ -606,7 +650,9 @@ class VideoProjectsController extends Controller
             'production_selection_conflict' => 'Bản production đã được thay đổi ở thao tác khác. Tải lại trang trước khi chọn.',
             'screenplay_profile_invalid' => __('messages.screenplay_profile_invalid'),
             'screenplay_profile_changed' => 'Nội dung kịch bản đang chọn được viết theo profile kịch bản khác với profile hiện hành — tạo lại nội dung kịch bản. Không gọi model.',
-            'screenplay_profile_unknown' => 'Không xác định được profile kịch bản mà bản nội dung này đã dùng — tạo lại nội dung kịch bản. Không gọi model.',
+            'screenplay_launch_means_missing' => 'Nội dung kịch bản chưa nêu phương thức hạ thủy — bổ sung hoặc tạo lại nội dung kịch bản, duyệt rồi mới tạo lại địa điểm. Lượt này được ghi là thất bại để xem lại; bản địa điểm thành công trước đó vẫn giữ nguyên.',
+            'story_profile_design_changed' =>'Phần profile mà bản thiết kế tàu đã dùng (yêu cầu thiết kế, danh sách phòng) đã đổi kể từ lúc thiết kế — thiết kế lại tàu trước khi viết kịch bản. Không gọi model.',
+            'screenplay_profile_unknown' =>'Không xác định được profile kịch bản mà bản nội dung này đã dùng — tạo lại nội dung kịch bản. Không gọi model.',
             'screenplay_contract_unsupported' => __('messages.screenplay_contract_unsupported'),
             'screenplay_schema_invalid' => __('messages.screenplay_schema_invalid'),
             'screenplay_call_failed' => __('messages.screenplay_call_failed'),
@@ -624,7 +670,7 @@ class VideoProjectsController extends Controller
             'screenplay_locations_not_selectable' => 'Chưa có danh sách địa điểm tạo từ đúng bản nội dung kịch bản này — tạo địa điểm trước.',
             'screenplay_characters_outdated' => 'Danh sách nhân vật này tạo theo bộ luật cũ, không khớp hồ sơ nhân vật chính hiện hành — tạo lại nhân vật.',
             'screenplay_locations_outdated' => 'Danh sách địa điểm này không tạo từ danh sách nhân vật đang dùng — tạo lại địa điểm.',
-            'screenplay_locations_without_brief_spaces' => 'Bộ địa điểm đang chọn chưa gắn đủ không gian của yêu cầu project (brief_space) — tạo lại địa điểm theo nội dung kịch bản hiện tại. Không gọi model.',
+            'screenplay_locations_without_brief_spaces' => 'Bộ địa điểm đang chọn gắn không gian của yêu cầu project (brief_space) sai: trùng phòng, phòng không có trong yêu cầu hoặc không thuộc tàu — tạo lại địa điểm theo nội dung kịch bản hiện tại. Không gọi model.',
             'screenplay_film_brief_invalid' => 'Khối film_brief trong profile kịch bản không hợp lệ hoặc không khớp coverage của profile. Không gọi model — xem log để biết mục nào.',
             'screenplay_locations_unprofiled' =>'Danh sách địa điểm này tạo theo mẫu cũ (chỉ có tên và mô tả), thiếu bố cục, lối nối, thiết bị cố định và nguồn sáng — tạo lại địa điểm.',
             'workflow_not_design_first' => 'Dự án này chạy luồng cũ (kịch bản trước, thiết kế sau). Luồng thiết kế trước chỉ áp dụng cho dự án mới.',
@@ -633,12 +679,16 @@ class VideoProjectsController extends Controller
             'anchor_prompt_other_design' => 'Prompt hoặc ảnh này thuộc một bản thiết kế khác bản thiết kế hiện hành — viết lại prompt anchor từ bản thiết kế mới.',
             'anchor_design_unresolved' => 'Bản thiết kế hiện hành còn quyết định thiết kế chưa chốt — chốt các quyết định đó trước khi viết prompt hoặc render anchor. Không gọi model.',
             'anchor_prompt_unstamped' => 'Prompt anchor này viết trước khi có dấu nguồn (bước viết, nguồn, skill, khung hình) — viết lại prompt anchor. Không render.',
-            'anchor_prompt_size_unsupported' => 'Prompt này viết trước khi tách phần hình học khỏi khung hình, nên không ghép lại được cho tỷ lệ của Size đang chọn — chọn Size cùng tỷ lệ với prompt hoặc viết lại prompt anchor. Không render.',
-            'anchor_design_incomplete_text' => 'Bản thiết kế hiện hành có đoạn văn bị cắt giữa câu (xem log để biết mục nào) — hiệu chỉnh hoặc tạo lại thiết kế trước khi viết prompt hay render anchor. Không gọi model.',
-            'anchor_design_placement_ambiguous' => 'Bản thiết kế có hai sàn cùng tầng, cùng loại mà lời văn không phân biệt được (mốc là khối/khoảng trống không có tên) — thiếu dữ kiện định vị, cần bổ sung trước khi viết prompt hay render anchor (xem log). Không gọi model.',
-            'anchor_source_conflict' => 'AI viết prompt đã báo nguồn thiết kế tự mâu thuẫn ở phần P0, vùng đặc trưng hoặc quan hệ hình học bắt buộc (xem log) — sửa nguồn thiết kế rồi viết lại prompt. Không render.',
-            'anchor_prompt_malformed' => 'AI trả kết quả sai định dạng (thiếu geometry_prompt hoặc conflicts) — nguyên văn và chi phí đã lưu. Không render.',
-            'anchor_prompt_source_changed' => 'Nguồn thiết kế hoặc skill đã đổi so với lúc viết prompt — viết lại prompt anchor. Không render.',
+            'anchor_prompt_size_unsupported' => 'Prompt anchor ghép cho Size đang chọn vượt giới hạn ký tự của model ảnh — chọn Size khác. Không render.',
+            'anchor_design_placement_ambiguous' => 'Hai sàn ngoài trời nhìn thấy từ góc anchor có cùng tầng, cùng loại mà thiết kế không phân biệt được — thiếu dữ kiện định vị, cần bổ sung trong thiết kế. Không ghép prompt.',
+            'anchor_design_not_canonical' => 'Bản thiết kế này không có phần hình học chuẩn (canonical) — tạo lại thiết kế trước khi ghép prompt anchor.',
+            'anchor_design_missing_dimensions' => 'Thiết kế thiếu tên tàu, chiều dài hoặc chiều rộng — không ghép được prompt anchor.',
+            'anchor_design_missing_decks' => 'Thiết kế chưa khai các tầng boong — không ghép được prompt anchor.',
+            'anchor_design_missing_near_end' => 'Thiết kế thiếu mô tả phần mũi tàu (phía gần máy quay của ảnh anchor) — không ghép được prompt anchor.',
+            'anchor_design_missing_side' => 'Thiết kế thiếu mô tả mặt mạn tàu (phía máy quay nhìn thấy) — không ghép được prompt anchor.',
+            'anchor_design_opening_unplaced' => 'Có ô mở nhìn thấy từ góc anchor nhưng thiếu tầng hoặc thiếu phần chứa nó — bổ sung trong thiết kế. Không ghép prompt.',
+            'anchor_prompt_too_long' => 'Prompt anchor ghép từ thiết kế vượt giới hạn ký tự của model ảnh. Không render.',
+            'anchor_prompt_source_changed' => 'Thiết kế hoặc bộ ghép prompt đã đổi so với prompt đang xem — tải lại trang để ghép prompt mới. Không render.',
             'design_anchor_not_approved' => 'Chưa có ảnh anchor được duyệt cho bản thiết kế — duyệt ảnh anchor trước khi viết kịch bản. Không gọi model.',
             'design_references_not_approved' => 'Chưa chốt bộ ảnh Reference cho ảnh anchor và bản thiết kế hiện hành (hoặc anchor/thiết kế đã đổi sau khi chốt) — duyệt ít nhất một ảnh Reference và bấm "Chốt bộ Reference" trước khi viết kịch bản. Không gọi model.',
             'design_references_none_approved' => 'Chưa có ảnh Reference nào được duyệt từ ảnh anchor hiện hành — duyệt ít nhất một ảnh Reference rồi mới chốt.',
@@ -743,6 +793,30 @@ class VideoProjectsController extends Controller
             ->with($stage === null ? 'error' : 'success', $message);
     }
 
+    public function referenceSheetPreview(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $this->form->validate($request, 'ReferenceImageForm', 'sheet_preview');
+
+        [$sheet, $reason] = $this->videoProjectService->referenceSheetPreview(
+            $id,
+            (string) $data['sheet_state'],
+            (string) $data['environment'],
+        );
+
+        if ($sheet === null) {
+            return response()->json(['ok' => false, 'message' => $this->referenceMessage($reason)]);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'prompt' => $sheet['prompt'],
+            'prompt_sha256' => $sheet['prompt_sha256'],
+            'length' => mb_strlen($sheet['prompt']),
+        ]);
+    }
+
     private function createReference(Request $request, string $id)
     {
         $data = $this->form->validate($request, 'ReferenceImageForm');
@@ -785,6 +859,10 @@ class VideoProjectsController extends Controller
             'reference_anchor_source_unknown' => 'Ảnh anchor không ghi kịch bản và nhân vật nguồn — không ghép với kịch bản đang chọn.',
             'reference_screenplay_unavailable' => 'Bản kịch bản mà ảnh anchor được tạo từ đó không còn đọc được.',
             'reference_anchor_not_object' => 'Nhân vật của ảnh anchor không phải loại object trong kịch bản nguồn.',
+            'reference_sheet_needs_design' => 'Bộ 6 góc cần bản thiết kế đã chốt (thiết kế trước) — dự án này chưa có. Không gọi model.',
+            'reference_sheet_finish_incomplete' => 'Thiết kế chưa chốt đủ thân tàu, thượng tầng, kính và vật liệu — chưa dùng được "Hoàn thiện theo thiết kế". Không gọi model.',
+            'reference_sheet_prompt_too_long' => 'Prompt bộ 6 góc vượt giới hạn ký tự của model ảnh. Không gọi model.',
+            'reference_sheet_state_unknown' => 'Trạng thái bộ 6 góc không hợp lệ.',
             default => $this->anchorMessage($reason),
         };
     }
@@ -800,6 +878,10 @@ class VideoProjectsController extends Controller
             (string) $data['artifact_id'],
             auth()->id(),
         );
+
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => $done, 'message' => $this->anchorMessage($reason)]);
+        }
 
         return back()->with($done ? 'success' : 'error', $this->anchorMessage($reason));
     }
@@ -873,9 +955,12 @@ class VideoProjectsController extends Controller
 
         abort_if($scenes !== [] && $current === null, 404);
 
+        $filmCut = $this->videoProjectService->filmCutView($id, (int) $plan['revision']);
         $keyframes = $this->videoProjectService->sceneKeyframeCells($id, $plan['revision']);
 
         return view('video-projects.scene', $this->chrome() + [
+            'filmCut' => $filmCut,
+            'filmCutPreset' => (array) config('video.film_cut.preset'),
             'id' => $id,
             'project' => $project,
             'step' => $stage,
@@ -925,10 +1010,13 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
+        $mode = $request->input('mode', VideoProjectService::STORYBOARD_MODE);
+
         [$count, $reason] = $this->videoProjectService->generateStoryboard(
             $id,
             auth()->id(),
             $request->boolean('force'),
+            is_string($mode) ? $mode : '',
         );
 
         if ($count === null) {
@@ -985,13 +1073,10 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
-        $source = $request->query('space_source');
-
         [$preview, $reason] = $this->videoProjectService->sceneImagePreview(
             $id,
             $this->actorId(),
             $sceneId,
-            is_string($source) && Str::isUuid($source) ? $source : null,
             $request->filled('provider_model') ? $request->only(['provider_model', 'size', 'quality']) : null,
         );
 
@@ -1007,6 +1092,25 @@ class VideoProjectsController extends Controller
         $scenes = $plan['scenes'] ?? [];
         $clips = $this->videoProjectService->sceneClipCells($id, $revision);
         $keyframes = $this->videoProjectService->sceneKeyframeCells($id, $revision);
+        $segments = $this->videoProjectService->filmSegments($id, $revision);
+
+        if ($segments !== []) {
+            $scenes = array_map(static fn(array $segment): array => [
+                'scene_id' => (string) $segment['owner']->id,
+                'title' => $segment['title'],
+                'video_prompt' => $segment['prompt'],
+                'duration_seconds' => $segment['duration_seconds'],
+                'film_cut' => true,
+                'film_keyframes' => $segment['keyframes'],
+                'film_references' => array_map(static fn(array $reference): array => [
+                    'role' => (string) $reference['role'],
+                    'label' => (string) $reference['label'],
+                    'url' => route('video-artifacts.show', (string) $reference['artifact_id']),
+                ], $segment['references']),
+                'film_views' => $segment['views'],
+                'film_blocked' => $segment['blocked'],
+            ], $segments);
+        }
 
         return view('video-projects.show', $this->chrome() + [
             'id' => $id,
@@ -1014,7 +1118,9 @@ class VideoProjectsController extends Controller
             'scenes' => $scenes,
             'clips' => $clips,
             'keyframes' => $keyframes,
-            'clipModels' => $this->clipModels(),
+            'clipModels' => $segments === []
+                ? $this->clipModels()
+                : $this->clipModels(SceneClipDispatchService::FILM_TASK, (int) $segments[0]['duration_seconds']),
             'summary' => $this->clipSummary($scenes, $clips, $keyframes),
         ]);
     }
@@ -1120,7 +1226,7 @@ class VideoProjectsController extends Controller
         foreach ($scenes as $scene) {
             $key = (string) ($scene['scene_id'] ?? '');
 
-            if (($keyframes[$key]['approved'] ?? null) !== null) {
+            if (array_key_exists('film_blocked', $scene) ? $scene['film_blocked'] === null : ($keyframes[$key]['approved'] ?? null) !== null) {
                 $summary['with_keyframe']++;
             }
 
@@ -1141,9 +1247,61 @@ class VideoProjectsController extends Controller
      *
      * Khong cho san hang `queued` chua ai dinh gui: mot o nhu the la mot o treo.
      */
+    /**
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
+     */
+    private function renderFilmSegment(Request $request, string $id, string $sceneId)
+    {
+        try {
+            $data = $request->validate([
+                'model_id' => ['required', 'string'],
+                'resolution' => ['required', 'string'],
+                'aspect_ratio' => ['required', 'string'],
+                'duration_seconds' => ['required', 'integer', 'min:1'],
+                'expected_intent_version' => ['required', 'integer', 'min:0'],
+                'operation_id' => ['required', 'uuid'],
+            ]);
+        } catch (ValidationException $e) {
+            return $this->clipRefused($request, implode(' ', $e->validator->errors()->all()), $id, $sceneId);
+        }
+
+        [$render, $reason] = $this->videoProjectService->renderFilmSegment(
+            $id,
+            $this->actorId(),
+            $sceneId,
+            Arr::only($data, ['model_id', 'resolution', 'aspect_ratio', 'duration_seconds']),
+            (int) $data['expected_intent_version'],
+            (string) $data['operation_id'],
+        );
+
+        if ($render === null) {
+            [$code, $detail] = array_pad(explode('|', $reason, 2), 2, null);
+
+            return $this->clipRefused($request, match (true) {
+                $detail === 'shot_dispatch_conflict' => 'Clip đã thay đổi ở thao tác khác. Tải lại trang trước khi render.',
+                $code === 'film_segment_blocked' => (string) $detail,
+                default => $this->sceneKeyframeMessage($reason),
+            }, $id, $sceneId);
+        }
+
+        [$ok, $submitted] = $this->clipExecution->submit($render->id);
+
+        if ($request->expectsJson()) {
+            return response()->json($this->clipState($id, $render->refresh(), $submitted));
+        }
+
+        return back()->with($ok ? 'status' : 'error', 'Clip: ' . $submitted);
+    }
+
     public function renderSceneClip(Request $request, string $id, string $sceneId)
     {
         $this->ownedProject($id);
+
+        $row = \App\Models\VideoRenderScene::query()->whereKey($sceneId)->where('project_id', $id)->first();
+
+        if (\App\Video\Scene\FilmCutAuthor::isFilmShape($row?->state_json['film_cut_shape'] ?? null)) {
+            return $this->renderFilmSegment($request, $id, $sceneId);
+        }
 
         // MOI thu nam trong try, ke ca validate va tra cuu scene. Mot ngoai le lot ra
         // ngoai se thanh trang loi HTML, ma man hinh lai doc JSON — luc do no that bai
@@ -1405,7 +1563,6 @@ class VideoProjectsController extends Controller
             $sceneId,
             (string) $data['prompt_sha256'],
             $data['anchor_artifact_id'] ?? null,
-            $data['space_source_artifact_id'] ?? null,
             isset($data['provider_model']) ? array_intersect_key($data, array_flip(['provider_model', 'size', 'quality'])) : null,
             isset($data['reference_choice_version']) ? (int) $data['reference_choice_version'] : null,
         );
@@ -1471,6 +1628,50 @@ class VideoProjectsController extends Controller
         return $version === null
             ? response()->json(['ok' => false, 'reason' => $reason, 'message' => $this->sceneKeyframeMessage($reason)], 422)
             : response()->json(['ok' => true, 'version' => $version]);
+    }
+
+    public function chooseSceneKeyframe(Request $request, string $id, string $sceneId)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate(['use' => ['required', 'boolean']]);
+
+        [$done, $reason] = $this->videoProjectService->chooseFilmKeyframe(
+            $id,
+            $this->actorId(),
+            $sceneId,
+            (bool) $data['use'],
+        );
+
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => $done, 'message' => $this->sceneKeyframeMessage($reason)], $done ? 200 : 422);
+        }
+
+        return back()->with($done ? 'success' : 'error', $this->sceneKeyframeMessage($reason));
+    }
+
+    public function chooseFilmViews(Request $request, string $id, string $sceneId)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'auto' => ['nullable', 'boolean'],
+            'views' => ['nullable', 'array', 'max:10'],
+            'views.*' => ['required', 'uuid'],
+        ]);
+
+        [$done, $reason] = $this->videoProjectService->chooseFilmReferenceViews(
+            $id,
+            $this->actorId(),
+            $sceneId,
+            $request->boolean('auto') ? null : array_values((array) ($data['views'] ?? [])),
+        );
+
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => $done, 'message' => $this->sceneKeyframeMessage($reason)], $done ? 200 : 422);
+        }
+
+        return back()->with($done ? 'success' : 'error', $this->sceneKeyframeMessage($reason));
     }
 
     public function approveSceneKeyframe(Request $request, string $id, string $image)
@@ -1540,16 +1741,16 @@ class VideoProjectsController extends Controller
      *
      * @return list<array{id: string, label: string, default: bool}>
      */
-    private function clipModels(): array
+    private function clipModels(string $task = SceneClipDispatchService::TASK, ?int $segmentSeconds = null): array
     {
         $registry = app(\App\Video\Media\VideoModelRegistry::class);
 
-        if (! $registry->available(SceneClipDispatchService::TASK)) {
+        if (! $registry->available($task)) {
             return [];
         }
 
         try {
-            $entries = $registry->forTask(SceneClipDispatchService::TASK);
+            $entries = $registry->forTask($task);
         } catch (InvalidArgumentException $e) {
             Log::warning('Registry clip hong: ' . $e->getMessage());
 
@@ -1560,7 +1761,9 @@ class VideoProjectsController extends Controller
             'id' => (string) $entry['id'],
             'label' => (string) $entry['label'],
             'default' => $entry['default'] === true,
-            'controls' => $entry['controls'],
+            'controls' => $segmentSeconds === null
+                ? $entry['controls']
+                : $entry['controls'] + ['durations' => [$segmentSeconds], 'default_duration' => $segmentSeconds],
         ], $entries);
     }
 

@@ -58,7 +58,6 @@ return [
                             '3840x2160', '720x1280', '1152x2048', '2160x3840',
                         ],
                         'default_size' => '1152x2048',
-                        'qualities' => ['low', 'medium', 'high'],
                         'default_quality' => 'low',
                     ],
                 ],
@@ -76,7 +75,6 @@ return [
                             '3840x2160', '720x1280', '1152x2048', '2160x3840',
                         ],
                         'default_size' => '1152x2048',
-                        'qualities' => ['low', 'medium', 'high'],
                         'default_quality' => 'low',
                     ],
                 ],
@@ -94,7 +92,6 @@ return [
                             '3840x2160', '720x1280', '1152x2048', '2160x3840',
                         ],
                         'default_size' => '1152x2048',
-                        'qualities' => ['low', 'medium', 'high'],
                         'default_quality' => 'low',
                     ],
                 ],
@@ -205,7 +202,6 @@ return [
                             '3840x2160', '720x1280', '1152x2048', '2160x3840',
                         ],
                         'default_size' => '1152x2048',
-                        'qualities' => ['low', 'medium', 'high'],
                         'default_quality' => 'low',
                     ],
                 ],
@@ -384,6 +380,61 @@ return [
                     'evidence' => ['models' => 'gemini_models_2026_09_15.json'],
                 ],
             ],
+            'film_segment' => [
+                [
+                    'id' => 'gemini:gemini-omni-1.1-flash',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-omni-1.1-flash',
+                    'label' => 'Omni 1.1 Flash',
+                    'default' => true,
+                    'api_version' => 'v1beta',
+                    'mode' => 'sync',
+                    'method' => 'interactions',
+                    'controls' => [
+                        'aspect_ratios' => ['9:16'],
+                        'default_aspect_ratio' => '9:16',
+                        'resolutions' => ['1080p'],
+                        'default_resolution' => '1080p',
+                        'task' => 'reference_to_video',
+                        'max_seconds' => 10,
+                        'duration_control' => 'unverified',
+                        'max_reference_images' => 10,
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_15.json',
+                        'contract' => 'omni_video_contract_2026_10_14.json',
+                    ],
+                ],
+            ],
+        ],
+    ],
+
+    'omni' => [
+        'timeout' => (int) env('VIDEO_OMNI_HTTP_TIMEOUT', 900),
+        'poll_timeout' => (int) env('VIDEO_OMNI_POLL_TIMEOUT', 30),
+        'max_reference_bytes' => (int) env('VIDEO_OMNI_MAX_REFERENCE_BYTES', 20971520),
+        'reference' => [
+            'max_long_edge' => (int) env('VIDEO_OMNI_REFERENCE_LONG_EDGE', 2048),
+            'max_bytes' => (int) env('VIDEO_OMNI_REFERENCE_MAX_BYTES', 2097152),
+            'jpeg_quality' => (int) env('VIDEO_OMNI_REFERENCE_JPEG_QUALITY', 92),
+            'processor' => 'gd-resize-jpeg-v1',
+        ],
+        'output_sizes' => [
+            '9:16' => ['720p' => [720, 1280], '1080p' => [1080, 1920]],
+            '16:9' => ['720p' => [1280, 720], '1080p' => [1920, 1080]],
+        ],
+        'canary_path' => 'omni-canary',
+        'evidence_prefix' => 'omni_video_canary_',
+        'target' => [
+            'duration_ms' => 10000,
+            'duration_tolerance_ms' => (int) env('VIDEO_OMNI_DURATION_TOLERANCE_MS', 500),
+            'width' => 1080,
+            'height' => 1920,
+            'video_streams' => 1,
+            'audio_streams' => 1,
+            'av_drift_tolerance_ms' => (int) env('VIDEO_OMNI_AV_DRIFT_TOLERANCE_MS', 100),
+            'extension_min_ms' => 3000,
+            'extension_max_ms' => 10000,
         ],
     ],
 
@@ -552,6 +603,20 @@ return [
         ],
     ],
 
+    'film_cut' => [
+        'preset' => [
+            'total_ms' => 30000,
+            'segment_ms' => 10000,
+            'segment_count' => 3,
+            'max_scenes' => 20,
+            'aspect_ratio' => '9:16',
+            'resolution' => '1080p',
+            'model_task' => 'film_segment',
+            'audio' => 'ambient_only',
+        ],
+        'segment_reference_views' => 3,
+    ],
+
     'screenplay' => [
         'profile_dir' => resource_path('ai/profiles/screenplay'),
 
@@ -612,7 +677,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/screenplay_foundation_story_v1.json'),
 
-            'prompt_version' => env('SCREENPLAY_STORY_PROMPT_VERSION', 'foundation-story-v1-r8'),
+            'prompt_version' => env('SCREENPLAY_STORY_PROMPT_VERSION', 'foundation-story-v1-r10'),
 
             'model' => env('SCREENPLAY_STORY_MODEL', 'claude-sonnet-5-5'),
 
@@ -629,13 +694,13 @@ return [
         ],
 
         'locations' => [
-            'contract_version' => 'screenplay_locations_v4',
+            'contract_version' => 'screenplay_locations_v5',
 
             'prompt_dir' => resource_path('ai/screenplay/locations'),
 
-            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_locations_v4.json'),
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_locations_v5.json'),
 
-            'prompt_version' => env('SCREENPLAY_LOCATIONS_PROMPT_VERSION', 'locations-v4-r2'),
+            'prompt_version' => env('SCREENPLAY_LOCATIONS_PROMPT_VERSION', 'locations-v5-r4'),
 
             'model' => env('SCREENPLAY_LOCATIONS_MODEL', 'gpt-5.6-sol'),
 
@@ -652,21 +717,21 @@ return [
         ],
 
         'scenes' => [
-            'contract_version' => 'screenplay_scene_expansion_v5',
+            'contract_version' => 'screenplay_scene_expansion_v6',
 
-            'assembled_version' => 'screenplay_v7',
+            'assembled_version' => 'screenplay_v8',
 
             /** Assembled contracts a stored screenplay may carry and still be approved or used in production. */
-            'production_versions' => ['screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7'],
+            'production_versions' => ['screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7', 'screenplay_v8'],
 
             /** Foundation contracts the cast and scene steps may build on. */
             'foundation_versions' => ['screenplay_foundation_v2', 'screenplay_foundation_v3', 'screenplay_foundation_v4'],
 
             'prompt_dir' => resource_path('ai/screenplay/scene_expansion'),
 
-            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_scene_expansion_v5.json'),
+            'schema_path' => resource_path('ai/screenplay/schemas/screenplay_scene_expansion_v6.json'),
 
-            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v5-r1'),
+            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v6-r2'),
 
             'model' => env('SCREENPLAY_SCENES_MODEL', 'claude-sonnet-5-5'),
 

@@ -1,8 +1,4 @@
 window.KeyframePreviewGate = (function () {
-    function wanted(choice) {
-        return typeof choice === 'string' && choice !== '' && choice !== 'none' ? choice : null;
-    }
-
     function create() {
         var sequence = 0;
         var current = null;
@@ -16,13 +12,13 @@ window.KeyframePreviewGate = (function () {
         }
 
         return {
-            begin: function (sceneId, choice, AbortControllerType) {
+            begin: function (sceneId, AbortControllerType) {
                 abort();
                 sequence += 1;
-                current = { sequence: sequence, sceneId: String(sceneId), choice: wanted(choice) };
+                current = { sequence: sequence, sceneId: String(sceneId) };
                 controller = typeof AbortControllerType === 'function' ? new AbortControllerType() : null;
 
-                return { sequence: current.sequence, sceneId: current.sceneId, choice: current.choice, signal: controller ? controller.signal : undefined };
+                return { sequence: current.sequence, sceneId: current.sceneId, signal: controller ? controller.signal : undefined };
             },
 
             cancel: function () {
@@ -40,13 +36,7 @@ window.KeyframePreviewGate = (function () {
                     return false;
                 }
 
-                if (String(preview.scene_id) !== ticket.sceneId) {
-                    return false;
-                }
-
-                var chosen = preview.space_source ? wanted(preview.space_source.chosen) : null;
-
-                return chosen === ticket.choice;
+                return String(preview.scene_id) === ticket.sceneId;
             },
 
             renderable: function (ticket, preview) {

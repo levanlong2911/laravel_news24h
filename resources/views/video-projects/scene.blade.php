@@ -50,7 +50,7 @@
             @csrf
         </form>
 
-        @if($approval['shot_board'])
+        @if($approval['shot_board'] || $approval['film_cut'])
             <span class="sep">·</span>
             @if($approval['approved'])
                 <span class="m" style="color:var(--vp-green-fg)"><b>Đã duyệt — mở render</b></span>
@@ -58,7 +58,7 @@
                 <span class="m" style="color:var(--vp-amber-fg)"><b>Bản nháp — chưa render được</b>
                     @if($approval['selected_revision'] > 0) (đang dùng bản {{ $approval['selected_revision'] }}) @endif
                 </span>
-                @if($review['status'] === 'passed')
+                @if($review['status'] === 'passed' && ($filmCut === null || $filmCut['drift'] === []))
                     <button type="button" class="vp-btn sm" id="storyboardApprove"
                             data-action="{{ route('video-projects.storyboard-approve', $id) }}"
                             data-revision="{{ $revision }}">Duyệt storyboard</button>
@@ -66,13 +66,18 @@
             @endif
         @endif
 
+        <select name="mode" form="storyboardForm" class="vp-select sm" id="storyboardMode" aria-label="Chế độ lập storyboard">
+            <option value="storyboard" @selected($filmCut === null)>Storyboard theo beat</option>
+            <option value="film_cut" @selected($filmCut !== null)>Kế hoạch phim {{ intdiv((int) ($filmCutPreset['total_ms'] ?? 0), 1000) }} giây · {{ $filmCutPreset['segment_count'] ?? '' }} đoạn</option>
+        </select>
+
         <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmStoryboard"
                 id="storyboardButton" @disabled(($storyboardRun['status'] ?? null) === 'running')>{{ $revision > 0 ? 'Lập lại storyboard' : 'Lập storyboard' }}</button>
 
         @include('modal.confirm_action', [
             'id' => 'confirmStoryboard',
             'form' => 'storyboardForm',
-            'content' => 'Gọi AI một lượt cho toàn bộ '.count($storyboard['scenes']).' scene của kịch bản production — TÁC VỤ NÀY TÍNH TIỀN.',
+            'content' => 'Chế độ "Storyboard theo beat": gọi AI một lượt cho toàn bộ '.count($storyboard['scenes']).' scene của kịch bản production — TÁC VỤ NÀY TÍNH TIỀN. Chế độ "Kế hoạch phim": code ghép từ phân cảnh đã duyệt, không gọi AI, không tính tiền.',
             'detail' => $revision > 0
                 ? 'Tạo bản '.($revision + 1).' mới thay cho bản '.$revision.' trên trang này: ảnh và clip của bản cũ KHÔNG được chuyển sang, mọi shot phải render và duyệt lại; bản mới là bản nháp, phải duyệt storyboard mới render được. Bản cũ vẫn giữ trong lịch sử. Có thể mất vài phút; đừng đóng trang.'
                 : 'AI chia beat thành shot theo mục đích quan sát, viết góc máy, ảnh tĩnh, hành động, thời lượng và trạng thái vật. Kết quả là bản nháp — duyệt storyboard rồi mới render. Có thể mất vài phút; đừng đóng trang.',
@@ -117,6 +122,40 @@
         </div>
     @endif
 
+    @if($filmCut !== null)
+        @if($filmCut['legacy'])
+            <div class="vs-c" style="margin-bottom:10px;color:var(--vp-red)">
+                <b>Bản {{ $filmCut['revision'] }} là phim 30 giây theo định dạng cũ</b> (AI chia shot) —
+                không render ảnh, không render video được. Chọn "Kế hoạch phim 30 giây · 3 đoạn" và bấm "Lập lại storyboard" để code lập lại từ phân cảnh.
+            </div>
+        @endif
+        @if($filmCut['drift'] !== [])
+            <div class="vs-c" style="margin-bottom:10px;color:var(--vp-red)">
+                <b>Nguồn đã đổi kể từ lúc lập bản {{ $filmCut['revision'] }}</b> — không duyệt và không render được nữa; lập bản mới.
+                <ul style="margin:6px 0 0 18px">
+                    @foreach($filmCut['drift'] as $item)
+                        <li>{{ $item }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+        <div class="vs-c" style="margin-bottom:10px">
+            <b>Phim {{ intdiv((int) ($filmCut['preset']['total_ms'] ?? 0), 1000) }} giây</b> —
+            {{ count($filmCut['segments']) }} đoạn render, {{ intdiv((int) ($filmCut['preset']['segment_ms'] ?? 0), 1000) }} s mỗi đoạn, giữ đúng thứ tự phân cảnh đã duyệt.
+            @foreach($filmCut['segments'] as $segment => $items)
+                <div style="margin-top:4px"><b>Đoạn {{ $segment }}</b>
+                    @foreach($items as $item)
+                        <div>{{ $item['scene_id'] }} · {{ $item['location_name'] }} · {{ $item['start_ms'] / 1000 }}–{{ $item['end_ms'] / 1000 }} s — {{ $item['focus'] }}</div>
+                    @endforeach
+                </div>
+            @endforeach
+            @foreach($filmCut['junctions'] as $junction)
+                <div>Mối nối sau scene thứ {{ $junction['after_shot'] }}: {{ $junction['link'] }}</div>
+            @endforeach
+            <div style="margin-top:4px;color:var(--vp-dim)">Code lập từ phân cảnh: đoạn, thời lượng, máy và hành động lấy nguyên từ từng scene; không AI chia shot. Người duyệt kiểm sức hút và mối nối giữa các đoạn.</div>
+        </div>
+    @endif
+
     <div class="vs-grid" id="storyboardGrid">
 
         <div class="vs-h"><b>1</b> Planning</div>
@@ -150,6 +189,15 @@
                         @foreach($s['beat_ids'] as $beatId)
                             <span class="ph" title="Beat của scene">{{ $beatId }}</span>
                         @endforeach
+                    @endif
+
+                    @if($s['film'] !== null)
+                        <span class="ph" title="Đoạn render và giây trong đoạn">Đoạn {{ $s['film']['segment'] }} · {{ $s['film']['start_ms'] / 1000 }}–{{ $s['film']['end_ms'] / 1000 }} s</span>
+                        <span class="ph" title="Giai đoạn của scene">{{ $s['film']['content_group'] }}</span>
+                        <div class="m"><b>Nơi:</b> {{ $s['film']['location_name'] ?? '—' }}</div>
+                        <div class="m"><b>Máy:</b> {{ $s['film']['camera'] }}</div>
+                        <div class="m"><b>Tiêu điểm:</b> {{ $s['film']['focus'] }}</div>
+                        <div class="m"><b>Kịch bản ({{ $s['film']['scene_id'] }}):</b> {{ $s['film']['source']['action'] }}</div>
                     @endif
 
                     @foreach($s['milestones'] as $milestone)
@@ -248,8 +296,14 @@
                     @endif --}}
                 </div>
 
-                @php($refs = $sources[$s['scene_id']] ?? ['slots' => [], 'blocked_reason' => null, 'blocked_code' => null, 'references' => null])
+                @php($refs = $sources[$s['scene_id']] ?? ['slots' => [], 'blocked_reason' => null, 'blocked_code' => null, 'references' => null, 'room' => null])
+                @php($room = $refs['room'] ?? null)
+                @php($cell = $keyframes[$s['scene_id']] ?? ['approved' => null, 'candidate' => null])
+                @php($kfModels = $keyframeModels[0])
+                @php($kfModelsError = $keyframeModels[1])
+                @php($kfDefault = collect($kfModels)->firstWhere('default', true) ?? ($kfModels[0] ?? null))
                 <div class="vs-c vs-refs">
+                    @if($room === null)
                     <div id="refs_{{ $s['scene_id'] }}">
                         <div class="vs-slots">
                             @foreach($refs['slots'] as $slot)
@@ -299,114 +353,51 @@
                         @endif
                     </div>
 
-                    @php($cell = $keyframes[$s['scene_id']] ?? ['approved' => null, 'candidate' => null])
-                    @php($kfModels = $keyframeModels[0])
-                    @php($kfModelsError = $keyframeModels[1])
-                    @php($kfDefault = collect($kfModels)->firstWhere('default', true) ?? ($kfModels[0] ?? null))
-                    @if(! $cell['candidate'])
-                        @if($kfModelsError !== null || $kfDefault === null)
-                            <div class="m" style="margin-top:6px;color:var(--vp-red)">{{ __('messages.scene_keyframe_'.($kfModelsError ?? 'media_invalid')) }}</div>
-                        @else
-                            <div class="kf-grid">
-                                <div class="va-field">
-                                    <label>Model</label>
-                                    <select class="ctl" data-row="{{ $s['scene_id'] }}" data-role="kf-model">
-                                        @foreach($kfModels as $entry)
-                                            <option value="{{ $entry['id'] }}" @selected($entry['id'] === $kfDefault['id'])>{{ $entry['label'] }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                @foreach($kfModels as $entry)
-                                    <div data-row="{{ $s['scene_id'] }}" data-kf-group="{{ $entry['id'] }}" @unless($entry['id'] === $kfDefault['id']) hidden @endunless>
-                                        <div class="va-field">
-                                            <label>Quality</label>
-                                            <select class="ctl" data-role="kf-quality" @disabled($entry['id'] !== $kfDefault['id'])>
-                                                @foreach($entry['controls']['qualities'] as $quality)
-                                                    <option value="{{ $quality }}" data-usd="{{ \App\Enums\ImageQuality::tryFrom($quality)?->estimatedCostUsd() }}"
-                                                            @selected($quality === $entry['controls']['default_quality'])>{{ $quality }}</option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                        <div class="va-field">
-                                            <label>Size</label>
-                                            <select class="ctl" data-role="kf-size" @disabled($entry['id'] !== $kfDefault['id'])>
-                                                @foreach($entry['controls']['sizes'] as $size)
-                                                    <option value="{{ $size }}" @selected($size === $entry['controls']['default_size'])>{{ $size }}</option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                    </div>
-                                @endforeach
-                                <button type="button" class="vp-btn pri sm js-kf"
-                                        data-scene="{{ $s['scene_id'] }}"
-                                        data-preview="{{ route('video-projects.scene-keyframe-preview', [$id, $s['scene_id']]) }}"
-                                        data-render="{{ route('video-projects.scene-keyframe-render', [$id, $s['scene_id']]) }}">
-                                    {{ $cell['approved'] ? 'Tạo bản khác' : 'Xem trước → Render' }}
-                                </button>
-                                <div class="m kf-wide" data-row="{{ $s['scene_id'] }}" data-role="kf-estimate"></div>
-                            </div>
-                        @endif
+                    @include('video-projects.partials.keyframe-tools')
                     @endif
                 </div>
 
                 <div class="vs-c vs-img" data-scene="{{ $s['scene_id'] }}">
                     <div class="m kf-result" data-result="{{ $s['scene_id'] }}" hidden></div>
 
-                    @if($cell['approved'])
-                        @php($chosen = collect($cell['approved']['artifacts'])
-                            ->firstWhere('id', $cell['approved']['selected_artifact_id']))
-                        <div class="vs-lbl">ĐÃ DUYỆT</div>
-                        @if($cell['approved']['needs_review'] !== null)
-                            <div class="m" style="color:var(--vp-amber-fg)">Cần kiểm tra lại: nguồn {{ $cell['approved']['needs_review'] }} đã đổi — render và duyệt lại.</div>
-                        @endif
-                        @if($cell['approved']['cost_recorded_has_ledger'])
-                            <div class="m">@include('video-projects.partials.cost-recorded', ['cell' => $cell['approved']])</div>
-                        @endif
-                        @if($chosen)
-                            <a class="frame" href="{{ $chosen['url'] }}" target="_blank">
-                                <img src="{{ $chosen['url'] }}" alt="">
+                    @if($room !== null)
+                        <div class="vs-lbl">ẢNH ĐỊA ĐIỂM ĐÃ DUYỆT</div>
+                        @if($room['url'] !== null)
+                            <a class="frame" href="{{ $room['url'] }}" target="_blank">
+                                <img src="{{ $room['url'] }}" alt="{{ $room['label'] }}">
                             </a>
-                            {{-- <div class="m vp-mono">{{ $chosen['sha'] }}</div> --}}
+                            <div class="m">{{ $room['label'] }} · gửi vào Đoạn {{ $room['segment'] }}</div>
+                        @else
+                            <div class="m" style="color:var(--vp-amber-fg)">{{ strtoupper((string) $s['screenplay_scene_code']) }}: {{ $refs['blocked_reason'] }}</div>
                         @endif
-                    @endif
+                        <a class="m" href="{{ $room['environment_url'] }}">Mở trong Environment Library →</a>
 
-                    @if($cell['candidate'])
-                        @php($c = $cell['candidate'])
-                        <div class="vs-lbl">ỨNG VIÊN · {{ $c['status_label'] }}</div>
-
-                        @if($c['cost_recorded_has_ledger'])
-                            <div class="m">@include('video-projects.partials.cost-recorded', ['cell' => $c])</div>
-                        @endif
-
-                        @if($c['render_error'])
-                            <div class="m" style="color:var(--vp-amber-fg)">{{ $c['render_error'] }}</div>
-                        @endif
-
-                        @foreach($c['artifacts'] as $artifact)
-                            <form method="POST" class="vs-cand js-kf-action" data-scene="{{ $s['scene_id'] }}" data-busy="Đang duyệt…"
-                                  action="{{ route('video-projects.scene-keyframe-approve', [$id, $c['id']]) }}">
-                                @csrf
-                                <input type="hidden" name="artifact_id" value="{{ $artifact['id'] }}">
-                                <a class="frame" href="{{ $artifact['url'] }}" target="_blank">
-                                    <img src="{{ $artifact['url'] }}" alt="">
-                                </a>
-                                <span class="m vp-mono">{{ $artifact['sha'] }}</span>
-                                <button class="vp-btn ok sm">✓ Duyệt</button>
-                            </form>
-                        @endforeach
-
-                        @if($c['resumable'])
-                            <form method="POST" class="js-kf-action" data-scene="{{ $s['scene_id'] }}" data-busy="Đang render…"
-                                  action="{{ route('video-projects.scene-keyframe-retry', [$id, $c['id']]) }}">
-                                @csrf
-                                <input type="hidden" name="prompt_sha256" value="{{ $c['prompt_sha256'] }}">
-                                <button class="vp-btn sm">
-                                    {{ $c['status'] === 'failed' ? '↻ Thử lại' : '▸ Tiếp tục render' }}
-                                </button>
-                            </form>
-                        @endif
-                    @elseif(! $cell['approved'])
-                        <div class="frame">chưa render</div>
+                        <details class="kf-optional" @if($cell['candidate'] || $room['keyframe_chosen'] || $room['keyframe_stale']) open @endif>
+                            <summary>Keyframe tuỳ chọn · {{ $room['keyframe_chosen'] ? 'đang gửi bổ sung vào Đoạn '.$room['segment'] : ($room['keyframe_stale'] ? 'lựa chọn hết hiệu lực' : 'không gửi') }}</summary>
+                            @if($room['keyframe_stale'])
+                                <div class="m" style="color:var(--vp-amber-fg)">Keyframe đã chọn gửi bổ sung không còn khớp keyframe đang duyệt — Đoạn {{ $room['segment'] }} bị chặn tới khi chọn lại hoặc bỏ lựa chọn.</div>
+                            @endif
+                            @if($room['url'] !== null)
+                                @include('video-projects.partials.keyframe-tools')
+                            @endif
+                            @include('video-projects.partials.keyframe-result')
+                            @if($cell['approved'] && ! $room['keyframe_chosen'])
+                                <form method="POST" class="js-kf-action" data-scene="{{ $s['scene_id'] }}" data-busy="Đang lưu…" action="{{ $room['use_url'] }}">
+                                    @csrf
+                                    <input type="hidden" name="use" value="1">
+                                    <button class="vp-btn sm">{{ $room['keyframe_stale'] ? 'Chọn keyframe đang duyệt' : 'Gửi bổ sung vào Đoạn '.$room['segment'] }}</button>
+                                </form>
+                            @endif
+                            @if($room['keyframe_chosen'] || $room['keyframe_stale'])
+                                <form method="POST" class="js-kf-action" data-scene="{{ $s['scene_id'] }}" data-busy="Đang lưu…" action="{{ $room['use_url'] }}">
+                                    @csrf
+                                    <input type="hidden" name="use" value="0">
+                                    <button class="vp-btn sm">{{ $room['keyframe_chosen'] ? 'Thôi gửi, chỉ dùng ảnh địa điểm' : 'Bỏ lựa chọn, chỉ dùng ảnh địa điểm' }}</button>
+                                </form>
+                            @endif
+                        </details>
+                    @else
+                        @include('video-projects.partials.keyframe-result')
                     @endif
                 </div>
 
@@ -439,13 +430,6 @@
       <div class="modal-body">
         <div id="kfError" class="vs-c" style="display:none;color:var(--vp-amber-fg)"></div>
         <div id="kfBody" style="display:none">
-          <div id="kfSpace" style="display:none">
-            <div class="vs-lbl">NGUỒN HÌNH HỌC CHO KHÔNG GIAN <span id="kfSpaceName"></span></div>
-            <div class="m">Chọn ảnh thể hiện được không gian này. Ảnh đã duyệt và đúng checksum chưa chắc đủ thông tin — chỉ chọn khi ảnh thật sự cho thấy không gian cần dựng.</div>
-            <div id="kfSpaceOptions" style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0"></div>
-            <div id="kfSpaceBlocked" class="vs-c" style="display:none;color:var(--vp-amber-fg)">Chưa có ảnh phù hợp — cảnh này chưa render được. Cần render và duyệt một reference view thể hiện được không gian này trước.</div>
-          </div>
-
           <div class="vs-lbl">PROMPT SẼ GỬI</div>
           <pre id="kfPrompt" class="body" style="white-space:pre-wrap;max-height:34vh;overflow:auto"></pre>
 
@@ -462,7 +446,6 @@
           @csrf
           <input type="hidden" name="prompt_sha256" id="kfHash">
           <input type="hidden" name="anchor_artifact_id" id="kfAnchor">
-          <input type="hidden" name="space_source_artifact_id" id="kfSpaceSource">
           <input type="hidden" name="provider_model" id="kfModel">
           <input type="hidden" name="size" id="kfSize">
           <input type="hidden" name="quality" id="kfQuality">
@@ -790,95 +773,13 @@
     var table = document.getElementById('kfSources');
     var form = document.getElementById('kfForm');
     var go = document.getElementById('kfGo');
-    var space = document.getElementById('kfSpace');
-    var spaceOptions = document.getElementById('kfSpaceOptions');
-    var spaceBlocked = document.getElementById('kfSpaceBlocked');
-    var spaceInput = document.getElementById('kfSpaceSource');
     var active = null;
-    var spaceChoice = null;
     var gate = window.KeyframePreviewGate.create();
     var ticket = null;
 
     function lockRender() {
         go.disabled = true;
         document.getElementById('kfHash').value = '';
-        spaceInput.value = '';
-    }
-
-    function spaceOption(value, text, checked, imageUrl) {
-        var label = document.createElement('label');
-        label.className = 'vs-c';
-        label.style.cssText = 'display:flex;flex-direction:column;gap:4px;cursor:pointer;max-width:160px';
-
-        var radio = document.createElement('input');
-        radio.type = 'radio';
-        radio.name = 'kfSpaceRadio';
-        radio.value = value;
-        radio.checked = checked;
-        radio.addEventListener('change', function () {
-            spaceChoice = value;
-
-            if (value === 'none') {
-                gate.cancel();
-                ticket = null;
-                lockRender();
-                spaceBlocked.style.display = '';
-            } else {
-                load();
-            }
-        });
-        label.appendChild(radio);
-
-        if (imageUrl) {
-            var image = document.createElement('img');
-            image.src = imageUrl;
-            image.alt = text;
-            image.style.cssText = 'width:150px;height:auto;border:1px solid var(--vp-line)';
-            label.appendChild(image);
-        }
-
-        var caption = document.createElement('span');
-        caption.textContent = text;
-        label.appendChild(caption);
-        spaceOptions.appendChild(label);
-    }
-
-    function fillSpace(source) {
-        spaceOptions.replaceChildren();
-        spaceBlocked.style.display = spaceChoice === 'none' ? '' : 'none';
-
-        if (!source) {
-            space.style.display = 'none';
-            spaceInput.value = '';
-            return;
-        }
-
-        space.style.display = '';
-        document.getElementById('kfSpaceName').textContent = source.name ? '«' + source.name + '»' : '';
-        spaceInput.value = spaceChoice === 'none' ? '' : (source.chosen || '');
-
-        if (source.options.length === 0 && source.chosen) {
-            var locked = document.createElement('div');
-            locked.className = 'm';
-            locked.textContent = 'Nguồn hình học đã khoá trong bản này: ' + source.chosen;
-            spaceOptions.appendChild(locked);
-            return;
-        }
-
-        source.options.forEach(function (option) {
-            spaceOption(
-                option.artifact_id,
-                option.title + ' · ' + (option.kind === 'anchor' ? 'ảnh neo' : (option.kind === 'environment' ? 'tấm nền phòng' : 'reference')) + ' · ' + option.sha
-                    + (option.suggested ? ' · đã chọn ở lần trước (chưa xác nhận)' : ''),
-                spaceChoice === option.artifact_id && source.chosen === option.artifact_id,
-                option.url
-            );
-        });
-        spaceOption('none', 'Chưa có ảnh phù hợp', spaceChoice === 'none', null);
-
-        if (source.options.length === 0) {
-            spaceBlocked.style.display = '';
-        }
     }
 
     var roleLabels = {
@@ -935,7 +836,6 @@
         fillReferences(preview);
         table.replaceChildren();
         preview.sources.forEach(appendRow);
-        fillSpace(preview.space_source);
 
         error.style.display = 'none';
         body.style.display = '';
@@ -959,7 +859,7 @@
         lockRender();
         form.action = active.dataset.render;
 
-        var mine = gate.begin(active.dataset.scene, spaceChoice, window.AbortController);
+        var mine = gate.begin(active.dataset.scene, window.AbortController);
         var url = active.dataset.preview;
         var chosen = media(active.dataset.scene);
         ticket = mine;
@@ -967,10 +867,6 @@
         document.getElementById('kfModel').value = chosen ? chosen.provider_model : '';
         document.getElementById('kfSize').value = chosen ? chosen.size : '';
         document.getElementById('kfQuality').value = chosen ? chosen.quality : '';
-
-        if (mine.choice !== null) {
-            url += (url.indexOf('?') === -1 ? '?' : '&') + 'space_source=' + encodeURIComponent(mine.choice);
-        }
 
         if (chosen !== null) {
             Object.keys(chosen).forEach(function (key) {
@@ -1091,7 +987,6 @@
         if (!button) { return; }
 
         active = button;
-        spaceChoice = null;
         body.style.display = 'none';
         error.style.display = 'none';
         $('#kfModal').modal('show');
