@@ -2,6 +2,8 @@
 
 namespace App\Video\Media;
 
+use App\Enums\ImageModel;
+use App\Enums\ImageQuality;
 use InvalidArgumentException;
 
 final class MediaModelRegistry
@@ -42,6 +44,8 @@ final class MediaModelRegistry
         $defaults = 0;
 
         foreach ($entries as $index => $entry) {
+            $entry = $this->withQualities("Task {$task}, entry {$index}", $entry);
+            $entries[$index] = $entry;
             $this->assertEntry($task, $index, $entry);
 
             if (isset($ids[$entry['id']])) {
@@ -87,6 +91,27 @@ final class MediaModelRegistry
         }
 
         throw new InvalidArgumentException('Khong co model mac dinh cho task: '.$task);
+    }
+
+    private function withQualities(string $at, mixed $entry): mixed
+    {
+        if (! is_array($entry) || ($entry['provider'] ?? null) !== 'openai' || ! is_array($entry['controls'] ?? null)) {
+            return $entry;
+        }
+
+        if (array_key_exists('qualities', $entry['controls'])) {
+            throw new InvalidArgumentException("{$at}: qualities cua model OpenAI lay tu ImageModel, khong khai trong config.");
+        }
+
+        $model = ImageModel::tryFrom((string) ($entry['model'] ?? ''));
+
+        if ($model === null) {
+            throw new InvalidArgumentException("{$at}: model {$entry['model']} chua co trong ImageModel.");
+        }
+
+        $entry['controls']['qualities'] = array_map(static fn (ImageQuality $quality): string => $quality->value, $model->qualities());
+
+        return $entry;
     }
 
     /** @param mixed $entry */

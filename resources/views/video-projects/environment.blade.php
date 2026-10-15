@@ -3,89 +3,6 @@
 
 @section('css')
 <link rel="stylesheet" href="{{ asset('assets/css/video-producer.css') }}?v={{ filemtime(public_path('assets/css/video-producer.css')) }}">
-<style>
-.ve-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.25fr) 232px minmax(0, 1.35fr);
-    overflow: hidden;
-    background: #fff;
-    border: 1px solid var(--vp-line);
-    border-radius: 8px;
-}
-
-.ve-name {
-    display: block;
-    margin-bottom: 6px;
-    color: var(--vp-ink);
-    font-size: .86rem;
-    font-weight: 700;
-}
-
-.ve-key {
-    color: var(--vp-faint);
-    font-family: var(--vp-mono);
-    font-size: .68rem;
-}
-
-.ve-grid .va-ta {
-    min-height: 148px;
-}
-
-.ve-set {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
-}
-
-.ve-set[hidden] {
-    display: none;
-}
-
-.ve-set .va-field label {
-    display: block;
-    margin-bottom: 3px;
-    color: var(--vp-dim);
-    font-size: .66rem;
-    font-weight: 700;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-}
-
-.ve-set .ctl {
-    width: 100%;
-}
-
-.ve-locked {
-    color: var(--vp-dim);
-    font-size: .68rem;
-    line-height: 1.45;
-}
-
-.ve-plates {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.ve-empty {
-    color: var(--vp-dim);
-    font-size: .72rem;
-}
-
-@media (max-width: 1200px) {
-    .ve-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .ve-grid .vs-h {
-        display: none;
-    }
-
-    .ve-grid .vs-c + .vs-c {
-        border-left: 0;
-    }
-}
-</style>
 @endsection
 
 @section('content')
@@ -125,7 +42,7 @@
             </p>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-            <span class="va-tag {{ $approvedKeys->count() === count($environments) && $environments !== [] ? 'ok' : 'mute' }}">
+            <span class="va-tag {{ $approvedKeys->count() === count($environments) && $environments !== [] ? 'ok' : 'mute' }}" id="envApprovedCount">
                 {{ $approvedKeys->count() }} / {{ count($environments) }} ĐÃ DUYỆT
             </span>
             <a class="vp-btn" href="{{ route('video-projects.reference', $id) }}">← Reference Views</a>
@@ -188,9 +105,11 @@
                         @if(($environment['scenes'] ?? []) !== [])
                             <span class="ve-key">Scene: {{ implode(', ', $environment['scenes']) }}</span>
                         @endif
-                        @if($approvedKeys->contains($key))
-                            <span class="va-tag ok" style="margin-left:6px">ĐÃ DUYỆT</span>
-                        @endif
+                        <span id="approved_{{ $key }}">
+                            @if($approvedKeys->contains($key))
+                                <span class="va-tag ok" style="margin-left:6px">ĐÃ DUYỆT</span>
+                            @endif
+                        </span>
 
                         <textarea class="va-ta" style="margin-top:8px" readonly>{{ $environment['prompt'] }}</textarea>
                         <div class="va-count">{{ mb_strlen($environment['prompt']) }} ký tự</div>
@@ -236,8 +155,8 @@
                                                 <label>Quality</label>
                                                 <select class="ctl" name="quality" form="{{ $form }}" required @disabled(! $active)>
                                                     @foreach($controls['qualities'] as $quality)
-                                                        <option value="{{ $quality }}"
-                                                                @selected($quality === $controls['default_quality'])>{{ $quality }}</option>
+                                                        <option value="{{ $quality }}" title="{{ \App\Enums\ImageQuality::tryFrom($quality)?->hint() }}"
+                                                                @selected($quality === $controls['default_quality'])>{{ \App\Enums\ImageQuality::tryFrom($quality)?->label() ?? $quality }}</option>
                                                     @endforeach
                                                 </select>
                                             </div>
@@ -298,13 +217,6 @@
                             </div>
                             <div class="ve-locked" id="msg_{{ $key }}" hidden></div>
 
-                            <div class="ve-locked">
-                                Mặc định {{ $defaultMediaModel['label'] }} · {{ $defaultMediaModel['controls']['default_size'] ?? '' }}
-                                · {{ $defaultMediaModel['controls']['default_quality'] ?? '' }} — cùng khổ với keyframe.
-                                Ước lượng chi phí tính theo chất lượng và số ảnh, không theo khổ.
-                                Khổ khác 9:16 sẽ bị ép lại khi tấm nền vào scene keyframe, và
-                                "chưa render thử" nghĩa là chưa có lần render thật nào ở giá trị đó.
-                            </div>
 
                             @include('modal.confirm_action', [
                                 'id' => $modal,
@@ -350,7 +262,7 @@
                                                     @if($cell['selected_artifact_id'] === $candidate['id'])
                                                         <b class="ok">Đang dùng</b>
                                                     @else
-                                                        <form method="POST"
+                                                        <form method="POST" data-approve-key="{{ $key }}"
                                                               action="{{ route('video-projects.environment-approve', $id) }}">
                                                             @csrf
                                                             <input type="hidden" name="artifact_id" value="{{ $candidate['id'] }}">
@@ -524,9 +436,12 @@
         return fetch(window.location.href, { credentials: 'same-origin', headers: { 'Accept': 'text/html' } })
             .then(function (response) { return response.text(); })
             .then(function (html) {
-                var fresh = new DOMParser().parseFromString(html, 'text/html').getElementById('plates_' + key);
-                var current = document.getElementById('plates_' + key);
-                if (fresh && current) { current.innerHTML = fresh.innerHTML; }
+                var page = new DOMParser().parseFromString(html, 'text/html');
+                ['plates_' + key, 'approved_' + key, 'envApprovedCount'].forEach(function (id) {
+                    var fresh = page.getElementById(id);
+                    var current = document.getElementById(id);
+                    if (fresh && current) { current.outerHTML = fresh.outerHTML; }
+                });
             });
     }
 
@@ -535,6 +450,42 @@
             window.toastr[ok ? 'success' : 'error'](text);
         }
     }
+
+    document.addEventListener('submit', function (event) {
+        var form = event.target.closest('form[data-approve-key]');
+        if (!form) { return; }
+
+        event.preventDefault();
+
+        var key = form.dataset.approveKey;
+        var button = form.querySelector('button');
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Đang duyệt…';
+        }
+
+        fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (response) { return response.json(); })
+            .then(function (payload) {
+                var ok = payload.ok === true;
+                var errors = payload.errors ? Object.values(payload.errors).flat().join(' ') : '';
+                var text = errors || payload.message || (ok ? 'Đã duyệt.' : 'Không duyệt được.');
+
+                return refresh(key).then(function () { notify(text, ok); });
+            })
+            .catch(function () {
+                notify('Không gửi được yêu cầu duyệt hoặc không đọc được kết quả. Tải lại trang để xem trạng thái.', false);
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = '✓ Duyệt';
+                }
+            });
+    });
 
     document.querySelectorAll('form[id^="envForm_"]').forEach(function (form) {
         var idleTrigger = document.querySelector('[data-target="#' + form.dataset.modal + '"]');
