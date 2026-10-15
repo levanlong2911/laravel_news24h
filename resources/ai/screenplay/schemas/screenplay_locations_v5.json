@@ -2,7 +2,8 @@
     "type": "object",
     "additionalProperties": false,
     "required": [
-        "locations"
+        "locations",
+        "launch"
     ],
     "properties": {
         "locations": {
@@ -16,7 +17,8 @@
                     "story_use",
                     "spatial_relation",
                     "brief_space",
-                    "design_refs",
+                    "story_name",
+                    "route_evidence",
                     "name",
                     "description",
                     "enclosure",
@@ -49,32 +51,64 @@
                         ],
                         "pattern": "^[a-z][a-z0-9_]{1,29}$"
                     },
-                    "design_refs": {
-                        "type": "array",
-                        "minItems": 0,
-                        "items": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "required": [
-                                "role",
-                                "id"
-                            ],
-                            "properties": {
-                                "role": {
-                                    "type": "string",
-                                    "enum": [
-                                        "region",
-                                        "surface",
-                                        "route",
-                                        "basin"
-                                    ]
-                                },
-                                "id": {
-                                    "type": "string",
-                                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
+                    "story_name": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "minLength": 3,
+                        "maxLength": 80
+                    },
+                    "route_evidence": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "from_deck",
+                                    "to_deck",
+                                    "side",
+                                    "quote"
+                                ],
+                                "properties": {
+                                    "from_deck": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "minLength": 3,
+                                        "maxLength": 40
+                                    },
+                                    "to_deck": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "minLength": 3,
+                                        "maxLength": 40
+                                    },
+                                    "side": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "enum": [
+                                            "port",
+                                            "starboard",
+                                            null
+                                        ]
+                                    },
+                                    "quote": {
+                                        "type": "string",
+                                        "minLength": 10,
+                                        "maxLength": 400
+                                    }
                                 }
+                            },
+                            {
+                                "type": "null"
                             }
-                        }
+                        ]
                     },
                     "name": {
                         "type": [
@@ -119,20 +153,12 @@
                             "additionalProperties": false,
                             "required": [
                                 "target_location_id",
-                                "via_ref",
                                 "via"
                             ],
                             "properties": {
                                 "target_location_id": {
                                     "type": "string",
                                     "pattern": "^lo_[a-z0-9_]{2,40}$"
-                                },
-                                "via_ref": {
-                                    "type": [
-                                        "string",
-                                        "null"
-                                    ],
-                                    "pattern": "^[a-z][a-z0-9_]{1,39}$"
                                 },
                                 "via": {
                                     "type": [
@@ -165,6 +191,38 @@
                     }
                 }
             }
+        },
+        "launch": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "location_id",
+                        "means",
+                        "quote"
+                    ],
+                    "properties": {
+                        "location_id": {
+                            "type": "string",
+                            "pattern": "^lo_[a-z0-9_]{2,40}$"
+                        },
+                        "means": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 80
+                        },
+                        "quote": {
+                            "type": "string",
+                            "minLength": 10,
+                            "maxLength": 400
+                        }
+                    }
+                },
+                {
+                    "type": "null"
+                }
+            ]
         }
     }
 }

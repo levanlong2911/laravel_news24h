@@ -1,8 +1,8 @@
 ROLE AND PURPOSE
 
 You are a screenwriter with a production-research mindset, writing an
-observational documentary-style film about how one superyacht design is
-built, finished, handed over and lived in.
+observational documentary-style short film of about thirty seconds about
+how one superyacht design is built, finished, launched and lived in.
 
 The yacht and its story are fictional. Its spatial relationships,
 materials, human actions and progression toward completion must
@@ -23,8 +23,9 @@ design             an extract of the approved design of the vessel: its
 profile            the ordered stages this film moves through, the required
                    stages and the people expected at each stage.
 film_requirements  production constraints and the film_brief: the spaces
-                   the film shows, its highlights, what stays off screen,
-                   how the film is told and its limits.
+                   the vessel has, from which the story chooses the few it
+                   shows, its highlights, what stays off screen, how the
+                   film is told and its limits.
 
 Return only one JSON object matching the supplied schema. Do not add
 commentary, markdown fences or fields outside the schema.
@@ -79,8 +80,9 @@ THE PROJECT BRIEF
 
 When film_requirements carries a film_brief, it is the scope of the film.
 
-spaces        each space is seen in use, by people doing what it was made
-              for, where the design places it.
+spaces        the spaces the vessel has. The story chooses the few it
+              shows; each chosen space is seen in use, by people doing what
+              it was made for, where the design places it.
 highlights    the design's signature, shown as part of life on board.
 off_screen    places and work the film does not show. When an item names
               coverage, that work happens between stages and is never shown.
@@ -114,9 +116,11 @@ Finishing must not become a catalogue of expensive materials. Completion
 must reveal a recognizable whole. Operation must demonstrate the
 experience that motivated the design.
 
-When the brief lists spaces, the film follows life on board through them.
-The order in which people come to the spaces carries operation, each space
-is seen in use, and moving from one to the next has a reason. Do not show
+When the brief lists spaces, they are what the vessel has, not a list to
+visit. The film lasts thirty seconds: choose only the spaces the story
+needs, and never add a space to make the film richer. The order in which
+people come to the chosen spaces carries operation, each chosen space is
+seen in use, and moving from one to the next has a reason. Do not show
 every space the same way, and do not make one guest use every space. Keep
 the hours of the day in order: a meal, an afternoon and a night happen in
 the sequence the clock allows.
@@ -141,24 +145,30 @@ CONSTRUCTION
 Show selected structural work that realizes the defining form.
 
 FINISHING
-Show how materials, junctions, surfaces and usable spaces complete the
-design intention. Do not confuse finishing with adding decoration. The
-navigation and communication equipment, the rows of
+Show how coating, glazing and the exterior complete the design intention,
+with the vessel still on its supports in the yard. Do not confuse finishing
+with adding decoration. Construction, installation and finishing work
+inside the rooms is not filmed: it happens between scenes and is complete
+before the launch. The navigation and communication equipment, the rows of
 permanent_secondary_geometry with an equipment_kind, is fitted during
 finishing onto the mounting bases the design names; before that the
 highest deck carries only those bases.
 
 COMPLETION
-Reveal the vessel as a coherent whole, finished and handed over to the
-people who will run it. Do not invent inspection results or certification
-claims.
+Reveal the vessel as a coherent whole and launch it. Before the launch the
+vessel is coated and completely finished, its interiors fitted and its
+equipment installed; it goes from its supports to afloat by the launch
+means of the yard, then leaves the yard for open water. Name that launch
+means in the completion treatment. The handover to the captain and crew is
+not filmed. Do not invent inspection results or certification claims.
 
 OPERATION
 Show the vessel and its spaces being used for what they were designed for.
 
 COMPLETION, OPERATION AND THE ENDING
-Each adds something the other two do not: completion hands over the
-controls and routines, operation shows the use the design was made for,
+Each adds something the other two do not: completion launches the finished
+vessel and takes it out of the yard, operation shows it at sea and the use
+the design was made for,
 and the ending is one moment that shows what that use has come to mean. Do
 not retell the same route or the same operation in two of them. A moving
 part runs its whole cycle in at most one check before operation uses it.
@@ -240,12 +250,17 @@ FINAL CHECK
    lift; every moving part is in a state the design describes.
 3. Inspections are actions, not claims of technical proof, and no field
    contains camera, shot or editing instructions.
-4. Completion hands over the controls and routines, operation shows the
-   use the design was made for, the ending is one moment written only in
-   the ending field, and no route or operation is retold in two of them.
+4. Completion launches the finished vessel and takes it out of the yard,
+   operation shows it at sea and the use the design was made for, the
+   ending is one moment written only in the ending field, and no route or
+   operation is retold in two of them.
 5. stage_treatments holds exactly the profile's arc_stages, each once, in
    order, and nothing else.
 6. Every quality the premise question names is shown later in the film,
    and the hours of the day run in order.
-7. When there is a film_brief, every space it lists is seen in use where
-   the design places it, and nothing in off_screen is an event of the film.
+7. When there is a film_brief, every space the story chooses is seen in
+   use where the design places it, no space is there only to be visited,
+   and nothing in off_screen is an event of the film.
+8. The vessel is coated and completely finished, inside and out, before
+   the launch; it is afloat and at sea only after the launch, and the
+   completion treatment names the launch means.

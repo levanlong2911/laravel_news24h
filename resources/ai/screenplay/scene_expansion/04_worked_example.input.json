@@ -27,7 +27,7 @@
             "change": "A row of gates argued over on paper becomes a routine the crew performs by habit, and passengers board together across the width.",
             "answer": "The ending shows passengers crossing open water beside the closed side without looking up, and standing ready in front of the closed gates as the far pier comes alongside."
         },
-        "synopsis": "An operator wants less of each crossing spent at the stops, and a design team answers with a ferry that has two identical working ends. Its hull is one long covered hall with a row of sliding gates along each side and benches running across its width, and a small helm cabin sits on the roof at mid-length above a crew stair. The argument is over the side: every opening that speeds boarding is also an opening for wind and spray once the ferry is under way. In the yard, the hull is built with matching ends and its sides are framed as rows of openings with posts between them. Fitting-out crews hang each gate and adjust it against its neighbours until a closed side reads as one surface. The operator's representatives open a side, step out through it onto the quay and back aboard, and close it once everyone is clear, and the master is handed the gate controls in the helm cabin. In service, a waiting crowd steps aboard across the width in one movement, the gates close behind the last passenger, and the ferry pulls away in the direction it arrived from. Out on open water the passengers sit beside the closed side as spray strikes it, and at the far pier they are already standing at the gates before the ferry stops.",
+        "synopsis": "An operator wants less of each crossing spent at the stops, and a design team answers with a ferry that has two identical working ends. Its hull is one long covered hall with a row of sliding gates along each side and benches running across its width, and a small helm cabin sits on the roof at mid-length above a crew stair. The argument is over the side: every opening that speeds boarding is also an opening for wind and spray once the ferry is under way. In the yard, the hull is built with matching ends and its sides are framed as rows of openings with posts between them. Fitting-out crews hang each gate and adjust it against its neighbours until a closed side reads as one surface, and the hull is coated while it still stands on its blocks in the building dock. The dock is flooded, the finished ferry floats off its blocks and is warped out through the dock gate into the harbour with both sides closed. In service, a waiting crowd steps aboard across the width in one movement, the gates close behind the last passenger, and the ferry pulls away in the direction it arrived from. Out on open water the passengers sit beside the closed side as spray strikes it, and at the far pier they are already standing at the gates before the ferry stops.",
         "stage_treatments": [
             {
                 "stage": "design",
@@ -46,16 +46,16 @@
             {
                 "stage": "finishing",
                 "dramatic_purpose": "This is where each open side has to become a wall that can close, so the gates have to be made to work as one surface.",
-                "observable_development": "Fitting-out crews hang the gates one by one, sliding each shut against the one before it and adjusting its runners until the edges meet. Benches are fixed across the hall from side to side, and the helm cabin is glazed toward both ends. A crew member walks the length of a closed side, running a hand along the seams.",
+                "observable_development": "With the hull still on its blocks in the building dock, fitting-out crews hang the gates one by one, sliding each shut against the one before it and adjusting its runners until the edges meet. The hull and the roof are coated, and the helm cabin is glazed toward both ends. A crew member walks the length of a closed side, running a hand along the seams.",
                 "participants": "Fitting-out crews, working gate by gate along both sides.",
-                "handover_to_next": "The finished hall, with every gate hung, is ready for the people who will run it."
+                "handover_to_next": "The coated ferry, with every gate hung and its hall fitted, stands finished on its blocks, ready to be floated out."
             },
             {
                 "stage": "completion",
-                "dramatic_purpose": "The people who will run the ferry have to operate the arrangement themselves and find that it makes sense to someone who did not build it.",
-                "observable_development": "Operator representatives slide the gates open along the side that lies against the quay while the master watches from the helm cabin, then comes down the crew stair at mid-length into the hall. They sit on a bench, stand, step out through the nearest opening onto the quay and back aboard; once everyone is clear of the gate line they slide the gates shut. On the side facing the water they open and close the gates once from inside the hall, with nobody stepping through. The master climbs back to the helm cabin and is handed the gate controls by the fitting-out crews.",
-                "participants": "Operator representatives and the master, with the fitting-out crews standing by.",
-                "handover_to_next": "The ferry passes from the yard to the operator and goes into service."
+                "dramatic_purpose": "The finished ferry has to leave the yard as one coherent vessel, its closed sides reading as walls from the water.",
+                "observable_development": "Yard crews flood the building dock. The water rises along the closed sides until the coated, finished ferry lifts off its blocks and floats. The dock gate opens and the yard crews warp the ferry out into the harbour, its gates closed along both sides, while the master watches from the helm cabin at mid-length.",
+                "participants": "Yard crews, with the master aboard.",
+                "handover_to_next": "The ferry leaves the yard for its home pier and goes into service."
             },
             {
                 "stage": "operation",
@@ -171,20 +171,27 @@
             ]
         },
         {
-            "id": "lo_building_hall",
-            "name": "The building hall",
-            "description": "A covered yard hall built for framing and roofing large vessels under cover.",
-            "story_use": "The construction treatment happens here: the framing for both ends is set out from one template, the sides rise as posts and openings, and the roof goes on.",
+            "id": "lo_building_dock",
+            "name": "The building dock",
+            "description": "A covered building dock where large vessels are framed under cover and floated out when they are finished.",
+            "story_use": "The construction, finishing and launch happen here: the framing for both ends is set out from one template, the sides rise as posts and openings, the gates are hung and the hull coated on its blocks, and in completion the dock is flooded and the finished ferry floats out through the gate.",
             "spatial_relation": "external",
             "subject_id": null,
             "brief_space": null,
             "enclosure": "interior",
-            "layout": "One tall, long covered hall with a level concrete floor. A large door fills one gable end, staging towers stand along both long walls, and crane rails run the length of the hall overhead.",
-            "connections": [],
+            "layout": "One tall, long covered dock with a level floor below the level of the harbour outside. A watertight gate closes the harbour end, staging towers stand along both long walls, and crane rails run the length of the dock overhead.",
+            "connections": [
+                {
+                    "target_location_id": "lo_harbour",
+                    "via": "the dock gate at the harbour end, once the dock is flooded and the gate is open"
+                }
+            ],
             "fixed_features": [
                 "a line of building blocks along the floor",
                 "staging towers along both long walls",
-                "an overhead crane on rails running the length of the hall"
+                "an overhead crane on rails running the length of the dock",
+                "a watertight gate at the harbour end",
+                "flooding culverts along the dock floor"
             ],
             "light_sources": [
                 "a band of roof lights along the ridge",
@@ -195,17 +202,13 @@
             "id": "lo_ferry_hall",
             "name": "The ferry's hall",
             "description": "The covered passenger hall that fills the ferry's main deck from one end to the other.",
-            "story_use": "Finishing, completion and the crossing happen here: the gates are hung and the benches fixed, the operators test both sides, and the passengers ride across the harbour.",
+            "story_use": "The crossing happens here: passengers board across the width and ride across the harbour beside the closed gates.",
             "spatial_relation": "subject_part",
             "subject_id": "ch_ferry",
             "brief_space": "passenger_hall",
             "enclosure": "interior",
             "layout":"One long open space on the main deck under the roof, between the bulwarks at the two ends, its floor level from end to end and a short step above the pier. Its port and starboard sides are each a row of openings between posts, nothing divides it along its length, and the crew stair opens through it on the centreline at mid-length, rising to the hatch in the helm cabin floor and going down to the crew spaces in the hull.",
             "connections": [
-                {
-                    "target_location_id": "lo_fitting_quay",
-                    "via": "the side openings facing the quay and the quay's gangway, while the ferry lies at the fitting-out berth"
-                },
                 {
                     "target_location_id": "lo_pier",
                     "via": "the side openings along whichever side lies against the home pier"
@@ -230,28 +233,28 @@
             }
         },
         {
-            "id": "lo_fitting_quay",
-            "name": "The fitting-out quay",
-            "description": "A working quay with a deep berth where vessels lie alongside to be fitted out and tested.",
-            "story_use": "The ferry lies here through finishing and completion, and in completion the operators step out through an opening onto the quay and back aboard.",
+            "id": "lo_harbour",
+            "name": "The harbour",
+            "description": "The sheltered harbour water outside the yard, between the building dock and the piers.",
+            "story_use": "In completion the finished ferry is warped out of the flooded dock into this water and leaves the yard for its home pier.",
             "spatial_relation": "external",
             "subject_id": null,
             "brief_space": null,
             "enclosure": "open_air",
-            "layout": "A long straight quay edge beside a deep berth, with an open paved apron behind it and a gangway landing at mid-length.",
+            "layout": "Open, sheltered water with the yard's dock gate on one shore and the town's piers along the other, and a breakwater with a gap to the open sea beyond.",
             "connections": [
                 {
-                    "target_location_id": "lo_ferry_hall",
-                    "via": "the gangway landing and the ferry's side openings, while the ferry lies in the berth"
+                    "target_location_id": "lo_building_dock",
+                    "via": "the dock gate at the harbour end, once the dock is flooded and the gate is open"
                 }
             ],
             "fixed_features": [
-                "bollards along the quay edge",
-                "a gangway landing at mid-length",
-                "a hoist standing on the apron"
+                "the building dock gate on the yard shore",
+                "mooring bollards along the yard quay",
+                "a breakwater with a gap to the open sea"
             ],
             "light_sources": [
-                "floodlight masts along the back of the apron"
+                "navigation lights at the breakwater gap"
             ]
         },
         {
@@ -304,7 +307,7 @@
         }
     ],
     "profile": {
-        "contract_version": "screenplay_scene_expansion_v5",
+        "contract_version": "screenplay_scene_expansion_v6",
         "subject_class": "harbour ferry",
         "arc_stages": [
             "design",
@@ -320,9 +323,17 @@
             "operation"
         ],
         "min_scenes": 3,
-        "max_scenes": 30,
+        "max_scenes": 20,
         "max_subjects": 10,
         "max_locations": 9,
+        "film_cut": {
+            "segment_count": 3,
+            "segment_ms": 10000,
+            "on_screen_room_states": ["fitted"],
+            "launch_coverage": "cov_comp_launch",
+            "after_launch_coverage": ["cov_op_boarding", "cov_op_crossing"],
+            "finished_before_launch_stages": ["design", "construction", "finishing"]
+        },
         "film_brief_spaces": [
             "passenger_hall"
         ],
@@ -341,9 +352,8 @@
                 "fitting-out crews"
             ],
             "completion": [
-                "operator representatives",
-                "master",
-                "fitting-out crews"
+                "yard crews",
+                "master"
             ],
             "operation": [
                 "crew",
@@ -378,12 +388,6 @@
                 "label": "The sides rise as rows of openings with posts between them."
             },
             {
-                "id": "cov_build_launch",
-                "stage": "construction",
-                "level": "shown_or_transition",
-                "label": "The hull leaves the building hall for the fitting-out quay."
-            },
-            {
                 "id": "cov_fin_gates",
                 "stage": "finishing",
                 "level": "required",
@@ -393,13 +397,21 @@
                 "id": "cov_fin_benches",
                 "stage": "finishing",
                 "level": "shown_or_transition",
-                "label": "Benches are fixed across the hall."
+                "label": "Benches are fixed across the hall.",
+                "off_screen": true
+            },
+            {
+                "id": "cov_comp_launch",
+                "stage": "completion",
+                "level": "required",
+                "label": "The coated, finished ferry floats out of the flooded building dock into the harbour."
             },
             {
                 "id": "cov_comp_handover",
                 "stage": "completion",
-                "level": "required",
-                "label": "The operator's people work the gates themselves with the master."
+                "level": "shown_or_transition",
+                "label": "The operator's people take over the gates and the controls.",
+                "off_screen": true
             },
             {
                 "id": "cov_op_boarding",
@@ -441,6 +453,13 @@
                 {
                     "text": "Engine room work and refuelling",
                     "coverage_ids": []
+                },
+                {
+                    "text": "Fitting-out work inside the hall, and the handover to the operator",
+                    "coverage_ids": [
+                        "cov_fin_benches",
+                        "cov_comp_handover"
+                    ]
                 }
             ],
             "storytelling": [

@@ -177,9 +177,8 @@
                 "fitting-out crews"
             ],
             "completion": [
-                "operator representatives",
-                "master",
-                "fitting-out crews"
+                "yard crews",
+                "master"
             ],
             "operation": [
                 "crew",
@@ -209,6 +208,10 @@
             "off_screen": [
                 {
                     "text": "Engine room work and refuelling",
+                    "coverage_ids": []
+                },
+                {
+                    "text": "Fitting-out work inside the hall, and the handover to the operator",
                     "coverage_ids": []
                 }
             ],

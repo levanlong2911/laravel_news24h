@@ -5,12 +5,20 @@
     "scope": "full_lifecycle",
     "objective": "Create an original, physically credible documentary-style film about a fictional superyacht with a distinctive contemporary design, recognizable in its form and in the way its spaces are organized, from collaborative design through construction, finishing, delivery and guest experience.",
     "min_scenes": 5,
-    "max_scenes": 22,
+    "max_scenes": 20,
     "max_subjects": 12,
     "max_locations": 12,
+    "film_cut": {
+        "segment_count": 3,
+        "segment_ms": 10000,
+        "on_screen_room_states": ["fitted"],
+        "launch_coverage": "cov_comp_launch",
+        "after_launch_coverage": ["cov_comp_trial", "cov_op_underway"],
+        "finished_before_launch_stages": ["design", "construction", "finishing"]
+    },
     "film_brief": {
         "format": "film_brief_v1",
-        "revision": 1,
+        "revision": 2,
         "spaces": [
             {
                 "key": "main_salon",
@@ -67,13 +75,28 @@
                 "coverage_ids": [
                     "cov_build_machinery"
                 ]
+            },
+            {
+                "text": "Construction, installation and finishing work inside the rooms; it is complete before the launch.",
+                "coverage_ids": [
+                    "cov_fin_interior",
+                    "cov_fin_signature",
+                    "cov_fin_accept"
+                ]
+            },
+            {
+                "text": "The handover of the vessel to the captain and crew in the lobby, the wheelhouse, on the Crown Deck and on the service stair.",
+                "coverage_ids": [
+                    "cov_comp_delivery"
+                ]
             }
         ],
         "storytelling": [
             "Life on board moves from private space, to meeting others, to movement and rest, to the open-air spaces, to the sea.",
             "People use each space for what it was made for, and moving from one space to the next has a reason.",
             "Spaces are not shown to one formula, and no single guest uses every space.",
-            "Construction, checks and handover keep to work whose result is later seen in use; a moving part does not run its whole cycle again and again."
+            "Construction, checks and handover keep to work whose result is later seen in use; a moving part does not run its whole cycle again and again.",
+            "The vessel is coated and completely finished before it is launched; it is seen afloat and underway at sea only after the launch."
         ],
         "limits": [
             "Do not claim that the design or any of its parts has been verified as technically feasible.",
@@ -279,7 +302,7 @@
         {
             "id": "cov_fin_signature",
             "stage": "finishing",
-            "level": "required",
+            "level": "shown_or_transition",
             "label": "Show the signature spaces becoming complete and recognizable."
         },
         {
@@ -295,6 +318,12 @@
             "label": "Teams review finished spaces without implying unsupported technical approval."
         },
         {
+            "id": "cov_fin_equipment",
+            "stage": "finishing",
+            "level": "shown_or_transition",
+            "label": "Establish the navigation, deck and safety equipment the design names installed on its bases, before the launch."
+        },
+        {
             "id": "cov_comp_whole",
             "stage": "completion",
             "level": "required",
@@ -303,8 +332,8 @@
         {
             "id": "cov_comp_launch",
             "stage": "completion",
-            "level": "shown_or_transition",
-            "label": "Establish launch and the transition from supported hull to afloat vessel, before the first scene in which the vessel is afloat; never a first launch after it has been afloat."
+            "level": "required",
+            "label": "Show the launch: the vessel, already coated and completely finished with its interiors fitted and its equipment installed, goes from supported hull to afloat vessel by the launch means the yard location declares, before the first scene in which it is afloat; never a first launch after it has been afloat."
         },
         {
             "id": "cov_comp_trial",
@@ -315,7 +344,7 @@
         {
             "id": "cov_comp_delivery",
             "stage": "completion",
-            "level": "required",
+            "level": "shown_or_transition",
             "label": "Show meaningful transfer to the owner representative and operating crew."
         },
         {

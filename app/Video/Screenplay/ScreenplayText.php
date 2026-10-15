@@ -14,7 +14,7 @@ final class ScreenplayText
         return match ($version) {
             'screenplay_v2' => self::renderV2($screenplay),
             'screenplay_v3' => self::renderV3($screenplay),
-            'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7' => self::renderV4($screenplay),
+            'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7', 'screenplay_v8' => self::renderV4($screenplay),
             '' => self::renderLegacy($screenplay),
             default => "Screenplay version {$version} is not supported by this view.",
         };
@@ -35,7 +35,7 @@ final class ScreenplayText
     /** @param array<string, mixed> $screenplay */
     public static function renderScenes(array $screenplay): string
     {
-        if (! in_array($screenplay['schema_version'] ?? null, ['screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7'], true)) {
+        if (! in_array($screenplay['schema_version'] ?? null, ['screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7', 'screenplay_v8'], true)) {
             return self::render($screenplay);
         }
 

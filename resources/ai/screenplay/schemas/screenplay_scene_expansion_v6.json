@@ -23,6 +23,8 @@
                     "dialogue",
                     "sound",
                     "duration_estimate_ms",
+                    "film_segment",
+                    "camera",
                     "why_it_cannot_be_cut",
                     "leads_to",
                     "scene_mode",
@@ -108,6 +110,19 @@
                     },
                     "duration_estimate_ms": {
                         "type": "integer"
+                    },
+                    "film_segment": {
+                        "type": "integer",
+                        "enum": [
+                            1,
+                            2,
+                            3
+                        ]
+                    },
+                    "camera": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 300
                     },
                     "why_it_cannot_be_cut": {
                         "type": "string",

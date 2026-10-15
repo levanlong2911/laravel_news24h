@@ -110,6 +110,8 @@ final class ScreenplayExpansionService
             return [null, 'screenplay_locations_without_brief_spaces'];
         }
 
+        $context['profile'] = FilmBrief::withChosenSpaces($context['profile'], $locations->output_json['locations']);
+        $context['assembled_profile'] = FilmBrief::withChosenSpaces($context['assembled_profile'], $locations->output_json['locations']);
         $author = $context['author'];
         $contract = $context['contract'];
         $assembledVersion = (string) config('video.screenplay.scenes.assembled_version');
@@ -204,7 +206,7 @@ final class ScreenplayExpansionService
         $violations = array_merge(
             $violations,
             $validator->structural($expansion, $context['profile'], $contract, $context['excluded']),
-            $contract === VesselDesign::SCENES_CONTRACT
+            in_array($contract, [VesselDesign::LEGACY_SCENES_CONTRACT, VesselDesign::SCENES_CONTRACT], true)
                 ? SceneBeats::roomStateViolations((array) ($expansion['scenes'] ?? []), $fixed['locations'])
                 : [],
         );
@@ -416,7 +418,9 @@ final class ScreenplayExpansionService
             'content_hash' => self::contentHash($fixed['characters']),
         ];
 
-        [$sentContext, $sentFixed, $requestReason] = self::locationRequest($projectId, $context, $fixed);
+        [$sentContext, $sentFixed, $requestReason] = $contract === VesselDesign::LOCATIONS_CONTRACT
+            ? self::storyLocationRequest($projectId, $context, $fixed)
+            : self::locationRequest($projectId, $context, $fixed);
 
         if ($sentContext === null) {
             return [null, $requestReason];
@@ -481,10 +485,25 @@ final class ScreenplayExpansionService
             }
         }
 
-        [$built, $problems] = DesignLocationBuilder::build($answer, (array) $context['design_output'], $fixed['characters'], $labels);
+        $fromStory = $contract === VesselDesign::LOCATIONS_CONTRACT;
+        $story = self::storyText($context['foundation']);
+        [$built, $problems] = $fromStory
+            ? DesignLocationBuilder::fromStory($answer, (array) $context['design_output'], $story, $fixed['characters'], $labels)
+            : DesignLocationBuilder::build($answer, (array) $context['design_output'], $fixed['characters'], $labels);
 
         if ($built === null) {
             return ['Locations failed validation: '.implode('; ', $problems), null, ''];
+        }
+
+        $launch = $result->screenplay['launch'] ?? null;
+
+        if ($fromStory && $launch === null && is_string($context['profile']['film_cut']['launch_coverage'] ?? null)) {
+            return ['Locations failed validation: launch: the screenplay content does not name how the vessel is launched; '
+                .'complete or rewrite the screenplay content, approve it, then write the locations again', null, 'screenplay_launch_means_missing'];
+        }
+
+        if ($fromStory && $launch !== null && ($launchErrors = $validator->launchViolations($launch, $built, $story)) !== []) {
+            return ['Locations failed validation: '.implode('; ', $launchErrors), null, ''];
         }
 
         $builtProfile = ['contract_version' => VesselDesign::BUILT_LOCATIONS_CONTRACT] + $context['profile'];
@@ -500,6 +519,7 @@ final class ScreenplayExpansionService
         return [null, [
             'locations' => $built,
             'location_choices' => $answer,
+        ] + ($fromStory ? ['launch' => $launch] : []) + [
             'schema_version' => $contract,
             'author_model' => $result->authorModel,
             'source_foundation' => $context['source_foundation'],
@@ -514,6 +534,49 @@ final class ScreenplayExpansionService
         return is_array($foundation?->output_json)
             && ($foundation->output_json['schema_version'] ?? null) === VesselDesign::FOUNDATION_CONTRACT
             && is_array($foundation->output_json[VesselDesign::SOURCE_DESIGN_KEY] ?? null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $fixed
+     * @return array{0: ?array<string, mixed>, 1: ?array<string, mixed>, 2: string}
+     */
+    private static function storyLocationRequest(string $projectId, array $context, array $fixed): array
+    {
+        $gaps = VesselDesign::locationReferenceGaps((array) $context['design_output']);
+
+        if ($gaps !== []) {
+            Log::error('screenplay locations: the design the places are built from references parts it does not hold, no model call made', [
+                'project_id' => $projectId,
+                'gaps' => $gaps,
+            ]);
+
+            return [null, null, 'location_design_reference_missing'];
+        }
+
+        unset($context['profile'][VesselDesign::DESIGN_GEOMETRY_KEY], $context['profile'][VesselDesign::CONFIGURATION_COMPONENTS_KEY]);
+        $fixed['characters'] = array_map(
+            static fn (mixed $row): mixed => is_array($row) ? array_diff_key($row, [ProtagonistProfile::CHARACTER_KEY => true]) : $row,
+            $fixed['characters'],
+        );
+
+        return [$context, $fixed, 'ok'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $foundation
+     */
+    public static function storyText(array $foundation): string
+    {
+        $texts = [];
+
+        array_walk_recursive($foundation, static function (mixed $value) use (&$texts): void {
+            if (is_string($value)) {
+                $texts[] = $value;
+            }
+        });
+
+        return implode("\n", $texts);
     }
 
     /**

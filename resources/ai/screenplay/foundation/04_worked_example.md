@@ -16,29 +16,37 @@ THE DESIGN DRIVES THE FILM
 
 The design stage settles the rule the thesis states, people moving on and
 off across the width. Construction frames each side as a row of openings,
-finishing hangs and adjusts every gate, completion runs one gate cycle as
-the handover and gives the controls to the master, and operation shows a
-crowd boarding through the gates as part of a crossing. Each stage that
-shows the gates says whether they are open or closed.
+finishing hangs and adjusts every gate and coats the hull while it still
+stands in the building dock, completion floats the finished ferry out of
+the dock, and operation shows a crowd boarding through the gates as part of
+a crossing. Each stage that shows the gates says whether they are open or
+closed.
 
 The design did not say which building work to show. The answer chose the
 framing of the sides and the hanging of the gates because the viewer later
 sees those gates in use, and it chose who boards and how the hall feels
-when the sides are open.
+when the sides are open. The fitting-out inside the hall and the handover
+to the operator stay off screen, as the brief says.
+
+FINISHED BEFORE THE LAUNCH
+
+The ferry is coated, its gates hung and its hall fitted before the dock is
+flooded. Completion names the launch means, a flooded building dock and its
+gate, so the next steps can place it. The ferry is afloat only from that
+moment on.
 
 WHO MOVES THE GATES, AND WHEN
 
 Every use of the gates keeps one order: they open, people pass through,
 everyone is clear of the gate line, and only then do they close. The text
-names who works them: the operator's people at completion, the master from
-the helm cabin in service.
+names who works them: the master from the helm cabin in service.
 
 COMPLETION, OPERATION AND THE ENDING
 
-Completion hands the controls and the routine to the people who will run
-the ferry. Operation shows the boarding the design was made for. The
-ending does not board anyone again: it stays with the crossing, where the
-premise asked its question.
+Completion launches the finished ferry and takes it out of the yard.
+Operation shows the boarding the design was made for. The ending does not
+board anyone again: it stays with the crossing, where the premise asked its
+question.
 
 WHAT THIS STEP DOES NOT DO
 

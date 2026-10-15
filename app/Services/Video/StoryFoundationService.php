@@ -29,6 +29,7 @@ final class StoryFoundationService
         private readonly ScreenplayStepRunner $runner,
         private readonly VesselDesignService $designs,
         private readonly VideoProjectRepositoryInterface $projects,
+        private readonly ScreenplayExpansionService $expansion,
     ) {}
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
@@ -60,10 +61,37 @@ final class StoryFoundationService
             return [null, $reason];
         }
 
-        $snapshot = PlanningStageStore::metadataOf($design->input_json)[ScreenplayExpansionService::PROFILE_SNAPSHOT_KEY] ?? null;
+        $designMeta = PlanningStageStore::metadataOf($design->input_json);
 
-        if (! is_array($snapshot) || $snapshot === []) {
+        if (! is_array($designMeta['profile'] ?? null) || $designMeta['profile'] === []) {
             return [null, 'screenplay_profile_unknown'];
+        }
+
+        $snapshot = $this->expansion->screenplayProfile((string) ($project->article?->category?->slug ?? ''));
+
+        if ($snapshot === null) {
+            return [null, 'no_screenplay_profile'];
+        }
+
+        [$currentBrief] = FilmBrief::ofProfile($snapshot);
+        $designBrief = VesselDesign::designBrief($currentBrief);
+        $recordedBrief = FilmBrief::ofRequirements((array) ($designMeta['requirements'] ?? []));
+        $current = [
+            'profile' => FilmBrief::applyToProfile(VesselDesign::designShape($snapshot), $designBrief),
+            'brief' => $designBrief === null ? null : array_diff_key($designBrief, ['revision' => true]),
+        ];
+        $recorded = [
+            'profile' => $designMeta['profile'],
+            'brief' => $recordedBrief === null ? null : array_diff_key($recordedBrief, ['revision' => true]),
+        ];
+
+        if (self::canonical($current) !== self::canonical($recorded)) {
+            Log::error('story foundation: the profile parts the design was written from have changed, no model call made', [
+                'project_id' => $projectId,
+                'design_stage_id' => $design->id,
+            ]);
+
+            return [null, 'story_profile_design_changed'];
         }
 
         [$filmBrief, $briefErrors] = FilmBrief::ofProfile($snapshot);
@@ -132,6 +160,7 @@ final class StoryFoundationService
             'anchor_artifact_sha256' => (string) ($lock['artifact_sha256'] ?? ''),
             'anchor_prompt_sha256' => (string) ($lock['prompt_sha256'] ?? ''),
             'fingerprint' => $author->fingerprint($storySource, $profile, $requirements),
+            'screenplay_profile_sha256' => ScreenplayExpansionService::contentHash($snapshot),
         ];
 
         $meta = [
@@ -369,6 +398,19 @@ final class StoryFoundationService
             (array) ($profile['arc_stages'] ?? []),
             static fn (mixed $stage): bool => is_string($stage) && $stage !== '',
         ));
+    }
+
+    private static function canonical(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        return array_map(self::canonical(...), $value);
     }
 
     /**

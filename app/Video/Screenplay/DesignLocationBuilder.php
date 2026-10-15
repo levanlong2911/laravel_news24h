@@ -27,6 +27,42 @@ final class DesignLocationBuilder
     /** @var list<string> */
     private const DESIGN_TEXT_FIELDS = ['name', 'description', 'enclosure', 'layout'];
 
+    public const STORY_NAME_KEY = 'story_name';
+
+    public const ROUTE_EVIDENCE_KEY = 'route_evidence';
+
+    /** @var list<string> */
+    private const ROUTE_PART_WORDS = ['landing', 'landings', 'foot', 'top', 'bottom'];
+
+    /** @var array<string, list<string>> */
+    private const DIRECTION_WORDS = [
+        'down' => ['down', 'downward', 'downwards'],
+        'up' => ['up', 'upward', 'upwards'],
+    ];
+
+    /** @var array<string, list<string>> */
+    private const DIRECTION_VERBS = [
+        'down' => ['descend', 'descends', 'descended', 'descending'],
+        'up' => ['ascend', 'ascends', 'ascended', 'ascending'],
+    ];
+
+    /** @var list<string> */
+    private const MOVE_VERBS = [
+        'walk', 'walks', 'walked', 'walking', 'go', 'goes', 'went', 'going', 'climb', 'climbs', 'climbed', 'climbing',
+        'take', 'takes', 'took', 'taking', 'head', 'heads', 'headed', 'heading', 'come', 'comes', 'came', 'coming',
+        'run', 'runs', 'ran', 'running', 'step', 'steps', 'stepped', 'stepping', 'move', 'moves', 'moved', 'moving',
+        'hurry', 'hurries', 'hurried', 'hurrying',
+    ];
+
+    /** @var list<string> */
+    private const MOVEMENT_WORDS = [
+        ...self::DIRECTION_WORDS['down'], ...self::DIRECTION_WORDS['up'], ...self::DIRECTION_VERBS['down'], ...self::DIRECTION_VERBS['up'],
+        ...self::MOVE_VERBS, 'from', 'toward', 'towards',
+    ];
+
+    /** @var list<string> */
+    private const NAME_STOPWORDS = ['the', 'a', 'an', 'of', 'on', 'at', 'in', 'to', 'and', 's'];
+
     /** @var list<string> */
     private const LIGHT_KINDS = ['glazing', 'open_void'];
 
@@ -90,6 +126,510 @@ final class DesignLocationBuilder
         }
 
         return $violations === [] ? [$rows, []] : [null, array_values(array_unique($violations))];
+    }
+
+    /**
+     * @param  list<mixed>  $answer  the locations the model chose from the screenplay content alone
+     * @param  array<string, mixed>  $design  the verified source design output
+     * @param  string  $story  every text of the screenplay content the model read
+     * @param  list<array<string, mixed>>  $characters
+     * @param  array<string, string>  $briefLabels  film_brief space key => label
+     * @return array{0: ?list<array<string, mixed>>, 1: list<string>}
+     */
+    public static function fromStory(array $answer, array $design, string $story, array $characters, array $briefLabels): array
+    {
+        $index = self::index($design);
+        $briefRegions = array_values(array_filter(array_map(
+            static fn (string $space): ?string => self::spaceRegion($space, $index, $briefLabels)[0],
+            array_keys($briefLabels),
+        )));
+        $storyText = self::flat($story);
+        $violations = [];
+        $problems = [];
+        $pending = [];
+        $rows = [];
+        $owned = [];
+
+        foreach ($answer as $position => $row) {
+            if (! is_array($row) || ! is_string($row['id'] ?? null)) {
+                $violations[] = 'locations['.$position.']: must be an object with an id';
+
+                continue;
+            }
+
+            $id = $row['id'];
+            $converted = array_diff_key($row, [self::STORY_NAME_KEY => true, self::ROUTE_EVIDENCE_KEY => true]);
+            $converted[self::DESIGN_REFS_KEY] = [];
+
+            if (($row['spatial_relation'] ?? null) === LocationProfile::SUBJECT_PART) {
+                [$refs, $problem, $routes] = array_pad(self::storyRefs($id, $row, $index, $briefLabels, $briefRegions, $storyText), 3, null);
+
+                if ($problem !== null) {
+                    $problems[$id] = $problem;
+                } elseif ($routes !== null) {
+                    $pending[$id] = $routes;
+                } else {
+                    $surface = self::regionSurface((string) $refs[0]['id'], $index);
+                    $refs = $surface === null ? $refs : [...$refs, ['role' => 'surface', 'id' => $surface]];
+                    $converted[self::DESIGN_REFS_KEY] = $refs;
+                    $owned[$id] = self::ownership($id, $converted, $index, $briefLabels)[0];
+                }
+            }
+
+            $rows[$id] = $converted;
+        }
+
+        $placed = $owned;
+
+        foreach ($pending as $id => $routes) {
+            $joined = [];
+
+            foreach ($rows as $other => $row) {
+                $targets = array_column(array_filter((array) ($row['connections'] ?? []), 'is_array'), 'target_location_id');
+
+                if ($other === $id) {
+                    $joined = [...$joined, ...$targets];
+                } elseif (in_array($id, $targets, true)) {
+                    $joined[] = $other;
+                }
+            }
+
+            $checked = array_values(array_unique(array_filter(
+                $joined,
+                static fn (mixed $other): bool => is_string($other) && $other !== $id && (isset($placed[$other])
+                    || (($rows[$other]['spatial_relation'] ?? null) === LocationProfile::EXTERNAL)),
+            )));
+            $kept = [];
+
+            foreach ($routes['routes'] as $route) {
+                $trial = ['id' => $id, self::DESIGN_REFS_KEY => [['role' => 'route', 'id' => $route]]];
+                $through = self::ownership($id, $trial, $index, $briefLabels)[0];
+                $joinsAll = true;
+
+                foreach ($checked as $other) {
+                    if (self::joiningRefs($through, $placed[$other] ?? null, $index) === []) {
+                        $joinsAll = false;
+                    }
+                }
+
+                if ($joinsAll) {
+                    $kept[$route] = $through;
+                }
+            }
+
+            if (count($kept) === 1) {
+                $rows[$id][self::DESIGN_REFS_KEY] = [['role' => 'route', 'id' => (string) array_key_first($kept)]];
+                $owned[$id] = $kept[array_key_first($kept)];
+            } elseif ($kept === []) {
+                $problems[$id] = "{$id}.story_name: \"{$routes['name']}\" matches ".count($routes['routes']).' routes of the design ('
+                    .implode('; ', array_map(static fn (string $route): string => trim((string) ($index['routes'][$route]['support'] ?? '')), $routes['routes']))
+                    .'), but none of them joins '.implode(' and ', $checked).' as the screenplay content connects it, '
+                    .'so the screenplay content does not establish which part of the vessel it is';
+            } else {
+                $problems[$id] = self::routesAmbiguity($id, $routes['name'], array_map('strval', array_keys($kept)), $routes['missing'], $index);
+            }
+        }
+
+        $violations = [...$violations, ...array_values(array_intersect_key(array_replace(array_fill_keys(array_keys($rows), null), $problems), $problems))];
+
+        foreach ($rows as $id => $row) {
+            $connections = [];
+
+            foreach ((array) ($row['connections'] ?? []) as $position => $connection) {
+                if (! is_array($connection) || ! is_string($connection['target_location_id'] ?? null)) {
+                    $connections[] = $connection;
+
+                    continue;
+                }
+
+                $target = $connection['target_location_id'];
+                $from = $owned[$id] ?? null;
+                $to = $owned[$target] ?? null;
+                $refs = [];
+                $unresolved = static fn (string $place): bool => ($rows[$place]['spatial_relation'] ?? null) === LocationProfile::SUBJECT_PART && ! isset($owned[$place]);
+
+                if ($unresolved($id) || (isset($rows[$target]) && $unresolved($target))) {
+                    $connections[] = ['target_location_id' => $target, 'via_refs' => [], 'via' => $connection['via'] ?? null];
+
+                    continue;
+                }
+
+                if (($from !== null || $to !== null) && isset($rows[$target])) {
+                    $refs = self::joiningRefs($from, $to, $index);
+
+                    if ($refs === []) {
+                        $violations[] = "{$id}.connections[{$position}]: the design has no route or opening between {$id} and {$target}, "
+                            .'so the screenplay content does not establish how one leads to the other';
+                    }
+                }
+
+                $connections[] = ['target_location_id' => $target, 'via_refs' => $refs, 'via' => $connection['via'] ?? null];
+            }
+
+            $rows[$id]['connections'] = $connections;
+        }
+
+        if ($violations !== []) {
+            return [null, array_values(array_unique($violations))];
+        }
+
+        return self::build(array_values($rows), $design, $characters, $briefLabels);
+    }
+
+    /**
+     * @param  array<string, mixed>  $index
+     * @return string|null the surface a region without a surface of its own stands on, when the design leaves one
+     */
+    private static function regionSurface(string $region, array $index): ?string
+    {
+        $regions = array_keys($index['spatial_topology']);
+
+        foreach ($index['surfaces'] as $surface) {
+            if (($surface['relation'] ?? null) === 'within' && ($surface['relative_to'] ?? null) === $region) {
+                return null;
+            }
+        }
+
+        $deckName = (string) ($index['spatial_topology'][$region]['deck'] ?? '');
+        $deck = null;
+
+        foreach ($index['decks'] as $id => $row) {
+            if (trim((string) ($row['name'] ?? '')) === trim($deckName)) {
+                $deck = (string) $id;
+            }
+        }
+
+        $candidates = array_keys(array_filter(
+            $index['surfaces'],
+            static fn (array $surface): bool => $deck !== null && ($surface['deck'] ?? null) === $deck
+                && ($surface['status'] ?? null) === 'locked'
+                && ! in_array($surface['relative_to'] ?? null, $regions, true),
+        ));
+
+        $deckWords = self::nameWords($deckName);
+        $words = array_diff(self::nameWords((string) ($index['spatial_topology'][$region]['region'] ?? '')), $deckWords);
+        $evidenced = array_values(array_filter(
+            $candidates,
+            static fn (int|string $candidate): bool => array_intersect($words, array_diff(self::nameWords(str_replace('_', ' ', (string) $candidate)), $deckWords)) !== [],
+        ));
+
+        return count($evidenced) === 1 ? (string) $evidenced[0] : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $index
+     * @param  array<string, string>  $briefLabels
+     * @return array{0: ?string, 1: list<string>} the region that is the room, and every region the design links the space to
+     */
+    private static function spaceRegion(string $space, array $index, array $briefLabels): array
+    {
+        $candidates = array_values(array_filter(
+            $index['regions_of_space'][$space] ?? [],
+            static fn (string $ref): bool => isset($index['spatial_topology'][$ref]),
+        ));
+
+        if (count($candidates) < 2) {
+            return [$candidates[0] ?? null, $candidates];
+        }
+
+        $words = self::nameWords(($briefLabels[$space] ?? '').' '.str_replace('_', ' ', $space));
+        $whole = [];
+        $partial = [];
+
+        foreach ($candidates as $candidate) {
+            $own = self::nameWords(
+                ((string) ($index['spatial_topology'][$candidate]['region'] ?? '')).' '.((string) ($index['spatial_topology'][$candidate]['deck'] ?? '')),
+            );
+
+            if ($words !== [] && array_diff($words, $own) === []) {
+                $whole[] = (string) $candidate;
+            }
+
+            if (array_intersect($words, $own) !== []) {
+                $partial[] = (string) $candidate;
+            }
+        }
+
+        $found = match (true) {
+            count($whole) === 1 => $whole[0],
+            $whole === [] && count($partial) === 1 => $partial[0],
+            default => null,
+        };
+
+        return [$found, $candidates];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $index
+     * @param  array<string, string>  $briefLabels
+     * @param  list<string>  $briefRegions  the region that is each space of the project brief
+     * @return array{0: list<array{role: string, id: string}>, 1: ?string, 2?: ?array{name: string, routes: list<string>, missing: list<string>}}
+     */
+    private static function storyRefs(string $id, array $row, array $index, array $briefLabels, array $briefRegions, string $storyText): array
+    {
+        $space = $row[FilmBrief::COVERAGE_SPACE_KEY] ?? null;
+        $label = static fn (string $regionId): string => trim((string) ($index['spatial_topology'][$regionId]['region'] ?? $regionId));
+
+        if (is_string($space)) {
+            [$region, $candidates] = self::spaceRegion($space, $index, $briefLabels);
+
+            if ($region === null) {
+                return [[], $candidates === []
+                    ? "{$id}.brief_space: the design gives no region for {$space}, so the place cannot be built"
+                    : "{$id}.brief_space: the design links {$space} to ".implode('; ', array_map($label, $candidates))
+                        .' and does not establish which one is the room, so the place cannot be built'];
+            }
+
+            $position = 'interior_spaces.'.($index['interior'][$space]['position_index'] ?? -1);
+            $basins = array_keys(array_filter(
+                $index['basins'],
+                static fn (array $basin): bool => in_array($position, (array) ($basin['profile_paths'] ?? []), true),
+            ));
+
+            return [[
+                ['role' => 'region', 'id' => $region],
+                ...array_map(static fn (int|string $basin): array => ['role' => 'basin', 'id' => (string) $basin], $basins),
+            ], null];
+        }
+
+        $name = is_string($row[self::STORY_NAME_KEY] ?? null) ? trim($row[self::STORY_NAME_KEY]) : '';
+
+        if ($name === '') {
+            return [[], "{$id}.story_name: a place aboard that is no space of the project brief is named as the screenplay content names it"];
+        }
+
+        if (! str_contains($storyText, self::flat($name))) {
+            return [[], "{$id}.story_name: \"{$name}\" is not written in the screenplay content"];
+        }
+
+        $words = self::nameWords($name);
+        $matches = [];
+
+        foreach ($index['spatial_topology'] as $regionId => $region) {
+            if (($region['status'] ?? null) === 'locked' && $words !== []
+                && array_diff($words, self::nameWords(((string) ($region['region'] ?? '')).' '.((string) ($region['deck'] ?? '')))) === []) {
+                $matches[] = (string) $regionId;
+            }
+        }
+
+        if ($matches === []) {
+            return self::storyRoute($id, $name, $words, $row[self::ROUTE_EVIDENCE_KEY] ?? null, $index, $storyText);
+        }
+
+        return match (true) {
+            count($matches) > 1 => [[], "{$id}.story_name: \"{$name}\" matches ".implode('; ', array_map($label, $matches))
+                .' in the design, so the screenplay content does not establish which one it is'],
+            in_array($matches[0], $briefRegions, true) => [[], "{$id}.story_name: \"{$name}\" is ".$label($matches[0]).', a space of the project brief, so the place carries its brief_space'],
+            default => [[['role' => 'region', 'id' => $matches[0]]], null],
+        };
+    }
+
+    /**
+     * @param  list<string>  $words
+     * @param  array<string, mixed>  $index
+     * @return array{0: list<array{role: string, id: string}>, 1: ?string, 2?: ?array{name: string, routes: list<string>, missing: list<string>}}
+     */
+    private static function storyRoute(string $id, string $name, array $words, mixed $evidence, array $index, string $storyText): array
+    {
+        $part = array_values(array_intersect($words, self::ROUTE_PART_WORDS));
+
+        if ($part !== []) {
+            return [[], "{$id}.story_name: \"{$name}\" names a {$part[0]}, one part of a stair or walkway; the design holds no {$part[0]} "
+                .'as a place of its own, so the screenplay content does not establish which one it is'];
+        }
+
+        $words = array_values(array_diff($words, self::MOVEMENT_WORDS));
+        $deckName = static fn (mixed $deck): string => is_string($deck) ? (string) ($index['decks'][$deck]['name'] ?? $deck) : '';
+        $routeWords = static fn (string $routeId, array $route): array => self::nameWords(implode(' ', [
+            str_replace('_', ' ', (string) preg_replace('/^r_/', '', $routeId)), (string) ($route['kind'] ?? ''), (string) ($route['support'] ?? ''),
+            $deckName($route['from']['deck'] ?? null), $deckName($route['to']['deck'] ?? null),
+        ]));
+        $endFor = static function (array $route, string $deck) use ($deckName): ?string {
+            foreach (['from', 'to'] as $end) {
+                $own = self::nameWords($deckName($route[$end]['deck'] ?? null));
+
+                if ($own !== [] && array_diff(self::nameWords($deck), $own) === []) {
+                    return $end;
+                }
+            }
+
+            return null;
+        };
+        $missing = ['the decks it joins'];
+        $matches = [];
+
+        foreach ($index['routes'] as $routeId => $route) {
+            if (($route['status'] ?? null) === 'locked' && $words !== [] && array_diff($words, $routeWords((string) $routeId, $route)) === []) {
+                $matches[(string) $routeId] = $route;
+            }
+        }
+
+        if (is_array($evidence)) {
+            $quote = is_string($evidence['quote'] ?? null) ? trim($evidence['quote']) : '';
+
+            if ($quote === '' || ! str_contains($storyText, self::flat($quote))) {
+                return [[], "{$id}.route_evidence.quote: is not written word for word in the screenplay content"];
+            }
+
+            foreach (['from_deck', 'to_deck', 'side'] as $field) {
+                if (is_string($evidence[$field] ?? null) && ! str_contains(self::flat($quote), self::flat($evidence[$field]))) {
+                    return [[], "{$id}.route_evidence.{$field}: \"{$evidence[$field]}\" is not in the quoted words"];
+                }
+            }
+
+            $ends = array_filter(['from' => $evidence['from_deck'] ?? null, 'to' => $evidence['to_deck'] ?? null], 'is_string');
+            $direction = self::stairDirection($quote, $words, array_values($ends));
+            $side = is_string($evidence['side'] ?? null) ? self::nameWords($evidence['side']) : [];
+            $level = static fn (array $route, string $end): ?int => is_int($index['decks'][$route[$end]['deck'] ?? '']['level'] ?? null)
+                ? $index['decks'][$route[$end]['deck']]['level']
+                : null;
+            $matches = array_filter($matches, static function (array $route, string $routeId) use ($ends, $side, $direction, $endFor, $level, $routeWords): bool {
+                foreach ($ends as $role => $deck) {
+                    $end = $endFor($route, $deck);
+
+                    if ($end === null) {
+                        return false;
+                    }
+
+                    $here = $level($route, $end);
+                    $there = $level($route, $end === 'from' ? 'to' : 'from');
+
+                    if ($direction !== null && $here !== null && $there !== null
+                        && (($role === 'to') === ($direction === 'down') ? $here > $there : $here < $there)) {
+                        return false;
+                    }
+                }
+
+                return array_diff($side, $routeWords($routeId, $route)) === [];
+            }, ARRAY_FILTER_USE_BOTH);
+            $missing = array_values(array_filter([
+                ! isset($ends['from']) ? 'the deck it starts from' : null,
+                ! isset($ends['to']) ? 'the deck it arrives at' : null,
+                $direction === null ? 'whether it goes up or down' : null,
+            ]));
+        }
+
+        return $matches === []
+            ? [[], "{$id}.story_name: \"{$name}\" matches no region or route of the design, so the screenplay content does not establish which part of the vessel it is", null]
+            : [[], null, ['name' => $name, 'routes' => array_map('strval', array_keys($matches)), 'missing' => $missing]];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $from  the design parts of one place, null for a place away from the subject
+     * @param  array<string, mixed>|null  $to  the design parts of the other place, null for a place away from the subject
+     * @param  array<string, mixed>  $index
+     * @return list<string> the routes and openings of the design that join the two places
+     */
+    private static function joiningRefs(?array $from, ?array $to, array $index): array
+    {
+        $refs = [];
+
+        foreach ([...array_keys($index['openings']), ...array_keys($index['routes'])] as $ref) {
+            if (self::viaRef('', (string) $ref, $from, $to, $index)[1] === null) {
+                $refs[] = (string) $ref;
+            }
+        }
+
+        return $refs;
+    }
+
+    /**
+     * @param  list<string>  $routes
+     * @param  list<string>  $missing  the facts of a stair the screenplay content does not give
+     * @param  array<string, mixed>  $index
+     */
+    private static function routesAmbiguity(string $id, string $name, array $routes, array $missing, array $index): string
+    {
+        $level = static fn (string $route): bool => ($index['routes'][$route]['from']['deck'] ?? null) === ($index['routes'][$route]['to']['deck'] ?? null);
+        $level = array_filter($routes, $level) === $routes;
+        $pairs = array_unique(array_map(static function (string $route) use ($index): string {
+            $decks = [(string) ($index['routes'][$route]['from']['deck'] ?? ''), (string) ($index['routes'][$route]['to']['deck'] ?? '')];
+            sort($decks);
+
+            return implode('|', $decks);
+        }, $routes));
+        $wanting = match (true) {
+            $level => 'which side or which places it joins',
+            count($pairs) === 1 => 'which side it is on',
+            default => $missing === [] ? 'enough to tell them apart' : implode(', ', $missing),
+        };
+
+        return "{$id}.story_name: \"{$name}\" matches ".count($routes).($level ? ' walkways' : ' routes').' of the design ('
+            .implode('; ', array_map(static fn (string $route): string => trim((string) ($index['routes'][$route]['support'] ?? '')), $routes))
+            ."), and the screenplay content does not give {$wanting}, so it does not establish which one it is";
+    }
+
+    /**
+     * @param  list<string>  $nameWords  the words that name the stair or walkway
+     * @param  list<string>  $decks  the decks the evidence names
+     * @return 'up'|'down'|null the direction the quote gives the movement on this stair, or null when it gives none for certain
+     */
+    private static function stairDirection(string $quote, array $nameWords, array $decks): ?string
+    {
+        preg_match_all('/[a-z0-9]+|[^a-z0-9\s]/', (string) preg_replace("/(?<=[a-z0-9])['’-](?=[a-z0-9])/u", ' ', mb_strtolower($quote)), $found);
+        $tokens = $found[0];
+        $deckWords = array_merge([], ...array_map(self::nameWords(...), $decks));
+        $core = array_values(array_diff($nameWords, $deckWords));
+        $start = null;
+        $end = null;
+
+        for ($position = 0; $position < count($tokens) && $start === null; $position++) {
+            $run = $position;
+
+            while ($run < count($tokens) && in_array($tokens[$run], $core, true)) {
+                $run++;
+            }
+
+            if ($core !== [] && array_diff($core, array_slice($tokens, $position, $run - $position)) === []) {
+                $start = $position;
+                $end = $run - 1;
+            }
+        }
+
+        if ($start === null) {
+            return null;
+        }
+
+        $before = $start - 1;
+
+        if (in_array($tokens[$before] ?? null, ['the', 'a'], true)) {
+            $before--;
+        }
+
+        $directionOf = static function (?string $token, array $sets): ?string {
+            foreach ($sets as $direction => $words) {
+                if (in_array($token, $words, true)) {
+                    return $direction;
+                }
+            }
+
+            return null;
+        };
+        $moves = static fn (?string $token): bool => in_array($token, self::MOVE_VERBS, true);
+        $found = array_values(array_filter([
+            $directionOf($tokens[$before] ?? null, self::DIRECTION_VERBS),
+            $moves($tokens[$before - 1] ?? null) ? $directionOf($tokens[$before] ?? null, self::DIRECTION_WORDS) : null,
+            $moves($tokens[$before] ?? null) ? $directionOf($tokens[$end + 1] ?? null, self::DIRECTION_WORDS) : null,
+        ]));
+
+        return count(array_unique($found)) === 1 ? $found[0] : null;
+    }
+
+    /** @return list<string> */
+    private static function nameWords(string $text): array
+    {
+        $words = preg_split('/[^a-z0-9]+/', mb_strtolower($text)) ?: [];
+
+        return array_values(array_unique(array_filter(
+            $words,
+            static fn (string $word): bool => $word !== '' && ! in_array($word, self::NAME_STOPWORDS, true),
+        )));
+    }
+
+    private static function flat(string $text): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $text)));
     }
 
     /**
@@ -363,6 +903,9 @@ final class DesignLocationBuilder
             $where = "{$id}.connections[{$position}]";
             $target = is_array($connection) ? ($connection['target_location_id'] ?? null) : null;
             $ref = is_array($connection) ? ($connection['via_ref'] ?? null) : null;
+            $refs = is_array($connection) && is_array($connection['via_refs'] ?? null)
+                ? array_values(array_filter($connection['via_refs'], 'is_string'))
+                : (is_string($ref) ? [$ref] : []);
             $text = is_array($connection) && is_string($connection['via'] ?? null) ? trim($connection['via']) : '';
             $other = is_string($target) ? ($places[$target] ?? null) : null;
 
@@ -375,20 +918,20 @@ final class DesignLocationBuilder
             $aboard = $place['owned'] !== null && $other['owned'] !== null;
             $crossing = ($place['owned'] !== null) !== ($other['owned'] !== null);
 
-            if ($aboard && ! is_string($ref)) {
+            if ($aboard && $refs === []) {
                 $violations[] = "{$where}: two places aboard connect through a route or opening of the design, named in via_ref";
 
                 continue;
             }
 
-            if ($crossing && ! is_string($ref)) {
+            if ($crossing && $refs === []) {
                 $violations[] = "{$where}: ".self::ENDPOINT_UNRESOLVED.': a place aboard reaches a place away from the subject only through '
                     .'an opening of the design that leads outside, named in via_ref; moving between them in the story is not a connection';
 
                 continue;
             }
 
-            if (! $aboard && ! $crossing && $ref !== null) {
+            if (! $aboard && ! $crossing && ($ref !== null || $refs !== [])) {
                 $violations[] = "{$where}.via_ref: two places away from the subject pass through no part of the design, so it is null";
 
                 continue;
@@ -401,15 +944,27 @@ final class DesignLocationBuilder
             }
 
             $refText = null;
+            $phrases = [];
+            $problem = null;
 
-            if (is_string($ref)) {
-                [$refText, $problem] = self::viaRef($where, $ref, $place['owned'], $other['owned'], $index);
+            foreach ($refs as $one) {
+                [$phrase, $problem] = self::viaRef($where, $one, $place['owned'], $other['owned'], $index);
 
                 if ($problem !== null) {
-                    $violations[] = $problem;
-
-                    continue;
+                    break;
                 }
+
+                $phrases[] = (string) $phrase;
+            }
+
+            if ($problem !== null) {
+                $violations[] = $problem;
+
+                continue;
+            }
+
+            if ($phrases !== []) {
+                $refText = implode(' or ', array_values(array_unique($phrases)));
             }
 
             $via = $aboard ? (string) $refText : ($refText === null ? $text : $refText.': '.$text);

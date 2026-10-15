@@ -7,7 +7,7 @@ namespace App\Video\Screenplay;
 final class SceneBeats
 {
     /** @var list<string> */
-    public const SCREENPLAY_VERSIONS = ['screenplay_v6', 'screenplay_v7'];
+    public const SCREENPLAY_VERSIONS = ['screenplay_v6', 'screenplay_v7', 'screenplay_v8'];
 
     public const CONTINUOUS = 'continuous';
 

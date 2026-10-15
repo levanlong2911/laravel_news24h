@@ -52,7 +52,7 @@ final class ScreenplayValidator
     ) {}
 
     /** @var list<string> A response is a whole film. */
-    public const CONTRACTS = ['screenplay_v2', 'screenplay_v3', 'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7'];
+    public const CONTRACTS = ['screenplay_v2', 'screenplay_v3', 'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7', 'screenplay_v8'];
 
     /** @var list<string> A response is one step towards a film, not a film. */
     public const STEP_CONTRACTS = [
@@ -72,24 +72,41 @@ final class ScreenplayValidator
         VesselDesign::LEGACY_CONTRACT,
         VesselDesign::STORY_CONTRACT,
         VesselDesign::FOUNDATION_CONTRACT,
+        VesselDesign::LEGACY_LOCATIONS_CONTRACT,
         VesselDesign::LOCATIONS_CONTRACT,
+        VesselDesign::LEGACY_SCENES_CONTRACT,
         VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var list<string> */
     public const EXPANSION_CONTRACTS = [
         'screenplay_scene_expansion_v1', 'screenplay_scene_expansion_v2', 'screenplay_scene_expansion_v3',
-        'screenplay_scene_expansion_v4', VesselDesign::SCENES_CONTRACT,
+        'screenplay_scene_expansion_v4', VesselDesign::LEGACY_SCENES_CONTRACT, VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var list<string> */
     private const LISTED_SUBJECT_CONTRACTS = [
         'screenplay_scene_expansion_v2', 'screenplay_scene_expansion_v3', 'screenplay_scene_expansion_v4',
-        VesselDesign::SCENES_CONTRACT,
+        VesselDesign::LEGACY_SCENES_CONTRACT, VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var list<string> */
-    private const BEAT_CONTRACTS = ['screenplay_v6', 'screenplay_v7', 'screenplay_scene_expansion_v4', VesselDesign::SCENES_CONTRACT];
+    private const BEAT_CONTRACTS = [
+        'screenplay_v6', 'screenplay_v7', 'screenplay_v8', 'screenplay_scene_expansion_v4',
+        VesselDesign::LEGACY_SCENES_CONTRACT, VesselDesign::SCENES_CONTRACT,
+    ];
+
+    /** @var list<string> */
+    public const FILM_CONTRACTS = ['screenplay_v8', VesselDesign::SCENES_CONTRACT];
+
+    /** @var array<string, string> */
+    private const FILM_FIELD_TYPES = [
+        'film_segment' => 'integer',
+        'camera' => 'string',
+    ];
+
+    /** @var array{0: int, 1: int} */
+    private const CAMERA_LIMITS = [20, 300];
 
     /** @var array<string, array<string, string>> */
     private const BEAT_FIELD_TYPES = [
@@ -121,6 +138,7 @@ final class ScreenplayValidator
         'screenplay_locations_v1' => 'locations',
         'screenplay_locations_v2' => 'locations',
         'screenplay_locations_v3' => 'locations',
+        VesselDesign::LEGACY_LOCATIONS_CONTRACT => 'locations',
         VesselDesign::LOCATIONS_CONTRACT => 'locations',
     ];
 
@@ -130,7 +148,7 @@ final class ScreenplayValidator
     /** @var list<string> */
     private const DIMENSIONED_CONTRACTS = [
         'screenplay_foundation_v2', 'screenplay_foundation_v3', 'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7',
-        VesselDesign::CONTRACT, VesselDesign::LEGACY_CONTRACT, VesselDesign::FOUNDATION_CONTRACT,
+        'screenplay_v8', VesselDesign::CONTRACT, VesselDesign::LEGACY_CONTRACT, VesselDesign::FOUNDATION_CONTRACT,
     ];
 
     /** @var list<string> */
@@ -153,9 +171,9 @@ final class ScreenplayValidator
 
     /** @var list<string> */
     private const SCENE_CONTRACTS = [
-        'screenplay_v3', 'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7',
+        'screenplay_v3', 'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7', 'screenplay_v8',
         'screenplay_scene_expansion_v1', 'screenplay_scene_expansion_v2', 'screenplay_scene_expansion_v3',
-        'screenplay_scene_expansion_v4', VesselDesign::SCENES_CONTRACT,
+        'screenplay_scene_expansion_v4', VesselDesign::LEGACY_SCENES_CONTRACT, VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var list<string> */
@@ -243,8 +261,8 @@ final class ScreenplayValidator
 
     /** @var list<string> */
     private const PLACE_CONTRACTS = [
-        'screenplay_v5', 'screenplay_v6', 'screenplay_v7', 'screenplay_locations_v2', 'screenplay_locations_v3',
-        'screenplay_scene_expansion_v3', 'screenplay_scene_expansion_v4', VesselDesign::SCENES_CONTRACT,
+        'screenplay_v5', 'screenplay_v6', 'screenplay_v7', 'screenplay_v8', 'screenplay_locations_v2', 'screenplay_locations_v3',
+        'screenplay_scene_expansion_v3', 'screenplay_scene_expansion_v4', VesselDesign::LEGACY_SCENES_CONTRACT, VesselDesign::SCENES_CONTRACT,
     ];
 
     /** @var array<string, array<string, string>> */
@@ -298,10 +316,12 @@ final class ScreenplayValidator
         'screenplay_v5' => ['object', 'person', 'group'],
         'screenplay_v6' => ['object', 'person', 'group'],
         'screenplay_v7' => ['object', 'person', 'group'],
+        'screenplay_v8' => ['object', 'person', 'group'],
         'screenplay_scene_expansion_v1' => ['object', 'person', 'group'],
         'screenplay_scene_expansion_v2' => ['object', 'person', 'group'],
         'screenplay_scene_expansion_v3' => ['object', 'person', 'group'],
         'screenplay_scene_expansion_v4' => ['object', 'person', 'group'],
+        VesselDesign::LEGACY_SCENES_CONTRACT => ['object', 'person', 'group'],
         VesselDesign::SCENES_CONTRACT => ['object', 'person', 'group'],
         'screenplay_characters_v1' => ['object', 'person', 'group'],
         'screenplay_characters_v2' => ['object', 'person', 'group'],
@@ -1042,10 +1062,6 @@ final class ScreenplayValidator
             }
         }
 
-        foreach (array_diff($spaces, array_keys($claimed)) as $missing) {
-            $violations[] = "locations: the project brief space {$missing} has no location";
-        }
-
         return $violations;
     }
 
@@ -1419,7 +1435,208 @@ final class ScreenplayValidator
             $beats ? $this->subjectStateViolations($screenplay, $profile) : $this->buildStateViolations($screenplay),
             $beats ? $this->beatViolations($screenplay) : [],
             $this->coverageViolations($screenplay, $profile),
+            in_array($contract, self::FILM_CONTRACTS, true) ? $this->filmViolations($screenplay, $profile) : [],
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @param  array<string, mixed>  $profile
+     * @return list<string>
+     */
+    private function filmViolations(array $screenplay, array $profile): array
+    {
+        $film = is_array($profile['film_cut'] ?? null) ? $profile['film_cut'] : [];
+        $count = (int) ($film['segment_count'] ?? 0);
+        $segmentMs = (int) ($film['segment_ms'] ?? 0);
+
+        if ($count < 1 || $segmentMs < 1) {
+            return ['profile film_cut: segment_count and segment_ms must be positive integers'];
+        }
+
+        $violations = [];
+        $totals = array_fill(1, $count, 0);
+        $previous = 1;
+        $positions = [];
+        $roomStates = array_values(array_filter((array) ($film['on_screen_room_states'] ?? []), 'is_string'));
+
+        foreach ($this->rowsOf($screenplay, 'scenes') as $position => $scene) {
+            if (! is_array($scene)) {
+                continue;
+            }
+
+            $id = $this->sceneLabel($scene);
+            $positions[(string) ($scene['id'] ?? '')] = $position;
+            $segment = $scene['film_segment'] ?? null;
+            $duration = $scene['duration_estimate_ms'] ?? null;
+
+            if (! is_int($segment) || $segment < 1 || $segment > $count) {
+                $violations[] = "{$id}.film_segment: must be a segment from 1 to {$count}";
+            } elseif ($segment < $previous) {
+                $violations[] = "{$id}.film_segment: steps back from segment {$previous} to {$segment}; segments follow the scene order";
+            } elseif ($segment > $previous + 1) {
+                $violations[] = "{$id}.film_segment: skips from segment {$previous} to {$segment}";
+            } else {
+                $previous = $segment;
+                $totals[$segment] += is_int($duration) ? $duration : 0;
+            }
+
+            $camera = $scene['camera'] ?? null;
+
+            if (is_string($camera) && (mb_strlen(trim($camera)) < self::CAMERA_LIMITS[0] || mb_strlen($camera) > self::CAMERA_LIMITS[1])) {
+                $violations[] = "{$id}.camera: must be ".self::CAMERA_LIMITS[0].'-'.self::CAMERA_LIMITS[1].' characters';
+            }
+
+            if ($roomStates !== [] && is_array($scene[SceneBeats::ROOM_STATE_KEY] ?? null)) {
+                foreach (['start', 'end'] as $edge) {
+                    $state = $scene[SceneBeats::ROOM_STATE_KEY][$edge] ?? null;
+
+                    if ($state !== null && ! in_array($state, $roomStates, true)) {
+                        $violations[] = "{$id}.room_state.{$edge}: {$state} is work inside a room, which the film does not show; only "
+                            .implode(', ', $roomStates).' rooms are on screen';
+                    }
+                }
+            }
+        }
+
+        foreach ($totals as $segment => $total) {
+            if ($total !== $segmentMs) {
+                $violations[] = "film segment {$segment}: its scenes last {$total} ms, the segment lasts exactly {$segmentMs} ms";
+            }
+        }
+
+        return [...$violations, ...$this->launchOrderViolations($screenplay, $film, $positions, $profile)];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $locations  the built locations
+     * @param  string  $story  every text of the screenplay content the locations were chosen from
+     * @return list<string>
+     */
+    public function launchViolations(mixed $launch, array $locations, string $story): array
+    {
+        if (! is_array($launch)) {
+            return ['launch: must name the launch place, the launch means and the words of the screenplay content that say it'];
+        }
+
+        $spaced = static fn (string $text): string => trim((string) preg_replace('/\s+/u', ' ', $text));
+        $quote = is_string($launch['quote'] ?? null) ? $spaced($launch['quote']) : '';
+        $means = is_string($launch['means'] ?? null) ? $spaced($launch['means']) : '';
+        $locationId = $launch['location_id'] ?? null;
+        $violations = [];
+
+        if ($quote === '') {
+            $violations[] = 'launch.quote: must quote the screenplay content';
+        } elseif (! str_contains($spaced($story), $quote)) {
+            $violations[] = 'launch.quote: is not written word for word in the screenplay content';
+        }
+
+        if ($means === '') {
+            $violations[] = 'launch.means: must name the launch means';
+        } elseif ($quote !== '' && ! str_contains(mb_strtolower($quote), mb_strtolower($means))) {
+            $violations[] = "launch.means: \"{$means}\" is not in the quoted words, so the screenplay content does not say it";
+        }
+
+        $location = null;
+
+        foreach ($locations as $row) {
+            if (is_array($row) && ($row['id'] ?? null) === $locationId) {
+                $location = $row;
+            }
+        }
+
+        if ($location === null) {
+            $violations[] = 'launch.location_id: '.$this->label($locationId).' is not a declared location';
+        } elseif (($location['spatial_relation'] ?? null) !== LocationProfile::EXTERNAL) {
+            $violations[] = "launch.location_id: {$locationId} is aboard the subject; the launch happens at a place away from it";
+        } elseif ($means !== '' && array_filter(
+            (array) ($location['fixed_features'] ?? []),
+            static fn (mixed $feature): bool => is_string($feature) && str_contains(mb_strtolower($feature), mb_strtolower($means)),
+        ) === []) {
+            $violations[] = "launch.means: no fixed feature of {$locationId} holds \"{$means}\"";
+        }
+
+        return $violations;
+    }
+
+    /**
+     * @param  array<string, mixed>  $screenplay
+     * @param  array<string, mixed>  $film
+     * @param  array<string, int>  $positions
+     * @param  array<string, mixed>  $profile
+     * @return list<string>
+     */
+    private function launchOrderViolations(array $screenplay, array $film, array $positions, array $profile): array
+    {
+        $launchId = $film['launch_coverage'] ?? null;
+
+        if (! is_string($launchId)) {
+            return [];
+        }
+
+        $shown = [];
+
+        foreach ($this->rowsOf($screenplay, 'coverage') as $item) {
+            if (is_array($item) && ($item['mode'] ?? null) === 'shown' && is_string($item['coverage_id'] ?? null)) {
+                $shown[$item['coverage_id']] = array_values(array_filter((array) ($item['scene_ids'] ?? []), 'is_string'));
+            }
+        }
+
+        $launch = array_map(static fn (string $sceneId): ?int => $positions[$sceneId] ?? null, $shown[$launchId] ?? []);
+        $launch = array_filter($launch, 'is_int');
+
+        if ($launch === []) {
+            return [];
+        }
+
+        $first = min($launch);
+        $violations = [];
+
+        foreach (array_filter((array) ($film['after_launch_coverage'] ?? []), 'is_string') as $afterId) {
+            foreach ($shown[$afterId] ?? [] as $sceneId) {
+                if (isset($positions[$sceneId]) && $positions[$sceneId] <= $first) {
+                    $violations[] = "coverage {$afterId}: {$sceneId} comes before the launch, the vessel is afloat only after it";
+                }
+            }
+        }
+
+        $before = array_values(array_filter((array) ($film['finished_before_launch_stages'] ?? []), 'is_string'));
+
+        if ($before === []) {
+            return $violations;
+        }
+
+        $stages = [];
+
+        foreach ((array) ($profile['coverage'] ?? []) as $item) {
+            if (is_array($item) && is_string($item['id'] ?? null) && is_string($item['stage'] ?? null)) {
+                $stages[$item['id']] = $item['stage'];
+            }
+        }
+
+        foreach ($this->rowsOf($screenplay, 'coverage') as $item) {
+            $coverageId = is_array($item) && is_string($item['coverage_id'] ?? null) ? $item['coverage_id'] : null;
+
+            if ($coverageId === null || ! in_array($stages[$coverageId] ?? null, $before, true)
+                || ! in_array($item['mode'] ?? null, ['shown', 'transition'], true)) {
+                continue;
+            }
+
+            foreach (array_filter((array) ($item['scene_ids'] ?? []), 'is_string') as $sceneId) {
+                if (isset($positions[$sceneId]) && $positions[$sceneId] > $first) {
+                    $violations[] = "coverage {$coverageId}: {$sceneId} comes after the launch; {$stages[$coverageId]} work is complete before the vessel is launched";
+                }
+            }
+        }
+
+        foreach ($this->rowsOf($screenplay, 'scenes') as $scene) {
+            if (is_array($scene) && in_array($scene['stage'] ?? null, $before, true)
+                && isset($positions[(string) ($scene['id'] ?? '')]) && $positions[(string) $scene['id']] > $first) {
+                $violations[] = $this->sceneLabel($scene).".stage: {$scene['stage']} comes after the launch; the vessel is complete before it is launched";
+            }
+        }
+
+        return $violations;
     }
 
     /**
@@ -1942,6 +2159,10 @@ final class ScreenplayValidator
 
         if (in_array($contract, self::BEAT_CONTRACTS, true)) {
             $types += self::BEAT_FIELD_TYPES[$collection] ?? [];
+        }
+
+        if ($collection === 'scenes' && in_array($contract, self::FILM_CONTRACTS, true)) {
+            $types += self::FILM_FIELD_TYPES;
         }
 
         return $types;

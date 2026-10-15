@@ -281,6 +281,35 @@ final class FilmBrief
 
     /**
      * @param  array<string, mixed>  $profile
+     * @param  list<array<string, mixed>>  $locations
+     * @return array<string, mixed>
+     */
+    public static function withChosenSpaces(array $profile, array $locations): array
+    {
+        if (! is_array($profile['coverage'] ?? null)) {
+            return $profile;
+        }
+
+        $chosen = [];
+
+        foreach ($locations as $location) {
+            if (is_array($location) && is_string($location[self::COVERAGE_SPACE_KEY] ?? null)) {
+                $chosen[] = $location[self::COVERAGE_SPACE_KEY];
+            }
+        }
+
+        $profile['coverage'] = array_values(array_filter(
+            $profile['coverage'],
+            static fn (mixed $item): bool => ! is_array($item)
+                || ! is_string($item[self::COVERAGE_SPACE_KEY] ?? null)
+                || in_array($item[self::COVERAGE_SPACE_KEY], $chosen, true),
+        ));
+
+        return $profile;
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
      * @param  array<string, mixed>  $brief
      * @return list<string>
      */

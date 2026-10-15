@@ -131,7 +131,7 @@ final class ScreenplayStepRunner
         $metadata = is_array($extra['metadata'] ?? null) ? $extra['metadata'] : [];
 
         if ($error !== null || $output === null) {
-            return [null, $fail((string) $error, 'screenplay_invalid', $usage, $result->rawResponse, $metadata)];
+            return [null, $fail((string) $error, $okReason !== '' ? $okReason : 'screenplay_invalid', $usage, $result->rawResponse, $metadata)];
         }
 
         try {
