@@ -41,8 +41,8 @@ return [
     ),
 
     'design_anchor' => [
-        'prompt_path' => resource_path('ai/prompts/anchor_from_design_v1.txt'),
-        'prompt_version' => 'anchor-from-design-v1-r10',
+        'prompt_path' => resource_path('ai/prompts/anchor_from_design_v1_r11.txt'),
+        'prompt_version' => 'anchor-from-design-v1-r11',
     ],
 
     'anchor_model' => env('IMAGE_ANCHOR_MODEL', 'gpt-image-2.5-flare'),

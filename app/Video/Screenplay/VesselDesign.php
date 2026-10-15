@@ -26,11 +26,15 @@ final class VesselDesign
 
     public const FOUNDATION_CONTRACT = 'screenplay_foundation_v4';
 
-    public const LOCATIONS_CONTRACT = 'screenplay_locations_v4';
+    public const LOCATIONS_CONTRACT = 'screenplay_locations_v5';
+
+    public const LEGACY_LOCATIONS_CONTRACT = 'screenplay_locations_v4';
 
     public const BUILT_LOCATIONS_CONTRACT = 'screenplay_locations_v3';
 
-    public const SCENES_CONTRACT = 'screenplay_scene_expansion_v5';
+    public const SCENES_CONTRACT = 'screenplay_scene_expansion_v6';
+
+    public const LEGACY_SCENES_CONTRACT = 'screenplay_scene_expansion_v5';
 
     public const SOURCE_KIND = 'vessel_design';
 
@@ -423,6 +427,18 @@ final class VesselDesign
 
     /** @var list<string> */
     private const REFERENCE_COMMON_OBJECTS = ['proportion_system', 'global_silhouette', 'superstructure_geometry'];
+
+    /** @var list<string> */
+    private const ANCHOR_HULL_FIELDS = [
+        'waterline_entry', 'forefoot', 'sheer', 'freeboard_distribution', 'midbody',
+        'hull_side_organization', 'hull_superstructure_relationship', 'design_waterline',
+    ];
+
+    /** @var list<string> */
+    private const ANCHOR_PROPORTION_FIELDS = ['overall', 'masses', 'vertical'];
+
+    /** @var list<string> */
+    private const ANCHOR_SILHOUETTE_FIELDS = ['profile_view'];
 
     /** @var list<string> */
     private const REFERENCE_SIGNATURE_FIELDS = ['feature_id', 'feature', 'kind', 'priority', 'description', 'topology', 'relationships', 'must_preserve'];
@@ -3429,11 +3445,171 @@ final class VesselDesign
      */
     public static function anchorBlockers(array $output): array
     {
-        return array_keys(array_filter([
+        if (! self::hasCanonical($output)) {
+            return array_keys(array_filter([
+                'anchor_design_unresolved' => self::unresolvedDecisions($output) !== [],
+                'anchor_design_not_canonical' => true,
+            ]));
+        }
+
+        $source = self::anchorPromptSource($output, self::anchorDesign($output, null));
+        $kept = array_flip(array_filter(array_column($source['geometry']['surfaces'], 'id'), 'is_string'));
+        $ambiguous = array_filter(
+            self::indistinctSurfaces(self::lockedDesign($output, null)[self::CANONICAL_KEY] ?? []),
+            static fn (array $pair): bool => isset($kept[$pair[0]], $kept[$pair[1]]),
+        );
+
+        return [...array_keys(array_filter([
             'anchor_design_unresolved' => self::unresolvedDecisions($output) !== [],
-            'anchor_design_incomplete_text' => self::incompleteTexts($output) !== [],
-            'anchor_design_placement_ambiguous' => self::placementGaps($output) !== [],
+            'anchor_design_placement_ambiguous' => $ambiguous !== [],
+        ])), ...self::anchorPromptGaps($source)];
+    }
+
+    /**
+     * @param  array<string, mixed>  $output
+     * @param  array<string, mixed>  $extract
+     * @return array{view: string, near_end: string, side: string, subject: array<string, mixed>, geometry: array<string, mixed>, identity: array<string, mixed>}
+     */
+    public static function anchorPromptSource(array $output, array $extract): array
+    {
+        $view = \App\Video\Reference\ReferenceView::DESIGN_ANCHOR_VIEW;
+        preg_match('/^(bow|stern)_three_quarter_(port|starboard)$/', $view, $parts);
+        [, $nearEnd, $side] = $parts;
+        $farSide = $side === 'port' ? 'starboard' : 'port';
+        $farEnd = $nearEnd === 'bow' ? 'stern' : 'bow';
+        $sheet = self::exteriorDesign($output, $extract, null);
+        $hidden = self::anchorHiddenIds($sheet, $nearEnd === 'bow' ? 'aft_of' : 'forward_of');
+        $drop = static fn (array $row, array $fields): array => array_diff_key($row, array_flip($fields));
+        $farWords = $farEnd === 'stern' ? '/\b(stern|aft|transom)\b/i' : '/\b(bow|forward|stem)\b/i';
+        $secondary = [];
+
+        foreach (self::rows($sheet['permanent_secondary_geometry'] ?? null) as $row) {
+            $text = ($row['element'] ?? '').' '.($row['position'] ?? '');
+            $farOnly = preg_match('/\b'.$farSide.'\b/i', $text) === 1 && preg_match('/\b'.$side.'\b/i', $text) !== 1;
+
+            if (($row[self::EQUIPMENT_KIND_KEY] ?? null) !== null || ($row['form'] ?? null) === 'equipment' || isset($hidden[$row['id'] ?? null]) || $farOnly) {
+                $hidden[(string) ($row['id'] ?? '')] = true;
+
+                continue;
+            }
+
+            $secondary[] = $drop($row, [self::EQUIPMENT_KIND_KEY]);
+        }
+
+        $touches = static fn (array $ids): bool => array_intersect(array_filter($ids, 'is_string'), array_keys($hidden)) !== [];
+        $faces =[$nearEnd === 'bow' ? 'forward' : 'aft', $side, 'upward', 'top'];
+
+        return [
+            'view' => $view,
+            'near_end' => $nearEnd,
+            'side' => $side,
+            'subject' => [
+                'name' => $sheet['vessel']['name'] ?? null,
+                'length_m' => $sheet['principal_dimensions']['length_m'] ?? null,
+                'beam_m' => $sheet['principal_dimensions']['beam_m'] ?? null,
+                'length_beam_ratio' => $sheet['principal_dimensions']['length_beam_ratio'] ?? null,
+                'proportion_system' => array_intersect_key((array) ($sheet['proportion_system'] ?? []), array_flip(self::ANCHOR_PROPORTION_FIELDS)),
+                'global_silhouette' => array_intersect_key((array) ($sheet['global_silhouette'] ?? []), array_flip(self::ANCHOR_SILHOUETTE_FIELDS)),
+            ],
+            'geometry' => [
+                'hull_geometry' => array_intersect_key((array) ($sheet['hull_geometry'] ?? []),
+                    array_flip([...self::ANCHOR_HULL_FIELDS, $nearEnd === 'bow' ? 'stem_and_bow' : 'stern_and_transom'])),
+                "{$nearEnd}_geometry" => (array) ($sheet["{$nearEnd}_geometry"] ?? []),
+                "{$farEnd}_geometry" => array_intersect_key((array) ($sheet["{$farEnd}_geometry"] ?? []), array_flip(['relationship_to_waterline'])),
+                'decks' => array_map(static fn (array $row): array => array_intersect_key($row, array_flip(['id', 'name', 'level', 'body'])), self::rows($sheet['decks'] ?? null)),
+                'superstructure_geometry' => (array) ($sheet['superstructure_geometry'] ?? []),
+                'governing_lines' => array_values(array_filter(self::rows($sheet['governing_lines'] ?? null), static fn (array $row): bool => ! isset($hidden[$row['id'] ?? null])
+                    && ! (preg_match($farWords, (string) ($row['runs_from'] ?? '')) === 1 && preg_match($farWords, (string) ($row['runs_to'] ?? '')) === 1))),
+                'primary_masses' => array_values(array_map(static fn (array $row): array => $drop($row, ['role']),
+                    array_filter(self::rows($sheet['primary_masses'] ?? null), static fn (array $row): bool => ! isset($hidden[$row['id'] ?? null])))),
+                'primary_voids' => array_values(array_map(static fn (array $row): array => $drop($row, ['role']),
+                    array_filter(self::rows($sheet['primary_voids'] ?? null), static fn (array $row): bool => ! isset($hidden[$row['id'] ?? null])))),
+                'openings' => array_values(array_map(static fn (array $row): array => $drop($row, ['serves', self::STANDARD_STATE_KEY]),
+                    array_filter(self::rows($sheet['openings'] ?? null), static fn (array $row): bool => ($row[self::EXTERIOR_ROLE_KEY] ?? null) !== 'interior_only'
+                        && in_array($row['face'] ?? null, $faces, true) && ! isset($hidden[$row['id'] ?? null])))),
+                'surfaces' => array_values(array_map(static fn (array $row): array => array_intersect_key($row, array_flip(['id', 'deck', 'kind', 'relative_to', 'relation', self::SIDE_KEY])),
+                    array_filter(self::rows($sheet['surfaces'] ?? null), static fn (array $row): bool => ($row[self::EXTERIOR_ROLE_KEY] ?? null) === 'exterior'
+                        && ! isset($hidden[$row['id'] ?? null]) && ($row[self::SIDE_KEY] ?? null) !== $farSide))),
+                'permanent_secondary_geometry' => $secondary,
+                'transitions' => array_values(array_filter(self::rows($sheet[self::TRANSITIONS_KEY] ?? null), static fn (array $row): bool => ! $touches((array) ($row['between'] ?? [])))),
+                'geometric_relationships' => array_values(array_filter(self::rows($sheet['geometric_relationships'] ?? null),
+                    static fn (array $row): bool => ! $touches([$row['subject'] ?? null, $row['object'] ?? null]))),
+            ],
+            'identity' => [
+                'signature_regions' => array_values(array_map(static fn (array $row): array => array_intersect_key($row, array_flip(['feature_id', 'feature', 'priority', 'description']))
+                    + ['topology' => array_intersect_key((array) ($row['topology'] ?? []), array_flip([$nearEnd === 'bow' ? 'fore' : 'aft', $side, 'top', 'bottom']))],
+                    array_filter(self::rows($sheet['signature_regions'] ?? null), static fn (array $row): bool => ! isset($hidden[$row['feature_id'] ?? null])))),
+                'must_preserve' => array_values(array_filter(self::rows($sheet['must_preserve'] ?? null), static fn (array $row): bool => ! $touches((array) ($row['refs'] ?? [])))),
+                'must_not_introduce' => array_values(array_filter(self::rows($sheet['must_not_introduce'] ?? null), static fn (array $row): bool => ! $touches((array) ($row['refs'] ?? [])))),
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $source
+     * @return list<string>
+     */
+    public static function anchorPromptGaps(array $source): array
+    {
+        $subject = $source['subject'];
+        $geometry = $source['geometry'];
+        $text = static fn (mixed $value): bool => is_string($value) && trim($value) !== '';
+        $nearEnd = $source['near_end'];
+
+        return array_keys(array_filter([
+            'anchor_design_missing_dimensions' => ! $text($subject['name']) || ! is_numeric($subject['length_m']) || ! is_numeric($subject['beam_m']),
+            'anchor_design_missing_decks' => $geometry['decks'] === [],
+            'anchor_design_missing_near_end' => ! $text($geometry['hull_geometry'][$nearEnd === 'bow' ? 'stem_and_bow' : 'stern_and_transom'] ?? null)
+                && array_filter($geometry["{$nearEnd}_geometry"], $text) === [],
+            'anchor_design_missing_side' => ! $text($geometry['hull_geometry']['hull_side_organization'] ?? null),
+            'anchor_design_opening_unplaced' => array_filter($geometry['openings'], static fn (array $row): bool => ! $text($row['deck'] ?? null) || ! $text($row['host'] ?? null)) !== [],
         ]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $sheet
+     * @return array<string, true>
+     */
+    private static function anchorHiddenIds(array $sheet, string $farRelation): array
+    {
+        $hidden = [];
+        $relationships = self::rows($sheet['geometric_relationships'] ?? null);
+        $surfaces = self::rows($sheet['surfaces'] ?? null);
+
+        foreach ($relationships as $row) {
+            if (($row['relation'] ?? null) === $farRelation && is_string($row['subject'] ?? null)) {
+                $hidden[$row['subject']] = true;
+            }
+        }
+
+        foreach ($surfaces as $row) {
+            if (($row['relation'] ?? null) === $farRelation && is_string($row['id'] ?? null)) {
+                $hidden[$row['id']] = true;
+            }
+        }
+
+        do {
+            $grew = false;
+
+            foreach ($relationships as $row) {
+                $subject = $row['subject'] ?? null;
+
+                if (is_string($subject) && ! isset($hidden[$subject]) && isset($hidden[$row['object'] ?? null])
+                    && in_array($row['relation'] ?? null, ['contained_by', 'below', 'within'], true)) {
+                    $hidden[$subject] = $grew = true;
+                }
+            }
+
+            foreach ($surfaces as $row) {
+                $id = $row['id'] ?? null;
+
+                if (is_string($id) && ! isset($hidden[$id]) && isset($hidden[$row['relative_to'] ?? null])) {
+                    $hidden[$id] = $grew = true;
+                }
+            }
+        } while ($grew);
+
+        return $hidden;
     }
 
     /**

@@ -19,7 +19,7 @@ final class OpenAiImageClient
 
     private const EDIT_ENDPOINT = '/v1/images/edits';
 
-    private const MAX_PROMPT_CHARS = 32000;
+    public const MAX_PROMPT_CHARS = 32000;
 
     private const MAX_VARIATIONS = 10;
 

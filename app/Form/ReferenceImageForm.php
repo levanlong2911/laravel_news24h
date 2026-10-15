@@ -7,6 +7,7 @@ use App\Enums\ImageQuality;
 use App\Enums\ImageSize;
 use App\Enums\ImageVariations;
 use App\Video\Reference\ReferenceEnvironment;
+use App\Video\Reference\ReferenceSheet;
 use App\Video\Reference\ReferenceView;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -28,6 +29,58 @@ class ReferenceImageForm
                 [
                     'view.required' => __('messages.anchor_setting_required', ['field' => 'View']),
                     'view.*' => __('messages.anchor_setting_invalid', ['field' => 'View']),
+                ])->validate();
+        }
+
+        if ($mode === 'sheet_preview') {
+            return Validator::make($request->all(),
+                [
+                    'sheet_state' => ['required', Rule::in(ReferenceSheet::STATES)],
+                    'environment' => ['required', Rule::enum(ReferenceEnvironment::class)],
+                ],
+                [
+                    'sheet_state.required' => __('messages.anchor_setting_required', ['field' => 'Trạng thái']),
+                    'sheet_state.*' => __('messages.anchor_setting_invalid', ['field' => 'Trạng thái']),
+                    'environment.required' => __('messages.anchor_setting_required', ['field' => 'Environment']),
+                    'environment.*' => __('messages.anchor_setting_invalid', ['field' => 'Environment']),
+                ])->validate();
+        }
+
+        if ($request->input('view') === ReferenceSheet::VIEW_OPTION) {
+            return Validator::make($request->all(),
+                [
+                    'prompt_sha256' => ['required', 'string', 'regex:/^[0-9a-f]{64}$/'],
+                    'view' => ['required', Rule::in([ReferenceSheet::VIEW_OPTION])],
+                    'sheet_state' => ['required', Rule::in(ReferenceSheet::STATES)],
+                    'environment' => ['required', Rule::enum(ReferenceEnvironment::class)],
+                    'model' => ['required', Rule::enum(ImageModel::class)],
+                    'quality' => ['required', Rule::enum(ImageQuality::class), static function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+                        $model = ImageModel::tryFrom((string) $request->input('model'));
+                        $quality = ImageQuality::tryFrom((string) $value);
+
+                        if ($model !== null && $quality !== null && ! $model->supports($quality)) {
+                            $fail("Quality {$quality->label()} không dùng được với model {$model->label()}.");
+                        }
+                    }],
+                    'size' => ['required', Rule::enum(ImageSize::class)],
+                    'variations' => ['required', Rule::in(['1', 1])],
+                ],
+                [
+                    'prompt_sha256.required' => 'Thiếu mã băm của prompt đang xem trước.',
+                    'prompt_sha256.*' => 'Mã băm của prompt đang xem trước không hợp lệ.',
+                    'view.*' => __('messages.anchor_setting_invalid', ['field' => 'View']),
+                    'sheet_state.required' => __('messages.anchor_setting_required', ['field' => 'Trạng thái']),
+                    'sheet_state.*' => __('messages.anchor_setting_invalid', ['field' => 'Trạng thái']),
+                    'environment.required' => __('messages.anchor_setting_required', ['field' => 'Environment']),
+                    'environment.*' => __('messages.anchor_setting_invalid', ['field' => 'Environment']),
+                    'model.required' => __('messages.anchor_setting_required', ['field' => 'Model']),
+                    'model.*' => __('messages.anchor_setting_invalid', ['field' => 'Model']),
+                    'quality.required' => __('messages.anchor_setting_required', ['field' => 'Quality']),
+                    'quality.'.Enum::class => __('messages.anchor_setting_invalid', ['field' => 'Quality']),
+                    'size.required' => __('messages.anchor_setting_required', ['field' => 'Size']),
+                    'size.*' => __('messages.anchor_setting_invalid', ['field' => 'Size']),
+                    'variations.required' => __('messages.anchor_setting_required', ['field' => 'Variations']),
+                    'variations.*' => 'Bộ 6 góc chỉ tạo 1 ảnh mỗi lượt.',
                 ])->validate();
         }
 

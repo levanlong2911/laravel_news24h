@@ -1116,6 +1116,12 @@ TEXT;
         ];
     }
 
+    /** @return array<string, mixed> */
+    public function anchorPromptSource(VideoPlanningStage $stage): array
+    {
+        return VesselDesign::anchorPromptSource((array) $stage->output_json, $this->anchorExtract($stage));
+    }
+
     public function ensureIdentity(VideoPlanningStage $stage): ?VideoVisualIdentity
     {
         $subjectKey = VesselDesign::subjectKey((string) $stage->id);
@@ -1272,7 +1278,8 @@ TEXT;
             $spec = is_array($image->prompt_spec_json) ? $image->prompt_spec_json : [];
             $artifact = $image->artifact;
 
-            if (($spec['source_artifact_id'] ?? null) !== ($anchorLock['artifact_id'] ?? null)
+            if (($spec['reference_mode'] ?? null) === \App\Video\Reference\ReferenceSheet::MODE
+                || ($spec['source_artifact_id'] ?? null) !== ($anchorLock['artifact_id'] ?? null)
                 || ($spec['source_artifact_sha256'] ?? null) !== ($anchorLock['artifact_sha256'] ?? null)
                 || $artifact === null || ! is_string($artifact->sha256) || $artifact->sha256 === '') {
                 continue;

@@ -58,7 +58,11 @@
                     <div class="va-row-prompt">
                         <div class="va-row-bar">
                             @if($hasPrompt)
-                                <div class="m">Viết bởi <b>{{ $row['prompt_version'] ?? '—' }}</b></div>
+                                <div class="m">Viết bởi <b>{{ ($row['prompt_author'] ?? null) === \App\Video\Prompt\AnchorDesignPrompt::AUTHOR ? 'code · ' : '' }}{{ $row['prompt_version'] ?? '—' }}</b></div>
+                            @elseif(($designFirst ?? false) && $character !== null)
+                                <div class="m" style="color:var(--vp-red)">
+                                    {{ $row['prompt_error'] ?? (($row['blockers'] ?? []) !== [] ? 'Thiết kế chưa đủ dữ kiện để ghép prompt anchor.' : 'Chưa ghép được prompt từ thiết kế — tải lại trang.') }}
+                                </div>
                             @else
                                 <div class="m" style="color:var(--vp-red)">
                                     {{ $row['stale_prompt']
@@ -67,7 +71,8 @@
                                 </div>
                             @endif
 
-                            @if(($row['blockers'] ?? []) !== [])
+                            @if(($designFirst ?? false) && $character !== null)
+                            @elseif(($row['blockers'] ?? []) !== [])
                                 <button class="vp-btn sm" disabled title="Thiết kế chưa sẵn sàng">Creat Prompt</button>
                             @elseif(! $brief['analysed'])
                                 <button class="vp-btn sm" disabled title="Cần brief Haiku trước">Creat Prompt</button>
@@ -104,17 +109,9 @@
                         </div>
                         @if(($row['blockers'] ?? []) !== [])
                             <div class="va-lbl" style="color:var(--vp-red);font-weight:400">
-                                Chưa sẵn sàng viết prompt hay render anchor:
+                                Chưa sẵn sàng ghép prompt hay render anchor:
                                 @foreach($row['blockers'] as $blocker)
                                     <div>{{ $blocker }}</div>
-                                @endforeach
-                            </div>
-                        @endif
-                        @if(($row['conflicts'] ?? []) !== [])
-                            <div class="va-lbl" style="color:var(--vp-red);font-weight:400">
-                                AI báo nguồn thiết kế còn mâu thuẫn hoặc thiếu dữ kiện (vẫn cho render):
-                                @foreach($row['conflicts'] as $conflict)
-                                    <div>{{ $conflict }}</div>
                                 @endforeach
                             </div>
                         @endif

@@ -150,7 +150,17 @@
                                     <option value="{{ $view->value }}" @selected(old('view') === $view->value)>{{ $view->displayLabel() }}</option>
                                 @endforeach
                                 <option value="" disabled>Tạo các ảnh cận cảnh chi tiết (chưa hỗ trợ)</option>
-                                <option value="" disabled>Tạo bộ ảnh tham chiếu từ ảnh hiện tại (chưa hỗ trợ)</option>
+                                <option value="{{ $referenceSheet['option'] }}" @selected(old('view') === $referenceSheet['option'])>Tạo bộ ảnh tham chiếu từ ảnh hiện tại (6 góc trên 1 ảnh)</option>
+                            </select>
+                        </div>
+                        <div class="va-field" id="referenceSheetStateField" hidden>
+                            <label>Trạng thái</label>
+                            <select class="ctl" name="sheet_state" id="referenceSheetState" form="referenceForm" disabled>
+                                @foreach(\App\Video\Reference\ReferenceSheet::STATES as $state)
+                                    <option value="{{ $state }}"
+                                            @selected(old('sheet_state', \App\Video\Reference\ReferenceSheet::STATE_AS_ANCHOR) === $state)
+                                            @disabled($state === \App\Video\Reference\ReferenceSheet::STATE_FINISHED && ! $referenceSheet['finish_ready'])>{{ \App\Video\Reference\ReferenceSheet::stateLabel($state) }}{{ $state === \App\Video\Reference\ReferenceSheet::STATE_FINISHED && ! $referenceSheet['finish_ready'] ? ' (thiết kế chưa đủ dữ liệu)' : '' }}</option>
+                                @endforeach
                             </select>
                         </div>
                         <div class="va-field">
@@ -185,7 +195,7 @@
                         </div>
                         <div class="va-field">
                             <label>Size</label>
-                            <select class="ctl" name="size" form="referenceForm" required
+                            <select class="ctl" name="size" id="referenceSize" form="referenceForm" required
                                     @disabled($approvedAnchor === null)>
                                 <option value="">Choose size</option>
                                 @foreach(\App\Enums\ImageSize::cases() as $size)
@@ -205,9 +215,19 @@
                         </div>
                     </div>
 
-                    <div class="va-lbl">PROMPT GỬI ĐI <span>(AI viết VIEW GEOMETRY · mục tiêu edit + giữ nhận dạng + góc máy + môi trường + trạng thái do PHP ghép)</span></div>
+                    <div class="va-lbl">PROMPT GỬI ĐI <span id="referencePromptNote">(AI viết VIEW GEOMETRY · mục tiêu edit + giữ nhận dạng + góc máy + môi trường + trạng thái do PHP ghép)</span></div>
                     <textarea class="va-ta" id="referencePrompt" readonly></textarea>
                     <div class="va-count"><span data-c="r">0</span> ký tự</div>
+
+                    <div id="referenceSheetLegend" hidden>
+                        <div class="va-lbl">THỨ TỰ 6 Ô TRÊN ẢNH <span>(ảnh không vẽ chữ; dùng làm tham chiếu tổng hợp, không dùng làm keyframe hay ảnh một góc)</span></div>
+                        <div class="va-sheet-legend">
+                            @foreach($referenceSheet['legend'] as $panel)
+                                <div><b>{{ $loop->iteration }}</b> {{ $panel['label'] }}</div>
+                            @endforeach
+                        </div>
+                    </div>
+                    <div class="va-lbl" id="referenceSheetError" hidden style="color:var(--vp-red);font-weight:400"></div>
 
                     <div class="va-lbl" id="referenceBlocked" hidden style="color:var(--vp-red);font-weight:400">
                         AI báo nguồn thiết kế hoặc ảnh anchor còn mâu thuẫn hoặc thiếu dữ kiện cho góc này (vẫn cho render):
@@ -216,7 +236,7 @@
                     <div id="referenceWarnings"></div>
 
                     <div class="va-foot">
-                        <button type="button" class="vp-btn" data-toggle="modal" data-target="#confirmReferencePrompt"
+                        <button type="button" class="vp-btn" id="referencePromptButton" data-toggle="modal" data-target="#confirmReferencePrompt"
                                 data-busy="Đang viết…" @disabled($approvedAnchor === null)>AI viết prompt</button>
                         <button type="button" id="generateReferenceButton" class="vp-btn pri"
                                 data-toggle="modal" data-target="#confirmReference"
@@ -233,7 +253,7 @@
                     @include('modal.confirm_action', [
                         'id' => 'confirmReference',
                         'form' => 'referenceForm',
-                        'content' => 'Render reference bằng đúng prompt AI đang hiển thị.',
+                        'content' => 'Render reference bằng đúng prompt đang hiển thị — TÁC VỤ NÀY TÍNH TIỀN.',
                         'detail' => 'Chi phí được tính theo model, quality và variations.',
                     ])
                 </div>
@@ -271,7 +291,9 @@
                                 <img src="{{ $candidate['url'] }}" alt="{{ $cell['image_code'] }}"
                                      width="{{ $candidate['width'] }}" height="{{ $candidate['height'] }}">
                                 <div class="cap">
-                                    <span>{{ \App\Video\Reference\ReferenceView::tryFrom((string) $cell['view_key'])?->displayLabel() ?? '—' }}
+                                    <span>{{ $cell['reference_mode'] === \App\Video\Reference\ReferenceSheet::MODE
+                                            ? 'Bộ 6 góc · '.\App\Video\Reference\ReferenceSheet::stateLabel((string) $cell['sheet_state'])
+                                            : (\App\Video\Reference\ReferenceView::tryFrom((string) $cell['view_key'])?->displayLabel() ?? '—') }}
                                         &middot; {{ \App\Video\Reference\ReferenceEnvironment::tryFrom((string) $cell['environment'])?->label() ?? '—' }}</span>
                                     <span class="act">
                                         <b class="{{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</b>
@@ -317,7 +339,9 @@
                 @forelse($pendingCells as $cell)
                     <div class="va-cell">
                         <span class="code">{{ $cell['image_code'] }}</span>
-                        <span class="va-tag blue">{{ \App\Video\Reference\ReferenceView::tryFrom((string) $cell['view_key'])?->displayLabel() ?? '—' }}
+                        <span class="va-tag blue">{{ $cell['reference_mode'] === \App\Video\Reference\ReferenceSheet::MODE
+                                ? 'Bộ 6 góc · '.\App\Video\Reference\ReferenceSheet::stateLabel((string) $cell['sheet_state'])
+                                : (\App\Video\Reference\ReferenceView::tryFrom((string) $cell['view_key'])?->displayLabel() ?? '—') }}
                             &middot; {{ \App\Video\Reference\ReferenceEnvironment::tryFrom((string) $cell['environment'])?->label() ?? '—' }}</span>
                         <span class="va-tag {{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</span>
                         <span class="grow"></span>
@@ -382,9 +406,89 @@
     var warnings = document.getElementById('referenceWarnings');
     var render = document.getElementById('generateReferenceButton');
     var count = document.querySelector('[data-c="r"]');
+    var sheet = @json($referenceSheet);
+    var sheetUrl = @json(route('video-projects.reference-sheet-preview', $id));
+    var sheetField = document.getElementById('referenceSheetStateField');
+    var sheetState = document.getElementById('referenceSheetState');
+    var sheetLegend = document.getElementById('referenceSheetLegend');
+    var sheetError = document.getElementById('referenceSheetError');
+    var size = document.getElementById('referenceSize');
+    var variations = document.getElementById('referenceVariations');
+    var aiButton = document.getElementById('referencePromptButton');
+    var note = document.getElementById('referencePromptNote');
+    var noteText = note ? note.textContent : '';
+    var ready = {{ $approvedAnchor === null ? 'false' : 'true' }};
+    var inSheet = false;
+    var ticket = 0;
     if (!view || !environment || !box) { return; }
 
+    function sheetMode(on) {
+        sheetField.hidden = !on;
+        sheetState.disabled = !on;
+        sheetLegend.hidden = !on;
+        aiButton.hidden = on;
+        note.textContent = on ? '(code ghép từ ảnh anchor + bản thiết kế, không gọi AI viết prompt · chỉ đọc)' : noteText;
+        Array.from(variations.options).forEach(function (option) {
+            option.disabled = on && option.value !== '1';
+        });
+        if (on) {
+            variations.value = '1';
+            if (!inSheet) {
+                size.value = sheet.default_size;
+                environment.value = sheet.default_environment;
+            }
+        }
+        if (!on) { sheetError.hidden = true; }
+        inSheet = on;
+    }
+
+    function syncSheet() {
+        var mine = ++ticket;
+        box.value = 'Đang ghép prompt…';
+        stage.value = '';
+        sha.value = '';
+        conflicts.innerHTML = '';
+        warnings.innerHTML = '';
+        blocked.hidden = true;
+        sheetError.hidden = true;
+        if (render) { render.disabled = true; }
+        if (count) { count.textContent = 0; }
+
+        var query = new URLSearchParams({ sheet_state: sheetState.value, environment: environment.value });
+        fetch(sheetUrl + '?' + query.toString(), {
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin'
+        }).then(function (response) {
+            return response.json().then(function (body) { return { ok: response.ok, body: body }; });
+        }).then(function (result) {
+            if (mine !== ticket) { return; }
+            if (result.ok && result.body.ok) {
+                box.value = result.body.prompt;
+                sha.value = result.body.prompt_sha256;
+                if (render) { render.disabled = !ready; }
+                if (count) { count.textContent = result.body.length; }
+                return;
+            }
+            var errors = result.body.errors ? Object.values(result.body.errors).flat() : [];
+            box.value = '';
+            sheetError.textContent = result.body.message && errors.length === 0 ? result.body.message : errors.join(' ');
+            sheetError.hidden = false;
+        }).catch(function () {
+            if (mine !== ticket) { return; }
+            box.value = '';
+            sheetError.textContent = 'Không tải được prompt xem trước — thử lại.';
+            sheetError.hidden = false;
+        });
+    }
+
     function sync() {
+        sheetMode(view.value === sheet.option);
+        if (inSheet) {
+            syncSheet();
+            return;
+        }
+        ticket++;
+
         var entry = prompts[view.value] || null;
         var prompt = entry ? entry.prompts[environment.value] : null;
 
@@ -415,7 +519,7 @@
         });
 
         blocked.hidden = conflictRows.length === 0;
-        if (render && {{ $approvedAnchor === null ? 'false' : 'true' }}) {
+        if (render && ready) {
             render.disabled = !prompt;
         }
         if (count) { count.textContent = prompt ? box.value.length : 0; }
@@ -423,6 +527,7 @@
 
     view.addEventListener('change', sync);
     environment.addEventListener('change', sync);
+    sheetState.addEventListener('change', sync);
     sync();
 })();
 

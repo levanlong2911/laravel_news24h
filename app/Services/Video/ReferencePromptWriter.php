@@ -16,6 +16,7 @@ use App\Video\Prompt\OpenAiTextClient;
 use App\Video\Prompt\TextCompletionAccounting;
 use App\Video\Reference\IdentityPreservationPrompt;
 use App\Video\Reference\ReferenceEnvironment;
+use App\Video\Reference\ReferenceSheet;
 use App\Video\Reference\ReferenceView;
 use App\Video\Screenplay\LocationProfile;
 use App\Video\Screenplay\ProtagonistProfile;
@@ -275,6 +276,49 @@ final class ReferencePromptWriter
         ];
     }
 
+    /**
+     * @return array{0: ?array<string, mixed>, 1: string}
+     */
+    public function sheet(string $projectId, ?VideoDesignImage $anchor, string $state, ReferenceEnvironment $environment): array
+    {
+        [$base, $why] = $this->base($projectId, $anchor, false);
+
+        if ($base === null) {
+            return [null, $why];
+        }
+
+        if (! $base['canonical']) {
+            return [null, 'reference_sheet_needs_design'];
+        }
+
+        [$prompt, $reason] = ReferenceSheet::compile($base['design'], $state, $environment);
+
+        if ($prompt === null) {
+            return [null, $reason];
+        }
+
+        return [[
+            'prompt' => $prompt,
+            'prompt_sha256' => hash('sha256', $prompt),
+            'anchor_image_id' => $base['image_id'],
+            'anchor_artifact_id' => $base['artifact_id'],
+            'anchor_sha256' => $base['sha256'],
+            'design_stage_id' => $base['screenplay_stage_id'],
+            'design_content_hash' => $base['design_content_hash'],
+            'state' => $state,
+            'environment' => $environment->value,
+            'layout_version' => ReferenceSheet::LAYOUT_VERSION,
+            'panels' => ReferenceSheet::PANELS,
+        ], 'ok'];
+    }
+
+    public function sheetFinishReady(string $projectId, ?VideoDesignImage $anchor): bool
+    {
+        [$base] = $this->base($projectId, $anchor, false);
+
+        return $base !== null && $base['canonical'] && ReferenceSheet::finish($base['design']) !== null;
+    }
+
     /** @return list<string> */
     public static function warnings(string $viewGeometry): array
     {
@@ -306,6 +350,23 @@ final class ReferencePromptWriter
     public function retryable(VideoDesignImage $cell, ?VideoDesignImage $anchor): array
     {
         $spec = is_array($cell->prompt_spec_json) ? $cell->prompt_spec_json : [];
+
+        if (($spec['reference_mode'] ?? null) === ReferenceSheet::MODE) {
+            $environment = ReferenceEnvironment::tryFrom((string) ($spec['environment'] ?? ''));
+            [$sheet, $why] = $environment === null
+                ? [null, 'reference_preview_stale']
+                : $this->sheet((string) $cell->project_id, $anchor, (string) ($spec['sheet_state'] ?? ''), $environment);
+
+            if ($sheet === null) {
+                return [false, $why];
+            }
+
+            return ($spec['source_artifact_id'] ?? null) === $sheet['anchor_artifact_id']
+                && ($spec['source_artifact_sha256'] ?? null) === $sheet['anchor_sha256']
+                && ($spec['prompt'] ?? null) === $sheet['prompt']
+                ? [true, 'ok']
+                : [false, 'reference_preview_stale'];
+        }
 
         if (($spec['derivation_version'] ?? null) !== self::DERIVATION_VERSION) {
             return [false, 'reference_needs_ai_prompt'];

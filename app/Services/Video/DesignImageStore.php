@@ -10,6 +10,7 @@ use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Models\VideoRenderScene;
 use App\Video\Media\OpenAiImagePricing;
+use App\Video\Reference\ReferenceSheet;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -316,9 +317,19 @@ class DesignImageStore
             'environment',
             'identity_lock_hash',
             'derivation_version',
-        ], ($spec['derivation_version'] ?? null) === ReferencePromptWriter::DERIVATION_VERSION
-            ? ['identity_anchor_artifact_id', 'identity_anchor_sha256']
-            : []));
+        ], match ($spec['derivation_version'] ?? null) {
+            ReferencePromptWriter::DERIVATION_VERSION => ['identity_anchor_artifact_id', 'identity_anchor_sha256'],
+            ReferenceSheet::DERIVATION_VERSION => [
+                'identity_anchor_artifact_id',
+                'identity_anchor_sha256',
+                'reference_mode',
+                'sheet_state',
+                'layout_version',
+                'sheet_prompt_sha256',
+                'design_content_hash',
+            ],
+            default => [],
+        }));
 
         try {
             return DB::transaction(function () use ($projectId, $creator, $spec, $sha) {
@@ -861,6 +872,8 @@ class DesignImageStore
             'queued_at' => $image->queued_at,
             'worker' => $image->worker_id,
             'view_key' => $spec['view_key'] ?? null,
+            'reference_mode' => $spec['reference_mode'] ?? null,
+            'sheet_state' => $spec['sheet_state'] ?? null,
             'character_id' => $spec['character_id'] ?? null,
             'character_name' => $spec['character_name'] ?? null,
             'design_stage_id' => $spec['design_stage_id'] ?? null,

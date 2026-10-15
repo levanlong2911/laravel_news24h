@@ -12,6 +12,7 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
+use App\Video\Prompt\AnchorDesignPrompt;
 use App\Video\Prompt\GeometryPromptAuthor;
 use App\Video\Screenplay\ProtagonistProfile;
 use App\Video\Screenplay\VesselDesign;
@@ -23,8 +24,6 @@ final class CharacterAnchorPromptService
     private const FOUNDATION_CONTEXT = ['logline', 'design_thesis', 'principal_dimensions'];
 
     public const PRODUCTION_SOURCE = 'production_character';
-
-    public const SOURCE_CONFLICT_MARKER = 'SOURCE CONFLICT:';
 
     /** @var list<string> */
     private const PARTICIPANT_FIELDS = ['id', 'name', 'role', 'kind', 'description', 'personality', 'appearance'];
@@ -46,7 +45,7 @@ final class CharacterAnchorPromptService
         private readonly ProductionSelectionService $selection,
         private readonly ScreenplaySubjectService $subjects,
         private readonly VesselDesignService $designs,
-        private readonly GeometryPromptAuthor $designAuthor,
+        private readonly AnchorDesignPrompt $designPrompt,
     ) {}
 
     public static function anchorModel(): ImageModel
@@ -178,40 +177,16 @@ final class CharacterAnchorPromptService
             return [null, 'character_prompt_unknown_character', null];
         }
 
-        if (VesselDesign::unresolvedDecisions((array) $design->output_json) !== []) {
-            return [null, 'anchor_design_unresolved', null];
+        $blockers = VesselDesign::anchorBlockers((array) $design->output_json);
+
+        if ($blockers !== []) {
+            return [null, $blockers[0], null];
         }
 
-        $incomplete = VesselDesign::incompleteTexts((array) $design->output_json);
-
-        if ($incomplete !== []) {
-            Log::error('anchor prompt: the design source holds incomplete text, no model call made', [
-                'project_id' => $projectId,
-                'design_stage_id' => $design->id,
-                'fields' => $incomplete,
-            ]);
-
-            return [null, 'anchor_design_incomplete_text', null];
-        }
-
-        $gaps = VesselDesign::placementGaps((array) $design->output_json);
-
-        if ($gaps !== []) {
-            Log::error('anchor prompt: the design lacks locating facts that tell surfaces apart, no model call made', [
-                'project_id' => $projectId,
-                'design_stage_id' => $design->id,
-                'gaps' => $gaps,
-            ]);
-
-            return [null, 'anchor_design_placement_ambiguous', null];
-        }
-
-        $character = $this->designs->vessel($design);
-        $source = $this->designs->anchorSource($design);
         $broken = VesselDesign::extractIntegrityViolations((array) $design->output_json, $this->designs->anchorExtract($design));
 
         if ($broken !== []) {
-            Log::error('anchor prompt: the locked design extract is incomplete, no model call made', [
+            Log::error('anchor prompt: the locked design extract is incomplete, no prompt compiled', [
                 'project_id' => $projectId,
                 'design_stage_id' => $design->id,
                 'violations' => $broken,
@@ -220,45 +195,83 @@ final class CharacterAnchorPromptService
             return [null, 'anchor_design_incomplete', null];
         }
 
-        [$compiled, $reason, $written] = $this->write(
-            $projectId,
-            $characterId,
-            $character,
-            $this->designAuthor,
-            $source,
-            GeometryPromptAuthor::downstreamFor($size),
-            self::designOrigin($design),
-            $stage,
-            $size,
-            $model,
-            $force,
-            ['anchor_scope' => VesselDesign::anchorScope((array) $design->output_json)],
-        );
+        $character = $this->designs->vessel($design);
+        $source = $this->designs->anchorPromptSource($design);
+        $prompt = $this->designPrompt->compile($source, (array) $design->output_json, $size);
 
-        $conflicts = $compiled === null ? [] : self::sourceConflicts($compiled->prompt);
-
-        if ($conflicts !== []) {
-            Log::error('anchor prompt: the author reported source conflicts on identity geometry, prompt not offered for render', [
-                'project_id' => $projectId,
-                'design_stage_id' => $design->id,
-                'conflicts' => $conflicts,
-            ]);
-
-            return [null, 'anchor_source_conflict', $written];
+        if (! $this->designPrompt->fits($prompt)) {
+            return [null, 'anchor_prompt_too_long', null];
         }
 
-        return [$compiled, $reason, $written];
+        $origin = self::designOrigin($design);
+        $input = $this->designInput($origin, $source, $size);
+        [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
+            $projectId,
+            PlanningStageName::ANCHOR_PROMPT,
+            $input,
+            $force,
+            ['anchor_source' => $source, 'downstream' => GeometryPromptAuthor::downstreamFor($size), 'pricing' => 'free'],
+        );
+
+        if ($claimed === null) {
+            return [null, $reason, $character];
+        }
+
+        $stamped = $character + [
+            'anchor_prompt_stage_id' => (string) $claimed->id,
+            'source_hash' => $input['source_hash'],
+            'skill_hash' => $input['skill_hash'],
+        ];
+
+        if ($reason === 'already_succeeded') {
+            $stored = (string) ($claimed->output_json['prompt'] ?? '');
+
+            return hash_equals(hash('sha256', $stored), hash('sha256', $prompt))
+                ? [$this->designPrompt->compiled($prompt, $stage, $size, $model), 'cached', $stamped]
+                : [null, 'anchor_prompt_source_changed', $character];
+        }
+
+        if ($token === null) {
+            return [null, 'character_prompt_running', $character];
+        }
+
+        $recorded = $this->stageStore->finishSucceeded(
+            $claimed->id,
+            $token,
+            $prompt,
+            [
+                'prompt' => $prompt,
+                'author_model' => AnchorDesignPrompt::AUTHOR,
+                'prompt_version' => $this->designPrompt->version,
+                'character_id' => $characterId,
+                'character_name' => (string) ($character['name'] ?? $characterId),
+                'character_kind' => (string) ($character['kind'] ?? ''),
+            ] + $origin,
+            ['model' => AnchorDesignPrompt::AUTHOR, 'instruction_version' => $this->designPrompt->version],
+            ['pricing' => 'free'],
+        );
+
+        if (! $recorded) {
+            return [null, 'screenplay_claim_lost', $character];
+        }
+
+        return [$this->designPrompt->compiled($prompt, $stage, $size, $model), 'ok', $stamped];
     }
 
-    /** @return list<string> */
-    public static function sourceConflicts(string $prompt): array
+    /**
+     * @param  array<string, string>  $origin
+     * @param  array<string, mixed>  $source
+     * @return array<string, mixed>
+     */
+    private function designInput(array $origin, array $source, ImageSize $size): array
     {
-        $lines = preg_split('/\R/u', $prompt) ?: [];
-
-        return array_values(array_filter(
-            array_map('trim', $lines),
-            static fn (string $line): bool => str_starts_with($line, self::SOURCE_CONFLICT_MARKER),
-        ));
+        return [
+            'character_id' => VesselDesign::VESSEL_ID,
+        ] + $origin + [
+            'source_hash' => hash('sha256', json_encode($source, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+            'skill_hash' => $this->designPrompt->skillHash(),
+            'downstream' => GeometryPromptAuthor::downstreamFor($size),
+        ];
     }
 
     /** @return array<string, string> */
@@ -369,15 +382,6 @@ final class CharacterAnchorPromptService
             }
         }
 
-        if (isset($source[VesselDesign::EXTERIOR_DESIGN_KEY])) {
-            $problem = self::editedProblem($result->toStorage(), $source);
-            if ($problem !== null) {
-                $this->stageStore->finishFailed($claimed->id, $token, $problem, $usage,
-                    $result->rawResponse ?? $result->compiled->prompt, $result->toStorage(), $pricing);
-                return [null, $problem, $character];
-            }
-        }
-
         $recorded = $this->stageStore->finishSucceeded(
             $claimed->id,
             $token,
@@ -400,68 +404,7 @@ final class CharacterAnchorPromptService
             return [null, 'screenplay_claim_lost', $character];
         }
 
-        $reported = self::reportedConflicts($result->toStorage());
-
-        if ($reported !== []) {
-            Log::warning('anchor prompt: the author reported design conflicts, prompt kept and shown with them', [
-                'project_id' => $projectId,
-                'stage_id' => $claimed->id,
-                'conflicts' => $reported,
-            ]);
-        }
-
         return [$result->compiled, 'ok', $stamped];
-    }
-
-    /** @return list<string> */
-    public function promptConflicts(?string $promptStageId): array
-    {
-        if ($promptStageId === null || $promptStageId === '') {
-            return [];
-        }
-
-        $output = VideoPlanningStage::query()->whereKey($promptStageId)->value('output_json');
-
-        return self::reportedConflicts(is_array($output) ? $output : null);
-    }
-
-    /**
-     * @param  array<string, mixed>|null  $stored
-     * @return list<string>
-     */
-    public static function reportedConflicts(?array $stored): array
-    {
-        if (($stored['source_version'] ?? null) !== VesselDesign::ANCHOR_SOURCE_VERSION) {
-            return [];
-        }
-
-        $conflicts = $stored['conflicts'] ?? null;
-
-        if (! is_array($conflicts)) {
-            return ['conflicts: missing'];
-        }
-
-        return array_values(array_filter(array_map(
-            static fn (mixed $line): string => is_string($line) ? trim($line) : 'conflicts: not text',
-            $conflicts,
-        ), static fn (string $line): bool => $line !== ''));
-    }
-
-    /**
-     * @param  array<string, mixed>  $stored
-     * @param  array<string, mixed>  $source
-     */
-    private static function editedProblem(array $stored, array $source): ?string
-    {
-        $geometry = $stored['geometry_prompt'] ?? null;
-
-        if (! is_string($geometry) || trim($geometry) === '' || ! is_array($stored['conflicts'] ?? null)) {
-            return 'anchor_prompt_malformed';
-        }
-
-        $ids = \App\Video\Prompt\AnchorCoverage::internalIds($geometry, $source);
-
-        return $ids === [] ? null : 'anchor_prompt_internal_ids: '.implode(', ', $ids);
     }
 
     /**
@@ -490,18 +433,8 @@ final class CharacterAnchorPromptService
             return [null, 'anchor_prompt_stale'];
         }
 
-        if (self::sourceConflicts($prompt) !== []) {
-            return [null, 'anchor_source_conflict'];
-        }
-
-        $input = self::promptInput(
-            VesselDesign::VESSEL_ID,
-            self::designOrigin($design),
-            $this->designs->anchorSource($design),
-            $this->designAuthor,
-            GeometryPromptAuthor::downstreamFor($promptSize),
-        );
-
+        $source = $this->designs->anchorPromptSource($design);
+        $input = $this->designInput(self::designOrigin($design), $source, $promptSize);
         $promptStage = $this->succeededPromptStage($projectId, $promptStageId);
         $stored = is_array($promptStage?->input_json) ? $promptStage->input_json : [];
 
@@ -514,9 +447,9 @@ final class CharacterAnchorPromptService
             return [null, 'anchor_prompt_source_changed'];
         }
 
-        $expected = $this->promptsBySize($design, $promptStage, $promptSize)[$size->value] ?? null;
+        $expected = $this->designPrompt->compile($source, (array) $design->output_json, $size);
 
-        if ($expected === null) {
+        if (! $this->designPrompt->fits($expected)) {
             return [null, 'anchor_prompt_size_unsupported'];
         }
 
@@ -549,39 +482,30 @@ final class CharacterAnchorPromptService
             ->first();
 
         if ($promptStage === null || $design === null
+            || ($promptStage->output_json['author_model'] ?? null) !== AnchorDesignPrompt::AUTHOR
             || ! hash_equals(hash('sha256', (string) ($promptStage->output_json['prompt'] ?? '')), hash('sha256', $preview['prompt']))) {
             return [];
         }
 
-        return $this->promptsBySize($design, $promptStage, $written);
-    }
-
-    /** @return array<string, string> */
-    private function promptsBySize(VideoPlanningStage $design, VideoPlanningStage $promptStage, ImageSize $written): array
-    {
-        $stored = is_array($promptStage->output_json) ? $promptStage->output_json : [];
-        $source = null;
-        $composed = [];
+        $source = $this->designs->anchorPromptSource($design);
         $prompts = [];
 
         foreach (ImageSize::cases() as $size) {
-            $downstream = GeometryPromptAuthor::downstreamFor($size);
+            $prompt = $this->designPrompt->compile($source, (array) $design->output_json, $size);
 
-            if ($downstream === GeometryPromptAuthor::downstreamFor($written)) {
-                $prompt = (string) ($stored['prompt'] ?? '');
-            } else {
-                $key = $downstream['aspect_ratio'].' '.$downstream['orientation'];
-                $source ??= $this->designs->anchorSource($design);
-                $composed[$key] ??= $this->designAuthor->composeForSize($stored, $source, $size) ?? '';
-                $prompt = $composed[$key];
-            }
-
-            if (trim($prompt) !== '') {
+            if ($this->designPrompt->fits($prompt)) {
                 $prompts[$size->value] = $prompt;
             }
         }
 
         return $prompts;
+    }
+
+    /** @param array<string, mixed> $preview */
+    public function isCurrentDesignPrompt(array $preview): bool
+    {
+        return ($preview['lineage']['prompt_version'] ?? null) === $this->designPrompt->version
+            && ($preview['lineage']['subject_state_version'] ?? null) === AnchorDesignPrompt::AUTHOR;
     }
 
     private function succeededPromptStage(string $projectId, string $promptStageId): ?VideoPlanningStage

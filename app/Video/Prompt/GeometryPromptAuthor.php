@@ -9,8 +9,6 @@ use App\Enums\ImageModel;
 use App\Enums\ImageSize;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
 use App\Video\Prompt\Exceptions\TextCompletionException;
-use App\Video\Reference\ReferenceView;
-use App\Video\Screenplay\VesselDesign;
 
 /**
  * Sinh prompt anh bang mot cu goi model, khong qua Python.
@@ -24,10 +22,6 @@ final class GeometryPromptAuthor
     private const SPLIT_MARKER = 'SOURCE MATERIAL:';
 
     private const DOWNSTREAM_MARKER = 'OPTIONAL DOWNSTREAM REQUIREMENTS:';
-
-    private const PRESENTATION_MARKER = 'PRESENTATION:';
-
-    public const PRESENTATION_KEY = 'presentation';
 
     public function __construct(
         private readonly TextCompletionClient $client,
@@ -59,14 +53,7 @@ final class GeometryPromptAuthor
         ImageModel $imageModel,
         ?array $downstream = null,
     ): GeometryPromptResult {
-        $edited = isset($brief[VesselDesign::EXTERIOR_DESIGN_KEY]);
-        $presentation = $edited ? $this->presentation($brief, $downstream) : null;
-
-        if ($presentation !== null) {
-            $brief[self::PRESENTATION_KEY] = $presentation;
-        }
-
-        $audited = ! $edited && isset($brief['design']['canonical_design']);
+        $audited = isset($brief['design']['canonical_design']);
         if ($audited) {
             $brief['coverage_requirements'] = array_map(
                 static fn (string $path, array $row): array => ['source_path' => $path] + $row,
@@ -79,7 +66,7 @@ final class GeometryPromptAuthor
             system: $this->system($this->skill()).($audited ? "\n\nFor this canonical design request, override plain-text output: return only a JSON object with prompt, coverage, conflicts and alignment as the CANONICAL COVERAGE REQUIREMENT specifies. Every coverage_requirements entry is checked exactly as it is written: its quote must appear verbatim in prompt, be at least quote_min_length characters, and contain at least one listed word from every quote_must_state group. No markdown fences." : ''),
             user: $this->user($brief, $downstream),
             maxTokens: $this->maxTokens,
-            outputSchema: $this->client instanceof AnthropicTextClient ? null : ($edited ? self::editedSchema() : ($audited ? AnchorCoverage::schema() : null)),
+            outputSchema: $this->client instanceof AnthropicTextClient ? null : ($audited ? AnchorCoverage::schema() : null),
         );
 
         if ($response->wasTruncated()) {
@@ -93,18 +80,7 @@ final class GeometryPromptAuthor
 
         $audit = [];
         $prompt = $response->text;
-        if ($edited) {
-            $decoded = json_decode($response->text, true);
-            $geometry = is_array($decoded) && is_string($decoded['geometry_prompt'] ?? null) ? trim($decoded['geometry_prompt']) : '';
-            $conflicts = is_array($decoded) && is_array($decoded['conflicts'] ?? null) ? $decoded['conflicts'] : null;
-            $prompt = $geometry === '' ? '' : $geometry."\n\n".$presentation;
-            $audit = [
-                'source_version' => VesselDesign::ANCHOR_SOURCE_VERSION,
-                'geometry_prompt' => $geometry,
-                'conflicts' => $conflicts,
-                self::PRESENTATION_KEY => $presentation,
-            ];
-        } elseif ($audited) {
+        if ($audited) {
             $decoded = json_decode($response->text, true);
             $prompt = is_array($decoded) && is_string($decoded['prompt'] ?? null) ? $decoded['prompt'] : '';
             $audit = [
@@ -159,70 +135,6 @@ final class GeometryPromptAuthor
     public function skillHash(): string
     {
         return hash('sha256', $this->skill());
-    }
-
-    /** @return array<string, mixed> */
-    public static function editedSchema(): array
-    {
-        return [
-            'type' => 'object', 'additionalProperties' => false,
-            'required' => ['geometry_prompt', 'conflicts'],
-            'properties' => [
-                'geometry_prompt' => ['type' => 'string'],
-                'conflicts' => ['type' => 'array', 'items' => ['type' => 'string']],
-            ],
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $stored
-     * @param  array<string, mixed>  $brief
-     */
-    public function composeForSize(array $stored, array $brief, ImageSize $size): ?string
-    {
-        $geometry = $stored['geometry_prompt'] ?? null;
-
-        if (($stored['source_version'] ?? null) !== VesselDesign::ANCHOR_SOURCE_VERSION
-            || ! is_string($geometry) || trim($geometry) === ''
-            || ! isset($brief[VesselDesign::EXTERIOR_DESIGN_KEY])) {
-            return null;
-        }
-
-        try {
-            return trim($geometry)."\n\n".$this->presentation($brief, self::downstreamFor($size));
-        } catch (TextCompletionException) {
-            return null;
-        }
-    }
-
-    /**
-     * @param  array<string, mixed>  $brief
-     * @param  array<string, mixed>|null  $downstream
-     */
-    private function presentation(array $brief, ?array $downstream): string
-    {
-        $skill = $this->skill();
-        $position = mb_strpos($skill, self::PRESENTATION_MARKER);
-
-        if ($position === false) {
-            throw new TextCompletionException('Image prompt skill has no "'.self::PRESENTATION_MARKER.'" template.');
-        }
-
-        $view = (string) ($brief['requested_anchor_view']['view'] ?? '');
-
-        if (! preg_match('/^(bow|stern)_three_quarter_(port|starboard)$/', $view, $parts)) {
-            throw new TextCompletionException('A design anchor prompt needs a chosen three-quarter view.');
-        }
-
-        return strtr(trim(mb_substr($skill, $position + mb_strlen(self::PRESENTATION_MARKER))), [
-            '{near_end}' => $parts[1],
-            '{far_end}' => $parts[1] === 'bow' ? 'stern' : 'bow',
-            '{side}' => $parts[2],
-            '{frame_direction}' => ReferenceView::frameDirection($parts[2]),
-            '{hidden_end}' => ReferenceView::hiddenEnd($parts[1], $parts[2]),
-            '{aspect_ratio}' => (string) ($downstream['aspect_ratio'] ?? ''),
-            '{orientation}' => (string) ($downstream['orientation'] ?? ''),
-        ]);
     }
 
     private function skill(): string
