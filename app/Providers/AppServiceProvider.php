@@ -7,6 +7,7 @@ use App\Observers\PromptFrameworkObserver;
 use App\Services\ImageProxyService;
 use App\Services\Video\GeminiImageClient;
 use App\Services\Video\OpenAiImageClient;
+use App\Video\Media\GeminiOmniVideoClient;
 use App\Video\Media\GeminiVeoVideoClient;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\Media\ClipConcatenator;
@@ -176,6 +177,19 @@ class AppServiceProvider extends ServiceProvider
                 disk: (string) config('video.veo.disk'),
                 timeoutSeconds: (int) config('video.veo.timeout'),
                 maxBytes: (int) config('video.veo.max_bytes'),
+                downloadHosts: (array) config('video.veo.download_hosts'),
+            ),
+        );
+
+        $this->app->singleton(
+            GeminiOmniVideoClient::class,
+            static fn (Application $app): GeminiOmniVideoClient => new GeminiOmniVideoClient(
+                http: $app->make(HttpFactory::class),
+                files: $app->make(GeminiVeoVideoClient::class),
+                apiKey: (string) config('video.gemini.api_key'),
+                baseUrl: (string) config('video.gemini.base_url'),
+                timeoutSeconds: (int) config('video.omni.timeout'),
+                pollTimeoutSeconds: (int) config('video.omni.poll_timeout'),
                 downloadHosts: (array) config('video.veo.download_hosts'),
             ),
         );
@@ -463,16 +477,11 @@ class AppServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(
-            'video.design_anchor_prompt_author',
-            static function (Application $app): GeometryPromptAuthor {
-                return new GeometryPromptAuthor(
-                    client: $app->make('video.anchor_prompt.client'),
-                    promptPath: (string) config('image_prompt.design_anchor.prompt_path'),
-                    promptVersion: (string) config('image_prompt.design_anchor.prompt_version'),
-                    model: (string) config('image_prompt.anchor_author.model'),
-                    maxTokens: (int) config('image_prompt.'.config('canonical_concept.provider').'.max_tokens'),
-                );
-            }
+            \App\Video\Prompt\AnchorDesignPrompt::class,
+            static fn (): \App\Video\Prompt\AnchorDesignPrompt => new \App\Video\Prompt\AnchorDesignPrompt(
+                templatePath: (string) config('image_prompt.design_anchor.prompt_path'),
+                version: (string) config('image_prompt.design_anchor.prompt_version'),
+            ),
         );
 
         $this->app->singleton(
@@ -484,7 +493,7 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(\App\Services\Video\ProductionSelectionService::class),
                 $app->make(\App\Services\Video\ScreenplaySubjectService::class),
                 $app->make(\App\Services\Video\VesselDesignService::class),
-                $app->make('video.design_anchor_prompt_author'),
+                $app->make(\App\Video\Prompt\AnchorDesignPrompt::class),
             ),
         );
 

@@ -6,7 +6,10 @@ namespace App\Video\Scene;
 
 final class ScenePlanResult
 {
-    /** @param list<array<string, mixed>> $scenes */
+    /**
+     * @param  list<array<string, mixed>>  $scenes
+     * @param  array<string, mixed>  $answer
+     */
     public function __construct(
         public readonly array $scenes,
         public readonly string $raw,
@@ -14,5 +17,6 @@ final class ScenePlanResult
         public readonly int $inputTokens,
         public readonly int $outputTokens,
         public readonly int $reasoningTokens,
+        public readonly array $answer = [],
     ) {}
 }

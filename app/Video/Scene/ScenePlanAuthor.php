@@ -25,8 +25,11 @@ final class ScenePlanAuthor
     public const STORYBOARD_CONTRACT_VERSIONS = [self::STORYBOARD_CONTRACT_VERSION, self::LEGACY_STORYBOARD_CONTRACT_VERSION];
 
     /** @var list<string> */
+    public const VALIDATED_CONTRACT_VERSIONS = [...self::STORYBOARD_CONTRACT_VERSIONS, FilmCutAuthor::CONTRACT_VERSION, FilmCutAuthor::LEGACY_CONTRACT_VERSION];
+
+    /** @var list<string> */
     public const CONTRACT_VERSIONS = [
-        self::SCENE_CONTRACT_VERSION, self::BEAT_CONTRACT_VERSION, ...self::STORYBOARD_CONTRACT_VERSIONS,
+        self::SCENE_CONTRACT_VERSION, self::BEAT_CONTRACT_VERSION, ...self::VALIDATED_CONTRACT_VERSIONS,
     ];
 
     /** @var list<string> */

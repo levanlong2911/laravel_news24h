@@ -19,6 +19,14 @@ final class VideoModelRegistry
     /** @var list<string> */
     private const PROVIDERS = ['gemini'];
 
+    public const INTERACTIONS = 'interactions';
+
+    /** @var array<string, string> */
+    private const PROTOCOLS = ['predictLongRunning' => 'async', self::INTERACTIONS => 'sync'];
+
+    /** @var list<string> */
+    public const DURATION_CONTROLS = ['unverified', 'prompt_only', 'request_field'];
+
     /** @var array<string, list<array<string, mixed>>> */
     private array $verified = [];
 
@@ -121,8 +129,8 @@ final class VideoModelRegistry
             throw new InvalidArgumentException("{$at}: api_version phai la v1 hoac v1beta.");
         }
 
-        if ($entry['mode'] !== 'async' || $entry['method'] !== 'predictLongRunning') {
-            throw new InvalidArgumentException("{$at}: chi ho tro predictLongRunning bat dong bo.");
+        if ((self::PROTOCOLS[$entry['method']] ?? null) !== $entry['mode']) {
+            throw new InvalidArgumentException("{$at}: chi ho tro predictLongRunning bat dong bo hoac interactions dong bo.");
         }
 
         if (! is_bool($entry['default'] ?? null)) {
@@ -135,12 +143,40 @@ final class VideoModelRegistry
             throw new InvalidArgumentException("{$at}: thieu controls.");
         }
 
-        $this->assertChoice($at, $controls, 'durations', 'default_duration');
+        if ($entry['method'] === self::INTERACTIONS) {
+            $this->assertInteractionControls($at, $controls);
+        } else {
+            $this->assertChoice($at, $controls, 'durations', 'default_duration');
+        }
+
         $this->assertChoice($at, $controls, 'aspect_ratios', 'default_aspect_ratio');
         $this->assertChoice($at, $controls, 'resolutions', 'default_resolution');
 
         if (! is_string($entry['evidence']['models'] ?? null) || $entry['evidence']['models'] === '') {
             throw new InvalidArgumentException("{$at}: thieu evidence.models.");
+        }
+
+        if ($entry['method'] === self::INTERACTIONS
+            && (! is_string($entry['evidence']['contract'] ?? null) || $entry['evidence']['contract'] === '')) {
+            throw new InvalidArgumentException("{$at}: interactions can evidence.contract.");
+        }
+    }
+
+    /** @param array<string, mixed> $controls */
+    private function assertInteractionControls(string $at, array $controls): void
+    {
+        if (! is_string($controls['task'] ?? null) || $controls['task'] === '') {
+            throw new InvalidArgumentException("{$at}: thieu controls.task.");
+        }
+
+        if (! in_array($controls['duration_control'] ?? null, self::DURATION_CONTROLS, true)) {
+            throw new InvalidArgumentException("{$at}: duration_control phai la ".implode(', ', self::DURATION_CONTROLS).'.');
+        }
+
+        foreach (['max_seconds' => 10, 'max_reference_images' => 10] as $key => $ceiling) {
+            if (! is_int($controls[$key] ?? null) || $controls[$key] < 1 || $controls[$key] > $ceiling) {
+                throw new InvalidArgumentException("{$at}: {$key} phai la so nguyen tu 1 den {$ceiling}.");
+            }
         }
     }
 
@@ -173,6 +209,12 @@ final class VideoModelRegistry
                 continue;
             }
 
+            if ($entry['method'] === self::INTERACTIONS) {
+                $this->assertContract($at, $entry);
+
+                return;
+            }
+
             $methods = $model['supportedGenerationMethods'] ?? [];
 
             if (in_array($entry['method'], is_array($methods) ? $methods : [], true)) {
@@ -187,6 +229,20 @@ final class VideoModelRegistry
         throw new InvalidArgumentException(
             "{$at}: {$entry['model']} khong co trong bang chung {$entry['api_version']}.",
         );
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function assertContract(string $at, array $entry): void
+    {
+        $contract = $this->evidenceFile($at, (string) $entry['evidence']['contract']);
+
+        foreach (['model', 'method', 'api_version'] as $key) {
+            if (($contract[$key] ?? null) !== $entry[$key]) {
+                throw new InvalidArgumentException(
+                    "{$at}: evidence.contract khai {$key} ".json_encode($contract[$key] ?? null).", entry khai {$entry[$key]}.",
+                );
+            }
+        }
     }
 
     /** @return array<string, mixed> */

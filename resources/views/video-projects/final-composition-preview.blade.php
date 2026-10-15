@@ -317,9 +317,11 @@
                     @endforeach
                 </details>
 
-                <button class="fcomp-render" type="submit" @disabled($clips === [])><i class="fas fa-cog"></i> Render Final Video</button>
+                <button class="fcomp-render" type="submit" @disabled($clips === [] || ($composition['blocked'] ?? null) !== null)><i class="fas fa-cog"></i> Render Final Video</button>
                 <p>
-                    @if($clips === [])
+                    @if(($composition['blocked'] ?? null) !== null)
+                        {{ $composition['blocked'] }}
+                    @elseif($clips === [])
                         Chưa có clip nào dựng xong nên chưa ghép được.
                     @else
                         Ghép chạy đồng bộ ngay trong request, chưa qua hàng đợi — {{ count($clips) }} clip,

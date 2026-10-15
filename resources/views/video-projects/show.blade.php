@@ -59,8 +59,12 @@
                 static fn (array $option): bool => ($option['validity'] ?? null) === 'valid',
             )))
             @php($model = $clipModels[0] ?? null)
+            @php($film = array_key_exists('film_keyframes', $s))
             {{-- Shot duoc sinh luc bam Render, nen thieu shot KHONG con la ly do chan. --}}
             @php($blocked = match (true) {
+                ! $film && ($s['film_cut'] ?? false) => 'bản phim 30 giây định dạng cũ — lập lại storyboard phim 30 giây',
+                $film && $s['film_blocked'] !== null => $s['film_blocked'],
+                $film => null,
                 ! $approved => 'cần ảnh đã duyệt trước',
                 ! $s['video_prompt'] => 'chưa có prompt clip',
                 $clipModels === [] => 'chưa có model clip',
@@ -85,7 +89,50 @@
                     @php($chosen = $approved
                         ? collect($approved['artifacts'])->firstWhere('id', $approved['selected_artifact_id'])
                         : null)
-                    @if($chosen)
+                    @if($film)
+                        @foreach($s['film_keyframes'] as $frame)
+                            @if($frame['url'] !== null)
+                                <a class="vs-shot" href="{{ $frame['url'] }}" target="_blank" title="Scene thứ {{ $frame['order'] }}">
+                                    <img src="{{ $frame['url'] }}" alt="">
+                                </a>
+                            @else
+                                <div class="vs-shot empty">scene thứ {{ $frame['order'] }} · không có ảnh khung (không bắt buộc)</div>
+                            @endif
+                        @endforeach
+                        <div class="m"><b>Ảnh gửi kèm ({{ count($s['film_references']) }}), đúng thứ tự trong prompt:</b></div>
+                        @foreach($s['film_references'] as $reference)
+                            <a class="vs-shot" href="{{ $reference['url'] }}" target="_blank" title="{{ $loop->iteration }}. {{ $reference['label'] }}">
+                                <img src="{{ $reference['url'] }}" alt="">
+                            </a>
+                            <div class="m">{{ $loop->iteration }}. {{ ['identity' => 'Ảnh neo', 'design_view' => 'Góc thiết kế (nguồn hình học, vỏ trần)', 'environment' => 'Ảnh nền', 'keyframe' => 'Ảnh khung'][$reference['role']] ?? $reference['role'] }} · {{ $reference['label'] }}</div>
+                        @endforeach
+                        @if(($s['film_views'] ?? null) !== null)
+                            @php($views = $s['film_views'])
+                            <form method="POST" class="js-film-views ve-views" action="{{ route('video-projects.film-reference-views', [$id, $sceneId]) }}">
+                                @csrf
+                                <div class="m"><b>Góc thiết kế gửi kèm</b> · {{ $views['auto'] ? 'tự động' : 'đã chọn' }} · còn chỗ cho {{ $views['room'] }} ảnh</div>
+                                <div class="m">Các góc này chỉ là nguồn hình học của thiết kế (vỏ trần), không phải ảnh tàu hoàn thiện.</div>
+                                @if($views['stale'])
+                                    <div class="m" style="color:var(--vp-amber-fg)">Có góc đã chọn không còn là ảnh duyệt của ảnh neo hiện tại — chọn lại.</div>
+                                @endif
+                                @forelse($views['options'] as $option)
+                                    <label class="ve-view">
+                                        <input type="checkbox" name="views[]" value="{{ $option['artifact_id'] }}" @checked(in_array($option['artifact_id'], $views['sent'], true))>
+                                        <img src="{{ $option['url'] }}" alt="{{ $option['label'] }}">
+                                        <span>{{ $option['label'] }}</span>
+                                    </label>
+                                @empty
+                                    <div class="m">Chưa có góc thiết kế nào đã duyệt cho ảnh neo hiện tại.</div>
+                                @endforelse
+                                @if($views['options'] !== [])
+                                    <button class="vp-btn sm" name="auto" value="0">Lưu góc đã chọn</button>
+                                @endif
+                                @unless($views['auto'])
+                                    <button class="vp-btn sm" name="auto" value="1">Về tự động</button>
+                                @endunless
+                            </form>
+                        @endif
+                    @elseif($chosen)
                         <a class="vs-shot" href="{{ $chosen['url'] }}" target="_blank">
                             <img src="{{ $chosen['url'] }}" alt="">
                         </a>
@@ -237,6 +284,7 @@
         @endforelse
 
     </div>
+
 </div>
 
 <div class="modal fade" id="clipModal" tabindex="-1">
@@ -510,6 +558,46 @@
         if (e.target.classList.contains('js-model')) { syncControls(form); }
 
         applyCrossRule(form);
+    });
+
+    document.addEventListener('submit', function (e) {
+        var views = e.target.closest('.js-film-views');
+
+        if (!views) { return; }
+
+        e.preventDefault();
+
+        var body = new FormData(views);
+        var row = views.closest('.vs-row');
+
+        if (e.submitter && e.submitter.name) { body.set(e.submitter.name, e.submitter.value); }
+        views.querySelectorAll('button').forEach(function (button) { button.disabled = true; });
+
+        fetch(views.action, {
+            method: 'POST',
+            body: body,
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (response) { return response.json(); })
+            .then(function (payload) {
+                if (window.toastr) { window.toastr[payload.ok ? 'success' : 'error'](payload.message || (payload.ok ? 'Xong.' : 'Không lưu được.')); }
+
+                return fetch(window.location.href, { credentials: 'same-origin', headers: { 'Accept': 'text/html' } });
+            })
+            .then(function (response) { return response.text(); })
+            .then(function (html) {
+                var fresh = new DOMParser().parseFromString(html, 'text/html').querySelector('.vs-row[data-scene="' + row.dataset.scene + '"]');
+
+                if (fresh) {
+                    row.replaceWith(fresh);
+                    fresh.querySelectorAll('.js-clip-form').forEach(applyCrossRule);
+                }
+            })
+            .catch(function () {
+                if (window.toastr) { window.toastr.error('Mất kết nối hoặc không đọc được kết quả — tải lại trang để xem trạng thái.'); }
+                views.querySelectorAll('button').forEach(function (button) { button.disabled = false; });
+            });
     });
 
     document.addEventListener('submit', function (e) {

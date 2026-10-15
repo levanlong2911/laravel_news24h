@@ -5,6 +5,7 @@ namespace App\Video\Render\Video;
 use App\Models\VideoProviderSubmissionReceipt;
 use App\Models\VideoRender;
 use App\Models\VideoRenderAttempt;
+use App\Video\Media\GeminiOmniVideoClient;
 use App\Video\Media\GeminiVeoVideoClient;
 use App\Video\Media\Mp4Probe;
 use App\Video\Concept\Support\Clock;
@@ -45,6 +46,7 @@ final class VideoRenderExecutionService
         private readonly VideoShotCheckpointService $shots,
         private readonly VideoModelRegistry $registry,
         private readonly GeminiVeoVideoClient $veo,
+        private readonly GeminiOmniVideoClient $omni,
         private readonly Mp4Probe $probe,
         private readonly FilesystemFactory $storage,
         private readonly RenderLeaseService $lease,
@@ -73,17 +75,15 @@ final class VideoRenderExecutionService
                 RenderFailureClass::INVALID_REQUEST, 'bad_request_json', 'render_request_json hong.');
         }
 
-        $entry = $render->render_kind !== 'video'
-            ? null
-            : $this->registry->find(
-                SceneClipDispatchService::TASK,
-                ($spec['provider'] ?? '').':'.($spec['model'] ?? ''),
-            );
+        $film = $this->isFilm($spec);
+        $entry = $render->render_kind !== 'video' ? null : $this->entryFor($spec);
 
         $blocked = match (true) {
             $render->render_kind !== 'video' => 'render nay khong phai video',
             $entry === null => 'model ngoai registry',
-            ($spec['provider_payload_version'] ?? null) !== SceneClipDispatchService::PROVIDER_PAYLOAD_VERSION
+            ($spec['provider_payload_version'] ?? null) !== ($film
+                ? GeminiOmniVideoClient::PAYLOAD_VERSION
+                : SceneClipDispatchService::PROVIDER_PAYLOAD_VERSION)
                 => 'provider payload contract khong duoc ho tro',
             ! hash_equals($claim->requestHash, hash('sha256', $claim->renderRequestJson)) => 'request hash lech',
             default => null,
@@ -92,6 +92,10 @@ final class VideoRenderExecutionService
         if ($blocked !== null) {
             return $this->failOrLose($renderId, $claim->claimToken,
                 RenderFailureClass::INVALID_REQUEST, 'precondition_failed', $blocked);
+        }
+
+        if ($film) {
+            return $this->submitFilm($render, $claim->claimToken, $spec);
         }
 
         $source = $this->frame($spec, 'source_artifact');
@@ -120,11 +124,20 @@ final class VideoRenderExecutionService
             return [false, 'lease_lost_before_submit'];
         }
 
-        $result = $this->veo->submit($this->target($spec), $this->payload($spec, $source, $end));
+        return $this->accepted($render, $claim->claimToken, $this->veo->submit($this->target($spec), $this->payload($spec, $source, $end)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @return array{0: bool, 1: string}
+     */
+    private function accepted(VideoRender $render, string $claimToken, array $result): array
+    {
+        $renderId = (string) $render->id;
 
         if ($result['ambiguous']) {
             try {
-                $this->attempts->markAmbiguous($renderId, $claim->claimToken,
+                $this->attempts->markAmbiguous($renderId, $claimToken,
                     'provider_unknown', (string) $result['error']);
             } catch (Throwable) {
                 return [false, 'lease_lost_before_ambiguous'];
@@ -134,25 +147,164 @@ final class VideoRenderExecutionService
         }
 
         if (! $result['ok']) {
-            return $this->failOrLose($renderId, $claim->claimToken,
+            return $this->failOrLose($renderId, $claimToken,
                 $result['failure'], 'submit_failed', (string) $result['error']);
         }
 
         // Provider da nhan job. Tu day tro di khong duoc de bat ky loi nao lam mat
         // operation id: mat no la mat duong poll toi thu da tra tien.
-        if (! $this->keepJobId($render, $claim->claimToken, $result)) {
+        if (! $this->keepJobId($render, $claimToken, $result)) {
             return [false, 'ownership_lost_after_submit'];
         }
 
         try {
-            $this->lease->heartbeat($renderId, $claim->claimToken, self::WORKER);
-            $this->provider->markProviderRunning($render, $claim->claimToken,
+            $this->lease->heartbeat($renderId, $claimToken, self::WORKER);
+            $this->provider->markProviderRunning($render, $claimToken,
                 (string) $result['job_id'], $result['request_id'], $result['response']);
-        } catch (Throwable $e) {
+        } catch (Throwable) {
             return [false, 'checkpoint_failed_after_submit'];
         }
 
         return [true, 'provider_running'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec
+     * @return array{0: bool, 1: string}
+     */
+    private function submitFilm(VideoRender $render, string $claimToken, array $spec): array
+    {
+        $images = [];
+
+        foreach ((array) ($spec['references'] ?? []) as $index => $reference) {
+            $image = $this->filmReference(is_array($reference) ? $reference : [], (array) ($spec['derivative_policy'] ?? []));
+
+            if ($image['error'] !== null) {
+                return $this->failOrLose((string) $render->id, $claimToken, RenderFailureClass::ARTIFACT_INTEGRITY,
+                    'reference_invalid', 'anh tham chieu '.($index + 1).': '.$image['error']);
+            }
+
+            $images[] = ['mime' => $image['mime'], 'base64' => $image['base64']];
+        }
+
+        try {
+            $this->attempts->markPreparing((string) $render->id, $claimToken);
+            $this->attempts->markSubmitting((string) $render->id, $claimToken);
+        } catch (Throwable) {
+            return [false, 'lease_lost_before_submit'];
+        }
+
+        $target = $this->target($spec) + ['controls' => ['task' => (string) ($spec['task'] ?? '')]];
+        $payload = GeminiOmniVideoClient::payload($target, $images, (string) $spec['compiled_prompt']['prompt'], [
+            'aspect_ratio' => (string) $spec['aspect_ratio'],
+            'resolution' => (string) $spec['resolution'],
+        ]);
+
+        return $this->accepted($render, $claimToken, $this->omni->submit($target, $payload));
+    }
+
+    /**
+     * @param  array<string, mixed>  $reference
+     * @param  array<string, mixed>  $policy
+     * @return array{error: ?string, mime: ?string, base64: ?string}
+     */
+    private function filmReference(array $reference, array $policy): array
+    {
+        $disk = (string) ($reference['disk'] ?? '');
+        $path = (string) ($reference['path'] ?? '');
+
+        if (! in_array($disk, (array) config('video.veo.source_disks', ['video_artifacts']), true)) {
+            return ['error' => 'disk ngoai danh sach cho phep: '.$disk, 'mime' => null, 'base64' => null];
+        }
+
+        $filesystem = $this->storage->disk($disk);
+
+        if ($path === '' || ! $filesystem->exists($path)) {
+            return ['error' => 'file khong con tren dia: '.$path, 'mime' => null, 'base64' => null];
+        }
+
+        $bytes = (string) $filesystem->get($path);
+
+        if (! hash_equals((string) ($reference['sha256'] ?? ''), hash('sha256', $bytes))) {
+            return ['error' => 'file khac hash da dong bang', 'mime' => null, 'base64' => null];
+        }
+
+        $sent = GeminiOmniVideoClient::reference($bytes, (string) ($reference['mime'] ?? ''), [
+            'max_long_edge' => (int) ($policy['max_long_edge'] ?? 0),
+            'max_bytes' => (int) ($policy['max_bytes'] ?? 0),
+            'jpeg_quality' => (int) ($policy['jpeg_quality'] ?? 0),
+            'processor' => (string) ($policy['processor'] ?? ''),
+        ]);
+
+        if (! $sent['ok']) {
+            return ['error' => (string) $sent['error'], 'mime' => null, 'base64' => null];
+        }
+
+        if (! hash_equals((string) ($reference['sent_sha256'] ?? ''), (string) $sent['sent_sha256'])) {
+            return ['error' => 'ban dan xuat khac sha256 da dong bang', 'mime' => null, 'base64' => null];
+        }
+
+        return ['error' => null, 'mime' => (string) $sent['mime'], 'base64' => (string) $sent['base64']];
+    }
+
+    /**
+     * @param  array<string, mixed>  $probed
+     * @param  array<string, mixed>  $spec
+     */
+    private function filmOutputMismatch(array $probed, array $spec, int $expectedMs, int $tolerance): ?string
+    {
+        $size = config('video.omni.output_sizes.'.($spec['aspect_ratio'] ?? '').'.'.($spec['resolution'] ?? ''));
+
+        if (! is_array($size) || count($size) !== 2) {
+            return 'khong co kich thuoc dau ra cho '.($spec['aspect_ratio'] ?? '?').' '.($spec['resolution'] ?? '?');
+        }
+
+        if ((int) $probed['width'] !== (int) $size[0] || (int) $probed['height'] !== (int) $size[1]) {
+            return sprintf('kich thuoc %dx%d, yeu cau %dx%d', (int) $probed['width'], (int) $probed['height'], (int) $size[0], (int) $size[1]);
+        }
+
+        if ((int) ($probed['video_count'] ?? 0) !== 1 || ! is_numeric($probed['video']['duration'] ?? null)) {
+            return 'can dung mot luong hinh co thoi luong doc duoc, file co '.(int) ($probed['video_count'] ?? 0);
+        }
+
+        $videoMs = (int) round((float) $probed['video']['duration'] * 1000);
+
+        if (abs($videoMs - $expectedMs) > $tolerance) {
+            return sprintf('luong hinh dai %dms, yeu cau %dms', $videoMs, $expectedMs);
+        }
+
+        if (in_array($spec['audio'] ?? null, ['ambient_only', 'music_and_effects'], true)) {
+            $audioMs = is_numeric($probed['audio']['duration'] ?? null) ? (int) round((float) $probed['audio']['duration'] * 1000) : null;
+            $drift = (int) config('video.omni.target.av_drift_tolerance_ms', 100);
+
+            if ((int) ($probed['audio_count'] ?? 0) !== 1 || $audioMs === null) {
+                return 'can dung mot luong tieng co thoi luong doc duoc, file co '.(int) ($probed['audio_count'] ?? 0);
+            }
+
+            if (abs($audioMs - $videoMs) > $drift) {
+                return sprintf('luong tieng dai %dms, luong hinh %dms, lech qua %dms', $audioMs, $videoMs, $drift);
+            }
+        }
+
+        return null;
+    }
+
+    /** @param array<string, mixed> $spec */
+    private function isFilm(array $spec): bool
+    {
+        return ($spec['kind'] ?? null) === SceneClipDispatchService::FILM_TASK;
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec
+     * @return array<string, mixed>|null
+     */
+    private function entryFor(array $spec): ?array
+    {
+        return $this->registry->find(
+            $this->isFilm($spec) ? SceneClipDispatchService::FILM_TASK : SceneClipDispatchService::TASK,
+            ($spec['provider'] ?? '').':'.($spec['model'] ?? ''),
+        );
     }
 
     /** @return array{0: bool, 1: string} [$ok, $reason] */
@@ -172,10 +324,7 @@ final class VideoRenderExecutionService
 
         $spec = (array) json_decode((string) $render->render_request_json, true);
 
-        $entry = $this->registry->find(
-            SceneClipDispatchService::TASK,
-            ($spec['provider'] ?? '').':'.($spec['model'] ?? ''),
-        );
+        $entry = $this->entryFor($spec);
 
         if ($entry === null) {
             return [false, 'model_gone_from_registry'];
@@ -184,7 +333,9 @@ final class VideoRenderExecutionService
         $token = (string) Str::uuid();
         $render = $this->provider->claimPoll($render, $token, self::WORKER);
 
-        $poll = $this->veo->poll($this->target($spec), (string) $render->provider_job_id);
+        $poll = $this->isFilm($spec)
+            ? $this->omni->poll($this->target($spec), (string) $render->provider_job_id)
+            : $this->veo->poll($this->target($spec), (string) $render->provider_job_id);
 
         if (! $poll['ok'] && $poll['failure'] === RenderFailureClass::TRANSIENT_NETWORK) {
             $this->provider->markStillRunning($render, $token, $poll['response']);
@@ -384,7 +535,7 @@ final class VideoRenderExecutionService
 
         $dir = 'video/'.$render->id;
         $path = $dir.'/clip.mp4';
-        $file = $this->veo->download($uri, $path);
+        $file = $this->isFilm($spec) ? $this->omni->download($uri, $path) : $this->veo->download($uri, $path);
 
         if (! $file['ok']) {
             return $this->failOrLose($render->id, $token, $file['failure'], 'download_failed', (string) $file['error']);
@@ -403,13 +554,22 @@ final class VideoRenderExecutionService
         @unlink((string) $file['local_path']);
 
         $expectedMs = (int) round(((float) ($spec['duration_seconds'] ?? 0)) * 1000);
-        $tolerance = (int) config('video.veo.duration_tolerance_ms', 1500);
+        $tolerance = $this->isFilm($spec)
+            ? (int) config('video.omni.target.duration_tolerance_ms', 500)
+            : (int) config('video.veo.duration_tolerance_ms', 1500);
 
         if (! $probed['ok']) {
             $this->storage->disk((string) config('video.veo.disk'))->delete($path);
 
             return $this->failOrLose($render->id, $token, RenderFailureClass::ARTIFACT_INTEGRITY,
                 'probe_failed', (string) $probed['error']);
+        }
+
+        $mismatch = $this->isFilm($spec) ? $this->filmOutputMismatch($probed, $spec, $expectedMs, $tolerance) : null;
+
+        if ($mismatch !== null) {
+            return $this->failOrLose($render->id, $token, RenderFailureClass::ARTIFACT_INTEGRITY,
+                'output_contract_mismatch', $mismatch.' — file da tra phi giu lai o '.$path.' de doi soat, khong duoc chon.');
         }
 
         if ($expectedMs > 0 && abs((int) $probed['duration_ms'] - $expectedMs) > $tolerance) {

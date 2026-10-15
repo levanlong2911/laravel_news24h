@@ -10,6 +10,7 @@ use App\Models\VideoRender;
 use App\Models\VideoRenderScene;
 use App\Models\VideoShot;
 use App\Services\Video\DesignImageStore;
+use App\Video\Media\GeminiOmniVideoClient;
 use App\Video\Media\Mp4Probe;
 use App\Video\Media\VideoModelRegistry;
 use App\Video\Render\Enums\RenderStatus;
@@ -46,6 +47,8 @@ final class SceneClipDispatchService
 
     public const PURPOSE_CANARY = 'canary';
 
+    public const FILM_TASK = 'film_segment';
+
     public function __construct(
         private readonly RenderDispatchService $dispatch,
         private readonly VideoModelRegistry $registry,
@@ -53,6 +56,206 @@ final class SceneClipDispatchService
         private readonly Mp4Probe $probe,
         private readonly ShotIntentService $intents,
     ) {}
+
+    /**
+     * @param  array<string, mixed>  $plan  the shot plan the factory receives
+     * @param  list<array<string, mixed>>  $references  the segment's approved keyframes and design images, in send order
+     * @param  array<string, mixed>  $controls  model_id, resolution, aspect_ratio, duration_seconds
+     */
+    public function createFilmSegment(
+        VideoShot $shot,
+        VideoRenderScene $owner,
+        array $plan,
+        array $references,
+        array $controls,
+        int $expectedIntentVersion,
+        string $operationId,
+    ): VideoRender {
+        $payloadHash = hash('sha256', json_encode([
+            'shot_id' => (string) $shot->id,
+            'references' => array_column($references, 'artifact_id'),
+            'controls' => $this->canonical($controls),
+            'expected_intent_version' => $expectedIntentVersion,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+        [$updated, $render, $reason] = $this->intents->dispatch(
+            $shot,
+            $expectedIntentVersion,
+            $operationId,
+            $payloadHash,
+            fn (VideoShot $locked): VideoRender => $this->buildFilmSegment($locked, $owner, $plan, $references, $controls),
+        );
+
+        if ($updated === null || $render === null) {
+            throw new RuntimeException($reason);
+        }
+
+        $shot->setRawAttributes($updated->getAttributes(), true);
+
+        return $render;
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     * @param  list<array<string, mixed>>  $references
+     * @param  array<string, mixed>  $controls
+     */
+    private function buildFilmSegment(VideoShot $shot, VideoRenderScene $owner, array $plan, array $references, array $controls): VideoRender
+    {
+        $request = $this->freezeFilmSegment($owner, $plan, $references, $controls);
+        $requestJson = json_encode($request, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $requestHash = hash('sha256', $requestJson);
+
+        if (trim((string) $shot->compiled_prompt) !== $request['compiled_prompt']['prompt']) {
+            throw new RuntimeException('film_segment_prompt_mismatch: prompt của shot khác prompt sẽ gửi.');
+        }
+
+        return $this->dispatch->create(
+            sessionId: null,
+            assetId: (string) $owner->id,
+            provider: (string) $request['provider'],
+            model: (string) $request['model'],
+            idempotencyKey: $this->idempotencyKey($shot, $requestHash, self::PURPOSE_PRODUCTION),
+            requestJson: $requestJson,
+            requestHash: $requestHash,
+            canonicalRevisionId: '',
+            canonicalHash: '',
+            projectionHash: '',
+            constraintSetHash: hash('sha256', (string) json_encode(array_column($request['references'], 'sent_sha256'))),
+            promptSpecHash: hash('sha256', (string) $request['compiled_prompt']['prompt']),
+            providerPromptPlanHash: '',
+            promptHash: hash('sha256', (string) $request['compiled_prompt']['prompt']),
+            renderKind: 'video',
+            shotId: $shot->id,
+            executionPurpose: self::PURPOSE_PRODUCTION,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     * @param  list<array<string, mixed>>  $manifest
+     * @param  array<string, mixed>  $controls
+     * @return array<string, mixed>
+     */
+    private function freezeFilmSegment(VideoRenderScene $owner, array $plan, array $manifest, array $controls): array
+    {
+        $missing = $this->probe->problem();
+
+        if ($missing !== null) {
+            throw new RuntimeException('Khong do duoc video vi '.$missing.' Chua sua duoc thi khong tao doan phim.');
+        }
+
+        $entry = $this->registry->find(self::FILM_TASK, (string) ($controls['model_id'] ?? ''));
+
+        if ($entry === null) {
+            throw new RuntimeException('Model doan phim ngoai registry: '.(string) ($controls['model_id'] ?? ''));
+        }
+
+        foreach (['aspect_ratio' => 'aspect_ratios', 'resolution' => 'resolutions'] as $key => $allowed) {
+            if (! in_array($controls[$key] ?? null, (array) ($entry['controls'][$allowed] ?? []), true)) {
+                throw new RuntimeException($key.' '.var_export($controls[$key] ?? null, true).' ngoai registry cua '.$entry['model'].'.');
+            }
+        }
+
+        $seconds = (int) ($controls['duration_seconds'] ?? 0);
+
+        if ($seconds !== (int) ($plan['duration_seconds'] ?? 0) || $seconds > (int) ($entry['controls']['max_seconds'] ?? 0)) {
+            throw new RuntimeException(sprintf(
+                'storyboard_duration_mismatch: doan phim da duyet %ds, luot render chon %ds, model toi da %ds.',
+                (int) ($plan['duration_seconds'] ?? 0), $seconds, (int) ($entry['controls']['max_seconds'] ?? 0),
+            ));
+        }
+
+        $policy = (array) config('video.omni.reference');
+        $references = [];
+
+        foreach ($manifest as $item) {
+            $artifact = is_array($item) ? VideoArtifact::query()->whereKey($item['artifact_id'] ?? null)->first() : null;
+
+            if ($artifact === null) {
+                throw new RuntimeException('Anh tham chieu "'.(is_array($item) ? ($item['label'] ?? '?') : '?').'" khong con artifact.');
+            }
+
+            $frame = $this->freezeFrame($artifact, null);
+
+            if (! hash_equals((string) ($item['original_sha256'] ?? ''), $frame['sha256'])) {
+                throw new RuntimeException('Anh tham chieu "'.($item['label'] ?? '?').'" khac sha256 da duyet trong ke hoach.');
+            }
+
+            $references[] = $this->sentReference($frame, $policy) + [
+                'role' => (string) ($item['role'] ?? ''),
+                'label' => (string) ($item['label'] ?? ''),
+                'candidate_id' => (string) ($item['candidate_id'] ?? ''),
+            ];
+        }
+
+        if (count($references) > (int) ($entry['controls']['max_reference_images'] ?? 0)) {
+            throw new RuntimeException(count($references).' anh vuot gioi han '.(int) $entry['controls']['max_reference_images'].' anh cua model.');
+        }
+
+        $sentBytes = array_sum(array_column($references, 'sent_bytes'));
+
+        if ($sentBytes > (int) config('video.omni.max_reference_bytes')) {
+            throw new RuntimeException(sprintf(
+                'Tong anh gui di %.1f MB vuot gioi han %.1f MB cua mot request Omni.',
+                $sentBytes / 1048576, (int) config('video.omni.max_reference_bytes') / 1048576,
+            ));
+        }
+
+        $prompt = trim((string) ($plan['video_prompt'] ?? ''));
+
+        if ($prompt === '') {
+            throw new RuntimeException('Doan phim chua co prompt.');
+        }
+
+        return [
+            'kind' => self::FILM_TASK,
+            'provider_payload_version' => GeminiOmniVideoClient::PAYLOAD_VERSION,
+            'provider' => $entry['provider'],
+            'model' => $entry['model'],
+            'api_version' => $entry['api_version'],
+            'task' => (string) $entry['controls']['task'],
+            'compiled_prompt' => ['prompt' => $prompt],
+            'compile_version' => FilmSegmentPrompt::VERSION,
+            'duration_seconds' => $seconds,
+            'aspect_ratio' => (string) $controls['aspect_ratio'],
+            'resolution' => (string) $controls['resolution'],
+            'audio' => (string) config('video.film_cut.preset.audio', ''),
+            'store' => true,
+            'segment_owner_id' => (string) $owner->id,
+            'segment' => (int) ($owner->state_json['film']['segment'] ?? 0),
+            'derivative_policy' => $policy,
+            'references' => $references,
+            'motion_spec_hash' => ShotSelectionReconciler::motionSpecHash(new VideoShot([
+                'spec_json' => SceneShotFactory::specOf($plan),
+                'to_state_id' => $plan['scene_state'] ?? null,
+                'from_state_id' => $plan['state_before'] ?? null,
+            ])),
+        ];
+    }
+
+    /**
+     * @param  array{artifact_id: string, scene_id: ?string, disk: string, path: string, sha256: string, mime: string, bytes: int, width: int, height: int}  $frame
+     * @param  array<string, mixed>  $policy
+     * @return array<string, mixed>
+     */
+    private function sentReference(array $frame, array $policy): array
+    {
+        $sent = GeminiOmniVideoClient::reference((string) $this->storage->disk($frame['disk'])->get($frame['path']), $frame['mime'], $policy);
+
+        if (! $sent['ok']) {
+            throw new RuntimeException('Anh '.$frame['path'].' khong dung duoc lam tham chieu: '.$sent['error']);
+        }
+
+        return $frame + [
+            'sent_sha256' => $sent['sent_sha256'],
+            'sent_mime' => $sent['mime'],
+            'sent_bytes' => $sent['sent_bytes'],
+            'sent_width' => $sent['sent_width'],
+            'sent_height' => $sent['sent_height'],
+            'transform' => $sent['transform'],
+        ];
+    }
 
     /**
      * Duong cua man hinh. Anh cuoi do CHINH dich vu nay tra ra tu ban ke hoach,

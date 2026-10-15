@@ -105,6 +105,22 @@ final class ShotSelectionReconciler
             $reasons[] = 'motion_spec_changed';
         }
 
+        if (($request['kind'] ?? null) === SceneClipDispatchService::FILM_TASK) {
+            $review = $scene === null
+                ? 'segment_row_missing'
+                : app(\App\Services\VideoProjectService::class)->filmSegmentNeedsReview($scene, $request);
+            $evidence['request']['reference_manifest_hash'] = $request['reference_manifest_hash'] ?? null;
+            $evidence['request']['bridge'] = $request['bridge']['source_render_id'] ?? null;
+
+            if ($review !== null) {
+                $reasons[] = $review;
+            }
+
+            return $reasons === []
+                ? $this->result('valid', [], $evidence)
+                : $this->result('stale', array_values(array_unique($reasons)), $evidence);
+        }
+
         $sourceId = $this->approvedArtifactId((string) $shot->scene_id);
         $evidence['current'] = [
             'compiled_prompt' => (string) $shot->compiled_prompt,
@@ -187,7 +203,7 @@ final class ShotSelectionReconciler
             : null;
         $storyboard = in_array(
             is_array($plan?->input_json) ? ($plan->input_json['scene_contract_version'] ?? null) : null,
-            \App\Video\Scene\ScenePlanAuthor::STORYBOARD_CONTRACT_VERSIONS,
+            \App\Video\Scene\ScenePlanAuthor::VALIDATED_CONTRACT_VERSIONS,
             true,
         );
         $planPassed = $storyboard

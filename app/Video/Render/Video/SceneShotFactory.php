@@ -41,7 +41,7 @@ final class SceneShotFactory
             // two independent owners for the same production shot.
             VideoProject::query()->whereKey($scene->project_id)->lockForUpdate()->firstOrFail();
             $session = $this->sessionFor((string) $scene->project_id);
-            $code = (string) ($scene->scene_code ?? $scene->id);
+            $code = (string) ($plan['shot_code'] ?? $scene->scene_code ?? $scene->id);
 
             $shot = VideoShot::query()
                 ->where('session_id', $session->id)
@@ -105,6 +105,15 @@ final class SceneShotFactory
      * @return array<string, mixed>
      */
     private function spec(array $plan): array
+    {
+        return self::specOf($plan);
+    }
+
+    /**
+     * @param  array<string, mixed>  $plan
+     * @return array<string, mixed>
+     */
+    public static function specOf(array $plan): array
     {
         return array_filter([
             'title' => $plan['title'] ?? null,
