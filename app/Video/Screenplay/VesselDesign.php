@@ -3468,7 +3468,7 @@ final class VesselDesign
     /**
      * @param  array<string, mixed>  $output
      * @param  array<string, mixed>  $extract
-     * @return array{view: string, near_end: string, side: string, subject: array<string, mixed>, geometry: array<string, mixed>, identity: array<string, mixed>}
+     * @return array{view: string, near_end: string, side: string, subject: array<string, mixed>, geometry: array<string, mixed>, identity: array<string, mixed>, construction: ?string}
      */
     public static function anchorPromptSource(array $output, array $extract): array
     {
@@ -3481,6 +3481,36 @@ final class VesselDesign
         $hidden = self::anchorHiddenIds($sheet, $nearEnd === 'bow' ? 'aft_of' : 'forward_of');
         $drop = static fn (array $row, array $fields): array => array_diff_key($row, array_flip($fields));
         $farWords = $farEnd === 'stern' ? '/\b(stern|aft|transom)\b/i' : '/\b(bow|forward|stem)\b/i';
+        $featureSides = [];
+
+        foreach (self::rows($output['protagonist_profile']['signature_features'] ?? null) as $feature) {
+            if (is_string($feature['name'] ?? null)) {
+                $featureSides[$feature['name']] = $feature['region'] ?? null;
+            }
+        }
+
+        foreach (self::rows($output[self::CANONICAL_KEY]['signature_regions'] ?? null) as $region) {
+            if (is_string($region['feature_id'] ?? null) && ($featureSides[$region['feature'] ?? ''] ?? null) === $farSide) {
+                $hidden[$region['feature_id']] = true;
+            }
+        }
+
+        foreach (self::rows($output[self::CANONICAL_KEY]['configuration_states'] ?? null) as $row) {
+            if (is_string($row['component_id'] ?? null) && isset($hidden[$row['feature_id'] ?? null])) {
+                $hidden[$row['component_id']] = true;
+            }
+        }
+
+        $mandatoryRefs = [];
+
+        foreach (self::rows($output[self::CANONICAL_KEY]['must_preserve'] ?? null) as $row) {
+            foreach ((array) ($row['refs'] ?? []) as $ref) {
+                if (is_string($ref)) {
+                    $mandatoryRefs[$ref] = true;
+                }
+            }
+        }
+
         $secondary = [];
 
         foreach (self::rows($sheet['permanent_secondary_geometry'] ?? null) as $row) {
@@ -3498,6 +3528,9 @@ final class VesselDesign
 
         $touches = static fn (array $ids): bool => array_intersect(array_filter($ids, 'is_string'), array_keys($hidden)) !== [];
         $faces =[$nearEnd === 'bow' ? 'forward' : 'aft', $side, 'upward', 'top'];
+        $openings = array_values(array_map(static fn (array $row): array => $drop($row, ['serves', self::STANDARD_STATE_KEY]),
+            array_filter(self::rows($sheet['openings'] ?? null), static fn (array $row): bool => ($row[self::EXTERIOR_ROLE_KEY] ?? null) !== 'interior_only'
+                && in_array($row['face'] ?? null, $faces, true) && ! isset($hidden[$row['id'] ?? null]))));
 
         return [
             'view' => $view,
@@ -3524,13 +3557,14 @@ final class VesselDesign
                     array_filter(self::rows($sheet['primary_masses'] ?? null), static fn (array $row): bool => ! isset($hidden[$row['id'] ?? null])))),
                 'primary_voids' => array_values(array_map(static fn (array $row): array => $drop($row, ['role']),
                     array_filter(self::rows($sheet['primary_voids'] ?? null), static fn (array $row): bool => ! isset($hidden[$row['id'] ?? null])))),
-                'openings' => array_values(array_map(static fn (array $row): array => $drop($row, ['serves', self::STANDARD_STATE_KEY]),
-                    array_filter(self::rows($sheet['openings'] ?? null), static fn (array $row): bool => ($row[self::EXTERIOR_ROLE_KEY] ?? null) !== 'interior_only'
-                        && in_array($row['face'] ?? null, $faces, true) && ! isset($hidden[$row['id'] ?? null])))),
+                'openings' => $openings,
                 'surfaces' => array_values(array_map(static fn (array $row): array => array_intersect_key($row, array_flip(['id', 'deck', 'kind', 'relative_to', 'relation', self::SIDE_KEY])),
                     array_filter(self::rows($sheet['surfaces'] ?? null), static fn (array $row): bool => ($row[self::EXTERIOR_ROLE_KEY] ?? null) === 'exterior'
                         && ! isset($hidden[$row['id'] ?? null]) && ($row[self::SIDE_KEY] ?? null) !== $farSide))),
                 'permanent_secondary_geometry' => $secondary,
+                'configuration_states' => array_values(array_map(static fn (array $row): array => array_intersect_key($row, array_flip(self::ANCHOR_CONFIGURATION_FIELDS)),
+                    array_filter(self::rows($sheet['configuration_states'] ?? null), static fn (array $row): bool => ! $touches([$row['component_id'] ?? null, $row['feature_id'] ?? null])
+                        || isset($mandatoryRefs[$row['component_id'] ?? null]) || isset($mandatoryRefs[$row['feature_id'] ?? null])))),
                 'transitions' => array_values(array_filter(self::rows($sheet[self::TRANSITIONS_KEY] ?? null), static fn (array $row): bool => ! $touches((array) ($row['between'] ?? [])))),
                 'geometric_relationships' => array_values(array_filter(self::rows($sheet['geometric_relationships'] ?? null),
                     static fn (array $row): bool => ! $touches([$row['subject'] ?? null, $row['object'] ?? null]))),
@@ -3539,9 +3573,13 @@ final class VesselDesign
                 'signature_regions' => array_values(array_map(static fn (array $row): array => array_intersect_key($row, array_flip(['feature_id', 'feature', 'priority', 'description']))
                     + ['topology' => array_intersect_key((array) ($row['topology'] ?? []), array_flip([$nearEnd === 'bow' ? 'fore' : 'aft', $side, 'top', 'bottom']))],
                     array_filter(self::rows($sheet['signature_regions'] ?? null), static fn (array $row): bool => ! isset($hidden[$row['feature_id'] ?? null])))),
-                'must_preserve' => array_values(array_filter(self::rows($sheet['must_preserve'] ?? null), static fn (array $row): bool => ! $touches((array) ($row['refs'] ?? [])))),
-                'must_not_introduce' => array_values(array_filter(self::rows($sheet['must_not_introduce'] ?? null), static fn (array $row): bool => ! $touches((array) ($row['refs'] ?? [])))),
+                'must_preserve' => self::rows($sheet['must_preserve'] ?? null),
+                'must_not_introduce' => self::rows($sheet['must_not_introduce'] ?? null),
             ],
+            'construction' => is_string($output['protagonist_profile']['construction_new_build_and_refit'] ?? null)
+                && trim($output['protagonist_profile']['construction_new_build_and_refit']) !== ''
+                ? trim($output['protagonist_profile']['construction_new_build_and_refit'])
+                : null,
         ];
     }
 
@@ -3563,7 +3601,22 @@ final class VesselDesign
                 && array_filter($geometry["{$nearEnd}_geometry"], $text) === [],
             'anchor_design_missing_side' => ! $text($geometry['hull_geometry']['hull_side_organization'] ?? null),
             'anchor_design_opening_unplaced' => array_filter($geometry['openings'], static fn (array $row): bool => ! $text($row['deck'] ?? null) || ! $text($row['host'] ?? null)) !== [],
+            'anchor_design_missing_mandatory' => ($source['identity']['must_preserve'] ?? []) === [],
+            'anchor_design_missing_masses' => ($geometry['primary_masses'] ?? []) === [],
+            'anchor_design_moving_part_state_missing' => array_filter((array) ($geometry['configuration_states'] ?? []), static fn (array $row): bool => ! $text($row['canonical_state'] ?? null)) !== [],
         ]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $source
+     * @return list<string> the elements of the anchor source the design never classed as interior or exterior
+     */
+    public static function anchorUnclassifiedDetails(array $source): array
+    {
+        return array_values(array_map(
+            static fn (array $row): string => trim((string) ($row['element'] ?? $row['id'] ?? '')),
+            array_filter((array) ($source['geometry']['permanent_secondary_geometry'] ?? []), static fn (mixed $row): bool => is_array($row) && ! array_key_exists(self::EXTERIOR_ROLE_KEY, $row)),
+        ));
     }
 
     /**

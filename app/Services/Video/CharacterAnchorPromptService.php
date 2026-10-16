@@ -73,6 +73,7 @@ final class CharacterAnchorPromptService
             }
 
             $vessel = $this->designs->vessel($design);
+            $blockers = VesselDesign::anchorBlockers((array) $design->output_json);
 
             return [[
                 'id' => VesselDesign::VESSEL_ID,
@@ -84,7 +85,8 @@ final class CharacterAnchorPromptService
                 'design_stage_id' => $vessel['design_stage_id'],
                 'design_content_hash' => $vessel['design_content_hash'],
                 'design_revision' => (int) $design->planning_revision,
-                'anchor_blockers' => VesselDesign::anchorBlockers((array) $design->output_json),
+                'anchor_blockers' => $blockers,
+                'anchor_unclassified' => $blockers === [] ? VesselDesign::anchorUnclassifiedDetails($this->designs->anchorPromptSource($design)) : [],
             ]];
         }
 
@@ -506,6 +508,15 @@ final class CharacterAnchorPromptService
     {
         return ($preview['lineage']['prompt_version'] ?? null) === $this->designPrompt->version
             && ($preview['lineage']['subject_state_version'] ?? null) === AnchorDesignPrompt::AUTHOR;
+    }
+
+    /** @param array<string, mixed> $preview */
+    public function designSourceChanged(string $projectId, array $preview): bool
+    {
+        $size = ImageSize::tryFrom((string) ($preview['size'] ?? ''));
+
+        return $size !== null
+            && $this->designPromptCheck($projectId, ['prompt_size' => $size->value] + $preview, $size)[1] === 'anchor_prompt_source_changed';
     }
 
     private function succeededPromptStage(string $projectId, string $promptStageId): ?VideoPlanningStage

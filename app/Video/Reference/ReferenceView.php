@@ -107,13 +107,11 @@ enum ReferenceView: string
         $outline = $side === null ? 'the outline beyond the '.$nearEnd.' and the superstructure' : 'the outline of the '.$side.' flank';
         $outboard = $side === null ? 'outboard of the hull sides' : 'onto or outboard of the '.$side.' flank';
 
-        return $nearEnd === 'bow'
-            ? 'The stern faces away from the camera: its centreline stairs, landings, pool and water platform lie behind '
-                .'the superstructure and within the hull sides and stay out of view; the stern reads only as '.$outline
-                .($side === null ? '' : ' and its stepped deck edges').'. No stair, landing or pool is moved '.$outboard.' to be seen.'
-            : 'The bow faces away from the camera: its foredeck, stem face and forward parts lie beyond the superstructure '
-                .'and stay out of view; the bow reads only as '.$outline.($side === null ? '' : ' and its sheer').'. No part is moved '
-                .$outboard.' to be seen.';
+        $farEnd = $nearEnd === 'bow' ? 'stern' : 'bow';
+
+        return 'The '.$farEnd.' faces away from the camera: whatever the design places there is seen only as far as this view '
+            .'naturally shows it past the superstructure and the hull sides, and the '.$farEnd.' reads mainly as '.$outline.'. '
+            .'Nothing is moved, duplicated or added '.$outboard.' to be seen.';
     }
 
     public static function bowEdge(string $side): string

@@ -122,13 +122,15 @@ class VideoProjectsController extends Controller
             $promptError = null;
 
             if ($designed && ($character['anchor_blockers'] ?? []) === []
-                && ($preview === null || ! VesselDesign::stampedFor($preview, $character) || ! $this->characterAnchorPromptService->isCurrentDesignPrompt($preview))) {
+                && ($preview === null || ! VesselDesign::stampedFor($preview, $character) || ! $this->characterAnchorPromptService->isCurrentDesignPrompt($preview)
+                    || $this->characterAnchorPromptService->designSourceChanged($project->id, $preview))) {
                 $promptError = $this->compileDesignAnchorPrompt($project->id, $character);
                 $preview = $this->videoProjectService->anchorPromptPreview($project->id, $characterId);
             }
 
             $stalePrompt = $designed && $preview !== null
-                && (! VesselDesign::stampedFor($preview, $character) || ! $this->characterAnchorPromptService->isCurrentDesignPrompt($preview));
+                && (! VesselDesign::stampedFor($preview, $character) || ! $this->characterAnchorPromptService->isCurrentDesignPrompt($preview)
+                    || $this->characterAnchorPromptService->designSourceChanged($project->id, $preview));
             $preview = $stalePrompt ? null : $preview;
             $rowCells = array_values(array_filter($cells, static fn(array $cell): bool => $character === null
                 || ($cell['character_id'] ?? null) === $characterId
@@ -140,6 +142,7 @@ class VideoProjectsController extends Controller
                 'prompt_error' => $promptError === null ? null : $this->anchorMessage($promptError),
                 'prompt_author' => $preview['lineage']['subject_state_version'] ?? null,
                 'blockers' => array_map(fn (string $reason): string => $this->anchorMessage($reason), $character['anchor_blockers'] ?? []),
+                'unclassified' => $character['anchor_unclassified'] ?? [],
                 'approved' => collect($rowCells)->contains(static fn(array $cell): bool => $cell['status'] === DesignImageStatus::APPROVED->value
                     && (! $designed || VesselDesign::stampedFor($cell, $character))),
                 'prompt' => $preview['prompt'] ?? null,
@@ -687,6 +690,9 @@ class VideoProjectsController extends Controller
             'anchor_design_missing_near_end' => 'Thiết kế thiếu mô tả phần mũi tàu (phía gần máy quay của ảnh anchor) — không ghép được prompt anchor.',
             'anchor_design_missing_side' => 'Thiết kế thiếu mô tả mặt mạn tàu (phía máy quay nhìn thấy) — không ghép được prompt anchor.',
             'anchor_design_opening_unplaced' => 'Có ô mở nhìn thấy từ góc anchor nhưng thiếu tầng hoặc thiếu phần chứa nó — bổ sung trong thiết kế. Không ghép prompt.',
+            'anchor_design_missing_mandatory' => 'Thiết kế không có ràng buộc phải giữ (must_preserve) nào thấy được từ góc anchor — không ghép prompt.',
+            'anchor_design_missing_masses' => 'Thiết kế chưa khai khối chính (primary_masses) thấy được từ góc anchor — không ghép prompt.',
+            'anchor_design_moving_part_state_missing' => 'Có bộ phận chuyển động chưa khai trạng thái chuẩn (canonical_state) — bổ sung trong thiết kế, không tự chọn mở hay đóng. Không ghép prompt.',
             'anchor_prompt_too_long' => 'Prompt anchor ghép từ thiết kế vượt giới hạn ký tự của model ảnh. Không render.',
             'anchor_prompt_source_changed' => 'Thiết kế hoặc bộ ghép prompt đã đổi so với prompt đang xem — tải lại trang để ghép prompt mới. Không render.',
             'design_anchor_not_approved' => 'Chưa có ảnh anchor được duyệt cho bản thiết kế — duyệt ảnh anchor trước khi viết kịch bản. Không gọi model.',

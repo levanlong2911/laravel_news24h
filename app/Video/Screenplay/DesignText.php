@@ -166,6 +166,8 @@ final class DesignText
             'permanent_secondary_geometry' => trim(sprintf('%s: %s %s', (string) ($item['element'] ?? ''), trim((string) ($item['position'] ?? '')), trim((string) ($item['description'] ?? '')))),
             'geometric_relationships' => is_string($item['statement'] ?? null) ? trim($item['statement']) : null,
             'must_preserve' => is_string($item['statement'] ?? null) ? trim($item['statement']) : null,
+            'configuration_states' => trim(sprintf('%s: %s Shown in its canonical state: %s', ucfirst($name($item['component_id'] ?? null)),
+                trim((string) ($item['fixed_geometry'] ?? '')), trim((string) ($item['canonical_state'] ?? '')))),
             'must_not_introduce' => sprintf('Never %s Instead: %s', lcfirst(rtrim(trim((string) ($item['interpretation'] ?? '')), '.')).'.', trim((string) ($item['instead'] ?? ''))),
             default => self::value(array_diff_key($item, array_flip(self::SKIPPED_KEYS)), $names),
         };
@@ -177,7 +179,7 @@ final class DesignText
      */
     private static function fresh(string $line, array &$seen): array
     {
-        $key = mb_strtolower(trim($line));
+        $key = (string) preg_replace('/\s+/u', ' ', trim($line));
 
         if ($key === '' || isset($seen[$key])) {
             return [];

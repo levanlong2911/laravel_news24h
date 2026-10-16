@@ -18,11 +18,18 @@ final class AnchorDesignPrompt
     public const AUTHOR = 'code';
 
     /** @var list<string> */
-    private const GEOMETRY_ORDER = [
-        'hull_geometry', 'bow_geometry', 'stern_geometry', 'decks', 'superstructure_geometry', 'governing_lines',
-        'primary_masses', 'primary_voids', 'openings', 'surfaces', 'permanent_secondary_geometry', 'transitions',
-        'geometric_relationships',
+    private const FORM_ORDER = ['primary_masses', 'superstructure_geometry', 'decks', 'governing_lines'];
+
+    /** @var list<string> */
+    private const EXTERIOR_ORDER = [
+        'hull_geometry', 'bow_geometry', 'stern_geometry', 'primary_voids', 'openings', 'surfaces',
+        'permanent_secondary_geometry', 'configuration_states', 'transitions', 'geometric_relationships',
     ];
+
+    private const CONSTRUCTION_RULE = 'This passage from the design states only how the structure is built and from which materials; '
+        .'it does not ask for a building site, construction stages or a cutaway:';
+
+    private const MANDATORY_PRIORITY = 'P0';
 
     public function __construct(
         private readonly string $templatePath,
@@ -47,38 +54,48 @@ final class AnchorDesignPrompt
         $side = (string) $source['side'];
         $farEnd = $nearEnd === 'bow' ? 'stern' : 'bow';
 
-        $subjectLines = [];
+        $geometry = $source['geometry'];
+        $identity = $source['identity'];
+        $lines = static function (array $keys, array $from) use ($names, &$seen): array {
+            $out = [];
 
-        foreach (['proportion_system', 'global_silhouette'] as $key) {
-            $subjectLines = [...$subjectLines, ...DesignText::section($key, $subject[$key], $names, $seen)];
-        }
-
-        $geometryLines = [];
-
-        foreach (self::GEOMETRY_ORDER as $key) {
-            if (! array_key_exists($key, $source['geometry'])) {
-                continue;
+            foreach ($keys as $key) {
+                if (array_key_exists($key, $from)) {
+                    $out = [...$out, ...DesignText::section($key, self::shaped($key, $from[$key], $names), $names, $seen)];
+                }
             }
 
-            $geometryLines = [...$geometryLines, ...DesignText::section($key, self::shaped($key, $source['geometry'][$key], $names), $names, $seen)];
-        }
+            return $out;
+        };
 
-        $identityLines = [];
-
-        foreach (['signature_regions', 'must_preserve', 'must_not_introduce'] as $key) {
-            $identityLines = [...$identityLines, ...DesignText::section($key, self::shaped($key, $source['identity'][$key], $names), $names, $seen)];
-        }
+        $mandatory = $lines(['must_preserve'], ['must_preserve' => self::mandatoryFirst((array) ($identity['must_preserve'] ?? []))]);
+        $form = [
+            ...$lines(['global_silhouette', 'proportion_system'], $subject),
+            ...$lines(self::FORM_ORDER, $geometry),
+        ];
+        $exterior = $lines(self::EXTERIOR_ORDER, $geometry);
+        $signature = $lines(['signature_regions'], $identity);
+        $forbidden = $lines(['must_not_introduce'], $identity);
 
         $text = static fn (array $lines): string => DesignText::readable(implode("\n", $lines), $names);
+        $block = static fn (string $title, string $body): string => $body === '' ? '' : $title."\n".$body;
+        $construction = is_string($source['construction'] ?? null) && trim($source['construction']) !== '' ? trim($source['construction']) : '';
+
+        $designSections = implode("\n\n", array_filter([
+            $block('MANDATORY GEOMETRY', $text($mandatory)),
+            $block('OVERALL FORM', $text($form)),
+            $block('EXTERIOR GEOMETRY', $text($exterior)),
+            $block('SIGNATURE FEATURES', $text($signature)),
+            $block('CONSTRUCTION SOURCE', $construction === '' ? '' : self::CONSTRUCTION_RULE."\n".$construction),
+        ], static fn (string $part): bool => $part !== ''));
 
         return trim(strtr($this->template(), [
             '{name}' => (string) $subject['name'],
             '{length_m}' => (string) $subject['length_m'],
             '{beam_m}' => (string) $subject['beam_m'],
             '{length_beam_ratio}' => (string) $subject['length_beam_ratio'],
-            '{subject}' => $text($subjectLines),
-            '{visible_geometry}' => $text($geometryLines),
-            '{identity_constraints}' => $text($identityLines),
+            '{design_sections}' => $designSections,
+            '{forbidden_section}' => $block('FORBIDDEN INTERPRETATIONS', $text($forbidden)),
             '{near_end}' => $nearEnd,
             '{far_end}' => $farEnd,
             '{side}' => $side,
@@ -119,6 +136,17 @@ final class AnchorDesignPrompt
             subjectState: $stage->value,
             subjectStateVersion: self::AUTHOR,
         );
+    }
+
+    /**
+     * @param  list<mixed>  $rows
+     * @return list<mixed>
+     */
+    private static function mandatoryFirst(array $rows): array
+    {
+        $first = static fn (mixed $row): bool => is_array($row) && ($row['priority'] ?? null) === self::MANDATORY_PRIORITY;
+
+        return [...array_values(array_filter($rows, $first)), ...array_values(array_filter($rows, static fn (mixed $row): bool => ! $first($row)))];
     }
 
     /**
