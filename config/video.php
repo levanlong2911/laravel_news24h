@@ -3,6 +3,13 @@
 // Thu muc dung chung cho moi bang chung va bang gia cua provider anh.
 $providerEvidenceDir = resource_path('ai/providers');
 
+$designPromptVersion = env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v2-r3');
+
+$designPromptDirs = [
+    'vessel-design-v2-r3' => resource_path('ai/screenplay/design'),
+    'vessel-design-v2-r4' => resource_path('ai/screenplay/design/r4'),
+];
+
 return [
     'provider_evidence_dir' => $providerEvidenceDir,
 
@@ -636,11 +643,13 @@ return [
 
             'profile_contract_version' => 'superyacht_design_v1',
 
-            'prompt_dir' => resource_path('ai/screenplay/design'),
+            'prompt_dirs' => $designPromptDirs,
+
+            'prompt_dir' => $designPromptDirs[$designPromptVersion] ?? '',
 
             'schema_path' => resource_path('ai/screenplay/schemas/vessel_design_v2.json'),
 
-            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v2-r2'),
+            'prompt_version' => $designPromptVersion,
 
             'model' => env('SCREENPLAY_DESIGN_MODEL', 'gpt-5.6-sol'),
 

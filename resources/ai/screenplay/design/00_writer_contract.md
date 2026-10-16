@@ -614,7 +614,10 @@ geometry_links
   geometry_links need not repeat them, and every other role is linked here.
   Every interior space links its deck here, and its openings, basins and
   routes on that deck name it in their profile_paths; a pool space is named
-  in its basin's profile_paths. A route lies on a space's deck when it
+  in its basin's profile_paths. An opening or basin on any other deck never
+  names that space, even when it serves a zone of the same kind: Lower Deck
+  guest glazing never names an Upper Deck guest cabin; it names
+  windows_and_glazing or a passage that describes the Lower Deck zone. A route lies on a space's deck when it
   starts or arrives on that deck. When a space's access continues along a
   route that neither starts nor arrives on its deck, that route does not
   name the space; it names the passage that describes it on its own decks,
