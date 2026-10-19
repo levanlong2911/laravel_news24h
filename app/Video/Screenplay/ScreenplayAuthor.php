@@ -18,6 +18,7 @@ final class ScreenplayAuthor
         'claude-sonnet-5' => ['input_usd_per_mtok' => 2.00, 'output_usd_per_mtok' => 10.00],
         'claude-sonnet-5-5' => ['input_usd_per_mtok' => 2.00, 'output_usd_per_mtok' => 10.00],
         'gpt-5.6-sol' => ['input_usd_per_mtok' => 4.00, 'output_usd_per_mtok' => 20.00],
+        'gpt-6.1-sol' => ['input_usd_per_mtok' => 2.00, 'output_usd_per_mtok' => 10.00],
     ];
 
     /** @var list<string> */

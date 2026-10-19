@@ -45,6 +45,8 @@ final class ReferencePromptWriter
 
     private const ID_PATTERN = '/^[A-Za-z0-9_]+$/';
 
+    public const V3_UNSUPPORTED = 'reference_writer_v3_uses_sheet';
+
     private const DIRECTIVE_PATTERNS = [
         '/(?:^|[.!?;:\n])\s*\K(?:show|render|photograph|depict|draw|frame)\s+(?:the|this|a|its)\s+(?:vessel|yacht|ship|boat|hull|scene|image|view|shot)\b/iu',
         '/\b(?:seen|viewed|shown|photographed|rendered|pictured|observed)\s+from\b/iu',
@@ -87,6 +89,10 @@ final class ReferencePromptWriter
 
         if ($base === null) {
             return [null, $why, []];
+        }
+
+        if (self::v3Subject($base) && ! $base['canonical']) {
+            return [null, self::V3_UNSUPPORTED, []];
         }
 
         if ($base['canonical']) {
@@ -226,7 +232,7 @@ final class ReferencePromptWriter
     {
         [$base] = $this->base($projectId, $anchor, false);
 
-        if ($base === null) {
+        if ($base === null || (self::v3Subject($base) && ! $base['canonical'])) {
             return [];
         }
 
@@ -437,6 +443,10 @@ final class ReferencePromptWriter
 
         if ($base === null) {
             return [null, $why];
+        }
+
+        if (self::v3Subject($base) && ! $base['canonical']) {
+            return [null, self::V3_UNSUPPORTED];
         }
 
         $stage = VideoPlanningStage::query()
@@ -853,6 +863,15 @@ final class ReferencePromptWriter
             'design_content_hash' => $base['design_content_hash'],
             'packet_version' => self::PACKET_VERSION,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $base
+     * @return bool true when the subject comes from a vessel_design_v3 design, whose reference is the contact sheet, not the per-view writer
+     */
+    public static function v3Subject(array $base): bool
+    {
+        return VesselDesign::isV3($base['design'] ?? null) || VesselDesign::isV3Profile($base['subject'][ProtagonistProfile::CHARACTER_KEY] ?? null);
     }
 
     /**

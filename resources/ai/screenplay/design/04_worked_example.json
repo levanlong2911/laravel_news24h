@@ -15,136 +15,22 @@
         "beam_m": 14.5,
         "rationale": "Length is set by how much of a waiting crowd must reach a gate at the same moment, so the hull is long enough for a full pier queue to board side by side. Beam is set by the cross benches and the standing space inside each row of gates, and ends where those bands end."
     },
-    "protagonist_profile": {
-        "size_and_dimensions": "The hull keeps the foundation's length and beam. It is long enough for a full pier queue to reach a gate at the same moment and no wider than the cross benches and the standing band inside each row of gates. The draft is proposed in the figures; nothing else about its size is decided yet.",
-        "form_and_proportions": "The hull is a low, even body with a flat sheer and square ends of the same shape, so the profile reads the same whichever way the ferry is travelling; as a proposal, its freeboard is a short band of plating below the gate tracks. As a proposal, in plan the hull keeps its full width along almost its whole length, its sides running parallel from end to end and meeting each square end at a firm corner, so the rows of gates can run nearly the full length. The hall stands directly on the hull sides, its posts rising straight from the plating, and one continuous roof runs over it from end to end, broken only by the small helm cabin at mid-length. As a proposal, each end closes in a raked bulwark that rises a step above the main deck, square in plan, with a mooring station in its port and starboard corners and a clear strip of deck between them. Nothing at either end moves and neither end has a way down to the water; people only board through the side gates.",
-        "spatial_layout": "One passenger hall fills the main deck between the two ends. Structurally the hall is one open span under the roof, carried by the posts along its port and starboard sides. Passengers board and leave through the gates on whichever side lies against the pier. The crew reach the crew spaces inside the hull and the helm cabin above the roof by one stair at mid-length, and walk along the hall to the mooring stations at both ends. Nothing divides the hall along its length.",
-        "deck_organization": "The main deck is the hall, level from end to end and a short step above the pier, with the cross benches and a clear standing band inside each row of gates. The crew spaces lie below it, inside the hull. The roof carries the helm cabin at mid-length, reached from the hall through the hatch in its floor, and, as a proposal, a narrow walkway around the cabin for cleaning its glazing; passengers never go up there.",
-        "materials_and_finishes": "All finishes here are proposals. A painted steel hull in a dark working colour, an aluminium roof in a lighter grey, and gate leaves framed in the hull colour with clear glazing in their upper halves. Benches are plain timber slats on steel frames.",
-        "amenities": "Benches run across the hall from the port row of gates to the starboard row, each within a few steps of a gate. As a proposal, racks for bicycles stand against the bulwark at both ends of the hall, where they do not block a gate.",
-        "windows_and_glazing": "The upper half of every gate leaf is glazed, so with the gates closed the port and starboard sides each read as a band of windows along the whole hall. The helm cabin is glazed on all four sides so it can see both ends over the roof.",
-        "wellness_and_relaxation": "The only place to rest is the hall itself. The closed gates keep the wind out while passengers sit on the benches beside them, with the harbour visible through the glazed upper halves.",
-        "transformable_spaces": "The port or the starboard side changes from a closed glazed wall to an open edge between slim posts when its gates slide toward one end. A waist-height rail folds up inside each opening while the ferry is underway and drops flat for boarding. With one side open at a pier, the whole hall is aired across its width.",
-        "capacity": "The hall seats a full pier queue at once and has standing room inside each row of gates. There are no cabins. A crew of three runs the ferry. The seated and crew figures are proposed; the standing figure is not decided.",
-        "construction_new_build_and_refit": "A new build. The steel hull is framed from one template used at both ends, each side is framed as a row of openings with posts between them, and the aluminium roof is lifted on after the gates are hung and adjusted.",
-        "figures": [
-            {
-                "quantity": "length_overall",
-                "value": "48",
-                "unit": "m",
-                "origin": "inherited",
-                "source_path": "principal_dimensions.length_m",
-                "note": "Set by the length of a full pier queue."
-            },
-            {
-                "quantity": "beam",
-                "value": "14.5",
-                "unit": "m",
-                "origin": "inherited",
-                "source_path": "principal_dimensions.beam_m",
-                "note": "Set by the cross benches and the standing bands."
-            },
-            {
-                "quantity": "draft",
-                "value": "2.2",
-                "unit": "m",
-                "origin": "proposed",
-                "source_path": "",
-                "note": "Shallow enough for harbour piers."
-            },
-            {
-                "quantity": "deck_count",
-                "value": "1",
-                "unit": "decks",
-                "origin": "proposed",
-                "source_path": "",
-                "note": "One passenger deck under one roof."
-            },
-            {
-                "quantity": "guest_count",
-                "value": "240",
-                "unit": "guests",
-                "origin": "proposed",
-                "source_path": "",
-                "note": "Seated on the cross benches."
-            },
-            {
-                "quantity": "crew_count",
-                "value": "3",
-                "unit": "crew",
-                "origin": "proposed",
-                "source_path": "",
-                "note": ""
-            },
-            {
-                "quantity": "max_speed",
-                "value": "",
-                "unit": "kn",
-                "origin": "undetermined",
-                "source_path": "",
-                "note": "Not decided by the foundation."
-            }
-        ],
-        "signature_features": [
-            {
-                "name": "Full-length sliding side gates",
-                "origin": "inherited",
-                "kind": "transforming",
-                "region": "port_and_starboard",
-                "location": "Along almost the whole length of the port and starboard sides of the main deck, between slim posts under the roof edge.",
-                "visual_difference": "A closed side reads as one continuous glazed wall; an open side leaves a clear run from pier to bench with no door frames.",
-                "fixed_and_moving_parts": "The posts and the upper and lower runner tracks are fixed; the gate leaves move.",
-                "standard_state": "closed",
-                "standard_geometry": "Each leaf sits in its own opening, flush with the posts, so the port and starboard sides each read as one glazed wall from end to end under the roof edge.",
-                "other_states": "Open on one side: every leaf on that side has slid toward the same end over its neighbour into a stack behind a post; the other side stays closed.",
-                "motion_and_clearance": "The leaves unlatch together, slide along the outer track and stack behind their posts, inside a narrow band just outside the hull plating.",
-                "access_and_furniture": "Passengers step straight from the pier across the open side to the benches; the folding rail drops flat before boarding.",
-                "verification": "Weathertight seal of closed leaves in a seaway; locking of stacked leaves under wind load."
-            },
-            {
-                "name": "Mid-length helm cabin facing both ends",
-                "origin": "inherited",
-                "kind": "fixed",
-                "region": "roof",
-                "location": "On the roof at mid-length, on the centreline, directly above the crew stair.",
-                "visual_difference": "A small glazed box stands alone in the middle of the long roof instead of a wheelhouse at one end, so the ferry has no front or back.",
-                "fixed_and_moving_parts": "Entirely fixed.",
-                "standard_state": "installed",
-                "standard_geometry": "A low box standing on the roof at mid-length on the centreline, square in plan and glazed on all four sides, its floor a step above the roof and its flat top the highest point of the ferry. In profile it rises from the long roof line like a small lantern and looks the same from either end. A hatch in its floor opens over the crew stair.",
-                "other_states": "None.",
-                "motion_and_clearance": "None.",
-                "access_and_furniture": "Reached from the hall by the crew stair at mid-length, which rises through the roof to the floor hatch; a door on its port side opens onto the roof walkway. One helm console faces each end.",
-                "verification": "Sight lines to both ends over the roof."
-            },
-            {
-                "name": "Folding boarding rail inside each opening",
-                "origin": "proposed",
-                "kind": "transforming",
-                "region": "port_and_starboard",
-                "location": "Inside every gate opening along the port and starboard sides, at the inner edge of the standing band.",
-                "visual_difference": "With the gates open the side still has a guard line while the ferry is underway, and nothing at all when it is boarding.",
-                "fixed_and_moving_parts": "The hinge brackets on each post are fixed; the rail sections fold.",
-                "standard_state": "raised",
-                "standard_geometry": "A waist-height rail spans each opening between its posts, just inside the closed gate leaves, so from outside it shows only through the glazing.",
-                "other_states": "Lowered: each rail section folds down flat against the deck edge to leave the opening clear for boarding.",
-                "motion_and_clearance": "Each section swings down about its lower hinge into a recess in the deck edge; the standing band beside it must be clear.",
-                "access_and_furniture": "Raised underway beside the benches; lowered only while the ferry lies at a pier.",
-                "verification": "Holding load of a raised rail; trip risk of the recess when lowered."
-            }
-        ],
-        "interior_spaces": [
-            {
-                "space": "passenger_hall",
-                "deck": "Main deck",
-                "position": "The whole main deck between the two working ends, on the centreline, with the port row of gates on one side, the starboard row on the other, the crew spaces below it inside the hull and the helm cabin above it on the roof at mid-length.",
-                "layout": "One long open room with nothing dividing it along its length. Cross benches run from the port standing band to the starboard one, each a few steps from a gate, with a clear standing band inside each row of gates. As a proposal, bicycle racks stand against the bulwark at both ends, clear of every gate.",
-                "access": "Passengers enter and leave through the gates on whichever side lies against the pier. The crew reach it from the crew spaces below and from the helm cabin by the crew stair at mid-length, and walk along it to the mooring stations at both ends.",
-                "materials_and_light": "As proposals, plain timber benches on steel frames, a painted steel floor and the underside of the aluminium roof left plain. Daylight comes through the glazed upper halves of the gate leaves along both sides; as a proposal, a line of fixed lights runs under the roof along the centreline.",
-                "fixed_furniture": "The cross benches, the folding rails hinged inside every opening, and, as a proposal, the bicycle racks at both ends.",
-                "identity": "Rows of benches running across the width between two long bands of glazed gates, so the whole room faces the pier side at every stop.",
-                "undetermined": "The foundation does not decide the standing capacity of the hall."
-            }
-        ]
+    "figures": [
+        {"quantity": "length_overall", "value": "48", "unit": "m", "origin": "inherited", "source_path": "principal_dimensions.length_m", "note": "Set by the length of a full pier queue.", "description": "Length overall of the hull, inherited unchanged from the principal dimensions."},
+        {"quantity": "beam", "value": "14.5", "unit": "m", "origin": "inherited", "source_path": "principal_dimensions.beam_m", "note": "Set by the cross benches and the standing bands.", "description": "Beam of the hull at its widest, inherited unchanged from the principal dimensions."},
+        {"quantity": "draft", "value": "2.2", "unit": "m", "origin": "proposed", "source_path": "", "note": "Shallow enough for harbour piers.", "description": "Proposed draft of the hull below the design waterline, kept shallow for harbour piers."},
+        {"quantity": "deck_count", "value": "1", "unit": "decks", "origin": "proposed", "source_path": "", "note": "One passenger deck under one roof; the crew spaces, the roof and the helm cabin are not passenger decks.", "description": "Proposed count of passenger decks: only the Main deck under the roof is a passenger deck."},
+        {"quantity": "guest_count", "value": "240", "unit": "guests", "origin": "proposed", "source_path": "", "note": "Seated on the cross benches; the standing figure is not decided.", "description": "Proposed count of seated passengers on the cross benches; the standing capacity is undetermined."},
+        {"quantity": "crew_count", "value": "3", "unit": "crew", "origin": "proposed", "source_path": "", "note": "There are no cabins.", "description": "Proposed count of the crew who work the ferry; the vessel has no cabins."},
+        {"quantity": "max_speed", "value": "", "unit": "kn", "origin": "undetermined", "source_path": "", "note": "Not decided by the foundation.", "description": "Maximum speed is undetermined; the foundation does not decide it."}
+    ],
+    "construction": {
+        "build_type": "new_build",
+        "structure": "The hall is one open span under the roof, carried by the posts along its port and starboard sides. Each side is framed as a row of openings with a post between each pair, so the roof loads pass down the posts around every gate opening into the hull side below.",
+        "materials": "A steel hull and steel posts, an aluminium roof, and glass in the upper half of every gate leaf and all round the helm cabin.",
+        "block_division": "The hull is framed from one template used at both ends; how the length between the ends is divided into blocks is not decided.",
+        "assembly": "The hull and the posts are built first, the gate leaves are hung and adjusted between the posts, and the aluminium roof is lifted on after them.",
+        "weight_arrangement": "The heaviest parts, the hull plating and the rudder and propeller under each square end, lie low and the same at both ends; the hall above is a light frame of posts under an aluminium roof, so the ferry trims the same whichever way it travels."
     },
     "canonical_design": {
         "design_identity": {
@@ -168,58 +54,15 @@
             "status": "locked"
         },
         "governing_lines": [
-            {
-                "id": "l_sheer",
-                "line": "A flat sheer running level along the hull side.",
-                "runs_from": "the forward square end",
-                "runs_to": "the aft square end",
-                "governs": "The lower edge of the gate band and the identical profile of both ends.",
-                "status": "locked"
-            },
-            {
-                "id": "l_roof_edge",
-                "line": "The roof edge running level over the hall.",
-                "runs_from": "the forward end bulwark",
-                "runs_to": "the aft end bulwark",
-                "governs": "The upper edge of the gate band and the long horizontal of the silhouette.",
-                "status": "locked"
-            }
+            {"id": "l_sheer", "name": "Sheer line", "description": "The sheer line runs level along the hull side from the forward square end to the aft square end; it sets the lower edge of the gate band and gives both ends the same profile.", "line": "A flat sheer running level along the hull side.", "runs_from": "the forward square end", "runs_to": "the aft square end", "governs": "The lower edge of the gate band and the identical profile of both ends.", "status": "locked"},
+            {"id": "l_roof_edge", "name": "Roof edge", "description": "The roof edge runs level over the Hall from the forward end bulwark to the aft end bulwark; it sets the upper edge of the gate band and draws the long horizontal of the silhouette.", "line": "The roof edge running level over the hall.", "runs_from": "the forward end bulwark", "runs_to": "the aft end bulwark", "governs": "The upper edge of the gate band and the long horizontal of the silhouette.", "status": "locked"}
         ],
         "primary_masses": [
-            {
-                "id": "m_hall",
-                "role": "The covered passenger hall standing on the hull.",
-                "position": "On the main deck from near the forward end to near the aft end, full width.",
-                "relative_length": "almost the full length of the hull",
-                "relative_width": "the full beam",
-                "relative_height": "one storey of headroom above the main deck",
-                "connections": "Stands directly on the hull sides; carries the roof and the helm cabin.",
-                "transition_to_adjacent_geometry": "Its posts rise straight from the hull plating, and its ends stop at the raked end bulwarks.",
-                "status": "locked"
-            },
-            {
-                "id": "m_helm_cabin",
-                "role": "The helm position, the only volume above the roof.",
-                "position": "On the roof at mid-length on the centreline.",
-                "relative_length": "a small fraction of the hall's length",
-                "relative_width": "well under the beam, square in plan",
-                "relative_height": "a short box with its floor a step above the roof",
-                "connections": "Reached from the hall by the crew stair through a floor hatch.",
-                "transition_to_adjacent_geometry": "Stands on the roof on a low plinth, glazed on all four sides.",
-                "status": "locked"
-            }
+            {"id": "m_hall", "name": "Hall", "description": "The Hall is the covered passenger body standing directly on the hull sides on the Main deck, running from near the forward end to near the aft end across the full beam and rising one storey of headroom above the main deck. Its posts rise straight from the hull plating, its ends stop at the raked end bulwarks, and it carries the roof and the Helm cabin.", "role": "The covered passenger hall standing on the hull.", "position": "On the main deck from near the forward end to near the aft end, full width.", "relative_length": "almost the full length of the hull", "relative_width": "the full beam", "relative_height": "one storey of headroom above the main deck", "connections": "Stands directly on the hull sides; carries the roof and the helm cabin.", "transition_to_adjacent_geometry": "Its posts rise straight from the hull plating, and its ends stop at the raked end bulwarks.", "status": "locked"},
+            {"id": "m_helm_cabin", "name": "Helm cabin", "description": "The Helm cabin is the only volume above the roof: a short box, square in plan and well under the beam wide, standing on a low plinth on the roof of the Hall at mid-length on the centreline, its floor a step above the roof and glazed on all four sides. It is a small fraction of the hall's length and is reached from the Hall by the crew stair through a floor hatch.", "role": "The helm position, the only volume above the roof.", "position": "On the roof at mid-length on the centreline.", "relative_length": "a small fraction of the hall's length", "relative_width": "well under the beam, square in plan", "relative_height": "a short box with its floor a step above the roof", "connections": "Reached from the hall by the crew stair through a floor hatch.", "transition_to_adjacent_geometry": "Stands on the roof on a low plinth, glazed on all four sides.", "status": "locked"}
         ],
         "primary_voids": [
-            {
-                "id": "v_hall",
-                "role": "The passenger hall interior.",
-                "position": "Inside m_hall on the main deck, end to end.",
-                "relative_extent": "almost the full length and the full beam",
-                "boundaries": "The hull deck below, the roof above, the gate bands port and starboard, the end bulwarks fore and aft.",
-                "open_or_enclosed_state": "enclosed",
-                "relationship_to_surrounding_masses": "Contained by the hall; opens to the pier along a whole side when the gates on that side open.",
-                "status": "locked"
-            }
+            {"id": "v_hall", "name": "Passenger hall interior", "description": "The Passenger hall interior fills the Hall on the Main deck from end to end across the full beam, bounded by the deck below, the roof above, the port and starboard gate bands at its sides and the end bulwarks fore and aft. It is enclosed, and opens to the pier along a whole side when the gates on that side open.", "role": "The passenger hall interior.", "position": "Inside m_hall on the main deck, end to end.", "relative_extent": "almost the full length and the full beam", "boundaries": "The hull deck below, the roof above, the gate bands port and starboard, the end bulwarks fore and aft.", "open_or_enclosed_state": "enclosed", "relationship_to_surrounding_masses": "Contained by the hall; opens to the pier along a whole side when the gates on that side open.", "status": "locked"}
         ],
         "hull_geometry": {
             "stem_and_bow": "Each end is square in plan and closes in a raked bulwark; there is no pointed stem.",
@@ -248,89 +91,72 @@
             "aft_silhouette": "The same square end and raked bulwark as the forward end.",
             "transom_closure": "A square end closed by the raked bulwark.",
             "stern_shoulders": "Firm square corners in plan.",
-            "platform_terrace_or_recess_topology": "None; a clear strip of deck inside the bulwark only.",
+            "platform_terrace_or_recess_topology": "None; the hall runs to the bulwark, nothing at either end moves and neither end has a way down to the water.",
             "relationship_to_waterline": "The end stands at the same short freeboard as the sides.",
-            "relationship_to_superstructure": "The hall stops at the bulwark, leaving the clear strip of deck aft of it.",
+            "relationship_to_superstructure": "The hall runs to the aft bulwark, which closes its aft end.",
             "forbidden_conventional_interpretations": "A stern that differs from the bow, or a stern boarding platform.",
             "status": "locked"
         },
         "bow_geometry": {
             "stem_type": "Square end with a raked bulwark.",
-            "rake_or_plumb": "The bulwark rakes outward; the end itself is square.",
+            "rake_or_plumb": "The bulwark rises a step above the main deck and rakes outward; the end itself is square.",
             "bow_volume": "Full to the end, with the same width as the midbody.",
-            "relationship_to_forward_superstructure": "The hall stops short of the bulwark, leaving the clear strip of deck forward of it.",
+            "relationship_to_forward_superstructure": "The hall runs to the forward bulwark, which closes its forward end.",
             "status": "locked"
         },
         "signature_regions": [
             {
                 "feature_id": "sr_side_gates",
                 "feature": "Full-length sliding side gates",
+                "origin": "inherited",
                 "kind": "transforming",
                 "priority": "P0",
-                "description": "A row of glazed sliding gate leaves between slim posts along almost the whole length of each side of the hall.",
-                "topology": {
-                    "fore": "ends at the forward end bulwark",
-                    "aft": "ends at the aft end bulwark",
-                    "port": "the port row forms the port side of the hall",
-                    "starboard": "the starboard row forms the starboard side of the hall",
-                    "top": "the roof edge",
-                    "bottom": "the outer track just above the sheer"
-                },
+                "region": "port_and_starboard",
+                "description": "Along almost the whole length of the port and starboard sides of the Hall on the Main deck, between the end bulwarks and under the roof edge, a row of sliding gate leaves fills the openings between slim posts, each leaf glazed in its upper half. Closed, every leaf sits flush with its posts, so each side reads as one glazed wall from end to end; the leaves run on an outer track just above the sheer.",
+                "visual_difference": "A closed side reads as one continuous glazed wall; an open side leaves a clear run from pier to bench with no door frames.",
+                "topology": {"fore": "ends at the forward end bulwark", "aft": "ends at the aft end bulwark", "port": "the port row forms the port side of the hall", "starboard": "the starboard row forms the starboard side of the hall", "top": "the roof edge", "bottom": "the outer track just above the sheer"},
                 "relationships": "Integrated with the hall sides and continuing the hull side upward.",
                 "must_preserve": "One continuous band of leaves along each side, flush between the posts.",
                 "forbidden_interpretations": "Separate doors in a solid side wall, or windows above a solid lower wall.",
                 "proof_conditions": "One side shows a continuous row of glazed leaves from end bulwark to end bulwark.",
-                "proof_views": [
-                    "profile_port",
-                    "profile_starboard"
-                ],
+                "proof_views": ["profile_port", "profile_starboard"],
+                "verification": "Weathertight seal of closed leaves in a seaway; locking of stacked leaves under wind load.",
                 "status": "locked"
             },
             {
                 "feature_id": "sr_helm_cabin",
                 "feature": "Mid-length helm cabin facing both ends",
+                "origin": "inherited",
                 "kind": "fixed",
                 "priority": "P0",
-                "description": "A small box glazed on all four sides standing on the roof at mid-length on the centreline.",
-                "topology": {
-                    "fore": "the roof running forward to the forward end",
-                    "aft": "the roof running aft to the aft end",
-                    "port": "the roof walkway and the cabin door",
-                    "starboard": "the roof walkway",
-                    "top": "its flat top, the highest point of the ferry",
-                    "bottom": "the roof, with a hatch over the crew stair"
-                },
+                "region": "roof",
+                "description": "The Helm cabin stands on the roof of the Hall at mid-length on the centreline: a low box, square in plan and glazed on all four sides, its floor a step above the roof and its flat top the highest point of the ferry. In profile it rises from the long roof line like a small lantern and looks the same from either end.",
+                "visual_difference": "A small glazed box stands alone in the middle of the long roof instead of a wheelhouse at one end, so the ferry has no front or back.",
+                "topology": {"fore": "the roof running forward to the forward end", "aft": "the roof running aft to the aft end", "port": "the roof walkway and the cabin door", "starboard": "the roof walkway", "top": "its flat top, the highest point of the ferry", "bottom": "the roof, with a hatch over the crew stair"},
                 "relationships": "Above the hall at mid-length, the only volume above the roof line.",
                 "must_preserve": "Mid-length, centreline, glazed all round, the same from either end.",
                 "forbidden_interpretations": "A wheelhouse at one end, or a tall mast or funnel beside it.",
                 "proof_conditions": "In profile the cabin stands exactly midway between the two identical ends.",
-                "proof_views": [
-                    "profile_port",
-                    "bow_three_quarter_port"
-                ],
+                "proof_views": ["profile_port", "bow_three_quarter_port"],
+                "verification": "Sight lines to both ends over the roof.",
                 "status": "locked"
             },
             {
                 "feature_id": "sr_boarding_rail",
                 "feature": "Folding boarding rail inside each opening",
+                "origin": "proposed",
                 "kind": "transforming",
                 "priority": "P2",
-                "description": "A waist-height rail spanning each gate opening just inside the leaves.",
-                "topology": {
-                    "fore": "the post at the forward side of its opening",
-                    "aft": "the post at the aft side of its opening",
-                    "port": "the gate leaves on the port side",
-                    "starboard": "the gate leaves on the starboard side",
-                    "top": "open",
-                    "bottom": "a recess in the deck edge"
-                },
+                "region": "port_and_starboard",
+                "description": "Inside each gate opening on the port and starboard sides of the Main deck, a waist-height rail spans between the opening's two posts, hinged on them above a recess in the deck edge, at the inner edge of the standing band just inside the closed gate leaves, so from outside it shows only through the glazing.",
+                "visual_difference": "With the gates open the side still has a guard line while the ferry is underway, and nothing at all when it is boarding.",
+                "topology": {"fore": "the post at the forward side of its opening", "aft": "the post at the aft side of its opening", "port": "the gate leaves on the port side", "starboard": "the gate leaves on the starboard side", "top": "open", "bottom": "a recess in the deck edge"},
                 "relationships": "Inside the gate band, hinged on the posts.",
                 "must_preserve": "Raised in the standard state, visible only through the glazing.",
                 "forbidden_interpretations": "A rail outside the leaves on the hull side.",
                 "proof_conditions": "Seen through the glazing as a line at waist height inside each leaf.",
-                "proof_views": [
-                    "profile_port"
-                ],
+                "proof_views": ["profile_port"],
+                "verification": "Holding load of a raised rail; trip risk of the recess when lowered.",
                 "status": "proposed"
             }
         ],
@@ -338,352 +164,148 @@
             {
                 "id": "t_hall_deck",
                 "region": "The passenger hall",
-                "deck": "Main deck",
-                "boundaries": "The gate bands port and starboard, the end bulwarks fore and aft.",
-                "connections": "The pier through an open side; the crew stair at mid-length.",
-                "circulation": "Passengers cross the width; crew go up the stair to the helm cabin.",
+                "description": "The passenger hall takes the whole Main deck between the two working ends, on the centreline, inside the Passenger hall interior: the Port gate band on one side, the Starboard gate band on the other and the end bulwarks fore and aft, with the Crew spaces below it inside the hull and the Helm cabin above it on the roof at mid-length. Passengers enter from the pier through whichever gate band lies against it, and the crew stair at mid-length leads down to the crew spaces and up to the helm cabin.",
+                "deck_ids": ["d_main"],
+                "parts": ["v_hall"],
+                "brief_space": "passenger_hall",
+                "boundaries": "The whole main deck between the two working ends, on the centreline: the port row of gates on one side, the starboard row on the other and the end bulwarks fore and aft, with the crew spaces below it inside the hull and the helm cabin above it on the roof at mid-length.",
+                "connections": "The pier through the port gate band or the starboard gate band, whichever side lies against it; the crew spaces below and the helm cabin above through the crew stair at mid-length.",
+                "open_to": [],
+                "circulation": "Passengers enter and leave through the gates on whichever side lies against the pier and cross the width to the benches. The crew walk along the hall to the mooring stations inside the bulwark at both ends.",
+                "light": "Daylight through the glazed upper halves of the gate leaves along both sides; as a proposal, a line of fixed lights runs under the roof along the centreline.",
+                "interior": {
+                    "layout": "One long open room with nothing dividing it along its length. Cross benches run from the port standing band to the starboard one, each a few steps from a gate, with a clear standing band inside each row of gates. As a proposal, bicycle racks stand against the bulwark at both ends, clear of every gate. The hall is the only place to rest: with the gates closed, passengers sit out of the wind with the harbour in view through the glazed upper halves.",
+                    "materials": "As proposals, plain timber benches on steel frames, a painted steel floor and the underside of the aluminium roof left plain.",
+                    "fixed_furniture": "The cross benches and, as a proposal, the bicycle racks at both ends.",
+                    "identity": "Rows of benches running across the width between two long bands of glazed gates, so the whole room faces the pier side at every stop.",
+                    "undetermined": "The foundation does not decide the standing capacity of the hall."
+                },
+                "exterior_role": "interior_affects_exterior",
+                "status": "locked"
+            },
+            {
+                "id": "t_helm_cabin",
+                "region": "The helm cabin",
+                "description": "The helm cabin is the room inside the Helm cabin on the Helm cabin deck, standing on the roof at mid-length on the centreline and bounded by its four glazed walls. It is entered from the hall below through the Helm cabin floor hatch at the head of the crew stair, and from the Roof walkway through the Helm cabin walkway door in its port wall.",
+                "deck_ids": ["d_helm"],
+                "parts": ["f_helm_floor"],
+                "brief_space": null,
+                "boundaries": "The four glazed walls of the helm cabin, standing on the roof at mid-length on the centreline.",
+                "connections": "The hall below through the floor hatch and the crew stair; the roof walkway through the port door and the walkway steps.",
+                "open_to": [],
+                "circulation": "Crew only: up the crew stair through the floor hatch to the two helm consoles, and out to the walkway through the port door.",
+                "light": "Daylight through the glazing on all four faces.",
+                "interior": {
+                    "layout": "One helm console faces each end on the centreline, with a clear floor between them around the hatch.",
+                    "materials": "As proposals, a painted steel floor and painted walls below the glazing.",
+                    "fixed_furniture": "The two helm consoles, one facing each end.",
+                    "identity": "A small glazed room that looks the same toward both ends.",
+                    "undetermined": "The cabin's finishes are not decided beyond the proposals above."
+                },
                 "exterior_role": "interior_affects_exterior",
                 "status": "locked"
             },
             {
                 "id": "t_roof_walkway",
                 "region": "The walkway around the helm cabin",
-                "deck": "Roof",
+                "description": "The walkway around the helm cabin lies on the Roof, between the Helm cabin inside and the roof edge outside, open to the sky. The crew reach it from the helm cabin through the Helm cabin walkway door and down the Walkway steps on the port side.",
+                "deck_ids": ["d_roof"],
+                "parts": ["f_roof_walkway"],
+                "brief_space": null,
                 "boundaries": "The helm cabin inside, the roof edge outside.",
-                "connections": "The helm cabin's port door.",
+                "connections": "The helm cabin through its port door and the walkway steps.",
+                "open_to": [],
                 "circulation": "Crew only, for cleaning the cabin glazing.",
+                "light": "Open to the sky; no walkway lighting is decided.",
+                "interior": null,
                 "exterior_role": "exterior",
-                "status": "proposed"
+                "status": "locked"
             }
         ],
         "geometric_relationships": [
-            {
-                "subject": "m_hall",
-                "relation": "integrated_with",
-                "object": "hull",
-                "statement": "The hall stands directly on the hull sides with no setback.",
-                "status": "locked"
-            },
-            {
-                "subject": "m_helm_cabin",
-                "relation": "above",
-                "object": "m_hall",
-                "statement": "The helm cabin stands on the hall's roof at mid-length.",
-                "status": "locked"
-            },
-            {
-                "subject": "v_hall",
-                "relation": "contained_by",
-                "object": "m_hall",
-                "statement": "The passenger hall interior fills the hall body.",
-                "status": "locked"
-            },
-            {
-                "subject": "s_end_decks",
-                "relation": "between",
-                "object": "m_hall",
-                "statement": "A clear strip of deck lies between each end of the hall and its raked bulwark.",
-                "status": "proposed"
-            },
-            {
-                "subject": "sr_side_gates",
-                "relation": "integrated_with",
-                "object": "m_hall",
-                "statement": "The gate bands are the hall's port and starboard sides.",
-                "status": "locked"
-            }
+            {"subject": "m_hall", "relation": "integrated_with", "object": "hull", "statement": "The hall stands directly on the hull sides with no setback.", "description": "The Hall is integrated with the hull: it stands directly on the hull sides with no setback, so the gate band continues the hull side upward.", "status": "locked"},
+            {"subject": "m_helm_cabin", "relation": "above", "object": "m_hall", "statement": "The helm cabin stands on the hall's roof at mid-length.", "description": "The Helm cabin stands above the Hall, on its roof at mid-length.", "status": "locked"},
+            {"subject": "v_hall", "relation": "contained_by", "object": "m_hall", "statement": "The passenger hall interior fills the hall body.", "description": "The Passenger hall interior is contained by the Hall and fills its body from end to end.", "status": "locked"},
+            {"subject": "sr_side_gates", "relation": "integrated_with", "object": "m_hall", "statement": "The gate bands are the hall's port and starboard sides.", "description": "The Full-length sliding side gates are integrated with the Hall: the two gate bands are its port and starboard sides.", "status": "locked"}
         ],
         "transitions": [
-            {
-                "id": "x_hull_hall",
-                "kind": "hull_superstructure",
-                "between": [
-                    "hull",
-                    "m_hall"
-                ],
-                "description": "The hull side runs straight up into the posts of the gate band, with the outer track along the joint.",
-                "status": "locked"
-            },
-            {
-                "id": "x_roof_cabin",
-                "kind": "mass_to_mass",
-                "between": [
-                    "m_hall",
-                    "m_helm_cabin"
-                ],
-                "description": "The helm cabin sits on a low plinth on the roof, its floor a step above the roof surface.",
-                "status": "locked"
-            },
-            {
-                "id": "x_gates",
-                "kind": "signature_region",
-                "between": [
-                    "sr_side_gates",
-                    "m_hall"
-                ],
-                "description": "The leaves fill the openings between the posts, flush with them, under the roof edge.",
-                "status": "locked"
-            },
-            {
-                "id": "x_cabin",
-                "kind": "signature_region",
-                "between": [
-                    "sr_helm_cabin",
-                    "m_helm_cabin"
-                ],
-                "description": "The signature cabin is the helm mass itself, glazed all round on its plinth.",
-                "status": "locked"
-            },
-            {
-                "id": "x_rail",
-                "kind": "signature_region",
-                "between": [
-                    "sr_boarding_rail",
-                    "sr_side_gates"
-                ],
-                "description": "Each rail hangs on the posts of its gate opening, inside the leaves.",
-                "status": "proposed"
-            }
+            {"id": "x_hull_hall", "name": "Hull to hall joint", "kind": "hull_superstructure", "between": ["hull", "m_hall"], "description": "Where the hull meets the Hall, the hull side runs straight up into the posts of the gate band along both sides, with the outer track along the joint and no setback.", "status": "locked"},
+            {"id": "x_roof_cabin", "name": "Helm cabin plinth", "kind": "mass_to_mass", "between": ["m_hall", "m_helm_cabin"], "description": "The Helm cabin sits on a low plinth on the roof of the Hall at mid-length, its floor a step above the roof surface.", "status": "locked"},
+            {"id": "x_gates", "name": "Gate leaves between the posts", "kind": "signature_region", "between": ["sr_side_gates", "m_hall"], "description": "The Full-length sliding side gates meet the Hall where their leaves fill the openings between the posts, flush with them, under the roof edge.", "status": "locked"},
+            {"id": "x_cabin", "name": "Signature cabin on its plinth", "kind": "signature_region", "between": ["sr_helm_cabin", "m_helm_cabin"], "description": "The Mid-length helm cabin facing both ends is the Helm cabin itself, glazed all round and standing on its plinth on the roof.", "status": "locked"},
+            {"id": "x_rail", "name": "Rail on the gate posts", "kind": "signature_region", "between": ["sr_boarding_rail", "sr_side_gates"], "description": "Each section of the Folding boarding rail inside each opening hangs on the posts of its opening in the Full-length sliding side gates, just inside the leaves.", "status": "proposed"}
         ],
         "permanent_secondary_geometry": [
-            {
-                "id": "s_end_decks",
-                "element": "End decks",
-                "position": "At both ends, between the hall and the raked bulwark.",
-                "description": "A short clear strip of deck across the full width at each end, open to the sky.",
-                "form": "surface_detail",
-                "equipment_kind": null,
-                "status": "proposed"
-            },
-            {
-                "id": "s_mooring_stations",
-                "element": "Mooring stations",
-                "position": "In the port and starboard corners of both end decks.",
-                "description": "A pair of bollards and a fairlead in each corner, inside the bulwark.",
-                "form": "open_structure",
-                "equipment_kind": null,
-                "status": "proposed"
-            },
-            {
-                "id": "s_helm_glazing_recess",
-                "element": "Helm cabin glazing recess",
-                "position": "Around the forward, aft, port and starboard faces of the Helm cabin, holding the four helm cabin glazing openings.",
-                "description": "A shallow recess cut a hand's width into each cabin wall, with a solid sill below the glazing and a narrow head above it.",
-                "form": "surface_detail",
-                "equipment_kind": null,
-                "status": "locked"
-            },
-            {
-                "id": "s_radar_base",
-                "element": "Radar mounting base",
-                "position": "On the centerline at the forward part of the Helm cabin roof.",
-                "description": "A short welded plinth, a small fraction of the cabin's width, that carries the radar.",
-                "form": "surface_detail",
-                "equipment_kind": null,
-                "status": "locked"
-            },
-            {
-                "id": "s_radar",
-                "element": "Radar scanner",
-                "position": "On the centerline at the forward part of the Helm cabin roof, on the radar mounting base.",
-                "description": "One slim horizontal bar antenna on a short pedestal, about the cabin's width, the highest piece of equipment so its sweep clears everything.",
-                "form": "equipment",
-                "equipment_kind": "radar_scanner",
-                "status": "locked"
-            },
-            {
-                "id": "s_light_port",
-                "element": "Port side light",
-                "position": "On the port edge of the Helm cabin roof, at its forward corner.",
-                "description": "A small light box facing forward and to port.",
-                "form": "equipment",
-                "equipment_kind": "navigation_light",
-                "status": "locked"
-            },
-            {
-                "id": "s_light_starboard",
-                "element": "Starboard side light",
-                "position": "On the starboard edge of the Helm cabin roof, at its forward corner.",
-                "description": "A small light box facing forward and to starboard.",
-                "form": "equipment",
-                "equipment_kind": "navigation_light",
-                "status": "locked"
-            },
-            {
-                "id": "s_horn",
-                "element": "Horn",
-                "position": "On the centerline of the Helm cabin roof, aft of the radar mounting base.",
-                "description": "One short horn on a bracket, facing forward.",
-                "form": "equipment",
-                "equipment_kind": "horn",
-                "status": "locked"
-            }
+            {"id": "s_mooring_stations", "element": "Mooring stations", "position": "In the port and starboard corners of the hall at both ends, inside the raked bulwark.", "description": "In each of the four corners of the Hall on the Main deck, port and starboard at both ends, a mooring station of a pair of bollards and a fairlead stands inside the raked end bulwark.", "form": "open_structure", "equipment_kind": null, "status": "locked"},
+            {"id": "s_helm_glazing_recess", "element": "Helm cabin glazing recess", "position": "Around the forward, aft, port and starboard faces of the Helm cabin, holding the four helm cabin glazing openings.", "description": "Around the forward, aft, port and starboard walls of the Helm cabin, a shallow recess cut a hand's width into each wall holds that wall's glazing opening, with a solid sill below the glazing and a narrow head above it.", "form": "surface_detail", "equipment_kind": null, "status": "locked"},
+            {"id": "s_radar_base", "element": "Radar mounting base", "position": "On the centerline at the forward part of the Helm cabin roof.", "description": "On the centerline at the forward part of the Helm cabin roof, a short welded plinth a small fraction of the cabin's width carries the radar scanner.", "form": "surface_detail", "equipment_kind": null, "status": "locked"},
+            {"id": "s_radar", "element": "Radar scanner", "position": "On the centerline at the forward part of the Helm cabin roof, on the radar mounting base.", "description": "One slim horizontal bar antenna about the cabin's width, on a short pedestal on the radar mounting base at the forward part of the Helm cabin roof on the centerline; it is the highest piece of equipment, so its sweep clears everything.", "form": "equipment", "equipment_kind": "radar_scanner", "status": "locked"},
+            {"id": "s_light_port", "element": "Port side light", "position": "On the port edge of the Helm cabin roof, at its forward corner.", "description": "A small navigation light box on the port edge of the Helm cabin roof at its forward corner, facing forward and to port.", "form": "equipment", "equipment_kind": "navigation_light", "status": "locked"},
+            {"id": "s_light_starboard", "element": "Starboard side light", "position": "On the starboard edge of the Helm cabin roof, at its forward corner.", "description": "A small navigation light box on the starboard edge of the Helm cabin roof at its forward corner, facing forward and to starboard.", "form": "equipment", "equipment_kind": "navigation_light", "status": "locked"},
+            {"id": "s_horn", "element": "Horn", "position": "On the centerline of the Helm cabin roof, aft of the radar mounting base.", "description": "One short horn on a bracket on the centerline of the Helm cabin roof, aft of the radar mounting base, facing forward.", "form": "equipment", "equipment_kind": "horn", "status": "locked"}
         ],
         "appearance_identity": {
             "hull": "Painted steel in a dark working colour.",
             "superstructure": "An aluminium roof in a lighter grey.",
             "glazing": "Clear glazing in the upper half of every gate leaf and all round the helm cabin.",
             "materials": "Gate leaves framed in the hull colour; timber slat benches on steel frames.",
+            "deck_coverings": "Painted steel on the hall floor and the roof walkway.",
+            "exterior_lighting": "None beyond the navigation lights; at night the line of lights under the roof shows through the glazed gate leaves.",
             "status": "proposed"
         },
         "configuration_states": [
-            {
-                "component_id": "c_gate_leaves",
-                "feature_id": "sr_side_gates",
-                "fixed_geometry": "The posts and the upper and lower runner tracks along each side.",
-                "canonical_state": "closed",
-                "alternate_states": [
-                    "open on the port side",
-                    "open on the starboard side"
-                ],
-                "mechanism_location": "The outer track just outside the hull plating, under the roof edge and above the sheer.",
-                "stowage": "Stacked behind a post toward one end.",
-                "swept_volume": "A narrow band just outside the hull plating along the side.",
-                "human_use_by_state": "Closed, the side is a glazed wall that cannot be passed; open, the side is clear from deck to roof and can be walked across between the hall and the pier."
-            },
-            {
-                "component_id": "c_rail_sections",
-                "feature_id": "sr_boarding_rail",
-                "fixed_geometry": "The hinge brackets on each post.",
-                "canonical_state": "raised",
-                "alternate_states": [
-                    "lowered"
-                ],
-                "mechanism_location": "A lower hinge on each post.",
-                "stowage": "Folded flat into a recess in the deck edge.",
-                "swept_volume": "A quarter circle inside each opening down to the deck edge.",
-                "human_use_by_state": "Raised, it is a guard line across the side opening that cannot be passed; lowered, it lies flush with the deck and can be walked over."
-            }
+            {"component_id": "c_gate_leaves", "component": "Gate leaves", "description": "The gate leaves of the Port gate band and the Starboard gate band hang between the fixed posts on upper and lower runner tracks. In the standard state every leaf is closed and each side is a glazed wall that cannot be passed. Opened on one side, the leaves of that side unlatch together, slide along the outer track just outside the hull plating toward one end and stack behind a post, leaving that side clear from deck to roof to walk across; the other side stays closed.", "feature_id": "sr_side_gates", "fixed_geometry": "The posts and the upper and lower runner tracks along each side.", "canonical_state": "closed", "alternate_states": ["open on the port side", "open on the starboard side"], "mechanism_location": "The outer track just outside the hull plating, under the roof edge and above the sheer; the leaves on one side unlatch together and slide along it.", "stowage": "Stacked behind a post toward one end.", "swept_volume": "A narrow band just outside the hull plating along the side.", "human_use_by_state": "Closed, the side is a glazed wall that cannot be passed; open, the side is clear from deck to roof and can be walked across between the hall and the pier, and the whole hall is aired across its width.", "closes": [{"opening": "o_gates_port", "passable_in": ["open on the port side"]}, {"opening": "o_gates_starboard", "passable_in": ["open on the starboard side"]}]},
+            {"component_id": "c_rail_sections", "component": "Rail sections", "description": "The rail sections hang on a lower hinge on each post inside the Port gate band and the Starboard gate band. In the standard state they are raised as a guard line across each side opening that cannot be passed; lowered, each swings through a quarter circle down to the deck edge and folds flat into a recess there, flush with the deck, so the opening can be walked over.", "feature_id": "sr_boarding_rail", "fixed_geometry": "The hinge brackets on each post.", "canonical_state": "raised", "alternate_states": ["lowered"], "mechanism_location": "A lower hinge on each post.", "stowage": "Folded flat into a recess in the deck edge.", "swept_volume": "A quarter circle inside each opening down to the deck edge, across the standing band beside it, which is kept clear while the rail moves.", "human_use_by_state": "Raised, it is a guard line across the side opening that cannot be passed; lowered, it lies flush with the deck and can be walked over.", "closes": [{"opening": "o_gates_port", "passable_in": ["lowered"]}, {"opening": "o_gates_starboard", "passable_in": ["lowered"]}]}
         ],
         "must_preserve": [
-            {
-                "id": "p_identical_ends",
-                "priority": "P0",
-                "statement": "Both ends have the same square shape and raked bulwark, so the profile reads the same either way.",
-                "refs": [
-                    "hull",
-                    "l_sheer"
-                ]
-            },
-            {
-                "id": "p_gate_band",
-                "priority": "P0",
-                "statement": "Each side of the hall is one continuous band of glazed gate leaves from end to end.",
-                "refs": [
-                    "sr_side_gates"
-                ]
-            },
-            {
-                "id": "p_mid_cabin",
-                "priority": "P0",
-                "statement": "The only raised volume is the helm cabin at mid-length on the centreline.",
-                "refs": [
-                    "sr_helm_cabin",
-                    "m_helm_cabin"
-                ]
-            },
-            {
-                "id": "p_one_roof",
-                "priority": "P1",
-                "statement": "One continuous level roof covers the hall from end to end.",
-                "refs": [
-                    "m_hall",
-                    "l_roof_edge"
-                ]
-            }
+            {"id": "p_identical_ends", "priority": "P0", "statement": "Both ends have the same square shape and raked bulwark, so the profile reads the same either way.", "description": "Protects the identical ends: the forward and aft ends of the hull share one square shape and one raked bulwark on the level sheer line, so the profile reads the same in either direction.", "refs": ["hull", "l_sheer"]},
+            {"id": "p_gate_band", "priority": "P0", "statement": "Each side of the hall is one continuous band of glazed gate leaves from end to end.", "description": "Protects the side gates: each side of the Hall is one continuous band of glazed gate leaves from end bulwark to end bulwark, never broken by a solid wall.", "refs": ["sr_side_gates"]},
+            {"id": "p_mid_cabin", "priority": "P0", "statement": "The only raised volume is the helm cabin at mid-length on the centreline.", "description": "Protects the single raised volume: the Helm cabin is the only volume above the roof line, at mid-length on the centreline.", "refs": ["sr_helm_cabin", "m_helm_cabin"]},
+            {"id": "p_one_roof", "priority": "P1", "statement": "One continuous level roof covers the hall from end to end.", "description": "Protects the roof line: one continuous level roof covers the Hall from end bulwark to end bulwark along the roof edge.", "refs": ["m_hall", "l_roof_edge"]}
         ],
         "must_not_introduce": [
-            {
-                "id": "n_end_wheelhouse",
-                "interpretation": "A wheelhouse at one end that gives the ferry a front.",
-                "instead": "The helm cabin stands alone on the roof at mid-length, and both ends finish in the same low raked bulwark.",
-                "refs": [
-                    "sr_helm_cabin",
-                    "hull"
-                ]
-            },
-            {
-                "id": "n_door_wall",
-                "interpretation": "Separate doors set in a solid side wall.",
-                "instead": "Each side is one continuous row of glazed gate leaves between slim posts from end bulwark to end bulwark.",
-                "refs": [
-                    "sr_side_gates"
-                ]
-            }
+            {"id": "n_end_wheelhouse", "interpretation": "A wheelhouse at one end that gives the ferry a front.", "instead": "The helm cabin stands alone on the roof at mid-length, and both ends finish in the same low raked bulwark.", "description": "Forbids a wheelhouse at one end, which would give the ferry a front; instead the Helm cabin stands alone on the roof at mid-length and both ends finish in the same low raked bulwark.", "refs": ["sr_helm_cabin", "hull"]},
+            {"id": "n_door_wall", "interpretation": "Separate doors set in a solid side wall.", "instead": "Each side is one continuous row of glazed gate leaves between slim posts from end bulwark to end bulwark.", "description": "Forbids separate doors set in a solid side wall; instead each side of the Hall is one continuous row of glazed gate leaves between slim posts from end bulwark to end bulwark.", "refs": ["sr_side_gates"]}
         ],
         "reference_proof_requirements": [
-            {
-                "target": "sr_side_gates",
-                "proof_condition": "A continuous row of glazed leaves runs from end bulwark to end bulwark on the visible side.",
-                "views": [
-                    "profile_port",
-                    "profile_starboard"
-                ]
-            },
-            {
-                "target": "sr_helm_cabin",
-                "proof_condition": "The cabin stands exactly midway along the roof, glazed on the faces the view shows.",
-                "views": [
-                    "profile_port",
-                    "bow_three_quarter_port"
-                ]
-            },
-            {
-                "target": "p_identical_ends",
-                "proof_condition": "Both ends show the same square end and raked bulwark in one profile.",
-                "views": [
-                    "profile_port"
-                ]
-            },
-            {
-                "target": "p_gate_band",
-                "proof_condition": "The band of leaves is unbroken along the visible side.",
-                "views": [
-                    "profile_port"
-                ]
-            },
-            {
-                "target": "p_mid_cabin",
-                "proof_condition": "No other volume rises above the roof line.",
-                "views": [
-                    "profile_port"
-                ]
-            }
+            {"target": "sr_side_gates", "proof_condition": "A continuous row of glazed leaves runs from end bulwark to end bulwark on the visible side.", "description": "The image must show the visible side of the Hall as one continuous row of glazed gate leaves from end bulwark to end bulwark; the port and starboard profiles each face one whole side.", "views": ["profile_port", "profile_starboard"]},
+            {"target": "sr_helm_cabin", "proof_condition": "The cabin stands exactly midway along the roof, glazed on the faces the view shows.", "description": "The image must place the Helm cabin exactly midway along the roof, glazed on the faces it shows; the port profile shows its place along the length and the bow three-quarter view from port shows two of its glazed faces.", "views": ["profile_port", "bow_three_quarter_port"]},
+            {"target": "p_identical_ends", "proof_condition": "Both ends show the same square end and raked bulwark in one profile.", "description": "The image must show both square ends with the same raked bulwark in one view; the port profile sees both ends at once.", "views": ["profile_port"]},
+            {"target": "p_gate_band", "proof_condition": "The band of leaves is unbroken along the visible side.", "description": "The image must show the band of gate leaves unbroken along the visible side; the port profile faces that side square on.", "views": ["profile_port"]},
+            {"target": "p_mid_cabin", "proof_condition": "No other volume rises above the roof line.", "description": "The image must show that no volume other than the Helm cabin rises above the roof line; the port profile shows the whole roof line.", "views": ["profile_port"]}
         ],
         "geometry_model": "typed",
+        "access_points": [
+            {"id": "a_pier_port", "name": "Port boarding from the pier", "description": "Passengers board through the Port gate band on the Main deck when the ferry lies port side to the pier, stepping straight across level with the hall floor while the gate leaves are open on the port side.", "place": "o_gates_port", "means": "Passengers step straight across from the pier, level with the hall floor, when the ferry lies port side to.", "state": [{"component_id": "c_gate_leaves", "state": "open on the port side"}], "status": "locked"},
+            {"id": "a_pier_starboard", "name": "Starboard boarding from the pier", "description": "Passengers board through the Starboard gate band on the Main deck when the ferry lies starboard side to the pier, stepping straight across level with the hall floor while the gate leaves are open on the starboard side.", "place": "o_gates_starboard", "means": "Passengers step straight across from the pier, level with the hall floor, when the ferry lies starboard side to.", "state": [{"component_id": "c_gate_leaves", "state": "open on the starboard side"}], "status": "locked"}
+        ],
         "decks": [
-            {"id": "d_crew", "name": "Crew spaces", "level": 0, "body": "hull", "status": "locked"},
-            {"id": "d_main", "name": "Main deck", "level": 1, "body": "m_hall", "status": "locked"},
-            {"id": "d_roof", "name": "Roof", "level": 2, "body": "m_hall", "status": "locked"},
-            {"id": "d_helm", "name": "Helm cabin", "level": 3, "body": "m_helm_cabin", "status": "locked"}
+            {"id": "d_crew", "name": "Crew spaces", "description": "The Crew spaces deck is the lowest level, inside the hull below the Main deck, holding the crew spaces on the Crew floor; it is reached by the lower flight of the crew stair at mid-length.", "level": 0, "body": "hull", "organization": "The crew spaces inside the hull, below the hall, reached by the lower flight of the crew stair at mid-length.", "status": "locked"},
+            {"id": "d_main", "name": "Main deck", "description": "The Main deck is the passenger level inside the Hall, level from end to end and a short step above the pier, running between the raked end bulwarks with a gate band along each side.", "level": 1, "body": "m_hall", "organization": "The hall, level from end to end and a short step above the pier, with the cross benches, a clear standing band inside each row of gates and a mooring station in each corner inside the raked bulwarks.", "status": "locked"},
+            {"id": "d_roof", "name": "Roof", "description": "The Roof is the continuous roof over the Hall from end bulwark to end bulwark; only the Roof walkway around the Helm cabin is walked, and only by the crew.", "level": 2, "body": "m_hall", "organization": "The continuous roof over the hall. Only the walkway around the helm cabin is walked, by the crew, for cleaning the cabin glazing; passengers never go up there.", "status": "locked"},
+            {"id": "d_helm", "name": "Helm cabin", "description": "The Helm cabin deck is the floor of the Helm cabin, a step above the roof at mid-length on the centreline, with the hatch over the crew stair.", "level": 3, "body": "m_helm_cabin", "organization": "The helm cabin floor, a step above the roof, with the hatch over the crew stair.", "status": "locked"}
         ],
         "openings": [
-            {"id": "o_gates_port", "deck": "d_main", "face": "port", "kind": "movable_closure", "host": "m_hall", "serves": "v_hall", "connects": ["v_hall", null], "exterior_role": "exterior", "profile_paths": ["windows_and_glazing", "interior_spaces.0.access"], "status": "locked"},
-            {"id": "o_gates_starboard", "deck": "d_main", "face": "starboard", "kind": "movable_closure", "host": "m_hall", "serves": "v_hall", "connects": ["v_hall", null], "exterior_role": "exterior", "profile_paths": ["windows_and_glazing", "interior_spaces.0.access"], "status": "locked"},
-            {"id": "o_helm_forward", "deck": "d_helm", "face": "forward", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "connects": null, "exterior_role": "exterior", "profile_paths": ["windows_and_glazing"], "status": "locked"},
-            {"id": "o_helm_aft", "deck": "d_helm", "face": "aft", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "connects": null, "exterior_role": "exterior", "profile_paths": ["windows_and_glazing"], "status": "locked"},
-            {"id": "o_helm_port", "deck": "d_helm", "face": "port", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "connects": null, "exterior_role": "exterior", "profile_paths": ["windows_and_glazing"], "status": "locked"},
-            {"id": "o_helm_starboard", "deck": "d_helm", "face": "starboard", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "connects": null, "exterior_role": "exterior", "profile_paths": ["windows_and_glazing"], "status": "locked"},
-            {"id": "o_helm_hatch", "deck": "d_helm", "face": "downward", "kind": "hatch", "host": "m_helm_cabin", "serves": "v_hall", "connects": ["f_helm_floor", "v_hall"], "exterior_role": "interior_only", "profile_paths": ["deck_organization"], "status": "locked"},
-            {"id": "o_walkway_door", "deck": "d_helm", "face": "port", "kind": "doorway", "host": "m_helm_cabin", "serves": "f_roof_walkway", "connects": ["f_helm_floor", "f_roof_walkway"], "exterior_role": "exterior", "profile_paths": ["deck_organization"], "status": "proposed"}
+            {"id": "o_gates_port", "name": "Port gate band", "deck": "d_main", "face": "port", "kind": "movable_closure", "host": "m_hall", "serves": "v_hall", "connects": ["v_hall", null], "description": "On the port side of the Hall on the Main deck, the Port gate band is one long opening divided by slim posts and closed by a row of sliding gate leaves, each glazed in its upper half; the leaves slide toward one end on the outer track and stack behind a post. The posts carry the roof loads down into the hull side around each opening.", "exterior_role": "exterior", "status": "locked"},
+            {"id": "o_gates_starboard", "name": "Starboard gate band", "deck": "d_main", "face": "starboard", "kind": "movable_closure", "host": "m_hall", "serves": "v_hall", "connects": ["v_hall", null], "description": "On the starboard side of the Hall on the Main deck, the Starboard gate band repeats the port band: one long opening divided by slim posts and closed by sliding gate leaves glazed in their upper halves, which slide toward one end on the outer track and stack behind a post, with the posts carrying the roof loads into the hull side.", "exterior_role": "exterior", "status": "locked"},
+            {"id": "o_helm_forward", "name": "Helm cabin forward glazing", "deck": "d_helm", "face": "forward", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "connects": null, "description": "Fixed glazing in the forward wall of the Helm cabin on the Helm cabin deck, set in that wall's shallow recess above a solid sill.", "exterior_role": "exterior", "status": "locked"},
+            {"id": "o_helm_aft", "name": "Helm cabin aft glazing", "deck": "d_helm", "face": "aft", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "connects": null, "description": "Fixed glazing in the aft wall of the Helm cabin on the Helm cabin deck, set in that wall's shallow recess above a solid sill.", "exterior_role": "exterior", "status": "locked"},
+            {"id": "o_helm_port", "name": "Helm cabin port glazing", "deck": "d_helm", "face": "port", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "connects": null, "description": "Fixed glazing in the port wall of the Helm cabin on the Helm cabin deck, set in that wall's shallow recess beside the walkway door.", "exterior_role": "exterior", "status": "locked"},
+            {"id": "o_helm_starboard", "name": "Helm cabin starboard glazing", "deck": "d_helm", "face": "starboard", "kind": "glazing", "host": "m_helm_cabin", "serves": "f_helm_floor", "connects": null, "description": "Fixed glazing in the starboard wall of the Helm cabin on the Helm cabin deck, set in that wall's shallow recess above a solid sill.", "exterior_role": "exterior", "status": "locked"},
+            {"id": "o_helm_hatch", "name": "Helm cabin floor hatch", "deck": "d_helm", "face": "downward", "kind": "hatch", "host": "m_helm_cabin", "serves": "f_hall_floor", "connects": ["f_helm_floor", "f_hall_floor"], "description": "A hatch in the floor of the Helm cabin on the Helm cabin deck, facing downward over the top of the crew stair, through which the stair rises from the hall floor.", "exterior_role": "interior_only", "status": "locked"},
+            {"id": "o_walkway_door", "name": "Helm cabin walkway door", "deck": "d_helm", "face": "port", "kind": "doorway", "host": "m_helm_cabin", "serves": "f_roof_walkway", "connects": ["f_helm_floor", "f_roof_walkway"], "description": "A door in the port wall of the Helm cabin on the Helm cabin deck that opens onto the roof walkway at the head of the walkway steps.", "exterior_role": "exterior", "status": "locked"}
         ],
         "surfaces": [
-            {"id": "f_crew_floor", "deck": "d_crew", "kind": "deck_floor", "relative_to": "hull", "relation": "within", "side": "both", "exterior_role": "interior_only", "status": "locked"},
-            {"id": "f_hall_floor", "deck": "d_main", "kind": "deck_floor", "relative_to": "v_hall", "relation": "within", "side": "both", "exterior_role": "interior_affects_exterior", "status": "locked"},
-            {"id": "f_helm_floor", "deck": "d_helm", "kind": "deck_floor", "relative_to": "m_helm_cabin", "relation": "within", "side": "both", "exterior_role": "interior_affects_exterior", "status": "locked"},
-            {"id": "f_roof_walkway", "deck": "d_roof", "kind": "walkway", "relative_to": "m_helm_cabin", "relation": "around", "side": "both", "exterior_role": "exterior", "status": "proposed"}
+            {"id": "f_crew_floor", "name": "Crew floor", "deck": "d_crew", "kind": "deck_floor", "relative_to": "hull", "relation": "within", "side": "both", "description": "The Crew floor is the floor of the crew spaces on the Crew spaces deck, within the hull below the hall, across the hull's width.", "exterior_role": "interior_only", "status": "locked"},
+            {"id": "f_hall_floor", "name": "Hall floor", "deck": "d_main", "kind": "deck_floor", "relative_to": "v_hall", "relation": "within", "side": "both", "description": "The Hall floor is the floor of the Passenger hall interior on the Main deck, level from end to end and a short step above the pier, running between the two gate bands.", "exterior_role": "interior_affects_exterior", "status": "locked"},
+            {"id": "f_helm_floor", "name": "Helm cabin floor", "deck": "d_helm", "kind": "deck_floor", "relative_to": "m_helm_cabin", "relation": "within", "side": "both", "description": "The Helm cabin floor lies within the Helm cabin on the Helm cabin deck, a step above the roof, with the floor hatch over the crew stair.", "exterior_role": "interior_affects_exterior", "status": "locked"},
+            {"id": "f_roof_walkway", "name": "Roof walkway", "deck": "d_roof", "kind": "walkway", "relative_to": "m_helm_cabin", "relation": "around", "side": "both", "description": "The Roof walkway is a narrow walkway on the Roof around the Helm cabin, running between the cabin walls and the roof edge.", "exterior_role": "exterior", "status": "locked"}
         ],
         "basins": [],
         "routes": [
-            {"id": "r_crew_stair_lower", "kind": "stair", "from": {"deck": "d_crew", "place": "f_crew_floor"}, "to": {"deck": "d_main", "place": "f_hall_floor"}, "direction": "vertical", "support": "The crew stair at mid-length, inside the hull below the hall.", "exterior_role": "interior_only", "profile_paths": ["spatial_layout", "interior_spaces.0.access"], "status": "locked"},
-            {"id": "r_crew_stair_upper", "kind": "stair", "from": {"deck": "d_main", "place": "f_hall_floor"}, "to": {"deck": "d_helm", "place": "f_helm_floor"}, "direction": "vertical", "support": "The same crew stair rising through the roof to the hatch in the helm cabin floor.", "exterior_role": "interior_affects_exterior", "profile_paths": ["spatial_layout", "deck_organization", "interior_spaces.0.access"], "status": "locked"}
+            {"id": "r_crew_stair_lower", "name": "Crew stair, lower flight", "description": "The lower flight of the crew stair runs vertically at mid-length inside the hull, from the Crew floor on the Crew spaces deck up to the Hall floor on the Main deck. It passes through no opening and stands within the hull below the hall; its landings are not described.", "kind": "stair", "from": {"deck": "d_crew", "place": "f_crew_floor"}, "to": {"deck": "d_main", "place": "f_hall_floor"}, "direction": "vertical", "support": "The crew stair at mid-length, inside the hull below the hall.", "through": [], "exterior_role": "interior_only", "status": "locked"},
+            {"id": "r_crew_stair_upper", "name": "Crew stair, upper flight", "description": "The upper flight continues the same crew stair vertically at mid-length, from the Hall floor on the Main deck up through the roof to the Helm cabin floor on the Helm cabin deck, arriving through the Helm cabin floor hatch; its landings are not described.", "kind": "stair", "from": {"deck": "d_main", "place": "f_hall_floor"}, "to": {"deck": "d_helm", "place": "f_helm_floor"}, "direction": "vertical", "support": "The same crew stair rising through the roof to the hatch in the helm cabin floor.", "through": ["o_helm_hatch"], "exterior_role": "interior_affects_exterior", "status": "locked"},
+            {"id": "r_walkway_steps", "name": "Walkway steps", "description": "The Walkway steps lead to port from the Helm cabin floor on the Helm cabin deck, out through the Helm cabin walkway door and two steps down to the Roof walkway on the Roof, carried on the cabin plinth.", "kind": "stair", "from": {"deck": "d_helm", "place": "f_helm_floor"}, "to": {"deck": "d_roof", "place": "f_roof_walkway"}, "direction": "port", "support": "Two steps down outside the port door, from the cabin floor to the walkway, carried on the cabin plinth.", "through": ["o_walkway_door"], "exterior_role": "exterior", "status": "locked"}
         ]
-    },
-    "geometry_links": [
-        {"profile_path": "deck_organization", "role": "deck", "refs": ["d_crew", "d_main", "d_roof", "d_helm"]},
-        {"profile_path": "interior_spaces.0", "role": "deck", "refs": ["d_main"]},
-        {"profile_path": "signature_features.0", "role": "region", "refs": ["sr_side_gates"]},
-        {"profile_path": "signature_features.1", "role": "region", "refs": ["sr_helm_cabin"]},
-        {"profile_path": "signature_features.2", "role": "region", "refs": ["sr_boarding_rail"]}
-    ]
+    }
 }

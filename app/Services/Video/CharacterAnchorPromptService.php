@@ -143,6 +143,10 @@ final class CharacterAnchorPromptService
             return [null, 'character_not_main', $character];
         }
 
+        if (VesselDesign::isV3Profile($character[ProtagonistProfile::CHARACTER_KEY] ?? null)) {
+            return [null, 'character_prompt_v3_profile_uses_design', $character];
+        }
+
         $character['screenplay_stage_id'] = (string) $screenplay->id;
 
         $isObject = ($character['kind'] ?? null) === 'object';
@@ -199,14 +203,15 @@ final class CharacterAnchorPromptService
 
         $character = $this->designs->vessel($design);
         $source = $this->designs->anchorPromptSource($design);
-        $prompt = $this->designPrompt->compile($source, (array) $design->output_json, $size);
+        $designPrompt = $this->designPrompt->forDesign((array) $design->output_json);
+        $prompt = $designPrompt->compile($source, (array) $design->output_json, $size);
 
-        if (! $this->designPrompt->fits($prompt)) {
+        if (! $designPrompt->fits($prompt)) {
             return [null, 'anchor_prompt_too_long', null];
         }
 
         $origin = self::designOrigin($design);
-        $input = $this->designInput($origin, $source, $size);
+        $input = $this->designInput($origin, $source, $size, $designPrompt);
         [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
             $projectId,
             PlanningStageName::ANCHOR_PROMPT,
@@ -229,7 +234,7 @@ final class CharacterAnchorPromptService
             $stored = (string) ($claimed->output_json['prompt'] ?? '');
 
             return hash_equals(hash('sha256', $stored), hash('sha256', $prompt))
-                ? [$this->designPrompt->compiled($prompt, $stage, $size, $model), 'cached', $stamped]
+                ? [$designPrompt->compiled($prompt, $stage, $size, $model), 'cached', $stamped]
                 : [null, 'anchor_prompt_source_changed', $character];
         }
 
@@ -244,12 +249,12 @@ final class CharacterAnchorPromptService
             [
                 'prompt' => $prompt,
                 'author_model' => AnchorDesignPrompt::AUTHOR,
-                'prompt_version' => $this->designPrompt->version,
+                'prompt_version' => $designPrompt->version,
                 'character_id' => $characterId,
                 'character_name' => (string) ($character['name'] ?? $characterId),
                 'character_kind' => (string) ($character['kind'] ?? ''),
             ] + $origin,
-            ['model' => AnchorDesignPrompt::AUTHOR, 'instruction_version' => $this->designPrompt->version],
+            ['model' => AnchorDesignPrompt::AUTHOR, 'instruction_version' => $designPrompt->version],
             ['pricing' => 'free'],
         );
 
@@ -257,7 +262,7 @@ final class CharacterAnchorPromptService
             return [null, 'screenplay_claim_lost', $character];
         }
 
-        return [$this->designPrompt->compiled($prompt, $stage, $size, $model), 'ok', $stamped];
+        return [$designPrompt->compiled($prompt, $stage, $size, $model), 'ok', $stamped];
     }
 
     /**
@@ -265,13 +270,13 @@ final class CharacterAnchorPromptService
      * @param  array<string, mixed>  $source
      * @return array<string, mixed>
      */
-    private function designInput(array $origin, array $source, ImageSize $size): array
+    private function designInput(array $origin, array $source, ImageSize $size, AnchorDesignPrompt $designPrompt): array
     {
         return [
             'character_id' => VesselDesign::VESSEL_ID,
         ] + $origin + [
             'source_hash' => hash('sha256', json_encode($source, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
-            'skill_hash' => $this->designPrompt->skillHash(),
+            'skill_hash' => $designPrompt->skillHash(),
             'downstream' => GeometryPromptAuthor::downstreamFor($size),
         ];
     }
@@ -436,7 +441,8 @@ final class CharacterAnchorPromptService
         }
 
         $source = $this->designs->anchorPromptSource($design);
-        $input = $this->designInput(self::designOrigin($design), $source, $promptSize);
+        $designPrompt = $this->designPrompt->forDesign((array) $design->output_json);
+        $input = $this->designInput(self::designOrigin($design), $source, $promptSize, $designPrompt);
         $promptStage = $this->succeededPromptStage($projectId, $promptStageId);
         $stored = is_array($promptStage?->input_json) ? $promptStage->input_json : [];
 
@@ -449,9 +455,9 @@ final class CharacterAnchorPromptService
             return [null, 'anchor_prompt_source_changed'];
         }
 
-        $expected = $this->designPrompt->compile($source, (array) $design->output_json, $size);
+        $expected = $designPrompt->compile($source, (array) $design->output_json, $size);
 
-        if (! $this->designPrompt->fits($expected)) {
+        if (! $designPrompt->fits($expected)) {
             return [null, 'anchor_prompt_size_unsupported'];
         }
 
@@ -490,12 +496,13 @@ final class CharacterAnchorPromptService
         }
 
         $source = $this->designs->anchorPromptSource($design);
+        $designPrompt = $this->designPrompt->forDesign((array) $design->output_json);
         $prompts = [];
 
         foreach (ImageSize::cases() as $size) {
-            $prompt = $this->designPrompt->compile($source, (array) $design->output_json, $size);
+            $prompt = $designPrompt->compile($source, (array) $design->output_json, $size);
 
-            if ($this->designPrompt->fits($prompt)) {
+            if ($designPrompt->fits($prompt)) {
                 $prompts[$size->value] = $prompt;
             }
         }
@@ -506,7 +513,7 @@ final class CharacterAnchorPromptService
     /** @param array<string, mixed> $preview */
     public function isCurrentDesignPrompt(array $preview): bool
     {
-        return ($preview['lineage']['prompt_version'] ?? null) === $this->designPrompt->version
+        return in_array($preview['lineage']['prompt_version'] ?? null, $this->designPrompt->versions(), true)
             && ($preview['lineage']['subject_state_version'] ?? null) === AnchorDesignPrompt::AUTHOR;
     }
 

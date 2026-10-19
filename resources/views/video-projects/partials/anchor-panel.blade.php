@@ -59,9 +59,9 @@
                         <div class="va-row-bar">
                             @if($hasPrompt)
                                 <div class="m">Viết bởi <b>{{ ($row['prompt_author'] ?? null) === \App\Video\Prompt\AnchorDesignPrompt::AUTHOR ? 'code · ' : '' }}{{ $row['prompt_version'] ?? '—' }}</b></div>
-                                @if(($row['unclassified'] ?? []) !== [])
+                                {{-- @if(($row['unclassified'] ?? []) !== [])
                                     <div class="m" style="color:var(--vp-amber-fg)">Thiết kế chưa phân loại trong/ngoài cho {{ count($row['unclassified']) }} chi tiết phụ cố định — prompt đang giữ cả: {{ implode(', ', $row['unclassified']) }}.</div>
-                                @endif
+                                @endif --}}
                             @elseif(($designFirst ?? false) && $character !== null)
                                 <div class="m" style="color:var(--vp-red)">
                                     {{ $row['prompt_error'] ?? (($row['blockers'] ?? []) !== [] ? 'Thiết kế chưa đủ dữ kiện để ghép prompt anchor.' : 'Chưa ghép được prompt từ thiết kế — tải lại trang.') }}

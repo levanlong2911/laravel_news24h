@@ -916,6 +916,10 @@ final class ScreenplayExpansionService
             return [...$violations, 'characters: no protagonist carries the profile'];
         }
 
+        if (VesselDesign::isV3Profile($rows[$index][ProtagonistProfile::CHARACTER_KEY] ?? null)) {
+            return $violations;
+        }
+
         return [...$violations, ...(new ScreenplayValidator)->protagonistProfileViolations(
             $rows[$index][ProtagonistProfile::CHARACTER_KEY] ?? null, $foundation, [], ProtagonistProfile::focus($profile),
             FilmBrief::profileSpaces($profile),

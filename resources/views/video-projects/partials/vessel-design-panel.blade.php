@@ -17,7 +17,19 @@
                     $lines[] = 'DIMENSION RATIONALE: '.($source['principal_dimensions']['rationale'] ?? '');
                     $lines[] = '';
 
-                    if (is_array($source['protagonist_profile'] ?? null)) {
+                    if (\App\Video\Screenplay\VesselDesign::isV4($source)) {
+                        try {
+                            $lines = [...$lines, ...\App\Video\Screenplay\ProtagonistProfileText::describedLines($source, multiline: true)];
+                        } catch (\Throwable) {
+                            $lines[] = json_encode(array_intersect_key($source, array_flip(['figures', 'construction'])), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        }
+                    } elseif (\App\Video\Screenplay\VesselDesign::isV3($source)) {
+                        try {
+                            $lines = [...$lines, ...\App\Video\Screenplay\ProtagonistProfileText::designLines($source, multiline: true)];
+                        } catch (\Throwable) {
+                            $lines[] = json_encode(array_intersect_key($source, array_flip(['figures', 'construction'])), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        }
+                    } elseif (is_array($source['protagonist_profile'] ?? null)) {
                         try {
                             $lines[] = \App\Video\Screenplay\ProtagonistProfileText::render($source['protagonist_profile'], '');
                         } catch (\Throwable) {
@@ -124,6 +136,20 @@
                                     @if($found !== [])<br>{{ $check }}: {{ implode('; ', $found) }}@endif
                                 @endforeach
                             </div>
+                            @if(($vesselDesign['text_warnings'] ?? []) !== [])
+                                <div class="va-lbl vd-reach warn" id="vesselDesignTextWarnings">
+                                    Chữ cần kiểm (chỉ báo, không chặn bản đã có):
+                                    @foreach($vesselDesign['text_warnings'] as $line)<br>{{ $line }}@endforeach
+                                </div>
+                            @endif
+                            @php $v3Findings = $vesselDesign['v3_findings'] ?? null; @endphp
+                            @if(is_array($v3Findings))
+                                <div class="va-lbl vd-reach {{ $v3Findings['findings'] === [] ? 'ok' : 'warn' }}" id="vesselDesignReach">
+                                    Tiếp cận (chỉ báo, không chặn):
+                                    @foreach($v3Findings['configurations'] as $line)<br>{{ $line }}@endforeach
+                                    @foreach($v3Findings['findings'] as $line)<br>{{ $line }}@endforeach
+                                </div>
+                            @endif
                             @if(($vesselDesign['p0'] ?? []) !== [])
                                 <div class="va-lbl" style="font-weight:400">
                                     P0 phải giữ:
@@ -131,7 +157,7 @@
                                 </div>
                             @endif
                         @endif
-                        <textarea class="va-ta" readonly>{{ $designText($design) }}</textarea>
+                        <textarea class="va-ta" readonly id="vesselDesignText">{{ $designText($design) }}</textarea>
                     @endif
                 </div>
             </div>

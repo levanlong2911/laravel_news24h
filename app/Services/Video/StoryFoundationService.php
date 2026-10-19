@@ -77,7 +77,7 @@ final class StoryFoundationService
         $designBrief = VesselDesign::designBrief($currentBrief);
         $recordedBrief = FilmBrief::ofRequirements((array) ($designMeta['requirements'] ?? []));
         $current = [
-            'profile' => FilmBrief::applyToProfile(VesselDesign::designShape($snapshot), $designBrief),
+            'profile' => FilmBrief::applyToProfile(VesselDesign::designShape($snapshot, VesselDesign::contractOf((array) $design->output_json)), $designBrief),
             'brief' => $designBrief === null ? null : array_diff_key($designBrief, ['revision' => true]),
         ];
         $recorded = [

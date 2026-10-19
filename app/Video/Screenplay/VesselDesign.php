@@ -15,10 +15,52 @@ final class VesselDesign
 
     public const CONTRACT = 'vessel_design_v2';
 
+    public const CONTRACT_V3 = 'vessel_design_v3';
+
+    public const CONTRACT_V4 = 'vessel_design_v4';
+
     public const LEGACY_CONTRACT = 'vessel_design_v1';
 
     /** @var list<string> */
-    public const CONTRACTS = [self::CONTRACT, self::LEGACY_CONTRACT];
+    public const CONTRACTS = [self::CONTRACT, self::LEGACY_CONTRACT, self::CONTRACT_V3, self::CONTRACT_V4];
+
+    /** @var list<string> */
+    public const AUTHORING_CONTRACTS = [self::CONTRACT, self::CONTRACT_V3, self::CONTRACT_V4];
+
+    /** @var list<string> */
+    public const V3_CONTRACTS = [self::CONTRACT_V3, self::CONTRACT_V4];
+
+    /** @var array<string, array{0: int, 1: int}> */
+    public const DESCRIPTION_LIMITS = [
+        'figures' => [10, 300],
+        'governing_lines' => [40, 800],
+        'primary_masses' => [60, 1200],
+        'primary_voids' => [60, 1000],
+        'signature_regions' => [60, 1200],
+        'spatial_topology' => [60, 1200],
+        'geometric_relationships' => [30, 600],
+        'transitions' => [40, 600],
+        'permanent_secondary_geometry' => [40, 600],
+        'configuration_states' => [60, 1000],
+        'must_preserve' => [30, 600],
+        'must_not_introduce' => [30, 600],
+        'reference_proof_requirements' => [30, 600],
+        'access_points' => [40, 600],
+        'decks' => [40, 900],
+        'openings' => [40, 800],
+        'surfaces' => [40, 800],
+        'basins' => [40, 800],
+        'routes' => [60, 1000],
+    ];
+
+    /** @var array<string, list<string>> */
+    private const DESCRIPTION_KEYS = [
+        'figures' => ['quantity', 'value', 'unit', 'origin', 'source_path', 'note'],
+        'signature_regions' => ['feature_id'],
+        'configuration_states' => ['component_id'],
+        'reference_proof_requirements' => ['target', 'proof_condition', 'views'],
+        'geometric_relationships' => ['subject', 'relation', 'object', 'statement'],
+    ];
 
     public const DESIGN_CONTRACT_KEY = 'design_contract';
 
@@ -152,14 +194,14 @@ final class VesselDesign
     public const EQUIPMENT_RULE = 'equipment';
 
     /** @var list<string> */
-    private const EQUIPMENT_SCAN_SECTIONS = [self::VESSEL_KEY, 'design_thesis', ProtagonistProfile::OUTPUT_KEY, self::CANONICAL_KEY];
+    private const EQUIPMENT_SCAN_SECTIONS = [self::VESSEL_KEY, 'design_thesis', ProtagonistProfile::OUTPUT_KEY, self::CANONICAL_KEY, 'figures', 'construction'];
 
     /** @var list<string> */
     private const EQUIPMENT_SKIPPED_KEYS = [
         'id', 'status', 'kind', 'face', 'side', self::EXTERIOR_ROLE_KEY, 'relation', 'orientation', 'water_level', 'direction',
         'priority', 'refs', 'between', 'subject', 'object', 'feature_id', 'component_id', 'host', 'serves', self::CONNECTS_KEY, 'surface',
         'relative_to', 'access_routes', 'place', 'body', 'level', self::GEOMETRY_MODEL_KEY, self::SECONDARY_FORM_KEY, self::EQUIPMENT_KIND_KEY,
-        self::PROFILE_PATHS_KEY,
+        self::PROFILE_PATHS_KEY, 'deck_ids', 'parts', 'open_to', 'through', 'brief_space', 'opening', 'passable_in', 'build_type',
     ];
 
     /** @var list<string> */
@@ -252,6 +294,51 @@ final class VesselDesign
 
     public const SCREENPLAY_DEPENDENCY_KEY = 'screenplay_dependency';
 
+    /** @var list<string> */
+    private const V3_PROFILE_KEYS = ['figures', 'construction'];
+
+    /** @var array<string, array{0: string, 1: string}> */
+    private const V3_LABELS = [
+        'governing_lines' => ['id', 'name'],
+        'primary_masses' => ['id', 'name'],
+        'primary_voids' => ['id', 'name'],
+        'transitions' => ['id', 'name'],
+        'spatial_topology' => ['id', 'region'],
+        'permanent_secondary_geometry' => ['id', 'element'],
+        'signature_regions' => ['feature_id', 'feature'],
+        'configuration_states' => ['component_id', 'component'],
+        'decks' => ['id', 'name'],
+        'openings' => ['id', 'name'],
+        'surfaces' => ['id', 'name'],
+        'basins' => ['id', 'name'],
+        'routes' => ['id', 'name'],
+        'must_preserve' => ['id', 'statement'],
+    ];
+
+    /** @var array<string, array{0: int, 1: int}> */
+    public const V3_INTERIOR_FIELDS = [
+        'layout' => [40, 1500],
+        'materials' => [40, 1200],
+        'fixed_furniture' => [20, 800],
+        'identity' => [20, 600],
+        'undetermined' => [0, 600],
+    ];
+
+    /** @var array{0: int, 1: int} */
+    public const V3_LIGHT_LIMITS = [20, 1200];
+
+    /** @var list<string> */
+    public const V3_CONSTRUCTION_TEXTS = ['structure', 'materials', 'block_division', 'assembly', 'weight_arrangement'];
+
+    /** @var list<string> */
+    private const V3_TEXT_LISTS = ['openings', 'surfaces', 'basins'];
+
+    /** @var list<string> */
+    private const V3_TEXT_OBJECTS = [
+        'design_identity', 'proportion_system', 'global_silhouette', 'hull_geometry', 'bow_geometry', 'stern_geometry',
+        'superstructure_geometry', 'appearance_identity',
+    ];
+
     /** @var array<string, array{0: int, 1: int}> */
     public const VESSEL_FIELDS = [
         'name' => [2, 60],
@@ -261,6 +348,9 @@ final class VesselDesign
 
     /** @var list<string> */
     public const CONTENT_KEYS = ['vessel', 'design_thesis', 'principal_dimensions', ProtagonistProfile::OUTPUT_KEY];
+
+    /** @var list<string> */
+    public const CONTENT_KEYS_V3 = ['vessel', 'design_thesis', 'principal_dimensions', 'figures', 'construction'];
 
     /** @var list<string> */
     public const FIXED_FOUNDATION_KEYS = ['design_thesis', 'principal_dimensions'];
@@ -400,11 +490,17 @@ final class VesselDesign
     ];
 
     /** @var array<string, list<string>|null> */
+    private const STORY_V3_LIST_FIELDS = [
+        'openings' => ['id', 'name', 'deck', 'face', 'kind', 'description', self::EXTERIOR_ROLE_KEY],
+        'basins' => null,
+    ];
+
+    /** @var array<string, list<string>|null> */
     private const STORY_LIST_FIELDS = [
-        'decks' => ['id', 'name', 'level', 'body'],
+        'decks' => ['id', 'name', 'level', 'body', 'organization'],
         'primary_masses' => null,
         'primary_voids' => null,
-        'signature_regions' => ['feature_id', 'feature', 'kind', 'priority', 'description', 'topology', 'relationships', 'must_preserve'],
+        'signature_regions' => ['feature_id', 'feature', 'kind', 'priority', 'region', 'description', 'visual_difference', 'topology', 'relationships', 'must_preserve'],
         'spatial_topology' => null,
         'routes' => null,
         'permanent_secondary_geometry' => null,
@@ -462,7 +558,7 @@ final class VesselDesign
 
     /** @var array<string, list<string>|null> */
     private const SCENE_LIST_FIELDS = [
-        'decks' => ['id', 'name', 'level', 'body'],
+        'decks' => ['id', 'name', 'level', 'body', 'organization'],
         'routes' => null,
         'openings' => null,
         'surfaces' => null,
@@ -470,7 +566,7 @@ final class VesselDesign
         'spatial_topology' => null,
         'primary_masses' => null,
         'primary_voids' => null,
-        'signature_regions' => ['feature_id', 'feature', 'kind', 'description', 'topology', 'relationships', 'must_preserve'],
+        'signature_regions' => ['feature_id', 'feature', 'kind', 'region', 'description', 'visual_difference', 'topology', 'relationships', 'must_preserve'],
         'transitions' => null,
         'permanent_secondary_geometry' => null,
         'must_preserve' => null,
@@ -494,10 +590,10 @@ final class VesselDesign
 
     /** @var array<string, list<string>|null> */
     private const LOCATION_LIST_FIELDS = [
-        'decks' => ['id', 'name', 'level', 'body'],
+        'decks' => ['id', 'name', 'level', 'body', 'organization'],
         'primary_masses' => null,
         'primary_voids' => null,
-        'signature_regions' => ['feature_id', 'feature', 'description', 'topology', 'relationships'],
+        'signature_regions' => ['feature_id', 'feature', 'region', 'description', 'visual_difference', 'topology', 'relationships'],
         'spatial_topology' => null,
         'surfaces' => null,
         'openings' => null,
@@ -552,7 +648,7 @@ final class VesselDesign
     {
         $content = [];
 
-        foreach (self::CONTENT_KEYS as $key) {
+        foreach (self::isV3($output) ? self::CONTENT_KEYS_V3 : self::CONTENT_KEYS as $key) {
             $content[$key] = $output[$key] ?? null;
         }
 
@@ -690,8 +786,11 @@ final class VesselDesign
      * @param  array<string, mixed>  $design
      * @return list<string>
      */
-    public static function newDesignViolations(array $design): array
+    public static function newDesignViolations(array $design, ?string $contract = null): array
     {
+        $contract ??= self::contractOf($design);
+        $v3 = in_array($contract, self::V3_CONTRACTS, true);
+
         if (self::geometryModel($design) === self::GEOMETRY_LEGACY) {
             return [self::CANONICAL_KEY.'.'.self::GEOMETRY_MODEL_KEY.': a new design must use the typed geometry model'];
         }
@@ -714,7 +813,7 @@ final class VesselDesign
             }
         }
 
-        foreach (array_keys(self::LINK_OBLIGATIONS) as $list) {
+        foreach ($v3 ? [] : array_keys(self::LINK_OBLIGATIONS) as $list) {
             foreach (self::rows($design[self::CANONICAL_KEY][$list] ?? null) as $index => $row) {
                 if (! array_key_exists(self::PROFILE_PATHS_KEY, $row)) {
                     $violations[] = self::CANONICAL_KEY.".{$list}[{$index}].".self::PROFILE_PATHS_KEY.': a new design names the '
@@ -727,6 +826,7 @@ final class VesselDesign
 
         return [
             ...$violations,
+            ...($contract === self::CONTRACT_V4 ? self::descriptionViolations($design) : []),
             ...self::filledViolations(self::CANONICAL_KEY.'.proportion_system', $canonical['proportion_system'] ?? null, ['vertical']),
             ...self::filledViolations(self::CANONICAL_KEY.'.hull_geometry', $canonical['hull_geometry'] ?? null, ['design_waterline', 'underbody_and_appendages']),
             ...self::equipmentRuleViolations($canonical),
@@ -735,6 +835,879 @@ final class VesselDesign
                 ? "{$finding['path']}: this text holds a damaged character (U+FFFD or a control character): \"{$finding['text']}\""
                 : "{$finding['path']}: a design is written in Latin script only, this text holds other letters: \"{$finding['text']}\"", self::scriptFindings($design)),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $design
+     * @param  array<string, mixed>  $profile
+     * @param  list<string>  $briefSpaces
+     * @return list<string>
+     */
+    public static function v3Violations(array $design, array $profile, array $briefSpaces): array
+    {
+        $cd = is_array($design[self::CANONICAL_KEY] ?? null) ? $design[self::CANONICAL_KEY] : [];
+        $graph = self::v3Index($cd);
+        ['byId' => $byId, 'listOf' => $listOf, 'labelOf' => $labelOf] = $graph;
+        $spaces = self::rows($cd['spatial_topology'] ?? null);
+        $violations = [];
+
+        foreach (self::V3_LABELS as $list => [$idField, $labelField]) {
+            $seen = [];
+
+            foreach (self::rows($cd[$list] ?? null) as $index => $row) {
+                $label = trim((string) ($row[$labelField] ?? ''));
+
+                if ($label === '') {
+                    $violations[] = self::CANONICAL_KEY.".{$list}[{$index}].{$labelField}: a v3 design names every part it declares";
+                } elseif ($list !== 'must_preserve' && isset($seen[mb_strtolower($label)])) {
+                    $violations[] = self::CANONICAL_KEY.".{$list}[{$index}].{$labelField}: \"{$label}\" already names another row of {$list}";
+                }
+
+                $seen[mb_strtolower($label)] = true;
+            }
+        }
+
+        foreach (self::v3References($cd) as [$id, $where]) {
+            if (! in_array($id, self::RESERVED_IDS, true) && ($labelOf[$id] ?? '') === '') {
+                $violations[] = self::CANONICAL_KEY.".{$where}: {$id} names no declared part with a name";
+            }
+        }
+
+        foreach ($spaces as $index => $space) {
+            $at = self::CANONICAL_KEY.".spatial_topology[{$index}]";
+            $decks = is_array($space['deck_ids'] ?? null) ? $space['deck_ids'] : [];
+
+            if ($decks === [] || count($decks) !== count(array_unique($decks))) {
+                $violations[] = "{$at}.deck_ids: names every deck the space lies on, each once";
+            }
+
+            foreach ($decks as $deck) {
+                if (($listOf[$deck] ?? null) !== 'decks') {
+                    $violations[] = "{$at}.deck_ids: ".self::label($deck).' is not a declared deck';
+                }
+            }
+
+            $brief = $space['brief_space'] ?? null;
+
+            if ($brief !== null && ! in_array($brief, $briefSpaces, true)) {
+                $violations[] = "{$at}.brief_space: ".self::label($brief).' is not a space of the project brief';
+            }
+
+            if ($brief !== null && ! is_array($space['interior'] ?? null)) {
+                $violations[] = "{$at}.interior: a space of the project brief describes its interior";
+            }
+
+            foreach (is_array($space['interior'] ?? null) ? self::V3_INTERIOR_FIELDS : [] as $field => [$min, $max]) {
+                $length = mb_strlen(trim((string) ($space['interior'][$field] ?? '')));
+
+                if ($length < $min || $length > $max) {
+                    $violations[] = "{$at}.interior.{$field}: must be text of {$min} to {$max} characters";
+                }
+            }
+
+            $light = mb_strlen(trim((string) ($space['light'] ?? '')));
+
+            if ($light < self::V3_LIGHT_LIMITS[0] || $light > self::V3_LIGHT_LIMITS[1]) {
+                $violations[] = "{$at}.light: must be text of ".self::V3_LIGHT_LIMITS[0].' to '.self::V3_LIGHT_LIMITS[1].' characters';
+            }
+        }
+
+        foreach ($briefSpaces as $key) {
+            $owners = count(array_filter($spaces, static fn (array $space): bool => ($space['brief_space'] ?? null) === $key));
+
+            if ($owners !== 1) {
+                $violations[] = self::CANONICAL_KEY.".spatial_topology: the project brief space {$key} is ".($owners === 0 ? 'not a space' : "{$owners} spaces").'; it is exactly one';
+            }
+        }
+
+        foreach (self::rows($cd['decks'] ?? null) as $index => $deck) {
+            if (($listOf[$deck['body'] ?? ''] ?? null) === 'primary_masses'
+                && array_filter($spaces, static fn (array $space): bool => in_array($deck['id'] ?? null, (array) ($space['deck_ids'] ?? []), true)) === []) {
+                $violations[] = self::CANONICAL_KEY.".decks[{$index}]: ".self::label($deck['id'] ?? null).' lies in a primary mass but holds no space';
+            }
+        }
+
+        $violations = [...$violations, ...self::v3PassageViolations($cd, $graph), ...self::v3PartViolations($cd, $graph), ...self::v3AccessViolations($cd, $graph)];
+
+        foreach (self::v3LockedTextViolations($cd) as $violation) {
+            $violations[] = $violation;
+        }
+
+        foreach (self::V3_CONSTRUCTION_TEXTS as $field) {
+            if (trim((string) ($design['construction'][$field] ?? '')) === '') {
+                $violations[] = "construction.{$field}: must be a nonempty text";
+            }
+        }
+
+        foreach (self::v3Texts($design) as $path => $text) {
+            if (trim($text) !== '' && ! ProtagonistProfile::endsAsSentence($text)) {
+                $violations[] = "{$path}: ends mid-sentence, the text is incomplete";
+            }
+        }
+
+        $regions = self::rows($cd['signature_regions'] ?? null);
+
+        if (count($regions) < ProtagonistProfile::MIN_FEATURES || count($regions) > ProtagonistProfile::MAX_FEATURES) {
+            $violations[] = self::CANONICAL_KEY.'.signature_regions: must hold '.ProtagonistProfile::MIN_FEATURES.' to '
+                .ProtagonistProfile::MAX_FEATURES.' regions, found '.count($regions);
+        }
+
+        foreach (ProtagonistProfile::focus($profile) as $focus) {
+            if (! in_array($focus, array_column($regions, 'region'), true)) {
+                $violations[] = self::CANONICAL_KEY.".signature_regions: the profile asks for a region at the {$focus}";
+            }
+        }
+
+        return array_values(array_unique($violations));
+    }
+
+    /**
+     * @param  array<string, mixed>  $design
+     * @return array{findings: list<string>, configurations: list<string>}
+     */
+    public static function v3Findings(array $design): array
+    {
+        $cd = is_array($design[self::CANONICAL_KEY] ?? null) ? $design[self::CANONICAL_KEY] : [];
+        $graph = self::v3Index($cd);
+        $levels = [];
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $space) {
+            if (($space['status'] ?? null) === self::LOCKED) {
+                foreach ((array) ($space['deck_ids'] ?? []) as $deck) {
+                    $levels[] = [(string) $space['id'], (string) $deck];
+                }
+            }
+        }
+
+        $reached = [];
+        $configurations = [];
+
+        foreach (self::rows($cd['access_points'] ?? null) as $point) {
+            if (($point['status'] ?? null) !== self::LOCKED) {
+                continue;
+            }
+
+            $seen = self::v3Reach($cd, $graph, $point);
+            $reached += $seen;
+            $missing = array_values(array_map(static fn (array $level): string => "{$level[0]}@{$level[1]}",
+                array_filter($levels, static fn (array $level): bool => ! isset($seen["S:{$level[0]}@{$level[1]}"]))));
+            $state = (array) ($point['state'] ?? []) === [] ? 'every component in its canonical state'
+                : implode(', ', array_map(static fn (array $entry): string => "{$entry['component_id']} {$entry['state']}", (array) $point['state']));
+            $configurations[] = "{$point['id']} ({$state}): reaches ".(count($levels) - count($missing)).' of '.count($levels)
+                .' space levels'.($missing === [] ? '' : '; not '.implode(', ', $missing));
+        }
+
+        $findings = [];
+
+        foreach ($levels as [$space, $deck]) {
+            if (! isset($reached["S:{$space}@{$deck}"])) {
+                $findings[] = "{$space} on {$deck}: no locked access point reaches it through locked openings, routes and open_to entries in that access point's state";
+            }
+        }
+
+        return ['findings' => $findings, 'configurations' => $configurations];
+    }
+
+    /**
+     * @param  array<string, mixed>  $output
+     * @return array<string, string> id => the name the design gives that part; the reserved ids keep their own word
+     */
+    public static function v3Labels(array $output): array
+    {
+        $cd = is_array($output[self::CANONICAL_KEY] ?? null) ? $output[self::CANONICAL_KEY] : [];
+
+        return array_filter(self::v3Index($cd)['labelOf'], static fn (string $label): bool => $label !== '')
+            + array_combine(self::RESERVED_IDS, self::RESERVED_IDS);
+    }
+
+    /**
+     * @param  array<string, mixed>  $output
+     * @return array<string, list<string>> space id => the surfaces and voids that belong to it, as the reachability check reads them
+     */
+    public static function v3SpaceParts(array $output): array
+    {
+        return self::v3Index(is_array($output[self::CANONICAL_KEY] ?? null) ? $output[self::CANONICAL_KEY] : [])['partsOf'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $output
+     * @return list<string> referenced ids the design gives no name
+     */
+    public static function v3UnnamedReferences(array $output): array
+    {
+        $cd = is_array($output[self::CANONICAL_KEY] ?? null) ? $output[self::CANONICAL_KEY] : [];
+        $labels = self::v3Labels($output);
+
+        return array_values(array_unique(array_map(static fn (array $ref): string => $ref[0],
+            array_filter(self::v3References($cd), static fn (array $ref): bool => ! isset($labels[$ref[0]])))));
+    }
+
+    /**
+     * @param  array<string, mixed>  $cd
+     * @return array{byId: array<string, array<string, mixed>>, listOf: array<string, string>, labelOf: array<string, string>, partsOf: array<string, list<string>>, components: array<string, array<string, mixed>>}
+     */
+    private static function v3Index(array $cd): array
+    {
+        $byId = [];
+        $listOf = [];
+        $labelOf = [];
+
+        foreach (self::V3_LABELS as $list => [$idField, $labelField]) {
+            foreach (self::rows($cd[$list] ?? null) as $row) {
+                if (is_string($row[$idField] ?? null)) {
+                    $byId[$row[$idField]] = $row;
+                    $listOf[$row[$idField]] = $list;
+                    $labelOf[$row[$idField]] = trim((string) ($row[$labelField] ?? ''));
+                }
+            }
+        }
+
+        $partsOf = [];
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $space) {
+            $listed = array_values(array_filter((array) ($space['parts'] ?? []), static fn (mixed $part): bool => is_string($part)
+                && in_array($listOf[$part] ?? null, ['surfaces', 'primary_voids'], true)));
+            $parts = $listed;
+
+            foreach (self::rows($cd['surfaces'] ?? null) as $surface) {
+                if (($surface['relation'] ?? null) === 'within'
+                    && (($surface['relative_to'] ?? null) === ($space['id'] ?? null) || in_array($surface['relative_to'] ?? null, $listed, true))) {
+                    $parts[] = (string) $surface['id'];
+                }
+            }
+
+            $partsOf[(string) ($space['id'] ?? '')] = array_values(array_unique($parts));
+        }
+
+        $components = [];
+
+        foreach (self::rows($cd['configuration_states'] ?? null) as $component) {
+            if (is_string($component['component_id'] ?? null)) {
+                $components[$component['component_id']] = $component + ['locked' => ($byId[$component['feature_id'] ?? '']['status'] ?? null) === self::LOCKED];
+            }
+        }
+
+        return ['byId' => $byId, 'listOf' => $listOf, 'labelOf' => $labelOf, 'partsOf' => $partsOf, 'components' => $components];
+    }
+
+    /**
+     * @param  array<string, mixed>  $cd
+     * @return list<array{0: string, 1: string}>
+     */
+    private static function v3References(array $cd): array
+    {
+        $refs = [];
+        $add = static function (mixed $id, string $where) use (&$refs): void {
+            if (is_string($id)) {
+                $refs[] = [$id, $where];
+            }
+        };
+
+        foreach (self::rows($cd['decks'] ?? null) as $i => $row) {
+            $add($row['body'] ?? null, "decks[{$i}].body");
+        }
+
+        foreach (self::rows($cd['openings'] ?? null) as $i => $row) {
+            $add($row['deck'] ?? null, "openings[{$i}].deck");
+            $add($row['host'] ?? null, "openings[{$i}].host");
+            $add($row['serves'] ?? null, "openings[{$i}].serves");
+
+            foreach ((array) ($row['connects'] ?? []) as $side) {
+                $add($side, "openings[{$i}].connects");
+            }
+        }
+
+        foreach (self::rows($cd['surfaces'] ?? null) as $i => $row) {
+            $add($row['deck'] ?? null, "surfaces[{$i}].deck");
+            $add($row['relative_to'] ?? null, "surfaces[{$i}].relative_to");
+        }
+
+        foreach (self::rows($cd['basins'] ?? null) as $i => $row) {
+            $add($row['surface'] ?? null, "basins[{$i}].surface");
+            $add($row['space'] ?? null, "basins[{$i}].space");
+
+            foreach ((array) ($row['access_routes'] ?? []) as $route) {
+                $add($route, "basins[{$i}].access_routes");
+            }
+        }
+
+        foreach (self::rows($cd['routes'] ?? null) as $i => $row) {
+            foreach (['from', 'to'] as $end) {
+                $add($row[$end]['deck'] ?? null, "routes[{$i}].{$end}.deck");
+                $add($row[$end]['place'] ?? null, "routes[{$i}].{$end}.place");
+            }
+
+            foreach ((array) ($row['through'] ?? []) as $opening) {
+                $add($opening, "routes[{$i}].through");
+            }
+        }
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $i => $row) {
+            foreach (['deck_ids', 'parts', 'open_to'] as $field) {
+                foreach ((array) ($row[$field] ?? []) as $id) {
+                    $add($id, "spatial_topology[{$i}].{$field}");
+                }
+            }
+        }
+
+        foreach (self::rows($cd['geometric_relationships'] ?? null) as $i => $row) {
+            $add($row['subject'] ?? null, "geometric_relationships[{$i}].subject");
+            $add($row['object'] ?? null, "geometric_relationships[{$i}].object");
+        }
+
+        foreach (self::rows($cd[self::TRANSITIONS_KEY] ?? null) as $i => $row) {
+            foreach ((array) ($row['between'] ?? []) as $id) {
+                $add($id, "transitions[{$i}].between");
+            }
+        }
+
+        foreach (['must_preserve', 'must_not_introduce'] as $list) {
+            foreach (self::rows($cd[$list] ?? null) as $i => $row) {
+                foreach ((array) ($row['refs'] ?? []) as $id) {
+                    $add($id, "{$list}[{$i}].refs");
+                }
+            }
+        }
+
+        foreach (self::rows($cd['reference_proof_requirements'] ?? null) as $i => $row) {
+            $add($row['target'] ?? null, "reference_proof_requirements[{$i}].target");
+        }
+
+        foreach (self::rows($cd['configuration_states'] ?? null) as $i => $row) {
+            $add($row['feature_id'] ?? null, "configuration_states[{$i}].feature_id");
+        }
+
+        return $refs;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cd
+     * @param  array<string, mixed>  $graph
+     * @return list<string>
+     */
+    private static function v3PassageViolations(array $cd, array $graph): array
+    {
+        ['byId' => $byId, 'listOf' => $listOf] = $graph;
+        $violations = [];
+        $decksOf = static fn (mixed $id): array => match (is_string($id) ? ($listOf[$id] ?? null) : null) {
+            'surfaces' => [(string) ($byId[$id]['deck'] ?? '')],
+            'spatial_topology' => array_values(array_filter((array) ($byId[$id]['deck_ids'] ?? []), 'is_string')),
+            default => [],
+        };
+        $routes = self::rows($cd['routes'] ?? null);
+
+        foreach (self::rows($cd['openings'] ?? null) as $index => $opening) {
+            $at = self::CANONICAL_KEY.".openings[{$index}]";
+
+            foreach (array_filter([$opening['serves'] ?? null, ...(array) ($opening['connects'] ?? [])], 'is_string') as $target) {
+                if (($listOf[$target] ?? null) === 'spatial_topology' && ! in_array($opening['deck'] ?? null, (array) ($byId[$target]['deck_ids'] ?? []), true)) {
+                    $violations[] = "{$at}: names space {$target}, but the opening lies on ".self::label($opening['deck'] ?? null).', not on a deck of that space';
+                }
+            }
+
+            $sides = array_values(array_filter((array) ($opening['connects'] ?? []), 'is_string'));
+
+            if (count($sides) !== 2) {
+                continue;
+            }
+
+            [$a, $b] = [$decksOf($sides[0]), $decksOf($sides[1])];
+
+            if ($a === [] || $b === [] || array_intersect($a, $b) !== []) {
+                continue;
+            }
+
+            $carried = array_filter($routes, static fn (array $route): bool => in_array($opening['id'] ?? null, (array) ($route['through'] ?? []), true)
+                && ((in_array($route['from']['deck'] ?? null, $a, true) && in_array($route['to']['deck'] ?? null, $b, true))
+                    || (in_array($route['from']['deck'] ?? null, $b, true) && in_array($route['to']['deck'] ?? null, $a, true))));
+
+            if ($carried === []) {
+                $violations[] = "{$at}: joins ".implode('/', $a).' and '.implode('/', $b).', but no route joining those decks names it in through';
+            }
+        }
+
+        foreach ($routes as $index => $route) {
+            $at = self::CANONICAL_KEY.".routes[{$index}].through";
+            $seen = [];
+
+            foreach ((array) ($route['through'] ?? []) as $id) {
+                if (isset($seen[$id])) {
+                    $violations[] = "{$at}: ".self::label($id).' is listed twice';
+                }
+
+                $seen[$id] = true;
+
+                if (($listOf[$id] ?? null) !== 'openings') {
+                    $violations[] = "{$at}: ".self::label($id).' is not a declared opening';
+                } elseif (! in_array($byId[$id]['deck'] ?? null, [$route['from']['deck'] ?? null, $route['to']['deck'] ?? null], true)) {
+                    $violations[] = "{$at}: {$id} lies on ".self::label($byId[$id]['deck'] ?? null).', at neither end of the route';
+                } elseif (($route['status'] ?? null) === self::LOCKED && ($byId[$id]['status'] ?? null) !== self::LOCKED) {
+                    $violations[] = "{$at}: a locked route passes {$id}, which is ".self::label($byId[$id]['status'] ?? null);
+                }
+            }
+        }
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $index => $space) {
+            foreach ((array) ($space['open_to'] ?? []) as $target) {
+                $kind = is_string($target) ? ($listOf[$target] ?? null) : null;
+                $at = self::CANONICAL_KEY.".spatial_topology[{$index}].open_to";
+
+                if (! in_array($kind, ['spatial_topology', 'surfaces', 'primary_voids'], true)) {
+                    $violations[] = "{$at}: ".self::label($target).' is not a declared space, surface or void';
+                } elseif ($target === ($space['id'] ?? null)) {
+                    $violations[] = "{$at}: names the space itself";
+                } elseif ($kind !== 'primary_voids' && array_intersect($decksOf($target), (array) ($space['deck_ids'] ?? [])) === []) {
+                    $violations[] = "{$at}: {$target} shares no deck with the space; a change of deck is a route";
+                }
+            }
+        }
+
+        foreach (self::rows($cd['surfaces'] ?? null) as $index => $surface) {
+            $relative = $surface['relative_to'] ?? null;
+
+            if (($surface['relation'] ?? null) === 'within' && is_string($relative) && ($listOf[$relative] ?? null) === 'spatial_topology'
+                && ! in_array($surface['deck'] ?? null, (array) ($byId[$relative]['deck_ids'] ?? []), true)) {
+                $violations[] = self::CANONICAL_KEY.".surfaces[{$index}]: lies within {$relative} but on ".self::label($surface['deck'] ?? null).', not on a deck of that space';
+            }
+        }
+
+        foreach (self::rows($cd['basins'] ?? null) as $index => $basin) {
+            $space = $basin['space'] ?? null;
+
+            if ($space === null) {
+                continue;
+            }
+
+            if (($listOf[$space] ?? null) !== 'spatial_topology') {
+                $violations[] = self::CANONICAL_KEY.".basins[{$index}].space: ".self::label($space).' is not a declared space';
+            } elseif (! in_array($byId[$basin['surface'] ?? '']['deck'] ?? null, (array) ($byId[$space]['deck_ids'] ?? []), true)) {
+                $violations[] = self::CANONICAL_KEY.".basins[{$index}]: its surface lies on no deck of space {$space}";
+            }
+        }
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $index => $space) {
+            if (is_string($space['brief_space'] ?? null) && str_contains($space['brief_space'], 'pool')
+                && array_filter(self::rows($cd['basins'] ?? null), static fn (array $basin): bool => ($basin['space'] ?? null) === ($space['id'] ?? null)) === []) {
+                $violations[] = self::CANONICAL_KEY.".spatial_topology[{$index}]: the {$space['brief_space']} space is the space of no basin";
+            }
+        }
+
+        return $violations;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cd
+     * @param  array<string, mixed>  $graph
+     * @return list<string>
+     */
+    private static function v3PartViolations(array $cd, array $graph): array
+    {
+        ['byId' => $byId, 'listOf' => $listOf, 'partsOf' => $partsOf] = $graph;
+        $violations = [];
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $index => $space) {
+            $at = self::CANONICAL_KEY.".spatial_topology[{$index}]";
+            $listed = (array) ($space['parts'] ?? []);
+
+            foreach ($listed as $part) {
+                if (! in_array(is_string($part) ? ($listOf[$part] ?? null) : null, ['surfaces', 'primary_voids'], true)) {
+                    $violations[] = "{$at}.parts: ".self::label($part).' is not a declared surface or primary void';
+
+                    continue;
+                }
+
+                $surface = $byId[$part];
+
+                if (($listOf[$part] ?? null) === 'surfaces' && ($surface['relation'] ?? null) === 'within'
+                    && (($surface['relative_to'] ?? null) === ($space['id'] ?? null) || in_array($surface['relative_to'] ?? null, $listed, true))) {
+                    $violations[] = "{$at}.parts: {$part} already belongs to the space through ".self::label($surface['relative_to'] ?? null).'; it is not listed again';
+                }
+            }
+
+            foreach ($partsOf[(string) ($space['id'] ?? '')] ?? [] as $part) {
+                if (($listOf[$part] ?? null) === 'surfaces' && ! in_array($byId[$part]['deck'] ?? null, (array) ($space['deck_ids'] ?? []), true)) {
+                    $violations[] = "{$at}: part {$part} lies on ".self::label($byId[$part]['deck'] ?? null).', not on a deck of the space';
+                }
+
+                if (($space['status'] ?? null) === self::LOCKED && ($byId[$part]['status'] ?? null) !== self::LOCKED) {
+                    $violations[] = "{$at}: a locked space has part {$part}, which is ".self::label($byId[$part]['status'] ?? null);
+                }
+            }
+        }
+
+        return $violations;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cd
+     * @param  array<string, mixed>  $graph
+     * @return list<string>
+     */
+    private static function v3AccessViolations(array $cd, array $graph): array
+    {
+        ['byId' => $byId, 'listOf' => $listOf, 'components' => $components] = $graph;
+        $violations = [];
+        $points = self::rows($cd['access_points'] ?? null);
+
+        foreach ($points as $index => $point) {
+            $at = self::CANONICAL_KEY.".access_points[{$index}]";
+            $place = $point['place'] ?? null;
+            $kind = is_string($place) ? ($listOf[$place] ?? null) : null;
+
+            if (! in_array($kind, ['openings', 'surfaces', 'spatial_topology'], true)) {
+                $violations[] = "{$at}.place: ".self::label($place).' is not a declared opening, surface or space';
+            } elseif ($kind === 'spatial_topology' && count((array) ($byId[$place]['deck_ids'] ?? [])) !== 1) {
+                $violations[] = "{$at}.place: space {$place} lies on several decks; name the opening or surface where people arrive";
+            } elseif (($point['status'] ?? null) === self::LOCKED && ($byId[$place]['status'] ?? null) !== self::LOCKED) {
+                $violations[] = "{$at}: a locked access point names {$place}, which is ".self::label($byId[$place]['status'] ?? null);
+            }
+
+            $stated = [];
+
+            foreach ((array) ($point['state'] ?? []) as $entry) {
+                $id = $entry['component_id'] ?? null;
+
+                if (is_string($id) && isset($stated[$id])) {
+                    $violations[] = "{$at}.state: {$id} is given ".($stated[$id] === ($entry['state'] ?? null) ? 'twice' : 'two different states');
+                }
+
+                $stated[(string) $id] = $entry['state'] ?? null;
+                $component = is_string($id) ? ($components[$id] ?? null) : null;
+
+                if ($component === null) {
+                    $violations[] = "{$at}.state: ".self::label($id).' is not a declared component';
+                } elseif (! in_array($entry['state'] ?? null, [$component['canonical_state'] ?? null, ...(array) ($component['alternate_states'] ?? [])], true)) {
+                    $violations[] = "{$at}.state: ".self::label($entry['state'] ?? null)." is not a state of {$id}";
+                } elseif (($point['status'] ?? null) === self::LOCKED && ! $component['locked']) {
+                    $violations[] = "{$at}: a locked access point relies on {$id}, whose region is not locked";
+                }
+            }
+        }
+
+        foreach ($components as $id => $component) {
+            $closed = [];
+
+            foreach ((array) ($component['closes'] ?? []) as $closure) {
+                $opening = $closure['opening'] ?? null;
+                $at = self::CANONICAL_KEY.".configuration_states.{$id}.closes";
+
+                if (isset($closed[$opening])) {
+                    $violations[] = "{$at}: ".self::label($opening).' is listed twice';
+                }
+
+                $closed[(string) $opening] = true;
+
+                if (($listOf[$opening] ?? null) !== 'openings') {
+                    $violations[] = "{$at}: ".self::label($opening).' is not a declared opening';
+                }
+
+                $states = (array) ($closure['passable_in'] ?? []);
+
+                if (count($states) !== count(array_unique($states))) {
+                    $violations[] = "{$at}: {$opening} repeats a state in passable_in";
+                }
+
+                foreach ($states as $state) {
+                    if (! in_array($state, [$component['canonical_state'] ?? null, ...(array) ($component['alternate_states'] ?? [])], true)) {
+                        $violations[] = "{$at}: ".self::label($state)." is not a state of {$id}";
+                    }
+                }
+            }
+        }
+
+        if (array_filter($points, static fn (array $point): bool => ($point['status'] ?? null) === self::LOCKED) === []) {
+            $violations[] = self::CANONICAL_KEY.'.access_points: the design declares at least one locked access point where people come aboard';
+        }
+
+        return $violations;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cd
+     * @return list<string>
+     */
+    private static function v3LockedTextViolations(array $cd): array
+    {
+        $proposed = [];
+
+        foreach (self::V3_LABELS as $list => [$idField, $labelField]) {
+            foreach (self::rows($cd[$list] ?? null) as $row) {
+                if (in_array($row['status'] ?? self::LOCKED, ['proposed', self::UNDETERMINED], true) && trim((string) ($row[$labelField] ?? '')) !== '') {
+                    $proposed[(string) $row[$idField]] = trim((string) $row[$labelField]);
+                }
+            }
+        }
+
+        $violations = [];
+
+        foreach (['decks', 'spatial_topology', 'openings', 'surfaces', 'basins', 'routes', 'primary_masses', 'primary_voids',
+            'signature_regions', 'permanent_secondary_geometry', self::TRANSITIONS_KEY, 'geometric_relationships', 'governing_lines'] as $list) {
+            foreach (self::rows($cd[$list] ?? null) as $index => $row) {
+                if (($row['status'] ?? null) !== self::LOCKED) {
+                    continue;
+                }
+
+                $own = $row['id'] ?? $row['feature_id'] ?? null;
+                $text = implode(' ', self::textPaths(array_diff_key($row, ['status' => true, 'id' => true, 'feature_id' => true]), ''));
+
+                foreach ($proposed as $id => $label) {
+                    if ($id !== $own && (mb_stripos($text, $label) !== false || preg_match('/\b'.preg_quote($id, '/').'\b/u', $text) === 1)) {
+                        $violations[] = self::CANONICAL_KEY.".{$list}[{$index}]: a locked row names {$id} (\"{$label}\"), which is not locked";
+                    }
+                }
+            }
+        }
+
+        return $violations;
+    }
+
+    /**
+     * @param  array<string, mixed>  $output  a stored v3 or v4 design
+     * @return list<string> texts that end mid-sentence or fill their field's length limit, shown without blocking the design
+     */
+    public static function textWarnings(array $output): array
+    {
+        $warnings = [];
+
+        foreach (self::v3Texts($output) as $path => $text) {
+            if (trim($text) !== '' && ! ProtagonistProfile::endsAsSentence($text)) {
+                $warnings[] = "{$path}: ends mid-sentence, the text is incomplete";
+            }
+        }
+
+        $schemaPath = config('video.screenplay.design.contracts')[self::contractOf($output)]['schema_path'] ?? null;
+        $schema = is_string($schemaPath) && is_file($schemaPath) ? json_decode((string) file_get_contents($schemaPath), true) : null;
+        $walk = static function (mixed $node, mixed $rule, string $path) use (&$walk, &$warnings): void {
+            if (! is_array($rule)) {
+                return;
+            }
+
+            if (is_string($node) && is_int($rule['maxLength'] ?? null) && mb_strlen($node) >= $rule['maxLength']) {
+                $warnings[] = ltrim($path, '.').': fills its whole length limit ('.mb_strlen($node).'/'.$rule['maxLength'].'), check that nothing was left out';
+            } elseif (is_array($node) && array_is_list($node)) {
+                foreach ($node as $index => $child) {
+                    $walk($child, $rule['items'] ?? null, "{$path}[{$index}]");
+                }
+            } elseif (is_array($node)) {
+                foreach ($node as $key => $child) {
+                    $walk($child, $rule['properties'][$key] ?? null, "{$path}.{$key}");
+                }
+            }
+        };
+
+        if (is_array($schema)) {
+            $walk(array_diff_key($output, ['schema_version' => true, 'author_model' => true]), $schema, '');
+        }
+
+        return $warnings;
+    }
+
+    /**
+     * @param  array<string, mixed>  $design
+     * @return array<string, string>
+     */
+    private static function v3Texts(array $design): array
+    {
+        $cd = is_array($design[self::CANONICAL_KEY] ?? null) ? $design[self::CANONICAL_KEY] : [];
+        $texts = [];
+
+        foreach (self::V3_CONSTRUCTION_TEXTS as $field) {
+            $texts["construction.{$field}"] = (string) ($design['construction'][$field] ?? '');
+        }
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $index => $space) {
+            foreach (['boundaries', 'connections', 'circulation', 'light'] as $field) {
+                $texts[self::CANONICAL_KEY.".spatial_topology[{$index}].{$field}"] = (string) ($space[$field] ?? '');
+            }
+
+            foreach (is_array($space['interior'] ?? null) ? $space['interior'] : [] as $field => $value) {
+                $texts[self::CANONICAL_KEY.".spatial_topology[{$index}].interior.{$field}"] = (string) $value;
+            }
+        }
+
+        foreach (self::rows($cd['decks'] ?? null) as $index => $deck) {
+            $texts[self::CANONICAL_KEY.".decks[{$index}].organization"] = (string) ($deck['organization'] ?? '');
+        }
+
+        foreach (self::V3_TEXT_OBJECTS as $object) {
+            foreach (is_array($cd[$object] ?? null) ? $cd[$object] : [] as $field => $value) {
+                if ($field !== 'status' && is_string($value)) {
+                    $texts[self::CANONICAL_KEY.".{$object}.{$field}"] = $value;
+                }
+            }
+        }
+
+        foreach (self::isV4($design) ? array_diff(array_keys(self::DESCRIPTION_LIMITS), ['figures']) : self::V3_TEXT_LISTS as $list) {
+            foreach (self::rows($cd[$list] ?? null) as $index => $row) {
+                $texts[self::CANONICAL_KEY.".{$list}[{$index}].description"] = (string) ($row['description'] ?? '');
+            }
+        }
+
+        foreach (self::isV4($design) ? self::rows($design['figures'] ?? null) : [] as $index => $figure) {
+            $texts["figures[{$index}].description"] = (string) ($figure['description'] ?? '');
+        }
+
+        foreach (self::rows($cd['signature_regions'] ?? null) as $index => $region) {
+            foreach (['visual_difference', 'verification'] as $field) {
+                $texts[self::CANONICAL_KEY.".signature_regions[{$index}].{$field}"] = (string) ($region[$field] ?? '');
+            }
+        }
+
+        return $texts;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cd
+     * @param  array<string, mixed>  $graph
+     * @param  array<string, mixed>  $point
+     * @return array<string, true>
+     */
+    private static function v3Reach(array $cd, array $graph, array $point): array
+    {
+        ['byId' => $byId, 'listOf' => $listOf, 'partsOf' => $partsOf, 'components' => $components] = $graph;
+        $locked = static fn (mixed $id): bool => is_string($id) && ($byId[$id]['status'] ?? null) === self::LOCKED;
+        $assignment = [];
+
+        foreach ((array) ($point['state'] ?? []) as $entry) {
+            $assignment[(string) ($entry['component_id'] ?? '')] = $entry['state'] ?? null;
+        }
+
+        $passable = static function (array $opening) use ($components, $assignment): bool {
+            foreach ($components as $id => $component) {
+                if (! $component['locked']) {
+                    continue;
+                }
+
+                foreach ((array) ($component['closes'] ?? []) as $closure) {
+                    if (($closure['opening'] ?? null) === ($opening['id'] ?? null)
+                        && ! in_array($assignment[$id] ?? $component['canonical_state'] ?? null, (array) ($closure['passable_in'] ?? []), true)) {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        };
+        $resolve = static fn (string $id, ?string $deck): array => match ($listOf[$id] ?? null) {
+            'surfaces' => $deck === null || ($byId[$id]['deck'] ?? null) === $deck ? ["F:{$id}"] : [],
+            'spatial_topology' => $deck !== null && in_array($deck, (array) ($byId[$id]['deck_ids'] ?? []), true) ? ["S:{$id}@{$deck}"] : [],
+            'primary_voids' => $deck === null ? [] : ["V:{$id}@{$deck}"],
+            default => [],
+        };
+        $adj = [];
+        $edge = static function (string $a, string $b) use (&$adj): void {
+            $adj[$a][$b] = true;
+            $adj[$b][$a] = true;
+        };
+        $owners = [];
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $space) {
+            if ($locked($space['id'] ?? null)) {
+                foreach ($partsOf[(string) $space['id']] ?? [] as $part) {
+                    $owners[$part] = ($owners[$part] ?? 0) + 1;
+                }
+            }
+        }
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $space) {
+            if (! $locked($space['id'] ?? null)) {
+                continue;
+            }
+
+            foreach ($partsOf[(string) $space['id']] ?? [] as $part) {
+                if (! $locked($part) || ($owners[$part] ?? 0) > 1) {
+                    continue;
+                }
+
+                if (($listOf[$part] ?? null) === 'surfaces' && in_array($byId[$part]['deck'] ?? null, (array) $space['deck_ids'], true)) {
+                    $edge("S:{$space['id']}@{$byId[$part]['deck']}", "F:{$part}");
+                } elseif (($listOf[$part] ?? null) === 'primary_voids') {
+                    foreach ((array) $space['deck_ids'] as $deck) {
+                        $edge("S:{$space['id']}@{$deck}", "V:{$part}@{$deck}");
+                    }
+                }
+            }
+        }
+
+        foreach (self::rows($cd['surfaces'] ?? null) as $surface) {
+            if (($surface['relation'] ?? null) === 'within' && ($listOf[$surface['relative_to'] ?? ''] ?? null) === 'primary_voids'
+                && $locked($surface['id'] ?? null) && $locked($surface['relative_to'])) {
+                $edge("V:{$surface['relative_to']}@{$surface['deck']}", "F:{$surface['id']}");
+            }
+        }
+
+        foreach (self::rows($cd['openings'] ?? null) as $opening) {
+            $sides = array_values(array_filter((array) ($opening['connects'] ?? []), 'is_string'));
+
+            if (count($sides) === 2 && $locked($opening['id'] ?? null) && $passable($opening)) {
+                foreach ($resolve($sides[0], $opening['deck'] ?? null) as $a) {
+                    foreach ($resolve($sides[1], $opening['deck'] ?? null) as $b) {
+                        $edge($a, $b);
+                    }
+                }
+            }
+        }
+
+        foreach (self::rows($cd['routes'] ?? null) as $route) {
+            if (! is_string($route['from']['place'] ?? null) || ! is_string($route['to']['place'] ?? null) || ! $locked($route['id'] ?? null)) {
+                continue;
+            }
+
+            foreach ((array) ($route['through'] ?? []) as $id) {
+                if (! $locked($id) || ($listOf[$id] ?? null) !== 'openings' || ! $passable($byId[$id])) {
+                    continue 2;
+                }
+            }
+
+            $edge("F:{$route['from']['place']}", "F:{$route['to']['place']}");
+        }
+
+        foreach (self::rows($cd['spatial_topology'] ?? null) as $space) {
+            if (! $locked($space['id'] ?? null)) {
+                continue;
+            }
+
+            foreach ((array) ($space['open_to'] ?? []) as $target) {
+                if (! $locked($target)) {
+                    continue;
+                }
+
+                foreach ((array) $space['deck_ids'] as $deck) {
+                    foreach ($resolve((string) $target, $deck) as $node) {
+                        $edge("S:{$space['id']}@{$deck}", $node);
+                    }
+                }
+            }
+        }
+
+        $place = $point['place'] ?? null;
+        $start = [];
+
+        if (is_string($place) && ($listOf[$place] ?? null) === 'openings' && $passable($byId[$place])) {
+            foreach (array_filter((array) ($byId[$place]['connects'] ?? []), 'is_string') as $side) {
+                $start = [...$start, ...$resolve($side, $byId[$place]['deck'] ?? null)];
+            }
+        } elseif (is_string($place) && ($listOf[$place] ?? null) === 'surfaces') {
+            $start[] = "F:{$place}";
+        } elseif (is_string($place) && ($listOf[$place] ?? null) === 'spatial_topology' && count((array) ($byId[$place]['deck_ids'] ?? [])) === 1) {
+            $start[] = "S:{$place}@{$byId[$place]['deck_ids'][0]}";
+        }
+
+        $seen = array_fill_keys($start, true);
+        $queue = $start;
+
+        while ($queue !== []) {
+            $node = array_shift($queue);
+
+            foreach (array_keys($adj[$node] ?? []) as $next) {
+                if (! isset($seen[$next])) {
+                    $seen[$next] = true;
+                    $queue[] = $next;
+                }
+            }
+        }
+
+        return $seen;
     }
 
     /**
@@ -1302,7 +2275,7 @@ final class VesselDesign
             }
         }
 
-        return [...$violations, ...self::linkViolations($design, $types, $rows)];
+        return [...$violations, ...(self::isV3($design) ? [] : self::linkViolations($design, $types, $rows))];
     }
 
     /** @param array<string, mixed> $profile */
@@ -1634,8 +2607,20 @@ final class VesselDesign
             'description' => (string) ($vessel['description'] ?? ''),
             'personality' => null,
             'appearance' => (string) ($vessel['appearance'] ?? ''),
-            ProtagonistProfile::CHARACTER_KEY => $output[ProtagonistProfile::OUTPUT_KEY] ?? null,
+            ProtagonistProfile::CHARACTER_KEY => self::isV3($output)
+                ? [self::V3_PROFILE_KEYS[0] => $output['figures'] ?? [], self::V3_PROFILE_KEYS[1] => $output['construction'] ?? null]
+                : ($output[ProtagonistProfile::OUTPUT_KEY] ?? null),
         ];
+    }
+
+    /**
+     * @return bool true when the profile is the one a v3 design gives its vessel row
+     */
+    public static function isV3Profile(mixed $profile): bool
+    {
+        return is_array($profile)
+            && count($profile) === count(self::V3_PROFILE_KEYS)
+            && array_diff_key($profile, array_flip(self::V3_PROFILE_KEYS)) === [];
     }
 
     /**
@@ -1660,20 +2645,205 @@ final class VesselDesign
         return is_array($output) && in_array($output['schema_version'] ?? null, self::CONTRACTS, true);
     }
 
+    public static function isV3(mixed $output): bool
+    {
+        return is_array($output) && in_array($output['schema_version'] ?? null, self::V3_CONTRACTS, true);
+    }
+
+    public static function isV4(mixed $output): bool
+    {
+        return is_array($output) && ($output['schema_version'] ?? null) === self::CONTRACT_V4;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    public static function descriptionKey(string $list, array $row): ?string
+    {
+        $fields = self::DESCRIPTION_KEYS[$list] ?? ['id'];
+        $parts = [];
+
+        foreach ($fields as $field) {
+            $value = $row[$field] ?? null;
+
+            if (is_array($value) && array_filter($value, 'is_string') === $value) {
+                $value = array_values(array_unique($value));
+                sort($value);
+            } elseif (! is_string($value) || ($parts === [] && $value === '')) {
+                return null;
+            }
+
+            $parts[] = $value;
+        }
+
+        return count($parts) === 1 && is_string($parts[0])
+            ? $parts[0]
+            : json_encode($parts, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * @param  array<string, mixed>  $output
+     * @return array<string, array<string, string>> list => row key => the description the design wrote for that row; empty unless the design is vessel_design_v4
+     */
+    public static function descriptions(array $output): array
+    {
+        if (! self::isV4($output)) {
+            return [];
+        }
+
+        $found = [];
+
+        foreach (array_keys(self::DESCRIPTION_LIMITS) as $list) {
+            $rows = $list === 'figures' ? self::rows($output['figures'] ?? null) : self::rows($output[self::CANONICAL_KEY][$list] ?? null);
+
+            foreach ($rows as $row) {
+                $key = self::descriptionKey($list, $row);
+
+                if ($key !== null && is_string($row['description'] ?? null) && trim($row['description']) !== '') {
+                    $found[$list][$key] = trim($row['description']);
+                }
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * @param  array<string, mixed>  $design
+     * @return list<string>
+     */
+    public static function descriptionViolations(array $design): array
+    {
+        $labels = self::v3Labels($design);
+        $ids = array_diff(array_keys($labels), self::RESERVED_IDS);
+        $violations = [];
+
+        foreach (self::DESCRIPTION_LIMITS as $list => [$min, $max]) {
+            $base = $list === 'figures' ? 'figures' : self::CANONICAL_KEY.'.'.$list;
+            $rows = $list === 'figures' ? self::rows($design['figures'] ?? null) : self::rows($design[self::CANONICAL_KEY][$list] ?? null);
+            $seenKeys = [];
+
+            foreach ($rows as $index => $row) {
+                $where = "{$base}[{$index}].description";
+                $rowKey = self::descriptionKey($list, $row);
+
+                if ($rowKey !== null && isset($seenKeys[$rowKey])) {
+                    $violations[] = "{$base}[{$index}]: repeats {$base}[{$seenKeys[$rowKey]}] field for field ("
+                        .implode(', ', self::DESCRIPTION_KEYS[$list] ?? ['id']).'); merge the two rows or tell them apart';
+                }
+
+                if ($rowKey !== null) {
+                    $seenKeys[$rowKey] ??= $index;
+                }
+                $text = is_string($row['description'] ?? null) ? trim($row['description']) : '';
+
+                if ($text === '') {
+                    $violations[] = "{$where}: every row of this list carries a description that reads on its own";
+
+                    continue;
+                }
+
+                $length = mb_strlen($text);
+
+                if ($length < $min || $length > $max) {
+                    $violations[] = "{$where}: must be {$min} to {$max} characters, has {$length}";
+                }
+
+                $name = self::rowLabel($list, $row);
+
+                if ($name !== null && mb_strtolower(rtrim($text, '. ')) === mb_strtolower(rtrim($name, '. '))) {
+                    $violations[] = "{$where}: only repeats the row's name; describe the part itself";
+                }
+
+                foreach ($ids as $id) {
+                    if (preg_match('/(?<![A-Za-z0-9_])'.preg_quote($id, '/').'(?![A-Za-z0-9_])/', $text) === 1) {
+                        $violations[] = "{$where}: names {$id} by its id; call it by its name \"{$labels[$id]}\"";
+                    }
+                }
+
+                foreach (self::requiredMentions($list, $row, $labels) as $field => $mention) {
+                    if (mb_stripos($text, $mention) === false) {
+                        $violations[] = "{$where}: does not mention \"{$mention}\" ({$field})";
+                    }
+                }
+            }
+        }
+
+        return $violations;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private static function rowLabel(string $list, array $row): ?string
+    {
+        $field = self::V3_LABELS[$list][1] ?? null;
+        $label = $field === null ? null : ($row[$field] ?? null);
+
+        return is_string($label) && trim($label) !== '' ? trim($label) : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, string>  $labels
+     * @return array<string, string> field => the word or name the description has to contain
+     */
+    private static function requiredMentions(string $list, array $row, array $labels): array
+    {
+        $named = static fn (mixed $id): ?string => is_string($id) && isset($labels[$id]) ? $labels[$id] : null;
+        $mentions = match ($list) {
+            'openings' => ['deck' => $named($row['deck'] ?? null), 'face' => is_string($row['face'] ?? null) ? $row['face'] : null, 'host' => $named($row['host'] ?? null)],
+            'surfaces' => ['deck' => $named($row['deck'] ?? null), 'relative_to' => $named($row['relative_to'] ?? null)],
+            'routes' => [
+                'from.deck' => $named($row['from']['deck'] ?? null),
+                'from.place' => $named($row['from']['place'] ?? null),
+                'to.deck' => $named($row['to']['deck'] ?? null),
+                'to.place' => $named($row['to']['place'] ?? null),
+            ] + array_combine(
+                array_map(static fn (int $i): string => "through[{$i}]", array_keys(array_values((array) ($row['through'] ?? [])))),
+                array_map($named, array_values((array) ($row['through'] ?? []))),
+            ),
+            'basins' => ['surface' => $named($row['surface'] ?? null)],
+            'transitions' => array_combine(
+                array_map(static fn (int $i): string => "between[{$i}]", array_keys(array_values((array) ($row['between'] ?? [])))),
+                array_map($named, array_values((array) ($row['between'] ?? []))),
+            ),
+            'geometric_relationships' => ['subject' => $named($row['subject'] ?? null), 'object' => $named($row['object'] ?? null)],
+            default => [],
+        };
+
+        return array_filter($mentions, static fn (?string $mention): bool => $mention !== null && $mention !== '');
+    }
+
+    /** @param array<string, mixed> $output */
+    public static function contractOf(array $output): string
+    {
+        $contract = $output['schema_version'] ?? null;
+
+        return is_string($contract) && in_array($contract, self::CONTRACTS, true) ? $contract : self::CONTRACT;
+    }
+
+    public static function authoringContract(): string
+    {
+        $contract = config('video.screenplay.design.contract_version');
+
+        return is_string($contract) && in_array($contract, self::AUTHORING_CONTRACTS, true) ? $contract : self::CONTRACT;
+    }
+
     /** @return list<string> */
     public static function thesisFields(?string $contract): array
     {
-        return $contract === self::CONTRACT ? self::THESIS_FIELDS : self::LEGACY_THESIS_FIELDS;
+        return in_array($contract, self::AUTHORING_CONTRACTS, true) ? self::THESIS_FIELDS : self::LEGACY_THESIS_FIELDS;
     }
 
     /**
      * @param  array<string, mixed>  $profile
      * @return array<string, mixed>
      */
-    public static function designShape(array $profile): array
+    public static function designShape(array $profile, ?string $contract = null): array
     {
         $shape = array_intersect_key($profile, array_flip(self::DESIGN_PROFILE_KEYS));
-        $shape['contract_version'] = self::CONTRACT;
+        $shape['contract_version'] = $contract ?? self::authoringContract();
         $shape['dimension_bounds'] = config('video.screenplay.dimension_bounds');
 
         return $shape;
@@ -2104,14 +3274,16 @@ final class VesselDesign
             self::VESSEL_KEY => $output[self::VESSEL_KEY] ?? null,
             'design_thesis' => $output['design_thesis'] ?? null,
             'principal_dimensions' => $output['principal_dimensions'] ?? null,
-            ProtagonistProfile::OUTPUT_KEY => array_intersect_key($profile, array_flip(self::STORY_PROFILE_FIELDS)),
-        ];
+        ] + (self::isV3($output)
+            ? ['figures' => $output['figures'] ?? [], 'construction' => $output['construction'] ?? null]
+            : [ProtagonistProfile::OUTPUT_KEY => array_intersect_key($profile, array_flip(self::STORY_PROFILE_FIELDS))]);
 
         if (! self::hasCanonical($output)) {
             return [$story, []];
         }
 
-        [$canonical, $gaps] = self::canonicalExtract($output, self::STORY_OBJECT_FIELDS, self::STORY_LIST_FIELDS);
+        [$canonical, $gaps] = self::canonicalExtract($output, self::STORY_OBJECT_FIELDS,
+            self::isV3($output) ? self::STORY_LIST_FIELDS + self::STORY_V3_LIST_FIELDS : self::STORY_LIST_FIELDS);
 
         return [$story + [self::CANONICAL_KEY => $canonical], $gaps];
     }
@@ -2140,6 +3312,10 @@ final class VesselDesign
      */
     public static function locationProfile(array $profile): array
     {
+        if (self::isV3Profile($profile)) {
+            return array_diff_key($profile, array_flip(self::SCENE_PROFILE_EXCLUDED_FIELDS));
+        }
+
         return array_intersect_key($profile, array_flip(self::LOCATION_PROFILE_FIELDS));
     }
 
@@ -2344,6 +3520,11 @@ final class VesselDesign
         $locked = self::lockedDesign($output, null)[self::CANONICAL_KEY] ?? [];
         $source = $output[self::CANONICAL_KEY];
         $canonical = [];
+
+        if (self::isV4($output)) {
+            $listFields = array_map(static fn (?array $fields): ?array => $fields === null ? null : [...$fields, 'description'], $listFields);
+            $configurationFields = [...$configurationFields, 'description'];
+        }
 
         foreach ($objectFields as $key => $fields) {
             if (is_array($locked[$key] ?? null)) {
@@ -2941,6 +4122,7 @@ final class VesselDesign
      */
     private static function signatureViolations(array $design, array $canonical): array
     {
+        $v3 = self::isV3($design);
         $names = self::profileFeatureKinds($design);
         $regions = self::rows($canonical['signature_regions'] ?? null);
         $violations = [];
@@ -2951,7 +4133,14 @@ final class VesselDesign
             $path = self::CANONICAL_KEY.".signature_regions[{$index}]";
             $feature = $region['feature'] ?? null;
 
-            if (! is_string($feature) || ! array_key_exists($feature, $names)) {
+            if ($v3 && (! is_string($feature) || trim($feature) === '')) {
+                $violations[] = "{$path}.feature: names the signature region";
+            } elseif ($v3) {
+                if (isset($covered[mb_strtolower(trim($feature))])) {
+                    $violations[] = "{$path}.feature: {$feature} already names another signature region";
+                }
+                $covered[mb_strtolower(trim($feature))] = true;
+            } elseif (! is_string($feature) || ! array_key_exists($feature, $names)) {
                 $violations[] = "{$path}.feature: must be the exact name of a signature feature in the protagonist profile";
             } elseif (isset($covered[$feature])) {
                 $violations[] = "{$path}.feature: {$feature} already has a signature region";
@@ -3462,13 +4651,14 @@ final class VesselDesign
         return [...array_keys(array_filter([
             'anchor_design_unresolved' => self::unresolvedDecisions($output) !== [],
             'anchor_design_placement_ambiguous' => $ambiguous !== [],
+            'anchor_design_name_missing' => self::isV3($output) && self::v3UnnamedReferences($output) !== [],
         ])), ...self::anchorPromptGaps($source)];
     }
 
     /**
      * @param  array<string, mixed>  $output
      * @param  array<string, mixed>  $extract
-     * @return array{view: string, near_end: string, side: string, subject: array<string, mixed>, geometry: array<string, mixed>, identity: array<string, mixed>, construction: ?string}
+     * @return array{view: string, near_end: string, side: string, subject: array<string, mixed>, geometry: array<string, mixed>, identity: array<string, mixed>, construction: string|array<string, string>|null}
      */
     public static function anchorPromptSource(array $output, array $extract): array
     {
@@ -3483,7 +4673,11 @@ final class VesselDesign
         $farWords = $farEnd === 'stern' ? '/\b(stern|aft|transom)\b/i' : '/\b(bow|forward|stem)\b/i';
         $featureSides = [];
 
-        foreach (self::rows($output['protagonist_profile']['signature_features'] ?? null) as $feature) {
+        $features = self::isV3($output)
+            ? array_map(static fn (array $region): array => ['name' => $region['feature'] ?? null, 'region' => $region['region'] ?? null], self::rows($output[self::CANONICAL_KEY]['signature_regions'] ?? null))
+            : self::rows($output['protagonist_profile']['signature_features'] ?? null);
+
+        foreach ($features as $feature) {
             if (is_string($feature['name'] ?? null)) {
                 $featureSides[$feature['name']] = $feature['region'] ?? null;
             }
@@ -3576,10 +4770,13 @@ final class VesselDesign
                 'must_preserve' => self::rows($sheet['must_preserve'] ?? null),
                 'must_not_introduce' => self::rows($sheet['must_not_introduce'] ?? null),
             ],
-            'construction' => is_string($output['protagonist_profile']['construction_new_build_and_refit'] ?? null)
-                && trim($output['protagonist_profile']['construction_new_build_and_refit']) !== ''
-                ? trim($output['protagonist_profile']['construction_new_build_and_refit'])
-                : null,
+            'construction' => self::isV3($output)
+                ? array_filter(array_intersect_key(array_map(static fn (mixed $text): string => trim((string) $text), (array) ($output['construction'] ?? [])),
+                    array_flip(['structure', 'materials'])), static fn (string $text): bool => $text !== '')
+                : (is_string($output['protagonist_profile']['construction_new_build_and_refit'] ?? null)
+                    && trim($output['protagonist_profile']['construction_new_build_and_refit']) !== ''
+                    ? trim($output['protagonist_profile']['construction_new_build_and_refit'])
+                    : null),
         ];
     }
 

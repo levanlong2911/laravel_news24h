@@ -2475,22 +2475,45 @@ class VideoProjectService
         $profile = $category === '' ? null : $this->screenplayExpansion->screenplayProfile($category);
         $stages = array_values(array_filter((array) ($profile['arc_stages'] ?? []), 'is_string'));
         $fittedFrom = config("video.environment.fitted_from_stage.{$category}");
+        return $this->rememberSource($memoKey, [
+            'stages' => $stages,
+            'fitted_from' => is_string($fittedFrom) && in_array($fittedFrom, $stages, true) ? $fittedFrom : null,
+            'spaces' => self::designSpaces(is_array($design?->output_json) ? $design->output_json : []),
+            'furnished' => $design !== null
+                && (PlanningStageStore::metadataOf($design->input_json)[VesselDesign::INTERIOR_POLICY_KEY] ?? null) === VesselDesign::FURNISHED_ROOMS_POLICY,
+            'design_hash' => $design === null ? null : (string) ($source['content_hash'] ?? ''),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $design  the verified source design output
+     * @return array<string, array<string, mixed>> film_brief space key => the fitted texts the design gives that room
+     */
+    public static function designSpaces(array $design): array
+    {
         $spaces = [];
 
-        foreach ((array) ($design?->output_json[\App\Video\Screenplay\ProtagonistProfile::OUTPUT_KEY][\App\Video\Screenplay\ProtagonistProfile::INTERIOR_KEY] ?? []) as $space) {
+        foreach ((array) ($design[\App\Video\Screenplay\ProtagonistProfile::OUTPUT_KEY][\App\Video\Screenplay\ProtagonistProfile::INTERIOR_KEY] ?? []) as $space) {
             if (is_array($space) && is_string($space['space'] ?? null)) {
                 $spaces[$space['space']] = $space;
             }
         }
 
-        return $this->rememberSource($memoKey, [
-            'stages' => $stages,
-            'fitted_from' => is_string($fittedFrom) && in_array($fittedFrom, $stages, true) ? $fittedFrom : null,
-            'spaces' => $spaces,
-            'furnished' => $design !== null
-                && (PlanningStageStore::metadataOf($design->input_json)[VesselDesign::INTERIOR_POLICY_KEY] ?? null) === VesselDesign::FURNISHED_ROOMS_POLICY,
-            'design_hash' => $design === null ? null : (string) ($source['content_hash'] ?? ''),
-        ]);
+        if (! VesselDesign::isV3($design)) {
+            return $spaces;
+        }
+
+        foreach ((array) ($design[VesselDesign::CANONICAL_KEY]['spatial_topology'] ?? []) as $row) {
+            if (is_array($row) && is_string($row['brief_space'] ?? null) && is_array($row['interior'] ?? null)) {
+                $spaces[$row['brief_space']] = array_filter([
+                    'materials_and_light' => trim(trim((string) ($row['interior']['materials'] ?? '')).' '.trim((string) ($row['light'] ?? ''))),
+                    'fixed_furniture' => trim((string) ($row['interior']['fixed_furniture'] ?? '')),
+                    'layout' => trim((string) ($row['interior']['layout'] ?? '')),
+                ], static fn (string $text): bool => $text !== '');
+            }
+        }
+
+        return $spaces;
     }
 
     /**

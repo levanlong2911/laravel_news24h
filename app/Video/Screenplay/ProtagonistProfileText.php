@@ -12,6 +12,10 @@ final class ProtagonistProfileText
      */
     public static function lines(array $profile, string $indent = ''): array
     {
+        if (VesselDesign::isV3Profile($profile)) {
+            return self::v3ProfileLines($profile, $indent);
+        }
+
         $lines = [];
 
         foreach (ProtagonistProfile::SECTIONS as $section) {
@@ -20,21 +24,7 @@ final class ProtagonistProfileText
             $lines[] = '';
         }
 
-        $lines[] = $indent.'FIGURES';
-
-        foreach ((array) ($profile['figures'] ?? []) as $figure) {
-            if (! is_array($figure)) {
-                continue;
-            }
-
-            $value = trim((string) ($figure['value'] ?? ''));
-            $note = trim((string) ($figure['note'] ?? ''));
-            $lines[] = $indent.'  '.str_replace('_', ' ', (string) ($figure['quantity'] ?? '?')).': '
-                .($value === '' ? 'not decided' : $value.' '.($figure['unit'] ?? ''))
-                .' ('.($figure['origin'] ?? '?').(($figure['source_path'] ?? '') === '' ? '' : ', '.$figure['source_path']).')'
-                .($note === '' ? '' : ' — '.$note);
-        }
-
+        $lines = [...$lines, ...self::figureLines((array) ($profile['figures'] ?? []), $indent)];
         $lines[] = '';
         $lines[] = $indent.'SIGNATURE FEATURES';
 
@@ -91,5 +81,107 @@ final class ProtagonistProfileText
     public static function render(array $profile, string $indent = ''): string
     {
         return implode("\n", self::lines($profile, $indent));
+    }
+
+    /**
+     * @param  array<string, mixed>  $design  a vessel_design_v3 output
+     * @return list<string>
+     */
+    public static function designLines(array $design, string $indent = '', bool $multiline = false): array
+    {
+        $lines = self::v3ProfileLines(['figures' => $design['figures'] ?? [], 'construction' => $design['construction'] ?? null], $indent);
+        $labels = VesselDesign::v3Labels($design);
+        $missing = [];
+        $sections = [...(array) ($design[VesselDesign::CANONICAL_KEY] ?? []), VesselDesign::UNRESOLVED_KEY => $design[VesselDesign::UNRESOLVED_KEY] ?? []];
+
+        foreach ($sections as $key => $node) {
+            $block = DesignText::labelled((string) $key, $node, $labels, $missing, true, $multiline);
+
+            if ($block !== []) {
+                $lines = [...$lines, '', ...array_map(static fn (string $line): string => $indent.$line, $block)];
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param  array<string, mixed>  $design  a vessel_design_v4 output
+     * @return list<string> every row as its name and the description the design wrote, verbatim
+     */
+    public static function describedLines(array $design, string $indent = '', bool $multiline = false): array
+    {
+        $descriptions = VesselDesign::descriptions($design);
+        $lines = [$indent.'FIGURES'];
+
+        foreach ((array) ($design['figures'] ?? []) as $figure) {
+            if (! is_array($figure)) {
+                continue;
+            }
+
+            $value = trim((string) ($figure['value'] ?? ''));
+            $text = $descriptions['figures'][VesselDesign::descriptionKey('figures', $figure) ?? ''] ?? trim((string) ($figure['note'] ?? ''));
+            $lines[] = $indent.'  '.str_replace('_', ' ', (string) ($figure['quantity'] ?? '?')).': '
+                .($value === '' ? 'not decided' : $value.' '.($figure['unit'] ?? ''))
+                .($text === '' ? '' : ' — '.$text);
+        }
+
+        $lines = [...$lines, ...array_slice(self::v3ProfileLines(['construction' => $design['construction'] ?? null], $indent), 1)];
+        $labels = VesselDesign::v3Labels($design);
+        $missing = [];
+        $sections = [...(array) ($design[VesselDesign::CANONICAL_KEY] ?? []), VesselDesign::UNRESOLVED_KEY => $design[VesselDesign::UNRESOLVED_KEY] ?? []];
+
+        foreach ($sections as $key => $node) {
+            $block = DesignText::described((string) $key, $node, $descriptions[$key] ?? [], $labels, $missing, true, $multiline);
+
+            if ($block !== []) {
+                $lines = [...$lines, '', ...array_map(static fn (string $line): string => $indent.$line, $block)];
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return list<string>
+     */
+    private static function v3ProfileLines(array $profile, string $indent): array
+    {
+        $lines = self::figureLines((array) ($profile['figures'] ?? []), $indent);
+        $lines[] = '';
+        $lines[] = $indent.'CONSTRUCTION';
+
+        foreach ((array) ($profile['construction'] ?? []) as $field => $text) {
+            if (is_string($text) && trim($text) !== '') {
+                $lines[] = $indent.'  '.str_replace('_', ' ', (string) $field).': '.trim($text);
+            }
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param  array<mixed>  $figures
+     * @return list<string>
+     */
+    private static function figureLines(array $figures, string $indent): array
+    {
+        $lines = [$indent.'FIGURES'];
+
+        foreach ($figures as $figure) {
+            if (! is_array($figure)) {
+                continue;
+            }
+
+            $value = trim((string) ($figure['value'] ?? ''));
+            $note = trim((string) ($figure['note'] ?? ''));
+            $lines[] = $indent.'  '.str_replace('_', ' ', (string) ($figure['quantity'] ?? '?')).': '
+                .($value === '' ? 'not decided' : $value.' '.($figure['unit'] ?? ''))
+                .' ('.($figure['origin'] ?? '?').(($figure['source_path'] ?? '') === '' ? '' : ', '.$figure['source_path']).')'
+                .($note === '' ? '' : ' — '.$note);
+        }
+
+        return $lines;
     }
 }

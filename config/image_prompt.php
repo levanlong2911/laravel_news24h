@@ -41,30 +41,30 @@ return [
     ),
 
     'design_anchor' => [
-        'prompt_path' => resource_path('ai/prompts/anchor_from_design_v1_r12.txt'),
-        'prompt_version' => 'anchor-from-design-v1-r12',
+        'prompt_path' => resource_path('ai/prompts/anchor_from_design_v1_r16.txt'),
+        'prompt_version' => 'anchor-from-design-v1-r16',
     ],
 
     'anchor_model' => env('IMAGE_ANCHOR_MODEL', 'gpt-image-2.5-flare'),
 
     'text_pricing' => [
-        'model' => 'gpt-5.6-sol',
-        'version' => 'openai-gpt-5.6-sol-2026-09-29',
+        'model' => 'gpt-6.1-sol',
+        'version' => 'openai-gpt-6.1-sol-2026-10-19',
         'input_per_million' => 2.0,
-        'cached_input_per_million' => 0.2,
-        'output_per_million' => 12.0,
+        'cached_input_per_million' => 0.1,
+        'output_per_million' => 10.0,
     ],
 
     'anchor_author' => [
-        'model' => env('IMAGE_ANCHOR_PROMPT_MODEL', 'gpt-5.6-sol'),
-        'reasoning_effort' => env('IMAGE_ANCHOR_PROMPT_REASONING', 'medium'),
+        'model' => env('IMAGE_ANCHOR_PROMPT_MODEL', 'gpt-6.1-sol'),
+        'reasoning_effort' => env('IMAGE_ANCHOR_PROMPT_REASONING', 'high'),
     ],
 
     'reference' => [
         'prompt_path' => resource_path('ai/prompts/reference_view_v1.txt'),
         'prompt_version' => 'reference-view-v1-r15',
-        'model' => env('IMAGE_REFERENCE_PROMPT_MODEL', 'gpt-5.6-sol'),
-        'reasoning_effort' => env('IMAGE_REFERENCE_PROMPT_REASONING', 'medium'),
+        'model' => env('IMAGE_REFERENCE_PROMPT_MODEL', 'gpt-6.1-sol'),
+        'reasoning_effort' => env('IMAGE_REFERENCE_PROMPT_REASONING', 'high'),
         'max_tokens' => (int) env('IMAGE_REFERENCE_PROMPT_MAX_TOKENS', 32000),
     ],
 

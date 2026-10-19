@@ -40,6 +40,9 @@ final class ReferenceSheet
     /** @var list<string> */
     private const FINISH_FIELDS = ['hull', 'superstructure', 'glazing', 'materials'];
 
+    /** @var array<string, string> */
+    private const V3_IDENTITY_LABELS = ['name' => 'name', 'length_m' => 'length (m)', 'beam_m' => 'beam (m)', 'length_beam_ratio' => 'length-to-beam ratio'];
+
     public static function stateLabel(string $state): string
     {
         return $state === self::STATE_FINISHED ? 'Hoàn thiện theo thiết kế' : 'Giữ nguyên anchor';
@@ -85,7 +88,9 @@ final class ReferenceSheet
         $names = DesignText::names($design);
 
         foreach ((array) ($design['canonical_design']['permanent_secondary_geometry'] ?? []) as $item) {
-            if (is_array($item) && ($item['form'] ?? null) === 'equipment' && is_string($item['element'] ?? null)) {
+            if (is_array($item) && ($item['form'] ?? null) === 'equipment' && is_string($item['element'] ?? null) && VesselDesign::isV3($design)) {
+                $equipment[] = trim($item['element']).(is_string($item['position'] ?? null) && trim($item['position']) !== '' ? ': '.trim($item['position']) : '');
+            } elseif (is_array($item) && ($item['form'] ?? null) === 'equipment' && is_string($item['element'] ?? null)) {
                 $equipment[] = DesignText::readable(trim($item['element']).(is_string($item['position'] ?? null) && trim($item['position']) !== '' ? ': '.trim($item['position']) : ''), $names);
             }
         }
@@ -116,6 +121,13 @@ final class ReferenceSheet
             $panels[] = 'Panel '.($index + 1).', '.self::POSITIONS[$index].' — '.$panel['label'].': '.$panel['camera'];
         }
 
+        $missing = [];
+        $geometry = self::designText($design, $missing);
+
+        if ($missing !== []) {
+            return [null, 'reference_sheet_design_name_missing'];
+        }
+
         $blocks = [
             'Edit the supplied image into one reference contact sheet of the same vessel: a grid of three columns and two rows '
                 .'of six equal panels separated by thin plain gutters. Each panel shows the whole vessel from one camera, nothing '
@@ -125,7 +137,7 @@ final class ReferenceSheet
             'The port and starboard panels are two separate true views of two different sides; never mirror one side to make '
                 .'the other. All six panels share the same light, background and surface state.',
             IdentityPreservationPrompt::text(),
-            "VIEW GEOMETRY (the approved design, for all six panels):\n".self::designText($design),
+            "VIEW GEOMETRY (the approved design, for all six panels):\n".$geometry,
             'CONSISTENCY: The vessel is identical in all six panels: the same hull, number of decks, proportions, bands, '
                 .'openings, stern, stairs and pools. Each panel shows only what is visible from its camera; nothing is moved, '
                 .'mirrored or added to expose a hidden part.',
@@ -204,10 +216,15 @@ final class ReferenceSheet
         return trim($text);
     }
 
-    /** @param array<string, mixed> $design */
-    private static function designText(array $design): string
+    /**
+     * @param  array<string, mixed>  $design
+     * @param  list<string>  $missing  ids a v3 design references without a name
+     */
+    private static function designText(array $design, array &$missing): string
     {
-        $names = DesignText::names($design);
+        $v3 = VesselDesign::isV3($design);
+        $names = $v3 ? [] : DesignText::names($design);
+        $labels = $v3 ? VesselDesign::v3Labels($design) : [];
         $extracts = [];
 
         foreach (self::PANELS as $value) {
@@ -217,7 +234,11 @@ final class ReferenceSheet
 
         $first = $extracts[0];
         $identity = (array) ($first['identity'] ?? []);
-        $lines = [sprintf(
+        $lines = $v3 ? ['VESSEL:', ...array_map(
+            static fn (string $field, string $label): string => '- '.$label.': '.(string) ($identity[$field] ?? ''),
+            array_keys(self::V3_IDENTITY_LABELS),
+            array_values(self::V3_IDENTITY_LABELS),
+        )] : [sprintf(
             'VESSEL: %s, length %s m, beam %s m, length-to-beam ratio %s.',
             (string) ($identity['name'] ?? ''),
             (string) ($identity['length_m'] ?? ''),
@@ -225,9 +246,28 @@ final class ReferenceSheet
             (string) ($identity['length_beam_ratio'] ?? ''),
         )];
         $seen = [];
+        $descriptions = VesselDesign::descriptions($design);
+        $section = static function (string $key, mixed $node) use ($v3, $names, $labels, $descriptions, &$seen, &$missing): array {
+            if (! $v3) {
+                return DesignText::section($key, $node, $names, $seen);
+            }
+
+            $rows = is_array($node) && array_is_list($node) ? array_values(array_intersect_key($node, array_unique(array_map('serialize', $node)))) : $node;
+
+            if ($descriptions === []) {
+                return DesignText::labelled($key, $rows, $labels, $missing);
+            }
+
+            if (is_array($rows) && array_is_list($rows)) {
+                $keys = array_map(static fn (mixed $row): string => is_array($row) ? (VesselDesign::descriptionKey($key, $row) ?? serialize($row)) : serialize($row), $rows);
+                $rows = array_values(array_intersect_key($rows, array_unique($keys)));
+            }
+
+            return DesignText::described($key, $rows, $descriptions[$key] ?? [], $labels, $missing);
+        };
 
         foreach ((array) ($first['common_geometry'] ?? []) as $key => $node) {
-            $lines = [...$lines, ...DesignText::section((string) $key, $node, $names, $seen)];
+            $lines = [...$lines, ...$section((string) $key, $node)];
         }
 
         $viewGeometry = [];
@@ -240,13 +280,13 @@ final class ReferenceSheet
 
         foreach ($viewGeometry as $key => $nodes) {
             $merged = array_is_list((array) $nodes[0]) ? array_merge(...array_map(static fn (mixed $node): array => (array) $node, $nodes)) : array_replace(...array_map(static fn (mixed $node): array => (array) $node, $nodes));
-            $lines = [...$lines, ...DesignText::section((string) $key, $merged, $names, $seen)];
+            $lines = [...$lines, ...$section((string) $key, $merged)];
         }
 
         foreach ((array) ($first['constraints'] ?? []) as $key => $node) {
-            $lines = [...$lines, ...DesignText::section((string) $key, $node, $names, $seen)];
+            $lines = [...$lines, ...$section((string) $key, $node)];
         }
 
-        return DesignText::readable(implode("\n", $lines), $names);
+        return $v3 ? implode("\n", $lines) : DesignText::readable(implode("\n", $lines), $names);
     }
 }

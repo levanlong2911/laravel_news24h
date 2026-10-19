@@ -174,6 +174,11 @@ class VideoProjectsController extends Controller
         $screenplayCharacters = $this->screenplayExpansion->latestCast(
             $project->id, 'characters', $screenplayFoundation['stage_id'],
         );
+        // dd(app(VesselDesignService::class)->panel($project->id));
+
+        // $vesselDesign = app(VesselDesignService::class)->panel($project->id);
+
+        // dd($vesselDesign);
 
         return view('video-projects.anchor', [
             'route' => 'video-projects',
@@ -611,6 +616,7 @@ class VideoProjectsController extends Controller
             'character_prompt_no_screenplay' => 'Chưa có bản phân cảnh được duyệt và chọn cho production — duyệt, chọn bản phân cảnh rồi mới viết prompt cho từng nhân vật.',
             'character_prompt_unknown_character' => 'Nhân vật này không có trong bản phân cảnh production.',
             'character_not_main' => 'Chỉ nhân vật chính (protagonist) mới có anchor — nhân vật phụ được mô tả bằng chữ khi render. Không gọi model, không render, không duyệt.',
+            'character_prompt_v3_profile_uses_design' => 'Tàu này lấy từ bản thiết kế v3 — anchor viết từ bản thiết kế, không qua đường viết prompt nhân vật cũ. Không gọi model.',
             'anchor_prompt_other_screenplay' => 'Prompt hoặc ảnh này thuộc một bản phân cảnh khác bản production đang chọn — viết lại prompt trước.',
             'screenplay_has_no_main_object' => 'Bản phân cảnh production không có nhân vật chính loại object để làm anchor chính.',
             'character_prompt_running' => 'Đang có một lượt viết prompt chạy cho dự án này.',
@@ -869,6 +875,8 @@ class VideoProjectsController extends Controller
             'reference_sheet_finish_incomplete' => 'Thiết kế chưa chốt đủ thân tàu, thượng tầng, kính và vật liệu — chưa dùng được "Hoàn thiện theo thiết kế". Không gọi model.',
             'reference_sheet_prompt_too_long' => 'Prompt bộ 6 góc vượt giới hạn ký tự của model ảnh. Không gọi model.',
             'reference_sheet_state_unknown' => 'Trạng thái bộ 6 góc không hợp lệ.',
+            'reference_sheet_design_name_missing' => 'Bản thiết kế v3 nhắc tới một bộ phận chưa được đặt tên — không đoán tên, không viết được prompt bộ 6 góc. Không gọi model.',
+            'reference_writer_v3_uses_sheet' => 'Bản thiết kế v3 dùng bộ 6 góc ghép từ thiết kế, không qua đường viết prompt Reference từng góc. Không gọi model.',
             default => $this->anchorMessage($reason),
         };
     }

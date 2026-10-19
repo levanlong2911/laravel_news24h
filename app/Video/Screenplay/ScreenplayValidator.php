@@ -70,6 +70,8 @@ final class ScreenplayValidator
         'screenplay_locations_v3',
         VesselDesign::CONTRACT,
         VesselDesign::LEGACY_CONTRACT,
+        VesselDesign::CONTRACT_V3,
+        VesselDesign::CONTRACT_V4,
         VesselDesign::STORY_CONTRACT,
         VesselDesign::FOUNDATION_CONTRACT,
         VesselDesign::LEGACY_LOCATIONS_CONTRACT,
@@ -148,7 +150,7 @@ final class ScreenplayValidator
     /** @var list<string> */
     private const DIMENSIONED_CONTRACTS = [
         'screenplay_foundation_v2', 'screenplay_foundation_v3', 'screenplay_v4', 'screenplay_v5', 'screenplay_v6', 'screenplay_v7',
-        'screenplay_v8', VesselDesign::CONTRACT, VesselDesign::LEGACY_CONTRACT, VesselDesign::FOUNDATION_CONTRACT,
+        'screenplay_v8', VesselDesign::CONTRACT, VesselDesign::LEGACY_CONTRACT, VesselDesign::CONTRACT_V3, VesselDesign::CONTRACT_V4, VesselDesign::FOUNDATION_CONTRACT,
     ];
 
     /** @var list<string> */
@@ -293,6 +295,15 @@ final class ScreenplayValidator
     private const PLACE_ITEM_LIMITS = [
         'locations.fixed_features' => [3, 200],
         'locations.light_sources' => [3, 200],
+        'scenes.props' => [3, 150],
+    ];
+
+    private const BUILT_ITEM_NAME_ALLOWANCE = 202;
+
+    /** @var array<string, array{0: int, 1: int}> */
+    private const BUILT_PLACE_ITEM_LIMITS = [
+        'locations.fixed_features' => [3, VesselDesign::DESCRIPTION_LIMITS['routes'][1] + self::BUILT_ITEM_NAME_ALLOWANCE],
+        'locations.light_sources' => [3, VesselDesign::DESCRIPTION_LIMITS['spatial_topology'][1] + self::BUILT_ITEM_NAME_ALLOWANCE],
         'scenes.props' => [3, 150],
     ];
 
@@ -558,6 +569,8 @@ final class ScreenplayValidator
      */
     private function designViolations(array $design, array $profile, string $contract, array $excludedNames): array
     {
+        $v3 = in_array($contract, VesselDesign::V3_CONTRACTS, true);
+        $design = $v3 ? ['schema_version' => $contract] + $design : $design;
         $violations = [];
 
         foreach (self::DESIGN_FORBIDDEN as $forbidden) {
@@ -604,6 +617,22 @@ final class ScreenplayValidator
             }
         }
 
+        foreach ($v3 ? VesselDesign::V3_CONSTRUCTION_TEXTS : [] as $field) {
+            if (is_string($design['construction'][$field] ?? null)) {
+                $texts["construction.{$field}"] = $design['construction'][$field];
+            }
+        }
+
+        foreach ($v3 ? (array) ($design['figures'] ?? []) : [] as $index => $figure) {
+            if (is_array($figure) && is_string($figure['note'] ?? null)) {
+                $texts["figures[{$index}].note"] = $figure['note'];
+            }
+
+            if (is_array($figure) && is_string($figure['description'] ?? null)) {
+                $texts["figures[{$index}].description"] = $figure['description'];
+            }
+        }
+
         if (! VesselDesign::hasCanonical($design)) {
             $violations[] = VesselDesign::CANONICAL_KEY.': must be an object';
         }
@@ -631,7 +660,10 @@ final class ScreenplayValidator
             $this->sourceFactsIn($canonicalTexts, $excludedNames),
             $this->dimensionViolations($design, $profile),
             $this->forbiddenTermViolations(['characters' => [VesselDesign::vesselRow($design)]], $profile),
-            $this->protagonistProfileViolations(
+            $v3 ? [
+                ...VesselDesign::v3Violations($design, $profile, FilmBrief::profileSpaces($profile)),
+                ...$this->v3FigureViolations($design),
+            ] : $this->protagonistProfileViolations(
                 $design[ProtagonistProfile::OUTPUT_KEY] ?? null,
                 $design,
                 $excludedNames,
@@ -641,7 +673,7 @@ final class ScreenplayValidator
             $this->sourceFactsIn($texts, $excludedNames),
             VesselDesign::incompleteVesselTexts($design),
             VesselDesign::typedGeometryViolations($design),
-            $contract === VesselDesign::CONTRACT ? VesselDesign::openingSideViolations($design) : [],
+            in_array($contract, VesselDesign::AUTHORING_CONTRACTS, true) ? VesselDesign::openingSideViolations($design) : [],
             VesselDesign::equipmentViolations($design, $profile),
             VesselDesign::extractIntegrityViolations(
                 $design,
@@ -1295,13 +1327,42 @@ final class ScreenplayValidator
      * @param  array<string, mixed>  $foundation
      * @return list<string>
      */
-    private function figureViolations(array $figures, array $foundation): array
+    /**
+     * @param  array<string, mixed>  $design
+     * @return list<string>
+     */
+    private function v3FigureViolations(array $design): array
+    {
+        $figures = $design['figures'] ?? null;
+
+        if (! is_array($figures) || ! array_is_list($figures) || $figures === []) {
+            return ['figures: must be a nonempty list'];
+        }
+
+        $violations = [];
+
+        foreach ($figures as $index => $figure) {
+            foreach (ProtagonistProfile::FIGURE_FIELDS as $field) {
+                if (! is_array($figure) || ! is_string($figure[$field] ?? null)) {
+                    $violations[] = "figures[{$index}].{$field}: must be a string";
+                }
+            }
+
+            if (is_array($figure) && mb_strlen((string) ($figure['note'] ?? '')) > ProtagonistProfile::NOTE_MAX) {
+                $violations[] = "figures[{$index}].note: at most ".ProtagonistProfile::NOTE_MAX.' characters';
+            }
+        }
+
+        return $violations === [] ? $this->figureViolations($figures, $design, 'figures') : $violations;
+    }
+
+    private function figureViolations(array $figures, array $foundation, string $list = 'protagonist_profile.figures'): array
     {
         $violations = [];
         $seen = [];
 
         foreach ($figures as $index => $figure) {
-            $at = "protagonist_profile.figures[{$index}]";
+            $at = "{$list}[{$index}]";
             $quantity = $figure['quantity'];
             $value = trim($figure['value']);
             $path = trim($figure['source_path']);
@@ -1370,7 +1431,7 @@ final class ScreenplayValidator
             $source = $this->foundationValue($foundation, $path);
 
             if ((is_int($source) || is_float($source)) && ($seen[$quantity] ?? null) !== 'inherited') {
-                $violations[] = "protagonist_profile.figures: {$quantity} must be inherited from {$path}";
+                $violations[] = "{$list}: {$quantity} must be inherited from {$path}";
             }
         }
 
@@ -2188,7 +2249,9 @@ final class ScreenplayValidator
             }
         }
 
-        foreach (self::PLACE_ITEM_LIMITS as $key => [$min, $max]) {
+        $built = in_array($contract, [VesselDesign::BUILT_LOCATIONS_CONTRACT, VesselDesign::LEGACY_SCENES_CONTRACT, ...self::FILM_CONTRACTS], true);
+
+        foreach ($built ? self::BUILT_PLACE_ITEM_LIMITS : self::PLACE_ITEM_LIMITS as $key => [$min, $max]) {
             [$owner, $field] = explode('.', $key);
             $items = $row[$field] ?? null;
 

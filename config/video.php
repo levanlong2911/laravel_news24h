@@ -3,6 +3,15 @@
 // Thu muc dung chung cho moi bang chung va bang gia cua provider anh.
 $providerEvidenceDir = resource_path('ai/providers');
 
+$designContracts = [
+    'vessel_design_v4' => [
+        'prompt_dir' => resource_path('ai/screenplay/design'),
+        'schema_path' => resource_path('ai/screenplay/schemas/vessel_design_v4.json'),
+        'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v4-r2'),
+    ],
+];
+$designContract = (string) env('SCREENPLAY_DESIGN_CONTRACT', 'vessel_design_v4');
+
 return [
     'provider_evidence_dir' => $providerEvidenceDir,
 
@@ -632,17 +641,19 @@ return [
         'workflow' => env('VIDEO_WORKFLOW', 'design_first_v1'),
 
         'design' => [
-            'contract_version' => 'vessel_design_v2',
+            'contract_version' => $designContract,
+
+            'contracts' => $designContracts,
 
             'profile_contract_version' => 'superyacht_design_v1',
 
-            'prompt_dir' => resource_path('ai/screenplay/design'),
+            'prompt_dir' => $designContracts[$designContract]['prompt_dir'] ?? null,
 
-            'schema_path' => resource_path('ai/screenplay/schemas/vessel_design_v2.json'),
+            'schema_path' => $designContracts[$designContract]['schema_path'] ?? null,
 
-            'prompt_version' => env('SCREENPLAY_DESIGN_PROMPT_VERSION', 'vessel-design-v2-r4'),
+            'prompt_version' => $designContracts[$designContract]['prompt_version'] ?? null,
 
-            'model' => env('SCREENPLAY_DESIGN_MODEL', 'gpt-5.6-sol'),
+            'model' => env('SCREENPLAY_DESIGN_MODEL', 'gpt-6.1-sol'),
 
             'max_tokens' => (int) env('SCREENPLAY_DESIGN_MAX_TOKENS', 48000),
 
@@ -702,7 +713,7 @@ return [
 
             'prompt_version' => env('SCREENPLAY_LOCATIONS_PROMPT_VERSION', 'locations-v5-r4'),
 
-            'model' => env('SCREENPLAY_LOCATIONS_MODEL', 'gpt-5.6-sol'),
+            'model' => env('SCREENPLAY_LOCATIONS_MODEL', 'gpt-6.1-sol'),
 
             'max_tokens' => (int) env('SCREENPLAY_LOCATIONS_MAX_TOKENS', 24000),
 

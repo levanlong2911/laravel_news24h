@@ -11,6 +11,7 @@ use App\Services\Video\OpenAiImageClient;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
 use App\Video\Reference\ReferenceView;
 use App\Video\Screenplay\DesignText;
+use App\Video\Screenplay\VesselDesign;
 use RuntimeException;
 
 final class AnchorDesignPrompt
@@ -34,7 +35,29 @@ final class AnchorDesignPrompt
     public function __construct(
         private readonly string $templatePath,
         public readonly string $version,
+        private readonly ?string $v3TemplatePath = null,
+        private readonly ?string $v3Version = null,
+        private readonly ?string $v4TemplatePath = null,
+        private readonly ?string $v4Version = null,
     ) {}
+
+    /** @param array<string, mixed> $design */
+    public function forDesign(array $design): self
+    {
+        if (VesselDesign::isV4($design) && $this->v4TemplatePath !== null && $this->v4Version !== null) {
+            return new self($this->v4TemplatePath, $this->v4Version, $this->v3TemplatePath, $this->v3Version, $this->v4TemplatePath, $this->v4Version);
+        }
+
+        return VesselDesign::isV3($design) && $this->v3TemplatePath !== null && $this->v3Version !== null
+            ? new self($this->v3TemplatePath, $this->v3Version, $this->v3TemplatePath, $this->v3Version, $this->v4TemplatePath, $this->v4Version)
+            : $this;
+    }
+
+    /** @return list<string> */
+    public function versions(): array
+    {
+        return array_values(array_filter([$this->version, $this->v3Version, $this->v4Version]));
+    }
 
     public function skillHash(): string
     {
@@ -47,6 +70,10 @@ final class AnchorDesignPrompt
      */
     public function compile(array $source, array $design, ImageSize $size): string
     {
+        if (VesselDesign::isV3($design)) {
+            return $this->compileLabelled($source, $design, $size);
+        }
+
         $names = DesignText::names($design);
         $seen = [];
         $subject = $source['subject'];
@@ -96,6 +123,71 @@ final class AnchorDesignPrompt
             '{length_beam_ratio}' => (string) $subject['length_beam_ratio'],
             '{design_sections}' => $designSections,
             '{forbidden_section}' => $block('FORBIDDEN INTERPRETATIONS', $text($forbidden)),
+            '{near_end}' => $nearEnd,
+            '{far_end}' => $farEnd,
+            '{side}' => $side,
+            '{frame_direction}' => ReferenceView::frameDirection($side),
+            '{hidden_end}' => ReferenceView::hiddenEnd($nearEnd, $side),
+            '{aspect_ratio}' => $size->aspectRatio(),
+            '{orientation}' => $size->orientation(),
+        ]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $source
+     * @param  array<string, mixed>  $design
+     */
+    private function compileLabelled(array $source, array $design, ImageSize $size): string
+    {
+        $labels = VesselDesign::v3Labels($design);
+        $descriptions = VesselDesign::descriptions($design);
+        $missing = [];
+        $subject = $source['subject'];
+        $geometry = $source['geometry'];
+        $identity = $source['identity'];
+        $nearEnd = (string) $source['near_end'];
+        $side = (string) $source['side'];
+        $farEnd = $nearEnd === 'bow' ? 'stern' : 'bow';
+        $lines = static function (array $keys, array $from) use ($labels, $descriptions, &$missing): array {
+            $out = [];
+
+            foreach ($keys as $key) {
+                if (array_key_exists($key, $from)) {
+                    $out = [...$out, ...($descriptions === []
+                        ? DesignText::labelled($key, $from[$key], $labels, $missing)
+                        : DesignText::described($key, $from[$key], $descriptions[$key] ?? [], $labels, $missing))];
+                }
+            }
+
+            return $out;
+        };
+        $block = static fn (string $title, array $body): string => $body === [] ? '' : $title."\n".implode("\n", $body);
+        $construction = array_values(array_map(
+            static fn (string $field, string $text): string => '- '.$field.': '.$text,
+            array_keys((array) ($source['construction'] ?? [])),
+            array_values((array) ($source['construction'] ?? [])),
+        ));
+
+        $designSections = implode("\n\n", array_filter([
+            $block('MANDATORY GEOMETRY', $lines(['must_preserve'], ['must_preserve' => self::mandatoryFirst((array) ($identity['must_preserve'] ?? []))])),
+            $block('OVERALL FORM', [...$lines(['global_silhouette', 'proportion_system'], $subject), ...$lines(self::FORM_ORDER, $geometry)]),
+            $block('EXTERIOR GEOMETRY', $lines(self::EXTERIOR_ORDER, $geometry)),
+            $block('SIGNATURE FEATURES', $lines(['signature_regions'], $identity)),
+            $construction === [] ? '' : 'CONSTRUCTION SOURCE'."\n".self::CONSTRUCTION_RULE."\n".implode("\n", $construction),
+        ], static fn (string $part): bool => $part !== ''));
+        $forbidden = $block('FORBIDDEN INTERPRETATIONS', $lines(['must_not_introduce'], $identity));
+
+        if ($missing !== []) {
+            throw new RuntimeException('anchor_design_name_missing: '.implode(', ', array_unique($missing)));
+        }
+
+        return trim(strtr($this->template(), [
+            '{name}' => (string) $subject['name'],
+            '{length_m}' => (string) $subject['length_m'],
+            '{beam_m}' => (string) $subject['beam_m'],
+            '{length_beam_ratio}' => (string) $subject['length_beam_ratio'],
+            '{design_sections}' => $designSections,
+            '{forbidden_section}' => $forbidden,
             '{near_end}' => $nearEnd,
             '{far_end}' => $farEnd,
             '{side}' => $side,

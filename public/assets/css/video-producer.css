@@ -770,6 +770,18 @@ a.vp-btn[disabled] {
     letter-spacing: 0;
 }
 
+.va-lbl.vd-reach {
+    font-weight: 400;
+}
+
+.va-lbl.vd-reach.ok {
+    color: var(--vp-green);
+}
+
+.va-lbl.vd-reach.warn {
+    color: var(--vp-amber-fg);
+}
+
 .va-ta {
     width: 100%;
     min-height: 240px;

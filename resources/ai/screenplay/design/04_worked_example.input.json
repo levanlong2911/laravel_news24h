@@ -24,7 +24,7 @@
         ]
     },
     "profile": {
-        "contract_version": "vessel_design_v2",
+        "contract_version": "vessel_design_v4",
         "subject_class": "harbour ferry",
         "design_requirements": [
             "The sides physically transform at architectural scale: the hull's side opens along its length and changes how the hall is entered and left. A door, a seat or lighting does not meet this requirement.",

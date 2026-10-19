@@ -252,6 +252,10 @@ final class ProtagonistProfile
      */
     public static function forImage(array $profile): array
     {
+        if (VesselDesign::isV3Profile($profile)) {
+            throw new \InvalidArgumentException('protagonist_profile_v3_unsupported: a vessel_design_v3 profile has no v2 image sections; its vessel images come from the design');
+        }
+
         $image = [];
 
         foreach (self::IMAGE_SECTIONS as $section) {

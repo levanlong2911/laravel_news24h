@@ -104,11 +104,12 @@ TEXT;
             return [null, 'screenplay_contract_unsupported'];
         }
 
+        $contract = VesselDesign::authoringContract();
         $designBrief = VesselDesign::designBrief($filmBrief);
-        $profile = FilmBrief::applyToProfile(VesselDesign::designShape($fullProfile), $designBrief);
+        $profile = FilmBrief::applyToProfile(VesselDesign::designShape($fullProfile, $contract), $designBrief);
         $validator = new ScreenplayValidator;
 
-        if ($validator->profileViolations($profile, VesselDesign::CONTRACT) !== []) {
+        if ($validator->profileViolations($profile, $contract) !== []) {
             return [null, 'screenplay_profile_invalid'];
         }
 
@@ -125,7 +126,7 @@ TEXT;
         $fixed = $previous === [] ? [] : [VesselDesign::PREVIOUS_DESIGNS_KEY => $previous];
 
         $input = [
-            'contract_version' => VesselDesign::CONTRACT,
+            'contract_version' => $contract,
             'fingerprint' => $author->fingerprint($inspiration, $profile, $requirements, $fixed),
             'screenplay_profile_sha256' => ScreenplayExpansionService::contentHash($fullProfile),
         ];
@@ -151,16 +152,16 @@ TEXT;
             $input,
             $meta,
             $force,
-            function (ScreenplayResult $result, array $run = []) use ($validator, $profile, $fullProfile, $excluded): array {
+            function (ScreenplayResult $result, array $run = []) use ($validator, $profile, $fullProfile, $excluded, $contract): array {
                 $validate = static fn (array $design): array => [
-                    ...$validator->structural($design, VesselDesign::validationProfile($profile, $fullProfile), VesselDesign::CONTRACT, $excluded),
-                    ...VesselDesign::newDesignViolations($design),
+                    ...$validator->structural($design, VesselDesign::validationProfile($profile, $fullProfile), $contract, $excluded),
+                    ...VesselDesign::newDesignViolations($design, $contract),
                 ];
                 $design = $result->screenplay;
                 $violations = $validate($design);
                 $extra = [];
 
-                if ($violations !== []) {
+                if ($violations !== [] && ! in_array($contract, VesselDesign::V3_CONTRACTS, true)) {
                     [$design, $violations, $extra] = $this->repairServes($design, $violations, $validate, $run);
                 }
 
@@ -172,7 +173,7 @@ TEXT;
                 }
 
                 return [null, VesselDesign::withSystemDecisions($design, $profile) + [
-                    'schema_version' => VesselDesign::CONTRACT,
+                    'schema_version' => $contract,
                     'author_model' => $result->authorModel,
                 ], 'ok', $extra];
             },
@@ -1020,6 +1021,7 @@ TEXT;
     public function panel(string $projectId): array
     {
         [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::VESSEL_DESIGN, []);
+        // dd($latest->output_json);
         $stage = $this->currentStage($projectId);
         $output = is_array($stage?->output_json) ? $stage->output_json : [];
         $snapshot = $stage === null ? null : (PlanningStageStore::metadataOf($stage->input_json)[ScreenplayExpansionService::PROFILE_SNAPSHOT_KEY] ?? null);
@@ -1031,10 +1033,14 @@ TEXT;
             'failed_repair' => self::repairRecord($failed),
             'repair_enabled' => (bool) config('video.screenplay.design.repair.enabled'),
             'errors' => $failed === null ? [] : self::failureLines((string) $failed->error_message),
-            'failed_design' => is_array($decoded) && is_array($decoded[VesselDesign::VESSEL_KEY] ?? null) ? $decoded : null,
+            'failed_design' => is_array($decoded) && is_array($decoded[VesselDesign::VESSEL_KEY] ?? null)
+                ? $decoded + (in_array($failed->input_json['contract_version'] ?? null, VesselDesign::V3_CONTRACTS, true) ? ['schema_version' => $failed->input_json['contract_version']] : [])
+                : null,
             'failed_at' => $failed?->finished_at?->format('d/m/Y H:i'),
             'gate' => VesselDesign::hasCanonical($output) ? VesselDesign::gate($output, is_array($snapshot) ? $snapshot : []) : null,
             'p0' => VesselDesign::p0($output),
+            'v3_findings' => VesselDesign::isV3($output) ? VesselDesign::v3Findings($output) : null,
+            'text_warnings' => VesselDesign::isV3($output) ? VesselDesign::textWarnings($output) : [],
             'design' => $stage?->output_json,
             'stage_id' => $stage?->id,
             'revision' => $stage?->planning_revision,
@@ -1439,6 +1445,13 @@ TEXT;
         if (isset($schema['properties'][$profile]['properties'][$rooms]['items']['properties']['space'])) {
             $schema['properties'][$profile]['properties'][$rooms]['items']['properties']['space'] = FilmBrief::spaceField(
                 $schema['properties'][$profile]['properties'][$rooms]['items']['properties']['space'],
+                $filmBrief,
+            );
+        }
+
+        if (isset($schema['properties'][$canonical]['properties']['spatial_topology']['items']['properties']['brief_space'])) {
+            $schema['properties'][$canonical]['properties']['spatial_topology']['items']['properties']['brief_space'] = FilmBrief::spaceField(
+                $schema['properties'][$canonical]['properties']['spatial_topology']['items']['properties']['brief_space'],
                 $filmBrief,
             );
         }

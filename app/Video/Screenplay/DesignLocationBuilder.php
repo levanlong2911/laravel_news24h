@@ -282,6 +282,10 @@ final class DesignLocationBuilder
      */
     private static function regionSurface(string $region, array $index): ?string
     {
+        if ($index['v3'] ?? false) {
+            return null;
+        }
+
         $regions = array_keys($index['spatial_topology']);
 
         foreach ($index['surfaces'] as $surface) {
@@ -384,7 +388,9 @@ final class DesignLocationBuilder
             $position = 'interior_spaces.'.($index['interior'][$space]['position_index'] ?? -1);
             $basins = array_keys(array_filter(
                 $index['basins'],
-                static fn (array $basin): bool => in_array($position, (array) ($basin['profile_paths'] ?? []), true),
+                static fn (array $basin): bool => ($index['v3'] ?? false)
+                    ? ($basin['space'] ?? null) === $region
+                    : in_array($position, (array) ($basin['profile_paths'] ?? []), true),
             ));
 
             return [[
@@ -639,7 +645,8 @@ final class DesignLocationBuilder
     private static function index(array $design): array
     {
         $canonical = is_array($design[VesselDesign::CANONICAL_KEY] ?? null) ? $design[VesselDesign::CANONICAL_KEY] : [];
-        $index = ['decks' => [], 'openings' => [], 'regions_of_space' => [], 'interior' => []];
+        $index = ['v3' => VesselDesign::isV3($design), 'v4' => VesselDesign::isV4($design), 'decks' => [], 'openings' => [], 'regions_of_space' => [], 'interior' => []]
+            + array_fill_keys(array_values(self::REF_LISTS), []);
 
         foreach ([...array_values(self::REF_LISTS), 'decks', 'openings'] as $list) {
             foreach ((array) ($canonical[$list] ?? []) as $row) {
@@ -647,6 +654,19 @@ final class DesignLocationBuilder
                     $index[$list][$row['id']] = $row;
                 }
             }
+        }
+
+        if ($index['v3']) {
+            $index['space_parts'] = VesselDesign::v3SpaceParts($design);
+
+            foreach ($index['spatial_topology'] as $id => $row) {
+                if (is_string($row['brief_space'] ?? null)) {
+                    $index['regions_of_space'][$row['brief_space']] = [(string) $id];
+                    $index['interior'][$row['brief_space']] = $row + ['space' => $row['brief_space'], 'position_index' => -1];
+                }
+            }
+
+            return $index;
         }
 
         $interior = (array) ($design[ProtagonistProfile::OUTPUT_KEY][ProtagonistProfile::INTERIOR_KEY] ?? []);
@@ -774,18 +794,26 @@ final class DesignLocationBuilder
     {
         $regions = array_values(array_unique($refs['region']));
         $surfaces = [...$refs['surface'], ...$basinSurfaces];
+        $holders = $regions;
+
+        foreach (($index['v3'] ?? false) ? $regions : [] as $region) {
+            foreach ($index['space_parts'][$region] ?? [] as $part) {
+                $surfaces[] = $part;
+                $holders[] = $part;
+            }
+        }
 
         foreach ($index['surfaces'] as $id => $surface) {
-            if (($surface['relation'] ?? null) === 'within' && in_array($surface['relative_to'] ?? null, $regions, true)) {
+            if (($surface['relation'] ?? null) === 'within' && in_array($surface['relative_to'] ?? null, $holders, true)) {
                 $surfaces[] = $id;
             }
         }
 
-        $surfaces = array_values(array_unique($surfaces));
+        $surfaces = array_values(array_unique(array_filter($surfaces, static fn (string $id): bool => isset($index['surfaces'][$id]))));
         $basins = $refs['basin'];
 
         foreach ($index['basins'] as $id => $basin) {
-            if (in_array($basin['surface'] ?? null, $surfaces, true)) {
+            if (in_array($basin['surface'] ?? null, $surfaces, true) || (($index['v3'] ?? false) && in_array($basin['space'] ?? null, $regions, true))) {
                 $basins[] = $id;
             }
         }
@@ -798,7 +826,7 @@ final class DesignLocationBuilder
             }
         }
 
-        $served = [...$regions, ...$surfaces];
+        $served = [...$holders, ...$surfaces];
         $openings = array_keys(array_filter(
             $index['openings'],
             static fn (array $opening): bool => in_array($opening['serves'] ?? null, $served, true),
@@ -816,6 +844,10 @@ final class DesignLocationBuilder
 
         foreach ($openings as $id) {
             $decks[] = $index['openings'][$id]['deck'] ?? null;
+        }
+
+        foreach (($index['v3'] ?? false) ? $regions : [] as $region) {
+            $decks = [...$decks, ...(array) ($index['spatial_topology'][$region]['deck_ids'] ?? [])];
         }
 
         return [
@@ -856,7 +888,9 @@ final class DesignLocationBuilder
 
         $deckNames = array_map(static fn (string $deck): string => (string) ($index['decks'][$deck]['name'] ?? $deck), $owned['decks']);
 
-        if (is_string($room['deck'] ?? null) && $owned['decks'] !== [] && ! in_array($room['deck'], $deckNames, true)) {
+        if (($index['v3'] ?? false) && $owned['decks'] !== [] && array_intersect((array) ($room['deck_ids'] ?? []), $owned['decks']) === []) {
+            $violations[] = "{$where}: the design puts {$space} on ".implode(', ', (array) ($room['deck_ids'] ?? [])).', the parts it names lie on '.implode(', ', $owned['decks']);
+        } elseif (! ($index['v3'] ?? false) && is_string($room['deck'] ?? null) && $owned['decks'] !== [] && ! in_array($room['deck'], $deckNames, true)) {
             $violations[] = "{$where}: the design puts {$space} on {$room['deck']}, the parts it names lie on ".implode(', ', $deckNames);
         }
 
@@ -1067,6 +1101,10 @@ final class DesignLocationBuilder
      */
     private static function subjectRow(array $row, array $owned, array $connections, array $index, array $briefLabels, string $subjectId): array
     {
+        if ($index['v3'] ?? false) {
+            return self::subjectRowFromText($row, $owned, $connections, $index, $briefLabels, $subjectId);
+        }
+
         $id = (string) $row['id'];
         $space = is_string($row[FilmBrief::COVERAGE_SPACE_KEY] ?? null) ? $row[FilmBrief::COVERAGE_SPACE_KEY] : null;
         $room = $space === null ? null : ($index['interior'][$space] ?? null);
@@ -1106,6 +1144,132 @@ final class DesignLocationBuilder
         ];
 
         return [$built, $problems];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<string, mixed>  $owned
+     * @param  list<array{target_location_id: string, via: string}>  $connections
+     * @param  array<string, mixed>  $index
+     * @param  array<string, string>  $briefLabels
+     * @return array{0: array<string, mixed>, 1: list<string>}
+     */
+    private static function subjectRowFromText(array $row, array $owned, array $connections, array $index, array $briefLabels, string $subjectId): array
+    {
+        $id = (string) $row['id'];
+        $space = is_string($row[FilmBrief::COVERAGE_SPACE_KEY] ?? null) ? $row[FilmBrief::COVERAGE_SPACE_KEY] : null;
+        [$enclosure, $enclosureProblem] = self::enclosure($id, $owned, $index);
+        $problems = $enclosureProblem === null ? [] : [$enclosureProblem];
+        $text = static fn (mixed $value): string => is_string($value) ? self::clean($value) : '';
+        $joined = static fn (array $parts): string => self::clean(implode(' ', array_filter($parts, static fn (string $part): bool => $part !== '')));
+        $regions = $owned['regions'];
+        $routeText = ($index['v4'] ?? false) ? 'description' : 'support';
+        $regionText = ($index['v4'] ?? false) ? 'description' : 'boundaries';
+        $partTexts = [
+            ...array_map(static fn (string $route): string => $text($index['routes'][$route][$routeText] ?? null), $owned['refs']['route']),
+            ...array_map(static fn (string $surface): string => $text($index['surfaces'][$surface]['description'] ?? null), $owned['refs']['surface']),
+        ];
+        $description = $joined([...array_map(static fn (string $region): string => $text($index['spatial_topology'][$region][$regionText] ?? null), $regions), ...$partTexts]);
+        $layouts = array_map(static fn (string $region): string => $text($index['spatial_topology'][$region]['interior']['layout'] ?? null), $regions);
+        $layout = $joined(array_filter($layouts) !== [] ? $layouts
+            : [...array_map(static fn (string $region): string => $text($index['spatial_topology'][$region]['circulation'] ?? null), $regions), ...$partTexts]);
+
+        if (mb_strlen($layout) < 40) {
+            $problems[] = "{$id}: the design parts it names do not describe the place well enough to build its layout";
+        }
+
+        $lightHolders = $regions;
+
+        if ($lightHolders === []) {
+            foreach ($index['space_parts'] as $spaceId => $parts) {
+                if (array_intersect($parts, $owned['surfaces']) !== []) {
+                    $lightHolders[] = (string) $spaceId;
+                }
+            }
+        }
+
+        $lights = array_values(array_unique(array_filter(array_map(static fn (string $region): string => $text($index['spatial_topology'][$region]['light'] ?? null), $lightHolders))));
+        $routeOnly = $lightHolders === [] && $owned['refs']['route'] !== [];
+
+        if ($lights === [] && $routeOnly) {
+            $lights = self::routeEndLights($owned['refs']['route'], $index);
+        }
+
+        if ($lights === []) {
+            $problems[] = $routeOnly
+                ? "{$id}: the design gives no light for the regions at either end of this route"
+                : "{$id}: the design gives no light for this place";
+        }
+
+        $named = static fn (array $part, string $field): string => self::clean(trim((string) ($part['name'] ?? '')).': '.trim((string) ($part[$field] ?? '')));
+        $features = [
+            ...array_map(static fn (string $opening): string => $named($index['openings'][$opening], 'description'),
+                array_values(array_filter($owned['openings'], static fn (string $opening): bool => ! in_array($index['openings'][$opening]['kind'] ?? null, self::LIGHT_KINDS, true)))),
+            ...array_map(static fn (string $route): string => $named($index['routes'][$route], $routeText), $owned['routes']),
+            ...array_map(static fn (string $basin): string => $named($index['basins'][$basin], 'description'), $owned['basins']),
+            ...array_map(static fn (string $surface): string => $named($index['surfaces'][$surface], 'description'),
+                array_values(array_filter($owned['surfaces'], static fn (string $surface): bool => ($index['surfaces'][$surface]['kind'] ?? null) !== 'deck_floor'))),
+        ];
+        $name = $space !== null && isset($briefLabels[$space]) ? $briefLabels[$space]
+            : ($regions !== [] ? $text($index['spatial_topology'][$regions[0]]['region'] ?? null)
+                : $text(($index['routes'][$owned['refs']['route'][0] ?? ''] ?? $index['surfaces'][$owned['refs']['surface'][0] ?? ''] ?? [])['name'] ?? null));
+
+        return [[
+            'id' => $id,
+            'name' => $name,
+            'description' => $description,
+            'story_use' => trim((string) ($row['story_use'] ?? '')),
+            'spatial_relation' => LocationProfile::SUBJECT_PART,
+            'subject_id' => $subjectId,
+            FilmBrief::COVERAGE_SPACE_KEY => $space,
+            LocationProfile::ENCLOSURE_KEY => $enclosure,
+            'layout' => $layout,
+            'connections' => $connections,
+            'fixed_features' => array_values(array_unique($features)),
+            'light_sources' => $lights,
+            self::EQUIPMENT_ACCESS_KEY => ['large_equipment' => self::NOT_ESTABLISHED, 'routes' => $owned['routes']],
+            self::DESIGN_REFS_KEY => array_values(array_merge(...array_map(
+                static fn (string $role, array $ids): array => array_map(static fn (string $ref): array => ['role' => $role, 'id' => $ref], $ids),
+                array_keys($owned['refs']),
+                array_values($owned['refs']),
+            ))),
+        ], $problems];
+    }
+
+    /**
+     * @param  list<string>  $routes
+     * @param  array<string, mixed>  $index
+     * @return list<string> the light of each region a route starts or arrives in, each named by its region
+     */
+    private static function routeEndLights(array $routes, array $index): array
+    {
+        $lights = [];
+
+        foreach ($routes as $route) {
+            foreach (['from', 'to'] as $end) {
+                $place = $index['routes'][$route][$end]['place'] ?? null;
+
+                if (! is_string($place)) {
+                    continue;
+                }
+
+                $holder = $index['surfaces'][$place]['relative_to'] ?? null;
+
+                foreach ((array) ($index['space_parts'] ?? []) as $region => $parts) {
+                    if (! in_array($place, (array) $parts, true) && ! in_array($holder, (array) $parts, true) && $holder !== $region) {
+                        continue;
+                    }
+
+                    $light = self::clean((string) ($index['spatial_topology'][$region]['light'] ?? ''));
+
+                    if ($light !== '') {
+                        $lights[] = self::clean(trim((string) ($index['spatial_topology'][$region]['region'] ?? $region)).': '.$light);
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($lights));
     }
 
     /**
