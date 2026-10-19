@@ -39,6 +39,16 @@ final class ScreenplayExpansionService
 
     public const PROFILE_SNAPSHOT_KEY = 'screenplay_profile';
 
+    public const FILM_CUT_UPGRADE_KEY = 'film_cut_upgrade';
+
+    public const FILM_CUT_UPGRADE = 'film-cut-production-v1';
+
+    /** @var list<string> */
+    public const FILM_PRODUCTION_KEYS = ['total_ms', 'min_shot_ms'];
+
+    /** @var list<string> */
+    private const RETIRED_FILM_KEYS = ['segment_count', 'segment_ms'];
+
     /** @var list<string> */
     private const FOUNDATION_PROFILE_KEYS = [
         'contract_version', 'subject_class', 'objective', 'arc_stages',
@@ -136,7 +146,7 @@ final class ScreenplayExpansionService
             'locations_content_hash' => self::contentHash($fixed['locations']),
             'output_schema_hash' => self::contentHash($constrained),
             'fingerprint' => $author->fingerprint($sentContext['foundation'], $sentContext['profile'], $sentContext['requirements'], $sentFixed),
-        ];
+        ] + ($context['film_cut_upgrade'] === null ? [] : [self::FILM_CUT_UPGRADE_KEY => $context['film_cut_upgrade']]);
 
         $meta = $context['meta'] + [
             'characters_stage_id' => $characters->id,
@@ -696,6 +706,11 @@ final class ScreenplayExpansionService
         }
 
         $loaded = VesselDesign::downstreamProfile($loaded) + $designContext;
+        $filmUpgrade = null;
+
+        if ($assembled) {
+            [$loaded, $filmUpgrade] = self::productionFilmCut($loaded, $current);
+        }
 
         try {
             $author = app($authorKey);
@@ -781,12 +796,13 @@ final class ScreenplayExpansionService
                 static fn (array $item): string => (string) ($item['value'] ?? ''),
                 is_array($brief) ? ($brief['excluded_context'] ?? []) : [],
             )),
+            'film_cut_upgrade' => $filmUpgrade,
             'meta' => [
                 'foundation_stage_id' => $foundationStage->id,
                 'foundation_revision' => $foundationStage->planning_revision,
                 'foundation_output_hash' => $foundationStage->output_hash,
                 'profile_source' => $source,
-            ],
+            ] + ($filmUpgrade === null ? [] : [self::FILM_CUT_UPGRADE_KEY => $filmUpgrade]),
             'source_foundation' => [
                 'stage_id' => $foundationStage->id,
                 'revision' => $foundationStage->planning_revision,
@@ -981,6 +997,29 @@ final class ScreenplayExpansionService
         $kept['dimension_bounds'] = config('video.screenplay.dimension_bounds');
 
         return $kept;
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile  the profile the foundation was written with
+     * @param  array<string, mixed>  $current  the profile in force now
+     * @return array{0: array<string, mixed>, 1: array{version: string, snapshot_sha256: string, production: array<string, mixed>, production_sha256: string}}
+     *         the profile whose film_cut takes the production keys in force now, with the segment keys gone and every other rule kept
+     */
+    public static function productionFilmCut(array $profile, array $current): array
+    {
+        $snapshot = is_array($profile['film_cut'] ?? null) ? $profile['film_cut'] : [];
+        $production = array_intersect_key(
+            is_array($current['film_cut'] ?? null) ? $current['film_cut'] : [],
+            array_flip(self::FILM_PRODUCTION_KEYS),
+        );
+        $profile['film_cut'] = array_diff_key($snapshot, array_flip([...self::RETIRED_FILM_KEYS, ...self::FILM_PRODUCTION_KEYS])) + $production;
+
+        return [$profile, [
+            'version' => self::FILM_CUT_UPGRADE,
+            'snapshot_sha256' => self::contentHash($snapshot),
+            'production' => $production,
+            'production_sha256' => self::contentHash($production),
+        ]];
     }
 
     /**

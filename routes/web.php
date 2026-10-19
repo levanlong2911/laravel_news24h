@@ -173,7 +173,10 @@ Route::group(
             Route::match(['get', 'post'], '/{id}/environment', [VideoProjectsController::class, 'environment'])->name('video-projects.environment');
             Route::get('/{id}/scene/{scene?}/{step?}', [VideoProjectsController::class, 'scene'])->name('video-projects.scene');
             Route::post('/{id}/storyboard/generate', [VideoProjectsController::class, 'generateStoryboard'])->name('video-projects.storyboard-generate');
-            Route::post('/{id}/storyboard/approve', [VideoProjectsController::class, 'approveStoryboard'])->name('video-projects.storyboard-approve');            Route::get('/{id}/scenes/{sceneId}/keyframe/preview', [VideoProjectsController::class, 'sceneKeyframePreview'])->name('video-projects.scene-keyframe-preview');
+            Route::post('/{id}/storyboard/approve', [VideoProjectsController::class, 'approveStoryboard'])->name('video-projects.storyboard-approve');
+            Route::post('/{id}/storyboard/recheck', [VideoProjectsController::class, 'recheckStoryboard'])->name('video-projects.storyboard-recheck');
+            Route::post('/{id}/storyboard/findings/accept', [VideoProjectsController::class, 'acceptStoryboardFinding'])->name('video-projects.storyboard-finding-accept');
+            Route::post('/{id}/scenes/{sceneId}/reference-confirm', [VideoProjectsController::class, 'confirmShotReference'])->name('video-projects.scene-reference-confirm');            Route::get('/{id}/scenes/{sceneId}/keyframe/preview', [VideoProjectsController::class, 'sceneKeyframePreview'])->name('video-projects.scene-keyframe-preview');
             Route::post('/{id}/scenes/{sceneId}/keyframe', [VideoProjectsController::class, 'renderSceneKeyframe'])->name('video-projects.scene-keyframe-render');
             Route::post('/{id}/scenes/{sceneId}/references', [VideoProjectsController::class, 'saveSceneReferences'])->name('video-projects.scene-references');
             Route::post('/{id}/scenes/{sceneId}/keyframe/use', [VideoProjectsController::class, 'chooseSceneKeyframe'])->name('video-projects.scene-keyframe-use');

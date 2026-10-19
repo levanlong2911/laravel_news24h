@@ -303,11 +303,38 @@ return [
         'video' => [
             'scene_clip' => [
                 [
+                    'id' => 'gemini:gemini-omni-1.1-flash',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-omni-1.1-flash',
+                    'label' => 'Omni 1.1 Flash · 3 s',
+                    'default' => true,
+                    'api_version' => 'v1beta',
+                    'mode' => 'sync',
+                    'method' => 'interactions',
+                    'controls' => [
+                        'durations' => [3],
+                        'default_duration' => 3,
+                        'aspect_ratios' => ['9:16'],
+                        'default_aspect_ratio' => '9:16',
+                        'resolutions' => ['720p', '1080p'],
+                        'default_resolution' => '720p',
+                        'task' => 'image_to_video',
+                        'max_seconds' => 10,
+                        'duration_control' => 'prompt_only',
+                        'max_reference_images' => 10,
+                        'last_frame' => false,
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_15.json',
+                        'contract' => 'omni_video_contract_2026_10_14.json',
+                    ],
+                ],
+                [
                     'id' => 'gemini:veo-3.1-lite-generate-preview',
                     'provider' => 'gemini',
                     'model' => 'veo-3.1-lite-generate-preview',
                     'label' => 'Veo 3.1 Lite',
-                    'default' => true,
+                    'default' => false,
                     'api_version' => 'v1beta',
                     'mode' => 'async',
                     'method' => 'predictLongRunning',
@@ -588,15 +615,22 @@ return [
     'scene_plan' => [
         'prompt_path' => resource_path('ai/prompts/storyboard.txt'),
 
-        'prompt_version' => env('STORYBOARD_PROMPT_VERSION', 'storyboard-v2-r1'),
+        'prompt_version' => env('STORYBOARD_PROMPT_VERSION', 'storyboard-v4-r2'),
 
-        'model' => env('SCENE_PLAN_MODEL'),
+        'model' => env('SCENE_PLAN_MODEL', 'gpt-6.1-sol'),
+
+        'effort' => env('SCENE_PLAN_EFFORT', 'high'),
+
+        'shot_clip' => [
+            'model_id' => 'gemini:gemini-omni-1.1-flash',
+            'duration_ms' => 3000,
+        ],
 
         /*
          * Gioi han van hanh, KHONG phai ngan sach da do. Nen 261 token/scene o
          * ban v1; v2 them bon truong moi va reasoning nam trong cung ngan sach.
          */
-        'max_tokens' => (int) env('SCENE_PLAN_MAX_TOKENS', 32000),
+        'max_tokens' => (int) env('SCENE_PLAN_MAX_TOKENS', 64000),
 
         'client' => [
             'stream' => (bool) env('SCENE_PLAN_STREAM', true),
@@ -742,7 +776,7 @@ return [
 
             'schema_path' => resource_path('ai/screenplay/schemas/screenplay_scene_expansion_v6.json'),
 
-            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v6-r2'),
+            'prompt_version' => env('SCREENPLAY_SCENES_PROMPT_VERSION', 'scene-expansion-v6-r5'),
 
             'model' => env('SCREENPLAY_SCENES_MODEL', 'claude-sonnet-5-5'),
 

@@ -239,7 +239,7 @@ class AppServiceProvider extends ServiceProvider
                     http: $app->make(HttpFactory::class),
                     apiKey: (string) config('canonical_concept.openai.api_key'),
                     baseUrl: (string) config('canonical_concept.openai.base_url'),
-                    reasoningEffort: (string) config('canonical_concept.openai.reasoning_effort'),
+                    reasoningEffort: (string) config('video.scene_plan.effort'),
                     timeoutSeconds: (int) config('video.scene_plan.client.timeout_seconds'),
                     retryTimes: (int) config('video.scene_plan.client.retry_times'),
                     retrySleepMs: 0,

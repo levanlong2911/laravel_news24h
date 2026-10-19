@@ -435,6 +435,14 @@ final class SceneClipDispatchService
             throw new RuntimeException('Model clip ngoai registry: '.$modelId);
         }
 
+        if (($entry['method'] ?? null) === VideoModelRegistry::INTERACTIONS) {
+            if ($purpose !== self::PURPOSE_PRODUCTION) {
+                throw new RuntimeException('Canary khung cuoi chi danh cho model predictLongRunning; '.$entry['model'].' khong nhan khung cuoi.');
+            }
+
+            return $this->freezeOmniRequest($shot, $source, $entry, $controls);
+        }
+
         // Canary khong doc co: no ton tai de CHUNG MINH co nay co duoc bat khong.
         $attach = $purpose === self::PURPOSE_CANARY
             || ($entry['controls']['last_frame'] ?? false) === true;
@@ -514,6 +522,64 @@ final class SceneClipDispatchService
         $this->assertPlannedDuration($shot, $entry, $request);
         $this->assertCombination($entry, $request, $purpose);
         $this->assertFramesAgree($request);
+
+        return [$entry, $keyframe, $request];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @param  array<string, mixed>  $controls
+     * @return array{0: array<string, mixed>, 1: VideoRender, 2: array<string, mixed>}
+     */
+    private function freezeOmniRequest(VideoShot $shot, VideoArtifact $source, array $entry, array $controls): array
+    {
+        $keyframe = $source->render_id === null ? null : VideoRender::query()->whereKey($source->render_id)->first();
+
+        if ($keyframe === null) {
+            throw new RuntimeException('Anh da duyet khong gan voi lan render nao — khong truy duoc canonical.');
+        }
+
+        if ($shot->scene_id !== null && ! VideoDesignImage::query()
+            ->where('render_scene_id', $shot->scene_id)
+            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
+            ->where('status', DesignImageStatus::APPROVED->value)
+            ->where('selected_artifact_id', $source->id)
+            ->exists()) {
+            throw new RuntimeException('source_keyframe_changed: anh nguon khong con la keyframe duoc duyet cua scene.');
+        }
+
+        $prompt = trim((string) $shot->compiled_prompt);
+
+        if ($prompt === '') {
+            throw new RuntimeException('Shot chua co compiled_prompt cho chuyen dong.');
+        }
+
+        $policy = (array) config('video.omni.reference');
+        $request = [
+            'kind' => self::TASK,
+            'provider_payload_version' => GeminiOmniVideoClient::PAYLOAD_VERSION,
+            'provider' => $entry['provider'],
+            'model' => $entry['model'],
+            'api_version' => $entry['api_version'],
+            'task' => (string) $entry['controls']['task'],
+            'compiled_prompt' => ['prompt' => $prompt],
+            'duration_seconds' => $this->choice($entry, $controls, 'durations', 'default_duration', 'duration_seconds'),
+            'aspect_ratio' => $this->choice($entry, $controls, 'aspect_ratios', 'default_aspect_ratio', 'aspect_ratio'),
+            'resolution' => $this->choice($entry, $controls, 'resolutions', 'default_resolution', 'resolution'),
+            'audio' => '',
+            'store' => true,
+            'source_render_id' => $keyframe->id,
+            'source_artifact_id' => (string) $source->id,
+            'derivative_policy' => $policy,
+            'references' => [$this->sentReference($this->freezeFrame($source, $shot->scene_id), $policy) + [
+                'role' => 'first_frame',
+                'label' => (string) ($shot->shot_code ?? ''),
+                'candidate_id' => '',
+            ]],
+            'motion_spec_hash' => ShotSelectionReconciler::motionSpecHash($shot),
+        ];
+
+        $this->assertPlannedDuration($shot, $entry, $request);
 
         return [$entry, $keyframe, $request];
     }

@@ -9,8 +9,8 @@
     "max_subjects": 12,
     "max_locations": 12,
     "film_cut": {
-        "segment_count": 3,
-        "segment_ms": 10000,
+        "total_ms": 30000,
+        "min_shot_ms": 1500,
         "on_screen_room_states": ["fitted"],
         "launch_coverage": "cov_comp_launch",
         "after_launch_coverage": ["cov_comp_trial", "cov_op_underway"],

@@ -316,4 +316,70 @@
                         <textarea class="va-ta" readonly>{{ \App\Video\Screenplay\ScreenplayText::renderScenes($screenplay['screenplay']) }}</textarea>
                     @endif
                 </div>
+
+                @php($board = $storyboardPanel)
+                @php($boardRun = $board['run']['status'] ?? null)
+                <div class="va-head" id="storyboard-panel" style="border-top:1px solid var(--vp-line)">
+                    <b>STORYBOARD</b>
+                    <em>chia shot, camera, thời lượng — từ phân cảnh production</em>
+                    <span class="grow"></span>
+                    @if($board['revision'] > 0)
+                        <span class="va-tag ok">Bản {{ $board['revision'] }} · {{ $board['shots'] }} shot</span>
+                        @if($board['approved'])
+                            <span class="va-tag ok">Đã duyệt</span>
+                        @else
+                            <span class="va-tag amber">Bản nháp — chưa duyệt</span>
+                        @endif
+                        <a class="vp-btn sm" href="{{ route('video-projects.scene', $project->id) }}">Mở storyboard</a>
+                    @endif
+                    @if($boardRun === 'running')
+                        <button class="vp-btn sm" disabled>Đang lập storyboard…</button>
+                    @elseif($screenplay['selected_stage_id'] === null)
+                        <button class="vp-btn sm" disabled title="Cần duyệt và chọn một bản phân cảnh cho production trước">Lập storyboard</button>
+                    @else
+                        <form method="POST" action="{{ route('video-projects.storyboard-generate', $project->id) }}"
+                              id="storyboardForm" data-modal="confirmStoryboard" onsubmit="return vpLockForm(this)">
+                            @csrf
+                        </form>
+                        <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmStoryboard"
+                                data-busy="Đang lập storyboard…">{{ $board['revision'] > 0 ? 'Lập lại storyboard' : 'Lập storyboard' }}</button>
+                        @include('modal.confirm_action', [
+                            'id' => 'confirmStoryboard',
+                            'form' => 'storyboardForm',
+                            'content' => 'Gọi '.$board['model'].' (effort '.$board['effort'].') một lượt cho toàn bộ '.$board['scenes'].' scene của phân cảnh production để chia shot: mục đích, camera, khung hình đầu, hành động, thời lượng clip và đoạn dùng, yêu cầu ảnh. Phân cảnh và thiết kế giữ nguyên, không viết lại — tác vụ này tính tiền.',
+                            'detail' => ($board['revision'] > 0
+                                    ? 'Tạo bản '.($board['revision'] + 1).' mới thay cho bản '.$board['revision'].': ảnh và clip của bản cũ KHÔNG được chuyển sang, mọi shot phải render và duyệt lại; bản cũ vẫn giữ trong lịch sử. '
+                                    : '')
+                                .'Cùng phân cảnh + cùng thiết kế + cùng bộ luật thì dùng lại bản đã lập, không gọi model. Kết quả là bản nháp — duyệt storyboard rồi mới render. Tối đa '
+                                .number_format($board['max_tokens'], 0, ',', '.').' token đầu ra, chờ tối đa '.$board['timeout_minutes'].' phút; đừng đóng trang.',
+                        ])
+                    @endif
+                </div>
+                <div class="va-body">
+                    @if($boardRun === 'failed')
+                        <div class="va-lbl" style="color:var(--vp-red);font-weight:400">
+                            Lượt lập storyboard lúc {{ $board['run']['at'] }} lỗi: {{ $board['run']['error'] }}
+                            @if($board['revision'] > 0)
+                                <br>Bản thành công gần nhất là bản {{ $board['revision'] }} — mở storyboard để xem, hoặc kiểm lại câu trả lời đã lưu ở đó.
+                            @endif
+                        </div>
+                    @elseif($boardRun === 'interrupted')
+                        <div class="va-lbl" style="color:var(--vp-amber-fg);font-weight:400">
+                            Lượt lập storyboard lúc {{ $board['run']['at'] }} bị dừng giữa chừng — chưa xác định kết quả; tải lại trang sau ít phút.
+                        </div>
+                    @elseif($boardRun === 'running')
+                        <div class="va-lbl" style="color:var(--vp-amber-fg);font-weight:400">
+                            Đang có một lượt lập storyboard chạy (cập nhật lúc {{ $board['run']['at'] }}). Tải lại trang sau ít phút để xem kết quả.
+                        </div>
+                    @endif
+                    @if($board['revision'] === 0)
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Chưa lập storyboard.</div>
+                    @else
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">
+                            Bản {{ $board['revision'] }} &middot; {{ $board['shots'] }} shot
+                            @if(! $board['approved'] && $board['selected_revision'] > 0)&middot; production đang dùng bản {{ $board['selected_revision'] }} @endif
+                            &middot; duyệt, chấp nhận cảnh báo và render ở trang <a href="{{ route('video-projects.scene', $project->id) }}">Storyboard</a>
+                        </div>
+                    @endif
+                </div>
             </div>

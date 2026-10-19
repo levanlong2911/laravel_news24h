@@ -277,6 +277,58 @@ final class DesignLocationBuilder
     }
 
     /**
+     * @param  array<string, mixed>  $design  the verified source design output
+     * @param  mixed  $designRefs  the design_refs a built place carries
+     * @return array<string, list<array<string, mixed>>> the design rows of the place and of the parts joining it, verbatim, by list
+     */
+    public static function placeDesignRows(array $design, mixed $designRefs): array
+    {
+        $index = self::index($design);
+        $refs = ['region' => [], 'surface' => [], 'route' => [], 'basin' => []];
+
+        foreach (is_array($designRefs) ? $designRefs : [] as $ref) {
+            $role = is_array($ref) ? ($ref['role'] ?? null) : null;
+            $id = is_array($ref) ? ($ref['id'] ?? null) : null;
+
+            if (is_string($role) && isset(self::REF_LISTS[$role]) && is_string($id) && isset($index[self::REF_LISTS[$role]][$id])) {
+                $refs[$role][] = $id;
+            }
+        }
+
+        if (array_merge(...array_values($refs)) === []) {
+            return [];
+        }
+
+        $basinSurfaces = array_values(array_filter(
+            array_map(static fn (string $basin): mixed => $index['basins'][$basin]['surface'] ?? null, $refs['basin']),
+            'is_string',
+        ));
+        $owned = self::owned($refs, $index, $basinSurfaces);
+        $surfaces = $owned['surfaces'];
+
+        foreach ($refs['route'] as $route) {
+            $surfaces[] = $index['routes'][$route]['from']['place'] ?? null;
+            $surfaces[] = $index['routes'][$route]['to']['place'] ?? null;
+        }
+
+        $pick = static fn (string $list, array $ids): array => array_values(array_map(
+            static fn (string $id): array => array_diff_key($index[$list][$id], ['status' => true]),
+            array_values(array_filter(
+                array_unique(array_filter($ids, 'is_string')),
+                static fn (string $id): bool => isset($index[$list][$id]),
+            )),
+        ));
+
+        return array_filter([
+            'spatial_topology' => $pick('spatial_topology', $owned['regions']),
+            'surfaces' => $pick('surfaces', $surfaces),
+            'basins' => $pick('basins', $owned['basins']),
+            'routes' => $pick('routes', $owned['routes']),
+            'openings' => $pick('openings', $owned['openings']),
+        ], static fn (array $rows): bool => $rows !== []);
+    }
+
+    /**
      * @param  array<string, mixed>  $index
      * @return string|null the surface a region without a surface of its own stands on, when the design leaves one
      */

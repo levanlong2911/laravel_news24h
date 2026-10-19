@@ -103,7 +103,6 @@ final class ScreenplayValidator
 
     /** @var array<string, string> */
     private const FILM_FIELD_TYPES = [
-        'film_segment' => 'integer',
         'camera' => 'string',
     ];
 
@@ -348,6 +347,10 @@ final class ScreenplayValidator
         $errors = [];
         if (($profile['contract_version'] ?? null) !== $contract) {
             $errors[] = 'contract_version: must match the author contract';
+        }
+
+        if (in_array($contract, self::FILM_CONTRACTS, true)) {
+            $errors = [...$errors, ...self::filmCutViolations($profile)];
         }
 
         if (in_array($contract, self::CONTRACTS, true)
@@ -1501,23 +1504,48 @@ final class ScreenplayValidator
     }
 
     /**
+     * @param  array<string, mixed>  $profile
+     * @return list<string> why the profile's film_cut cannot hold the film the scenes are written for
+     */
+    public static function filmCutViolations(array $profile): array
+    {
+        $film = is_array($profile['film_cut'] ?? null) ? $profile['film_cut'] : [];
+        $errors = [];
+
+        foreach (['total_ms', 'min_shot_ms'] as $key) {
+            if (! is_int($film[$key] ?? null) || $film[$key] < 1) {
+                $errors[] = "profile film_cut.{$key}: must be a positive integer";
+            }
+        }
+
+        foreach (['segment_count', 'segment_ms'] as $key) {
+            if (array_key_exists($key, $film)) {
+                $errors[] = "profile film_cut.{$key}: the film is no longer cut into segments";
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
      * @param  array<string, mixed>  $screenplay
      * @param  array<string, mixed>  $profile
      * @return list<string>
      */
     private function filmViolations(array $screenplay, array $profile): array
     {
-        $film = is_array($profile['film_cut'] ?? null) ? $profile['film_cut'] : [];
-        $count = (int) ($film['segment_count'] ?? 0);
-        $segmentMs = (int) ($film['segment_ms'] ?? 0);
+        $profileErrors = self::filmCutViolations($profile);
 
-        if ($count < 1 || $segmentMs < 1) {
-            return ['profile film_cut: segment_count and segment_ms must be positive integers'];
+        if ($profileErrors !== []) {
+            return $profileErrors;
         }
 
+        $film = $profile['film_cut'];
+        $totalMs = $film['total_ms'];
+        $shotMs = $film['min_shot_ms'];
+
         $violations = [];
-        $totals = array_fill(1, $count, 0);
-        $previous = 1;
+        $total = 0;
         $positions = [];
         $roomStates = array_values(array_filter((array) ($film['on_screen_room_states'] ?? []), 'is_string'));
 
@@ -1528,18 +1556,16 @@ final class ScreenplayValidator
 
             $id = $this->sceneLabel($scene);
             $positions[(string) ($scene['id'] ?? '')] = $position;
-            $segment = $scene['film_segment'] ?? null;
-            $duration = $scene['duration_estimate_ms'] ?? null;
+            $duration = is_int($scene['duration_estimate_ms'] ?? null) ? $scene['duration_estimate_ms'] : 0;
+            $total += $duration;
+            $moments = 1 + count(array_filter(
+                array_slice((array) ($scene['beats'] ?? []), 1),
+                static fn (mixed $beat): bool => is_array($beat) && is_string($beat['time_jump'] ?? null) && trim($beat['time_jump']) !== '',
+            ));
 
-            if (! is_int($segment) || $segment < 1 || $segment > $count) {
-                $violations[] = "{$id}.film_segment: must be a segment from 1 to {$count}";
-            } elseif ($segment < $previous) {
-                $violations[] = "{$id}.film_segment: steps back from segment {$previous} to {$segment}; segments follow the scene order";
-            } elseif ($segment > $previous + 1) {
-                $violations[] = "{$id}.film_segment: skips from segment {$previous} to {$segment}";
-            } else {
-                $previous = $segment;
-                $totals[$segment] += is_int($duration) ? $duration : 0;
+            if ($duration < $moments * $shotMs) {
+                $violations[] = "{$id}: holds {$moments} moment(s) between time jumps, each one shot of at least {$shotMs} ms, "
+                    .'so it lasts at least '.($moments * $shotMs)." ms; it lasts {$duration} ms";
             }
 
             $camera = $scene['camera'] ?? null;
@@ -1560,10 +1586,8 @@ final class ScreenplayValidator
             }
         }
 
-        foreach ($totals as $segment => $total) {
-            if ($total !== $segmentMs) {
-                $violations[] = "film segment {$segment}: its scenes last {$total} ms, the segment lasts exactly {$segmentMs} ms";
-            }
+        if ($total !== $totalMs) {
+            $violations[] = "film: the scenes last {$total} ms, the film lasts exactly {$totalMs} ms";
         }
 
         return [...$violations, ...$this->launchOrderViolations($screenplay, $film, $positions, $profile)];

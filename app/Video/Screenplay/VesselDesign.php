@@ -2998,6 +2998,55 @@ final class VesselDesign
     }
 
     /**
+     * @param  array<string, mixed>  $design  the verified source design output
+     * @return array<string, mixed> the design's identity fields, copied verbatim, must_preserve P0 first
+     */
+    public static function storyboardIdentity(array $design): array
+    {
+        $canonical = is_array($design[self::CANONICAL_KEY] ?? null) ? $design[self::CANONICAL_KEY] : [];
+        $unstatused = static fn (mixed $row): mixed => is_array($row) ? array_diff_key($row, ['status' => true]) : $row;
+        $preserve = self::rows($canonical['must_preserve'] ?? null);
+        usort($preserve, static fn (array $a, array $b): int => strcmp((string) ($a['priority'] ?? 'P9'), (string) ($b['priority'] ?? 'P9')));
+
+        return [
+            'name' => $design[self::VESSEL_KEY]['name'] ?? null,
+            'principal_dimensions' => array_intersect_key((array) ($design['principal_dimensions'] ?? []), array_flip(['length_m', 'beam_m'])),
+            'proportion_system' => $unstatused($canonical['proportion_system'] ?? null),
+            'global_silhouette' => $unstatused($canonical['global_silhouette'] ?? null),
+            'primary_masses' => array_map($unstatused, self::rows($canonical['primary_masses'] ?? null)),
+            'decks' => array_map($unstatused, self::rows($canonical['decks'] ?? null)),
+            'signature_regions' => array_map(
+                static fn (array $row): array => array_intersect_key($row, array_flip(['feature_id', 'feature', 'priority', 'region', 'description', 'visual_difference'])),
+                self::rows($canonical['signature_regions'] ?? null),
+            ),
+            'must_preserve' => $preserve,
+            'must_not_introduce' => self::rows($canonical['must_not_introduce'] ?? null),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $design
+     * @return array<string, true> every id a row of the canonical design carries
+     */
+    public static function canonicalIds(array $design): array
+    {
+        $canonical = is_array($design[self::CANONICAL_KEY] ?? null) ? $design[self::CANONICAL_KEY] : [];
+        $ids = [];
+
+        foreach ($canonical as $value) {
+            foreach (self::rows($value) as $row) {
+                foreach (['id', 'feature_id'] as $key) {
+                    if (is_string($row[$key] ?? null) && $row[$key] !== '') {
+                        $ids[$row[$key]] = true;
+                    }
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * @param  array<string, mixed>  $profile
      * @return list<string>|null
      */

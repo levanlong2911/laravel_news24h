@@ -197,6 +197,7 @@ class VideoProjectsController extends Controller
                 $project->id, 'locations', $screenplayFoundation['stage_id'], $screenplayCharacters['stage_id'],
             ),
             'anchorPrompt' => $this->videoProjectService->latestAnchorPrompt($project->id),
+            'storyboardPanel' => $this->videoProjectService->storyboardPanel($project->id),
             'designFirst' => VesselDesign::isDesignFirst($project),
             'vesselDesign' => VesselDesign::isDesignFirst($project)
                 ? app(VesselDesignService::class)->panel($project->id)
@@ -627,6 +628,10 @@ class VideoProjectsController extends Controller
             'no_approved_anchor' => __('messages.no_approved_anchor'),
             'no_scene_profile' => __('messages.scene_no_profile'),
             'identity_summary_unreadable' => __('messages.scene_identity_unreadable'),
+            'storyboard_design_source_missing', 'storyboard_design_source_invalid', 'storyboard_design_revision_mismatch',
+            'storyboard_design_identity_missing', 'storyboard_film_profile_invalid', 'storyboard_source_changed', 'storyboard_recheck_input_changed',
+            'storyboard_nothing_to_recheck', 'storyboard_finding_reason_required', 'storyboard_finding_not_found',
+            'storyboard_finding_not_acceptable', 'storyboard_finding_after_approval' => __('messages.'.$reason),
             'storyboard_running' => __('messages.storyboard_running'),
             'storyboard_unchanged' => __('messages.storyboard_unchanged'),
             'storyboard_failed' => __('messages.storyboard_failed'),
@@ -971,6 +976,7 @@ class VideoProjectsController extends Controller
 
         $filmCut = $this->videoProjectService->filmCutView($id, (int) $plan['revision']);
         $keyframes = $this->videoProjectService->sceneKeyframeCells($id, $plan['revision']);
+        $cells = $this->videoProjectService->sceneSourceCells($id, $plan['revision']);
 
         return view('video-projects.scene', $this->chrome() + [
             'filmCut' => $filmCut,
@@ -990,6 +996,9 @@ class VideoProjectsController extends Controller
             'storyboard' => $this->videoProjectService->storyboardScenes($id),
             'storyboardRun' => $this->videoProjectService->storyboardRun($id),
             'approval' => $this->videoProjectService->storyboardApproval($id, (int) $plan['revision']),
+            'findings' => $this->videoProjectService->storyboardFindings($id, (int) $plan['revision']),
+            'readiness' => $this->videoProjectService->referenceReadiness($id, (int) $plan['revision'], $scenes, $cells),
+            'storedAnswer' => $this->videoProjectService->storedStoryboardAnswer($id) !== null,
             'keyframeModels' => $this->videoProjectService->sceneKeyframeModels(),
             'keyframes' => $keyframes,
             'referenceRoles' => [
@@ -1002,7 +1011,7 @@ class VideoProjectsController extends Controller
                 'continuity' => 'liền mạch',
                 'design_reference' => 'thiết kế',
             ],
-            'sources' => collect($this->videoProjectService->sceneSourceCells($id, $plan['revision']))
+            'sources' => collect($cells)
                 ->map(fn(array $cell): array => array_replace($cell, [
                     'blocked_code' => $cell['blocked_reason'] === null
                         ? null
@@ -1033,14 +1042,64 @@ class VideoProjectsController extends Controller
             is_string($mode) ? $mode : '',
         );
 
-        if ($count === null) {
-            return response()->json(['ok' => false, 'reason' => $reason, 'message' => $this->anchorMessage($reason)]);
+        $message = $count === null ? $this->anchorMessage($reason) : __('messages.'.$reason, ['count' => $count]);
+
+        if (! $request->expectsJson()) {
+            return redirect()->to(route('video-projects.anchor', $id).'#storyboard-panel')
+                ->with($count === null ? 'error' : 'success', $message);
         }
 
+        return response()->json(['ok' => $count !== null, 'reason' => $reason, 'message' => $message]);
+    }
+
+    public function recheckStoryboard(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$count, $reason] = $this->videoProjectService->recheckStoredStoryboard($id, auth()->id());
+
         return response()->json([
-            'ok' => true,
+            'ok' => $count !== null,
             'reason' => $reason,
-            'message' => __('messages.'.$reason, ['count' => $count]),
+            'message' => $count === null ? $this->anchorMessage($reason) : __('messages.'.$reason, ['count' => $count]),
+        ]);
+    }
+
+    public function acceptStoryboardFinding(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        [$ok, $reason] = $this->videoProjectService->acceptStoryboardFinding(
+            $id,
+            auth()->id(),
+            (int) $request->input('revision'),
+            (string) $request->input('finding_id'),
+            (string) $request->input('reason'),
+        );
+
+        return response()->json([
+            'ok' => $ok,
+            'reason' => $reason,
+            'message' => $ok ? __('messages.storyboard_finding_accepted') : $this->anchorMessage($reason),
+        ]);
+    }
+
+    public function confirmShotReference(Request $request, string $id, string $sceneId)
+    {
+        $this->ownedProject($id);
+
+        [$ok, $reason] = $this->videoProjectService->confirmShotReference(
+            $id,
+            auth()->id(),
+            $sceneId,
+            (int) $request->input('index'),
+            (string) $request->input('artifact_id'),
+        );
+
+        return response()->json([
+            'ok' => $ok,
+            'reason' => $reason,
+            'message' => __('messages.'.($ok ? 'reference_confirmed' : $reason)),
         ]);
     }
 
@@ -1062,6 +1121,7 @@ class VideoProjectsController extends Controller
                 'storyboard_already_approved' => __('messages.storyboard_already_approved', ['revision' => $revision]),
                 'storyboard_not_latest' => __('messages.storyboard_not_latest'),
                 'project_not_found' => __('messages.project_not_found'),
+                'storyboard_findings_blocking', 'storyboard_findings_open', 'storyboard_source_changed' => __('messages.'.$reason),
                 default => $this->sceneKeyframeMessage($reason),
             },
         ]);

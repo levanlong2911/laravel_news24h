@@ -75,16 +75,18 @@ final class VideoRenderExecutionService
                 RenderFailureClass::INVALID_REQUEST, 'bad_request_json', 'render_request_json hong.');
         }
 
-        $film = $this->isFilm($spec);
+        $omni = $this->isOmni($spec);
         $entry = $render->render_kind !== 'video' ? null : $this->entryFor($spec);
 
         $blocked = match (true) {
             $render->render_kind !== 'video' => 'render nay khong phai video',
             $entry === null => 'model ngoai registry',
-            ($spec['provider_payload_version'] ?? null) !== ($film
+            ($spec['provider_payload_version'] ?? null) !== ($omni
                 ? GeminiOmniVideoClient::PAYLOAD_VERSION
                 : SceneClipDispatchService::PROVIDER_PAYLOAD_VERSION)
                 => 'provider payload contract khong duoc ho tro',
+            $omni !== (($entry['method'] ?? null) === \App\Video\Media\VideoModelRegistry::INTERACTIONS)
+                => 'hop dong payload khong khop cach goi cua model',
             ! hash_equals($claim->requestHash, hash('sha256', $claim->renderRequestJson)) => 'request hash lech',
             default => null,
         };
@@ -94,7 +96,7 @@ final class VideoRenderExecutionService
                 RenderFailureClass::INVALID_REQUEST, 'precondition_failed', $blocked);
         }
 
-        if ($film) {
+        if ($omni) {
             return $this->submitFilm($render, $claim->claimToken, $spec);
         }
 
@@ -295,6 +297,12 @@ final class VideoRenderExecutionService
         return ($spec['kind'] ?? null) === SceneClipDispatchService::FILM_TASK;
     }
 
+    /** @param array<string, mixed> $spec */
+    private function isOmni(array $spec): bool
+    {
+        return $this->isFilm($spec) || ($spec['provider_payload_version'] ?? null) === GeminiOmniVideoClient::PAYLOAD_VERSION;
+    }
+
     /**
      * @param  array<string, mixed>  $spec
      * @return array<string, mixed>|null
@@ -333,7 +341,7 @@ final class VideoRenderExecutionService
         $token = (string) Str::uuid();
         $render = $this->provider->claimPoll($render, $token, self::WORKER);
 
-        $poll = $this->isFilm($spec)
+        $poll = $this->isOmni($spec)
             ? $this->omni->poll($this->target($spec), (string) $render->provider_job_id)
             : $this->veo->poll($this->target($spec), (string) $render->provider_job_id);
 
@@ -535,7 +543,7 @@ final class VideoRenderExecutionService
 
         $dir = 'video/'.$render->id;
         $path = $dir.'/clip.mp4';
-        $file = $this->isFilm($spec) ? $this->omni->download($uri, $path) : $this->veo->download($uri, $path);
+        $file = $this->isOmni($spec) ? $this->omni->download($uri, $path) : $this->veo->download($uri, $path);
 
         if (! $file['ok']) {
             return $this->failOrLose($render->id, $token, $file['failure'], 'download_failed', (string) $file['error']);
@@ -554,7 +562,7 @@ final class VideoRenderExecutionService
         @unlink((string) $file['local_path']);
 
         $expectedMs = (int) round(((float) ($spec['duration_seconds'] ?? 0)) * 1000);
-        $tolerance = $this->isFilm($spec)
+        $tolerance = $this->isOmni($spec)
             ? (int) config('video.omni.target.duration_tolerance_ms', 500)
             : (int) config('video.veo.duration_tolerance_ms', 1500);
 
@@ -565,7 +573,7 @@ final class VideoRenderExecutionService
                 'probe_failed', (string) $probed['error']);
         }
 
-        $mismatch = $this->isFilm($spec) ? $this->filmOutputMismatch($probed, $spec, $expectedMs, $tolerance) : null;
+        $mismatch = $this->isOmni($spec) ? $this->filmOutputMismatch($probed, $spec, $expectedMs, $tolerance) : null;
 
         if ($mismatch !== null) {
             return $this->failOrLose($render->id, $token, RenderFailureClass::ARTIFACT_INTEGRITY,

@@ -1259,6 +1259,84 @@ a.vp-btn[disabled] {
     font-size: .63rem;
 }
 
+.vs-findings {
+    margin-bottom: 10px;
+    border: 1px solid var(--vp-line);
+    border-radius: 6px;
+}
+
+.vs-findings ul {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.vs-finding {
+    padding: 6px 8px;
+    font-size: .74rem;
+    line-height: 1.45;
+    border-left: 3px solid var(--vp-amber-fg);
+    border-radius: 4px;
+    background: #f8fafc;
+}
+
+.vs-finding.error {
+    border-left-color: var(--vp-red);
+}
+
+.vs-finding.accepted {
+    border-left-color: var(--vp-green-fg);
+    color: var(--vp-dim);
+}
+
+.vs-finding .ph {
+    display: inline-block;
+    padding: 1px 6px;
+    margin-right: 4px;
+    color: var(--vp-blue);
+    font-size: .62rem;
+    font-weight: 700;
+    background: var(--vp-blue-bg);
+    border-radius: 999px;
+}
+
+.vs-finding-accept {
+    display: flex;
+    gap: 6px;
+    margin-top: 5px;
+}
+
+.vs-finding-accept input {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 7px;
+    font-size: .72rem;
+    border: 1px solid var(--vp-line-2);
+    border-radius: 4px;
+}
+
+.vs-need {
+    margin-top: 3px;
+}
+
+.vs-need.available,
+.vs-need.not_applicable {
+    color: var(--vp-green-fg);
+}
+
+.vs-need.missing,
+.vs-need.waiting_source,
+.vs-need.needs_selection {
+    color: var(--vp-amber-fg);
+}
+
+.vs-need.mismatch {
+    color: var(--vp-red);
+}
+
 .vs-slots {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -29,16 +29,11 @@ design scene, where only a paper strip stands for it.
 
 THE THIRTY-SECOND FILM
 
-The film is three segments of 10000 ms. The scenes fill them in order:
-sc_01, sc_02 and sc_03 are segment 1, from the paper strip to the finished
-hull on its blocks; sc_04 and sc_05 are segment 2, the launch and the first
-boarding; sc_06 and sc_07 are segment 3, the crossing and the ending. Each
-segment's durations add up to exactly 10000: 3000, 4000 and 3000, then
-5000 and 5000, then 5000 and 5000. The durations are not equal by rule:
-the framing of the whole hull gets more time than the paper strip, and the
-launch, which the viewer has to watch happen, gets five seconds. Each
-segment ends where the story turns: the finished hull, then the ferry in
-service.
+The film lasts 30000 ms. The durations of the seven scenes add up to
+exactly that: 3000, 4000, 3000, 5000, 5000, 5000 and 5000. The durations
+are not equal by rule: the framing of the whole hull gets more time than
+the paper strip, and the launch, which the viewer has to watch happen,
+gets five seconds.
 
 Each scene shows one moment the viewer can read in its time. sc_02 keeps
 two moments of weeks of framing, the matching end frames and the roof over

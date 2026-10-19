@@ -45,43 +45,46 @@
             @endif
         @endif
 
-        <form method="POST" action="{{ route('video-projects.storyboard-generate', $id) }}"
-              id="storyboardForm" data-modal="confirmStoryboard" hidden>
+        <form id="storyboardForm" hidden>
             @csrf
         </form>
 
+        @php($findingErrors = collect($findings)->where('severity', 'error')->count())
+        @php($findingOpen = collect($findings)->where('status', 'open')->count())
         @if($approval['shot_board'] || $approval['film_cut'])
             <span class="sep">·</span>
             @if($approval['approved'])
-                <span class="m" style="color:var(--vp-green-fg)"><b>Đã duyệt — mở render</b></span>
+                <span class="m" style="color:var(--vp-green-fg)"><b>Đã duyệt storyboard</b></span>
             @else
                 <span class="m" style="color:var(--vp-amber-fg)"><b>Bản nháp — chưa render được</b>
                     @if($approval['selected_revision'] > 0) (đang dùng bản {{ $approval['selected_revision'] }}) @endif
                 </span>
-                @if($review['status'] === 'passed' && ($filmCut === null || $filmCut['drift'] === []))
+                @if($review['status'] === 'passed' && ($filmCut === null || $filmCut['drift'] === []) && $findingErrors === 0 && $findingOpen === 0)
                     <button type="button" class="vp-btn sm" id="storyboardApprove"
                             data-action="{{ route('video-projects.storyboard-approve', $id) }}"
                             data-revision="{{ $revision }}">Duyệt storyboard</button>
+                @elseif($findingErrors > 0)
+                    <span class="m" style="color:var(--vp-red)">{{ $findingErrors }} lỗi kế hoạch chặn duyệt</span>
+                @elseif($findingOpen > 0)
+                    <span class="m" style="color:var(--vp-amber-fg)">{{ $findingOpen }} cảnh báo chờ chấp nhận</span>
                 @endif
+            @endif
+            @if($readiness['planned'] > 0)
+                <span class="sep">·</span>
+                <span class="m" title="Shot có đủ ảnh nguồn hợp lệ, đã duyệt" style="color:{{ $readiness['ready'] === $readiness['planned'] ? 'var(--vp-green-fg)' : 'var(--vp-amber-fg)' }}">
+                    Sẵn sàng render <b>{{ $readiness['ready'] }}</b>/{{ $readiness['planned'] }} shot
+                </span>
             @endif
         @endif
 
-        <select name="mode" form="storyboardForm" class="vp-select sm" id="storyboardMode" aria-label="Chế độ lập storyboard">
-            <option value="storyboard" @selected($filmCut === null)>Storyboard theo beat</option>
-            <option value="film_cut" @selected($filmCut !== null)>Kế hoạch phim {{ intdiv((int) ($filmCutPreset['total_ms'] ?? 0), 1000) }} giây · {{ $filmCutPreset['segment_count'] ?? '' }} đoạn</option>
-        </select>
+        @if($storedAnswer)
+            <button type="button" class="vp-btn sm" id="storyboardRecheck"
+                    data-action="{{ route('video-projects.storyboard-recheck', $id) }}"
+                    title="Kiểm lại câu trả lời AI thất bại đã lưu bằng code hiện tại — không gọi AI, không tính tiền">Kiểm lại câu trả lời đã lưu</button>
+        @endif
 
-        <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmStoryboard"
-                id="storyboardButton" @disabled(($storyboardRun['status'] ?? null) === 'running')>{{ $revision > 0 ? 'Lập lại storyboard' : 'Lập storyboard' }}</button>
-
-        @include('modal.confirm_action', [
-            'id' => 'confirmStoryboard',
-            'form' => 'storyboardForm',
-            'content' => 'Chế độ "Storyboard theo beat": gọi AI một lượt cho toàn bộ '.count($storyboard['scenes']).' scene của kịch bản production — TÁC VỤ NÀY TÍNH TIỀN. Chế độ "Kế hoạch phim": code ghép từ phân cảnh đã duyệt, không gọi AI, không tính tiền.',
-            'detail' => $revision > 0
-                ? 'Tạo bản '.($revision + 1).' mới thay cho bản '.$revision.' trên trang này: ảnh và clip của bản cũ KHÔNG được chuyển sang, mọi shot phải render và duyệt lại; bản mới là bản nháp, phải duyệt storyboard mới render được. Bản cũ vẫn giữ trong lịch sử. Có thể mất vài phút; đừng đóng trang.'
-                : 'AI chia beat thành shot theo mục đích quan sát, viết góc máy, ảnh tĩnh, hành động, thời lượng và trạng thái vật. Kết quả là bản nháp — duyệt storyboard rồi mới render. Có thể mất vài phút; đừng đóng trang.',
-        ])
+        <a class="vp-btn sm" href="{{ route('video-projects.anchor', $id) }}#storyboard-panel"
+           title="Nút lập storyboard nằm ngay sau phần Phân cảnh đầy đủ">{{ $revision > 0 ? 'Lập lại storyboard ở trang Kịch bản' : 'Lập storyboard ở trang Kịch bản' }}</a>
     </div>
 
     <div class="vs-c" id="storyboardStatus" style="margin-bottom:10px;{{ in_array($storyboardRun['status'] ?? null, ['running', 'interrupted', 'failed'], true) ? '' : 'display:none;' }}color:{{ ($storyboardRun['status'] ?? null) === 'failed' ? 'var(--vp-red)' : 'var(--vp-amber-fg)' }}">
@@ -111,7 +114,35 @@
         </div>
     @endif
 
-    @if($warnings !== [])
+    @if($findings !== [])
+        <div class="vs-c vs-findings" id="storyboardFindings" data-action="{{ route('video-projects.storyboard-finding-accept', $id) }}" data-revision="{{ $revision }}">
+            <b>Kiểm kế hoạch bản {{ $revision }}</b> — code chỉ kiểm cấu trúc, mã, thời lượng và mâu thuẫn máy xác định được; camera và ý nghĩa liên tục vẫn cần người duyệt đánh giá.
+            <ul>
+                @foreach($findings as $finding)
+                    <li class="vs-finding {{ $finding['severity'] }} {{ $finding['status'] }}">
+                        <span class="ph">{{ $finding['severity'] === 'error' ? 'lỗi' : 'cảnh báo' }}</span>
+                        <span class="ph">{{ $finding['rule'] }}</span>
+                        @if($finding['shot_code'] ?? null)
+                            <span class="ph">{{ $finding['shot_code'] }}</span>
+                        @elseif($finding['scene_id'] ?? null)
+                            <span class="ph">{{ $finding['scene_id'] }}</span>
+                        @endif
+                        {{ $finding['evidence'] }}
+                        @if($finding['status'] === 'accepted')
+                            <div class="m">Đã chấp nhận: {{ $finding['reason'] }}</div>
+                        @elseif($finding['severity'] === 'warning' && ! $approval['approved'])
+                            <div class="vs-finding-accept">
+                                <input type="text" maxlength="500" placeholder="Lý do chấp nhận" aria-label="Lý do chấp nhận cảnh báo">
+                                <button type="button" class="vp-btn sm" data-finding="{{ $finding['id'] }}">Chấp nhận</button>
+                            </div>
+                        @endif
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    @if($warnings !== [] && $findings === [])
         <div class="vs-c" style="margin-bottom:10px;color:var(--vp-amber-fg)">
             <b>Cảnh báo của bản {{ $revision }}</b> — heuristic, không phải lỗi hợp đồng:
             <ul style="margin:6px 0 0 18px">
@@ -179,11 +210,29 @@
 
                     @if($s['shot_board'])
                         @foreach($s['beat_coverage'] as $covered)
-                            <span class="ph" title="Phần beat shot này thể hiện">{{ $covered['beat_id'] ?? '?' }}{{ ['whole' => '', 'opening' => ' · mở', 'middle' => ' · giữa', 'closing' => ' · kết'][$covered['part'] ?? ''] ?? '' }}</span>
+                            <span class="ph" title="{{ $covered['shown'] ?? 'Phần beat shot này thể hiện' }}">{{ $covered['beat_id'] ?? '?' }}{{ ['whole' => '', 'opening' => ' · mở', 'middle' => ' · giữa', 'closing' => ' · kết'][$covered['part'] ?? ''] ?? '' }}</span>
                         @endforeach
+                        @if($s['after_jump'] !== null)
+                            <span class="ph" title="Trạng thái đầu shot lấy theo time jump của phân cảnh: {{ $s['after_jump']['evidence'] }}">sau time jump</span>
+                        @endif
                         <span class="ph">{{ $s['camera_relation'] === 'same_camera' ? 'giữ máy' : 'máy mới' }}</span>
+                        @if($s['camera_movement'] !== null && $s['camera_movement'] !== 'static')
+                            <span class="ph" title="Chuyển động máy trong clip">máy {{ str_replace('_', ' ', $s['camera_movement']) }}</span>
+                        @endif
                         @if($s['duration_seconds'] !== null)
-                            <span class="ph" title="Thời lượng clip">{{ $s['duration_seconds'] }}s</span>
+                            <span class="ph" title="Thời lượng clip render">{{ $s['duration_seconds'] }}s</span>
+                        @endif
+                        @if($s['used_ms'] !== null)
+                            <span class="ph" title="Đoạn clip dùng trong bản dựng (điểm vào–ra)">dùng {{ ($s['used_start_ms'] ?? 0) / 1000 }}–{{ (($s['used_start_ms'] ?? 0) + $s['used_ms']) / 1000 }}s</span>
+                        @endif
+                        @if($s['result_at_ms'] !== null)
+                            <span class="ph" title="Thời điểm trong clip hành động đạt kết quả">kết quả ở {{ $s['result_at_ms'] / 1000 }}s</span>
+                        @endif
+                        @if($s['timeline'] !== null)
+                            <span class="ph" title="Vị trí trên timeline phim">{{ $s['timeline']['start_ms'] / 1000 }}–{{ $s['timeline']['end_ms'] / 1000 }}s</span>
+                        @endif
+                        @if(isset($readiness['shots'][$s['scene_id']]))
+                            <span class="ph" style="color:{{ $readiness['shots'][$s['scene_id']]['ready'] ? 'var(--vp-green-fg)' : 'var(--vp-amber-fg)' }}">{{ $readiness['shots'][$s['scene_id']]['ready'] ? 'đủ ảnh nguồn' : 'chưa đủ ảnh nguồn' }}</span>
                         @endif
                     @else
                         @foreach($s['beat_ids'] as $beatId)
@@ -268,8 +317,41 @@
 
                         <div class="m">
                             <b>Cần ảnh:</b>
-                            @forelse($s['reference_requirements'] as $need)
-                                {{ $loop->first ? '' : '·' }} {{ ['design' => 'thiết kế', 'continuity' => 'liền mạch', 'identity' => 'nhận dạng', 'environment' => 'tấm nền'][$need['kind'] ?? ''] ?? '?' }} ({{ $need['purpose'] ?? '' }})
+                            @forelse($readiness['shots'][$s['scene_id']]['needs'] ?? $s['reference_requirements'] as $need)
+                                <div class="vs-need {{ $need['status'] ?? '' }}">
+                                    {{ ['design' => 'thiết kế', 'continuity' => 'liền mạch', 'identity' => 'nhận dạng', 'environment' => 'tấm nền'][$need['kind'] ?? ''] ?? '?' }} ({{ $need['purpose'] ?? '' }})
+                                    @isset($need['status'])
+                                        — {{ ['available' => 'có ảnh phù hợp', 'needs_selection' => 'cần chọn và duyệt', 'missing' => 'thiếu ảnh', 'waiting_source' => 'chờ ảnh của shot nguồn', 'not_applicable' => 'không cần tấm nền', 'mismatch' => 'ảnh đang gắn không đúng yêu cầu', 'needs_confirmation' => 'chờ người duyệt xác nhận'][$need['status']] ?? $need['status'] }}
+                                    @endisset
+                                    @if(($need['confirmed_by'] ?? null) !== null)
+                                        <span class="d">· đã xác nhận bằng mắt</span>
+                                    @endif
+                                    @if(($need['status'] ?? null) === 'needs_confirmation')
+                                        <button type="button" class="vp-btn sm" data-reference-confirm="{{ route('video-projects.scene-reference-confirm', [$id, $s['scene_id']]) }}"
+                                                data-index="{{ $need['index'] }}" data-artifact="{{ $need['fitting_artifact_ids'][0] ?? '' }}">Xác nhận ảnh đúng yêu cầu</button>
+                                    @endif
+                                    @if(($need['misfits'] ?? []) !== [])
+                                        <span class="d">· lệch: {{ implode(', ', array_map(static fn (string $field): string => ['source_shot' => 'shot nguồn', 'view' => 'góc nhìn', 'design_revision' => 'revision thiết kế'][$field] ?? $field, $need['misfits'])) }}</span>
+                                    @endif
+                                    @if(($need['unchecked'] ?? []) !== [])
+                                        <span class="d">· code không kiểm được, cần người xác nhận bằng mắt: {{ implode(', ', array_map(static fn (string $field): string => ['state' => 'trạng thái', 'design_refs' => 'phần thiết kế'][$field] ?? $field, $need['unchecked'])) }}</span>
+                                    @endif
+                                    @if(($need['must_show'] ?? null) !== null)
+                                        <span class="d">· cần thấy: {{ $need['must_show'] }}</span>
+                                    @endif
+                                    @if(($need['view'] ?? null) !== null)
+                                        <span class="d">· góc: {{ $need['view'] }}</span>
+                                    @endif
+                                    @if(($need['state'] ?? null) !== null)
+                                        <span class="d">· trạng thái: {{ $need['state'] }}</span>
+                                    @endif
+                                    @if(($need['design_refs'] ?? []) !== [])
+                                        <span class="d">· thiết kế: {{ implode(', ', $need['design_refs']) }}</span>
+                                    @endif
+                                    @if(($need['source_shot'] ?? null) !== null)
+                                        <span class="d">· nguồn: {{ $need['source_shot'] }}</span>
+                                    @endif
+                                </div>
                             @empty
                                 không
                             @endforelse
@@ -481,10 +563,9 @@
 <script>
 (function () {
     var form = document.getElementById('storyboardForm');
-    var button = document.getElementById('storyboardButton');
     var status = document.getElementById('storyboardStatus');
 
-    if (form === null || button === null || status === null) { return; }
+    if (form === null || status === null) { return; }
 
     function show(text, color) {
         status.style.display = '';
@@ -496,42 +577,93 @@
         if (window.toastr) { window.toastr[ok ? 'success' : 'error'](text); }
     }
 
-    form.addEventListener('submit', function (event) {
-        event.preventDefault();
+    var postJson = function (url, fields, done) {
+        var body = new FormData(form);
+        Object.keys(fields).forEach(function (key) { body.append(key, fields[key]); });
 
-        if (window.jQuery) { window.jQuery('#' + form.dataset.modal).modal('hide'); }
-        button.disabled = true;
-        button.textContent = 'Đang lập storyboard…';
-        show('Đang lập storyboard — một lượt AI cho toàn bộ scene, có thể mất vài phút. Đừng đóng trang.', 'var(--vp-amber-fg)');
-
-        fetch(form.action, {
+        return fetch(url, {
             method: 'POST',
-            body: new FormData(form),
+            body: body,
             credentials: 'same-origin',
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
-        })
-            .then(function (response) { return response.json(); })
-            .then(function (payload) {
-                var text = payload.message || 'Không lập được storyboard.';
+        }).then(function (response) { return response.json(); }).then(done);
+    };
+
+    var recheckButton = document.getElementById('storyboardRecheck');
+
+    if (recheckButton !== null) {
+        recheckButton.addEventListener('click', function () {
+            recheckButton.disabled = true;
+            postJson(recheckButton.dataset.action, {}, function (payload) {
+                var text = payload.message || 'Không kiểm lại được câu trả lời đã lưu.';
+                notify(text, payload.ok === true);
 
                 if (payload.ok === true) {
-                    notify(text, true);
                     window.location.reload();
 
                     return;
                 }
 
-                button.disabled = false;
-                button.textContent = 'Lập storyboard';
+                recheckButton.disabled = false;
                 show(text, 'var(--vp-red)');
-                notify(text, false);
-            })
-            .catch(function () {
-                button.textContent = 'Lập storyboard';
-                show('Chưa xác định kết quả: mất kết nối hoặc không đọc được câu trả lời. Lượt AI có thể vẫn đang chạy hoặc đã xong — tải lại trang để xem trạng thái, đừng bấm lại ngay.', 'var(--vp-amber-fg)');
-                notify('Chưa xác định kết quả — tải lại trang để xem trạng thái.', false);
+            }).catch(function () {
+                recheckButton.disabled = false;
+                show('Không đọc được kết quả kiểm lại — tải lại trang để xem trạng thái.', 'var(--vp-amber-fg)');
             });
+        });
+    }
+
+    document.querySelectorAll('button[data-reference-confirm]').forEach(function (confirmButton) {
+        confirmButton.addEventListener('click', function () {
+            confirmButton.disabled = true;
+            postJson(confirmButton.dataset.referenceConfirm, {
+                index: confirmButton.dataset.index,
+                artifact_id: confirmButton.dataset.artifact
+            }, function (payload) {
+                notify(payload.message || 'Không ghi được xác nhận.', payload.ok === true);
+
+                if (payload.ok === true) {
+                    window.location.reload();
+
+                    return;
+                }
+
+                confirmButton.disabled = false;
+            }).catch(function () {
+                confirmButton.disabled = false;
+                show('Không đọc được kết quả xác nhận — tải lại trang để xem trạng thái.', 'var(--vp-amber-fg)');
+            });
+        });
     });
+
+    var findingsPanel = document.getElementById('storyboardFindings');
+
+    if (findingsPanel !== null) {
+        findingsPanel.querySelectorAll('button[data-finding]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                var input = button.parentNode.querySelector('input');
+                button.disabled = true;
+                postJson(findingsPanel.dataset.action, {
+                    revision: findingsPanel.dataset.revision,
+                    finding_id: button.dataset.finding,
+                    reason: input.value
+                }, function (payload) {
+                    notify(payload.message || 'Không ghi được quyết định.', payload.ok === true);
+
+                    if (payload.ok === true) {
+                        window.location.reload();
+
+                        return;
+                    }
+
+                    button.disabled = false;
+                }).catch(function () {
+                    button.disabled = false;
+                    show('Không đọc được kết quả — tải lại trang để xem trạng thái.', 'var(--vp-amber-fg)');
+                });
+            });
+        });
+    }
 
     var approveButton = document.getElementById('storyboardApprove');
 

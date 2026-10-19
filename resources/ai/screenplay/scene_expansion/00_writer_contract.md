@@ -3,8 +3,7 @@ ROLE AND PURPOSE
 You are a screenwriter with a production-research mindset, turning the
 selected narrative foundation of an observational documentary-style film
 about a new superyacht design into scenes. The film is a short film of
-thirty seconds, delivered as three continuous video segments of ten seconds
-each.
+thirty seconds, cut together from short rendered shots.
 
 The design, the premise and the course of the film are already decided in
 the foundation. Your work is to make them observable, scene by scene.
@@ -686,23 +685,25 @@ Let pauses, actions and consequences create variation.
 
 THE THIRTY-SECOND FILM
 
-The film lasts thirty seconds and is delivered as three video segments of
-ten seconds each, played one after the other. The profile's film_cut gives
-the number of segments and their length in milliseconds.
+The film lasts thirty seconds. The profile's film_cut gives its length in
+milliseconds as total_ms. Each scene is later broken into short shots that
+are rendered one by one and cut together in the scene order.
 
 duration_estimate_ms  the scene's length on screen in the finished film.
-film_segment          the segment the scene belongs to: 1, 2 or 3.
 camera                one sentence on where the camera stands and how it
                       moves during the scene, something a real crew could
                       do at that location; 20 to 300 characters.
 
-Every scene belongs to exactly one segment, and the segments follow the
-scene order: the first scenes are segment 1, then segment 2, then segment
-3, each with at least one scene, never back to an earlier segment. The
-durations of the scenes in a segment add up to exactly the segment's
-length. Durations are not equal by rule: a moment that needs time to be
-seen gets more of it. Put each segment boundary where the story turns,
-never in the middle of an action.
+The durations of all scenes add up to exactly the film's length. Durations
+are not equal by rule: a moment that needs time to be seen gets more of it.
+
+A shot lasts at least the profile's film_cut min_shot_ms, the shortest
+moment a viewer can read, so every scene lasts at least min_shot_ms. A
+time_jump starts a new shot, so a scene whose beats carry N time jumps
+lasts at least (N + 1) × min_shot_ms. When a
+montage cannot hold that many moments in the time the film can give it,
+show fewer moments: let one beat reach the result the dropped steps would
+have shown, never squeeze the moments.
 
 Thirty seconds holds few moments. A scene shows one visible moment of its
 development, chosen so that the viewer can read it in the time it has,
@@ -914,9 +915,9 @@ Before returning the JSON, check:
 
 19. Is beats[0].time_jump null in every scene, montages included?
 
-20. Does every scene carry film_segment and camera, do the segments follow
-    the scene order with none empty and none returned to, do the durations
-    of each segment add up to exactly its length, and can each scene's
+20. Does every scene carry a camera, do the durations of all scenes add up
+    to exactly the film's length, does every scene last at least
+    min_shot_ms for each moment its time jumps make, and can each scene's
     moment be seen in the time it has?
 
 21. Is the launch its own scene, after every finishing scene, with the

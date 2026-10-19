@@ -17,12 +17,63 @@ final class ScenePlanAuthor
 
     public const BEAT_CONTRACT_VERSION = 'scene-contract-v6';
 
-    public const STORYBOARD_CONTRACT_VERSION = 'storyboard-contract-v2';
+    public const STORYBOARD_CONTRACT_VERSION = 'storyboard-contract-v4';
+
+    public const CUT_STORYBOARD_CONTRACT_VERSION = 'storyboard-contract-v3';
+
+    public const PREVIOUS_STORYBOARD_CONTRACT_VERSION = 'storyboard-contract-v2';
 
     public const LEGACY_STORYBOARD_CONTRACT_VERSION = 'storyboard-contract-v1';
 
     /** @var list<string> */
-    public const STORYBOARD_CONTRACT_VERSIONS = [self::STORYBOARD_CONTRACT_VERSION, self::LEGACY_STORYBOARD_CONTRACT_VERSION];
+    public const STORYBOARD_CONTRACT_VERSIONS = [
+        self::STORYBOARD_CONTRACT_VERSION, self::CUT_STORYBOARD_CONTRACT_VERSION,
+        self::PREVIOUS_STORYBOARD_CONTRACT_VERSION, self::LEGACY_STORYBOARD_CONTRACT_VERSION,
+    ];
+
+    /** @var list<string> the contracts whose shots carry cuts, structured references and a timeline */
+    public const SHOT_CONTRACT_VERSIONS = [self::STORYBOARD_CONTRACT_VERSION, self::CUT_STORYBOARD_CONTRACT_VERSION];
+
+    /** @var list<string> */
+    public const AFTER_JUMP_FIELDS = ['beat_id', 'evidence', 'subject_start_state', 'room_state_start', 'object_states'];
+
+    public const PACKET_VERSION = 'storyboard-packet-v3';
+
+    public const DESIGN_FIRST_SOURCE = 'design_first';
+
+    public const LEGACY_SOURCE = 'legacy';
+
+    /** @var list<string> */
+    public const SHOT_SIZES = ['extreme_wide', 'wide', 'medium_wide', 'medium', 'medium_close_up', 'close_up', 'extreme_close_up'];
+
+    /** @var list<string> */
+    public const CAMERA_ANGLES = ['eye_level', 'high', 'low', 'overhead', 'aerial'];
+
+    /** @var list<string> */
+    public const CAMERA_LENSES = ['wide', 'normal', 'long'];
+
+    public const STATIC_MOVEMENT = 'static';
+
+    /** @var list<string> */
+    public const CAMERA_MOVEMENTS = [self::STATIC_MOVEMENT, 'pan', 'tilt', 'push_in', 'pull_out', 'track', 'crane', 'orbit'];
+
+    /** @var list<string> */
+    public const COMPOSITION_FIELDS = ['must_show', 'foreground', 'background', 'motion_room'];
+
+    /** @var list<string> */
+    public const MOVEMENT_FIELDS = ['type', 'start', 'end'];
+
+    /** @var list<string> */
+    public const REFERENCE_FIELDS = ['kind', 'purpose', 'view', 'state', 'must_show', 'design_refs', 'source_shot'];
+
+    /** @var list<string> the kinds whose image shows the subject from a named view */
+    public const VIEWED_REFERENCE_KINDS = ['identity', 'design'];
+
+    /** @return list<string> */
+    public static function referenceViews(): array
+    {
+        return [\App\Video\Reference\ReferenceView::DESIGN_ANCHOR_VIEW, ...\App\Video\Reference\ReferenceView::values()];
+    }
 
     /** @var list<string> */
     public const VALIDATED_CONTRACT_VERSIONS = [...self::STORYBOARD_CONTRACT_VERSIONS, FilmCutAuthor::CONTRACT_VERSION, FilmCutAuthor::LEGACY_CONTRACT_VERSION];
@@ -36,7 +87,12 @@ final class ScenePlanAuthor
     public const SUBJECT_SIDES = ['port', 'starboard', 'front', 'rear', 'top'];
 
     /** @var list<string> */
-    public const CAMERA_FIELDS = ['position', 'elevation', 'framing', 'subject_side'];
+    public const PREVIOUS_CAMERA_FIELDS = ['position', 'elevation', 'framing', 'subject_side'];
+
+    /** @var list<string> */
+    public const CAMERA_FIELDS = [
+        ...self::PREVIOUS_CAMERA_FIELDS, 'shot_size', 'facing', 'angle', 'lens', 'composition', 'movement',
+    ];
 
     public const SAME_CAMERA = 'same_camera';
 
@@ -108,30 +164,50 @@ final class ScenePlanAuthor
             );
         }
 
-        try {
-            $decoded = json_decode($response->text, true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException $e) {
-            throw new ScenePlanException(
-                'Storyboard response was not valid JSON: '.$e->getMessage(),
-                $response->text,
-                $usage,
-            );
-        }
-
-        if (! is_array($decoded)
-            || ! is_array($decoded['scenes'] ?? null)
-            || ! array_is_list($decoded['scenes'])) {
-            throw new ScenePlanException('Storyboard response carried no scenes list.', $response->text, $usage);
-        }
-
         return new ScenePlanResult(
-            scenes: array_values($decoded['scenes']),
+            scenes: $this->scenesOf($response->text, $usage),
             raw: $response->text,
             authorModel: $response->model,
             inputTokens: $response->inputTokens,
             outputTokens: $response->outputTokens,
             reasoningTokens: $response->reasoningTokens,
         );
+    }
+
+    /**
+     * @param  string  $raw  an answer the model already returned and the ledger kept
+     */
+    public function fromStored(string $raw, ?string $authorModel): ScenePlanResult
+    {
+        return new ScenePlanResult(
+            scenes: $this->scenesOf($raw, []),
+            raw: $raw,
+            authorModel: $authorModel,
+            inputTokens: 0,
+            outputTokens: 0,
+            reasoningTokens: 0,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $usage
+     * @return list<mixed>
+     */
+    private function scenesOf(string $raw, array $usage): array
+    {
+        try {
+            $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new ScenePlanException('Storyboard response was not valid JSON: '.$e->getMessage(), $raw, $usage);
+        }
+
+        if (! is_array($decoded)
+            || ! is_array($decoded['scenes'] ?? null)
+            || ! array_is_list($decoded['scenes'])) {
+            throw new ScenePlanException('Storyboard response carried no scenes list.', $raw, $usage);
+        }
+
+        return array_values($decoded['scenes']);
     }
 
     public function promptVersion(): string
@@ -191,6 +267,7 @@ final class ScenePlanAuthor
     {
         $text = ['type' => 'string', 'minLength' => 1, 'maxLength' => self::TEXT_LIMIT];
         $cameraText = ['type' => 'string', 'minLength' => 3, 'maxLength' => self::CAMERA_TEXT_LIMIT];
+        $optionalCameraText = ['anyOf' => [$cameraText, ['type' => 'null']]];
 
         $camera = [
             'type' => 'object',
@@ -201,6 +278,31 @@ final class ScenePlanAuthor
                 'elevation' => $cameraText,
                 'framing' => $cameraText,
                 'subject_side' => ['anyOf' => [['type' => 'string', 'enum' => self::SUBJECT_SIDES], ['type' => 'null']]],
+                'shot_size' => ['type' => 'string', 'enum' => self::SHOT_SIZES],
+                'facing' => $cameraText,
+                'angle' => ['type' => 'string', 'enum' => self::CAMERA_ANGLES],
+                'lens' => ['type' => 'string', 'enum' => self::CAMERA_LENSES],
+                'composition' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'required' => self::COMPOSITION_FIELDS,
+                    'properties' => [
+                        'must_show' => $cameraText,
+                        'foreground' => $optionalCameraText,
+                        'background' => $optionalCameraText,
+                        'motion_room' => $optionalCameraText,
+                    ],
+                ],
+                'movement' => [
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'required' => self::MOVEMENT_FIELDS,
+                    'properties' => [
+                        'type' => ['type' => 'string', 'enum' => self::CAMERA_MOVEMENTS],
+                        'start' => $optionalCameraText,
+                        'end' => $optionalCameraText,
+                    ],
+                ],
             ],
         ];
 
@@ -232,8 +334,8 @@ final class ScenePlanAuthor
             'type' => 'object',
             'additionalProperties' => false,
             'required' => [
-                'beat_coverage', 'visual_purpose', 'camera_relation', 'camera', 'keyframe', 'action',
-                'duration_ms', 'first_frame_object_ids', 'last_frame_object_ids', 'state_changes', 'subject_end_state',
+                'beat_coverage', 'after_jump', 'visual_purpose', 'camera_relation', 'camera', 'camera_change_reason', 'keyframe', 'action',
+                'duration_ms', 'used_start_ms', 'used_ms', 'result_at_ms', 'first_frame_object_ids', 'last_frame_object_ids', 'state_changes', 'subject_end_state',
                 'room_state_end', 'reference_requirements',
             ],
             'properties' => [
@@ -243,19 +345,44 @@ final class ScenePlanAuthor
                     'items' => [
                         'type' => 'object',
                         'additionalProperties' => false,
-                        'required' => ['beat_id', 'part'],
+                        'required' => ['beat_id', 'part', 'shown'],
                         'properties' => [
                             'beat_id' => ['type' => 'string', 'pattern' => '^b[0-9]{1,2}$'],
                             'part' => ['type' => 'string', 'enum' => self::BEAT_PARTS],
+                            'shown' => $cameraText,
                         ],
                     ],
                 ],
+                'after_jump' => ['anyOf' => [[
+                    'type' => 'object',
+                    'additionalProperties' => false,
+                    'required' => self::AFTER_JUMP_FIELDS,
+                    'properties' => [
+                        'beat_id' => ['type' => 'string', 'pattern' => '^b[0-9]{1,2}$'],
+                        'evidence' => $cameraText,
+                        'subject_start_state' => ['anyOf' => [$moment, ['type' => 'null']]],
+                        'room_state_start' => ['anyOf' => [['type' => 'string', 'enum' => SceneBeats::ROOM_STATES], ['type' => 'null']]],
+                        'object_states' => [
+                            'type' => 'array',
+                            'items' => [
+                                'type' => 'object',
+                                'additionalProperties' => false,
+                                'required' => ['object_id', 'state'],
+                                'properties' => ['object_id' => $objectId, 'state' => $stateText],
+                            ],
+                        ],
+                    ],
+                ], ['type' => 'null']]],
                 'visual_purpose' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 300],
                 'camera_relation' => ['type' => 'string', 'enum' => [self::NEW_CAMERA, self::SAME_CAMERA]],
                 'camera' => ['anyOf' => [$camera, ['type' => 'null']]],
+                'camera_change_reason' => $optionalCameraText,
                 'keyframe' => $text,
                 'action' => $text,
                 'duration_ms' => ['type' => 'integer'],
+                'used_start_ms' => ['type' => 'integer'],
+                'used_ms' => ['type' => 'integer'],
+                'result_at_ms' => ['type' => 'integer'],
                 'first_frame_object_ids' => ['type' => 'array', 'items' => $objectId],
                 'last_frame_object_ids' => ['type' => 'array', 'items' => $objectId],
                 'state_changes' => [
@@ -274,10 +401,15 @@ final class ScenePlanAuthor
                     'items' => [
                         'type' => 'object',
                         'additionalProperties' => false,
-                        'required' => ['kind', 'purpose'],
+                        'required' => self::REFERENCE_FIELDS,
                         'properties' => [
                             'kind' => ['type' => 'string', 'enum' => self::REFERENCE_KINDS],
                             'purpose' => ['type' => 'string', 'minLength' => 3, 'maxLength' => 200],
+                            'view' => ['anyOf' => [['type' => 'string', 'enum' => self::referenceViews()], ['type' => 'null']]],
+                            'state' => $optionalCameraText,
+                            'must_show' => $cameraText,
+                            'design_refs' => ['type' => 'array', 'items' => ['type' => 'string', 'pattern' => '^[a-z][a-z0-9_]{0,80}$']],
+                            'source_shot' => ['anyOf' => [['type' => 'string', 'pattern' => '^sc_[a-z0-9_]{1,56}_s[0-9]{2}$'], ['type' => 'null']]],
                         ],
                     ],
                 ],
@@ -294,9 +426,10 @@ final class ScenePlanAuthor
                     'items' => [
                         'type' => 'object',
                         'additionalProperties' => false,
-                        'required' => ['scene_id', 'tracked_objects', 'shots'],
+                        'required' => ['scene_id', 'duration_conflict', 'tracked_objects', 'shots'],
                         'properties' => [
                             'scene_id' => ['type' => 'string', 'pattern' => '^sc_[a-z0-9_]{1,56}$'],
+                            'duration_conflict' => ['anyOf' => [['type' => 'string', 'minLength' => 3, 'maxLength' => 500], ['type' => 'null']]],
                             'tracked_objects' => [
                                 'type' => 'array',
                                 'items' => [
