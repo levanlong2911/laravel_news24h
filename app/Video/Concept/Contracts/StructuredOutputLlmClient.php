@@ -11,7 +11,7 @@ interface StructuredOutputLlmClient
     /**
      * @param  list<array{
      *     role:string,
-     *     content:string
+     *     content:string|list<array<string,mixed>>
      * }>  $messages
      * @param  array<string,mixed>  $outputSchema
      */

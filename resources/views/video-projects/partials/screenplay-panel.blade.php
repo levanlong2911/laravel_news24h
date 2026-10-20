@@ -330,6 +330,9 @@
                         @else
                             <span class="va-tag amber">Bản nháp — chưa duyệt</span>
                         @endif
+                        @if($board['old_rules'])
+                            <span class="va-tag amber">Được tạo bằng bộ luật cũ; bộ luật hiện tại đã thay đổi.</span>
+                        @endif
                         <a class="vp-btn sm" href="{{ route('video-projects.scene', $project->id) }}">Mở storyboard</a>
                     @endif
                     @if($boardRun === 'running')

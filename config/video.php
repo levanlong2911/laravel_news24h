@@ -615,7 +615,7 @@ return [
     'scene_plan' => [
         'prompt_path' => resource_path('ai/prompts/storyboard.txt'),
 
-        'prompt_version' => env('STORYBOARD_PROMPT_VERSION', 'storyboard-v4-r2'),
+        'prompt_version' => env('STORYBOARD_PROMPT_VERSION', 'storyboard-v4-r3'),
 
         'model' => env('SCENE_PLAN_MODEL', 'gpt-6.1-sol'),
 
@@ -625,6 +625,8 @@ return [
             'model_id' => 'gemini:gemini-omni-1.1-flash',
             'duration_ms' => 3000,
         ],
+
+        'unblocked_findings' => ['duration_conflict', 'heuristic'],
 
         /*
          * Gioi han van hanh, KHONG phai ngan sach da do. Nen 261 token/scene o

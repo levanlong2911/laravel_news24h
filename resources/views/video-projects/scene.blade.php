@@ -26,31 +26,15 @@
         <span class="m">Đã render <b>{{ $summary['approved'] }}</b>/{{ count($scenes) }}</span>
         @if($revision > 0)
             <span class="sep">·</span><span class="m">Bản <b>{{ $revision }}</b></span>
-            <span class="sep">·</span>
-            <span class="m" style="color:{{ $review['status'] === 'passed' ? 'var(--vp-green-fg)' : 'var(--vp-amber-fg)' }}">
-                <b>{{ $review['status'] === 'passed' ? ($review['reason'] === 'validated' ? 'Đã kiểm bằng code' : 'Đã rà tự động') : 'Chưa kiểm' }}</b>
-            </span>
-        @endif
-        @isset($review['usage']['total']['calls'])
-            <span class="sep">·</span>
-            <span class="m">{{ $review['usage']['total']['calls'] }} lượt AI ·
-                {{ $review['usage']['total']['tokens_in'] ?? 0 }} token vào ·
-                {{ $review['usage']['total']['tokens_out'] ?? 0 }} token ra</span>
-        @endisset
-        @if($records > 0)
-            <span class="sep">·</span>
-            <span class="m">Lập storyboard: <b>{{ $records }}</b> bản ghi xử lý</span>
-            @if($unpriced)
-                <span class="sep">·</span><span class="m">Chưa định giá</span>
-            @endif
         @endif
 
         <form id="storyboardForm" hidden>
             @csrf
         </form>
 
-        @php($findingErrors = collect($findings)->where('severity', 'error')->count())
-        @php($findingOpen = collect($findings)->where('status', 'open')->count())
+        @php($findingErrors = collect($findings)->where('unblocked', false)->where('severity', 'error')->count())
+        @php($findingOpen = collect($findings)->where('unblocked', false)->where('status', 'open')->count())
+        @php($shownFindings = collect($findings)->where('unblocked', false)->values()->all())
         @if($approval['shot_board'] || $approval['film_cut'])
             <span class="sep">·</span>
             @if($approval['approved'])
@@ -114,11 +98,18 @@
         </div>
     @endif
 
-    @if($findings !== [])
+    @if($approval['old_rules'])
+        <div class="vs-c vs-old-rules" id="storyboardOldRules">
+            Được tạo bằng bộ luật cũ; bộ luật hiện tại đã thay đổi.
+            <span class="m">Bản {{ $revision }} theo {{ $approval['contract_version'] }} — lập lại storyboard để áp dụng bộ luật hiện tại.</span>
+        </div>
+    @endif
+
+    @if($shownFindings !== [])
         <div class="vs-c vs-findings" id="storyboardFindings" data-action="{{ route('video-projects.storyboard-finding-accept', $id) }}" data-revision="{{ $revision }}">
             <b>Kiểm kế hoạch bản {{ $revision }}</b> — code chỉ kiểm cấu trúc, mã, thời lượng và mâu thuẫn máy xác định được; camera và ý nghĩa liên tục vẫn cần người duyệt đánh giá.
             <ul>
-                @foreach($findings as $finding)
+                @foreach($shownFindings as $finding)
                     <li class="vs-finding {{ $finding['severity'] }} {{ $finding['status'] }}">
                         <span class="ph">{{ $finding['severity'] === 'error' ? 'lỗi' : 'cảnh báo' }}</span>
                         <span class="ph">{{ $finding['rule'] }}</span>

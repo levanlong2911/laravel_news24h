@@ -43,6 +43,17 @@ return [
     'design_anchor' => [
         'prompt_path' => resource_path('ai/prompts/anchor_from_design_v1_r16.txt'),
         'prompt_version' => 'anchor-from-design-v1-r16',
+        'geometry_template_path' => resource_path('ai/prompts/anchor_from_design_v2.txt'),
+        'geometry_version' => 'anchor-from-design-v2-r2',
+    ],
+
+    'anchor_geometry' => [
+        'prompt_path' => resource_path('ai/prompts/anchor_geometry_v1.txt'),
+        'prompt_version' => 'anchor-geometry-v1-r4',
+        'model' => env('IMAGE_ANCHOR_GEOMETRY_MODEL', 'claude-sonnet-5-5'),
+        'effort' => env('IMAGE_ANCHOR_GEOMETRY_EFFORT', 'high'),
+        'max_tokens' => (int) env('IMAGE_ANCHOR_GEOMETRY_MAX_TOKENS', 64000),
+        'timeout_seconds' => (int) env('IMAGE_ANCHOR_GEOMETRY_TIMEOUT', 900),
     ],
 
     'anchor_model' => env('IMAGE_ANCHOR_MODEL', 'gpt-image-2.5-flare'),
@@ -66,6 +77,15 @@ return [
         'model' => env('IMAGE_REFERENCE_PROMPT_MODEL', 'gpt-6.1-sol'),
         'reasoning_effort' => env('IMAGE_REFERENCE_PROMPT_REASONING', 'high'),
         'max_tokens' => (int) env('IMAGE_REFERENCE_PROMPT_MAX_TOKENS', 32000),
+    ],
+
+    'reference_plan' => [
+        'prompt_path' => resource_path('ai/prompts/reference_plan_v1.txt'),
+        'prompt_version' => 'reference-plan-v1-r3',
+        'model' => env('IMAGE_REFERENCE_PLAN_MODEL', 'claude-sonnet-5-5'),
+        'effort' => env('IMAGE_REFERENCE_PLAN_EFFORT', 'high'),
+        'max_tokens' => (int) env('IMAGE_REFERENCE_PLAN_MAX_TOKENS', 64000),
+        'timeout_seconds' => (int) env('IMAGE_REFERENCE_PLAN_TIMEOUT', 900),
     ],
 
     'anthropic' => [

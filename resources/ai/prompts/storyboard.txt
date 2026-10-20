@@ -43,7 +43,7 @@ AFTER A TIME JUMP
 `after_jump` is null, except on a shot whose first coverage item is the `whole` or the `opening` of a beat with a `time_jump`. Every such shot gives it: the moment the shot starts from, because work went on off screen during the jump:
 `beat_id`              that beat
 `evidence`             the words of its `time_jump` that allow the change, quoted exactly
-`subject_start_state`  the subject at the later moment, or null when the scene does not show the subject; name configuration parts only as the scene's `subject_state` names them, and never go back
+`subject_start_state`  the subject at the later moment, or null when the scene does not show the subject; its `progress` never goes back; name configuration parts only as the scene's `subject_state` names them, each in whatever state the later moment shows it, because a door or another moving part may stand open or closed after the jump
 `room_state_start`     the room's state at the later moment, or null when the scene has no room state; never back and never past the scene's `room_state.end`
 `object_states`        each tracked object whose state changed during the jump, with its new state; an empty list when none did
 Without `after_jump` a shot starts from the state the previous shot ended on. A shot with `after_jump` uses `new_camera`: its first frame is a new keyframe of the later moment, never an edit of the earlier frame.
@@ -127,6 +127,6 @@ Before returning, verify silently:
 11. Does every `new_camera` shot after the first give `camera_change_reason`, does every moving camera name its start and end, and does `same_camera` follow only a static camera?
 12. Does every reference requirement name only design ids the input carries and, for continuity, an earlier shot?
 13. Does every coverage item say in `shown` what the shot shows of its beat, does every continuous scene show its action as it happens, and does every montage show its process by moments without a time jump the beats do not declare?
-14. Is `after_jump` given only on a `new_camera` shot that opens a beat with a `time_jump`, quoting that `time_jump` exactly, with the later states moving forward only?
+14. Is `after_jump` given only on a `new_camera` shot that opens a beat with a `time_jump`, quoting that `time_jump` exactly, with progress and the room state moving forward only, and moving parts named only as the scene names them, in any state?
 
 PLANNING INPUT:

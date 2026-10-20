@@ -168,6 +168,9 @@ Route::group(
             Route::post('/{id}/reference/prompt', [VideoProjectsController::class, 'writeReferencePrompt'])->name('video-projects.reference-prompt');
             Route::get('/{id}/reference/sheet-preview', [VideoProjectsController::class, 'referenceSheetPreview'])->name('video-projects.reference-sheet-preview');
             Route::post('/{id}/reference/lock',[VideoProjectsController::class, 'lockReferences'])->name('video-projects.reference-lock');
+            Route::post('/{id}/reference/plan', [VideoProjectsController::class, 'writeReferencePlan'])->name('video-projects.reference-plan');
+            Route::post('/{id}/reference/plan/decide', [VideoProjectsController::class, 'decideReferencePlanItem'])->name('video-projects.reference-plan-decide');
+            Route::post('/{id}/reference/plan/render', [VideoProjectsController::class, 'renderReferencePlanItem'])->name('video-projects.reference-plan-render');
             Route::match(['get', 'post'], '/{id}/reference', [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
             Route::post('/{id}/environment/approve', [VideoProjectsController::class, 'approveEnvironment'])->name('video-projects.environment-approve');
             Route::match(['get', 'post'], '/{id}/environment', [VideoProjectsController::class, 'environment'])->name('video-projects.environment');

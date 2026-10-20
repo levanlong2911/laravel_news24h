@@ -32,6 +32,12 @@ final class AnchorDesignPrompt
 
     private const MANDATORY_PRIORITY = 'P0';
 
+    /** @var list<string> */
+    private const UNIT_SKIPPED_KEYS = ['schema_version', 'author_model', 'status'];
+
+    /** @var array<string, string> */
+    private const POLICY_BLOCKS = ['state' => 'UNFINISHED STATE', 'camera' => 'CAMERA AND FRAMING'];
+
     public function __construct(
         private readonly string $templatePath,
         public readonly string $version,
@@ -39,17 +45,21 @@ final class AnchorDesignPrompt
         private readonly ?string $v3Version = null,
         private readonly ?string $v4TemplatePath = null,
         private readonly ?string $v4Version = null,
+        private readonly ?string $geometryTemplatePath = null,
+        private readonly ?string $geometryVersion = null,
     ) {}
 
     /** @param array<string, mixed> $design */
     public function forDesign(array $design): self
     {
         if (VesselDesign::isV4($design) && $this->v4TemplatePath !== null && $this->v4Version !== null) {
-            return new self($this->v4TemplatePath, $this->v4Version, $this->v3TemplatePath, $this->v3Version, $this->v4TemplatePath, $this->v4Version);
+            return new self($this->v4TemplatePath, $this->v4Version, $this->v3TemplatePath, $this->v3Version, $this->v4TemplatePath, $this->v4Version,
+                $this->geometryTemplatePath, $this->geometryVersion);
         }
 
         return VesselDesign::isV3($design) && $this->v3TemplatePath !== null && $this->v3Version !== null
-            ? new self($this->v3TemplatePath, $this->v3Version, $this->v3TemplatePath, $this->v3Version, $this->v4TemplatePath, $this->v4Version)
+            ? new self($this->v3TemplatePath, $this->v3Version, $this->v3TemplatePath, $this->v3Version, $this->v4TemplatePath, $this->v4Version,
+                $this->geometryTemplatePath, $this->geometryVersion)
             : $this;
     }
 
@@ -57,6 +67,94 @@ final class AnchorDesignPrompt
     public function versions(): array
     {
         return array_values(array_filter([$this->version, $this->v3Version, $this->v4Version]));
+    }
+
+    public function geometryVersion(): ?string
+    {
+        return $this->geometryVersion;
+    }
+
+    public function geometryTemplateHash(): string
+    {
+        return hash('sha256', $this->geometryVersion."\n".$this->geometryTemplate());
+    }
+
+    /**
+     * @param  array<string, mixed>  $design
+     * @return string the anchor prompt: the fixed frame around the geometry prose, which is inserted word for word
+     */
+    public function compileProse(array $design, string $prose, ImageSize $size): string
+    {
+        $frame = ReferenceView::DESIGN_ANCHOR_FRAME;
+        $farEnd = $frame['near_end'] === 'bow' ? 'stern' : 'bow';
+
+        return trim(strtr($this->geometryTemplate(), [
+            '{name}' => (string) ($design[VesselDesign::VESSEL_KEY]['name'] ?? ''),
+            '{length_m}' => (string) ($design['principal_dimensions']['length_m'] ?? ''),
+            '{beam_m}' => (string) ($design['principal_dimensions']['beam_m'] ?? ''),
+            '{length_beam_ratio}' => (string) VesselDesign::lengthBeamRatio($design),
+            '{geometry_prose}' => trim($prose),
+            '{near_end}' => $frame['near_end'],
+            '{far_end}' => $farEnd,
+            '{side}' => $frame['side'],
+            '{frame_direction}' => ReferenceView::frameDirection($frame['side']),
+            '{hidden_end}' => ReferenceView::hiddenEnd($frame['near_end'], $frame['side']),
+            '{aspect_ratio}' => $size->aspectRatio(),
+            '{orientation}' => $size->orientation(),
+        ]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $design
+     * @return array{state: string, camera: string} the fixed state policy and camera of the anchor, as the prompt states them
+     */
+    public function policy(array $design, ImageSize $size): array
+    {
+        $blocks = [];
+
+        foreach (explode("\n\n", $this->compileProse($design, '', $size)) as $block) {
+            foreach (self::POLICY_BLOCKS as $key => $title) {
+                if (str_starts_with(trim($block), $title)) {
+                    $blocks[$key] = trim($block);
+                }
+            }
+        }
+
+        return ['state' => $blocks['state'] ?? '', 'camera' => $blocks['camera'] ?? ''];
+    }
+
+    /**
+     * @param  array<string, mixed>  $design
+     * @return list<string> every unit of the design the geometry writer must account for: each list row by its id, each other field by its path
+     */
+    public static function sourceUnits(array $design): array
+    {
+        $units = [];
+        $walk = static function (mixed $node, string $path) use (&$walk, &$units): void {
+            if (! is_array($node) || $node === [] || (array_is_list($node) && array_filter($node, 'is_array') === [])) {
+                $units[] = $path;
+
+                return;
+            }
+
+            if (array_is_list($node)) {
+                foreach ($node as $index => $row) {
+                    $id = is_array($row) ? ($row['id'] ?? $row['feature_id'] ?? $row['component_id'] ?? null) : null;
+                    $units[] = $path.'.'.(is_string($id) && $id !== '' ? $id : (string) $index);
+                }
+
+                return;
+            }
+
+            foreach ($node as $key => $child) {
+                if (! in_array($key, self::UNIT_SKIPPED_KEYS, true)) {
+                    $walk($child, $path === '' ? (string) $key : $path.'.'.$key);
+                }
+            }
+        };
+        $walk($design, '');
+
+        return array_values(array_unique($units));
     }
 
     public function skillHash(): string
@@ -203,13 +301,15 @@ final class AnchorDesignPrompt
         return mb_strlen($prompt) <= OpenAiImageClient::MAX_PROMPT_CHARS;
     }
 
-    public function compiled(string $prompt, AnchorStage $stage, ImageSize $size, ImageModel $model): CompiledAnchorPrompt
+    public function compiled(string $prompt, AnchorStage $stage, ImageSize $size, ImageModel $model, ?string $author = null): CompiledAnchorPrompt
     {
+        $version = $author === null ? $this->version : (string) $this->geometryVersion;
+
         return new CompiledAnchorPrompt(
             prompt: $prompt,
             negativePrompt: null,
             nativeControls: ['size' => $size->value, 'width' => $size->width(), 'height' => $size->height()],
-            promptVersion: $this->version,
+            promptVersion: $version,
             provider: $model->provider(),
             model: $model->value,
             canonicalHash: '',
@@ -224,9 +324,9 @@ final class AnchorDesignPrompt
             sourceRevisionId: '',
             assetRole: 'identity_anchor',
             environmentPolicy: 'neutral_studio',
-            environmentPolicyVersion: $this->version,
+            environmentPolicyVersion: $version,
             subjectState: $stage->value,
-            subjectStateVersion: self::AUTHOR,
+            subjectStateVersion: $author ?? self::AUTHOR,
         );
     }
 
@@ -267,6 +367,15 @@ final class AnchorDesignPrompt
             ),
             default => $node,
         };
+    }
+
+    private function geometryTemplate(): string
+    {
+        if ($this->geometryTemplatePath === null || ! is_file($this->geometryTemplatePath)) {
+            throw new RuntimeException('Anchor geometry template not found: '.$this->geometryTemplatePath);
+        }
+
+        return (string) file_get_contents($this->geometryTemplatePath);
     }
 
     private function template(): string

@@ -1786,6 +1786,7 @@ class VideoProjectService
         }
 
         $facts = $this->referenceImageFacts($projectId, $revision, array_keys($artifactIds));
+        $planLinks = $this->referencePlanLinks($projectId, $stage);
         $shas = VideoArtifact::query()->whereIn('id', array_keys($artifactIds))->pluck('sha256', 'id')->map(static fn (mixed $sha): string => (string) $sha)->all();
         $out = [];
         $ready = 0;
@@ -1864,6 +1865,14 @@ class VideoProjectService
                     && hash_equals($this->referenceNeedHash($need), (string) ($confirmation['need_sha256'] ?? ''))
                     && in_array($confirmation['artifact_id'] ?? null, $fitting, true)
                     && hash_equals((string) ($shas[$confirmation['artifact_id']] ?? ''), (string) ($confirmation['sha256'] ?? ''));
+                $planned = $planLinks[$code.'#'.$index] ?? null;
+
+                if (! $confirmed && $unchecked !== [] && $planned !== null
+                    && hash_equals($planned['need_sha256'], $this->referenceNeedHash($need))
+                    && array_intersect($planned['artifact_ids'], $fitting) !== []) {
+                    $confirmed = true;
+                    $confirmation = ['by' => ReferencePromptWriter::PLAN_MODE];
+                }
 
                 if ($status === 'available' && $unchecked !== [] && ! $confirmed) {
                     $status = 'needs_confirmation';
@@ -2391,6 +2400,8 @@ class VideoProjectService
         if ($items === null) {
             $auto = [];
             $needs = $this->referenceNeedKinds($scene);
+            $planned = array_flip($this->plannedReferenceArtifacts($scene));
+            $plannedViews = array_values(array_filter($views, static fn (array $view): bool => isset($planned[$view['artifact_id']])));
             $roles = match (true) {
                 $needs === null => $place ? [] : ['identity', 'geometry'],
                 $place => in_array('design', $needs, true) ? ['design_reference'] : [],
@@ -2402,7 +2413,7 @@ class VideoProjectService
                     $role === 'design_reference' => collect($this->designReferenceOptions($projectId))
                         ->first(static fn (array $option): bool => ! array_key_exists($option['artifact_id'], $used)),
                     $role === 'identity' && $continues => $identity,
-                    default => $this->pickView($views, $used),
+                    default => $this->pickView($planned === [] ? $views : $plannedViews, $used),
                 };
 
                 if ($entry === null || array_key_exists($entry['artifact_id'], $used) || count($auto) >= $room) {
@@ -2411,6 +2422,22 @@ class VideoProjectService
 
                 $used[$entry['artifact_id']] = true;
                 $auto[] = array_replace($entry, ['role' => $role, 'title' => $entry['title'] ?? 'Ảnh neo']);
+            }
+
+            if ($roles !== []) {
+                $linked = $place
+                    ? array_values(array_filter($this->designReferenceOptions($projectId), static fn (array $option): bool => isset($planned[$option['artifact_id']])))
+                    : $plannedViews;
+
+                foreach ($linked as $entry) {
+                    if (array_key_exists($entry['artifact_id'], $used) || count($auto) >= $room) {
+                        continue;
+                    }
+
+                    $used[$entry['artifact_id']] = true;
+                    $auto[] = ['artifact_id' => $entry['artifact_id'], 'candidate_id' => $entry['candidate_id'], 'sha256' => $entry['sha256'],
+                        'title' => $entry['title'], 'role' => $place ? 'design_reference' : 'geometry'];
+                }
             }
 
             $designRequired = $needs !== null
@@ -2472,6 +2499,33 @@ class VideoProjectService
     }
 
     /** @return list<string>|null */
+    /**
+     * @return list<string> the approved images an approved reference plan item gives this shot's unchanged needs
+     */
+    private function plannedReferenceArtifacts(VideoRenderScene $scene): array
+    {
+        $state = is_array($scene->state_json) ? $scene->state_json : [];
+
+        if (($state['storyboard_shape'] ?? null) !== ScenePlanAuthor::SHOT_SHAPE) {
+            return [];
+        }
+
+        $links = $this->referencePlanLinks((string) $scene->project_id, $this->stageStore->stageForProjectRevision(
+            (string) $scene->project_id, PlanningStageName::SCENE_PLAN, (int) $scene->revision,
+        ));
+        $artifacts = [];
+
+        foreach (array_values((array) ($state['reference_requirements'] ?? [])) as $index => $need) {
+            $link = $links[$scene->scene_code.'#'.$index] ?? null;
+
+            if (is_array($need) && $link !== null && hash_equals($link['need_sha256'], $this->referenceNeedHash($need))) {
+                array_push($artifacts, ...$link['artifact_ids']);
+            }
+        }
+
+        return array_values(array_unique($artifacts));
+    }
+
     private function referenceNeedKinds(VideoRenderScene $scene): ?array
     {
         $state = is_array($scene->state_json) ? $scene->state_json : [];
@@ -3101,7 +3155,7 @@ class VideoProjectService
             }
 
             $anchorKeys = match (true) {
-                ($spec['derivation_version'] ?? null) === ReferencePromptWriter::DERIVATION_VERSION => ['identity_anchor_artifact_id', 'identity_anchor_sha256'],
+                in_array($spec['derivation_version'] ?? null, [ReferencePromptWriter::DERIVATION_VERSION, ReferencePromptWriter::PLAN_DERIVATION_VERSION], true) => ['identity_anchor_artifact_id', 'identity_anchor_sha256'],
                 ($spec['derivation'] ?? null) === 'gpt_edit' => ['source_artifact_id', 'source_artifact_sha256'],
                 default => null,
             };
@@ -3187,6 +3241,7 @@ class VideoProjectService
             'referenceViewCases' => ReferenceView::menu(),
             'referenceEnvironmentCases' => ReferenceEnvironment::cases(),
             'referencePrompts' => app(ReferencePromptWriter::class)->previews($projectId, $anchor),
+            'referencePlan' => $designFirst ? $this->referencePlanPanel($projectId) : null,
             'referenceSource' => app(ReferencePromptWriter::class)->source($projectId, $anchor),
             'referenceSheet' => [
                 'option' => \App\Video\Reference\ReferenceSheet::VIEW_OPTION,
@@ -3349,6 +3404,494 @@ class VideoProjectService
         }
 
         return $this->designImageDirectRenderer->renderNow($image->id);
+    }
+
+    /**
+     * @return array{0: ?array<string, mixed>, 1: string} the production chain the reference plan is written from:
+     *         approved storyboard → its screenplay → the verified design → the approved anchor of that design
+     */
+    public function referencePlanSource(string $projectId, bool $readBytes = false): array
+    {
+        $project = VideoProject::query()->find($projectId);
+
+        if ($project === null) {
+            return [null, 'project_not_found'];
+        }
+
+        if (! VesselDesign::isDesignFirst($project)) {
+            return [null, 'reference_plan_design_first_only'];
+        }
+
+        $storyboard = $project->selectedScenePlanStage()->first();
+        $input = is_array($storyboard?->input_json) ? $storyboard->input_json : [];
+
+        if ($storyboard === null || $storyboard->status !== VideoPlanningStageStatus::SUCCEEDED->value
+            || ($input['source_mode'] ?? null) !== ScenePlanAuthor::DESIGN_FIRST_SOURCE
+            || ! in_array($input['scene_contract_version'] ?? null, ScenePlanAuthor::SHOT_CONTRACT_VERSIONS, true)) {
+            return [null, 'reference_plan_no_production_storyboard'];
+        }
+
+        $changed = $this->storyboardSourceChange($projectId, $input);
+
+        if ($changed !== null) {
+            return [null, 'reference_plan_source_changed|'.$changed];
+        }
+
+        $screenplayStage = VideoPlanningStage::query()->whereKey((string) $input['screenplay_stage_id'])->first();
+        $output = is_array($screenplayStage?->output_json) ? $screenplayStage->output_json : [];
+        $recorded = $output[VesselDesign::SOURCE_DESIGN_KEY] ?? null;
+        $design = is_array($recorded) ? app(VesselDesignService::class)->verifiedSource($projectId, $recorded) : null;
+
+        if ($design === null || (string) $design->id !== (string) ($input['design_stage_id'] ?? '')
+            || (int) $design->planning_revision !== (int) ($recorded['revision'] ?? -1)
+            || (int) $design->planning_revision !== (int) ($input['design_revision'] ?? -1)) {
+            return [null, 'reference_plan_design_mismatch'];
+        }
+
+        $anchor = $this->productionAnchor($projectId);
+        $anchorSpec = is_array($anchor?->prompt_spec_json) ? $anchor->prompt_spec_json : [];
+
+        if ($anchor?->artifact === null || $anchor->status !== DesignImageStatus::APPROVED->value
+            || ($anchorSpec['subject_key'] ?? null) !== VesselDesign::subjectKey((string) $design->id)
+            || (is_string($anchorSpec['design_content_hash'] ?? null) && ! hash_equals($anchorSpec['design_content_hash'], (string) $input['design_content_hash']))) {
+            return [null, 'reference_plan_anchor_mismatch'];
+        }
+
+        $revision = (int) ($storyboard->output_json['revision'] ?? 0);
+        $rows = VideoRenderScene::query()
+            ->where('project_id', $projectId)
+            ->where('revision', $revision)
+            ->where('screenplay_stage_id', $screenplayStage->id)
+            ->orderBy('scene_index')
+            ->get();
+
+        if ($revision < 1 || $rows->isEmpty()) {
+            return [null, 'reference_plan_no_production_storyboard'];
+        }
+
+        $meta = PlanningStageStore::metadataOf($screenplayStage->input_json);
+        $foundation = VideoPlanningStage::query()
+            ->whereKey((string) ($meta['foundation_stage_id'] ?? ''))
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::SCREENPLAY_FOUNDATION->value)
+            ->first();
+
+        if ($foundation === null || ! hash_equals((string) ($meta['foundation_output_hash'] ?? ''), (string) $foundation->output_hash)) {
+            return [null, 'reference_plan_profile_unknown'];
+        }
+
+        [$profile] = ScreenplayExpansionService::profileForFoundation(
+            $foundation, app(ScreenplayExpansionService::class)->screenplayProfile((string) ($project->article?->category?->slug ?? '')),
+        );
+        $unfinished = $profile['film_cut']['finished_before_launch_stages'] ?? null;
+
+        if ($profile === null) {
+            return [null, 'reference_plan_profile_unknown'];
+        }
+
+        if (! is_array($unfinished) || ! array_is_list($unfinished)) {
+            return [null, 'reference_plan_profile_invalid'];
+        }
+
+        $bytes = '';
+
+        if ($readBytes) {
+            try {
+                $bytes = (string) Storage::disk((string) $anchor->artifact->storage_disk)->get((string) $anchor->artifact->storage_path);
+            } catch (\Throwable) {
+                $bytes = '';
+            }
+
+            if ($bytes === '' || ! hash_equals((string) $anchor->artifact->sha256, hash('sha256', $bytes))) {
+                return [null, 'artifact_checksum_mismatch'];
+            }
+        }
+
+        [$needs, $interior] = $this->referencePlanNeeds($rows, $this->productionScreenplayContent($output), $unfinished);
+
+        return [[
+            'storyboard_stage_id' => (string) $storyboard->id,
+            'storyboard_revision' => $revision,
+            'screenplay_stage_id' => (string) $screenplayStage->id,
+            'screenplay_hash' => (string) $input['screenplay_hash'],
+            'design_stage_id' => (string) $design->id,
+            'design_revision' => (int) $design->planning_revision,
+            'design_content_hash' => (string) $input['design_content_hash'],
+            'design' => (array) $design->output_json,
+            'anchor_image_id' => (string) $anchor->id,
+            'anchor_artifact_id' => (string) $anchor->artifact->id,
+            'anchor_sha256' => (string) $anchor->artifact->sha256,
+            'anchor_mime' => (string) ($anchor->artifact->mime_type ?: 'image/png'),
+            'anchor_bytes' => $bytes,
+            'needs' => $needs,
+            'interior' => $interior,
+            'catalog' => $this->referencePlanCatalog($projectId, (string) $anchor->artifact->id, (string) $anchor->artifact->sha256),
+        ], 'ok'];
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, VideoRenderScene>  $rows
+     * @param  array<string, mixed>  $screenplay
+     * @param  list<string>  $unfinished  the screenplay stages whose vessel is not finished yet
+     * @return array{0: list<array<string, mixed>>, 1: list<array<string, mixed>>} [$needs, $interior] the image needs of the real vessel or its drawing, and those inside its rooms
+     */
+    private function referencePlanNeeds(\Illuminate\Support\Collection $rows, array $screenplay, array $unfinished): array
+    {
+        $scenes = collect((array) ($screenplay['scenes'] ?? []))->filter(static fn (mixed $row): bool => is_array($row))->keyBy('id');
+        $locations = collect((array) ($screenplay['locations'] ?? []))->filter(static fn (mixed $row): bool => is_array($row))->keyBy('id');
+        $needs = [];
+        $interior = [];
+
+        foreach ($rows as $row) {
+            $state = is_array($row->state_json) ? $row->state_json : [];
+            $video = is_array($row->video_plan_json) ? $row->video_plan_json : [];
+            $scene = $scenes[(string) $row->screenplay_scene_code] ?? [];
+            $location = $locations[(string) ($scene['location_id'] ?? '')] ?? [];
+            $inside = ($location['spatial_relation'] ?? null) === \App\Video\Screenplay\LocationProfile::SUBJECT_PART
+                && ($location[\App\Video\Screenplay\LocationProfile::ENCLOSURE_KEY] ?? null) === \App\Video\Screenplay\LocationProfile::INTERIOR;
+
+            foreach (array_values(array_filter((array) ($state['reference_requirements'] ?? []), 'is_array')) as $index => $need) {
+                $kind = $need['kind'] ?? null;
+
+                if (! in_array($kind, ScenePlanAuthor::VIEWED_REFERENCE_KINDS, true)) {
+                    continue;
+                }
+
+                $item = [
+                    'need_id' => $row->scene_code.'#'.$index,
+                    'need_sha256' => $this->referenceNeedHash($need),
+                    'kind' => $kind,
+                    'shot_code' => (string) $row->scene_code,
+                    'scene_id' => (string) $row->screenplay_scene_code,
+                    'stage' => $scene['stage'] ?? null,
+                    'presentation' => in_array($scene['stage'] ?? null, $unfinished, true) ? ReferencePromptWriter::UNFINISHED : ReferencePromptWriter::FINISHED,
+                    'view' => is_string($need['view'] ?? null) ? $need['view'] : null,
+                    'state' => $need['state'] ?? null,
+                    'must_show' => $need['must_show'] ?? null,
+                    'purpose' => $need['purpose'] ?? null,
+                    'design_refs' => array_values((array) ($need['design_refs'] ?? [])),
+                    'camera' => $video['camera'] ?? null,
+                    'action' => $video['action'] ?? null,
+                    'start_state' => $state['keyframe_state'] ?? null,
+                ];
+
+                if ($kind === 'identity' && $inside) {
+                    $interior[] = $item + ['location' => (string) ($location['name'] ?? $scene['location_id'] ?? '')];
+
+                    continue;
+                }
+
+                $needs[] = $item;
+            }
+        }
+
+        return [$needs, $interior];
+    }
+
+    /**
+     * @return list<array{artifact_id: string, view: string, environment: string, presentation: string, state_details: ?string}> the approved references made from this anchor
+     */
+    private function referencePlanCatalog(string $projectId, string $anchorArtifactId, string $anchorSha): array
+    {
+        $catalog = [];
+
+        foreach (VideoDesignImage::query()
+            ->where('project_id', $projectId)
+            ->where('image_type', DesignImageStore::REFERENCE_TYPE)
+            ->where('status', DesignImageStatus::APPROVED->value)
+            ->whereNotNull('selected_artifact_id')
+            ->with('artifact')
+            ->orderBy('slot_index')
+            ->get() as $image) {
+            $spec = is_array($image->prompt_spec_json) ? $image->prompt_spec_json : [];
+
+            if ($image->artifact === null || ($spec['reference_mode'] ?? null) === \App\Video\Reference\ReferenceSheet::MODE
+                || ! is_string($spec['view_key'] ?? null)
+                || ($spec['identity_anchor_artifact_id'] ?? null) !== $anchorArtifactId
+                || ($spec['identity_anchor_sha256'] ?? null) !== $anchorSha) {
+                continue;
+            }
+
+            $catalog[] = [
+                'artifact_id' => (string) $image->artifact->id,
+                'view' => $spec['view_key'],
+                'environment' => (string) ($spec['environment'] ?? ''),
+                'presentation' => is_string($spec['presentation'] ?? null) ? $spec['presentation'] : ReferencePromptWriter::BARE_METAL,
+                'build_stage' => is_string($spec['build_stage'] ?? null) ? $spec['build_stage'] : null,
+                'state_details' => is_string($spec['state_details'] ?? null) ? $spec['state_details'] : null,
+            ];
+        }
+
+        return $catalog;
+    }
+
+    /**
+     * @return array{0: ?VideoPlanningStage, 1: string, 2: list<string>}
+     */
+    public function writeReferencePlan(string $projectId, ?string $actorId, bool $force = false): array
+    {
+        $actor = $actorId === null ? null : Admin::find($actorId);
+        $project = $actor === null ? null : $this->videoProjectRepository->getById($projectId);
+
+        if ($project === null || Gate::forUser($actor)->denies('update', $project)) {
+            return [null, 'project_not_found', []];
+        }
+
+        [$source, $why] = $this->referencePlanSource($projectId, true);
+
+        if ($source === null) {
+            return [null, $why, []];
+        }
+
+        $keys = ['storyboard_stage_id', 'screenplay_hash', 'design_content_hash', 'anchor_sha256', 'needs'];
+        $frozen = array_intersect_key($source, array_flip($keys));
+
+        return app(ReferencePromptWriter::class)->writePlan($projectId, $source, $force, function () use ($projectId, $frozen, $keys): ?string {
+            [$now, $why] = $this->referencePlanSource($projectId);
+
+            if ($now === null) {
+                return $why;
+            }
+
+            return array_intersect_key($now, array_flip($keys)) == $frozen ? null : 'production_changed';
+        });
+    }
+
+    /**
+     * @return array{0: bool, 1: string}
+     */
+    public function decideReferencePlanItem(string $projectId, ?string $actorId, string $stageId, string $requestId, string $status): array
+    {
+        $actor = $actorId === null ? null : Admin::find($actorId);
+        $project = $actor === null ? null : $this->videoProjectRepository->getById($projectId);
+
+        if ($project === null || Gate::forUser($actor)->denies('update', $project)) {
+            return [false, 'project_not_found'];
+        }
+
+        if (! in_array($status, [ReferencePromptWriter::APPROVED, ReferencePromptWriter::SKIPPED], true)) {
+            return [false, 'reference_plan_decision_unknown'];
+        }
+
+        [$source, $why] = $this->referencePlanSource($projectId);
+
+        if ($source === null) {
+            return [false, $why];
+        }
+
+        return DB::transaction(function () use ($projectId, $actorId, $stageId, $requestId, $status, $source): array {
+            $current = app(ReferencePromptWriter::class)->currentPlan($projectId, $source);
+
+            if ($current === null || (string) $current->id !== $stageId) {
+                return [false, 'reference_plan_stale'];
+            }
+
+            $stage = VideoPlanningStage::query()->whereKey($current->id)->lockForUpdate()->firstOrFail();
+            $output = (array) $stage->output_json;
+            $item = collect((array) ($output['references'] ?? []))->firstWhere('request_id', $requestId);
+
+            if (! is_array($item)) {
+                return [false, 'reference_plan_item_not_found'];
+            }
+
+            if ($status === ReferencePromptWriter::APPROVED && $item['recommendation'] === ReferencePromptWriter::NEEDS_REVIEW) {
+                return [false, 'reference_plan_item_needs_review'];
+            }
+
+            $output['decisions'][$requestId] = ['status' => $status, 'by' => $actorId, 'at' => now()->toIso8601String()];
+            $stage->forceFill(['output_json' => $output])->save();
+
+            return [true, 'ok'];
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{0: ?VideoDesignImage, 1: string}
+     */
+    public function renderReferencePlanItem(string $projectId, string $creator, array $data): array
+    {
+        [$source, $why] = $this->referencePlanSource($projectId);
+
+        if ($source === null) {
+            return [null, $why];
+        }
+
+        $environment = ReferenceEnvironment::from((string) $data['environment']);
+        [$ready, $why] = app(ReferencePromptWriter::class)->plannedRenderable(
+            $projectId, $source, (string) $data['reference_plan_stage_id'], (string) $data['request_id'], $environment, (string) $data['prompt_sha256'],
+        );
+
+        if ($ready === null) {
+            return [null, $why];
+        }
+
+        $item = $ready['item'];
+        $stages = collect((array) ($ready['stage']->output_json['needs'] ?? []))
+            ->whereIn('need_id', $item['need_ids'])
+            ->where('kind', 'identity')
+            ->where('presentation', ReferencePromptWriter::UNFINISHED)
+            ->pluck('stage')->unique()->values()->all();
+
+        [$image, $reason] = $this->designImageStore->createReference($projectId, $creator, [
+            'operation' => 'edit',
+            'derivation' => 'gpt_edit',
+            'reference_mode' => ReferencePromptWriter::PLAN_MODE,
+            'reference_plan_stage_id' => (string) $ready['stage']->id,
+            'request_id' => $item['request_id'],
+            'need_ids' => $item['need_ids'],
+            'presentation' => $item['presentation'],
+            'build_stage' => count($stages) === 1 ? $stages[0] : null,
+            'planned_frame_version' => \App\Video\Reference\IdentityPreservationPrompt::PLANNED_VERSION,
+            'state_details' => $item['state_details'],
+            'design_stage_id' => $source['design_stage_id'],
+            'design_content_hash' => $source['design_content_hash'],
+            'source_image_id' => $source['anchor_image_id'],
+            'source_artifact_id' => $source['anchor_artifact_id'],
+            'source_artifact_sha256' => $source['anchor_sha256'],
+            'identity_anchor_artifact_id' => $source['anchor_artifact_id'],
+            'identity_anchor_sha256' => $source['anchor_sha256'],
+            'prompt' => $ready['prompt'],
+            'variations' => (int) $data['variations'],
+            'project_id' => $projectId,
+            'image_type' => DesignImageStore::REFERENCE_TYPE,
+            'view_key' => $item['view'],
+            'environment' => $environment->value,
+            'slot_index' => ReferenceView::tryFrom((string) $item['view'])?->slot() ?? 0,
+            'identity_lock_id' => null,
+            'identity_lock_hash' => null,
+            'derivation_version' => ReferencePromptWriter::PLAN_DERIVATION_VERSION,
+            'model' => (string) $data['model'],
+            'quality' => (string) $data['quality'],
+            'size' => (string) $data['size'],
+        ]);
+
+        if ($image === null) {
+            return [null, $reason];
+        }
+
+        if ($reason === 'already_exists' && in_array($image->status, [DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value], true)) {
+            return [$image, 'already_exists'];
+        }
+
+        return $this->designImageDirectRenderer->renderNow($image->id);
+    }
+
+    /**
+     * @return array<string, mixed> what the Reference page shows of the production reference plan
+     */
+    public function referencePlanPanel(string $projectId): array
+    {
+        [$source, $why] = $this->referencePlanSource($projectId);
+        $panel = ['error' => $source === null ? $why : null, 'source' => null, 'plan' => null, 'needs' => [], 'interior' => [], 'run' => null,
+            'model' => (string) config('image_prompt.reference_plan.model'), 'effort' => (string) config('image_prompt.reference_plan.effort')];
+        $latest = VideoPlanningStage::query()
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::REFERENCE_PROMPT->value)
+            ->where('input_json->mode', ReferencePromptWriter::PLAN_MODE)
+            ->orderByDesc('updated_at')
+            ->first(['id', 'status', 'error_message', 'updated_at']);
+        $panel['run'] = $latest === null ? null : ['status' => (string) $latest->status, 'error' => $latest->status === VideoPlanningStageStatus::FAILED->value ? (string) $latest->error_message : null, 'at' => $latest->updated_at?->format('d/m H:i')];
+
+        if ($source === null) {
+            return $panel;
+        }
+
+        $panel['source'] = array_intersect_key($source, array_flip(['storyboard_revision', 'design_revision', 'design_stage_id', 'anchor_artifact_id']));
+        $panel['needs'] = $source['needs'];
+        $panel['interior'] = $source['interior'];
+        $stage = app(ReferencePromptWriter::class)->currentPlan($projectId, $source);
+
+        if ($stage === null) {
+            return $panel;
+        }
+
+        $output = (array) $stage->output_json;
+        $cells = collect($this->designImageStore->referenceCellsFor($projectId));
+        $items = [];
+
+        foreach ((array) ($output['references'] ?? []) as $item) {
+            $prompts = [];
+
+            if ($item['recommendation'] === ReferencePromptWriter::RENDER_NEW) {
+                foreach (ReferenceEnvironment::cases() as $environment) {
+                    $prompt = ReferencePromptWriter::assemblePlanned($item, $environment);
+                    $prompts[$environment->value] = ['prompt' => $prompt, 'prompt_sha256' => hash('sha256', $prompt)];
+                }
+            }
+
+            $items[] = $item + [
+                'decision' => $output['decisions'][$item['request_id']]['status'] ?? null,
+                'prompts' => $prompts,
+                'cells' => $cells->filter(static fn (array $cell): bool => ($cell['reference_mode'] ?? null) === ReferencePromptWriter::PLAN_MODE
+                    && ($cell['request_id'] ?? null) === $item['request_id'] && ($cell['reference_plan_stage_id'] ?? null) === (string) $stage->id)->values()->all(),
+            ];
+        }
+
+        $panel['plan'] = [
+            'stage_id' => (string) $stage->id,
+            'at' => $stage->updated_at?->format('d/m H:i'),
+            'author_model' => $output['author_model'] ?? null,
+            'usage' => $output['usage'] ?? null,
+            'items' => $items,
+            'unresolved' => (array) ($output['unresolved'] ?? []),
+        ];
+
+        return $panel;
+    }
+
+    /**
+     * @return array<string, array{need_sha256: string, artifact_ids: list<string>}> need id => the images an approved reference plan item gives it
+     */
+    private function referencePlanLinks(string $projectId, ?VideoPlanningStage $storyboard): array
+    {
+        $key = 'plan_links:'.$projectId.':'.($storyboard?->id ?? '');
+
+        if ($this->sourceMemo !== null && array_key_exists($key, $this->sourceMemo)) {
+            return $this->sourceMemo[$key];
+        }
+
+        [$source] = $storyboard === null ? [null] : $this->referencePlanSource($projectId);
+        $plan = $source === null || $source['storyboard_stage_id'] !== (string) $storyboard->id
+            ? null
+            : app(ReferencePromptWriter::class)->currentPlan($projectId, $source);
+        $output = is_array($plan?->output_json) ? $plan->output_json : [];
+        $hashes = collect((array) ($output['needs'] ?? []))->pluck('need_sha256', 'need_id')->all();
+        $links = [];
+
+        foreach ((array) ($output['references'] ?? []) as $item) {
+            if (($output['decisions'][$item['request_id']]['status'] ?? null) === ReferencePromptWriter::SKIPPED) {
+                continue;
+            }
+
+            $artifacts = match ($item['recommendation']) {
+                ReferencePromptWriter::REUSE_ANCHOR => [$source['anchor_artifact_id']],
+                ReferencePromptWriter::REUSE_REFERENCE => in_array($item['existing_artifact_id'], array_column($source['catalog'], 'artifact_id'), true)
+                    ? [(string) $item['existing_artifact_id']] : [],
+                ReferencePromptWriter::RENDER_NEW => VideoDesignImage::query()
+                    ->where('project_id', $projectId)
+                    ->where('image_type', DesignImageStore::REFERENCE_TYPE)
+                    ->where('status', DesignImageStatus::APPROVED->value)
+                    ->where('prompt_spec_json->reference_plan_stage_id', (string) $plan->id)
+                    ->where('prompt_spec_json->request_id', $item['request_id'])
+                    ->where('prompt_spec_json->identity_anchor_artifact_id', $source['anchor_artifact_id'])
+                    ->where('prompt_spec_json->identity_anchor_sha256', $source['anchor_sha256'])
+                    ->pluck('selected_artifact_id')->map('strval')->all(),
+                default => [],
+            };
+
+            foreach ($item['need_ids'] as $needId) {
+                if (is_string($hashes[$needId] ?? null)) {
+                    $links[$needId] = ['need_sha256' => $hashes[$needId], 'artifact_ids' => array_values(array_filter($artifacts))];
+                }
+            }
+        }
+
+        if ($this->sourceMemo !== null) {
+            $this->sourceMemo[$key] = $links;
+        }
+
+        return $links;
     }
 
     /** @return array<string, mixed>|null */
@@ -4119,7 +4662,14 @@ class VideoProjectService
         $locked = is_array($stage?->output_json) ? ($stage->output_json[VesselDesign::SOURCE_ANCHOR_KEY] ?? null) : null;
 
         if (is_array($locked)) {
-            return app(VesselDesignService::class)->anchorBySource($projectId, $locked);
+            $designs = app(VesselDesignService::class);
+            $image = $designs->anchorBySource($projectId, $locked);
+            $sourceDesign = $stage->output_json[VesselDesign::SOURCE_DESIGN_KEY] ?? null;
+            $replacement = $image?->status === DesignImageStatus::SUPERSEDED->value && VesselDesign::isDesignFirst($project) && is_array($sourceDesign)
+                ? $designs->replacementAnchor($project, $locked, $sourceDesign)
+                : null;
+
+            return $replacement ?? $image;
         }
 
         if ($stage === null && VesselDesign::isDesignFirst($project)) {
@@ -5544,7 +6094,7 @@ class VideoProjectService
     }
 
     /**
-     * @return array{revision: int, shot_board: bool, approved: bool, selected_revision: int}
+     * @return array{revision: int, shot_board: bool, film_cut: bool, approved: bool, selected_revision: int, contract_version: ?string, old_rules: bool}
      */
     public function storyboardApproval(string $projectId, int $revision): array
     {
@@ -5552,11 +6102,15 @@ class VideoProjectService
         $selected = $project?->selectedScenePlanStage()->first();
         $selectedRevision = is_array($selected?->output_json) ? (int) ($selected->output_json['revision'] ?? 0) : 0;
         $stage = $revision < 1 ? null : $this->stageStore->stageForProjectRevision($projectId, PlanningStageName::SCENE_PLAN, $revision);
+        $contract = $stage?->input_json['scene_contract_version'] ?? null;
+        $shotBoard = $stage !== null && in_array($contract, ScenePlanAuthor::STORYBOARD_CONTRACT_VERSIONS, true);
 
         return [
             'revision' => $revision,
-            'shot_board' => $stage !== null
-                && in_array($stage->input_json['scene_contract_version'] ?? null, ScenePlanAuthor::STORYBOARD_CONTRACT_VERSIONS, true),
+            'contract_version' => is_string($contract) ? $contract : null,
+            'old_rules' => $shotBoard && ($contract !== ScenePlanAuthor::STORYBOARD_CONTRACT_VERSION
+                || ($stage->input_json['prompt_version'] ?? null) !== (string) config('video.scene_plan.prompt_version')),
+            'shot_board' => $shotBoard,
             'film_cut' => $stage !== null
                 && FilmCutAuthor::isFilmCut($stage->input_json['scene_contract_version'] ?? null),
             'approved' => $stage !== null && (string) $project?->selected_scene_plan_stage_id === (string) $stage->id,
@@ -5565,7 +6119,7 @@ class VideoProjectService
     }
 
     /**
-     * @return list<array<string, mixed>> the findings of a storyboard revision with their status
+     * @return list<array<string, mixed>> the findings of a storyboard revision with their status and whether they still block approval
      */
     public function storyboardFindings(string $projectId, int $revision): array
     {
@@ -5573,7 +6127,16 @@ class VideoProjectService
 
         return $stage === null || ! is_array($stage->output_json)
             ? []
-            : StoryboardPlanCheck::withStatus($stage->output_json['findings'] ?? [], $stage->output_json['finding_decisions'] ?? []);
+            : array_map(
+                fn (array $finding): array => $finding + ['unblocked' => $this->findingUnblocked($finding)],
+                StoryboardPlanCheck::withStatus($stage->output_json['findings'] ?? [], $stage->output_json['finding_decisions'] ?? []),
+            );
+    }
+
+    /** @param array<string, mixed> $finding */
+    private function findingUnblocked(array $finding): bool
+    {
+        return in_array($finding['rule'] ?? null, (array) config('video.scene_plan.unblocked_findings', []), true);
     }
 
     /**
@@ -5689,6 +6252,9 @@ class VideoProjectService
             }
 
             $findings = StoryboardPlanCheck::withStatus($stage->output_json['findings'] ?? [], $stage->output_json['finding_decisions'] ?? []);
+            $unblocked = array_values(array_filter($findings, fn (array $finding): bool => $finding['status'] === StoryboardPlanCheck::OPEN
+                && $this->findingUnblocked($finding)));
+            $findings = array_values(array_filter($findings, fn (array $finding): bool => ! $this->findingUnblocked($finding)));
 
             if (array_filter($findings, static fn (array $finding): bool => $finding['severity'] === StoryboardPlanCheck::ERROR) !== []) {
                 return [null, 'storyboard_findings_blocking'];
@@ -5728,7 +6294,9 @@ class VideoProjectService
                 'plan_sha256' => $review['reviewed_plan_sha256'],
                 'approved_by' => $actorId,
                 'selected_at' => now()->toIso8601String(),
-            ];
+            ] + ($unblocked === [] ? [] : [
+                'unblocked_findings' => array_map(static fn (array $finding): array => array_intersect_key($finding, array_flip(['id', 'rule', 'scene_id', 'shot_code'])), $unblocked),
+            ]);
             $metadata['production_selection_history'] = $history;
 
             $project->forceFill([
@@ -5817,7 +6385,7 @@ class VideoProjectService
     }
 
     /**
-     * @return array{revision: int, shots: int, approved: bool, selected_revision: int, run: ?array<string, mixed>, scenes: int,
+     * @return array{revision: int, shots: int, approved: bool, selected_revision: int, old_rules: bool, run: ?array<string, mixed>, scenes: int,
      *               model: string, effort: string, max_tokens: int, timeout_minutes: int}
      */
     public function storyboardPanel(string $projectId): array
@@ -5830,6 +6398,7 @@ class VideoProjectService
             'shots' => $revision === 0 ? 0 : VideoRenderScene::query()->where('project_id', $projectId)->where('revision', $revision)->count(),
             'approved' => $approval['approved'],
             'selected_revision' => $approval['selected_revision'],
+            'old_rules' => $approval['old_rules'],
             'run' => $this->storyboardRun($projectId),
             'scenes' => count($this->storyboardScenes($projectId)['scenes']),
             'model' => app(ScenePlanAuthor::class)->model(),
@@ -7453,11 +8022,26 @@ class VideoProjectService
             return [null, 'anchor_lock_unreadable'];
         }
 
+        if ($this->anchorLockReplaced($projectId, (string) $entry['candidate_id'])) {
+            return [null, 'anchor_lock_replaced'];
+        }
+
         return [[
             'artifact_id' => $entry['artifact_id'],
             'candidate_id' => $entry['candidate_id'],
             'sha256' => $entry['sha256'],
         ], 'ok'];
+    }
+
+    /** @return bool whether the anchor a keyframe revision was locked to is the screenplay's anchor, since replaced by an approved anchor of the same design */
+    private function anchorLockReplaced(string $projectId, string $candidateId): bool
+    {
+        $project = VideoProject::query()->find($projectId);
+        $stage = $project === null || ! VesselDesign::isDesignFirst($project) ? null : $this->selectedProductionScreenplay($project);
+        $locked = is_array($stage?->output_json) ? ($stage->output_json[VesselDesign::SOURCE_ANCHOR_KEY] ?? null) : null;
+        $current = is_array($locked) && (string) ($locked['image_id'] ?? '') === $candidateId ? $this->productionAnchor($projectId) : null;
+
+        return $current !== null && (string) $current->id !== $candidateId && $current->status === DesignImageStatus::APPROVED->value;
     }
 
     /**

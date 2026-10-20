@@ -6,6 +6,7 @@ use App\Enums\ImageModel;
 use App\Enums\ImageQuality;
 use App\Enums\ImageSize;
 use App\Enums\ImageVariations;
+use App\Services\Video\ReferencePromptWriter;
 use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceSheet;
 use App\Video\Reference\ReferenceView;
@@ -43,6 +44,52 @@ class ReferenceImageForm
                     'sheet_state.*' => __('messages.anchor_setting_invalid', ['field' => 'Trạng thái']),
                     'environment.required' => __('messages.anchor_setting_required', ['field' => 'Environment']),
                     'environment.*' => __('messages.anchor_setting_invalid', ['field' => 'Environment']),
+                ])->validate();
+        }
+
+        if ($mode === 'plan_decision') {
+            return Validator::make($request->all(),
+                [
+                    'reference_plan_stage_id' => ['required', 'string', 'max:64'],
+                    'request_id' => ['required', 'string', 'regex:/^ref_[0-9a-f]{12}$/'],
+                    'status' => ['required', Rule::in([ReferencePromptWriter::APPROVED, ReferencePromptWriter::SKIPPED])],
+                ],
+                [
+                    'request_id.*' => 'Mã mục Reference không hợp lệ.',
+                    'status.*' => 'Quyết định không hợp lệ.',
+                ])->validate();
+        }
+
+        if ($mode === 'plan_render') {
+            return Validator::make($request->all(),
+                [
+                    'reference_plan_stage_id' => ['required', 'string', 'max:64'],
+                    'request_id' => ['required', 'string', 'regex:/^ref_[0-9a-f]{12}$/'],
+                    'prompt_sha256' => ['required', 'string', 'regex:/^[0-9a-f]{64}$/'],
+                    'environment' => ['required', Rule::enum(ReferenceEnvironment::class)],
+                    'model' => ['required', Rule::enum(ImageModel::class)],
+                    'quality' => ['required', Rule::enum(ImageQuality::class), static function (string $attribute, mixed $value, \Closure $fail) use ($request): void {
+                        $model = ImageModel::tryFrom((string) $request->input('model'));
+                        $quality = ImageQuality::tryFrom((string) $value);
+
+                        if ($model !== null && $quality !== null && ! $model->supports($quality)) {
+                            $fail("Quality {$quality->label()} không dùng được với model {$model->label()}.");
+                        }
+                    }],
+                    'size' => ['required', Rule::enum(ImageSize::class)],
+                    'variations' => ['required', Rule::enum(ImageVariations::class)],
+                ],
+                [
+                    'request_id.*' => 'Mã mục Reference không hợp lệ.',
+                    'prompt_sha256.*' => 'Mã băm của prompt đang xem trước không hợp lệ.',
+                    'environment.*' => __('messages.anchor_setting_invalid', ['field' => 'Environment']),
+                    'model.required' => __('messages.anchor_setting_required', ['field' => 'Model']),
+                    'model.*' => __('messages.anchor_setting_invalid', ['field' => 'Model']),
+                    'quality.required' => __('messages.anchor_setting_required', ['field' => 'Quality']),
+                    'quality.'.Enum::class => __('messages.anchor_setting_invalid', ['field' => 'Quality']),
+                    'size.required' => __('messages.anchor_setting_required', ['field' => 'Size']),
+                    'size.*' => __('messages.anchor_setting_invalid', ['field' => 'Size']),
+                    'variations.*' => __('messages.anchor_setting_invalid', ['field' => 'Variations']),
                 ])->validate();
         }
 

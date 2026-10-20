@@ -1158,9 +1158,10 @@ TEXT;
 
     /**
      * @param  array<string, mixed>  $spec
+     * @param  bool  $extractBlockers  also refuse a design the compiled anchor extract cannot use; false for a prompt written from the whole design
      * @return array{0: ?VideoPlanningStage, 1: string}
      */
-    public function stageForSpec(string $projectId, array $spec): array
+    public function stageForSpec(string $projectId, array $spec, bool $extractBlockers = true): array
     {
         $current = $this->currentStage($projectId);
         $stageId = $spec['design_stage_id'] ?? null;
@@ -1173,7 +1174,9 @@ TEXT;
             return [null, 'anchor_prompt_other_design'];
         }
 
-        $blockers = VesselDesign::anchorBlockers((array) $current->output_json);
+        $blockers = $extractBlockers
+            ? VesselDesign::anchorBlockers((array) $current->output_json)
+            : CharacterAnchorPromptService::geometryBlockers((array) $current->output_json);
 
         return $blockers === [] ? [$current, 'ok'] : [null, $blockers[0]];
     }
@@ -1427,6 +1430,36 @@ TEXT;
         $image->setRelation('artifact', $artifact);
 
         return $image;
+    }
+
+    /**
+     * @param  array<string, mixed>  $locked  the anchor a screenplay was written against
+     * @param  array<string, mixed>  $sourceDesign  the design that screenplay was written from
+     * @return VideoDesignImage|null the anchor approved since for the very same design, when it superseded the locked one intact; null otherwise
+     */
+    public function replacementAnchor(VideoProject $project, array $locked, array $sourceDesign): ?VideoDesignImage
+    {
+        $projectId = (string) $project->id;
+        $previous = $this->anchorBySource($projectId, $locked);
+        $current = $this->anchorSelection($project);
+
+        if ($previous === null || $previous->status !== \App\Enums\DesignImageStatus::SUPERSEDED->value || $current === null
+            || (string) ($current['image_id'] ?? '') === (string) $previous->id
+            || ! is_string($locked['subject_key'] ?? null) || ($current['subject_key'] ?? null) !== $locked['subject_key']
+            || (string) ($current['design_stage_id'] ?? '') !== (string) ($sourceDesign['stage_id'] ?? '')
+            || ! hash_equals((string) ($sourceDesign['content_hash'] ?? ''), (string) ($current['design_content_hash'] ?? ''))
+            || $this->verifiedSource($projectId, $sourceDesign) === null) {
+            return null;
+        }
+
+        $image = $this->anchorBySource($projectId, $current);
+        $selected = $image === null ? null : VideoDesignImage::query()->whereKey($image->id)->value('selected_artifact_id');
+
+        return $image !== null
+            && $image->status === \App\Enums\DesignImageStatus::APPROVED->value
+            && (string) $selected === (string) ($current['artifact_id'] ?? '')
+            && ($image->prompt_spec_json['subject_key'] ?? null) === $locked['subject_key']
+            ? $image : null;
     }
 
     /**

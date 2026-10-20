@@ -22,6 +22,9 @@ enum ReferenceView: string
 
     public const DESIGN_ANCHOR_VIEW = 'bow_three_quarter_port';
 
+    /** @var array{near_end: string, side: string} */
+    public const DESIGN_ANCHOR_FRAME = ['near_end' => 'bow', 'side' => 'port'];
+
     /** @var list<string> */
     public const ANCHOR_VIEWS = [
         'stern_three_quarter_port', 'stern_three_quarter_starboard', 'bow_three_quarter_port', 'bow_three_quarter_starboard',

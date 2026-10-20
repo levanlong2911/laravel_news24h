@@ -141,6 +141,7 @@ class VideoProjectsController extends Controller
                 'stale_prompt' => $stalePrompt,
                 'prompt_error' => $promptError === null ? null : $this->anchorMessage($promptError),
                 'prompt_author' => $preview['lineage']['subject_state_version'] ?? null,
+                'geometry' => $designed && $preview !== null ? $this->characterAnchorPromptService->geometryReview($project->id, $preview) : null,
                 'blockers' => array_map(fn (string $reason): string => $this->anchorMessage($reason), $character['anchor_blockers'] ?? []),
                 'unclassified' => $character['anchor_unclassified'] ?? [],
                 'approved' => collect($rowCells)->contains(static fn(array $cell): bool => $cell['status'] === DesignImageStatus::APPROVED->value
@@ -239,6 +240,8 @@ class VideoProjectsController extends Controller
             AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
             ImageSize::LANDSCAPE,
             $this->characterAnchorPromptService->anchorModel(),
+            false,
+            false,
         );
 
         if ($compiled === null) {
@@ -718,6 +721,11 @@ class VideoProjectsController extends Controller
             'design_geometry_incomplete' => 'Phần hình học đã chốt của bản thiết kế không toàn vẹn — không thể giao cho bước địa điểm/phân cảnh. Không gọi model, xem log.',
             'artifact_not_verified' =>'Ảnh này chưa có mã kiểm tra (sha256) — không thể khoá làm nguồn cho kịch bản.',
             'foundation_not_design_first' => 'Bản nội dung này không dựng trên bản thiết kế tàu.',
+            'anchor_prompt_not_written' => 'Chưa có prompt anchor cho bản thiết kế hiện hành — bấm "Viết prompt anchor bằng Claude".',
+            'anchor_geometry_call_failed' => 'Gọi Claude viết hình học anchor thất bại — phản hồi (nếu có) và usage đã lưu, prompt đang dùng giữ nguyên.',
+            'anchor_geometry_invalid' => 'Kết quả Claude không qua kiểm tra (bảng đối soát, số liệu, id hoặc lệnh camera) — raw và usage đã lưu, prompt đang dùng giữ nguyên.',
+            'anchor_geometry_source_changed' => 'Bản thiết kế đã đổi trong lúc Claude chạy — kết quả được giữ để đối chiếu, không áp dụng.',
+            'anchor_prompt_needs_review' => 'Prompt anchor còn mục cần xử lý (thiếu dữ liệu, mâu thuẫn hoặc xung đột chính sách) — chưa render được.',
             default => $reason,
         };
     }
@@ -810,6 +818,50 @@ class VideoProjectsController extends Controller
             ->with($stage === null ? 'error' : 'success', $message);
     }
 
+    public function writeReferencePlan(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        [$stage, $reason, $violations] = $this->videoProjectService->writeReferencePlan($id, auth()->id(), $request->boolean('force'));
+        $message = $this->referenceMessage(explode('|', $reason, 2)[0]);
+
+        if ($violations !== []) {
+            $message .= ' Chi tiết: '.implode(' | ', $violations);
+        }
+
+        return redirect()->to(route('video-projects.reference', $id).'#referencePlan')
+            ->with($stage === null ? 'error' : 'success', $message);
+    }
+
+    public function decideReferencePlanItem(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $this->form->validate($request, 'ReferenceImageForm', 'plan_decision');
+        [$ok, $reason] = $this->videoProjectService->decideReferencePlanItem(
+            $id, auth()->id(), (string) $data['reference_plan_stage_id'], (string) $data['request_id'], (string) $data['status'],
+        );
+
+        return redirect()->to(route('video-projects.reference', $id).'#referencePlan')
+            ->with($ok ? 'success' : 'error', $ok ? 'Đã lưu quyết định cho mục Reference.' : $this->referenceMessage(explode('|', $reason, 2)[0]));
+    }
+
+    public function renderReferencePlanItem(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $this->form->validate($request, 'ReferenceImageForm', 'plan_render');
+        [$image, $reason] = $this->videoProjectService->renderReferencePlanItem($id, (string) auth()->user()?->name, $data);
+
+        if ($image === null) {
+            return redirect()->to(route('video-projects.reference', $id).'#referencePlan')
+                ->with('error', $this->referenceMessage(explode('|', $reason, 2)[0]));
+        }
+
+        return redirect()->to(route('video-projects.reference', $id).'#referencePlan')
+            ->with(in_array($reason, ['rendered', 'already_exists'], true) ? 'success' : 'error', $this->renderOutcome($reason, $image));
+    }
+
     public function referenceSheetPreview(Request $request, string $id)
     {
         $this->ownedProject($id);
@@ -882,7 +934,7 @@ class VideoProjectsController extends Controller
             'reference_sheet_state_unknown' => 'Trạng thái bộ 6 góc không hợp lệ.',
             'reference_sheet_design_name_missing' => 'Bản thiết kế v3 nhắc tới một bộ phận chưa được đặt tên — không đoán tên, không viết được prompt bộ 6 góc. Không gọi model.',
             'reference_writer_v3_uses_sheet' => 'Bản thiết kế v3 dùng bộ 6 góc ghép từ thiết kế, không qua đường viết prompt Reference từng góc. Không gọi model.',
-            default => $this->anchorMessage($reason),
+            default => str_starts_with($reason, 'reference_plan_') ? __('messages.'.$reason) : $this->anchorMessage($reason),
         };
     }
 

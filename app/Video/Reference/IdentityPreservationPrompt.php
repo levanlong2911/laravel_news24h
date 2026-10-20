@@ -6,6 +6,8 @@ final class IdentityPreservationPrompt
 {
     public const VERSION = 'identity-reference-v10';
 
+    public const PLANNED_VERSION = 'planned-reference-v3';
+
     public static function editTarget(string $viewLabel, bool $environmentChanges): string
     {
         return 'Edit the supplied image: change only the camera viewpoint to the '.$viewLabel.' view'
@@ -22,10 +24,31 @@ final class IdentityPreservationPrompt
             .'plainly, without new features.';
     }
 
-    public static function referenceState(): string
+    public static function plannedText(): string
+    {
+        return 'Keep the vessel\'s identity part by part. The approved design decides the shape, proportions and position of every part. '
+            .'The build state described below decides which parts exist, whether assemblies are joined and what is fitted. The supplied '
+            .'image keeps the identity only of the parts that agree with both. Preserve the approved geometry and proportions of each '
+            .'part that exists at this build state; do not preserve the supplied image\'s complete silhouette, masses or connected '
+            .'structure where they conflict with this state. Build every part the description states exactly as it states it. Omit only '
+            .'the parts it states are not yet built or fitted. Keep assemblies that exist but are not yet joined visible as separate '
+            .'parts: do not join them and do not omit them. Add no gap, cut or section the description does not state.';
+    }
+
+    public static function plannedClosing(): string
+    {
+        return 'Add nothing beyond the approved design and the build state described above, and no text. Change nothing the description does not change.';
+    }
+
+    public static function lighting(): string
     {
         return 'LIGHTING: Soft, large-source, neutral light with controlled contrast and even exposure that reveals planes, '
-            .'edges, setbacks, recesses, overhangs and openings, with a low, diffuse specular response on the metal.'
+            .'edges, setbacks, recesses, overhangs and openings, with a low, diffuse specular response on the metal.';
+    }
+
+    public static function referenceState(): string
+    {
+        return self::lighting()
             ."\n".'SUBJECT STATE: The same bare-metal reference presentation as the supplied image: matte, unpainted metal '
             .'plating with visible weld seams and frame lines. Every pool is a dry, empty basin that keeps its full recess, '
             .'rim and floor. Every glazed opening the geometry states is an open cut-out with its frame, keeping its exact '

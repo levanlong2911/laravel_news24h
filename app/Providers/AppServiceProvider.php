@@ -463,6 +463,21 @@ class AppServiceProvider extends ServiceProvider
             ),
         );
 
+        $this->app->bind(
+            'video.reference_plan.client',
+            static fn (Application $app): AnthropicStructuredOutputClient => new AnthropicStructuredOutputClient(
+                http: $app->make(HttpFactory::class),
+                apiKey: (string) config('canonical_concept.anthropic.api_key'),
+                baseUrl: (string) config('canonical_concept.anthropic.base_url'),
+                apiVersion: (string) config('canonical_concept.anthropic.api_version'),
+                timeoutSeconds: (int) config('image_prompt.reference_plan.timeout_seconds'),
+                retryTimes: 0,
+                retrySleepMs: 0,
+                stream: true,
+                effort: config('image_prompt.reference_plan.effort'),
+            ),
+        );
+
         $this->app->singleton(
             'video.character_prompt_author',
             static function (Application $app): GeometryPromptAuthor {
@@ -481,6 +496,23 @@ class AppServiceProvider extends ServiceProvider
             static fn (): \App\Video\Prompt\AnchorDesignPrompt => new \App\Video\Prompt\AnchorDesignPrompt(
                 templatePath: (string) config('image_prompt.design_anchor.prompt_path'),
                 version: (string) config('image_prompt.design_anchor.prompt_version'),
+                geometryTemplatePath: (string) config('image_prompt.design_anchor.geometry_template_path'),
+                geometryVersion: (string) config('image_prompt.design_anchor.geometry_version'),
+            ),
+        );
+
+        $this->app->bind(
+            'video.anchor_geometry.client',
+            static fn (Application $app): AnthropicStructuredOutputClient => new AnthropicStructuredOutputClient(
+                http: $app->make(HttpFactory::class),
+                apiKey: (string) config('canonical_concept.anthropic.api_key'),
+                baseUrl: (string) config('canonical_concept.anthropic.base_url'),
+                apiVersion: (string) config('canonical_concept.anthropic.api_version'),
+                timeoutSeconds: (int) config('image_prompt.anchor_geometry.timeout_seconds'),
+                retryTimes: 0,
+                retrySleepMs: 0,
+                stream: true,
+                effort: config('image_prompt.anchor_geometry.effort'),
             ),
         );
 

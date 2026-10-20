@@ -11,8 +11,12 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Video\Concept\Contracts\StructuredOutputLlmClient;
+use App\Video\Concept\Exceptions\AnthropicRefusalException;
+use App\Video\Concept\Exceptions\AnthropicTruncatedOutputException;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
 use App\Video\Prompt\AnchorDesignPrompt;
+use App\Video\Reference\ReferenceView;
 use App\Video\Prompt\GeometryPromptAuthor;
 use App\Video\Screenplay\ProtagonistProfile;
 use App\Video\Screenplay\VesselDesign;
@@ -34,6 +38,31 @@ final class CharacterAnchorPromptService
     /** @var list<string> */
     private const EXTERIOR_FEATURE_FIELDS = ['name', 'region', 'location', 'standard_state', 'standard_geometry'];
 
+    public const GEOMETRY_WRITER = 'anchor-geometry';
+
+    private const GEOMETRY_MARKER = 'PLANNING INPUT:';
+
+    public const READY = 'ready';
+
+    public const NEEDS_REVIEW = 'needs_review';
+
+    public const USED = 'used';
+
+    public const MIXED = 'mixed';
+
+    public const EXCLUDED = 'excluded';
+
+    public const UNRESOLVED = 'unresolved';
+
+    /** @var list<string> */
+    public const DECISIONS = [self::USED, self::MIXED, self::EXCLUDED, self::UNRESOLVED];
+
+    /** @var list<string> */
+    public const FINDING_KINDS = ['note', 'missing', 'conflict', 'policy_conflict'];
+
+    /** @var list<string> */
+    public const BLOCKING_FINDINGS = ['missing', 'conflict', 'policy_conflict'];
+
     private const MAX_APPEARANCES = 8;
 
     private const ACTION_CHARS = 400;
@@ -46,6 +75,7 @@ final class CharacterAnchorPromptService
         private readonly ScreenplaySubjectService $subjects,
         private readonly VesselDesignService $designs,
         private readonly AnchorDesignPrompt $designPrompt,
+        private ?StructuredOutputLlmClient $geometryClient = null,
     ) {}
 
     public static function anchorModel(): ImageModel
@@ -73,7 +103,7 @@ final class CharacterAnchorPromptService
             }
 
             $vessel = $this->designs->vessel($design);
-            $blockers = VesselDesign::anchorBlockers((array) $design->output_json);
+            $blockers = self::geometryBlockers((array) $design->output_json);
 
             return [[
                 'id' => VesselDesign::VESSEL_ID,
@@ -86,7 +116,7 @@ final class CharacterAnchorPromptService
                 'design_content_hash' => $vessel['design_content_hash'],
                 'design_revision' => (int) $design->planning_revision,
                 'anchor_blockers' => $blockers,
-                'anchor_unclassified' => $blockers === [] ? VesselDesign::anchorUnclassifiedDetails($this->designs->anchorPromptSource($design)) : [],
+                'anchor_unclassified' => [],
             ]];
         }
 
@@ -121,9 +151,10 @@ final class CharacterAnchorPromptService
         ImageSize $size,
         ImageModel $model,
         bool $force = false,
+        bool $call = true,
     ): array {
         if (VesselDesign::isDesignFirst(VideoProject::query()->find($projectId))) {
-            return $this->authorFromDesign($projectId, $characterId, $stage, $size, $model, $force);
+            return $this->authorFromDesign($projectId, $characterId, $stage, $size, $model, $force, $call);
         }
 
         $screenplay = $this->screenplayStage($projectId);
@@ -172,6 +203,7 @@ final class CharacterAnchorPromptService
         ImageSize $size,
         ImageModel $model,
         bool $force,
+        bool $call,
     ): array {
         $design = $this->designs->currentStage($projectId);
 
@@ -183,86 +215,331 @@ final class CharacterAnchorPromptService
             return [null, 'character_prompt_unknown_character', null];
         }
 
-        $blockers = VesselDesign::anchorBlockers((array) $design->output_json);
+        $output = (array) $design->output_json;
+        $blockers = self::geometryBlockers($output);
 
         if ($blockers !== []) {
             return [null, $blockers[0], null];
         }
 
-        $broken = VesselDesign::extractIntegrityViolations((array) $design->output_json, $this->designs->anchorExtract($design));
-
-        if ($broken !== []) {
-            Log::error('anchor prompt: the locked design extract is incomplete, no prompt compiled', [
-                'project_id' => $projectId,
-                'design_stage_id' => $design->id,
-                'violations' => $broken,
-            ]);
-
-            return [null, 'anchor_design_incomplete', null];
-        }
-
         $character = $this->designs->vessel($design);
-        $source = $this->designs->anchorPromptSource($design);
-        $designPrompt = $this->designPrompt->forDesign((array) $design->output_json);
-        $prompt = $designPrompt->compile($source, (array) $design->output_json, $size);
+        $input = $this->geometryInput($design);
+        $existing = $this->geometryStage($projectId, $input);
 
-        if (! $designPrompt->fits($prompt)) {
-            return [null, 'anchor_prompt_too_long', null];
+        if ($existing !== null && ! $force) {
+            return $this->geometryResult($existing, $output, $character, $stage, $size, $model, 'cached');
         }
 
-        $origin = self::designOrigin($design);
-        $input = $this->designInput($origin, $source, $size, $designPrompt);
+        if (! $call) {
+            return [null, 'anchor_prompt_not_written', $character];
+        }
+
         [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
-            $projectId,
-            PlanningStageName::ANCHOR_PROMPT,
-            $input,
-            $force,
-            ['anchor_source' => $source, 'downstream' => GeometryPromptAuthor::downstreamFor($size), 'pricing' => 'free'],
+            $projectId, PlanningStageName::ANCHOR_PROMPT, $input, $force, ['pricing' => 'unpriced'],
         );
 
         if ($claimed === null) {
             return [null, $reason, $character];
         }
 
-        $stamped = $character + [
-            'anchor_prompt_stage_id' => (string) $claimed->id,
-            'source_hash' => $input['source_hash'],
-            'skill_hash' => $input['skill_hash'],
-        ];
-
         if ($reason === 'already_succeeded') {
-            $stored = (string) ($claimed->output_json['prompt'] ?? '');
-
-            return hash_equals(hash('sha256', $stored), hash('sha256', $prompt))
-                ? [$designPrompt->compiled($prompt, $stage, $size, $model), 'cached', $stamped]
-                : [null, 'anchor_prompt_source_changed', $character];
+            return $this->geometryResult($claimed, $output, $character, $stage, $size, $model, 'cached');
         }
 
         if ($token === null) {
             return [null, 'character_prompt_running', $character];
         }
 
-        $recorded = $this->stageStore->finishSucceeded(
-            $claimed->id,
-            $token,
-            $prompt,
-            [
-                'prompt' => $prompt,
-                'author_model' => AnchorDesignPrompt::AUTHOR,
-                'prompt_version' => $designPrompt->version,
-                'character_id' => $characterId,
-                'character_name' => (string) ($character['name'] ?? $characterId),
-                'character_kind' => (string) ($character['kind'] ?? ''),
-            ] + $origin,
-            ['model' => AnchorDesignPrompt::AUTHOR, 'instruction_version' => $designPrompt->version],
-            ['pricing' => 'free'],
-        );
+        $units = AnchorDesignPrompt::sourceUnits($output);
+        $designPrompt = $this->designPrompt->forDesign($output);
+        $policy = $designPrompt->policy($output, ImageSize::LANDSCAPE);
+        $unpriced = ['pricing' => 'unpriced', 'pricing_version' => null];
+
+        try {
+            $response = $this->geometryClient()->create(
+                model: (string) config('image_prompt.anchor_geometry.model'),
+                system: $this->geometrySkill(),
+                messages: [['role' => 'user', 'content' => self::GEOMETRY_MARKER."\n\n".json_encode([
+                    'camera' => $policy['camera'],
+                    'anchor_policy' => $policy['state'],
+                    'source_units' => $units,
+                    'design' => array_diff_key($output, ['author_model' => true]),
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)]],
+                outputSchema: self::geometrySchema(),
+                maxTokens: (int) config('image_prompt.anchor_geometry.max_tokens'),
+            );
+        } catch (\Throwable $e) {
+            $failed = $e instanceof AnthropicRefusalException || $e instanceof AnthropicTruncatedOutputException ? $e->response : null;
+            $this->stageStore->finishFailed((string) $claimed->id, $token, $e->getMessage(),
+                $failed === null ? [] : self::geometryUsage($failed->model, $failed->inputTokens, $failed->outputTokens), (string) ($failed?->rawText ?? ''), [], $unpriced);
+            Log::error('anchor geometry: author call failed', ['project_id' => $projectId, 'stage_id' => $claimed->id, 'exception' => $e]);
+
+            return [null, 'anchor_geometry_call_failed', $character];
+        }
+
+        $usage = self::geometryUsage($response->model, $response->inputTokens, $response->outputTokens);
+        $decoded = json_decode($response->rawText, true);
+        $violations = is_array($decoded) ? self::geometryViolations($decoded, $output, $units) : ['the answer is not a JSON object'];
+
+        if ($violations === [] && ! $designPrompt->fits($designPrompt->compileProse($output, (string) $decoded['geometry_prose'], $size))) {
+            $violations[] = 'the anchor prompt with this geometry prose is longer than the image model accepts';
+        }
+
+        $current = $this->designs->currentStage($projectId);
+        $changed = $current === null || (string) $current->id !== (string) $design->id
+            || ! hash_equals($input['design_content_hash'], VesselDesign::contentHash((array) $current->output_json));
+
+        if ($violations === [] && $changed) {
+            $violations[] = 'the design changed during the call; the answer is kept and not applied';
+        }
+
+        $result = [
+            'author_model' => $response->model,
+            'usage' => $usage,
+            'character_id' => $characterId,
+            'character_name' => (string) ($character['name'] ?? $characterId),
+            'character_kind' => (string) ($character['kind'] ?? ''),
+        ] + self::designOrigin($design);
+
+        if ($violations !== []) {
+            $this->stageStore->finishFailed((string) $claimed->id, $token, 'Anchor geometry failed validation: '.implode('; ', $violations),
+                $usage, $response->rawText, $result + ['violations' => $violations], $unpriced);
+
+            return [null, $changed ? 'anchor_geometry_source_changed' : 'anchor_geometry_invalid', $character];
+        }
+
+        $recorded = $this->stageStore->finishSucceeded((string) $claimed->id, $token, $response->rawText, $result + [
+            'prompt' => $designPrompt->compileProse($output, (string) $decoded['geometry_prose'], ImageSize::LANDSCAPE),
+            'prompt_version' => $designPrompt->geometryVersion(),
+            'geometry_prose' => trim((string) $decoded['geometry_prose']),
+            'status' => $decoded['status'],
+            'coverage' => array_values($decoded['coverage']),
+            'findings' => array_values($decoded['findings']),
+        ], $usage, $unpriced);
 
         if (! $recorded) {
             return [null, 'screenplay_claim_lost', $character];
         }
 
-        return [$designPrompt->compiled($prompt, $stage, $size, $model), 'ok', $stamped];
+        return $this->geometryResult($claimed->fresh(), $output, $character, $stage, $size, $model, 'ok');
+    }
+
+    /**
+     * @param  array<string, mixed>  $output
+     * @return list<string> why the design cannot be written into an anchor prompt at all; the geometry writer reports every finer gap itself
+     */
+    public static function geometryBlockers(array $output): array
+    {
+        return array_keys(array_filter([
+            'anchor_design_unresolved' => VesselDesign::unresolvedDecisions($output) !== [],
+            'anchor_design_not_canonical' => ! VesselDesign::hasCanonical($output),
+        ]));
+    }
+
+    /**
+     * @param  array<string, mixed>  $character
+     * @return array{0: ?CompiledAnchorPrompt, 1: string, 2: ?array<string, mixed>}
+     */
+    private function geometryResult(VideoPlanningStage $promptStage, array $design, array $character, AnchorStage $stage, ImageSize $size, ImageModel $model, string $reason): array
+    {
+        $designPrompt = $this->designPrompt->forDesign($design);
+        $prompt = $designPrompt->compileProse($design, (string) ($promptStage->output_json['geometry_prose'] ?? ''), $size);
+
+        if (! $designPrompt->fits($prompt)) {
+            return [null, 'anchor_prompt_too_long', $character];
+        }
+
+        return [$designPrompt->compiled($prompt, $stage, $size, $model, (string) $promptStage->output_json['author_model']), $reason, $character + [
+            'anchor_prompt_stage_id' => (string) $promptStage->id,
+            'source_hash' => (string) $promptStage->input_json['units_hash'],
+            'skill_hash' => (string) $promptStage->input_json['skill_hash'],
+            'geometry_status' => (string) ($promptStage->output_json['status'] ?? ''),
+        ]];
+    }
+
+    /**
+     * @return array<string, mixed> what a geometry prompt is written from: the design revision, the writer's instructions and the fixed frame
+     */
+    private function geometryInput(VideoPlanningStage $design): array
+    {
+        $output = (array) $design->output_json;
+        $designPrompt = $this->designPrompt->forDesign($output);
+
+        return [
+            'character_id' => VesselDesign::VESSEL_ID,
+            'writer' => self::GEOMETRY_WRITER,
+            'design_stage_id' => (string) $design->id,
+            'design_revision' => (int) $design->planning_revision,
+            'design_content_hash' => VesselDesign::contentHash($output),
+            'prompt_version' => (string) config('image_prompt.anchor_geometry.prompt_version'),
+            'skill_hash' => hash('sha256', (string) @file_get_contents((string) config('image_prompt.anchor_geometry.prompt_path'))),
+            'template_version' => (string) $designPrompt->geometryVersion(),
+            'template_hash' => $designPrompt->geometryTemplateHash(),
+            'units_hash' => hash('sha256', json_encode(AnchorDesignPrompt::sourceUnits($output), JSON_THROW_ON_ERROR)),
+            'model' => (string) config('image_prompt.anchor_geometry.model'),
+            'effort' => (string) config('image_prompt.anchor_geometry.effort'),
+        ];
+    }
+
+    /** @param array<string, mixed> $input */
+    private function geometryStage(string $projectId, array $input): ?VideoPlanningStage
+    {
+        return VideoPlanningStage::query()
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::ANCHOR_PROMPT->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->where('input_json->writer', self::GEOMETRY_WRITER)
+            ->where('input_json->design_stage_id', $input['design_stage_id'])
+            ->orderByDesc('planning_revision')
+            ->get()
+            ->first(static fn (VideoPlanningStage $row): bool => array_intersect_key((array) $row->input_json, $input) == $input);
+    }
+
+    /** @return array<string, mixed> */
+    public static function geometrySchema(): array
+    {
+        $text = ['type' => 'string'];
+        $texts = ['type' => 'array', 'items' => $text];
+
+        return [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'required' => ['status', 'geometry_prose', 'coverage', 'findings'],
+            'properties' => [
+                'status' => ['type' => 'string', 'enum' => [self::READY, self::NEEDS_REVIEW]],
+                'geometry_prose' => $text,
+                'coverage' => ['type' => 'array', 'items' => [
+                    'type' => 'object', 'additionalProperties' => false, 'required' => ['path', 'decision', 'reason'],
+                    'properties' => ['path' => $text, 'decision' => ['type' => 'string', 'enum' => self::DECISIONS], 'reason' => $text],
+                ]],
+                'findings' => ['type' => 'array', 'items' => [
+                    'type' => 'object', 'additionalProperties' => false, 'required' => ['kind', 'text', 'paths'],
+                    'properties' => ['kind' => ['type' => 'string', 'enum' => self::FINDING_KINDS], 'text' => $text, 'paths' => $texts],
+                ]],
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $decoded
+     * @param  array<string, mixed>  $design
+     * @param  list<string>  $units
+     * @return list<string> what code can see wrong in the answer; an empty list proves the accounting, not that the prose means the design
+     */
+    public static function geometryViolations(array $decoded, array $design, array $units): array
+    {
+        $prose = is_string($decoded['geometry_prose'] ?? null) ? trim($decoded['geometry_prose']) : '';
+        $coverage = $decoded['coverage'] ?? null;
+        $findings = $decoded['findings'] ?? null;
+
+        if ($prose === '' || ! in_array($decoded['status'] ?? null, [self::READY, self::NEEDS_REVIEW], true)
+            || ! is_array($coverage) || ! array_is_list($coverage) || ! is_array($findings) || ! array_is_list($findings)) {
+            return ['status, geometry_prose, coverage and findings must take their listed shapes'];
+        }
+
+        $known = array_flip($units);
+        $decisions = [];
+        $violations = [];
+
+        foreach ($coverage as $index => $entry) {
+            $path = is_array($entry) && is_string($entry['path'] ?? null) ? $entry['path'] : '';
+            $decision = is_array($entry) ? ($entry['decision'] ?? null) : null;
+            $reasoned = is_array($entry) && is_string($entry['reason'] ?? null) && trim($entry['reason']) !== '';
+            $at = 'coverage['.$index.'] '.$path;
+
+            if (! isset($known[$path])) {
+                $violations[] = $at.': is not a unit of the design';
+
+                continue;
+            }
+
+            if (isset($decisions[$path])) {
+                $violations[] = $at.': is accounted twice';
+
+                continue;
+            }
+
+            $decisions[$path] = $decision;
+            $wrong = match ($decision) {
+                self::USED => null,
+                self::MIXED, self::EXCLUDED, self::UNRESOLVED => $reasoned ? null : $decision.' gives its reason',
+                default => 'decision must be used, mixed, excluded or unresolved',
+            };
+
+            if ($wrong !== null) {
+                $violations[] = $at.': '.$wrong;
+            }
+        }
+
+        foreach (array_diff($units, array_keys($decisions)) as $missing) {
+            $violations[] = 'source unit '.$missing.' has no coverage entry';
+        }
+
+        $cited = array_values(array_map(
+            static fn (string $path): mixed => ReferencePromptWriter::designPath($design, $path),
+            array_keys(array_filter($decisions, static fn (mixed $decision): bool => in_array($decision, [self::USED, self::MIXED], true))),
+        ));
+
+        $blocking = in_array(self::UNRESOLVED, $decisions, true);
+
+        foreach ($findings as $index => $finding) {
+            $kind = is_array($finding) ? ($finding['kind'] ?? null) : null;
+
+            if (! in_array($kind, self::FINDING_KINDS, true) || ! is_string($finding['text'] ?? null) || trim($finding['text']) === ''
+                || ! is_array($finding['paths'] ?? null) || array_filter($finding['paths'], static fn (mixed $path): bool => ! is_string($path)
+                    || ReferencePromptWriter::designPath($design, $path) === null) !== []) {
+                $violations[] = 'findings['.$index.']: needs a listed kind, a text and design paths that exist';
+
+                continue;
+            }
+
+            $blocking = $blocking || in_array($kind, self::BLOCKING_FINDINGS, true);
+        }
+
+        if ($blocking && $decoded['status'] === self::READY) {
+            $violations[] = 'status is ready although a unit is unresolved or a finding is missing, conflict or policy_conflict';
+        }
+
+        if (! $blocking && $decoded['status'] === self::NEEDS_REVIEW) {
+            $violations[] = 'status is needs_review without an unresolved unit or a blocking finding';
+        }
+
+        foreach (ReferencePromptWriter::proseViolations($prose, ReferenceView::DESIGN_ANCHOR_FRAME, $design, $cited) as $line) {
+            $violations[] = 'geometry_prose: '.str_replace('the description', 'the prose', $line);
+        }
+
+        return array_values(array_unique($violations));
+    }
+
+    /** @return array<string, mixed> */
+    private static function geometryUsage(string $model, int $inputTokens, int $outputTokens): array
+    {
+        return [
+            'model' => 'anthropic',
+            'provider_model' => $model,
+            'instruction_version' => (string) config('image_prompt.anchor_geometry.prompt_version'),
+            'tokens_in' => $inputTokens,
+            'tokens_out' => $outputTokens,
+            'thinking_tokens' => null,
+            'cost_usd' => 0.0,
+        ];
+    }
+
+    private function geometryClient(): StructuredOutputLlmClient
+    {
+        return $this->geometryClient ??= app('video.anchor_geometry.client');
+    }
+
+    private function geometrySkill(): string
+    {
+        $skill = (string) @file_get_contents((string) config('image_prompt.anchor_geometry.prompt_path'));
+        $position = mb_strpos($skill, self::GEOMETRY_MARKER);
+
+        if (trim($skill) === '') {
+            throw new \RuntimeException('Anchor geometry skill not found.');
+        }
+
+        return trim($position === false ? $skill : mb_substr($skill, 0, $position));
     }
 
     /**
@@ -420,13 +697,15 @@ final class CharacterAnchorPromptService
      */
     public function designPromptCheck(string $projectId, array $stamp, ImageSize $size): array
     {
-        [$design, $reason] = $this->designs->stageForSpec($projectId, $stamp);
+        $promptStageId = $stamp['anchor_prompt_stage_id'] ?? null;
+        $written = is_string($promptStageId) && $promptStageId !== '' ? $this->succeededPromptStage($projectId, $promptStageId) : null;
+        $geometry = ($written?->input_json['writer'] ?? null) === self::GEOMETRY_WRITER;
+        [$design, $reason] = $this->designs->stageForSpec($projectId, $stamp, ! $geometry);
 
         if ($design === null) {
             return [null, $reason];
         }
 
-        $promptStageId = $stamp['anchor_prompt_stage_id'] ?? null;
         $prompt = $stamp['prompt'] ?? null;
         $promptSize = ImageSize::tryFrom((string) ($stamp['prompt_size'] ?? ''));
 
@@ -438,6 +717,27 @@ final class CharacterAnchorPromptService
 
         if (! hash_equals((string) ($stamp['prompt_sha256'] ?? ''), $promptHash)) {
             return [null, 'anchor_prompt_stale'];
+        }
+
+        if ($geometry) {
+            $input = $this->geometryInput($design);
+
+            if (array_intersect_key((array) $written->input_json, $input) != $input) {
+                return [null, 'anchor_prompt_source_changed'];
+            }
+
+            if (($written->output_json['status'] ?? null) !== self::READY) {
+                return [null, 'anchor_prompt_needs_review'];
+            }
+
+            $designPrompt = $this->designPrompt->forDesign((array) $design->output_json);
+            $expected = $designPrompt->compileProse((array) $design->output_json, (string) ($written->output_json['geometry_prose'] ?? ''), $size);
+
+            if (! $designPrompt->fits($expected)) {
+                return [null, 'anchor_prompt_size_unsupported'];
+            }
+
+            return hash_equals($promptHash, hash('sha256', $expected)) ? [$design, 'ok'] : [null, 'anchor_prompt_source_changed'];
         }
 
         $source = $this->designs->anchorPromptSource($design);
@@ -489,6 +789,28 @@ final class CharacterAnchorPromptService
             ->where('stage', PlanningStageName::VESSEL_DESIGN->value)
             ->first();
 
+        if ($promptStage !== null && $design !== null && ($promptStage->input_json['writer'] ?? null) === self::GEOMETRY_WRITER) {
+            $output = (array) $design->output_json;
+            $designPrompt = $this->designPrompt->forDesign($output);
+            $prose = (string) ($promptStage->output_json['geometry_prose'] ?? '');
+
+            if (! hash_equals(hash('sha256', $designPrompt->compileProse($output, $prose, $written)), hash('sha256', $preview['prompt']))) {
+                return [];
+            }
+
+            $prompts = [];
+
+            foreach (ImageSize::cases() as $size) {
+                $prompt = $designPrompt->compileProse($output, $prose, $size);
+
+                if ($designPrompt->fits($prompt)) {
+                    $prompts[$size->value] = $prompt;
+                }
+            }
+
+            return $prompts;
+        }
+
         if ($promptStage === null || $design === null
             || ($promptStage->output_json['author_model'] ?? null) !== AnchorDesignPrompt::AUTHOR
             || ! hash_equals(hash('sha256', (string) ($promptStage->output_json['prompt'] ?? '')), hash('sha256', $preview['prompt']))) {
@@ -513,8 +835,31 @@ final class CharacterAnchorPromptService
     /** @param array<string, mixed> $preview */
     public function isCurrentDesignPrompt(array $preview): bool
     {
-        return in_array($preview['lineage']['prompt_version'] ?? null, $this->designPrompt->versions(), true)
-            && ($preview['lineage']['subject_state_version'] ?? null) === AnchorDesignPrompt::AUTHOR;
+        return ($preview['lineage']['prompt_version'] ?? null) === $this->designPrompt->geometryVersion()
+            && ($preview['lineage']['subject_state_version'] ?? null) !== AnchorDesignPrompt::AUTHOR;
+    }
+
+    /**
+     * @param  array<string, mixed>  $preview
+     * @return array{usage: mixed, blocks: list<string>}|null the call's usage and why the geometry prompt in use cannot be rendered (each blocking finding and unresolved unit); null when it is not a geometry prompt
+     */
+    public function geometryReview(string $projectId, array $preview): ?array
+    {
+        $promptStageId = $preview['anchor_prompt_stage_id'] ?? null;
+        $stage = is_string($promptStageId) ? $this->succeededPromptStage($projectId, $promptStageId) : null;
+
+        if ($stage === null || ($stage->input_json['writer'] ?? null) !== self::GEOMETRY_WRITER) {
+            return null;
+        }
+
+        $output = (array) $stage->output_json;
+
+        return ['usage' => $output['usage'] ?? null, 'blocks' => ($output['status'] ?? null) !== self::NEEDS_REVIEW ? [] : [
+            ...array_map(static fn (array $finding): string => $finding['kind'].': '.$finding['text'],
+                array_values(array_filter((array) ($output['findings'] ?? []), static fn (array $finding): bool => in_array($finding['kind'] ?? null, self::BLOCKING_FINDINGS, true)))),
+            ...array_map(static fn (array $entry): string => self::UNRESOLVED.' '.$entry['path'].': '.$entry['reason'],
+                array_values(array_filter((array) ($output['coverage'] ?? []), static fn (array $entry): bool => ($entry['decision'] ?? null) === self::UNRESOLVED))),
+        ]];
     }
 
     /** @param array<string, mixed> $preview */

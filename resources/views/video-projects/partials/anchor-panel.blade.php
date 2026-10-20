@@ -58,7 +58,9 @@
                     <div class="va-row-prompt">
                         <div class="va-row-bar">
                             @if($hasPrompt)
-                                <div class="m">Viết bởi <b>{{ ($row['prompt_author'] ?? null) === \App\Video\Prompt\AnchorDesignPrompt::AUTHOR ? 'code · ' : '' }}{{ $row['prompt_version'] ?? '—' }}</b></div>
+                                <div class="m">Viết bởi <b>{{ ($row['prompt_author'] ?? null) === \App\Video\Prompt\AnchorDesignPrompt::AUTHOR ? 'code' : ($row['prompt_author'] ?? '—') }} · {{ $row['prompt_version'] ?? '—' }}</b>
+                                    @isset($row['geometry']['usage']['tokens_in']) · {{ $row['geometry']['usage']['tokens_in'] }} token vào · {{ $row['geometry']['usage']['tokens_out'] }} token ra · chưa định giá @endisset
+                                </div>
                                 {{-- @if(($row['unclassified'] ?? []) !== [])
                                     <div class="m" style="color:var(--vp-amber-fg)">Thiết kế chưa phân loại trong/ngoài cho {{ count($row['unclassified']) }} chi tiết phụ cố định — prompt đang giữ cả: {{ implode(', ', $row['unclassified']) }}.</div>
                                 @endif --}}
@@ -75,6 +77,28 @@
                             @endif
 
                             @if(($designFirst ?? false) && $character !== null)
+                                @if(($row['blockers'] ?? []) === [] && ! $anchorPrompt['running'])
+                                    <form method="POST" action="{{ route('video-projects.concept', $project->id) }}"
+                                          id="conceptForm{{ $n }}" data-modal="confirmConcept{{ $n }}"
+                                          onsubmit="return vpLockForm(this)" hidden>
+                                        @csrf
+                                        <input type="hidden" name="character_id" value="{{ $character['id'] }}">
+                                        @if($hasPrompt)<input type="hidden" name="force" value="1">@endif
+                                    </form>
+                                    <button type="button" class="vp-btn sm pri" data-toggle="modal"
+                                            data-target="#confirmConcept{{ $n }}" data-busy="Claude đang viết…">
+                                        {{ $hasPrompt ? 'Viết lại bằng Claude' : 'Viết prompt anchor bằng Claude' }}
+                                    </button>
+                                    @include('modal.confirm_action', [
+                                        'id' => 'confirmConcept'.$n,
+                                        'form' => 'conceptForm'.$n,
+                                        'content' => 'Gọi '.config('image_prompt.anchor_geometry.model').' (effort '.config('image_prompt.anchor_geometry.effort').') MỘT lượt: gửi toàn bộ bản thiết kế tàu rev '
+                                            .($character['design_revision'] ?? '—').' để viết phần hình học anchor góc 3/4 mũi mạn trái 35° — TÁC VỤ NÀY TÍNH TIỀN.',
+                                        'detail' => $hasPrompt
+                                            ? 'Viết lại tạo bản mới; prompt đang dùng giữ nguyên nếu lượt mới lỗi. Không tự render.'
+                                            : 'Cùng thiết kế và cùng bộ luật thì lần sau dùng lại, không gọi lại. Không tự render.',
+                                    ])
+                                @endif
                             @elseif(($row['blockers'] ?? []) !== [])
                                 <button class="vp-btn sm" disabled title="Thiết kế chưa sẵn sàng">Creat Prompt</button>
                             @elseif(! $brief['analysed'])
@@ -117,6 +141,12 @@
                                     <div>{{ $blocker }}</div>
                                 @endforeach
                             </div>
+                        @endif
+                        @if(($row['geometry']['blocks'] ?? []) !== [])
+                            <div class="va-lbl" style="font-weight:400"><span class="va-tag dg">Cần xử lý — chưa render được</span></div>
+                            @foreach($row['geometry']['blocks'] as $block)
+                                <div class="va-lbl vr-finding dg">{{ $block }}</div>
+                            @endforeach
                         @endif
                         <div class="va-lbl">PROMPT GỬI ĐI</div>
                         <textarea class="va-ta" readonly id="anchorPrompt{{ $n }}">{{ $row['prompt'] ?? '' }}</textarea>
@@ -183,7 +213,7 @@
                                     data-prompt-box="anchorPrompt{{ $n }}" data-prompt-count="anchorPromptCount{{ $n }}"
                                     data-sized-prompts="{{ json_encode((object) ($row['sized_prompts'] ?? []), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) }}"
                                     data-toggle="modal" data-target="#confirmAnchorImage{{ $n }}"
-                                    @if(($row['blockers'] ?? []) !== []) disabled data-blocked="1" @endif
+                                    @if(($row['blockers'] ?? []) !== [] || ($row['geometry']['blocks'] ?? []) !== []) disabled data-blocked="1" @endif
                                     data-busy="Đang render…">Render Image</button>
                             @include('modal.confirm_action', [
                                 'id' => 'confirmAnchorImage'.$n,

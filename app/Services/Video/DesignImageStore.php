@@ -319,6 +319,15 @@ class DesignImageStore
             'derivation_version',
         ], match ($spec['derivation_version'] ?? null) {
             ReferencePromptWriter::DERIVATION_VERSION => ['identity_anchor_artifact_id', 'identity_anchor_sha256'],
+            ReferencePromptWriter::PLAN_DERIVATION_VERSION => [
+                'identity_anchor_artifact_id',
+                'identity_anchor_sha256',
+                'reference_mode',
+                'reference_plan_stage_id',
+                'request_id',
+                'build_stage',
+                'design_content_hash',
+            ],
             ReferenceSheet::DERIVATION_VERSION => [
                 'identity_anchor_artifact_id',
                 'identity_anchor_sha256',
@@ -873,6 +882,9 @@ class DesignImageStore
             'worker' => $image->worker_id,
             'view_key' => $spec['view_key'] ?? null,
             'reference_mode' => $spec['reference_mode'] ?? null,
+            'reference_plan_stage_id' => $spec['reference_plan_stage_id'] ?? null,
+            'request_id' => $spec['request_id'] ?? null,
+            'presentation' => $spec['presentation'] ?? null,
             'sheet_state' => $spec['sheet_state'] ?? null,
             'character_id' => $spec['character_id'] ?? null,
             'character_name' => $spec['character_name'] ?? null,
