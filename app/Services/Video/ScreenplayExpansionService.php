@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
-use App\Services\PromptLibrary\PromptLibraryException;
-use App\Services\PromptLibrary\PromptSource;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
@@ -61,12 +59,6 @@ final class ScreenplayExpansionService
     private const LOCATION_AUTHOR = 'video.screenplay.location_author';
 
     private const SCENE_AUTHOR = 'video.screenplay.scene_author';
-
-    /** Author -> consumer trong prompt_library.consumers. */
-    private const PROMPT_CONSUMERS = [
-        self::LOCATION_AUTHOR => 'video.screenplay.locations',
-        self::SCENE_AUTHOR => 'video.screenplay.scenes',
-    ];
 
     /** @var array<string, array{stage: PlanningStageName}> */
     private const CAST = [
@@ -721,9 +713,8 @@ final class ScreenplayExpansionService
         }
 
         try {
-            // Ghep prompt TRUOC khi tinh fingerprint: rules_hash nam trong input cua stage.
-            $author = app(PromptSource::class)->attach(app($authorKey), self::PROMPT_CONSUMERS[$authorKey], $projectId);
-        } catch (TextCompletionException|PromptLibraryException $e) {
+            $author = app($authorKey);
+        } catch (TextCompletionException $e) {
             Log::error('screenplay expansion: configured contract is not supported, no model call made', [
                 'project_id' => $projectId,
                 'author' => $authorKey,

@@ -270,8 +270,15 @@ class AppServiceProvider extends ServiceProvider
                     model: (string) config('video.screenplay.design.model'),
                     maxTokens: (int) config('video.screenplay.design.max_tokens'),
                     contractVersion: (string) config('video.screenplay.design.contract_version'),
-                    // Doan dan truoc vi du mau: design/03_example_guidance.txt (vao thu vien prompt cung cac file khac).
-                    exampleGuidance: null,
+                    exampleGuidance: [
+                        'A WORKED EXAMPLE',
+                        'Its subject is deliberately unlike yours. Copy the way the decisions',
+                        'were made. Never copy its vessel, its arrangement or its sentences.',
+                        'It shows how an abstract question from the inspiration becomes one',
+                        'whole design described precisely enough to build and draw.',
+                        'Its finish level follows its own subject. The finish level of your',
+                        'design, inside and out, follows your profile.',
+                    ],
                     sourceKey: 'inspiration',
                 );
             }
@@ -324,7 +331,13 @@ class AppServiceProvider extends ServiceProvider
                     model: (string) config('video.screenplay.story.model'),
                     maxTokens: (int) config('video.screenplay.story.max_tokens'),
                     contractVersion: (string) config('video.screenplay.story.contract_version'),
-                    exampleGuidance: null,
+                    exampleGuidance: [
+                        'A WORKED EXAMPLE',
+                        'Its subject is deliberately unlike yours. Copy the way the decisions',
+                        'were made. Never copy its story, its people or its sentences.',
+                        'It shows how a fixed design is followed from the drawing to the life',
+                        'on board without changing any part of it.',
+                    ],
                     sourceKey: 'design',
                 );
             }
@@ -353,7 +366,13 @@ class AppServiceProvider extends ServiceProvider
                         model: (string) config("video.screenplay.{$step}.model"),
                         maxTokens: (int) config("video.screenplay.{$step}.max_tokens"),
                         contractVersion: (string) config("video.screenplay.{$step}.contract_version"),
-                        exampleGuidance: null,
+                        exampleGuidance: [
+                            'A WORKED EXAMPLE',
+                            'Its subject is deliberately unlike yours. Copy the way the decisions',
+                            'were made. Never copy its story, its characters, its locations or its',
+                            'sentences.',
+                            'It shows how a selected foundation yields the '.strtok($step, '_').' its scenes will need.',
+                        ],
                         sourceKey: 'foundation',
                     );
                 },
@@ -382,7 +401,15 @@ class AppServiceProvider extends ServiceProvider
                         model: (string) config("video.screenplay.{$step}.model"),
                         maxTokens: (int) config("video.screenplay.{$step}.max_tokens"),
                         contractVersion: (string) config("video.screenplay.{$step}.contract_version"),
-                        exampleGuidance: null,
+                        exampleGuidance: [
+                            'A WORKED EXAMPLE',
+                            'Its subject is deliberately unlike yours. Copy the way the decisions',
+                            'were made. Never copy its story, its characters, its locations or its',
+                            'sentences.',
+                            'It shows how a selected foundation becomes scenes without changing it,',
+                            'how coverage is accounted for, and how build state is written.',
+                            'Its scene count belongs to its own foundation and is not a target.',
+                        ],
                         sourceKey: 'foundation',
                     );
                 }
@@ -419,7 +446,6 @@ class AppServiceProvider extends ServiceProvider
                     promptVersion: (string) config('image_prompt.prompt_version'),
                     model: (string) config('image_prompt.anchor_author.model'),
                     maxTokens: (int) config('image_prompt.'.config('canonical_concept.provider').'.max_tokens'),
-                    promptConsumer: 'image.geometry_reference',
                 );
             }
         );
@@ -461,7 +487,6 @@ class AppServiceProvider extends ServiceProvider
                     promptVersion: (string) config('image_prompt.character_prompt_version'),
                     model: (string) config('image_prompt.anchor_author.model'),
                     maxTokens: (int) config('image_prompt.'.config('canonical_concept.provider').'.max_tokens'),
-                    promptConsumer: 'image.character_reference',
                 );
             }
         );
@@ -473,7 +498,6 @@ class AppServiceProvider extends ServiceProvider
                 version: (string) config('image_prompt.design_anchor.prompt_version'),
                 geometryTemplatePath: (string) config('image_prompt.design_anchor.geometry_template_path'),
                 geometryVersion: (string) config('image_prompt.design_anchor.geometry_version'),
-                promptConsumer: 'image.design_anchor',
             ),
         );
 
@@ -518,16 +542,6 @@ class AppServiceProvider extends ServiceProvider
                 );
             }
         );
-
-        // Thu vien prompt (ai_prompt_*): nguon prompt chung cho moi consumer.
-        $this->app->singleton(\App\Services\PromptLibrary\Import\MarkdownSectionParser::class);
-        $this->app->singleton(\App\Services\PromptLibrary\Import\PromptImporter::class);
-        $this->app->singleton(\App\Services\PromptLibrary\PromptVariableResolver::class);
-        $this->app->singleton(\App\Services\PromptLibrary\PromptResolver::class);
-        $this->app->singleton(\App\Services\PromptLibrary\PromptPublisher::class);
-        $this->app->singleton(\App\Services\PromptLibrary\PromptRunPinner::class);
-        // scoped: ghep mot lan moi request/job, khong giu revision cu sang job sau.
-        $this->app->scoped(\App\Services\PromptLibrary\PromptSource::class);
 
         // Spec superyacht v6.3: chi phan kiem tai lieu (8 schema, 22 rang buoc).
         $superyacht = static fn (): array => (array) config('video.superyacht');

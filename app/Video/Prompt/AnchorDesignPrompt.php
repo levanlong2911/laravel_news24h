@@ -7,8 +7,6 @@ namespace App\Video\Prompt;
 use App\Enums\AnchorStage;
 use App\Enums\ImageModel;
 use App\Enums\ImageSize;
-use App\Services\PromptLibrary\PromptSource;
-use App\Services\PromptLibrary\ResolvedPrompt;
 use App\Services\Video\OpenAiImageClient;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
 use App\Video\Reference\ReferenceView;
@@ -49,12 +47,6 @@ final class AnchorDesignPrompt
         private readonly ?string $v4Version = null,
         private readonly ?string $geometryTemplatePath = null,
         private readonly ?string $geometryVersion = null,
-        /*
-         * Consumer trong prompt_library.consumers (section "template" va
-         * "geometry_template"). Chi ban chinh mang no; ban v3/v4 tao trong
-         * forDesign() khong truyen nen van doc file cua rieng chung.
-         */
-        private readonly ?string $promptConsumer = null,
     ) {}
 
     /** @param array<string, mixed> $design */
@@ -379,12 +371,6 @@ final class AnchorDesignPrompt
 
     private function geometryTemplate(): string
     {
-        $prompt = $this->libraryPrompt();
-
-        if ($prompt !== null) {
-            return $prompt->section('geometry_template');
-        }
-
         if ($this->geometryTemplatePath === null || ! is_file($this->geometryTemplatePath)) {
             throw new RuntimeException('Anchor geometry template not found: '.$this->geometryTemplatePath);
         }
@@ -394,22 +380,10 @@ final class AnchorDesignPrompt
 
     private function template(): string
     {
-        $prompt = $this->libraryPrompt();
-
-        if ($prompt !== null) {
-            return $prompt->section('template');
-        }
-
         if (! is_file($this->templatePath)) {
             throw new RuntimeException('Anchor prompt template not found: '.$this->templatePath);
         }
 
         return (string) file_get_contents($this->templatePath);
-    }
-
-    /** Null o che do file. PromptSource la scoped: lay tu container moi lan vi lop nay la singleton. */
-    private function libraryPrompt(): ?ResolvedPrompt
-    {
-        return $this->promptConsumer === null ? null : app(PromptSource::class)->resolve($this->promptConsumer);
     }
 }

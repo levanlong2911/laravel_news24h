@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
-use App\Services\PromptLibrary\PromptSource;
 use App\Video\Screenplay\ScreenplayAuthor;
 use App\Video\Screenplay\ScreenplayFailure;
 use App\Video\Screenplay\ScreenplayResult;
@@ -44,12 +43,8 @@ final class ScreenplayStepRunner
         callable $finish,
         ?array $constrainedSchema = null,
     ): array {
-        // Author da gan prompt tu thu vien thi pin revision vao stage ngay trong transaction claim.
-        // PromptSource la scoped: lay tu container moi lan, khong giu qua constructor cua service song lau.
-        [$promptMeta, $pinPrompt] = app(PromptSource::class)->forClaim([$author->resolvedPrompt()]);
-
         [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage(
-            $projectId, $stage, $input, $force, $meta + $promptMeta, $pinPrompt,
+            $projectId, $stage, $input, $force, $meta,
         );
 
         if ($claimReason === 'already_succeeded') {
