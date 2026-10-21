@@ -1,0 +1,11 @@
+{
+    "id": "9d2c4e6f-1a3b-4c5d-8e7f-0a1b2c3d4e5f",
+    "item_id": "frame/SC07_SH02@1",
+    "item_type": "frame",
+    "reason": "UNCERTAIN",
+    "priority": "P1",
+    "decision": "swap_variant",
+    "decided_by": "system",
+    "decided_at": "2026-10-19T16:39:12Z",
+    "note": "Hull door position and deck count match the model sheet."
+}

@@ -1,0 +1,14 @@
+{
+    "id": "C-P2-001",
+    "priority": "P2",
+    "statement": "Scaffolding covers both hull sides while the hull is in primer",
+    "check": "vision_question",
+    "question": "Is scaffolding visible along the hull?",
+    "part": "scaffolding_on_hull",
+    "visible_from": [
+        "port_profile"
+    ],
+    "from_state": "BS07",
+    "until_state": "BS09",
+    "canonical_revision": 1
+}

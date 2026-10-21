@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Video\Screenplay;
 
+use App\Services\PromptLibrary\ResolvedPrompt;
 use App\Video\Concept\Claude\AnthropicStructuredOutputClient;
 use App\Video\Concept\Contracts\StructuredOutputLlmClient;
 use App\Video\Prompt\Exceptions\TextCompletionException;
@@ -42,7 +43,16 @@ final class ScreenplayAuthor
         'It does not stand in for the design work this assignment asks of you.',
     ];
 
+    /** Doan dan truoc vi du mau, khi khong truyen exampleGuidance bang mang. */
+    private const EXAMPLE_GUIDANCE_FILE = '03_example_guidance.txt';
+
     private ?array $validatedSchema = null;
+
+    /**
+     * Prompt da ghep tu thu vien cho DUNG mot lan goi (section = ten file). Null
+     * thi doc promptDir nhu truoc. Author la singleton nen withPrompt() tra ban sao.
+     */
+    private ?ResolvedPrompt $prompt = null;
 
     public function __construct(
         private readonly StructuredOutputLlmClient $client,
@@ -52,8 +62,8 @@ final class ScreenplayAuthor
         private readonly string $model,
         private readonly int $maxTokens,
         private readonly string $contractVersion = self::DEFAULT_CONTRACT,
-        /** @var list<string> */
-        private readonly array $exampleGuidance = self::EXAMPLE_GUIDANCE,
+        /** @var list<string>|null null: doc 03_example_guidance.txt cung thu muc prompt */
+        private readonly ?array $exampleGuidance = self::EXAMPLE_GUIDANCE,
         private readonly string $sourceKey = 'inspiration',
     ) {
         if (! in_array($contractVersion, ScreenplayValidator::ALL_CONTRACTS, true)) {
@@ -63,6 +73,19 @@ final class ScreenplayAuthor
         if (! array_key_exists($model, self::PRICING)) {
             throw new TextCompletionException("No price is known for screenplay model: {$model}");
         }
+    }
+
+    public function withPrompt(ResolvedPrompt $prompt): self
+    {
+        $author = clone $this;
+        $author->prompt = $prompt;
+
+        return $author;
+    }
+
+    public function resolvedPrompt(): ?ResolvedPrompt
+    {
+        return $this->prompt;
     }
 
     public function contractVersion(): string
@@ -280,8 +303,11 @@ final class ScreenplayAuthor
             $parts[] = $this->read($name);
         }
 
+        // File khong ket thuc bang xuong dong de noi ra dung nhu mang cu; rtrim chiu duoc editor tu them.
+        $guidance = $this->exampleGuidance ?? [rtrim($this->read(self::EXAMPLE_GUIDANCE_FILE), "\r\n")];
+
         $parts[] = implode("\n\n", [
-            ...$this->exampleGuidance,
+            ...$guidance,
             'GIVEN THIS INPUT:',
             $this->read(self::EXAMPLE_INPUT),
             'A VALID ANSWER IS:',
@@ -375,6 +401,10 @@ final class ScreenplayAuthor
 
     private function read(string $name): string
     {
+        if ($this->prompt !== null) {
+            return $this->prompt->section($name);
+        }
+
         $path = rtrim($this->promptDir, '/\\').DIRECTORY_SEPARATOR.$name;
 
         if (! is_file($path)) {

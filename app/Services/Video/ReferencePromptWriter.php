@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
+use App\Services\PromptLibrary\PromptSource;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
@@ -152,8 +153,10 @@ final class ReferencePromptWriter
         $packet = $this->packet($base, $view);
         $input = $this->fingerprint($base, $packet, $view);
 
+        [$promptMeta, $pinPrompt] = app(PromptSource::class)->claimFor(['image.reference_view']);
+
         [$claimed, $token, $reason] = $this->stages->claimProjectStage(
-            $projectId, PlanningStageName::REFERENCE_PROMPT, $input, $force, ['pricing' => 'unpriced', 'reference_source' => $packet],
+            $projectId, PlanningStageName::REFERENCE_PROMPT, $input, $force, ['pricing' => 'unpriced', 'reference_source' => $packet] + $promptMeta, $pinPrompt,
         );
 
         if ($claimed === null) {
@@ -640,9 +643,10 @@ final class ReferencePromptWriter
 
         $packet = self::planPacket($source);
         $input = $this->planFingerprint($source, $packet);
+        [$promptMeta, $pinPrompt] = app(PromptSource::class)->claimFor(['image.reference_plan']);
 
         [$claimed, $token, $reason] = $this->stages->claimProjectStage(
-            $projectId, PlanningStageName::REFERENCE_PROMPT, $input, $force, ['pricing' => 'unpriced'],
+            $projectId, PlanningStageName::REFERENCE_PROMPT, $input, $force, ['pricing' => 'unpriced'] + $promptMeta, $pinPrompt,
         );
 
         if ($claimed === null) {
@@ -1202,7 +1206,7 @@ final class ReferencePromptWriter
             'mode' => self::PLAN_MODE,
             'plan_version' => self::PLAN_VERSION,
             'prompt_version' => (string) config('image_prompt.reference_plan.prompt_version'),
-            'skill_hash' => hash('sha256', (string) @file_get_contents((string) config('image_prompt.reference_plan.prompt_path'))),
+            'skill_hash' => hash('sha256', self::planSkillText()),
             'storyboard_stage_id' => $source['storyboard_stage_id'],
             'storyboard_revision' => $source['storyboard_revision'],
             'screenplay_stage_id' => $source['screenplay_stage_id'],
@@ -1235,15 +1239,35 @@ final class ReferencePromptWriter
         return $this->planClient ??= app('video.reference_plan.client');
     }
 
+    /**
+     * Toan van skill reference plan cho skill_hash. Che do database doc tu thu
+     * vien (mot lan moi request/job); che do file giu cach doc cu (rong khi thieu file).
+     */
+    private static function planSkillText(): string
+    {
+        $prompt = app(PromptSource::class)->resolve('image.reference_plan');
+
+        return $prompt !== null
+            ? $prompt->content
+            : (string) @file_get_contents((string) config('image_prompt.reference_plan.prompt_path'));
+    }
+
     private function planSkill(): string
     {
-        $path = (string) config('image_prompt.reference_plan.prompt_path');
+        $prompt = app(PromptSource::class)->resolve('image.reference_plan');
 
-        if (! is_file($path)) {
-            throw new TextCompletionException('Reference plan skill not found: '.$path);
+        if ($prompt !== null) {
+            $skill = $prompt->content;
+        } else {
+            $path = (string) config('image_prompt.reference_plan.prompt_path');
+
+            if (! is_file($path)) {
+                throw new TextCompletionException('Reference plan skill not found: '.$path);
+            }
+
+            $skill = (string) file_get_contents($path);
         }
 
-        $skill = (string) file_get_contents($path);
         $position = mb_strpos($skill, self::PLAN_MARKER);
 
         return trim($position === false ? $skill : mb_substr($skill, 0, $position));
@@ -1614,6 +1638,13 @@ final class ReferencePromptWriter
 
     private function skill(): string
     {
+        // Che do database: doc tu thu vien, mot lan moi request/job (cung ban voi skill_hash luc claim).
+        $prompt = app(PromptSource::class)->resolve('image.reference_view');
+
+        if ($prompt !== null) {
+            return $prompt->content;
+        }
+
         $path = (string) config('image_prompt.reference.prompt_path');
 
         if (! is_file($path)) {

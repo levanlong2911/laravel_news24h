@@ -19,6 +19,8 @@ use App\Models\VideoProject;
 use App\Models\VideoRender;
 use App\Models\VideoRenderScene;
 use App\Models\VideoSession;
+use App\Services\PromptLibrary\PromptLibraryException;
+use App\Services\PromptLibrary\PromptSource;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\CharacterAnchorPromptService;
@@ -4358,10 +4360,14 @@ class VideoProjectService
             'brief_hash' => hash('sha256', json_encode($brief, JSON_UNESCAPED_UNICODE)),
             'skill_hash' => $this->geometryPromptAuthor->skillHash(),
         ];
+        [$promptMeta, $pinPrompt] = app(PromptSource::class)->claimFor([(string) $this->geometryPromptAuthor->promptConsumer()]);
         [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
             $projectId,
             PlanningStageName::ANCHOR_PROMPT,
             $input,
+            false,
+            $promptMeta,
+            $pinPrompt,
         );
 
         if ($reason === 'already_succeeded') {
@@ -5052,12 +5058,12 @@ class VideoProjectService
             return [null, 'storyboard_film_profile_invalid'];
         }
 
-        $author = app(ScenePlanAuthor::class);
-
         try {
+            // Ghep prompt TRUOC skill_hash va claim: no la mot phan cua input_hash.
+            $author = app(PromptSource::class)->attach(app(ScenePlanAuthor::class), 'video.storyboard', $projectId);
             $skillHash = $author->skillHash();
             $schemaHash = $author->schemaHash();
-        } catch (ScenePlanException $e) {
+        } catch (ScenePlanException|PromptLibraryException $e) {
             $this->quietLog('storyboard: author skill unreadable', $e, ['project_id' => $projectId]);
 
             return [null, 'scene_plan_misconfigured'];
@@ -5276,9 +5282,11 @@ class VideoProjectService
         $stageName = PlanningStageName::SCENE_PLAN;
         $provider = (string) $claimInput['provider'];
         $claimMeta = ['pricing' => $stored === null ? 'unpriced' : 'free'];
+        // _meta nam ngoai input_hash: nguon goc prompt khong lam lech viec dung lai ket qua.
+        [$promptMeta, $pinPrompt] = app(PromptSource::class)->forClaim([$author instanceof ScenePlanAuthor ? $author->resolvedPrompt() : null]);
 
         [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
-            $projectId, $stageName, $claimInput, $force, $claimMeta,
+            $projectId, $stageName, $claimInput, $force, $claimMeta + $promptMeta, $pinPrompt,
         );
 
         if ($token === null) {

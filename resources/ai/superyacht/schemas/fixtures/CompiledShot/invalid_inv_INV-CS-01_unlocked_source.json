@@ -1,0 +1,71 @@
+{
+    "shot_id": "SC07_SH02",
+    "revision": 1,
+    "hash": "sha256:0cb42fc4fe2398f97ac5b3dce4f04362ad0ce68619520e8cf102a5d404419142",
+    "state": "BS12",
+    "sources": {
+        "canonical": "rev2",
+        "shot_spec": "rev1"
+    },
+    "image_tool": "gpt-image-2",
+    "image_mode": "edit_from_clay",
+    "video_tool": "veo-3.1-generate-preview",
+    "video_mode": "first_frame",
+    "image_prompt": [
+        {
+            "block": "geometry_instruction",
+            "text": "Keep the silhouette, deck count and window rhythm of the input render exactly.",
+            "source": "canonical@1"
+        },
+        {
+            "block": "identity",
+            "text": "The completed yacht with a complete hull shell, an open main deck, the superstructure, fitted glazing, twin hull door openings at midships, an observation blister below the bow waterline, a flush helideck on the foredeck, a mast, a full-width stern water platform and stepped terraces; no scaffolding. Surfaces: hull shell in final paint, main deck in teak, superstructure in final paint, glazing in final tinted glass.",
+            "source": "canonical.build_states.BS12@1"
+        },
+        {
+            "block": "location",
+            "text": "Calm turquoise bay with limestone cliffs, golden hour.",
+            "source": "locations.LOC03@1"
+        },
+        {
+            "block": "action",
+            "text": "The yacht rests at anchor while the hull doors fold open.",
+            "source": "shot_spec.SC07_SH02@1"
+        },
+        {
+            "block": "camera",
+            "text": "Low three-quarter view from port, 50 mm, slow dolly left.",
+            "source": "shot_spec.SC07_SH02@1"
+        },
+        {
+            "block": "style",
+            "text": "Photographic, natural colour, no text, no logos.",
+            "source": "style_bible@3"
+        }
+    ],
+    "motion_prompt": "Slow dolly left; hull doors fold open; gentle swell; no camera shake.",
+    "refs": [
+        "model_sheet/port_profile@1",
+        "clay/SC07_SH02@1"
+    ],
+    "constraints_to_check": [
+        {
+            "id": "C-P0-001",
+            "status": "must_show"
+        },
+        {
+            "id": "C-P1-001",
+            "status": "must_show"
+        },
+        {
+            "id": "C-P2-001",
+            "status": "not_applicable"
+        }
+    ],
+    "validation": {
+        "rule": "PASS",
+        "judge": "PASS",
+        "operational": "PASS"
+    },
+    "status": "FROZEN"
+}

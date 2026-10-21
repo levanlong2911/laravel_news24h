@@ -8,6 +8,7 @@ use App\Enums\AnchorStage;
 use App\Enums\ImageModel;
 use App\Enums\ImageSize;
 use App\Enums\PlanningStageName;
+use App\Services\PromptLibrary\PromptSource;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
@@ -234,8 +235,11 @@ final class CharacterAnchorPromptService
             return [null, 'anchor_prompt_not_written', $character];
         }
 
+        // Skill anchor geometry + template dung de tinh input o tren: pin ca hai vao stage.
+        [$promptMeta, $pinPrompt] = app(PromptSource::class)->claimFor(['image.anchor_geometry', 'image.design_anchor']);
+
         [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
-            $projectId, PlanningStageName::ANCHOR_PROMPT, $input, $force, ['pricing' => 'unpriced'],
+            $projectId, PlanningStageName::ANCHOR_PROMPT, $input, $force, ['pricing' => 'unpriced'] + $promptMeta, $pinPrompt,
         );
 
         if ($claimed === null) {
@@ -372,7 +376,7 @@ final class CharacterAnchorPromptService
             'design_revision' => (int) $design->planning_revision,
             'design_content_hash' => VesselDesign::contentHash($output),
             'prompt_version' => (string) config('image_prompt.anchor_geometry.prompt_version'),
-            'skill_hash' => hash('sha256', (string) @file_get_contents((string) config('image_prompt.anchor_geometry.prompt_path'))),
+            'skill_hash' => hash('sha256', $this->geometrySkillText()),
             'template_version' => (string) $designPrompt->geometryVersion(),
             'template_hash' => $designPrompt->geometryTemplateHash(),
             'units_hash' => hash('sha256', json_encode(AnchorDesignPrompt::sourceUnits($output), JSON_THROW_ON_ERROR)),
@@ -530,9 +534,23 @@ final class CharacterAnchorPromptService
         return $this->geometryClient ??= app('video.anchor_geometry.client');
     }
 
+    /**
+     * Toan van file skill anchor geometry. Che do database doc tu thu vien (mot
+     * lan moi request/job, cung ban voi skill_hash luc claim); che do file giu
+     * nguyen cach doc cu, ke ca tra chuoi rong khi thieu file.
+     */
+    private function geometrySkillText(): string
+    {
+        $prompt = app(PromptSource::class)->resolve('image.anchor_geometry');
+
+        return $prompt !== null
+            ? $prompt->content
+            : (string) @file_get_contents((string) config('image_prompt.anchor_geometry.prompt_path'));
+    }
+
     private function geometrySkill(): string
     {
-        $skill = (string) @file_get_contents((string) config('image_prompt.anchor_geometry.prompt_path'));
+        $skill = $this->geometrySkillText();
         $position = mb_strpos($skill, self::GEOMETRY_MARKER);
 
         if (trim($skill) === '') {
@@ -594,13 +612,17 @@ final class CharacterAnchorPromptService
         array $metadata = [],
     ): array {
         $input = self::promptInput($characterId, $origin, $source, $author, $downstream);
+        [$promptMeta, $pinPrompt] = $author->promptConsumer() === null
+            ? [[], null]
+            : app(PromptSource::class)->claimFor([$author->promptConsumer()]);
 
         [$claimed, $token, $reason] = $this->stageStore->claimProjectStage(
             $projectId,
             PlanningStageName::ANCHOR_PROMPT,
             $input,
             $force,
-            ['anchor_source' => $source, 'downstream' => $downstream, 'pricing' => 'unpriced'] + $metadata,
+            ['anchor_source' => $source, 'downstream' => $downstream, 'pricing' => 'unpriced'] + $metadata + $promptMeta,
+            $pinPrompt,
         );
 
         $stamped = $claimed === null ? $character : $character + [

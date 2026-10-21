@@ -1,0 +1,586 @@
+{
+    "revision": 0,
+    "revision_kind": "draft",
+    "hash": "sha256:a19b686415a5faa708add603be6e0e123387d34e5166c2e2134c39755df41b8c",
+    "name": "Aurelion",
+    "dimensions": {
+        "loa": {
+            "value": 148.0,
+            "unit": "m",
+            "basis": "CONCEPT_ASSUMPTION"
+        },
+        "beam": {
+            "value": 21.5,
+            "unit": "m",
+            "basis": "CONCEPT_ASSUMPTION"
+        },
+        "draft": {
+            "value": 5.4,
+            "unit": "m",
+            "basis": "CONCEPT_ASSUMPTION"
+        },
+        "gross_tonnage": {
+            "value": 9800.0,
+            "unit": "GT",
+            "basis": "DERIVED"
+        }
+    },
+    "decks": [
+        {
+            "name": "lower",
+            "height_m": 3.2,
+            "start_x": 0.06,
+            "end_x": 0.94
+        },
+        {
+            "name": "main",
+            "height_m": 3.4,
+            "start_x": 0.04,
+            "end_x": 0.97
+        },
+        {
+            "name": "upper",
+            "height_m": 3.3,
+            "start_x": 0.14,
+            "end_x": 0.86
+        },
+        {
+            "name": "owner",
+            "height_m": 3.3,
+            "start_x": 0.22,
+            "end_x": 0.78
+        },
+        {
+            "name": "bridge",
+            "height_m": 3.1,
+            "start_x": 0.3,
+            "end_x": 0.66
+        },
+        {
+            "name": "sun",
+            "height_m": 2.8,
+            "start_x": 0.38,
+            "end_x": 0.6
+        }
+    ],
+    "profile_curve": [
+        [
+            0.0,
+            0.08
+        ],
+        [
+            0.0435,
+            0.0868
+        ],
+        [
+            0.087,
+            0.0935
+        ],
+        [
+            0.1304,
+            0.0999
+        ],
+        [
+            0.1739,
+            0.106
+        ],
+        [
+            0.2174,
+            0.1116
+        ],
+        [
+            0.2609,
+            0.1165
+        ],
+        [
+            0.3043,
+            0.1208
+        ],
+        [
+            0.3478,
+            0.1244
+        ],
+        [
+            0.3913,
+            0.1271
+        ],
+        [
+            0.4348,
+            0.129
+        ],
+        [
+            0.4783,
+            0.1299
+        ],
+        [
+            0.5217,
+            0.1299
+        ],
+        [
+            0.5652,
+            0.129
+        ],
+        [
+            0.6087,
+            0.1271
+        ],
+        [
+            0.6522,
+            0.1244
+        ],
+        [
+            0.6957,
+            0.1208
+        ],
+        [
+            0.7391,
+            0.1165
+        ],
+        [
+            0.7826,
+            0.1116
+        ],
+        [
+            0.8261,
+            0.106
+        ],
+        [
+            0.8696,
+            0.0999
+        ],
+        [
+            0.913,
+            0.0935
+        ],
+        [
+            0.9565,
+            0.0868
+        ],
+        [
+            1.0,
+            0.08
+        ]
+    ],
+    "plan_outline": [
+        [
+            0.0,
+            0.0
+        ],
+        [
+            0.0435,
+            0.0783
+        ],
+        [
+            0.087,
+            0.1546
+        ],
+        [
+            0.1304,
+            0.2269
+        ],
+        [
+            0.1739,
+            0.2939
+        ],
+        [
+            0.2174,
+            0.3536
+        ],
+        [
+            0.2609,
+            0.4045
+        ],
+        [
+            0.3043,
+            0.4455
+        ],
+        [
+            0.3478,
+            0.4755
+        ],
+        [
+            0.3913,
+            0.4938
+        ],
+        [
+            0.4348,
+            0.5
+        ],
+        [
+            0.4783,
+            0.4938
+        ],
+        [
+            0.5217,
+            0.4756
+        ],
+        [
+            0.5652,
+            0.4455
+        ],
+        [
+            0.6087,
+            0.4045
+        ],
+        [
+            0.6522,
+            0.3535
+        ],
+        [
+            0.6957,
+            0.2938
+        ],
+        [
+            0.7391,
+            0.227
+        ],
+        [
+            0.7826,
+            0.1545
+        ],
+        [
+            0.8261,
+            0.0782
+        ],
+        [
+            0.8696,
+            0.0
+        ],
+        [
+            0.913,
+            0.0
+        ],
+        [
+            0.9565,
+            0.0
+        ],
+        [
+            1.0,
+            0.0
+        ]
+    ],
+    "deck_outlines": [
+        {
+            "deck": "main",
+            "points": [
+                [
+                    0.04,
+                    0.0
+                ],
+                [
+                    0.5,
+                    0.5
+                ],
+                [
+                    0.97,
+                    0.0
+                ]
+            ]
+        }
+    ],
+    "landmarks": {
+        "hull_doors": {
+            "x": 0.52,
+            "z": 0.03
+        },
+        "observation_blister": {
+            "x": 0.08,
+            "z": -0.02
+        },
+        "helideck": {
+            "x": 0.18,
+            "z": 0.11
+        },
+        "mast": {
+            "x": 0.46,
+            "z": 0.27
+        }
+    },
+    "surfaces": {
+        "finished": "pearl-grey hull, bronze-tinted glazing, teak decks",
+        "colors": [
+            {
+                "role": "hull",
+                "name": "Pearl Grey",
+                "hex": "#D9D7D2"
+            },
+            {
+                "role": "superstructure",
+                "name": "Warm White",
+                "hex": "#F4F1EA"
+            },
+            {
+                "role": "accent",
+                "name": "Smoked Bronze",
+                "hex": "#6B5843"
+            }
+        ]
+    },
+    "build_states": [
+        {
+            "id": "BS05",
+            "kind": "scale_model",
+            "present_parts": [
+                "hull_shell",
+                "observation_blister"
+            ],
+            "absent_parts": [
+                "superstructure",
+                "glazing",
+                "mast"
+            ],
+            "surfaces_by_part": {
+                "hull_shell": "scale_model_white"
+            },
+            "compiled_text": "A white 1:25 tank model with a complete hull shell and an observation blister below the bow waterline; no superstructure, no glazing, no mast. Surfaces: hull shell in white scale-model finish."
+        },
+        {
+            "id": "BS06",
+            "kind": "build",
+            "present_parts": [
+                "keel_blocks"
+            ],
+            "absent_parts": [
+                "hull_shell",
+                "main_deck",
+                "superstructure",
+                "glazing",
+                "mast"
+            ],
+            "surfaces_by_part": {
+                "keel_blocks": "bare_steel"
+            },
+            "compiled_text": "The yacht under construction with welded keel and bottom blocks; no hull shell, no main deck, no superstructure, no glazing, no mast. Surfaces: keel block in bare welded steel."
+        },
+        {
+            "id": "BS07",
+            "kind": "build",
+            "present_parts": [
+                "hull_shell",
+                "scaffolding_on_hull"
+            ],
+            "absent_parts": [
+                "main_deck",
+                "superstructure",
+                "glazing",
+                "mast"
+            ],
+            "surfaces_by_part": {
+                "hull_shell": "steel_primer"
+            },
+            "compiled_text": "The yacht under construction with a complete hull shell and scaffolding along both sides; no main deck, no superstructure, no glazing, no mast. Surfaces: hull shell in red-oxide primer."
+        },
+        {
+            "id": "BS08",
+            "kind": "build",
+            "present_parts": [
+                "hull_shell",
+                "main_deck",
+                "superstructure",
+                "scaffolding_on_hull"
+            ],
+            "absent_parts": [
+                "glazing",
+                "mast"
+            ],
+            "surfaces_by_part": {
+                "hull_shell": "steel_primer",
+                "superstructure": "raw_aluminium"
+            },
+            "compiled_text": "The yacht under construction with a complete hull shell, an open main deck, the superstructure and scaffolding along both sides; no glazing, no mast. Surfaces: hull shell in red-oxide primer, superstructure in raw unpainted aluminium."
+        },
+        {
+            "id": "BS09",
+            "kind": "build",
+            "present_parts": [
+                "hull_shell",
+                "main_deck",
+                "superstructure",
+                "glazing",
+                "hull_doors",
+                "observation_blister",
+                "helideck",
+                "scaffolding_on_hull"
+            ],
+            "absent_parts": [
+                "mast",
+                "stern_platform",
+                "terraces"
+            ],
+            "surfaces_by_part": {
+                "hull_shell": "filler_primer",
+                "superstructure": "filler_primer",
+                "glazing": "protective_film"
+            },
+            "compiled_text": "The yacht under construction with a complete hull shell, an open main deck, the superstructure, fitted glazing, twin hull door openings at midships, an observation blister below the bow waterline, a flush helideck on the foredeck and scaffolding along both sides; no mast, no stern platform, no terrace. Surfaces: hull shell in grey filler and primer, superstructure in grey filler and primer, glazing in white protective film."
+        },
+        {
+            "id": "BS10",
+            "kind": "build",
+            "present_parts": [
+                "hull_shell",
+                "main_deck",
+                "superstructure",
+                "glazing",
+                "hull_doors",
+                "observation_blister",
+                "helideck",
+                "mast",
+                "stern_platform",
+                "terraces"
+            ],
+            "absent_parts": [
+                "scaffolding_on_hull"
+            ],
+            "surfaces_by_part": {
+                "hull_shell": "final_paint",
+                "superstructure": "final_paint",
+                "glazing": "protective_film"
+            },
+            "compiled_text": "The yacht under construction with a complete hull shell, an open main deck, the superstructure, fitted glazing, twin hull door openings at midships, an observation blister below the bow waterline, a flush helideck on the foredeck, a mast, a full-width stern water platform and stepped terraces; no scaffolding. Surfaces: hull shell in final paint, superstructure in final paint, glazing in white protective film."
+        },
+        {
+            "id": "BS11",
+            "kind": "build",
+            "present_parts": [
+                "hull_shell",
+                "main_deck",
+                "superstructure",
+                "glazing",
+                "hull_doors",
+                "observation_blister",
+                "helideck",
+                "mast",
+                "stern_platform",
+                "terraces"
+            ],
+            "absent_parts": [
+                "scaffolding_on_hull"
+            ],
+            "surfaces_by_part": {
+                "hull_shell": "final_paint",
+                "main_deck": "teak",
+                "superstructure": "final_paint",
+                "glazing": "final_glass"
+            },
+            "compiled_text": "The yacht under construction with a complete hull shell, an open main deck, the superstructure, fitted glazing, twin hull door openings at midships, an observation blister below the bow waterline, a flush helideck on the foredeck, a mast, a full-width stern water platform and stepped terraces; no scaffolding. Surfaces: hull shell in final paint, main deck in teak, superstructure in final paint, glazing in final tinted glass."
+        },
+        {
+            "id": "BS12",
+            "kind": "finished",
+            "present_parts": [
+                "hull_shell",
+                "main_deck",
+                "superstructure",
+                "glazing",
+                "hull_doors",
+                "observation_blister",
+                "helideck",
+                "mast",
+                "stern_platform",
+                "terraces"
+            ],
+            "absent_parts": [
+                "scaffolding_on_hull"
+            ],
+            "surfaces_by_part": {
+                "hull_shell": "final_paint",
+                "main_deck": "teak",
+                "superstructure": "final_paint",
+                "glazing": "final_glass"
+            },
+            "compiled_text": "The completed yacht with a complete hull shell, an open main deck, the superstructure, fitted glazing, twin hull door openings at midships, an observation blister below the bow waterline, a flush helideck on the foredeck, a mast, a full-width stern water platform and stepped terraces; no scaffolding. Surfaces: hull shell in final paint, main deck in teak, superstructure in final paint, glazing in final tinted glass."
+        }
+    ],
+    "operational_limits": [
+        {
+            "feature": "hull_doors_open",
+            "allowed_when": {
+                "at_anchor_only": true,
+                "max_speed_kn": 0,
+                "max_sea_state": 2
+            }
+        },
+        {
+            "feature": "helideck_landing",
+            "allowed_when": {
+                "max_speed_kn": 12,
+                "max_sea_state": 4
+            }
+        },
+        {
+            "feature": "blister_viewing",
+            "allowed_when": {
+                "max_speed_kn": 6
+            }
+        },
+        {
+            "feature": "stern_platform_down",
+            "allowed_when": {
+                "at_anchor_only": true
+            }
+        }
+    ],
+    "rooms": [
+        {
+            "id": "R01",
+            "deck": "main",
+            "window_type": "floor_to_ceiling"
+        },
+        {
+            "id": "R02",
+            "deck": "upper",
+            "window_type": "skylight"
+        },
+        {
+            "id": "R03",
+            "deck": "owner",
+            "window_type": "hull_window"
+        },
+        {
+            "id": "R04",
+            "deck": "lower",
+            "window_type": "floor_to_ceiling"
+        },
+        {
+            "id": "R05",
+            "deck": "main",
+            "window_type": "skylight"
+        },
+        {
+            "id": "R06",
+            "deck": "upper",
+            "window_type": "hull_window"
+        },
+        {
+            "id": "R07",
+            "deck": "owner",
+            "window_type": "floor_to_ceiling"
+        },
+        {
+            "id": "R08",
+            "deck": "lower",
+            "window_type": "skylight"
+        },
+        {
+            "id": "R09",
+            "deck": "main",
+            "window_type": "hull_window"
+        },
+        {
+            "id": "R10",
+            "deck": "upper",
+            "window_type": "floor_to_ceiling"
+        },
+        {
+            "id": "R11",
+            "deck": "owner",
+            "window_type": "skylight"
+        },
+        {
+            "id": "R12",
+            "deck": "lower",
+            "window_type": "hull_window"
+        }
+    ]
+}

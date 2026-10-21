@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/ShotSpec",
+  "title": "ShotSpec (v6.3)",
+  "type": "object",
+  "required": ["shot_id", "beat", "act", "tl_in", "tl_out", "render_sec", "tool", "place", "state", "size", "angle", "lens_mm", "move", "action", "render_type", "difficulty", "reveal", "source", "operational_context", "coverage"],
+  "properties": {
+    "shot_id": {"type": "string", "pattern": "^SC[0-9]{2}_SH[0-9]{2}$"},
+    "beat": {"type": "string", "pattern": "^B([0-9]|1[0-6])$"},
+    "act": {"enum": ["A1", "A2", "A3", "A4"]},
+    "tl_in": {"type": "number", "minimum": 0},
+    "tl_out": {"type": "number", "exclusiveMinimum": 0},
+    "render_sec": {"type": "number", "minimum": 2, "maximum": 40},
+    "tool": {"type": "string"},
+    "place": {"type": "string", "pattern": "^(LOC[0-9]{2}|SET_INT[0-9]{2}_(bare|fitout|finished))$"},
+    "state": {"type": "string", "pattern": "^BS(0[1-9]|1[0-2])$"},
+    "size": {"enum": ["EWS", "WS", "MS", "CU", "ECU", "AERIAL"]},
+    "angle": {"type": "string"},
+    "lens_mm": {"type": "integer", "minimum": 8, "maximum": 600},
+    "move": {
+      "type": "object",
+      "required": ["type", "direction", "speed"],
+      "properties": {"type": {"type": "string"}, "direction": {"type": "string"}, "speed": {"enum": ["very_slow", "slow", "medium"]}}
+    },
+    "action": {
+      "type": "object",
+      "required": ["subject", "verb"],
+      "properties": {"subject": {"type": "string"}, "verb": {"type": "string"}, "object": {"type": "string"}, "detail": {"type": "string", "maxLength": 160}}
+    },
+    "card": {"type": ["string", "null"]},
+    "render_type": {"enum": ["A", "B", "C", "D"]},
+    "difficulty": {"enum": ["EASY", "MEDIUM", "HARD"]},
+    "fallback": {"type": "string"},
+    "reveal": {"enum": ["H1", "H2", "H3", "H4", "H5"]},
+    "source": {"enum": ["ai", "live", "stock"]},
+    "operational_context": {
+      "type": "object",
+      "required": ["speed_kn", "at_anchor"],
+      "properties": {
+        "speed_kn": {"type": "number", "minimum": 0, "maximum": 35},
+        "at_anchor": {"type": "boolean"},
+        "features_active": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+      }
+    },
+    "sequence_id": {"type": "string"},
+    "match_pair": {"type": ["string", "null"]},
+    "characters": {"type": "array", "uniqueItems": true, "items": {"enum": ["HANDS", "CREW", "CAPTAIN"]}},
+    "coverage": {"type": "boolean"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"operational_context": {"properties": {"at_anchor": {"const": true}}}}},
+      "then": {"properties": {"operational_context": {"properties": {"speed_kn": {"const": 0}}}}}
+    }
+  ]
+}

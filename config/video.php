@@ -796,4 +796,87 @@ return [
 
         'aspect_ratio' => env('SCREENPLAY_ASPECT_RATIO', '9:16'),
     ],
+
+    /*
+    | Spec superyacht v6.3: 8 JSON Schema va 22 rang buoc cheo truong (port tu
+    | superyacht-pipeline-starter). Chi dung de kiem tai lieu; pipeline v6.3 chua chay.
+    */
+    'superyacht' => [
+        'spec_version' => '6.3.0',
+
+        // Thu muc 8 file JSON Schema va base URI dung trong $id cua chung.
+        'schema_dir' => resource_path('ai/superyacht/schemas'),
+        'schema_base_uri' => 'https://superyacht.local/schemas/',
+        'schemas' => [
+            'CanonicalDesign', 'BuildState', 'Constraint', 'ShotSpec',
+            'CompiledShot', 'LockRecord', 'ReviewDecision', 'RenderRequest',
+        ],
+
+        // FULL_AUTO | REVIEW_KEY | REVIEW_ALL
+        'default_run_mode' => 'REVIEW_KEY',
+
+        // Thu tu build state cho moi phep so sanh (BS01-BS04 la trang thai thiet ke).
+        'states' => ['BS01', 'BS02', 'BS03', 'BS04', 'BS05', 'BS06', 'BS07', 'BS08', 'BS09', 'BS10', 'BS11', 'BS12'],
+        'hero_beat' => 'B16',
+
+        // Phan duoc phep bien mat giua hai build state lien tiep (INV-BS-03).
+        'removable_parts' => ['scaffolding_on_hull', 'keel_blocks'],
+
+        // 'phrase' cho bo bien dich STATE GEOMETRY (INV-BS-04); 'keywords' de do nhac toi duong tinh (INV-CS-03).
+        'parts' => [
+            'keel_blocks' => ['phrase' => 'welded keel and bottom blocks', 'keywords' => ['keel block', 'bottom block']],
+            'hull_shell' => ['phrase' => 'a complete hull shell', 'keywords' => ['hull shell', 'complete hull']],
+            'main_deck' => ['phrase' => 'an open main deck', 'keywords' => ['main deck']],
+            'superstructure' => ['phrase' => 'the superstructure', 'keywords' => ['superstructure']],
+            'glazing' => ['phrase' => 'fitted glazing', 'keywords' => ['glazing', 'glass panel', 'window glass']],
+            'hull_doors' => ['phrase' => 'twin hull door openings at midships', 'keywords' => ['hull door']],
+            'observation_blister' => ['phrase' => 'an observation blister below the bow waterline', 'keywords' => ['blister']],
+            'helideck' => ['phrase' => 'a flush helideck on the foredeck', 'keywords' => ['helideck']],
+            'mast' => ['phrase' => 'a mast', 'keywords' => ['mast']],
+            'stern_platform' => ['phrase' => 'a full-width stern water platform', 'keywords' => ['stern platform', 'water platform']],
+            'terraces' => ['phrase' => 'stepped terraces', 'keywords' => ['terrace']],
+            'scaffolding_on_hull' => ['phrase' => 'scaffolding along both sides', 'keywords' => ['scaffolding']],
+        ],
+
+        // Tu vung be mat cho nua SURFACE STATE cua compiled_text.
+        'surfaces' => [
+            'scale_model_white' => 'white scale-model finish',
+            'bare_steel' => 'bare welded steel',
+            'steel_primer' => 'red-oxide primer',
+            'raw_aluminium' => 'raw unpainted aluminium',
+            'protective_film' => 'white protective film',
+            'filler_primer' => 'grey filler and primer',
+            'final_paint' => 'final paint',
+            'final_glass' => 'final tinted glass',
+            'teak' => 'teak',
+            'other_final' => 'final finish',
+        ],
+
+        // operational_limits[].feature -> phan phai co tren tau hoan thien (INV-CD-03).
+        'features' => [
+            'hull_doors_open' => 'hull_doors',
+            'helideck_landing' => 'helideck',
+            'blister_viewing' => 'observation_blister',
+            'terraces_deployed' => 'terraces',
+            'stern_platform_down' => 'stern_platform',
+        ],
+
+        // Quyet dinh duyet hop le theo loai muc (INV-RD-01).
+        'review_decisions' => [
+            'canonical' => ['approve', 'reject', 'revise_design'],
+            'model_sheet' => ['approve', 'reject', 'rerender', 'revise_design'],
+            'compiled_shot' => ['approve', 'reject', 'swap_coverage'],
+            'frame' => ['approve', 'reject', 'rerender', 'swap_variant', 'swap_coverage'],
+            'clip' => ['approve', 'reject', 'rerender', 'swap_variant', 'swap_coverage'],
+            'animatic' => ['approve', 'reject'],
+            'export' => ['approve', 'reject'],
+        ],
+        'human_only_review_reasons' => ['DESIGN_LOCK', 'PUBLISH'],
+
+        // Model cua nguoi duyet DESIGN_LOCK / PUBLISH ("user:<id>"). Du an dung Admin.
+        'user_model' => 'App\\Models\\Admin',
+
+        // Sai so khi kiem moc thoi gian nam tren cut grid (giay).
+        'cut_grid_tolerance' => 0.001,
+    ],
 ];

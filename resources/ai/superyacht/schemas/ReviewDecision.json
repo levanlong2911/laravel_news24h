@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/ReviewDecision",
+  "title": "ReviewDecision (v6.3)",
+  "type": "object",
+  "required": ["id", "item_id", "item_type", "reason", "priority", "decision", "decided_by", "decided_at"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "item_id": {"type": "string", "minLength": 1},
+    "item_type": {"enum": ["canonical", "model_sheet", "compiled_shot", "frame", "clip", "animatic", "export"]},
+    "reason": {"enum": ["UNCERTAIN", "BLOCKED", "ANIMATIC_LOW", "DESIGN_LOCK", "PUBLISH"]},
+    "priority": {"enum": ["P0", "P1", "P2", "none"]},
+    "decision": {"enum": ["approve", "reject", "rerender", "swap_variant", "swap_coverage", "revise_design"]},
+    "decided_by": {"type": "string", "minLength": 1},
+    "decided_at": {"type": "string", "format": "date-time"},
+    "note": {"type": "string", "maxLength": 1000}
+  }
+}

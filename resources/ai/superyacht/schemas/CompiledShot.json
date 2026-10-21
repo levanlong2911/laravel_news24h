@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/CompiledShot",
+  "title": "CompiledShot (v6.3)",
+  "type": "object",
+  "required": ["shot_id", "revision", "hash", "state", "sources", "image_tool", "image_mode", "video_tool", "video_mode", "image_prompt", "motion_prompt", "refs", "constraints_to_check", "validation", "status"],
+  "properties": {
+    "shot_id": {"type": "string", "pattern": "^SC[0-9]{2}_SH[0-9]{2}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "state": {"type": "string", "pattern": "^BS(0[1-9]|1[0-2])$"},
+    "sources": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^rev[0-9]+$"}},
+    "image_tool": {"type": "string"},
+    "image_mode": {"enum": ["generate", "edit_from_clay", "edit_from_reference", "none"]},
+    "video_tool": {"type": "string"},
+    "video_mode": {"enum": ["first_frame", "first_last_frame", "reference", "video_reference", "extend", "edit", "none"]},
+    "image_prompt": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["block", "text", "source"],
+        "properties": {
+          "block": {"enum": ["geometry_instruction", "identity", "state", "location", "action", "character", "camera", "light", "style", "aspect", "constraints"]},
+          "text": {"type": "string", "minLength": 1},
+          "source": {"type": "string", "pattern": "^[a-z_.A-Z0-9]+@[0-9]+$"}
+        }
+      }
+    },
+    "motion_prompt": {"type": "string", "description": "empty string only when video_mode = none"},
+    "refs": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "constraints_to_check": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^C-P[0-2]-[0-9]{3}$"},
+          "status": {"enum": ["must_show", "may_be_hidden", "not_applicable", "not_yet_built"]}
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["rule", "judge", "operational"],
+      "properties": {
+        "rule": {"enum": ["PASS", "FAIL"]},
+        "judge": {"enum": ["PASS", "FAIL", "UNCERTAIN"]},
+        "operational": {"enum": ["PASS", "BLOCKED"]}
+      }
+    },
+    "status": {"enum": ["DRAFT", "VALIDATING", "REVIEW_REQUIRED", "APPROVED", "FROZEN", "EXECUTED", "FAILED", "BLOCKED", "STALE"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"enum": ["APPROVED", "FROZEN", "EXECUTED"]}}},
+      "then": {"properties": {"validation": {"properties": {"rule": {"const": "PASS"}, "judge": {"const": "PASS"}, "operational": {"const": "PASS"}}}}}
+    },
+    {
+      "if": {"properties": {"video_mode": {"not": {"const": "none"}}}},
+      "then": {"properties": {"motion_prompt": {"minLength": 1}}}
+    }
+  ]
+}

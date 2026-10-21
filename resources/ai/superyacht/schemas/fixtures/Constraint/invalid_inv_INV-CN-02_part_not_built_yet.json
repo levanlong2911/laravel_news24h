@@ -1,0 +1,14 @@
+{
+    "id": "C-P1-001",
+    "priority": "P1",
+    "statement": "Twin hull doors at midships, 52% of LOA from the bow",
+    "check": "landmark",
+    "part": "hull_doors",
+    "visible_from": [
+        "port_profile",
+        "low_3q"
+    ],
+    "from_state": "BS07",
+    "until_state": null,
+    "canonical_revision": 1
+}

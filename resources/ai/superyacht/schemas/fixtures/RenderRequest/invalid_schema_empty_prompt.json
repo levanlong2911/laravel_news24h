@@ -1,0 +1,38 @@
+{
+    "id": "0f9b6c1e-3d2a-4b8e-9a51-6c7d2e4f8a10",
+    "compiled_shot_id": "SC07_SH02",
+    "compiled_shot_revision": 1,
+    "compiled_shot_hash": "sha256:0cb42fc4fe2398f97ac5b3dce4f04362ad0ce68619520e8cf102a5d404419142",
+    "kind": "video",
+    "provider": "google_gemini_api",
+    "model_id": "veo-3.1-generate-preview",
+    "model_snapshot": null,
+    "endpoint": "models/veo-3.1-generate-preview:predictLongRunning",
+    "adapter_version": "1.0.0",
+    "parameters": {
+        "aspect_ratio": "16:9",
+        "resolution": "1080p",
+        "duration_sec": 8,
+        "fps": 24,
+        "seed": 1907,
+        "seed_policy": "hash_of_shot",
+        "variants": 2,
+        "audio": "ambient_only",
+        "extra": {
+            "negative_prompt": "text, captions, logos, watermark, people facing camera",
+            "person_generation": "allow_adult"
+        }
+    },
+    "inputs": [
+        {
+            "role": "first_frame",
+            "path": "media/frames/SC07_SH02_v1.png",
+            "hash": "sha256:8a6c43225bfd695e68914a69d8a03a4cb918ea411bb0c7b9419c6bd624a8c6ff"
+        }
+    ],
+    "prompt_text": "",
+    "request_hash": "sha256:45a9c2f85fa5927c806557f8ae2833b2e6e4456333ae954ea017e23388049086",
+    "created_at": "2026-10-20T09:15:00Z",
+    "response_id": null,
+    "status": "FROZEN"
+}

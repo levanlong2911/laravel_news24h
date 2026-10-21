@@ -54,8 +54,15 @@ class PlanningStageStore
      * bam nham hai lan — nen no phai di qua mot nut rieng, khong phai mot co an
      * trong request.
      *
+     * `$onClaimed` chay BEN TRONG transaction claim, chi khi claim that su (tao
+     * dong moi hoac lay lai dong running het lease), de ghi kem du lieu phai
+     * song chet cung lan claim (pin prompt). No nem loi thi claim rollback.
+     * `already_succeeded` va `claimed_by_other` khong goi no: stage cu giu
+     * nguyen lich su cua minh.
+     *
      * @param  array<string, mixed>  $input
      * @param  array<string, mixed>  $metadata
+     * @param  ?callable(VideoPlanningStage): void  $onClaimed
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
      *                                                              reason: project_not_found|claimed_by_other|already_succeeded|claimed
      */
@@ -65,6 +72,7 @@ class PlanningStageStore
         array $input,
         bool $force = false,
         array $metadata = [],
+        ?callable $onClaimed = null,
     ): array {
         if (array_key_exists(self::METADATA_KEY, $input)) {
             throw new \InvalidArgumentException(
@@ -77,7 +85,7 @@ class PlanningStageStore
         $claimToken = (string) Str::uuid();
 
         try {
-            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force) {
+            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force, $onClaimed) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
                 $rows = VideoPlanningStage::query()
@@ -117,19 +125,20 @@ class PlanningStageStore
 
                 if ($expired !== null) {
                     $expired->update($attributes);
-
-                    return [$expired, $claimToken, 'claimed'];
-                }
-
-                return [
-                    VideoPlanningStage::create($attributes + [
+                    $claimed = $expired;
+                } else {
+                    $claimed = VideoPlanningStage::create($attributes + [
                         'project_id' => $projectId,
                         'planning_revision' => ((int) $rows->max('planning_revision')) + 1,
                         'stage' => $stage->value,
-                    ]),
-                    $claimToken,
-                    'claimed',
-                ];
+                    ]);
+                }
+
+                if ($onClaimed !== null) {
+                    $onClaimed($claimed);
+                }
+
+                return [$claimed, $claimToken, 'claimed'];
             });
         } catch (ModelNotFoundException $e) {
             return [null, null, 'project_not_found'];

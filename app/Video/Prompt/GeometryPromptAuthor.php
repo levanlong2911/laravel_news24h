@@ -7,6 +7,7 @@ namespace App\Video\Prompt;
 use App\Enums\AnchorStage;
 use App\Enums\ImageModel;
 use App\Enums\ImageSize;
+use App\Services\PromptLibrary\PromptSource;
 use App\Video\Concept\Handoff\CompiledAnchorPrompt;
 use App\Video\Prompt\Exceptions\TextCompletionException;
 
@@ -23,13 +24,23 @@ final class GeometryPromptAuthor
 
     private const DOWNSTREAM_MARKER = 'OPTIONAL DOWNSTREAM REQUIREMENTS:';
 
+    /**
+     * @param  ?string  $promptConsumer  consumer trong prompt_library.consumers; o che do
+     *                                   database skill doc tu thu vien (mot lan moi request/job)
+     */
     public function __construct(
         private readonly TextCompletionClient $client,
         private readonly string $promptPath,
         private readonly string $promptVersion,
         private readonly string $model,
         private readonly int $maxTokens,
+        private readonly ?string $promptConsumer = null,
     ) {}
+
+    public function promptConsumer(): ?string
+    {
+        return $this->promptConsumer;
+    }
 
     /**
      * @return array{aspect_ratio: string, orientation: string}
@@ -139,6 +150,13 @@ final class GeometryPromptAuthor
 
     private function skill(): string
     {
+        // PromptSource la scoped: lay tu container moi lan vi author nay la singleton.
+        $prompt = $this->promptConsumer === null ? null : app(PromptSource::class)->resolve($this->promptConsumer);
+
+        if ($prompt !== null) {
+            return $prompt->content;
+        }
+
         if (! is_file($this->promptPath)) {
             throw new TextCompletionException(
                 'Image prompt skill not found: '.$this->promptPath

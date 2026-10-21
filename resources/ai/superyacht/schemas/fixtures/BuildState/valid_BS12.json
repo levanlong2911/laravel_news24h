@@ -1,0 +1,26 @@
+{
+    "id": "BS12",
+    "kind": "finished",
+    "present_parts": [
+        "hull_shell",
+        "main_deck",
+        "superstructure",
+        "glazing",
+        "hull_doors",
+        "observation_blister",
+        "helideck",
+        "mast",
+        "stern_platform",
+        "terraces"
+    ],
+    "absent_parts": [
+        "scaffolding_on_hull"
+    ],
+    "surfaces_by_part": {
+        "hull_shell": "final_paint",
+        "main_deck": "teak",
+        "superstructure": "final_paint",
+        "glazing": "final_glass"
+    },
+    "compiled_text": "The completed yacht with a complete hull shell, an open main deck, the superstructure, fitted glazing, twin hull door openings at midships, an observation blister below the bow waterline, a flush helideck on the foredeck, a mast, a full-width stern water platform and stepped terraces; no scaffolding. Surfaces: hull shell in final paint, main deck in teak, superstructure in final paint, glazing in final tinted glass."
+}

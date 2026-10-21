@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/Constraint",
+  "title": "Constraint (v6.3)",
+  "type": "object",
+  "required": ["id", "priority", "statement", "check", "visible_from", "from_state", "canonical_revision"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^C-P[0-2]-[0-9]{3}$"},
+    "priority": {"enum": ["P0", "P1", "P2"]},
+    "statement": {"type": "string", "maxLength": 200},
+    "check": {"enum": ["count", "landmark", "vision_question", "color", "relation"]},
+    "question": {"type": "string"},
+    "part": {"type": "string"},
+    "visible_from": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "from_state": {"type": "string", "pattern": "^BS(0[5-9]|1[0-2])$"},
+    "until_state": {"type": ["string", "null"], "pattern": "^BS(0[5-9]|1[0-2])$"},
+    "canonical_revision": {"type": "integer", "minimum": 1}
+  }
+}

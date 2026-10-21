@@ -1,0 +1,71 @@
+{
+    "shot_id": "SC03_SH01",
+    "revision": 1,
+    "hash": "sha256:6f3d8933ba2d6b8b886a2451f5c567a851edb9262ff443dbaadf2d5a4e141abc",
+    "state": "BS08",
+    "sources": {
+        "canonical": "rev1",
+        "shot_spec": "rev1"
+    },
+    "image_tool": "gpt-image-2",
+    "image_mode": "edit_from_clay",
+    "video_tool": "veo-3.1-generate-preview",
+    "video_mode": "none",
+    "image_prompt": [
+        {
+            "block": "geometry_instruction",
+            "text": "Keep the silhouette, deck count and window rhythm of the input render exactly.",
+            "source": "canonical@1"
+        },
+        {
+            "block": "state",
+            "text": "The yacht under construction with a complete hull shell, an open main deck, the superstructure and scaffolding along both sides; no glazing, no mast. Surfaces: hull shell in red-oxide primer, superstructure in raw unpainted aluminium. Tall mast and helideck already fitted.",
+            "source": "canonical.build_states.BS08@1"
+        },
+        {
+            "block": "location",
+            "text": "Calm turquoise bay with limestone cliffs, golden hour.",
+            "source": "locations.LOC03@1"
+        },
+        {
+            "block": "action",
+            "text": "The yacht rests at anchor while the hull doors fold open.",
+            "source": "shot_spec.SC07_SH02@1"
+        },
+        {
+            "block": "camera",
+            "text": "Low three-quarter view from port, 50 mm, slow dolly left.",
+            "source": "shot_spec.SC07_SH02@1"
+        },
+        {
+            "block": "style",
+            "text": "Photographic, natural colour, no text, no logos.",
+            "source": "style_bible@3"
+        }
+    ],
+    "motion_prompt": "",
+    "refs": [
+        "model_sheet/port_profile@1",
+        "clay/SC07_SH02@1"
+    ],
+    "constraints_to_check": [
+        {
+            "id": "C-P0-001",
+            "status": "must_show"
+        },
+        {
+            "id": "C-P1-001",
+            "status": "not_yet_built"
+        },
+        {
+            "id": "C-P2-001",
+            "status": "may_be_hidden"
+        }
+    ],
+    "validation": {
+        "rule": "PASS",
+        "judge": "PASS",
+        "operational": "PASS"
+    },
+    "status": "DRAFT"
+}

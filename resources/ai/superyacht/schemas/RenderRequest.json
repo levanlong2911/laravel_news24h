@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/RenderRequest",
+  "title": "RenderRequest (v6.3)",
+  "type": "object",
+  "required": ["id", "compiled_shot_id", "compiled_shot_revision", "compiled_shot_hash", "kind", "provider", "model_id", "endpoint", "adapter_version", "parameters", "inputs", "prompt_text", "request_hash", "created_at", "status"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "compiled_shot_id": {"type": "string", "pattern": "^SC[0-9]{2}_SH[0-9]{2}$"},
+    "compiled_shot_revision": {"type": "integer", "minimum": 1},
+    "compiled_shot_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "kind": {"enum": ["image", "video", "video_extend", "video_edit", "upscale"]},
+    "provider": {"enum": ["openai", "google_gemini_api", "google_vertex_ai"]},
+    "model_id": {"type": "string", "minLength": 1},
+    "model_snapshot": {"type": ["string", "null"]},
+    "endpoint": {"type": "string", "minLength": 1},
+    "adapter_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "parameters": {
+      "type": "object",
+      "required": ["aspect_ratio", "resolution", "seed_policy"],
+      "properties": {
+        "aspect_ratio": {"enum": ["16:9", "9:16", "1:1", "4:3", "3:2"]},
+        "resolution": {"type": "string", "pattern": "^([0-9]{3,4}x[0-9]{3,4}|360p|720p|1080p|4K|1K|2K)$"},
+        "duration_sec": {"type": "number", "minimum": 1, "maximum": 40},
+        "fps": {"type": "integer", "minimum": 12, "maximum": 60},
+        "seed": {"type": ["integer", "null"]},
+        "seed_policy": {"enum": ["fixed", "hash_of_shot", "not_supported"]},
+        "variants": {"type": "integer", "minimum": 1, "maximum": 8},
+        "audio": {"enum": ["ambient_only", "off"]},
+        "extra": {"type": "object", "description": "every other provider parameter, written explicitly - no reliance on provider defaults"}
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["role", "path", "hash"],
+        "properties": {
+          "role": {"enum": ["edit_input", "reference", "first_frame", "last_frame", "video_reference", "source_video"]},
+          "path": {"type": "string"},
+          "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+        }
+      }
+    },
+    "prompt_text": {"type": "string", "minLength": 1},
+    "request_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$", "description": "SHA-256 of the canonical serialisation of the full request body"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "response_id": {"type": ["string", "null"]},
+    "status": {"enum": ["FROZEN", "EXECUTED", "FAILED"]}
+  }
+}

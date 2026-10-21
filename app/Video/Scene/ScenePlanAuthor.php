@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Video\Scene;
 
+use App\Services\PromptLibrary\ResolvedPrompt;
 use App\Video\Prompt\TextCompletionClient;
 use App\Video\Screenplay\SceneBeats;
 use App\Video\Screenplay\ScreenplayValidator;
@@ -110,6 +111,13 @@ final class ScenePlanAuthor
 
     public const CAMERA_TEXT_LIMIT = 300;
 
+    /**
+     * Prompt da ghep tu thu vien prompt cho DUNG mot lan lap storyboard. Null thi
+     * doc promptPath nhu truoc. Author la singleton nen khong bao gio gan vao
+     * chinh no: withPrompt() tra ban sao, de worker chay lau khong giu revision cu.
+     */
+    private ?ResolvedPrompt $prompt = null;
+
     public function __construct(
         private readonly TextCompletionClient $client,
         private readonly string $promptPath,
@@ -117,6 +125,30 @@ final class ScenePlanAuthor
         private readonly string $model,
         private readonly int $maxTokens,
     ) {}
+
+    public function withPrompt(ResolvedPrompt $prompt): self
+    {
+        $author = clone $this;
+        $author->prompt = $prompt;
+
+        return $author;
+    }
+
+    public function resolvedPrompt(): ?ResolvedPrompt
+    {
+        return $this->prompt;
+    }
+
+    /**
+     * Dung y nhu plan() se gui di, khong goi model: de so file voi DB tung byte.
+     *
+     * @param  array<string, mixed>  $packet
+     * @return array{system: string, user: string}
+     */
+    public function preview(array $packet): array
+    {
+        return ['system' => $this->system(), 'user' => $this->user($packet)];
+    }
 
     public function contractVersion(): string
     {
@@ -232,6 +264,10 @@ final class ScenePlanAuthor
 
     private function skill(): string
     {
+        if ($this->prompt !== null) {
+            return $this->prompt->content;
+        }
+
         if (! is_file($this->promptPath)) {
             throw new ScenePlanException('Storyboard skill not found: '.$this->promptPath);
         }

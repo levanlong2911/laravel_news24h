@@ -1,0 +1,40 @@
+{
+    "shot_id": "SC03_SH01",
+    "beat": "B8",
+    "act": "A2",
+    "tl_in": 28.0,
+    "tl_out": 32.0,
+    "render_sec": 6,
+    "tool": "veo-3.1-generate-preview",
+    "place": "LOC02",
+    "state": "BS08",
+    "size": "WS",
+    "angle": "low_3q_port",
+    "lens_mm": 50,
+    "move": {
+        "type": "dolly",
+        "direction": "left",
+        "speed": "slow"
+    },
+    "action": {
+        "subject": "yacht",
+        "verb": "rests",
+        "object": "at anchor",
+        "detail": "hull doors folding open at golden hour"
+    },
+    "card": "Month 14",
+    "render_type": "B",
+    "difficulty": "MEDIUM",
+    "fallback": "SC07_SH03",
+    "reveal": "H2",
+    "source": "ai",
+    "operational_context": {
+        "speed_kn": 0,
+        "at_anchor": false,
+        "features_active": []
+    },
+    "sequence_id": "SEQ07",
+    "match_pair": null,
+    "characters": [],
+    "coverage": false
+}

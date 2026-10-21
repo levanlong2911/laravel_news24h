@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
+use App\Services\PromptLibrary\PromptLibraryException;
+use App\Services\PromptLibrary\PromptSource;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
@@ -101,9 +103,10 @@ final class StoryFoundationService
         }
 
         try {
-            $author = app('video.screenplay.story_author');
+            // Ghep prompt TRUOC khi tinh promptLineage: rules_hash nam trong input cua stage.
+            $author = app(PromptSource::class)->attach(app('video.screenplay.story_author'), 'video.screenplay.story', $projectId);
             $author->assertSchemaMatchesContract();
-        } catch (TextCompletionException $e) {
+        } catch (TextCompletionException|PromptLibraryException $e) {
             Log::error('story foundation: the author is not configured, no model call made', [
                 'project_id' => $projectId,
                 'reason' => $e->getMessage(),

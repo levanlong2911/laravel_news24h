@@ -1,0 +1,22 @@
+{
+    "id": "6b1f0a52-9c3e-4d71-8f20-2a4b5c6d7e8f",
+    "project_id": "PRJ-0001",
+    "lock_type": "design",
+    "components": [
+        {
+            "artifact_id": "canonical",
+            "artifact_type": "canonical_design",
+            "revision": 1,
+            "hash": "sha256:c7bb46d5f241c4550d200a11a8e88de2d5738ebc53dc4614febf640b785e1e45"
+        },
+        {
+            "artifact_id": "model_sheet",
+            "artifact_type": "model_sheet",
+            "revision": 1,
+            "hash": "sha256:38e09beda38476922d34a47b0dddb8843f69aef2bcd35295c74a036ceba0e6d6"
+        }
+    ],
+    "bundle_hash": "sha256:abc",
+    "approver": "user:42",
+    "approved_at": "2026-10-19T16:40:00Z"
+}

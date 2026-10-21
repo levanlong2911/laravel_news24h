@@ -1,0 +1,20 @@
+{
+    "id": "BS08",
+    "kind": "build",
+    "present_parts": [
+        "hull_shell",
+        "main_deck",
+        "superstructure",
+        "scaffolding_on_hull"
+    ],
+    "absent_parts": [
+        "glazing",
+        "mast",
+        "superstructure"
+    ],
+    "surfaces_by_part": {
+        "hull_shell": "steel_primer",
+        "superstructure": "raw_aluminium"
+    },
+    "compiled_text": "The yacht under construction with a complete hull shell, an open main deck, the superstructure and scaffolding along both sides; no glazing, no mast. Surfaces: hull shell in red-oxide primer, superstructure in raw unpainted aluminium."
+}
