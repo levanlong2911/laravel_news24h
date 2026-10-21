@@ -1,0 +1,7 @@
+{
+  "action": "spec.design",
+  "about": "The design lock record is checked on its own, as a whole record",
+  "slot": {"role": "lock", "slot": "design"},
+  "expect": {"violations": []},
+  "payload": {"$fixture": "LockRecord/valid_design_lock.json"}
+}

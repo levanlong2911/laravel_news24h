@@ -1,0 +1,17 @@
+{
+  "action": "spec.prompt_compile",
+  "about": "The task was resolved for SC08_SH01 but the output compiles SC07_SH02",
+  "context": {"project_id": "contract-fixture-project", "input_key": "shot_id", "input_id": "SC08_SH01", "input_revision": 2, "input_sha256": "sha256:ff40e2225231c6f5b3d1911018c813b72c90f94f2ddfd5847cdd35bb690cfe41"},
+  "expect": {"violations": ["CONTRACT-ITEM-KEY"], "applicable": false},
+  "output": {
+    "phase": "6C",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "status": "ok",
+    "data": {
+      "compiled_shots": [{"$fixture": "CompiledShot/valid_SC07_SH02_frozen.json"}]
+    },
+    "flags": [],
+    "notes": ""
+  }
+}

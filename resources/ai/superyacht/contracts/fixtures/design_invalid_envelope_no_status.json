@@ -1,0 +1,16 @@
+{
+  "action": "spec.design",
+  "about": "The envelope has no status and its flags is not a list",
+  "expect": {"violations": ["ENVELOPE"], "applicable": false},
+  "output": {
+    "phase": "3",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "data": {
+      "canonical": {"$fixture": "CanonicalDesign/valid_locked_rev1.json"},
+      "constraints": []
+    },
+    "flags": {},
+    "notes": ""
+  }
+}

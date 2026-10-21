@@ -1,0 +1,8 @@
+{
+  "action": "spec.prompt_compile",
+  "about": "A valid LockRecord of type design does not fill the spec lock slot",
+  "context": {"project_id": "contract-fixture-project", "input_key": "shot_id", "input_id": "SC07_SH02", "input_revision": 2, "input_sha256": "sha256:ff40e2225231c6f5b3d1911018c813b72c90f94f2ddfd5847cdd35bb690cfe41"},
+  "slot": {"role": "lock", "slot": "spec"},
+  "expect": {"violations": ["CONTRACT-MATCH"]},
+  "payload": {"$fixture": "LockRecord/valid_design_lock.json"}
+}

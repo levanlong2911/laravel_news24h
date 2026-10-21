@@ -1,0 +1,19 @@
+{
+  "action": "spec.shot_list",
+  "about": "One shot of the list breaks the ShotSpec schema",
+  "expect": {"violations": ["SCHEMA-ShotSpec"], "applicable": false},
+  "output": {
+    "phase": "6",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "status": "ok",
+    "data": {
+      "shots": [
+        {"$fixture": "ShotSpec/valid_SC03_SH01_construction.json"},
+        {"$fixture": "ShotSpec/invalid_schema_bad_place.json"}
+      ]
+    },
+    "flags": [],
+    "notes": ""
+  }
+}

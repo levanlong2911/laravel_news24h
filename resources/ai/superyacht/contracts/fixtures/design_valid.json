@@ -1,0 +1,20 @@
+{
+  "action": "spec.design",
+  "about": "Phase 3 output in the documented envelope: one canonical design and a list of constraints",
+  "expect": {"violations": [], "applicable": true},
+  "output": {
+    "phase": "3",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "status": "ok",
+    "data": {
+      "canonical": {"$fixture": "CanonicalDesign/valid_locked_rev1.json"},
+      "constraints": [
+        {"$fixture": "Constraint/valid_P1_hull_doors.json"},
+        {"$fixture": "Constraint/valid_P2_scaffolding_until_BS09.json"}
+      ]
+    },
+    "flags": [],
+    "notes": ""
+  }
+}

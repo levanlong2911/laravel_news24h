@@ -1,0 +1,17 @@
+{
+  "action": "spec.design",
+  "about": "A slot that is present with the value null is checked, not treated as missing",
+  "expect": {"violations": ["SCHEMA-CanonicalDesign"], "applicable": false},
+  "output": {
+    "phase": "3",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "status": "ok",
+    "data": {
+      "canonical": null,
+      "constraints": []
+    },
+    "flags": [],
+    "notes": ""
+  }
+}

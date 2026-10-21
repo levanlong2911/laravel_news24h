@@ -1,0 +1,20 @@
+{
+  "action": "spec.design",
+  "about": "One item of an each_item list breaks its schema",
+  "expect": {"violations": ["SCHEMA-Constraint"], "applicable": false},
+  "output": {
+    "phase": "3",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "status": "ok",
+    "data": {
+      "canonical": {"$fixture": "CanonicalDesign/valid_locked_rev1.json"},
+      "constraints": [
+        {"$fixture": "Constraint/valid_P1_hull_doors.json"},
+        {"$fixture": "Constraint/invalid_schema_bad_id.json"}
+      ]
+    },
+    "flags": [],
+    "notes": ""
+  }
+}

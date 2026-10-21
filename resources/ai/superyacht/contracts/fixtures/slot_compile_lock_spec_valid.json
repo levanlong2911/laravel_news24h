@@ -1,0 +1,18 @@
+{
+  "action": "spec.prompt_compile",
+  "about": "The spec-freeze lock record of a compiled shot, checked on its own with lock_type spec",
+  "context": {"project_id": "contract-fixture-project", "input_key": "shot_id", "input_id": "SC07_SH02", "input_revision": 2, "input_sha256": "sha256:ff40e2225231c6f5b3d1911018c813b72c90f94f2ddfd5847cdd35bb690cfe41"},
+  "slot": {"role": "lock", "slot": "spec"},
+  "expect": {"violations": []},
+  "payload": {
+    "id": "7c2e1b63-0d4f-4e82-9a31-3b5c6d7e8f90",
+    "project_id": "PRJ-0001",
+    "lock_type": "spec",
+    "components": [
+      {"artifact_id": "SC07_SH02", "artifact_type": "compiled_shot", "revision": 1, "hash": "sha256:9b2e4c7a1f0d3e5b8c6a2d4f1e3b5c7d9a0b2c4e6f8a1b3c5d7e9f0a2b4c6d8e"}
+    ],
+    "bundle_hash": "sha256:3044ec58c9de7e3dd4db85411a4ab9db68a7ad3217a0f45376c88c14b70bcd0e",
+    "approver": "system",
+    "approved_at": "2026-10-19T17:05:00Z"
+  }
+}

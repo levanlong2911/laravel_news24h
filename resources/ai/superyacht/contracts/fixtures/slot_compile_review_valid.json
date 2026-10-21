@@ -1,0 +1,18 @@
+{
+  "action": "spec.prompt_compile",
+  "about": "A human decision on an UNCERTAIN compiled shot, checked with item_type compiled_shot",
+  "context": {"project_id": "contract-fixture-project", "input_key": "shot_id", "input_id": "SC07_SH02", "input_revision": 2, "input_sha256": "sha256:ff40e2225231c6f5b3d1911018c813b72c90f94f2ddfd5847cdd35bb690cfe41"},
+  "slot": {"role": "review", "slot": "decision"},
+  "expect": {"violations": []},
+  "payload": {
+    "id": "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d",
+    "item_id": "compiled_shot/SC07_SH02@1",
+    "item_type": "compiled_shot",
+    "reason": "UNCERTAIN",
+    "priority": "P1",
+    "decision": "approve",
+    "decided_by": "user:42",
+    "decided_at": "2026-10-19T17:02:00Z",
+    "note": "Hull door constraint read correctly in the compiled prompt."
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "action": "spec.shot_list",
+  "about": "Phase 6 output: the shot list as a list of ShotSpec rows",
+  "expect": {"violations": [], "applicable": true},
+  "output": {
+    "phase": "6",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "status": "ok",
+    "data": {
+      "shots": [
+        {"$fixture": "ShotSpec/valid_SC03_SH01_construction.json"},
+        {"$fixture": "ShotSpec/valid_SC07_SH02_hero_at_anchor.json"}
+      ]
+    },
+    "flags": [],
+    "notes": ""
+  }
+}

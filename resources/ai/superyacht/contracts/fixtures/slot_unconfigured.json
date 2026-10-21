@@ -1,0 +1,7 @@
+{
+  "action": "spec.design",
+  "about": "A slot the bundle does not carry is reported as not configured, never as PASS",
+  "slot": {"role": "input", "slot": "render_request"},
+  "expect": {"violations": ["CONTRACT-NOT-CONFIGURED"]},
+  "payload": {"$fixture": "RenderRequest/valid_SC07_SH02_veo.json"}
+}

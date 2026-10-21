@@ -1,0 +1,17 @@
+{
+  "action": "spec.design",
+  "about": "An each_item slot holding a single object instead of a list",
+  "expect": {"violations": ["CONTRACT-NOT-A-LIST"], "applicable": false},
+  "output": {
+    "phase": "3",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "status": "ok",
+    "data": {
+      "canonical": {"$fixture": "CanonicalDesign/valid_locked_rev1.json"},
+      "constraints": {"$fixture": "Constraint/valid_P1_hull_doors.json"}
+    },
+    "flags": [],
+    "notes": ""
+  }
+}

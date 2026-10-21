@@ -1,0 +1,17 @@
+{
+  "action": "spec.design",
+  "about": "A well-formed envelope with status fail is never applicable",
+  "expect": {"violations": [], "applicable": false},
+  "output": {
+    "phase": "3",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "status": "fail",
+    "data": {
+      "canonical": {"$fixture": "CanonicalDesign/valid_locked_rev1.json"},
+      "constraints": []
+    },
+    "flags": ["MODEL_SHEET_REJECTED"],
+    "notes": ""
+  }
+}

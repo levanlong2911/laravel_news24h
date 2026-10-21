@@ -1,0 +1,7 @@
+{
+  "action": "spec.design",
+  "about": "A lock record with an unknown lock type breaks LockRecord and is not a design lock",
+  "slot": {"role": "lock", "slot": "design"},
+  "expect": {"violations": ["SCHEMA-LockRecord", "CONTRACT-MATCH"]},
+  "payload": {"$fixture": "LockRecord/invalid_schema_bad_type.json"}
+}

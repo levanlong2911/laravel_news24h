@@ -804,6 +804,75 @@ return [
     'superyacht' => [
         'spec_version' => '6.3.0',
 
+        'workflow_code' => 'superyacht_v6_3',
+        'schema_namespace' => 'superyacht',
+        'spec_path' => resource_path('ai/superyacht/spec_v6_3_en.md'),
+        'contract_fixture_dir' => resource_path('ai/superyacht/contracts/fixtures'),
+
+        'contracts' => [
+            'categories' => [
+                'yacht' => 'superyacht_v6_3',
+            ],
+            'workflows' => [
+                'superyacht_v6_3' => [
+                    'actions' => [
+                        'spec.design' => [
+                            'phase' => 'phase-3',
+                            'instructions' => ['system-prompt', 'common-standards'],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '2',
+                            'outputs' => [
+                                'canonical' => ['namespace' => 'superyacht', 'schema' => 'CanonicalDesign', 'version' => '6.3.0', 'pointer' => '/data/canonical', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 0 Step 6 data contract: canonical (Phase 3); Phase 3 Step 11 example'],
+                                'constraints' => ['namespace' => 'superyacht', 'schema' => 'Constraint', 'version' => '6.3.0', 'pointer' => '/data/constraints', 'mode' => 'each_item', 'required' => true, 'source' => 'Phase 0 Step 6 data contract: constraints[] (Phase 3); Phase 3 Step 11 example'],
+                            ],
+                            'records' => [
+                                'lock/design' => ['namespace' => 'superyacht', 'schema' => 'LockRecord', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'match' => ['/lock_type' => ['design']], 'source' => 'Pipeline map: DESIGN LOCK (lock record); Phase 3 Step 11 design lock; LockRecord.lock_type design'],
+                                'review/decision' => ['namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'match' => ['/item_type' => ['canonical', 'model_sheet']], 'source' => 'ReviewDecision.item_type canonical, model_sheet; reason DESIGN_LOCK'],
+                            ],
+                        ],
+                        'spec.shot_list' => [
+                            'phase' => 'phase-6',
+                            'instructions' => ['system-prompt', 'common-standards'],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'outputs' => [
+                                'shots' => ['namespace' => 'superyacht', 'schema' => 'ShotSpec', 'version' => '6.3.0', 'pointer' => '/data/shots', 'mode' => 'each_item', 'required' => true, 'source' => 'Phase 0 Step 6 data contract: shots[] (Phase 6); schema 4 ShotSpec is one row of the Phase 6 shot list'],
+                            ],
+                        ],
+                        'spec.prompt_compile' => [
+                            'phase' => 'phase-6c',
+                            'instructions' => ['system-prompt', 'common-standards'],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '2',
+                            'outputs' => [
+                                'compiled_shots' => ['namespace' => 'superyacht', 'schema' => 'CompiledShot', 'version' => '6.3.0', 'pointer' => '/data/compiled_shots', 'mode' => 'each_item', 'required' => true, 'items' => ['count' => 1, 'key' => 'shot_id'], 'source' => 'Phase 0 Step 6 data contract: compiled_shots[] (Phase 6C); Phase 6C Output is one item (schema 5); one shot per task'],
+                            ],
+                            'records' => [
+                                'lock/spec' => ['namespace' => 'superyacht', 'schema' => 'LockRecord', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'match' => ['/lock_type' => ['spec']], 'source' => 'Phase 6C Step 7: the compiled spec is written with a lock record; Pipeline map: SPEC FREEZE'],
+                                'review/decision' => ['namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'match' => ['/item_type' => ['compiled_shot']], 'source' => 'ReviewDecision.item_type compiled_shot; SPEC FREEZE: UNCERTAIN goes to a human'],
+                            ],
+                        ],
+                    ],
+                    'links' => [
+                        ['phase' => 'phase-4m', 'role' => 'lock', 'slot' => 'timing', 'namespace' => 'superyacht', 'schema' => 'LockRecord', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Pipeline map: TIMING LOCK; LockRecord.lock_type timing'],
+                        ['phase' => 'phase-7a', 'role' => 'lock', 'slot' => 'pacing', 'namespace' => 'superyacht', 'schema' => 'LockRecord', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Pipeline map: PACING LOCK; LockRecord.lock_type pacing'],
+                        ['phase' => 'phase-9q', 'role' => 'lock', 'slot' => 'publish', 'namespace' => 'superyacht', 'schema' => 'LockRecord', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Pipeline map: BEFORE PUBLISH; LockRecord.lock_type publish'],
+                        ['phase' => 'phase-7', 'role' => 'review', 'slot' => 'decision', 'namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'source' => 'ReviewDecision.item_type frame; Phase 7 UNCERTAIN frames go to the human queue'],
+                        ['phase' => 'phase-7a', 'role' => 'review', 'slot' => 'decision', 'namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'source' => 'ReviewDecision.item_type animatic; reason ANIMATIC_LOW'],
+                        ['phase' => 'phase-8', 'role' => 'review', 'slot' => 'decision', 'namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'source' => 'ReviewDecision.item_type clip; Phase 8 UNCERTAIN clips go to the human queue'],
+                        ['phase' => 'phase-9q', 'role' => 'review', 'slot' => 'decision', 'namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'source' => 'ReviewDecision.item_type export; reason PUBLISH'],
+                        ['phase' => 'phase-7', 'role' => 'input', 'slot' => 'compiled_shot', 'namespace' => 'superyacht', 'schema' => 'CompiledShot', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 7 Input (v6.3): frozen CompiledShots (Phase 6C)'],
+                        ['phase' => 'phase-7', 'role' => 'input', 'slot' => 'render_request', 'namespace' => 'superyacht', 'schema' => 'RenderRequest', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 7 Input (v6.3): a frozen RenderRequest built from them for each call'],
+                        ['phase' => 'phase-8', 'role' => 'input', 'slot' => 'compiled_shot', 'namespace' => 'superyacht', 'schema' => 'CompiledShot', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 8 v6: motion prompts, references and tool parameters come from the frozen compiled spec (Phase 6C)'],
+                        ['phase' => 'phase-8', 'role' => 'input', 'slot' => 'render_request', 'namespace' => 'superyacht', 'schema' => 'RenderRequest', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Schema 8 RenderRequest: frozen right before each provider call, kind video / video_extend / video_edit'],
+                    ],
+                ],
+            ],
+        ],
+
         // Thu muc 8 file JSON Schema va base URI dung trong $id cua chung.
         'schema_dir' => resource_path('ai/superyacht/schemas'),
         'schema_base_uri' => 'https://superyacht.local/schemas/',

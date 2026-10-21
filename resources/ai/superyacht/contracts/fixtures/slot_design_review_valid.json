@@ -1,0 +1,7 @@
+{
+  "action": "spec.design",
+  "about": "A human design-lock decision is checked against ReviewDecision",
+  "slot": {"role": "review", "slot": "decision"},
+  "expect": {"violations": []},
+  "payload": {"$fixture": "ReviewDecision/valid_design_lock_by_human.json"}
+}

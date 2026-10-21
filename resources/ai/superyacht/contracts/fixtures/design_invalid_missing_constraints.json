@@ -1,0 +1,16 @@
+{
+  "action": "spec.design",
+  "about": "A required output slot is absent from data",
+  "expect": {"violations": ["CONTRACT-MISSING"], "applicable": false},
+  "output": {
+    "phase": "3",
+    "prompt_version": "6.3.0",
+    "project_id": "contract-fixture-project",
+    "status": "ok",
+    "data": {
+      "canonical": {"$fixture": "CanonicalDesign/valid_locked_rev1.json"}
+    },
+    "flags": [],
+    "notes": ""
+  }
+}
