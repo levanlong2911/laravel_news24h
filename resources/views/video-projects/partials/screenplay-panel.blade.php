@@ -4,7 +4,7 @@
             @endphp
             <div class="vp-panel" id="screenplay-panel">
                 <div class="va-head">
-                    <span class="n">{{ $storyFirst ? 5 : 3 }}</span>
+                    <span class="n">{{ $storyFirst ? 6 : 3 }}</span>
                     <b>KỊCH BẢN PHIM</b>
                     <em>{{ $storyFirst ? 'câu chuyện quanh bản thiết kế đã duyệt — chưa phân cảnh' : 'nội dung — chưa phân cảnh' }}</em>
                     <span class="grow"></span>

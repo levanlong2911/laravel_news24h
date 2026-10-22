@@ -15,7 +15,7 @@ final class ActionContract
 
     private const KEYS = ['phase', 'instructions', 'executor', 'model_profile', 'contract_version', 'outputs'];
 
-    private const OPTIONAL_KEYS = ['records'];
+    private const OPTIONAL_KEYS = ['records', 'stages'];
 
     private const SLOT_KEYS = ['namespace', 'schema', 'version', 'pointer', 'mode', 'required', 'source'];
 
@@ -80,7 +80,7 @@ final class ActionContract
         ksort($outputs);
         ksort($records);
 
-        return [
+        $normalised = [
             'phase' => $action['phase'],
             'instructions' => array_map('strval', $instructions),
             'executor' => $action['executor'],
@@ -89,6 +89,39 @@ final class ActionContract
             'outputs' => $outputs,
             'records' => $records,
         ];
+
+        if (array_key_exists('stages', $action)) {
+            $normalised['stages'] = self::stages($key, $action['stages'], array_keys($outputs));
+        }
+
+        return $normalised;
+    }
+
+    /**
+     * @param  list<string>  $outputs
+     * @return array<string, list<string>>
+     */
+    private static function stages(string $key, mixed $stages, array $outputs): array
+    {
+        if (! is_array($stages) || $stages === [] || array_is_list($stages)) {
+            throw new RuntimeException("Action {$key} stages must name each stage with the output slots it checks.");
+        }
+
+        $normalised = [];
+
+        foreach ($stages as $stage => $slots) {
+            if (! is_array($slots) || $slots === [] || ! array_is_list($slots) || array_diff($slots, $outputs) !== [] || count(array_unique($slots)) !== count($slots)) {
+                throw new RuntimeException("Action {$key} stage {$stage} must list distinct output slots of the action.");
+            }
+
+            $sorted = array_map('strval', $slots);
+            sort($sorted);
+            $normalised[(string) $stage] = $sorted;
+        }
+
+        ksort($normalised);
+
+        return $normalised;
     }
 
     /**

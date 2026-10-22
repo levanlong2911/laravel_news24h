@@ -23,6 +23,13 @@ class ClaudeWriterService
             'output_usd_per_mtok' => 0.50,
             'thinking' => null,
         ],
+        'sonnet55' => [
+            'id' => 'claude-sonnet-5-5',
+            'max_tokens' => 32000,
+            'input_usd_per_mtok' => 2.00,
+            'output_usd_per_mtok' => 10.00,
+            'thinking' => null,
+        ],
         'sonnet' => [
             'id' => 'claude-sonnet-4-6',
             'max_tokens' => 8000,
@@ -45,6 +52,8 @@ class ClaudeWriterService
     private const CACHE_READ_MULTIPLIER = 0.10;
 
     private const MAX_RETRIES = 5;
+
+    private const TIMEOUT_S = 60;
 
     private const BASE_DELAY_S = 3;   // normal errors: 3s, 6s, 12s...
 
@@ -173,10 +182,16 @@ class ClaudeWriterService
      *
 
      */
-    public function generate(string $prompt, string $modelType = 'haiku', string $system = '', ?int $maxTokens = null, ?float $temperature = null, ?string $effort = null): ClaudeResponse
+    public function generate(string $prompt, string $modelType = 'haiku', string $system = '', ?int $maxTokens = null, ?float $temperature = null, ?string $effort = null, ?int $timeoutSeconds = null, ?int $maxAttempts = null): ClaudeResponse
     {
         $model = self::modelId($modelType);
         $maxTokens ??= self::maxTokensFor($modelType);
+        $attempts = $maxAttempts ?? self::MAX_RETRIES;
+        $timeout = $timeoutSeconds ?? self::TIMEOUT_S;
+
+        if ($timeoutSeconds !== null && function_exists('set_time_limit')) {
+            @set_time_limit(($timeout + 30) * $attempts);
+        }
 
         $requestBody = $this->requestBody($prompt, $modelType, $model, $maxTokens, $system, $temperature, $effort);
         $encodedBody = json_encode($requestBody, JSON_UNESCAPED_UNICODE);
@@ -192,14 +207,14 @@ class ClaudeWriterService
 
         $lastError = '';
 
-        for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             $this->waitForRpmSlot();       // block nếu đạt RPM_LIMIT
             $this->acquireConcurrent();    // block nếu đạt MAX_CONCURRENT
 
             $ch = curl_init('https://api.anthropic.com/v1/messages');
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 60,
+                CURLOPT_TIMEOUT => $timeout,
                 CURLOPT_POST => true,
                 CURLOPT_HTTPHEADER => [
                     'x-api-key: '.config('services.claude.key'),
@@ -217,7 +232,7 @@ class ClaudeWriterService
 
             if ($curlError ?? false) {
                 $lastError = "cURL error: {$curlError}";
-                Log::warning("Claude exception (attempt {$attempt}/".self::MAX_RETRIES."): {$lastError}");
+                Log::warning("Claude exception (attempt {$attempt}/{$attempts}): {$lastError}");
             } else {
                 $json = json_decode($body, true);
 
@@ -265,10 +280,10 @@ class ClaudeWriterService
                 }
 
                 $lastError = "HTTP {$httpStatus}: ".($json['error']['message'] ?? $body);
-                Log::warning("Claude {$httpStatus} (attempt {$attempt}/".self::MAX_RETRIES."): {$lastError}");
+                Log::warning("Claude {$httpStatus} (attempt {$attempt}/{$attempts}): {$lastError}");
             }
 
-            if ($attempt < self::MAX_RETRIES) {
+            if ($attempt < $attempts) {
                 $is529 = str_contains($lastError, '529');
                 $jitter = random_int(1, 5); // tránh thundering herd khi nhiều worker retry cùng lúc
                 $delaySec = $is529
@@ -279,7 +294,7 @@ class ClaudeWriterService
             }
         }
 
-        Log::error('Claude failed after '.self::MAX_RETRIES.' attempts', [
+        Log::error("Claude failed after {$attempts} attempts", [
             'model' => $model,
             'last_error' => $lastError,
         ]);

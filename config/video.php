@@ -533,8 +533,6 @@ return [
 
         'profiles' => [
             'luxury_vessel' => [
-                'mission' => 'Prepare a concise source-inspiration brief containing information from this article that could help a separate creative designer invent a completely new superyacht.',
-
                 'concept_mission' => 'Design a superyacht that has never existed. Its proportions and silhouette must be readable from outside the superyacht.',
 
                 'concept_forbidden_terms' => [
@@ -563,41 +561,6 @@ return [
                 'arc_stages' => ['design', 'construction', 'finishing', 'completion', 'operation'],
 
                 'arc_required_stages' => ['design', 'construction', 'completion', 'operation'],
-                'article_patterns' => [
-                    'design_profile',
-                    'new_build_launch_or_delivery',
-                    'construction_progress',
-                    'refit_or_conversion',
-                    'sale_charter_or_market',
-                    'owner_or_celebrity_news',
-                    'performance_or_sea_trial',
-                    'incident_or_legal',
-                    'mixed',
-                ],
-                'inspection_aspects' => [
-                    'size_and_dimensions',
-                    'form_and_proportions',
-                    'spatial_layout',
-                    'deck_organization',
-                    'materials_and_finishes',
-                    'amenities',
-                    'windows_and_glazing',
-                    'wellness_and_relaxation',
-                    'transformable_spaces',
-                    'capacity',
-                    'construction_new_build_and_refit',
-                ],
-
-                'excluded_context_types' => [
-                    'owner',
-                    'celebrity',
-                    'sale_price',
-                    'builder',
-                    'designer',
-                    'brand',
-                    'product_name',
-                    'legal_controversy',
-                ],
             ],
         ],
     ],
@@ -802,6 +765,59 @@ return [
     | superyacht-pipeline-starter). Chi dung de kiem tai lieu; pipeline v6.3 chua chay.
     */
     'superyacht' => [
+        'variables' => [
+            'languages' => ['en'],
+        ],
+
+        'phase3_requires_judges' => (bool) env('SUPERYACHT_PHASE3_REQUIRES_JUDGES', false),
+
+        'judge' => [
+            'model' => env('SUPERYACHT_JUDGE_MODEL', 'gpt-6.1-sol'),
+            'effort' => env('SUPERYACHT_JUDGE_EFFORT', 'high'),
+            'max_tokens' => (int) env('SUPERYACHT_JUDGE_MAX_TOKENS', 16000),
+            'timeout_seconds' => (int) env('SUPERYACHT_JUDGE_TIMEOUT_SECONDS', 600),
+            'stream' => false,
+            'retry_times' => 0,
+        ],
+
+        'design' => [
+            'model' => env('SUPERYACHT_DESIGN_MODEL', 'gpt-6.1-sol'),
+            'effort' => env('SUPERYACHT_DESIGN_EFFORT', 'high'),
+            'max_tokens' => (int) env('SUPERYACHT_DESIGN_MAX_TOKENS', 48000),
+            'timeout_seconds' => (int) env('SUPERYACHT_DESIGN_TIMEOUT_SECONDS', 1800),
+            'stream' => true,
+            'retry_times' => 0,
+        ],
+
+        'build_state_text' => [
+            'parts' => [
+                'keel_blocks' => 'keel blocks',
+                'hull_shell' => 'hull shell',
+                'main_deck' => 'main deck',
+                'superstructure' => 'superstructure',
+                'glazing' => 'glazing',
+                'hull_doors' => 'hull doors',
+                'observation_blister' => 'observation blister',
+                'helideck' => 'helideck',
+                'mast' => 'mast',
+                'stern_platform' => 'stern platform',
+                'terraces' => 'terraces',
+                'scaffolding_on_hull' => 'scaffolding on the hull',
+            ],
+            'surfaces' => [
+                'scale_model_white' => 'white scale-model finish',
+                'bare_steel' => 'bare steel',
+                'steel_primer' => 'red-oxide primer',
+                'raw_aluminium' => 'raw unpainted aluminium',
+                'protective_film' => 'white protective film',
+                'filler_primer' => 'grey filler and primer',
+                'final_paint' => 'final paint',
+                'final_glass' => 'final glass',
+                'teak' => 'teak',
+                'other_final' => 'final finish',
+            ],
+        ],
+
         'spec_version' => '6.3.0',
 
         'workflow_code' => 'superyacht_v6_3',
@@ -818,10 +834,14 @@ return [
                     'actions' => [
                         'spec.design' => [
                             'phase' => 'phase-3',
-                            'instructions' => ['system-prompt', 'common-standards'],
+                            'instructions' => [],
                             'executor' => 'none',
                             'model_profile' => null,
-                            'contract_version' => '2',
+                            'contract_version' => '3',
+                            'stages' => [
+                                'draft' => ['canonical'],
+                                'lock' => ['canonical', 'constraints'],
+                            ],
                             'outputs' => [
                                 'canonical' => ['namespace' => 'superyacht', 'schema' => 'CanonicalDesign', 'version' => '6.3.0', 'pointer' => '/data/canonical', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 0 Step 6 data contract: canonical (Phase 3); Phase 3 Step 11 example'],
                                 'constraints' => ['namespace' => 'superyacht', 'schema' => 'Constraint', 'version' => '6.3.0', 'pointer' => '/data/constraints', 'mode' => 'each_item', 'required' => true, 'source' => 'Phase 0 Step 6 data contract: constraints[] (Phase 3); Phase 3 Step 11 example'],

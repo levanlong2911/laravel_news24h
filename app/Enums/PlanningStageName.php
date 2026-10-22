@@ -19,6 +19,10 @@ enum PlanningStageName: string
     case FINALIZE = 'finalize';
     case REFERENCE_PROMPT = 'reference_prompt';
     case VESSEL_DESIGN = 'vessel_design';
+    case DESIGN_DNA = 'design_dna';
+    case DNA_NOVELTY = 'dna_novelty';
+    case DNA_PLAUSIBILITY = 'dna_plausibility';
+    case YACHT_DESIGN = 'yacht_design';
 
     /** @return list<string> */
     public static function values(): array
@@ -40,6 +44,10 @@ enum PlanningStageName: string
             self::FINALIZE => null,
             self::REFERENCE_PROMPT => null,
             self::VESSEL_DESIGN => self::ANCHOR_PROMPT,
+            self::DESIGN_DNA => self::YACHT_DESIGN,
+            self::DNA_NOVELTY => self::YACHT_DESIGN,
+            self::DNA_PLAUSIBILITY => self::YACHT_DESIGN,
+            self::YACHT_DESIGN => null,
         };
     }
 }

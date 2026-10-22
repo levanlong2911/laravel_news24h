@@ -126,7 +126,6 @@ return [
     'reference_already_exists' => 'Cell :code already holds that reference view — nothing was rendered',
     'anchor_prompt_missing' => 'No compiled prompt — press Compile Prompt first',
     'anchor_prompt_stale' => 'Compiled prompt is stale - press Compile Prompt again',
-    'inspiration_done' => 'Phân tích xong',
     'reference_plan_written' => 'Claude đã đề xuất góc và viết mô tả — đọc từng mục, bỏ chọn mục không cần, rồi render.',
     'reference_plan_cached' => 'Nguồn production và nhu cầu shot không đổi — dùng lại bộ đề xuất đã có, không gọi Claude.',
     'reference_plan_call_failed' => 'Gọi Claude thất bại — phản hồi (nếu có) và usage đã được lưu, bộ đề xuất đang dùng giữ nguyên.',

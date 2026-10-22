@@ -4,7 +4,7 @@
 
     <div class="vp-panel va-anchor">
         <div class="va-head">
-            <span class="n">4</span>
+            <span class="n">{{ ($designFirst ?? false) ? 5 : 4 }}</span>
             <b>ANCHOR PROMPT</b>
             <em>{{ ($designFirst ?? false)
                 ? 'anchor từ bản thiết kế tàu — duyệt ảnh xong mới viết kịch bản'

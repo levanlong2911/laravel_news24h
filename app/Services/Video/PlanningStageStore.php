@@ -55,6 +55,7 @@ class PlanningStageStore
      * trong request.
      *
      * @param  array<string, mixed>  $input
+     * @param  bool|\Closure(VideoPlanningStage): bool  $force  a closure decides inside the claim transaction from the succeeded row that would be reused
      * @param  array<string, mixed>  $metadata
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
      *                                                              reason: project_not_found|claimed_by_other|already_succeeded|claimed
@@ -63,7 +64,7 @@ class PlanningStageStore
         string $projectId,
         PlanningStageName $stage,
         array $input,
-        bool $force = false,
+        bool|\Closure $force = false,
         array $metadata = [],
     ): array {
         if (array_key_exists(self::METADATA_KEY, $input)) {
@@ -98,7 +99,7 @@ class PlanningStageStore
                     ->sortByDesc('planning_revision')
                     ->first();
 
-                if ($done !== null && ! $force) {
+                if ($done !== null && ! ($force instanceof \Closure ? $force($done) : $force)) {
                     return [$done, null, 'already_succeeded'];
                 }
 
@@ -413,6 +414,18 @@ class PlanningStageStore
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->where('input_hash', $this->hash($input))
             ->exists();
+    }
+
+    /** @param array<string, mixed> $input */
+    public function latestSucceededForInput(string $projectId, PlanningStageName $stage, array $input): ?VideoPlanningStage
+    {
+        return VideoPlanningStage::query()
+            ->where('project_id', $projectId)
+            ->where('stage', $stage->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->where('input_hash', $this->hash($input))
+            ->orderByDesc('planning_revision')
+            ->first();
     }
 
     public function releaseClaim(string $stageId, string $reason): bool

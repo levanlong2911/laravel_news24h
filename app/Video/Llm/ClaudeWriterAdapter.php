@@ -32,6 +32,8 @@ final class ClaudeWriterAdapter implements LlmClient
                 $request->maxTokens,
                 $request->temperature,
                 $request->effort,
+                $request->timeoutSeconds,
+                $request->maxAttempts,
             );
         } catch (Throwable $e) {
             throw new LlmUnavailable(

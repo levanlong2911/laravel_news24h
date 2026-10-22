@@ -21,6 +21,8 @@ use App\Video\Render\Video\VideoRenderExecutionService;
 use App\Video\Scene\Services\ShotIntentService;
 use App\Video\Scene\Services\ShotSelectionReconciler;
 use App\Services\Video\CharacterAnchorPromptService;
+use App\Services\Video\DesignDnaService;
+use App\Services\Video\YachtDesignService;
 use App\Services\Video\ScreenplayExpansionService;
 use App\Services\Video\StoryFoundationService;
 use App\Services\Video\VesselDesignService;
@@ -187,7 +189,9 @@ class VideoProjectsController extends Controller
             'menu' => 'menu-open',
             'active' => 'active',
             'project' => $project,
-            'brief' => $this->videoProjectService->latestInspiration($project->id),
+            'brief' => $brief = $this->videoProjectService->latestInspiration($project->id),
+            'dna' => app(DesignDnaService::class)->panel($project->id),
+            'yacht' => VesselDesign::isDesignFirst($project) && $brief['phase_one'] ? app(YachtDesignService::class)->panel($project->id) : null,
             'anchorRows' => $anchorRows,
             'compileReason' => $this->anchorMessage('choose_prompt_settings'),
             'nextImageCode' => $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name),
@@ -216,6 +220,44 @@ class VideoProjectsController extends Controller
         return back()->with('success', $reason === 'cached'
             ? 'Prompt Phase 1 và nội dung bài không đổi — dùng lại phản hồi đã lưu, không gọi Haiku.'
             : 'Đã lưu phản hồi Haiku theo prompt Phase 1 — chưa kiểm nội dung.');
+    }
+
+    public function designDna(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+        [$output, $reason] = app(DesignDnaService::class)->run($id, $request->boolean('regenerate'));
+
+        if ($output === null) {
+            return back()->with('error', $reason);
+        }
+
+        return back()->with('success', $reason === 'cached'
+            ? 'Prompt Phase 2 và kết quả Phase 1 không đổi — dùng lại DNA đã lưu, không gọi Sonnet.'
+            : 'Đã lưu Design DNA theo prompt Phase 2.');
+    }
+
+    public function judgeDesignDna(Request $request, string $id, string $kind)
+    {
+        $this->ownedProject($id);
+        [$output, $reason] = app(DesignDnaService::class)->judge($id, $kind, $request->boolean('rejudge'));
+
+        if ($output === null) {
+            return back()->with('error', $reason);
+        }
+
+        return back()->with('success', $reason === 'cached'
+            ? "DNA và prompt không đổi — dùng lại kết quả JUDGE {$kind} đã lưu, không gọi model."
+            : "Đã lưu kết quả JUDGE {$kind}: ".($output['verdict'] ?? '').' ('.($output['total'] ?? '—').'/10).');
+    }
+
+    public function resetDesignDna(string $id)
+    {
+        $this->ownedProject($id);
+        [$done, $reason] = app(DesignDnaService::class)->reset($id);
+
+        return $done
+            ? back()->with('success', 'Đã reset lượt tạo DNA bị kẹt.')
+            : back()->with('error', $reason);
     }
 
     public function resetInspiration(string $id)
@@ -327,6 +369,12 @@ class VideoProjectsController extends Controller
 
         if ($design === null) {
             return back()->with('error', $this->anchorMessage($reason));
+        }
+
+        if (($design['execution'] ?? null) === YachtDesignService::EXECUTION) {
+            return back()->with('success', $reason === 'cached'
+                ? 'DNA và prompt Phase 3 không đổi — dùng lại bản thiết kế đã lưu, không gọi model.'
+                : 'Đã lưu bản thiết kế Phase 3 (draft) — xem kết quả kiểm RULE.');
         }
 
         return back()->with('success', $reason === 'cached'

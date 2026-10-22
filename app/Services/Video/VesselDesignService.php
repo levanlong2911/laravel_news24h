@@ -29,8 +29,6 @@ final class VesselDesignService
 {
     private const CORRECTION_VERSION_MAX = 40;
 
-    public const READS_PHASE_ONE = false;
-
     public const REPAIR_KEY = 'design_repair';
 
     public const REFERENCE_SELECTION_KEY = 'design_reference_selection';
@@ -79,8 +77,8 @@ TEXT;
 
         [$latestInspiration] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::INSPIRATION, [], skipOrphans: true);
 
-        if (! self::READS_PHASE_ONE && ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration)) {
-            return [null, 'inspiration_phase1_not_supported'];
+        if (ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration)) {
+            return app(YachtDesignService::class)->run($projectId, $force);
         }
 
         $brief = $this->stageStore->latestOutputForProject($projectId, PlanningStageName::INSPIRATION);
@@ -1087,6 +1085,12 @@ TEXT;
     /** @return array{0: bool, 1: string} */
     public function reset(string $projectId): array
     {
+        [$latestInspiration] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::INSPIRATION, [], skipOrphans: true);
+
+        if (ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration)) {
+            return app(YachtDesignService::class)->reset($projectId);
+        }
+
         [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::VESSEL_DESIGN, []);
 
         if ($latest === null) {

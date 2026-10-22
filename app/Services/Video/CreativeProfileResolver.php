@@ -23,10 +23,6 @@ final class CreativeProfileResolver
         // gọi model nào.
         return new CategoryCreativeProfile(
             $profileKey,
-            (string) ($profile['mission'] ?? ''),
-            $profile['article_patterns'] ?? [],
-            $profile['inspection_aspects'] ?? [],
-            $profile['excluded_context_types'] ?? [],
             (string) ($profile['concept_mission'] ?? ''),
             $profile['arc_stages'] ?? [],
             $profile['arc_required_stages'] ?? [],

@@ -58,9 +58,10 @@ final class ResolvedPhase
 
     /**
      * @param  ?string  $projectId  only for a bundle resolved by category; a bundle resolved for a project checks against its own project
+     * @param  ?string  $stage  a stage the action declares; it limits the check to that stage's output slots
      * @return array{report: ValidationReport, status: ?string, applicable: bool, notices: list<string>}
      */
-    public function checkOutput(string $json, ?string $projectId = null): array
+    public function checkOutput(string $json, ?string $projectId = null, ?string $stage = null): array
     {
         $refused = static fn (string $code, string $message): array => [
             'report' => new ValidationReport([new Violation($code, $message)]),
@@ -93,8 +94,19 @@ final class ResolvedPhase
         $envelope = (new EnvelopeValidator())->check($decoded, $this->manifest['phase']['code'], $project);
         $violations = $envelope['report']->violations;
 
+        $slots = $stage === null ? null : ($this->manifest['action']['stages'][$stage] ?? null);
+
+        if ($stage !== null && $slots === null) {
+            return $refused('CONTRACT-STAGE', "Action {$this->manifest['action']['key']} declares no stage {$stage}.");
+        }
+
+        $links = array_values(array_filter(
+            $this->links('output'),
+            static fn (array $link): bool => $slots === null || in_array($link['slot'], $slots, true),
+        ));
+
         if (is_object($decoded)) {
-            foreach ($this->links('output') as $link) {
+            foreach ($links as $link) {
                 array_push($violations, ...$this->checkLink($link, $decoded));
                 array_push($violations, ...$this->checkItems($link, $decoded));
             }

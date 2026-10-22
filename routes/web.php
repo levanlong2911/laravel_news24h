@@ -144,6 +144,9 @@ Route::group(
             Route::get('/{id}/anchor', [VideoProjectsController::class, 'anchor'])->name('video-projects.anchor');
             Route::post('/{id}/inspiration', [VideoProjectsController::class, 'inspiration'])->name('video-projects.inspiration');
             Route::post('/{id}/inspiration/reset', [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
+            Route::post('/{id}/design-dna', [VideoProjectsController::class, 'designDna'])->name('video-projects.design-dna');
+            Route::post('/{id}/design-dna/reset', [VideoProjectsController::class, 'resetDesignDna'])->name('video-projects.design-dna-reset');
+            Route::post('/{id}/design-dna/judge/{kind}', [VideoProjectsController::class, 'judgeDesignDna'])->whereIn('kind', ['novelty', 'plausibility'])->name('video-projects.design-dna-judge');
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
             Route::post('/{id}/concept/reset', [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
             //tạo phân cảnh

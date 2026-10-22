@@ -22,6 +22,8 @@ final class LlmRequest
         /** `null` = không gửi, để mặc định của nhà cung cấp. Khác hẳn `0.0`. */
         public readonly ?float $temperature = null,
         public readonly ?string $effort = null,
+        public readonly ?int $timeoutSeconds = null,
+        public readonly ?int $maxAttempts = null,
     ) {
         if ($temperature !== null && (! is_finite($temperature) || $temperature < 0.0 || $temperature > 1.0)) {
             throw new \InvalidArgumentException('temperature must be null or a finite value in [0.0, 1.0]');

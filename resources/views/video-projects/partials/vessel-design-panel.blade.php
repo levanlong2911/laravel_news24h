@@ -1,3 +1,83 @@
+            @if(($yacht ?? null) !== null)
+            @php
+                $yachtModel = (string) config('video.screenplay.design.model').' (effort '.config('video.screenplay.design.effort').')';
+                $yachtCheck = $yacht['check'];
+            @endphp
+            <div class="vp-panel">
+                <div class="va-head">
+                    <span class="n">4</span>
+                    <b>DESIGN</b>
+                    <em>Phase 3 — hồ sơ thiết kế (draft)</em>
+                    <span class="grow"></span>
+                    @if($yacht['analysed'])<span class="va-tag blue">Đã thiết kế</span>@endif
+                    @if($yacht['running'])
+                        <button class="vp-btn sm" disabled>Đang thiết kế…</button>
+                    @elseif($yacht['stuck'])
+                        <form method="POST" action="{{ route('video-projects.vessel-design-reset', $project->id) }}">
+                            @csrf
+                            <button class="vp-btn sm dg">Reset lượt bị kẹt</button>
+                        </form>
+                    @elseif($yacht['can_run'] || $yacht['can_regenerate'])
+                        <form method="POST" action="{{ route('video-projects.vessel-design', $project->id) }}"
+                              id="yachtDesignForm" data-modal="confirmYachtDesign" onsubmit="return vpLockForm(this)">
+                            @csrf
+                            @if($yacht['can_regenerate'])<input type="hidden" name="force" value="1">@endif
+                        </form>
+                        <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmYachtDesign"
+                                data-busy="Đang thiết kế…">{{ $yacht['can_regenerate'] ? 'Thiết kế lại (tính phí)' : 'Creat design' }}</button>
+                        @include('modal.confirm_action', [
+                            'id' => 'confirmYachtDesign',
+                            'form' => 'yachtDesignForm',
+                            'content' => 'Gọi '.$yachtModel.' viết hồ sơ thiết kế theo prompt Phase 3 từ Design DNA đã đạt — tác vụ này tính tiền.',
+                        ])
+                    @else
+                        <button class="vp-btn sm" disabled title="{{ $yacht['run_error'] ?? 'Đã có bản thiết kế đạt kiểm RULE cho đúng DNA và prompt hiện tại' }}">Creat design</button>
+                    @endif
+                </div>
+                <div class="va-body">
+                    <div class="va-brief">
+                        @if($yacht['prompt'])
+                            <div class="line"><span class="k">Prompt khi chạy lại</span><span class="v">{{ $yacht['prompt'] }}</span></div>
+                        @endif
+                        @if($yacht['run_error'])
+                            <div class="line"><span class="v" style="color:var(--vp-red)">{{ $yacht['run_error'] }}</span></div>
+                        @endif
+                        @if($yacht['error'])
+                            <div class="line"><span class="v" style="color:var(--vp-red)">{{ $yacht['error'] }}</span></div>
+                        @elseif(! $yacht['analysed'])
+                            <div class="line"><span class="v">Chưa thiết kế</span></div>
+                        @else
+                            @if(! $yacht['current'])
+                                <div class="line"><span class="v" style="color:var(--vp-red)">Bản thiết kế này thuộc DNA hoặc prompt cũ.</span></div>
+                            @endif
+                            @if($yachtCheck !== null)
+                                <div class="line"><span class="k">Kiểm RULE</span><span class="v src-verdict {{ strtolower($yachtCheck['verdict']) }}">
+                                    @switch($yachtCheck['verdict'])
+                                        @case('PASS') Đạt @break
+                                        @case('FAIL') Không đạt — {{ count($yachtCheck['issues']) }} lỗi @break
+                                        @default Chưa thể kiểm — {{ $yachtCheck['error'] }}
+                                    @endswitch
+                                </span></div>
+                                @foreach($yachtCheck['issues'] as $issue)
+                                    <div class="line"><span class="v" style="color:var(--vp-red)">{{ $issue }}</span></div>
+                                @endforeach
+                            @endif
+                            @if($yacht['name'])
+                                <div class="line"><span class="k">Tên tàu</span><span class="v">{{ $yacht['name'] }}@if($yacht['loa']) · LOA {{ $yacht['loa'] }} m @endif</span></div>
+                            @endif
+                            @if($yacht['yacht_anchor'])
+                                <div class="line"><span class="k">YACHT ANCHOR</span><span class="v">{{ $yacht['yacht_anchor'] }}</span></div>
+                            @endif
+                            @if($yacht['json'] !== null)
+                                <pre class="raw">{{ $yacht['json'] }}</pre>
+                            @else
+                                <div class="line"><span class="v">Phản hồi không phải JSON ({{ $yacht['json_error'] }})</span></div>
+                            @endif
+                        @endif
+                    </div>
+                </div>
+            </div>
+            @else
             @php
                 $design = $vesselDesign['design'] ?? null;
                 $hasDesign = $design !== null;
@@ -42,12 +122,12 @@
             @endphp
             <div class="vp-panel">
                 <div class="va-head">
-                    <span class="n">3</span>
+                    <span class="n">4</span>
                     <b>DESIGN</b>
                     <span class="grow"></span>
                     @if($hasDesign)<span class="va-tag ok">Đã có thiết kế rev {{ $vesselDesign['revision'] }}</span>@endif
                     @if(! $brief['can_design'])
-                        <button class="vp-btn sm" disabled title="{{ $brief['format'] !== 'phase1' ? 'Cần brief Haiku trước' : ($brief['source_passed'] ? 'Nguồn đạt; bước thiết kế chưa hỗ trợ Phase 1' : 'Bài viết chưa đạt đánh giá nguồn') }}">Creat design</button>
+                        <button class="vp-btn sm" disabled title="{{ $brief['format'] !== 'phase1' ? 'Cần brief Haiku trước' : ($brief['source_passed'] ? 'Cần Design DNA đạt kiểm RULE, novelty và plausibility' : 'Bài viết chưa đạt đánh giá nguồn') }}">Creat design</button>
                     @elseif($vesselDesign['running'])
                         <button class="vp-btn sm" disabled>Đang thiết kế…</button>
                         <form method="POST" action="{{ route('video-projects.vessel-design-reset', $project->id) }}">
@@ -160,3 +240,4 @@
                     @endif
                 </div>
             </div>
+            @endif

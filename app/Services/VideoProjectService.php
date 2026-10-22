@@ -50,6 +50,7 @@ use App\Video\Media\MediaModelRegistry;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Inspiration\InspirationResult;
 use App\Video\Inspiration\SourceCheck;
+use App\Video\Llm\JsonAnswer;
 use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceView;
 use App\Video\Render\Video\FilmSegmentPrompt;
@@ -433,10 +434,11 @@ class VideoProjectService
         };
         $sourcePassed = $sourceCurrent && ($sourceCheck['verdict'] ?? null) === SourceCheck::RUN;
         $runInput = is_array($latest->input_json) ? $latest->input_json : [];
-        [$parsed, $parseError] = $phaseOne && $succeeded ? self::parseForDisplay((string) ($stored['raw_text'] ?? '')) : [null, null];
+        [$parsed, $parseError] = $phaseOne && $succeeded ? JsonAnswer::parse((string) ($stored['raw_text'] ?? '')) : [null, null];
         $pretty = static fn (mixed $value): string => (string) json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         return [
+            'stage_id' => (string) $latest->id,
             'analysed' => $succeeded,
             'status' => $latest->status,
             'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
@@ -452,7 +454,8 @@ class VideoProjectService
             'source_check' => $sourceCheck,
             'source_current' => $sourceCurrent,
             'source_passed' => $sourcePassed,
-            'can_design' => $phaseOne ? $sourcePassed && VesselDesignService::READS_PHASE_ONE : $succeeded,
+            'phase_one' => $phaseOne,
+            'can_design' => ! $phaseOne && $succeeded,
         ];
     }
 
@@ -4876,6 +4879,7 @@ class VideoProjectService
     private function emptyInspiration(?string $reason = null): array
     {
         return [
+            'stage_id' => null,
             'analysed' => false,
             'status' => null,
             'running' => false,
@@ -4891,6 +4895,7 @@ class VideoProjectService
             'source_check' => null,
             'source_current' => false,
             'source_passed' => false,
+            'phase_one' => false,
             'can_design' => false,
         ];
     }
@@ -4927,7 +4932,7 @@ class VideoProjectService
      */
     private function inspirationOutput(array $input, string $rawText, string $articleBlock): array
     {
-        [$json, $error] = self::parseForDisplay($rawText);
+        [$json, $error] = JsonAnswer::parse($rawText);
 
         return [
             'execution' => ClaudeInspirationAnalyst::EXECUTION,
@@ -4943,34 +4948,7 @@ class VideoProjectService
     /** @return array<string, mixed> */
     private static function sourceCheckOf(string $rawText, string $articleBlock): array
     {
-        [$json, $error] = self::parseForDisplay($rawText);
-        $response = $error === null ? json_decode((string) json_encode($json), true) : null;
-
-        return SourceCheck::evaluate(is_array($response) ? $response : null, $articleBlock);
-    }
-
-    /** @return array{0: mixed, 1: ?string} */
-    private static function parseForDisplay(string $text): array
-    {
-        $decoded = json_decode($text);
-
-        if (json_last_error() === JSON_ERROR_NONE) {
-            return [$decoded, null];
-        }
-
-        $error = json_last_error_msg();
-
-        if (preg_match('/\A\s*```(?:json)?[ \t]*\r?\n(.*)\r?\n```\s*\z/s', $text, $fenced) === 1) {
-            $decoded = json_decode($fenced[1]);
-
-            if (json_last_error() === JSON_ERROR_NONE) {
-                return [$decoded, null];
-            }
-
-            $error = json_last_error_msg();
-        }
-
-        return [null, $error];
+        return SourceCheck::evaluate(JsonAnswer::object($rawText), $articleBlock);
     }
 
     /** @return array{0: ?int, 1: string} [$shotCount, $reason] */
