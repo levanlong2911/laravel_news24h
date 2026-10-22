@@ -682,6 +682,39 @@ a.vp-btn[disabled] {
     color: var(--vp-ink);
 }
 
+.va-brief .raw {
+    max-height: 420px;
+    margin: 6px 0 0;
+    padding: 8px 9px;
+    overflow: auto;
+    color: var(--vp-ink);
+    font-family: var(--vp-mono);
+    font-size: .72rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #f8fafc;
+    border: 1px solid var(--vp-line);
+    border-radius: 6px;
+}
+
+.va-brief .src-verdict {
+    font-weight: 600;
+}
+
+.va-brief .src-verdict.run {
+    color: var(--vp-green);
+}
+
+.va-brief .src-verdict.reject,
+.va-brief .src-verdict.stop {
+    color: var(--vp-red);
+}
+
+.va-brief .src-verdict.unscored {
+    color: var(--vp-amber-fg);
+}
+
 .va-fields,
 .va-set {
     display: grid;

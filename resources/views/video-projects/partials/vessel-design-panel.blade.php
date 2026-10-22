@@ -43,12 +43,11 @@
             <div class="vp-panel">
                 <div class="va-head">
                     <span class="n">3</span>
-                    <b>THIẾT KẾ TÀU</b>
-                    <em>hình dáng, boong, không gian — trước kịch bản</em>
+                    <b>DESIGN</b>
                     <span class="grow"></span>
                     @if($hasDesign)<span class="va-tag ok">Đã có thiết kế rev {{ $vesselDesign['revision'] }}</span>@endif
-                    @if(! $brief['analysed'])
-                        <button class="vp-btn sm" disabled title="Cần brief Haiku trước">Thiết kế tàu</button>
+                    @if(! $brief['can_design'])
+                        <button class="vp-btn sm" disabled title="{{ $brief['format'] !== 'phase1' ? 'Cần brief Haiku trước' : ($brief['source_passed'] ? 'Nguồn đạt; bước thiết kế chưa hỗ trợ Phase 1' : 'Bài viết chưa đạt đánh giá nguồn') }}">Creat design</button>
                     @elseif($vesselDesign['running'])
                         <button class="vp-btn sm" disabled>Đang thiết kế…</button>
                         <form method="POST" action="{{ route('video-projects.vessel-design-reset', $project->id) }}">
@@ -103,7 +102,7 @@
                     @endif
                     @if(! $hasDesign)
                         @if(! $vesselDesign['error'] && $failedDesign === null)
-                            <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Chưa thiết kế tàu.</div>
+                            <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Click design.</div>
                         @endif
                     @else
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">

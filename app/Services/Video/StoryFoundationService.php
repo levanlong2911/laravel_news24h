@@ -8,6 +8,7 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Prompt\Exceptions\TextCompletionException;
 use App\Video\Screenplay\FilmBrief;
 use App\Video\Screenplay\ScreenplayResult;
@@ -43,6 +44,12 @@ final class StoryFoundationService
 
         if (! VesselDesign::isDesignFirst($project)) {
             return [null, 'workflow_not_design_first'];
+        }
+
+        [$latestInspiration] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::INSPIRATION, [], skipOrphans: true);
+
+        if (ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration)) {
+            return [null, 'inspiration_phase1_not_supported'];
         }
 
         $lock = $this->designs->anchorSelection($project);

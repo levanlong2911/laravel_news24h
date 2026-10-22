@@ -8,6 +8,7 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Prompt\Exceptions\TextCompletionException;
 use App\Video\Screenplay\DesignLocationBuilder;
 use App\Video\Screenplay\FilmBrief;
@@ -673,6 +674,12 @@ final class ScreenplayExpansionService
 
         if ($project === null || $project->article === null) {
             return [null, 'project_not_found'];
+        }
+
+        [$latestInspiration] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::INSPIRATION, [], skipOrphans: true);
+
+        if (ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration)) {
+            return [null, 'inspiration_phase1_not_supported'];
         }
 
         $foundationStage = $this->selectableFoundation($projectId, $foundationStageId);

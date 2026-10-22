@@ -11,6 +11,7 @@ use App\Enums\ImageVariations;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\Admin;
+use App\Models\AiPhase;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoFinal;
@@ -22,7 +23,6 @@ use App\Models\VideoSession;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\CharacterAnchorPromptService;
-use App\Services\Video\CreativeProfileResolver;
 use App\Services\Video\DesignImageDirectRenderer;
 use App\Services\Video\DesignImageStore;
 use App\Services\Video\FinalCompositionReconciler;
@@ -47,7 +47,9 @@ use App\Video\FinalComposition\CompositionResult;
 use App\Video\FinalComposition\CompositionRun;
 use App\Video\FinalComposition\Deadline;
 use App\Video\Media\MediaModelRegistry;
-use App\Video\Inspiration\CategoryCreativeProfile as InspirationProfile;
+use App\Video\Inspiration\ClaudeInspirationAnalyst;
+use App\Video\Inspiration\InspirationResult;
+use App\Video\Inspiration\SourceCheck;
 use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceView;
 use App\Video\Render\Video\FilmSegmentPrompt;
@@ -220,8 +222,6 @@ class VideoProjectService
 
     private CanonicalConceptInputBuilder $canonicalConceptInputBuilder;
 
-    private CreativeProfileResolver $creativeProfileResolver;
-
     private GeometryPromptAuthor $geometryPromptAuthor;
 
     private ScreenplayApprovalService $screenplayApprovalService;
@@ -238,7 +238,6 @@ class VideoProjectService
         DesignImageDirectRenderer $designImageDirectRenderer,
         VisualIdentityStore $identityStore,
         CanonicalConceptInputBuilder $canonicalConceptInputBuilder,
-        CreativeProfileResolver $creativeProfileResolver,
         GeometryPromptAuthor $geometryPromptAuthor,
         ScreenplayApprovalService $screenplayApprovalService,
         ProductionSelectionService $productionSelectionService,
@@ -251,7 +250,6 @@ class VideoProjectService
         $this->designImageDirectRenderer = $designImageDirectRenderer;
         $this->identityStore = $identityStore;
         $this->canonicalConceptInputBuilder = $canonicalConceptInputBuilder;
-        $this->creativeProfileResolver = $creativeProfileResolver;
         $this->geometryPromptAuthor = $geometryPromptAuthor;
         $this->screenplayApprovalService = $screenplayApprovalService;
         $this->productionSelectionService = $productionSelectionService;
@@ -304,24 +302,25 @@ class VideoProjectService
             return [null, 'Du an nay khong gan voi bai viet nao'];
         }
 
-        $category = (string) ($project->article->category?->slug ?? '');
+        try {
+            [$prompt, $articleBlock, $input] = $this->inspirationRun($project);
+        } catch (\Throwable $e) {
+            Log::error('inspiration phase-1: prompt or article unavailable, no model call made', [
+                'project_id' => $project->id,
+                'exception' => $e,
+            ]);
+
+            return [null, 'Không lấy được prompt Phase 1 hoặc bài viết — chưa gọi Haiku: '.$e->getMessage()];
+        }
 
         try {
-            $profile = $this->inspirationProfile($project);
-
-            if ($profile === null) {
-                return [null, "Category {$category} chua co creative profile"];
-            }
-
-            $input = $this->inspirationInput($project, $profile);
-
             [$stage, $token, $reason] = $this->stageStore->claimProjectStage(
                 $project->id,
                 PlanningStageName::INSPIRATION,
                 $input,
             );
         } catch (\Throwable $e) {
-            Log::error('canonical-inspiration: khong mo duoc luot', [
+            Log::error('inspiration phase-1: could not open the run', [
                 'project_id' => $project->id,
                 'exception' => $e,
             ]);
@@ -340,25 +339,19 @@ class VideoProjectService
         $result = null;
 
         try {
-            $post = $this->rawArticleFromModel($project->article);
-            $result = $this->canonicalConceptInputBuilder->buildInspiration($post, $profile);
+            $result = $this->canonicalConceptInputBuilder->buildInspiration($prompt, $articleBlock);
 
-
-            $output = $result->brief->toArray($profile);
-            unset($output['uncovered_aspects']);
-            $empty = trim((string) ($output['article_focus'] ?? '')) === ''
-                ? 'Haiku tra ve brief khong co article_focus'
-                : null;
-
-            if ($empty !== null) {
+            if (trim($result->rawResponse) === '') {
                 return $this->failInspirationStage(
                     $stage->id,
                     $token,
-                    $empty,
+                    'Haiku trả về phản hồi rỗng',
                     $result->rawResponse,
                     $result->usage,
                 );
             }
+
+            $output = $this->inspirationOutput($input, $result->rawResponse, $articleBlock);
 
             if (! $this->stageStore->finishSucceeded(
                 $stage->id,
@@ -372,20 +365,20 @@ class VideoProjectService
 
             return [$output, 'ok'];
         } catch (\Throwable $e) {
-            Log::error('canonical-inspiration: that bai', [
+            Log::error('inspiration phase-1: the run failed', [
                 'stage_id' => $stage->id,
                 'article_id' => $project->article->id,
                 'exception' => $e,
             ]);
 
-            $fromBrief = $e instanceof \App\Video\Inspiration\InvalidInspirationBrief;
+            $billed = $e instanceof \App\Video\Llm\LlmUnavailable ? $e->billed : null;
 
             return $this->failInspirationStage(
                 $stage->id,
                 $token,
                 $e->getMessage(),
-                $result?->rawResponse ?? ($fromBrief ? $e->rawResponse : ''),
-                $result?->usage ?? ($fromBrief ? $e->usage : []),
+                $result?->rawResponse ?? $billed?->text ?? '',
+                $result?->usage ?? ($billed === null ? [] : ClaudeInspirationAnalyst::usageOf($billed, ClaudeInspirationAnalyst::instructionVersion($prompt))),
             );
         }
     }
@@ -403,12 +396,16 @@ class VideoProjectService
             return $this->emptyInspiration('Du an nay khong gan voi bai viet nao');
         }
 
-        try {
-            $input = $this->inspirationInput($project, $this->inspirationProfile($project));
-        } catch (\Throwable $e) {
-            $this->quietLog('canonical-inspiration: profile unreadable', $e, ['project_id' => $project->id]);
+        $prompt = null;
+        $articleBlock = null;
+        $input = [];
+        $runError = null;
 
-            return $this->emptyInspiration('Creative profile cua category nay cau hinh loi — xem log.');
+        try {
+            [$prompt, $articleBlock, $input] = $this->inspirationRun($project);
+        } catch (\Throwable $e) {
+            $this->quietLog('inspiration phase-1: prompt or article unavailable', $e, ['project_id' => $project->id]);
+            $runError = 'Không lấy được prompt Phase 1 cho chủ đề này — chưa thể chạy lượt mới: '.$e->getMessage();
         }
 
         [$latest, $matchesInput] = $this->stageStore->latestStageForProject(
@@ -417,14 +414,27 @@ class VideoProjectService
             $input,
             skipOrphans: true,
         );
+        $label = static fn (int $revision, string $workflow): string => 'Prompt '.ClaudeInspirationAnalyst::PHASE_CODE.' revision '.$revision.' ('.$workflow.')';
+        $next = $prompt === null ? null : $label((int) $prompt->revision, (string) $input['workflow']);
 
         if ($latest === null) {
-            return $this->emptyInspiration();
+            return ['can_run' => $runError === null, 'prompt' => $next, 'run_error' => $runError] + $this->emptyInspiration();
         }
 
         $succeeded = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value;
         $claimed = $latest->status === VideoPlanningStageStatus::RUNNING->value;
-        $stored = $succeeded ? ($latest->output_json ?? []) : [];
+        $stored = $succeeded && is_array($latest->output_json) ? $latest->output_json : [];
+        $phaseOne = ClaudeInspirationAnalyst::isPhaseOneRun($latest);
+        $sourceCurrent = $phaseOne && $succeeded && $matchesInput && $runError === null && is_string($articleBlock);
+        $sourceCheck = match (true) {
+            $sourceCurrent => self::sourceCheckOf((string) ($stored['raw_text'] ?? ''), (string) $articleBlock),
+            $phaseOne && is_array($stored['source'] ?? null) => $stored['source'],
+            default => null,
+        };
+        $sourcePassed = $sourceCurrent && ($sourceCheck['verdict'] ?? null) === SourceCheck::RUN;
+        $runInput = is_array($latest->input_json) ? $latest->input_json : [];
+        [$parsed, $parseError] = $phaseOne && $succeeded ? self::parseForDisplay((string) ($stored['raw_text'] ?? '')) : [null, null];
+        $pretty = static fn (mixed $value): string => (string) json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         return [
             'analysed' => $succeeded,
@@ -432,10 +442,17 @@ class VideoProjectService
             'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest->error_message,
-            'can_run' => ! $matchesInput || $latest->status === VideoPlanningStageStatus::FAILED->value,
-            'focus' => (string) ($stored['article_focus'] ?? ''),
-            'insights' => $stored['source_insights'] ?? [],
-            'patterns' => $stored['article_patterns'] ?? [],
+            'can_run' => $runError === null && (! $matchesInput || $latest->status === VideoPlanningStageStatus::FAILED->value),
+            'prompt' => $next,
+            'run_error' => $runError,
+            'source' => $phaseOne ? $label((int) ($runInput['phase_revision'] ?? 0), (string) ($runInput['workflow'] ?? '')) : null,
+            'format' => $succeeded ? ($phaseOne ? 'phase1' : 'legacy') : null,
+            'json' => ! $succeeded ? null : ($phaseOne ? ($parseError === null ? $pretty($parsed) : null) : $pretty($stored)),
+            'json_error' => $parseError,
+            'source_check' => $sourceCheck,
+            'source_current' => $sourceCurrent,
+            'source_passed' => $sourcePassed,
+            'can_design' => $phaseOne ? $sourcePassed && VesselDesignService::READS_PHASE_ONE : $succeeded,
         ];
     }
 
@@ -449,7 +466,7 @@ class VideoProjectService
         array $input,
         string $stageId,
         string $lostToken,
-        \App\Video\Inspiration\InspirationResult $result,
+        InspirationResult $result,
         array $output,
     ): array {
         $orphaned = false;
@@ -496,8 +513,8 @@ class VideoProjectService
             $claimToken,
             $reason,
             $usage !== [] ? $usage : [
-                'model' => 'haiku',
-                'instruction_version' => \App\Video\Inspiration\ClaudeInspirationAnalyst::INSTRUCTION_VERSION,
+                'model' => ClaudeInspirationAnalyst::MODEL,
+                'instruction_version' => ClaudeInspirationAnalyst::EXECUTION,
             ],
             $rawResponse,
         );
@@ -4344,6 +4361,12 @@ class VideoProjectService
         $size = ImageSize::LANDSCAPE;
         $model = CharacterAnchorPromptService::anchorModel();
 
+        [$latestInspiration] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::INSPIRATION, [], skipOrphans: true);
+
+        if (ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration)) {
+            return [null, 'inspiration_phase1_not_supported', null];
+        }
+
         $brief = $this->stageStore->latestOutputForProject(
             $projectId,
             PlanningStageName::INSPIRATION,
@@ -4859,30 +4882,95 @@ class VideoProjectService
             'stuck' => false,
             'error' => $reason,
             'can_run' => true,
-            'focus' => '',
-            'insights' => [],
-            'patterns' => [],
+            'prompt' => null,
+            'run_error' => null,
+            'source' => null,
+            'format' => null,
+            'json' => null,
+            'json_error' => null,
+            'source_check' => null,
+            'source_current' => false,
+            'source_passed' => false,
+            'can_design' => false,
+        ];
+    }
+
+    /** @return array{0: AiPhase, 1: string, 2: array<string, mixed>} [$prompt, $articleBlock, $input] */
+    private function inspirationRun(VideoProject $project): array
+    {
+        $category = $project->article?->category
+            ?? throw new \RuntimeException('The article of this project has no category.');
+        $workflow = config('video.superyacht.contracts.categories')[$category->slug] ?? null;
+
+        if (! is_string($workflow) || $workflow === '') {
+            throw new \RuntimeException("Category {$category->slug} has no configured workflow.");
+        }
+
+        $prompt = AiPhase::currentFor((string) $category->id, $workflow, ClaudeInspirationAnalyst::PHASE_CODE);
+        $articleBlock = $this->canonicalConceptInputBuilder->articleBlock($this->rawArticleFromModel($project->article));
+
+        return [$prompt, $articleBlock, [
+            'execution' => ClaudeInspirationAnalyst::EXECUTION,
+            'article_id' => (string) $project->article->id,
+            'category_id' => (string) $category->id,
+            'workflow' => $workflow,
+            'phase_id' => (string) $prompt->id,
+            'phase_revision' => (int) $prompt->revision,
+            'prompt_sha256' => (string) $prompt->content_sha256,
+            'article_sha256' => hash('sha256', $articleBlock),
+        ] + $this->canonicalConceptInputBuilder->inspirationSettings()];
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @return array<string, mixed>
+     */
+    private function inspirationOutput(array $input, string $rawText, string $articleBlock): array
+    {
+        [$json, $error] = self::parseForDisplay($rawText);
+
+        return [
+            'execution' => ClaudeInspirationAnalyst::EXECUTION,
+            'checked' => false,
+            'prompt' => array_intersect_key($input, array_flip(['phase_id', 'phase_revision', 'prompt_sha256', 'workflow', 'category_id'])),
+            'raw_text' => $rawText,
+            'parsed_json' => $json,
+            'json_parse_error' => $error,
+            'source' => self::sourceCheckOf($rawText, $articleBlock),
         ];
     }
 
     /** @return array<string, mixed> */
-    private function inspirationInput(VideoProject $project, ?InspirationProfile $profile): array
+    private static function sourceCheckOf(string $rawText, string $articleBlock): array
     {
-        $result = $this->canonicalConceptInputBuilder->inspirationFingerprint($profile);
-        return [
-            'article_id' => $project->article->id,
-            'category' => (string) ($project->article->category?->slug ?? ''),
-            'title' => $project->article->title,
-            'content' => (string) $project->article->content,
-            'inspiration' => $profile === null
-                ? null
-                : $result,
-        ];
+        [$json, $error] = self::parseForDisplay($rawText);
+        $response = $error === null ? json_decode((string) json_encode($json), true) : null;
+
+        return SourceCheck::evaluate(is_array($response) ? $response : null, $articleBlock);
     }
 
-    private function inspirationProfile(VideoProject $project): ?InspirationProfile
+    /** @return array{0: mixed, 1: ?string} */
+    private static function parseForDisplay(string $text): array
     {
-        return $this->creativeProfileResolver->resolve((string) ($project->article->category?->slug ?? ''));
+        $decoded = json_decode($text);
+
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return [$decoded, null];
+        }
+
+        $error = json_last_error_msg();
+
+        if (preg_match('/\A\s*```(?:json)?[ \t]*\r?\n(.*)\r?\n```\s*\z/s', $text, $fenced) === 1) {
+            $decoded = json_decode($fenced[1]);
+
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return [$decoded, null];
+            }
+
+            $error = json_last_error_msg();
+        }
+
+        return [null, $error];
     }
 
     /** @return array{0: ?int, 1: string} [$shotCount, $reason] */

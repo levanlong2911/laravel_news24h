@@ -55,7 +55,7 @@
             <div class="vp-panel">
                 <div class="va-head">
                     <span class="n">2</span>
-                    <b>HAIKU INSPIRATION</b>
+                    <b>INSPIRATION</b>
                     <span class="grow"></span>
                     @if($brief['analysed'])<span class="va-tag blue">Đã phân tích</span>@endif
                     @if($brief['running'])
@@ -82,25 +82,49 @@
 
                 <div class="va-insp-grid">
                     <div>
-                        <div class="va-lbl" style="margin-top:0">Tóm tắt ý tưởng (Haiku)</div>
+                        <div class="va-lbl" style="margin-top:0">Tóm tắt ý tưởng (Phase 1)</div>
                         <div class="va-brief">
+                            @if($brief['source'])
+                                <div class="line"><span class="k">Nguồn kết quả</span><span class="v">{{ $brief['source'] }}</span></div>
+                            @endif
+                            @if($brief['prompt'])
+                                <div class="line"><span class="k">Prompt khi chạy lại</span><span class="v">{{ $brief['prompt'] }}</span></div>
+                            @endif
+                            @if($brief['run_error'])
+                                <div class="line"><span class="v" style="color:var(--vp-red)">{{ $brief['run_error'] }}</span></div>
+                            @endif
                             @if($brief['error'])
                                 <div class="line"><span class="v" style="color:var(--vp-red)">{{ $brief['error'] }}</span></div>
                             @elseif(! $brief['analysed'])
                                 <div class="line"><span class="v">Chưa phân tích</span></div>
+                            @elseif($brief['format'] === 'phase1')
+                                @php
+                                    $check = $brief['source_check'];
+                                    $points = $check === null ? '' : ($check['score_min'] === $check['score_max'] ? $check['score_min'] : $check['score_min'].'–'.$check['score_max']).'/10 điểm';
+                                @endphp
+                                @if($check === null)
+                                    <div class="line"><span class="k">Đánh giá nguồn</span><span class="v">Lượt phân tích này chưa có đánh giá nguồn — bấm Analysis để chạy lại.</span></div>
+                                @else
+                                    @if(! $brief['source_current'])
+                                        <div class="line"><span class="v" style="color:var(--vp-red)">Đánh giá này thuộc bài viết hoặc prompt cũ — không dùng để tạo thiết kế. Bấm Analysis để chạy lại.</span></div>
+                                    @endif
+                                    <div class="line"><span class="k">Đánh giá nguồn</span><span class="v src-verdict {{ strtolower($check['verdict']) }}">
+                                        @switch($check['verdict'])
+                                            @case('STOP') Bài viết không nói về một siêu du thuyền hoặc thiết kế cụ thể. Vui lòng chọn bài viết khác. @break
+                                            @case('REJECT') Bài viết chưa đủ thông tin thiết kế — {{ $points }}. Vui lòng chọn bài viết khác. @break
+                                            @case('RUN') Đạt — {{ $points }}.@if(in_array('THIN_SOURCE', $check['flags'], true)) Nguồn ít thông tin (THIN_SOURCE).@endif @if($brief['source_passed'] && ! $brief['can_design']) Bước thiết kế chưa hỗ trợ Phase 1.@endif @break
+                                            @default Chưa thể chấm điểm — {{ $check['error'] ?? 'còn tiêu chí chưa xác minh ('.$points.'), chưa đủ cơ sở kết luận' }}.
+                                        @endswitch
+                                    </span></div>
+                                @endif
+                                @if($brief['json'] !== null)
+                                    <pre class="raw">{{ $brief['json'] }}</pre>
+                                @else
+                                    <div class="line"><span class="v">Phản hồi không phải JSON ({{ $brief['json_error'] }})</span></div>
+                                @endif
                             @else
-                                <div class="line">
-                                    <span class="tick">✓</span>
-                                    <span class="k">Chủ đề chính</span>
-                                    <span class="v">{{ $brief['focus'] }}</span>
-                                </div>
-                                @foreach($brief['insights'] as $insight)
-                                    <div class="line">
-                                        <span class="tick">✓</span>
-                                        <span class="k">{{ str_replace('_', ' ', $insight['aspect']) }}</span>
-                                        <span class="v">{{ $insight['summary'] }}</span>
-                                    </div>
-                                @endforeach
+                                <div class="line"><span class="va-tag mute">Brief cũ (inspiration-v2) — lịch sử</span></div>
+                                <pre class="raw">{{ $brief['json'] }}</pre>
                             @endif
                         </div>
                     </div>
@@ -232,7 +256,7 @@
 
     if (page) {
         init(page);
-        vpAjaxPage('anchorPage', init);
+        // vpAjaxPage('anchorPage', init);
     }
 })();
 </script>

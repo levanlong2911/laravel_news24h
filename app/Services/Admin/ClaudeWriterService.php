@@ -16,6 +16,13 @@ class ClaudeWriterService
             'output_usd_per_mtok' => 5.00,
             'thinking' => null,
         ],
+        'haiku5' => [
+            'id' => 'claude-haiku-5-5',
+            'max_tokens' => 16000,
+            'input_usd_per_mtok' => 0.10,
+            'output_usd_per_mtok' => 0.50,
+            'thinking' => null,
+        ],
         'sonnet' => [
             'id' => 'claude-sonnet-4-6',
             'max_tokens' => 8000,
@@ -131,7 +138,7 @@ class ClaudeWriterService
     }
 
     /** @return array<string, mixed> */
-    private function requestBody(string $prompt, string $modelType, string $model, int $maxTokens, string $system, ?float $temperature): array
+    private function requestBody(string $prompt, string $modelType, string $model, int $maxTokens, string $system, ?float $temperature, ?string $effort = null): array
     {
         $body = [
             'model' => $model,
@@ -153,6 +160,10 @@ class ClaudeWriterService
             $body['system'] = $system;
         }
 
+        if ($effort !== null) {
+            $body['output_config'] = ['effort' => $effort];
+        }
+
         return $body;
     }
 
@@ -162,12 +173,12 @@ class ClaudeWriterService
      *
 
      */
-    public function generate(string $prompt, string $modelType = 'haiku', string $system = '', ?int $maxTokens = null, ?float $temperature = null): ClaudeResponse
+    public function generate(string $prompt, string $modelType = 'haiku', string $system = '', ?int $maxTokens = null, ?float $temperature = null, ?string $effort = null): ClaudeResponse
     {
         $model = self::modelId($modelType);
         $maxTokens ??= self::maxTokensFor($modelType);
 
-        $requestBody = $this->requestBody($prompt, $modelType, $model, $maxTokens, $system, $temperature);
+        $requestBody = $this->requestBody($prompt, $modelType, $model, $maxTokens, $system, $temperature, $effort);
         $encodedBody = json_encode($requestBody, JSON_UNESCAPED_UNICODE);
         if ($encodedBody === false) {
             // Fallback: strip invalid UTF-8 rồi encode lại

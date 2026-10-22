@@ -206,18 +206,16 @@ class VideoProjectsController extends Controller
         ]);
     }
 
-    public function inspiration(string $id)
+    public function inspiration(Request $request, string $id)
     {
         $this->ownedProject($id);
-
         [$brief, $reason] = $this->videoProjectService->runInspiration($id);
         if ($brief === null) {
             return back()->with('error', $reason);
         }
-
         return back()->with('success', $reason === 'cached'
-            ? 'Nội dung bài không đổi — dùng lại kết quả cũ, không gọi Claude.'
-            : __('messages.inspiration_done'));
+            ? 'Prompt Phase 1 và nội dung bài không đổi — dùng lại phản hồi đã lưu, không gọi Haiku.'
+            : 'Đã lưu phản hồi Haiku theo prompt Phase 1 — chưa kiểm nội dung.');
     }
 
     public function resetInspiration(string $id)
@@ -626,6 +624,7 @@ class VideoProjectsController extends Controller
             'character_prompt_running' => 'Đang có một lượt viết prompt chạy cho dự án này.',
             'anchor_prompt_stale' => __('messages.anchor_prompt_stale'),
             'no_inspiration_brief' => __('messages.anchor_no_inspiration_brief'),
+            'inspiration_phase1_not_supported' => 'Lượt Inspiration mới nhất của dự án chạy theo Phase 1 v6.3 (phản hồi chưa kiểm nội dung) — bước này chưa hỗ trợ kết quả đó và không dùng brief cũ. Không gọi model.',
             'artifact_not_found' => __('messages.anchor_artifact_not_found'),
             'not_approvable' => __('messages.anchor_not_approvable'),
             'no_approved_anchor' => __('messages.no_approved_anchor'),

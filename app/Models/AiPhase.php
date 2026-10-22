@@ -51,6 +51,29 @@ class AiPhase extends Model
         });
     }
 
+    public static function currentFor(string $categoryId, string $workflowCode, string $phaseCode): self
+    {
+        $rows = self::query()
+            ->where('category_id', $categoryId)
+            ->where('workflow_code', $workflowCode)
+            ->where('phase_code', $phaseCode)
+            ->where('status', self::PUBLISHED)
+            ->where('is_current', true)
+            ->get();
+
+        if ($rows->count() !== 1) {
+            throw new RuntimeException("{$phaseCode} of {$workflowCode} has {$rows->count()} current published revisions for this category; expected exactly one.");
+        }
+
+        $phase = $rows->first();
+
+        if (! hash_equals((string) $phase->content_sha256, hash('sha256', (string) $phase->prompt_content))) {
+            throw new RuntimeException("Revision {$phase->revision} of {$phaseCode} does not match its stored hash.");
+        }
+
+        return $phase;
+    }
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class, 'category_id');

@@ -12,6 +12,7 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoVisualIdentity;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Prompt\Exceptions\TextCompletionException;
 use App\Video\Reference\ReferenceView;
 use App\Video\Screenplay\CreativeInspirationBuilder;
@@ -27,6 +28,8 @@ use Illuminate\Support\Facades\Log;
 final class VesselDesignService
 {
     private const CORRECTION_VERSION_MAX = 40;
+
+    public const READS_PHASE_ONE = false;
 
     public const REPAIR_KEY = 'design_repair';
 
@@ -72,6 +75,12 @@ TEXT;
 
         if (! VesselDesign::isDesignFirst($project)) {
             return [null, 'workflow_not_design_first'];
+        }
+
+        [$latestInspiration] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::INSPIRATION, [], skipOrphans: true);
+
+        if (! self::READS_PHASE_ONE && ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration)) {
+            return [null, 'inspiration_phase1_not_supported'];
         }
 
         $brief = $this->stageStore->latestOutputForProject($projectId, PlanningStageName::INSPIRATION);
@@ -901,7 +910,7 @@ TEXT;
             ->orderByDesc('created_at')
             ->first();
 
-        if ($inspiration === null || ! is_array($inspiration->output_json)) {
+        if ($inspiration === null || ! is_array($inspiration->output_json) || ClaudeInspirationAnalyst::isPhaseOneRun($inspiration)) {
             return null;
         }
 

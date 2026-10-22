@@ -4,58 +4,33 @@ declare(strict_types=1);
 
 namespace App\Video\Concept\Orchestration;
 
+use App\Models\AiPhase;
 use App\Video\Article\ArticleNormalizer;
 use App\Video\Article\RawArticle;
-use App\Video\Inspiration\CategoryCreativeProfile as InspirationProfile;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
-use App\Video\Inspiration\InspirationBuilder;
 use App\Video\Inspiration\InspirationResult;
-use App\Video\Inspiration\InvalidInspirationBrief;
 
 final class CanonicalConceptInputBuilder
 {
     public function __construct(
         private readonly ArticleNormalizer $normalizer,
         private readonly ClaudeInspirationAnalyst $analyst,
-        private readonly InspirationBuilder $inspirationBuilder,
     ) {
     }
 
-    /** @return array{profile: array<string, string>, analyst: array<string, ?string>} */
-    public function inspirationFingerprint(InspirationProfile $profile): array
+    public function articleBlock(RawArticle $article): string
     {
-        return [
-            'profile' => $profile->inspirationFingerprint(),
-            'analyst' => $this->analyst->fingerprint(),
-        ];
+        return $this->analyst->articleBlock($this->normalizer->normalize($article));
     }
 
-    public function buildInspiration(
-        RawArticle $article,
-        InspirationProfile $profile,
-    ): InspirationResult {
-        $index = $this->normalizer->normalize($article);
-        $draft = $this->analyst->analyze($article, $profile, $index);
+    /** @return array{model: string, provider_model: ?string, temperature: float, max_tokens: int} */
+    public function inspirationSettings(): array
+    {
+        return $this->analyst->settings();
+    }
 
-        try {
-            $brief = $this->inspirationBuilder->build(
-                draft: $draft->brief,
-                profile: $profile,
-                index: $index,
-            );
-        } catch (InvalidInspirationBrief $exception) {
-            throw new InvalidInspirationBrief(
-                $exception->violations,
-                $draft->rawResponse,
-                $draft->usage,
-            );
-        }
-
-        return new InspirationResult(
-            brief: $brief,
-            attempts: $draft->attempts,
-            rawResponse: $draft->rawResponse,
-            usage: $draft->usage,
-        );
+    public function buildInspiration(AiPhase $prompt, string $articleBlock): InspirationResult
+    {
+        return $this->analyst->analyze($prompt, $articleBlock);
     }
 }
