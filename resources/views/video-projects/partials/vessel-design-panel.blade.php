@@ -1,6 +1,6 @@
             @if(($yacht ?? null) !== null)
             @php
-                $yachtModel = (string) config('video.screenplay.design.model').' (effort '.config('video.screenplay.design.effort').')';
+                $yachtModel = (string) config('video.superyacht.design.model').' (effort '.config('video.superyacht.design.effort').')';
                 $yachtCheck = $yacht['check'];
             @endphp
             <div class="vp-panel">
@@ -51,15 +51,21 @@
                                 <div class="line"><span class="v" style="color:var(--vp-red)">Bản thiết kế này thuộc DNA hoặc prompt cũ.</span></div>
                             @endif
                             @if($yachtCheck !== null)
-                                <div class="line"><span class="k">Kiểm RULE</span><span class="v src-verdict {{ strtolower($yachtCheck['verdict']) }}">
+                                @php
+                                    $yachtWarnings = $yachtCheck['warnings'] ?? [];
+                                @endphp
+                                <div class="line"><span class="k">Kiểm tự động</span><span class="v src-verdict {{ $yachtCheck['verdict'] === 'PASS' && $yachtWarnings !== [] ? 'unscored' : strtolower($yachtCheck['verdict']) }}">
                                     @switch($yachtCheck['verdict'])
-                                        @case('PASS') Đạt @break
+                                        @case('PASS') {{ $yachtWarnings !== [] ? 'Cần xác nhận — '.count($yachtWarnings).' cảnh báo' : 'Đạt kiểm tự động' }} @break
                                         @case('FAIL') Không đạt — {{ count($yachtCheck['issues']) }} lỗi @break
-                                        @default Chưa thể kiểm — {{ $yachtCheck['error'] }}
+                                        @default Đã nhận kết quả, chưa kiểm được — {{ $yachtCheck['error'] }}
                                     @endswitch
                                 </span></div>
                                 @foreach($yachtCheck['issues'] as $issue)
                                     <div class="line"><span class="v" style="color:var(--vp-red)">{{ $issue }}</span></div>
+                                @endforeach
+                                @foreach($yachtWarnings as $warning)
+                                    <div class="line"><span class="v" style="color:var(--vp-amber-fg)">{{ $warning }}</span></div>
                                 @endforeach
                             @endif
                             @if($yacht['name'])
@@ -68,8 +74,8 @@
                             @if($yacht['yacht_anchor'])
                                 <div class="line"><span class="k">YACHT ANCHOR</span><span class="v">{{ $yacht['yacht_anchor'] }}</span></div>
                             @endif
-                            @if($yacht['json'] !== null)
-                                <pre class="raw">{{ $yacht['json'] }}</pre>
+                            @if($yacht['prose'] !== null)
+                                <pre class="raw">{{ $yacht['prose'] }}</pre>
                             @else
                                 <div class="line"><span class="v">Phản hồi không phải JSON ({{ $yacht['json_error'] }})</span></div>
                             @endif

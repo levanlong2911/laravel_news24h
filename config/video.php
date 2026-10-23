@@ -782,11 +782,17 @@ return [
 
         'design' => [
             'model' => env('SUPERYACHT_DESIGN_MODEL', 'gpt-6.1-sol'),
-            'effort' => env('SUPERYACHT_DESIGN_EFFORT', 'high'),
+            'effort' => env('SUPERYACHT_DESIGN_EFFORT', 'medium'),
             'max_tokens' => (int) env('SUPERYACHT_DESIGN_MAX_TOKENS', 48000),
             'timeout_seconds' => (int) env('SUPERYACHT_DESIGN_TIMEOUT_SECONDS', 1800),
             'stream' => true,
             'retry_times' => 0,
+        ],
+
+        'design_check' => [
+            'profile_margin_m' => 0.2,
+            'near_x' => 0.005,
+            'near_z_m' => 0.3,
         ],
 
         'build_state_text' => [

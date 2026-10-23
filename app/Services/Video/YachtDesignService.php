@@ -18,6 +18,7 @@ use App\Video\Prompt\TextCompletionClient;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Support\CanonicalJson;
 use App\Video\YachtDesign\BuildStateText;
+use App\Video\YachtDesign\DesignProse;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -55,7 +56,7 @@ final class YachtDesignService
             return [null, 'Chưa gọi model thiết kế: '.$e->getMessage()];
         }
 
-        $replaceFailing = fn (VideoPlanningStage $served): bool => $regenerate && $this->fails($served, $run);
+        $replaceFailing = fn (VideoPlanningStage $served): bool => $regenerate && $this->replaceable($served, $run);
         [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::YACHT_DESIGN, $run['input'], $replaceFailing, [
             'manifest' => $run['manifest'],
             'judge_gate' => DesignDnaService::judgesRequired() ? 'rule_and_judges' : 'rule_only',
@@ -63,7 +64,7 @@ final class YachtDesignService
 
         if ($token === null) {
             return match (true) {
-                $reason === 'already_succeeded' && $this->fails($stage, $run) => [null, 'Bản thiết kế đã lưu cho đúng DNA và prompt này chưa đạt kiểm RULE — bấm "Thiết kế lại" để tạo bản mới. Không gọi model.'],
+                $reason === 'already_succeeded' && $this->replaceable($stage, $run) => [null, 'Bản thiết kế đã lưu cho đúng DNA và prompt này chưa đạt kiểm RULE hoặc còn cảnh báo — bấm "Thiết kế lại" nếu muốn tạo bản mới. Không gọi model.'],
                 $reason === 'already_succeeded' => [$stage->output_json, 'cached'],
                 $reason === 'claimed_by_other' => [null, 'Đang có một lượt thiết kế chạy cho dự án này — đợi xong rồi thử lại.'],
                 default => [null, 'Không tìm thấy dự án.'],
@@ -88,7 +89,14 @@ final class YachtDesignService
                 return [null, 'Bản thiết kế bị cắt ở trần token đầu ra — kết quả không hoàn chỉnh.'];
             }
 
-            $output = $this->output($run, $response->text);
+            try {
+                $output = $this->output($run, $response->text);
+            } catch (\Throwable $e) {
+                Log::error('yacht design: the check threw on a received answer', ['stage_id' => $stage->id, 'exception' => $e]);
+                $this->stageStore->finishFailed($stage->id, $token, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận: '.$e->getMessage(), $usage, $response->text, [], $pricing);
+
+                return [null, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận — phản hồi và usage đã được lưu: '.$e->getMessage()];
+            }
 
             if (! $this->stageStore->finishSucceeded($stage->id, $token, $response->text, $output, $usage, $pricing)) {
                 try {
@@ -138,10 +146,10 @@ final class YachtDesignService
         [$latest, $matchesInput] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::YACHT_DESIGN, $run['input'] ?? [], skipOrphans: true);
         $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::YACHT_DESIGN, $run['input']);
         $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'stuck' => false, 'error' => null,
-            'current' => false, 'check' => null, 'name' => null, 'loa' => null, 'yacht_anchor' => null, 'json' => null, 'json_error' => null];
+            'current' => false, 'check' => null, 'name' => null, 'loa' => null, 'yacht_anchor' => null, 'prose' => null, 'json_error' => null];
         $base = [
             'can_run' => $run !== null && $served === null,
-            'can_regenerate' => $run !== null && $served !== null && $this->fails($served, $run),
+            'can_regenerate' => $run !== null && $served !== null && $this->replaceable($served, $run),
             'prompt' => $run === null ? null : self::label((int) $run['prompt']->revision),
             'run_error' => $runError,
         ];
@@ -172,7 +180,7 @@ final class YachtDesignService
             'name' => is_array($data) ? ($data['yacht_bible']['name'] ?? null) : null,
             'loa' => is_array($data) ? ($data['yacht_bible']['specs']['loa']['value'] ?? null) : null,
             'yacht_anchor' => is_array($data) ? ($data['anchors']['yacht'] ?? null) : null,
-            'json' => is_object($filled) ? (string) json_encode($filled, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
+            'prose' => is_array($data) ? DesignProse::text($data) : null,
             'json_error' => $parseError,
         ];
     }
@@ -290,7 +298,7 @@ final class YachtDesignService
         $text = BuildStateText::fromConfig();
 
         if ($error !== null || ! is_object($decoded)) {
-            return [null, YachtDesignCheck::evaluate(null, $run['project_id'], $run['dna'], $run['source_identity'], [], [], $text)];
+            return [null, YachtDesignCheck::evaluate(null, $run['project_id'], $run['dna'], $run['source_identity'], [], [], $text, self::limits())];
         }
 
         $canonical = $decoded->data->canonical ?? null;
@@ -329,13 +337,28 @@ final class YachtDesignService
             self::forbiddenWords((string) $run['prompt']->prompt_content),
             $schemaIssues,
             $text,
+            self::limits(),
         )];
     }
 
-    /** @param array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string} $run */
-    private function fails(VideoPlanningStage $served, array $run): bool
+    /** @return array{profile_margin_m: float, near_x: float, near_z_m: float} */
+    private static function limits(): array
     {
-        return $this->evaluate((string) (is_array($served->output_json) ? ($served->output_json['raw_text'] ?? '') : ''), $run, self::manifestOf($served))[1]['verdict'] !== YachtDesignCheck::PASS;
+        $limits = (array) config('video.superyacht.design_check');
+
+        return [
+            'profile_margin_m' => (float) $limits['profile_margin_m'],
+            'near_x' => (float) $limits['near_x'],
+            'near_z_m' => (float) $limits['near_z_m'],
+        ];
+    }
+
+    /** @param array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string} $run */
+    private function replaceable(VideoPlanningStage $served, array $run): bool
+    {
+        $check = $this->evaluate((string) (is_array($served->output_json) ? ($served->output_json['raw_text'] ?? '') : ''), $run, self::manifestOf($served))[1];
+
+        return $check['verdict'] !== YachtDesignCheck::PASS || $check['warnings'] !== [];
     }
 
     /** @return ?array<string, mixed> */

@@ -16,6 +16,11 @@ final class BuildStateText
         return new self((array) config('video.superyacht.build_state_text'));
     }
 
+    public function isPart(string $key): bool
+    {
+        return array_key_exists($key, $this->phrases['parts']);
+    }
+
     /**
      * @param  array<mixed>  $state
      * @return array{parts: list<string>, surfaces: list<string>}
