@@ -23,6 +23,12 @@ enum PlanningStageName: string
     case DNA_NOVELTY = 'dna_novelty';
     case DNA_PLAUSIBILITY = 'dna_plausibility';
     case YACHT_DESIGN = 'yacht_design';
+    case MODEL_SHEET = 'model_sheet';
+    case MODEL_SHEET_REVIEW = 'model_sheet_review';
+    case MODEL_SHEET_PROMPT = 'model_sheet_prompt';
+    case MODEL_SHEET_PROMPT_APPROVAL = 'model_sheet_prompt_ok';
+    case PROXY_3D = 'proxy_3d';
+    case PROXY_3D_REVIEW = 'proxy_3d_review';
 
     /** @return list<string> */
     public static function values(): array
@@ -48,6 +54,12 @@ enum PlanningStageName: string
             self::DNA_NOVELTY => self::YACHT_DESIGN,
             self::DNA_PLAUSIBILITY => self::YACHT_DESIGN,
             self::YACHT_DESIGN => null,
+            self::MODEL_SHEET => self::MODEL_SHEET_REVIEW,
+            self::MODEL_SHEET_REVIEW => null,
+            self::MODEL_SHEET_PROMPT => self::MODEL_SHEET_PROMPT_APPROVAL,
+            self::MODEL_SHEET_PROMPT_APPROVAL => null,
+            self::PROXY_3D => self::PROXY_3D_REVIEW,
+            self::PROXY_3D_REVIEW => null,
         };
     }
 }

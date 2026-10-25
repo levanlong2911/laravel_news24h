@@ -102,6 +102,7 @@ class DesignImageDirectRenderer
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
                 'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
                 'environment_plate' => $this->environmentPlate($spec, $budget),
+                ModelSheetService::OPERATION => $this->modelSheet($image, $spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),
                 default => throw new RuntimeException(
                     'Unknown render operation: '.$spec['operation'],
@@ -253,6 +254,21 @@ class DesignImageDirectRenderer
         return $spec['provider'] === 'gemini'
             ? $this->gemini->generate($spec, $budget)
             : $this->client->generate($spec, $budget);
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec
+     * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>}
+     */
+    private function modelSheet(VideoDesignImage $image, array $spec, int $budget): array
+    {
+        if ($spec['source_artifact_id'] === null) {
+            return $this->client->generate($spec, $budget);
+        }
+
+        $source = $this->sourceArtifact($image, $spec);
+
+        return $this->client->edit($spec, $this->verifiedBytes($source, $spec), 'model-sheet-source.'.$this->sourceExtension($source), $budget);
     }
 
     /**

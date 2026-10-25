@@ -276,10 +276,14 @@
 
     </div>
 
-    @include('video-projects.partials.anchor-panel')
+    @if(($modelSheet ?? null) !== null)
+        @include('video-projects.partials.model-sheet-panel')
+    @else
+        @include('video-projects.partials.anchor-panel')
 
-    @if($designFirst)
-        @include('video-projects.partials.screenplay-panel')
+        @if($designFirst)
+            @include('video-projects.partials.screenplay-panel')
+        @endif
     @endif
 </div>
 @endsection

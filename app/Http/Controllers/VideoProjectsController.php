@@ -22,11 +22,14 @@ use App\Video\Scene\Services\ShotIntentService;
 use App\Video\Scene\Services\ShotSelectionReconciler;
 use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\DesignDnaService;
+use App\Services\Video\ModelSheetService;
 use App\Services\Video\YachtDesignService;
+use App\Services\Video\YachtProxyService;
 use App\Services\Video\ScreenplayExpansionService;
 use App\Services\Video\StoryFoundationService;
 use App\Services\Video\VesselDesignService;
 use App\Video\Screenplay\VesselDesign;
+use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
@@ -191,7 +194,8 @@ class VideoProjectsController extends Controller
             'project' => $project,
             'brief' => $brief = $this->videoProjectService->latestInspiration($project->id),
             'dna' => app(DesignDnaService::class)->panel($project->id),
-            'yacht' => VesselDesign::isDesignFirst($project) && $brief['phase_one'] ? app(YachtDesignService::class)->panel($project->id) : null,
+            'yacht' => $phaseThree = VesselDesign::isDesignFirst($project) && $brief['phase_one'] ? app(YachtDesignService::class)->panel($project->id) : null,
+            'modelSheet' => $phaseThree === null ? null : app(ModelSheetService::class)->panel($project->id, (string) auth()->user()?->name),
             'anchorRows' => $anchorRows,
             'compileReason' => $this->anchorMessage('choose_prompt_settings'),
             'nextImageCode' => $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name),
@@ -372,9 +376,13 @@ class VideoProjectsController extends Controller
         }
 
         if (($design['execution'] ?? null) === YachtDesignService::EXECUTION) {
-            return back()->with('success', $reason === 'cached'
+            $message = $reason === 'cached'
                 ? 'DNA và prompt Phase 3 không đổi — dùng lại bản thiết kế đã lưu, không gọi model.'
-                : 'Đã lưu bản thiết kế Phase 3 (draft) — xem kết quả kiểm RULE.');
+                : 'Đã lưu bản thiết kế Phase 3 (draft) — xem kết quả kiểm RULE.';
+
+            return ($design['check']['verdict'] ?? null) === YachtDesignCheck::PASS
+                ? redirect()->route('video-projects.proxy', $id)->with('success', $message.' Thiết kế đạt kiểm — dựng proxy 3D.')
+                : back()->with('success', $message);
         }
 
         return back()->with('success', $reason === 'cached'
@@ -390,6 +398,100 @@ class VideoProjectsController extends Controller
 
         return $done
             ? back()->with('success', 'Đã reset — bấm Thiết kế tàu để chạy lại.')
+            : back()->with('error', $reason);
+    }
+
+    public function renderModelSheet(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $this->form->validate($request, 'ModelSheetRenderForm');
+        [$image, $reason] = app(ModelSheetService::class)->render($id, (string) auth()->user()?->name, [
+            'view_id' => (string) $data['view_id'],
+            'model' => (string) $data['model'],
+            'size' => (string) $data['size'],
+            'quality' => (string) $data['quality'],
+            'variations' => (int) $data['variations'],
+            'attempt' => (string) $data['attempt'],
+            'prompt_sha256' => (string) $data['prompt_sha256'],
+        ]);
+
+        if ($image === null) {
+            return back()->with('error', $reason);
+        }
+
+        return match ($reason) {
+            'rendered' => back()->with('success', "Đã render {$data['view_id']} ({$image->image_code})."),
+            'already_exists' => back()->with('error', "Lượt render này đã được gửi trước đó ({$image->image_code}, trạng thái {$image->status}) — không gọi provider lần nữa. Tải lại trang để có lượt mới."),
+            default => back()->with('error', "Render {$data['view_id']} chưa thành công ({$reason}): ".(string) $image->render_error),
+        };
+    }
+
+    public function approveModelSheet(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $this->form->validate($request, 'AnchorApproveForm');
+        [$done, $reason] = app(ModelSheetService::class)->approve($id, (string) $data['artifact_id'], auth()->id());
+
+        return $done ? back()->with('success', 'Đã duyệt ảnh model sheet.') : back()->with('error', $reason);
+    }
+
+    public function reviewModelSheet(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$review, $reason] = app(ModelSheetService::class)->review($id, auth()->id());
+
+        return $review === null
+            ? back()->with('error', $reason)
+            : back()->with('success', $reason === 'already_reviewed' ? 'Bộ model sheet này đã được duyệt.' : 'Đã duyệt bộ model sheet — đây chưa phải DESIGN LOCK.');
+    }
+
+    public function proxy(string $id)
+    {
+        $project = $this->ownedProject($id);
+
+        return view('video-projects.proxy', [
+            'route' => 'video-projects',
+            'action' => 'video-projects-index',
+            'menu' => 'menu-open',
+            'active' => 'active',
+            'project' => $project,
+            'proxy' => app(YachtProxyService::class)->page($project->id),
+        ]);
+    }
+
+    public function saveProxy(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        try {
+            $data = $this->form->validate($request, 'ProxySaveForm');
+        } catch (ValidationException $e) {
+            return response()->json(['ok' => false, 'message' => implode(' ', $e->validator->errors()->all())], 422);
+        }
+
+        [$stage, $reason] = app(YachtProxyService::class)->save($id, (string) auth()->user()?->name, [
+            'input_sha256' => (string) $data['input_sha256'],
+            'report' => (string) $data['report'],
+            'cameras' => (string) $data['cameras'],
+        ], (array) $request->file('images', []), $request->file('glb'));
+
+        return $stage === null
+            ? response()->json(['ok' => false, 'message' => $reason], 422)
+            : response()->json(['ok' => true, 'message' => "Đã lưu revision proxy {$stage->planning_revision}."]);
+    }
+
+    public function approveProxy(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate(['stage_id' => ['required', 'uuid']], ['stage_id.*' => 'Thiếu revision proxy cần duyệt.']);
+        [$done, $reason] = app(YachtProxyService::class)->approve($id, (string) $data['stage_id'], auth()->id());
+
+        return $done
+            ? back()->with('success', 'Đã duyệt proxy 3D — bộ model sheet sẽ tự mở cho bản thiết kế này.')
             : back()->with('error', $reason);
     }
 

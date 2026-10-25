@@ -319,6 +319,7 @@ final class OpenAiImageClient
                     'render_kind' => (string) ($spec['operation'] ?? 'generate'),
                     'sent_prompt' => $prompt,
                     'source_kind' => in_array($spec['operation'] ?? 'generate', ['edit', 'scene_keyframe'], true)
+                        || ($spec['source_artifact_id'] ?? null) !== null
                         ? 'image'
                         : 'text',
                     'artifact_dir' => $dir,

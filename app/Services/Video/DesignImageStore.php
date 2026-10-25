@@ -37,6 +37,14 @@ class DesignImageStore
 
     public const ENVIRONMENT_TYPE = 'environment_plate';
 
+    public const MODEL_SHEET_TYPE = 'model_sheet_view';
+
+    /** @var list<string> */
+    private const MODEL_SHEET_IDENTITY_KEYS = [
+        'provider', 'view_id', 'model_sheet_set_id', 'design_stage_id', 'design_canonical_hash',
+        'attempt', 'source_artifact_id', 'source_artifact_sha256', 'aspect_ratio', 'image_size',
+    ];
+
     public function __construct(
         private readonly OpenAiImagePricing $openAiPricing = new OpenAiImagePricing,
     ) {}
@@ -377,6 +385,77 @@ class DesignImageStore
 
             return [$existing, 'already_exists'];
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec
+     * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
+     *                                                reason: created|already_exists|project_not_found
+     */
+    public function createModelSheetView(string $projectId, string $creator, array $spec): array
+    {
+        $spec = $this->withPriceSnapshot($spec);
+        $sha = $this->identityHash($spec, self::MODEL_SHEET_IDENTITY_KEYS);
+
+        try {
+            return DB::transaction(function () use ($projectId, $creator, $spec, $sha) {
+                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+
+                $existing = $this->findByHash($projectId, $sha);
+
+                if ($existing !== null) {
+                    return [$existing, 'already_exists'];
+                }
+
+                return [
+                    VideoDesignImage::create([
+                        'project_id' => $projectId,
+                        'image_code' => $this->nextImageCode($projectId, $creator, '_model_sheet_v'),
+                        'image_type' => self::MODEL_SHEET_TYPE,
+                        'slot_index' => $spec['slot_index'],
+                        'source_image_id' => $spec['source_image_id'] ?? null,
+                        'prompt_spec_json' => $spec,
+                        'prompt_sha256' => $sha,
+                        'status' => 'candidate',
+                        'revision' => 1,
+                    ]),
+                    'created',
+                ];
+            });
+        } catch (ModelNotFoundException) {
+            return [null, 'project_not_found'];
+        } catch (UniqueConstraintViolationException $e) {
+            $existing = $this->findByHash($projectId, $sha);
+
+            if ($existing === null) {
+                throw $e;
+            }
+
+            return [$existing, 'already_exists'];
+        }
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function modelSheetCellsFor(string $projectId, string $setId): array
+    {
+        $images = $this->whereModelSheetSet(VideoDesignImage::query(), $setId)
+            ->where('project_id', $projectId)
+            ->where('image_type', self::MODEL_SHEET_TYPE)
+            ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
+            ->orderBy('slot_index')
+            ->orderBy('created_at')
+            ->get();
+
+        $cost = $this->costSummaryByImage($projectId, $images->pluck('id')->map('strval')->all());
+
+        return $images
+            ->map(fn (VideoDesignImage $image) => $this->cellView($image, $cost[(string) $image->id]))
+            ->all();
+    }
+
+    private function whereModelSheetSet(Builder $query, string $setId): Builder
+    {
+        return $query->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(prompt_spec_json, '$.model_sheet_set_id')) = ?", [$setId]);
     }
 
     /**
@@ -833,6 +912,10 @@ class DesignImageStore
             $this->whereAnchorSubject($query, self::anchorSubjectKey($image));
         }
 
+        if ($image->image_type === self::MODEL_SHEET_TYPE) {
+            $this->whereModelSheetSet($query, (string) (($image->prompt_spec_json ?? [])['model_sheet_set_id'] ?? ''));
+        }
+
         return $query;
     }
 
@@ -891,6 +974,10 @@ class DesignImageStore
             'design_stage_id' => $spec['design_stage_id'] ?? null,
             'design_content_hash' => $spec['design_content_hash'] ?? null,
             'environment' => $spec['environment'] ?? null,
+            'view_id' => $spec['view_id'] ?? null,
+            'model_sheet_set_id' => $spec['model_sheet_set_id'] ?? null,
+            'source_artifact_id' => $spec['source_artifact_id'] ?? null,
+            'render_model' => (string) ($spec['model'] ?? ''),
             'quality' => (string) ($spec['quality'] ?? ''),
             'size' => (string) ($spec['size'] ?? ''),
             'variations' => $variations,

@@ -3,6 +3,7 @@
 namespace App\Video\Media;
 
 use App\Services\Video\DesignImageStore;
+use App\Services\Video\ModelSheetService;
 use App\Video\Environment\EnvironmentPlatePrompt;
 use InvalidArgumentException;
 
@@ -87,6 +88,7 @@ final class SpecRouting
         $derived = match (self::operation($spec)) {
             'environment_plate' => EnvironmentPlatePrompt::TASK,
             'generate' => DesignImageStore::ANCHOR_TYPE,
+            ModelSheetService::OPERATION => ModelSheetService::TASK,
             default => null,
         };
 

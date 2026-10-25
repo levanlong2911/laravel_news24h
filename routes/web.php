@@ -147,11 +147,19 @@ Route::group(
             Route::post('/{id}/design-dna', [VideoProjectsController::class, 'designDna'])->name('video-projects.design-dna');
             Route::post('/{id}/design-dna/reset', [VideoProjectsController::class, 'resetDesignDna'])->name('video-projects.design-dna-reset');
             Route::post('/{id}/design-dna/judge/{kind}', [VideoProjectsController::class, 'judgeDesignDna'])->whereIn('kind', ['novelty', 'plausibility'])->name('video-projects.design-dna-judge');
-            Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
-            Route::post('/{id}/concept/reset', [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
             //tạo phân cảnh
             Route::post('/{id}/design', [VideoProjectsController::class, 'vesselDesign'])->name('video-projects.vessel-design');
             Route::post('/{id}/design/reset', [VideoProjectsController::class, 'resetVesselDesign'])->name('video-projects.vessel-design-reset');
+            Route::get('/{id}/proxy', [VideoProjectsController::class, 'proxy'])->name('video-projects.proxy');
+            Route::post('/{id}/proxy/save', [VideoProjectsController::class, 'saveProxy'])->name('video-projects.proxy-save');
+            Route::post('/{id}/proxy/approve', [VideoProjectsController::class, 'approveProxy'])->name('video-projects.proxy-approve');
+            Route::post('/{id}/model-sheet/render',[VideoProjectsController::class, 'renderModelSheet'])->name('video-projects.model-sheet-render');
+            Route::post('/{id}/model-sheet/approve', [VideoProjectsController::class, 'approveModelSheet'])->name('video-projects.model-sheet-approve');
+            Route::post('/{id}/model-sheet/review', [VideoProjectsController::class, 'reviewModelSheet'])->name('video-projects.model-sheet-review');
+
+            Route::middleware('video.v4')->group(function () {
+            Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
+            Route::post('/{id}/concept/reset', [VideoProjectsController::class, 'resetConcept'])->name('video-projects.concept-reset');
             Route::post('/{id}/screenplay', [VideoProjectsController::class, 'screenplay'])->name('video-projects.screenplay');
             // viết kịch bản
             Route::post('/{id}/screenplay/foundation', [VideoProjectsController::class, 'screenplayFoundation'])->name('video-projects.screenplay-foundation');
@@ -196,6 +204,7 @@ Route::group(
             Route::get('/{id}/scene-clips/{render}/file', [VideoProjectsController::class, 'sceneClipFile'])->name('video-projects.scene-clip-file');
             Route::post('/{id}/scene-keyframes/{image}/retry', [VideoProjectsController::class, 'retrySceneKeyframe'])->name('video-projects.scene-keyframe-retry');
             Route::post('/{id}/scene-keyframes/{image}/approve', [VideoProjectsController::class, 'approveSceneKeyframe'])->name('video-projects.scene-keyframe-approve');
+            });
         });
 
         Route::get('/video-artifacts/{artifact}', [VideoArtifactController::class, 'show'])->name('video-artifacts.show');
