@@ -11,7 +11,7 @@
     "state": {"type": "string", "pattern": "^BS(0[1-9]|1[0-2])$"},
     "sources": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^rev[0-9]+$"}},
     "image_tool": {"type": "string"},
-    "image_mode": {"enum": ["generate", "edit_from_clay", "edit_from_reference", "none"]},
+    "image_mode": {"enum": ["generate", "edit_from_reference", "none"]},
     "video_tool": {"type": "string"},
     "video_mode": {"enum": ["first_frame", "first_last_frame", "reference", "video_reference", "extend", "edit", "none"]},
     "image_prompt": {

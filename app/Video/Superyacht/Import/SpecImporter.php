@@ -28,6 +28,7 @@ final class SpecImporter
     /**
      * @param  list<string>  $schemaNames
      * @param  list<array<string, mixed>>  $links
+     * @param  array<string, string>  $schemaVersions  Published version overrides for individual schemas.
      */
     public function __construct(
         private readonly string $workflowCode,
@@ -39,6 +40,7 @@ final class SpecImporter
         private readonly string $schemaBaseUri,
         private readonly array $schemaNames,
         private readonly array $links = [],
+        private readonly array $schemaVersions = [],
     ) {}
 
     /** @param array<string, mixed> $config */
@@ -54,6 +56,7 @@ final class SpecImporter
             (string) $config['schema_base_uri'],
             array_values((array) $config['schemas']),
             ActionContract::desiredLinks((array) ($config['contracts']['workflows'][$config['workflow_code']] ?? [])),
+            (array) ($config['schema_versions'] ?? []),
         );
     }
 
@@ -122,14 +125,14 @@ final class SpecImporter
 
         $stored = AiJsonSchema::query()
             ->where('namespace', $plan['namespace'])
-            ->where('version', $this->specVersion)
+            ->whereIn('version', array_values(array_unique([$this->specVersion, ...array_values($this->schemaVersions)])))
             ->get()
-            ->keyBy('schema_key');
+            ->keyBy(static fn (AiJsonSchema $row): string => $row->schema_key.'@'.$row->version);
         $planned = array_column($plan['schemas'], null, 'id');
         $reuse = [];
 
         foreach ($plan['schemas'] as $row) {
-            $hit = $stored->get($row['schema_key']);
+            $hit = $stored->get($row['schema_key'].'@'.$row['version']);
 
             if ($hit === null) {
                 continue;
@@ -524,7 +527,7 @@ final class SpecImporter
                 'id' => $entry['id'],
                 'namespace' => $this->schemaNamespace,
                 'schema_key' => $name,
-                'version' => $this->specVersion,
+                'version' => $this->schemaVersions[$name] ?? $this->specVersion,
                 'name' => $entry['title'],
                 'schema_content' => $entry['content'],
                 'schema_sha256' => hash('sha256', $entry['content']),

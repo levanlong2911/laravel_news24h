@@ -27,8 +27,6 @@ enum PlanningStageName: string
     case MODEL_SHEET_REVIEW = 'model_sheet_review';
     case MODEL_SHEET_PROMPT = 'model_sheet_prompt';
     case MODEL_SHEET_PROMPT_APPROVAL = 'model_sheet_prompt_ok';
-    case PROXY_3D = 'proxy_3d';
-    case PROXY_3D_REVIEW = 'proxy_3d_review';
 
     /** @return list<string> */
     public static function values(): array
@@ -58,8 +56,6 @@ enum PlanningStageName: string
             self::MODEL_SHEET_REVIEW => null,
             self::MODEL_SHEET_PROMPT => self::MODEL_SHEET_PROMPT_APPROVAL,
             self::MODEL_SHEET_PROMPT_APPROVAL => null,
-            self::PROXY_3D => self::PROXY_3D_REVIEW,
-            self::PROXY_3D_REVIEW => null,
         };
     }
 }

@@ -2,6 +2,7 @@
             @php
                 $yachtModel = (string) config('video.superyacht.design.model').' (effort '.config('video.superyacht.design.effort').')';
                 $yachtCheck = $yacht['check'];
+                $yachtKept = ($yacht['stage_id'] ?? null) !== null && ($modelSheet['sheet']['design_stage_id'] ?? null) === $yacht['stage_id'];
             @endphp
             <div class="vp-panel">
                 <div class="va-head">
@@ -9,8 +10,8 @@
                     <b>DESIGN</b>
                     <em>Phase 3 — hồ sơ thiết kế (draft)</em>
                     <span class="grow"></span>
-                    @if($yacht['analysed'])<span class="va-tag blue">Đã thiết kế</span>@endif
-                    @if($yacht['current'] && ($yachtCheck['verdict'] ?? null) === \App\Video\YachtDesign\YachtDesignCheck::PASS)
+                    @if($yachtKept)<span class="va-tag ok">Đã duyệt (model sheet)</span>@elseif($yacht['analysed'])<span class="va-tag blue">Đã thiết kế</span>@endif
+                    @if($yachtKept || ($yacht['current'] && ($yachtCheck['verdict'] ?? null) === \App\Video\YachtDesign\YachtDesignCheck::PASS))
                         <a class="vp-btn sm" href="#modelSheetPanel">Model sheet →</a>
                     @endif
                     @if($yacht['running'])
@@ -27,11 +28,12 @@
                             @if($yacht['can_regenerate'])<input type="hidden" name="force" value="1">@endif
                         </form>
                         <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmYachtDesign"
-                                data-busy="Đang thiết kế…">{{ $yacht['can_regenerate'] ? 'Thiết kế lại (tính phí)' : 'Creat design' }}</button>
+                                data-busy="Đang thiết kế…">{{ $yachtKept ? 'Thiết kế mới (tuỳ chọn, tính phí)' : ($yacht['can_regenerate'] ? 'Thiết kế lại (tính phí)' : 'Creat design') }}</button>
                         @include('modal.confirm_action', [
                             'id' => 'confirmYachtDesign',
                             'form' => 'yachtDesignForm',
-                            'content' => 'Gọi '.$yachtModel.' viết hồ sơ thiết kế theo prompt Phase 3 từ Design DNA đã đạt — tác vụ này tính tiền.',
+                            'content' => 'Gọi '.$yachtModel.' viết hồ sơ thiết kế theo prompt Phase 3 từ Design DNA đã đạt — tác vụ này tính tiền.'
+                                .($yachtKept ? ' Bản thiết kế đã duyệt cùng model sheet vẫn hiệu lực; bản mới sẽ cần model sheet mới.' : ''),
                         ])
                     @else
                         <button class="vp-btn sm" disabled title="{{ $yacht['run_error'] ?? 'Đã có bản thiết kế đạt kiểm RULE cho đúng DNA và prompt hiện tại' }}">Creat design</button>
@@ -50,7 +52,9 @@
                         @elseif(! $yacht['analysed'])
                             <div class="line"><span class="v">Chưa thiết kế</span></div>
                         @else
-                            @if(! $yacht['current'])
+                            @if($yachtKept && ! $yacht['current'])
+                                <div class="line"><span class="v">Bản thiết kế đã duyệt (nguồn của model sheet đã duyệt) — vẫn hiệu lực. Prompt Phase 3 hiện có revision mới hơn; không cần chạy lại.</span></div>
+                            @elseif(! $yacht['current'])
                                 <div class="line"><span class="v" style="color:var(--vp-red)">Bản thiết kế này thuộc DNA hoặc prompt cũ.</span></div>
                             @endif
                             @if($yachtCheck !== null)
