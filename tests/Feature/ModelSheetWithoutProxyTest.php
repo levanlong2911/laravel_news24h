@@ -69,7 +69,7 @@ final class ModelSheetWithoutProxyTest extends TestCase
         $this->sheet = app(ModelSheetService::class);
         // Isolate the already-passed design input from DNA/judge orchestration.
         (new ReflectionProperty($this->sheet, 'designPanels'))->setValue($this->sheet, [$this->project => [
-            'current' => true, 'stage_id' => $stage->id, 'check' => ['verdict' => YachtDesignCheck::PASS], 'name' => 'Arclight',
+            'current' => true, 'dna_stale' => false, 'stage_id' => $stage->id, 'check' => ['verdict' => YachtDesignCheck::PASS], 'name' => 'Arclight',
         ]]);
         [$set, $error] = (new ReflectionMethod($this->sheet, 'activeSet'))->invoke($this->sheet, $this->project);
         self::assertNull($error);

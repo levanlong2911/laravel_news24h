@@ -11,7 +11,7 @@
                     <em>Phase 3 — hồ sơ thiết kế (draft)</em>
                     <span class="grow"></span>
                     @if($yachtKept)<span class="va-tag ok">Đã duyệt (model sheet)</span>@elseif($yacht['analysed'])<span class="va-tag blue">Đã thiết kế</span>@endif
-                    @if($yachtKept || ($yacht['current'] && ($yachtCheck['verdict'] ?? null) === \App\Video\YachtDesign\YachtDesignCheck::PASS))
+                    @if($yachtKept || ($yacht['analysed'] && ! $yacht['dna_stale'] && ($yachtCheck['verdict'] ?? null) === \App\Video\YachtDesign\YachtDesignCheck::PASS))
                         <a class="vp-btn sm" href="#modelSheetPanel">Model sheet →</a>
                     @endif
                     @if($yacht['running'])
@@ -49,13 +49,14 @@
                         @endif
                         @if($yacht['error'])
                             <div class="line"><span class="v" style="color:var(--vp-red)">{{ $yacht['error'] }}</span></div>
-                        @elseif(! $yacht['analysed'])
-                            <div class="line"><span class="v">Chưa thiết kế</span></div>
+                        @endif
+                        @if(! $yacht['analysed'])
+                            @if(! $yacht['error'])
+                                <div class="line"><span class="v">Chưa thiết kế</span></div>
+                            @endif
                         @else
-                            @if($yachtKept && ! $yacht['current'])
-                                <div class="line"><span class="v">Bản thiết kế đã duyệt (nguồn của model sheet đã duyệt) — vẫn hiệu lực. Prompt Phase 3 hiện có revision mới hơn; không cần chạy lại.</span></div>
-                            @elseif(! $yacht['current'])
-                                <div class="line"><span class="v" style="color:var(--vp-red)">Bản thiết kế này thuộc DNA hoặc prompt cũ.</span></div>
+                            @if($yacht['dna_stale'])
+                                <div class="line"><span class="v" style="color:var(--vp-red)">Bản thiết kế này thuộc Design DNA cũ.</span></div>
                             @endif
                             @if($yachtCheck !== null)
                                 @php
@@ -83,7 +84,7 @@
                             @endif
                             @if($yacht['prose'] !== null)
                                 <pre class="raw">{{ $yacht['prose'] }}</pre>
-                            @else
+                            @elseif($yacht['json_error'] !== null)
                                 <div class="line"><span class="v">Phản hồi không phải JSON ({{ $yacht['json_error'] }})</span></div>
                             @endif
                         @endif

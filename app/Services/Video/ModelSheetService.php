@@ -384,11 +384,6 @@ final class ModelSheetService
         } catch (RuntimeException) {
         }
 
-        if ($base['sheet'] !== null && $design['stage_id'] !== null && $base['sheet']['design_stage_id'] === $design['stage_id'] && ! $design['current']) {
-            $base['source_error'] = null;
-            $base['design_note'] = 'Bản thiết kế nguồn là bản đã duyệt của model sheet này và vẫn hiệu lực. Prompt/contract Phase 3 đã có revision mới hơn — chỉ chạy thiết kế mới khi muốn đổi thiết kế (tính phí, phải làm lại model sheet).';
-        }
-
         if ($set === null) {
             return $base;
         }
@@ -697,8 +692,10 @@ final class ModelSheetService
 
         $panel = $this->designPanel($projectId);
 
-        if (! $panel['current'] || ($panel['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($panel['stage_id'])) {
-            throw new RuntimeException('Chưa có bản thiết kế Phase 3 hiện hành đạt kiểm tự động.');
+        // Ban thiet ke da chay (theo prompt cua chinh no) van la nguon khi prompt Phase 3 len revision
+        // moi; chi DNA nguon doi moi lam ban cu het hieu luc.
+        if ($panel['dna_stale'] || ($panel['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($panel['stage_id'])) {
+            throw new RuntimeException('Chưa có bản thiết kế Phase 3 đạt kiểm tự động cho Design DNA hiện hành.');
         }
 
         $stage = VideoPlanningStage::query()->whereKey($panel['stage_id'])->where('project_id', $projectId)->first();

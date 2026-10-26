@@ -143,10 +143,10 @@ final class YachtDesignService
             $runError = $e->getMessage();
         }
 
-        [$latest, $matchesInput] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::YACHT_DESIGN, $run['input'] ?? [], skipOrphans: true);
+        [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::YACHT_DESIGN, $run['input'] ?? [], skipOrphans: true);
         $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::YACHT_DESIGN, $run['input']);
         $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'stuck' => false, 'error' => null,
-            'current' => false, 'check' => null, 'name' => null, 'loa' => null, 'yacht_anchor' => null, 'prose' => null, 'json_error' => null];
+            'current' => false, 'dna_stale' => false, 'check' => null, 'name' => null, 'loa' => null, 'yacht_anchor' => null, 'prose' => null, 'json_error' => null];
         $base = [
             'can_run' => $run !== null && $served === null,
             'can_regenerate' => $run !== null && $served !== null && $this->replaceable($served, $run),
@@ -158,24 +158,38 @@ final class YachtDesignService
             return $base + $empty;
         }
 
-        $succeeded = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value;
         $claimed = $latest->status === VideoPlanningStageStatus::RUNNING->value;
-        $stored = $succeeded && is_array($latest->output_json) ? $latest->output_json : [];
-        $current = $succeeded && $matchesInput && $run !== null;
+        // Noi dung hien thi: ban thiet ke thanh cong moi nhat, doc tu output da luu. Prompt Phase 3
+        // len revision moi chi doi luot Create design moi; khong an noi dung ban da chay. Mot luot
+        // moi hon bi loi hoac dang chay cung khong thay noi dung ban da co.
+        $shown = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value ? $latest : VideoPlanningStage::query()
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::YACHT_DESIGN->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->whereNull('input_json->orphan_of_stage_id')
+            ->orderByDesc('planning_revision')
+            ->first();
+        $succeeded = $shown !== null;
+        $stored = $succeeded && is_array($shown->output_json) ? $shown->output_json : [];
+        $current = $succeeded && $served !== null && (string) $served->id === (string) $shown->id;
         [$filled, $check] = $current
-            ? $this->evaluate((string) ($stored['raw_text'] ?? ''), $run, self::manifestOf($latest))
+            ? $this->evaluate((string) ($stored['raw_text'] ?? ''), $run, self::manifestOf($shown))
             : [null, is_array($stored['check'] ?? null) ? $stored['check'] : null];
-        $data = is_object($filled) ? json_decode((string) json_encode($filled->data ?? null), true) : null;
+        $data = is_object($filled)
+            ? json_decode((string) json_encode($filled->data ?? null), true)
+            : (is_array($stored['design']['data'] ?? null) ? $stored['design']['data'] : null);
         [, $parseError] = $succeeded ? JsonAnswer::parse((string) ($stored['raw_text'] ?? '')) : [null, null];
 
         return $base + [
-            'stage_id' => (string) $latest->id,
+            'stage_id' => $succeeded ? (string) $shown->id : null,
             'analysed' => $succeeded,
             'status' => $latest->status,
             'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
-            'error' => $latest->error_message,
+            'error' => $latest->status === VideoPlanningStageStatus::FAILED->value ? $latest->error_message : null,
             'current' => $current,
+            // Chi DNA nguon doi moi lam ban thiet ke cu; prompt Phase 3 doi revision thi khong.
+            'dna_stale' => $succeeded && $run !== null && ($shown->input_json['dna_stage_id'] ?? null) !== $run['input']['dna_stage_id'],
             'check' => $check,
             'name' => is_array($data) ? ($data['yacht_bible']['name'] ?? null) : null,
             'loa' => is_array($data) ? ($data['yacht_bible']['specs']['loa']['value'] ?? null) : null,
