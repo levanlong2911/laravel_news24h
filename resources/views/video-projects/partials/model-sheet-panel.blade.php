@@ -9,9 +9,6 @@
             <em>Phase 3 — một master {{ $sheet['size'] }}, lưới 2 × 4, MS1–MS8 (chưa DESIGN LOCK)</em>
             <span class="grow"></span>
             @if($sheet['reviewed'] || $sheet['sheet'] !== null)<span class="va-tag ok">Đã duyệt model sheet</span>@endif
-            @if($sheet['proxy_ready'])
-                <a class="vp-btn sm" href="{{ route('video-projects.proxy', $project->id) }}">Proxy 3D →</a>
-            @endif
         </div>
 
         <div class="va-body">
@@ -23,8 +20,11 @@
                 @if($sheet['source_error'] !== null)
                     <div class="line"><span class="v" style="color:var(--vp-red)">{{ $sheet['source_error'] }}</span></div>
                 @endif
+                @if($sheet['design_note'] !== null)
+                    <div class="line"><span class="v">{{ $sheet['design_note'] }}</span></div>
+                @endif
                 @if($sheet['sheet'] !== null && ($sheet['set'] === null || $sheet['sheet']['set_id'] !== $sheet['set']['id']))
-                    <div class="line"><span class="k">Model sheet đã duyệt</span><span class="v">master {{ substr($sheet['sheet']['master_image_id'], 0, 8) }} · bộ {{ substr($sheet['sheet']['set_id'], 0, 8) }} (bộ trước) — vẫn là model sheet hợp lệ cho proxy 3D.</span></div>
+                    <div class="line"><span class="k">Model sheet đã duyệt</span><span class="v">master {{ substr($sheet['sheet']['master_image_id'], 0, 8) }} · bộ {{ substr($sheet['sheet']['set_id'], 0, 8) }} (bộ trước) — vẫn là model sheet hợp lệ.</span></div>
                 @endif
                 @if($sheet['set'] !== null)
                     <div class="line"><span class="k">Bộ model sheet</span><span class="v">{{ substr($sheet['set']['id'], 0, 8) }} · prompt QA revision {{ $sheet['set']['phase_revision'] }}</span></div>

@@ -36,4 +36,4 @@ JSON, and service prompt hashes.
 
 These are structural regression tests. They do not certify natural-language semantics,
 physical visibility, provider schema acceptance, image quality, SQL concurrency, or the
-full render/approval/proxy workflow.
+full render/approval workflow.

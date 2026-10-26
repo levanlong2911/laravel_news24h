@@ -16,15 +16,14 @@ After v6.3 the next step is implementation and testing, not further document rev
 | 1 | Inspiration extraction | 0 | — | — |
 | 2 | Design DNA + novelty brief | 1 | — | — |
 | 3 | Yacht design + Canonical Design JSON + model sheet | 2 | — | **DESIGN LOCK** (lock record) |
-| 3P | 3D proxy | 3 | 3R, 3B | — |
-| 3R | Reference pack | 3, 3P | 3B, 4 | — |
-| 3B | Visual story engine | 2, 3 | 3P, 3R | — |
+| 3R | Reference pack | 3 | 3B, 4 | — |
+| 3B | Visual story engine | 2, 3 | 3R | — |
 | 4 | Visual script | 3, 3B | — | — |
 | 4M | Music selection + timing lock | 3B, 4 | 5 | **TIMING LOCK** (automatic) |
 | 5 | Locations + interior sets | 3, 4 | 4M | — |
-| 5L | Look test + style lock | 3P, 3R, 5 | — | — |
+| 5L | Look test + style lock | 3R, 5 | — | — |
 | 6 | Shot list | 3B, 4, 4M, 5, 5L | — | — |
-| 6C | Strict prompt compilation + validation | 3, 3P, 3R, 5, 5L, 6 | — | **SPEC FREEZE** (automatic; UNCERTAIN → human) |
+| 6C | Strict prompt compilation + validation | 3, 3R, 5, 5L, 6 | — | **SPEC FREEZE** (automatic; UNCERTAIN → human) |
 | 7 | Keyframes + scoring | 6C | per location | — |
 | 7A | Animatic | 4M, 6, 7 | — | **PACING LOCK** |
 | 8 | Video shots + scoring | 6C, 7A | per shot | — |
@@ -36,7 +35,7 @@ After v6.3 the next step is implementation and testing, not further document rev
 
 ### Three locks
 
-- **Design lock (after Phase 3):** the Canonical Design JSON, constraint registry, model sheet and anchors are approved together. Changing any of them later regenerates the proxy, reference pack and every frame and clip containing the yacht.
+- **Design lock (after Phase 3):** the Canonical Design JSON, constraint registry, model sheet and anchors are approved together. Changing any of them later regenerates the reference pack and every frame and clip containing the yacht.
 - **Timing lock (after Phase 4M):** the film length, section boundaries and beat grid come from the chosen music. Shot durations snap to that grid.
 - **Spec freeze (after Phase 6C):** every compiled shot spec is validated and frozen; Phases 7 and 8 may render only frozen specs.
 - **Pacing lock (after Phase 7A):** shot order and durations approved on the animatic. Video budget is spent only after this lock.
@@ -47,8 +46,8 @@ Every lock is an immutable database record: lock type · artifact revision · co
 
 | Change | Must regenerate |
 | --- | --- |
-| YACHT ANCHOR or HEX colors | proxy, reference pack, model sheet, every yacht frame and clip, thumbnail |
-| One build-state sentence | proxy for that state, frames and clips in that state |
+| YACHT ANCHOR or HEX colors | reference pack, model sheet, every yacht frame and clip, thumbnail |
+| One build-state sentence | reference images, frames and clips in that state |
 | One LOCATION or SET anchor | its reference image, frames and clips in it |
 | Music track | timing lock, shot durations, animatic; frames are kept, clips re-trimmed (re-rendered only if a shot grows beyond its clip) |
 | Shot order | animatic, EDL; no re-render |
@@ -158,7 +157,6 @@ When two artifacts disagree, the higher one wins and the lower one is regenerate
 1. Canonical Design JSON (Phase 3, locked)
 2. Constraint registry (Phase 3, locked)
 3. Approved model sheet (MS1 first)
-4. 3D proxy
 5. Reference pack
 6. Compiled shot specs (Phase 6C, frozen)
 7. Generated frames and clips
@@ -337,10 +335,10 @@ A constraint applies from `from_state` to `until_state` (inclusive; null = to th
     "state": {"type": "string", "pattern": "^BS(0[1-9]|1[0-2])$"},
     "sources": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^rev[0-9]+$"}},
     "image_tool": {"type": "string"},
-    "image_mode": {"enum": ["generate", "edit_from_clay", "edit_from_reference", "none"]},
+    "image_mode": {"enum": ["generate", "edit_from_reference", "none"]},
     "video_tool": {"type": "string"},
     "video_mode": {"enum": ["first_frame", "first_last_frame", "reference", "video_reference", "extend", "edit", "none"]},
-    "image_prompt": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["block", "text", "source"], "properties": {"block": {"enum": ["geometry_instruction", "identity", "state", "location", "action", "character", "camera", "light", "style", "aspect", "constraints"]}, "text": {"type": "string", "minLength": 1}, "source": {"type": "string", "pattern": "^[a-z_.A-Z0-9]+@[0-9]+$"}}}},
+    "image_prompt": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["block", "text", "source"], "properties": {"block": {"enum": ["reference_instruction", "identity", "state", "location", "action", "character", "camera", "light", "style", "aspect", "constraints"]}, "text": {"type": "string", "minLength": 1}, "source": {"type": "string", "pattern": "^[a-z_.A-Z0-9]+@[0-9]+$"}}}},
     "motion_prompt": {"type": "string", "description": "empty string only when video_mode = none"},
     "refs": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
     "constraints_to_check": {"type": "array", "items": {"type": "object", "required": ["id", "status"], "properties": {"id": {"type": "string", "pattern": "^C-P[0-2]-[0-9]{3}$"}, "status": {"enum": ["must_show", "may_be_hidden", "not_applicable", "not_yet_built"]}}}},
@@ -532,7 +530,7 @@ Google’s own guidance recommends Omni Flash as the default video model and Veo
 | --- | --- | --- | --- |
 | Design sketches, concept boards, GA-style plans without text | GPT Image 2 | Nano Banana Pro | instruction following, clean line work |
 | Model sheet (MS1–MS8) | both, scored | — | pick the more consistent set |
-| Shots with the yacht | Nano Banana Pro (up to 14 refs + proxy render as edit input) | GPT Image 2 (edit on proxy render) | multi-reference consistency |
+| Shots with the yacht | Nano Banana Pro (up to 14 approved reference images) | GPT Image 2 (edit on an approved reference image) | multi-reference consistency |
 | Interior sets | Nano Banana Pro | GPT Image 2 | material fidelity with set references |
 | Coverage, drafts, look tests | Nano Banana 2 | — | cost |
 | Exterior hero, sea trials, aerials, water | Veo 3.1 Quality | Omni 1.1 Flash | water physics, realism |
@@ -571,7 +569,6 @@ These caps are **provisional**. After the shot list is locked (Phase 6), the fin
 | 1 | `inspiration` |
 | 2 | `dna`, `novelty` |
 | 3 | `yacht_bible`, `anchors.yacht`, `anchors.exterior{}`, `anchors.interior{}`, `build_states{}`, `model_sheet[]` |
-| 3P | `proxy3d`, later `shots[].controls` |
 | 3R | `ref_pack` |
 | 3B | `story`, `anchors.character{}`, `reveal_plan`, `loops[]`, `obstacles[]` |
 | 4 | `script.beats[]`, `script.text_cards[]`, `script.music_brief` |
@@ -1030,7 +1027,7 @@ Contents:
 - **Surfaces:** finished colors (HEX), glazing tint, metal finishes; surface state per BS.
 - **Rooms:** INT list with deck, position and window type.
 
-Constraint registry: generated from the canonical JSON, at least 12 constraints — every P0 identity feature, every landmark as P1, key finish details as P2. Each constraint has: `id`, `priority`, `statement`, `check` (how it is verified: proxy landmark, vision question, count) and `visible_from` (which views or shot sizes can see it).
+Constraint registry: generated from the canonical JSON, at least 12 constraints — every P0 identity feature, every landmark as P1, key finish details as P2. Each constraint has: `id`, `priority`, `statement`, `check` (how it is verified: reference landmark, vision question, count) and `visible_from` (which views or shot sizes can see it).
 
 Partial example (full structure: schema 1 in Common standards):
 
@@ -1070,7 +1067,7 @@ Partial example (full structure: schema 1 in Common standards):
 - **VISION (after model sheet):** MS2–MS8 similarity to MS1 ≥ threshold; no text; deck count visible matches `decks`; similarity to images of the source yacht and to a reference set of well-known superyachts BELOW the copy threshold (novelty check).
 - **Stop:** DESIGN LOCK — REVIEW\_KEY stops for human approval of the model sheet.
 
-v6 additions to the gates: GEOMETRY ANCHOR contains no color, material or finish words (RULE); every P0 constraint is visible in at least one model-sheet view (MS1–MS8) or a designated detail sheet (interior P0 constraints: in the room board) (VISION + human); canonical JSON landmarks match the approved model sheet within 3% of LOA (human with overlay); the design lock record is written with hash and approver.
+v6 additions to the gates: GEOMETRY ANCHOR contains no color, material or finish words (RULE); every P0 constraint is visible in at least one model-sheet view (MS1–MS8) or a designated detail sheet (interior P0 constraints: in the room board) (VISION + human); visible canonical identity landmarks agree with the approved model sheet (vision and human review; uncertainty remains explicit); the design lock record is written with hash and approver.
 
 ### Quality gate
 
@@ -1081,84 +1078,11 @@ v6 additions to the gates: GEOMETRY ANCHOR contains no color, material or finish
 - [ ] Build states BS01–BS12 and room set states defined
 - [ ] Model sheet consistent; novelty vision check passed
 
-## Phase 3P — 3D proxy
-
-A rough 3D model of the yacht, used as a geometric skeleton: it fixes the silhouette, camera angle and framing of every yacht shot. It never appears in the film.
-
-You are the pipeline’s 3D technician. **Input:** `yacht_bible`, approved model sheet; after Phase 6: `shots[]`.
-
-### Absolute rules
-
-- Build procedurally from the specs with a Python script run inside headless Blender (`blender -b -P build_proxy.py -- yacht_bible.json`). Image-to-3D only for a free-form innovation shape if needed.
-- No materials or detail required; dimensions, proportions and volumes must be right.
-- All PROGRESS shots share one virtual camera.
-- The proxy must pass the silhouette check before use.
-
-### Step 1 — Build
-
-- Hull: lofted volume from LOA, beam, draft, bow type and sheer / arch line.
-- Superstructure: stacked or recessed volumes from `decks[].height` and `setback`.
-- Innovations: simple volumes at their exact positions (hull doors, observation blister, terraces, helideck).
-- Export `.glb`.
-
-v6: the hull and superstructure are built from the canonical **profile curve**, **plan outline** and **deck outlines** (Phase 3, Step 11), not only from LOA, beam and deck heights. The hull is lofted through cross-sections interpolated between the profile and plan curves; innovations are placed at their canonical landmark positions.
-
-### Step 2 — Silhouette check
-
-Render the proxy at MS1–MS7 and compare silhouettes with the model sheet. IoU ≥ 0.85 for every view; otherwise adjust and rebuild.
-
-**Landmark check (v6):** silhouette IoU alone cannot see topology. Project every canonical landmark (bow tip, hull doors, blister, helideck, terrace steps, stern platform) into the MS1–MS7 cameras and compare with the same points marked on the approved model sheet: every landmark within 3% of LOA. Deck count in the proxy must equal the canonical deck count. A failure blocks the proxy and is shown to the reviewer with an overlay.
-
-### Step 3 — States
-
-| State | Proxy |
-| --- | --- |
-| BS05 | hull only, scaled 1:25 |
-| BS06 | keel blocks only |
-| BS07 | full hull, open deck |
-| BS08 | hull + superstructure + scaffolding volumes |
-| BS09–BS12 | complete |
-
-### Step 4 — Per-shot renders (after Phase 6)
-
-- Virtual camera from each shot’s lens, height, distance, angle.
-- Render with Cycles on CPU at 1–4 samples: **depth map**, **hull mask**, and a **clay render** (neutral grey shading, correct silhouette).
-- One Blender run per project for all shots, 2–4 threads, cached by hash of specs + state + camera.
-
-### Step 5 — How the proxy is used with GPT Image 2 and Nano Banana
-
-These image models do not take depth-control maps, so the proxy is used through editing and scoring:
-
-| Use | How |
-| --- | --- |
-| Geometry lock | send the clay render as the edit input image with the instruction “render this exact geometry as a photorealistic yacht, keep the silhouette and camera exactly”, plus the reference pack |
-| Scoring | the hull mask gives the IoU score in Phase 7 |
-| Timelapse alignment | PROGRESS frames align by the mask in Phase 9 |
-| Reframing | Phase 10 crops along the mask |
-
-**Conditional use as edit input (v6):** sending a grey clay render as the edit input can make outputs look CGI or keep clay-like surfaces. Phase 5L tests it (Step 4B there). If the test fails, the proxy is used only for scoring, landmark checks, timelapse alignment and reframing — never as an image input.
-
-### Output
-
-```json
-{
-  "proxy3d": {"file": "proxy_noctiluca.glb", "iou_ms": [0.91, 0.88, 0.89, 0.93, 0.9, 0.87, 0.9]},
-  "controls": [{"shot": "SC07_SH01", "bs": "BS08", "depth": "…", "mask": "…", "clay": "…"}]
-}
-```
-
-### Quality gate
-
-- [ ] IoU ≥ 0.85 at MS1–MS7
-- [ ] Proxy exists for every used state
-- [ ] Every yacht shot has depth, mask and clay render
-- [ ] PROGRESS shots share one camera
-
 ## Phase 3R — Reference pack
 
 A curated, versioned set of reference images that every image and video call draws from. It replaces custom model training: GPT Image 2 and Nano Banana are steered by references, not fine-tuning.
 
-You are the pipeline’s reference librarian. **Input:** approved model sheet · `yacht_bible` · proxy clay renders.
+You are the pipeline’s reference librarian. **Input:** approved model sheet · `yacht_bible`.
 
 ### Contents
 
@@ -1175,9 +1099,9 @@ You are the pipeline’s reference librarian. **Input:** approved model sheet ·
 
 | Tool / shot type | References attached |
 | --- | --- |
-| Nano Banana Pro, exterior yacht shot | clay render (edit input) + 3 nearest MS views + 1–2 detail sheets + color sheet + LOC ref + 2 style refs (≤ 14) |
+| Nano Banana Pro, exterior yacht shot | approved reference image (edit input) + 3 nearest MS views + 1–2 detail sheets + color sheet + LOC ref + 2 style refs (≤ 14) |
 | Nano Banana Pro, interior shot | SET ref + room board + material board + 2 style refs |
-| GPT Image 2 | clay render or SET ref as edit input + the 2–4 most relevant references |
+| GPT Image 2 | approved yacht reference or SET ref as edit input + the 2–4 most relevant references |
 | Veo 3.1 reference mode | 3 images max: nearest MS view + key detail + style ref |
 | Omni 1.1 Flash | image references + up to 3 s video reference (turntable or previous clip) |
 
@@ -1671,15 +1595,6 @@ Also record which image tool won each category (exterior with yacht · interior 
 - Measure hull stability, flicker and motion smoothness (method in Phase 8).
 - Record the preferred video tool per category and the maximum safe intensity.
 
-### Step 4B — Proxy input test (v6)
-
-Render T1 and T3 twice with the winning style: once with the clay render as edit input, once without it (references only). A human compares the pairs:
-
-- Clay input gives correct geometry **and** natural materials → `proxy_input = true`.
-- Clay input looks CGI, plastic or keeps grey surfaces → `proxy_input = false`; the proxy is used only for checks, alignment and reframing.
-
-Record the decision per tool (GPT Image 2 and Nano Banana Pro may behave differently).
-
 ### Step 5 — Locks
 
 - `style.suffix` — winning STYLE sentence used in every Phase 7 prompt.
@@ -1814,7 +1729,7 @@ Phase 6C turns every shot of the locked shot list into a **compiled shot spec**:
 
 Roles are separated: the AI designer is creative before the design lock; the compiler only assembles after it; code validators decide whether a spec may be rendered.
 
-**Input:** canonical JSON and constraint registry (3) · anchors, build and surface states (3) · reference pack (3R) · locations and sets (5) · style, routing, `proxy_input` (5L) · shot list (6) · tool profiles (0).
+**Input:** canonical JSON and constraint registry (3) · anchors, build and surface states (3) · reference pack (3R) · locations and sets (5) · style and routing (5L) · shot list (6) · tool profiles (0).
 
 ### Absolute rules
 
@@ -1848,12 +1763,12 @@ From the registry, keep constraints whose `visible_from` matches the shot’s si
 
 ### Step 3 — Compose
 
-- **Image prompt:** fixed order — geometry instruction (only if `proxy_input = true`) · identity block · state block · location / set · action · characters · camera · light · style · aspect · constraints line.
+- **Image prompt:** fixed order — identity block · state block · location / set · action · characters · camera · light · style · aspect · constraints line.
 - **Motion prompt:** Phase 8 formula built from structured fields (move, direction, speed, subject motion, environment, pace) + keep-fixed line + audio line + constraints.
 
 ### Step 4 — Model adapter
 
-Translate the spec to the assigned tool’s capabilities: reference images within the tool’s limit (priority: clay render if allowed → nearest MS views → detail sheets → color sheet → location / set → style); exclusions as a positive constraints line; prompt length budget (drop style first, then action detail, never identity or state blocks); mode selection (Veo frame mode vs reference mode cannot be mixed on some endpoints; Omni video reference for type C); aspect and resolution.
+Translate the spec to the assigned tool’s capabilities: reference images within the tool’s limit (priority: nearest MS views → detail sheets → color sheet → location / set → style); exclusions as a positive constraints line; prompt length budget (drop style first, then action detail, never identity or state blocks); mode selection (Veo frame mode vs reference mode cannot be mixed on some endpoints; Omni video reference for type C); aspect and resolution.
 
 ### Step 5 — Validate (RULE)
 
@@ -1902,11 +1817,11 @@ Complete example (valid against schema 5; the hash is an example value):
   "state": "BS08",
   "sources": {"canonical": "rev1", "constraints": "rev1", "build_states": "rev1", "style": "rev1", "shot_list": "rev2"},
   "image_tool": "gemini-3-pro-image-preview",
-  "image_mode": "edit_from_clay",
+  "image_mode": "edit_from_reference",
   "video_tool": "veo-3.1-generate-preview",
   "video_mode": "first_frame",
   "image_prompt": [
-    {"block": "geometry_instruction", "text": "Use the attached clay render as the exact geometry, silhouette and camera.", "source": "templates.geometry_instruction@1"},
+    {"block": "reference_instruction", "text": "Preserve the yacht geometry, silhouette and identity from the attached approved model sheet views.", "source": "templates.reference_instruction@1"},
     {"block": "identity", "text": "The hull with the superstructure recessed into the arch in four stepped terraces, window openings empty, no mast, no helideck surface.", "source": "build_states.BS08.compiled_text@1"},
     {"block": "state", "text": "Hull surfaces in bare welded steel with red-oxide primer; superstructure in raw unpainted aluminium; no paint, no glass.", "source": "surface_states.BS08@1"},
     {"block": "location", "text": "Enclosed construction hall, 230 m long and 62 m high, grey epoxy floor, two yellow overhead gantry cranes, scaffolding towers along both walls.", "source": "anchors.location.LOC04@1"},
@@ -1918,7 +1833,7 @@ Complete example (valid against schema 5; the hash is an example value):
     {"block": "constraints", "text": "No text, no lettering, no numbers, no logos, no signage, no visible faces, hull symmetric.", "source": "templates.constraints@1"}
   ],
   "motion_prompt": "Camera slow push-in toward the bow, very slow. The crane hook sways slightly. Keep fixed: hull shape, number of decks, scaffolding, hall. Audio: hall hum and distant grinding only, no music, no speech. No text.",
-  "refs": ["clay_SC08_SH01.png", "MS2.png", "MS7.png", "detail_N1.png", "LOC04_ref.png"],
+  "refs": ["MS2.png", "MS7.png", "detail_N1.png", "LOC04_ref.png"],
   "constraints_to_check": [
     {"id": "C-P0-001", "status": "must_show"},
     {"id": "C-P0-002", "status": "must_show"},
@@ -1940,7 +1855,7 @@ Complete example (valid against schema 5; the hash is an example value):
 
 ## Phase 7 — Keyframes
 
-Phase 7 produces the START (and END) frames of every shot with GPT Image 2 or Nano Banana, using the proxy for geometry and the reference pack for identity, then scores every variant and keeps the best.
+Phase 7 produces the START (and END) frames of every shot with GPT Image 2 or Nano Banana, using the approved model sheet and reference pack for geometry and identity, then scores every variant and keeps the best.
 
 You are the AI image render operator. **Input (v6.3):** frozen CompiledShots (Phase 6C) and, for each call, a frozen RenderRequest built from them. Phase 7 never reads anchors, shot lists or style files directly; the prompt order below is reference documentation of what Phase 6C produces.
 
@@ -1958,7 +1873,7 @@ v6: Phase 7 renders **only from frozen compiled specs** (Phase 6C). It does not 
 
 ### Prompt order (reference — produced by Phase 6C)
 
-1. Geometry instruction (yacht shots, only if `proxy_input = true`): “Use the attached clay render as the exact geometry, silhouette and camera.”
+1. Reference instruction (yacht shots): preserve the approved yacht geometry, silhouette and identity from the attached model sheet views.
 2. Identity block — GEOMETRY ANCHOR for BS06–BS10; YACHT ANCHOR (geometry + finished surface) for BS11–BS12; SET ANCHOR for interiors; omitted for BS01–BS05 and location-only shots
 3. State block — build-state sentence + SURFACE STATE (BS06–BS10), or room state
 4. LOCATION ANCHOR (exteriors)
@@ -1975,9 +1890,9 @@ BS01–BS05: replace 1–2 with the BS sentence + “showing the profile of ” 
 
 | Tool | Inputs | Notes |
 | --- | --- | --- |
-| Nano Banana Pro | clay render as edit input + up to 13 references from the reference budget (3R) | best for multi-reference consistency; 2K default, 4K for hero frames |
+| Nano Banana Pro | approved reference image as edit input + up to 13 references from the reference budget (3R) | best for multi-reference consistency; 2K default, 4K for hero frames |
 | Nano Banana 2 | same, fewer references | coverage, drafts, cheaper retries |
-| GPT Image 2 | clay render or SET ref as edit input + 2–4 key references | strong instruction following; good for interiors and precise edits; up to about 2K |
+| GPT Image 2 | approved yacht reference or SET ref as edit input + 2–4 key references | strong instruction following; good for interiors and precise edits; up to about 2K |
 
 Routing follows `routing.image` from 5L; the other tool is the automatic second attempt when all variants fail.
 
@@ -1992,7 +1907,7 @@ Epic cinematic shot of a beautiful luxury superyacht being built in a huge shipy
 Right (exterior, BS08, LOC04):
 
 ```
-Use the attached clay render as the exact geometry, silhouette and camera. [GEOMETRY ANCHOR]. [SURFACE STATE BS08]. The yacht as a steel hull joined to raw unpainted aluminium superstructure, scaffolding along both sides. [LOCATION ANCHOR LOC04]. A yellow gantry crane hook hangs above the bow; two workers seen from behind on the scaffolding, plain burnt-orange coveralls. 3/4 bow view from port side, camera 1.7 m above the hall floor, 110 m from the bow, 35 mm lens. Sodium high-bay light 2200K from above with daylight shafts 5600K. [style.suffix]. 16:9. No text, no lettering, no numbers, no logos, no signage, no visible faces, hull symmetric.
+Preserve the yacht geometry, silhouette and identity from the attached approved model sheet views. [GEOMETRY ANCHOR]. [SURFACE STATE BS08]. The yacht as a steel hull joined to raw unpainted aluminium superstructure, scaffolding along both sides. [LOCATION ANCHOR LOC04]. A yellow gantry crane hook hangs above the bow; two workers seen from behind on the scaffolding, plain burnt-orange coveralls. 3/4 bow view from port side, camera 1.7 m above the hall floor, 110 m from the bow, 35 mm lens. Sodium high-bay light 2200K from above with daylight shafts 5600K. [style.suffix]. 16:9. No text, no lettering, no numbers, no logos, no signage, no visible faces, hull symmetric.
 ```
 
 Right (interior, finished):
@@ -2018,7 +1933,6 @@ For H2–H4, the camera or light line states how the yacht is hidden: “tight c
 | Text in image | OCR | any text → reject | — |
 | Faces | face detection | face > 2% of frame → reject | — |
 | Geometry defects | vision judge: extra decks, warped hull, asymmetry, bad hands | yes → reject | — |
-| Proxy match | IoU of yacht silhouette vs proxy mask | ≥ 0.85 | 20% |
 | Model-sheet match | image embedding vs nearest MS view | ≥ 0.80 | 20% |
 | Correct state | vision judge: build state / room state correct | yes, confidence ≥ 0.7 | 15% |
 | Style | embedding vs `style.ref_images` | ≥ 0.75 | 10% |
@@ -2026,7 +1940,7 @@ For H2–H4, the camera or light line states how the yacht is hidden: “tight c
 | Size and reveal | vision judge vs `size`, `reveal` | match | 15% |
 | Aesthetic | aesthetic model | ≥ 5.5 / 10 | 10% |
 
-- Pick the highest total among non-rejected variants.
+- Normalize the remaining score weights by their sum, then pick the highest total among non-rejected variants.
 - PROGRESS frames: hull bounding box within 5% of the previous PROGRESS frame.
 - Type B END: similarity to START ≥ 0.85 except for the changed element.
 - After 3 rounds: switch tool; then simplify (nearest MS angle, smaller size), flag `FRAME_SIMPLIFIED`; then use a coverage shot.
@@ -2036,7 +1950,7 @@ For H2–H4, the camera or light line states how the yacht is hidden: “tight c
 ### Constraint checks and sequence consistency (v6)
 
 - **Per-constraint check:** for every constraint in the spec’s `constraints_to_check`, a vision judge answers a direct question (e.g. “How many decks are above the hull?”, “Are the hull doors at about mid-length?”). `must_show` P0 fails → reject; P1 fails → reject unless `may_be_hidden`; P2 fails → flag. An answer the judge cannot see → `UNCERTAIN`.
-- **Landmark overlay:** when a proxy mask exists, project the canonical landmarks into the frame; landmarks off by more than 3% of LOA → reject.
+- **Landmark review:** compare visible identity landmarks with the approved model sheet and reference views. Missing or displaced identity features require review; do not claim a metric 3D measurement from uncalibrated images.
 - **Sequence consistency:** after all frames of a `sequence_id` are selected, compare them as a set (hull color, deck count, light direction, location locks). One frame out of line → re-select from its variants before rendering video.
 - **Verdicts:** every frame ends as `PASS`, `FAIL` or `UNCERTAIN`; UNCERTAIN frames go to the human review queue before Phase 7A.
 
@@ -2046,8 +1960,8 @@ For H2–H4, the camera or light line states how the yacht is hidden: “tight c
 {
   "shot": "SC08_SH01",
   "frames": {"start": {"tool": "nano-banana-pro", "recipe": ["geometry", "anchors.yacht", "build_states.BS08", "anchors.location.LOC04", "action", "camera", "light", "style", "aspect", "constraints"],
-    "refs": ["clay_SC08_SH01.png", "MS2.png", "MS7.png", "detail_N1.png"],
-    "variants": [{"file": "SC08_SH01_START_r1a.png", "scores": {"iou": 0.88, "ms": 0.83, "state": 0.9, "aesthetic": 6.1}}],
+    "refs": ["MS2.png", "MS7.png", "detail_N1.png"],
+    "variants": [{"file": "SC08_SH01_START_r1a.png", "scores": {"ms": 0.83, "state": 0.9, "aesthetic": 6.1}}],
     "selected": "SC08_SH01_START.png"}}
 }
 ```
@@ -2221,7 +2135,7 @@ Camera static. Grey primer spreads across the hull from bow to stern while maski
 
 ### Scoring and segment selection
 
-Sample one frame every 0.25 s; crop the hull with the proxy mask.
+Sample one frame every 0.25 s; use an image-derived yacht mask when available; otherwise inspect the full frame.
 
 | Score | Measure | Start threshold |
 | --- | --- | --- |
@@ -2359,7 +2273,7 @@ You are the editor and post supervisor. **Input:** processed clips (8P) · music
 | Type | How | Limit |
 | --- | --- | --- |
 | cut | straight cut on a grid point | default |
-| match cut | align shape positions via proxy masks; shift / scale the second frame if offset > 5% | declared `match_pair` only |
+| match cut | align shape positions using image-derived masks or approved reference landmarks; shift / scale the second frame if offset > 5% | declared `match_pair` only |
 | dissolve | 6–12 frames | time jumps and timelapse only |
 | morph (PROGRESS timelapse) | align hull bounding box by mask, dissolve 6–12 frames, hold each state ≥ 1 bar | BS06 → BS11 |
 | whip pan | motion blur 4–6 frames, on an accent | max 2 per film |
@@ -2590,7 +2504,7 @@ You are the release and analytics unit. **Input:** master and timeline (9) · QC
 
 ### Step 1 — Reframe
 
-- 16:9 ↔ 9:16 by cropping along the proxy hull mask with smoothed crop motion; interiors crop around the room’s signature element.
+- 16:9 ↔ 9:16 by cropping around the yacht detected in the rendered frames with smoothed crop motion; interiors crop around the room’s signature element.
 - Crop keeps ≥ 80% of the hull; otherwise pan-and-scan along the hull; otherwise center the frame over a blurred fill of the same shot.
 - Re-place cards inside the new safe zones.
 
@@ -2718,21 +2632,19 @@ Laravel orchestrates; a Python worker handles media analysis and scoring; Blende
 | Model calls | LLM, GPT Image 2, Nano Banana (Gemini API), Veo 3.1 and Omni 1.1 Flash (Gemini API / Vertex AI) | Laravel HTTP client; async jobs with polling for video |
 | RULE gates | regex, counts, sums, JSON Schema validation | PHP |
 | Python worker | vision scoring (embeddings, OCR, faces, optical flow, aesthetics), music analysis (beats, sections, energy, vocals), timeline build | Python + FastAPI; GPU host if models run locally |
-| 3D proxy | build proxy, render depth / mask / clay | headless Blender (`blender -b -P …`), Cycles CPU |
 | Media | trim, normalize, deflicker, stabilize, loudness, black / freeze detection, export | ffmpeg |
 | Storage | images, clips, audio, masters, manifest | S3-compatible object storage (S3 or MinIO); services exchange paths only |
 | Link Laravel ↔ worker | jobs and results | HTTP or a shared Redis queue |
 
 **Video calls are slow:** Veo and Omni renders can take minutes each; run them as async jobs, poll for completion, and parallelize up to the account rate limits.
 
-**Server sizing (reference):** Laravel + Blender proxy + ffmpeg on about 4 vCPU / 8 GB RAM, no GPU. The Python worker on a separate GPU host if vision and music models run locally; without a GPU, use hosted APIs for scoring at a per-call cost.
+**Server sizing (reference):** Laravel + ffmpeg on about 4 vCPU / 8 GB RAM, no GPU. The Python worker on a separate GPU host if vision and music models run locally; without a GPU, use hosted APIs for scoring at a per-call cost.
 
 ### v6 decisions on components
 
 | Component | v6 decision |
 | --- | --- |
 | Python worker | kept, full scope: vision scoring and per-constraint checks, clip analysis, music analysis, landmark overlays, timeline build |
-| 3D proxy | Blender (bundled Python, no separate Python install) called by Laravel via CLI; same script on Windows / XAMPP for testing and on Linux in production |
 | Human review UI | Laravel + Filament or Livewire: design lock (model sheet + canonical overlay), UNCERTAIN queue, animatic approval, final approval; side-by-side variants, keyboard approve / reject |
 | Prompt compilation | Phase 6C service in Laravel: template assembly, model adapters, RULE validation; LLM only for the action slot and the semantic judge |
 
@@ -2842,7 +2754,7 @@ The pipeline is “stable” only after four pilot rounds and all acceptance cri
 | Round | Scope | Mode | Goal |
 | --- | --- | --- | --- |
 | 1 — Dry run | 5 articles, Phase 0 → 6, no renders | REVIEW\_ALL | schemas, RULE pass rates, novelty and plausibility scores, LLM cost |
-| 2 — Calibration | 1 article, full | REVIEW\_ALL | humans label \~60 images and \~40 clips pass / fail; tune VISION thresholds until machine and human agree ≥ 85%; verify proxy IoU and tool routing |
+| 2 — Calibration | 1 article, full | REVIEW\_ALL | humans label \~60 images and \~40 clips pass / fail; tune VISION thresholds until machine and human agree ≥ 85%; verify reference consistency and tool routing |
 | 3 — Reviewed run | 2 articles, full | REVIEW\_KEY | stops, fallback rate, cost and time per film |
 | 4 — Unattended run | 2 articles, full | FULL\_AUTO | blind comparison with round 3 |
 
@@ -2878,7 +2790,7 @@ v6 additional acceptance criteria:
 | Published films with a failed P0 constraint | 0 |
 | Landmark deviation on sampled hero frames | ≤ 3% of LOA |
 | Novelty verdict of pilot designs | ORIGINAL (or UNCERTAIN resolved by a human) |
-| Proxy-as-input decision recorded per image tool | yes |
+| Approved reference inputs recorded per image tool | yes |
 | Lock records with hash and approver for every lock | 100% |
 | UNCERTAIN items resolved before publish | 100% |
 

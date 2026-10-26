@@ -24,8 +24,6 @@ use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\DesignDnaService;
 use App\Services\Video\ModelSheetService;
 use App\Services\Video\YachtDesignService;
-use App\Services\Video\YachtProxyReferenceService;
-use App\Services\Video\YachtProxyService;
 use App\Services\Video\ScreenplayExpansionService;
 use App\Services\Video\StoryFoundationService;
 use App\Services\Video\VesselDesignService;
@@ -451,7 +449,11 @@ class VideoProjectsController extends Controller
         $data = $this->form->validate($request, 'AnchorApproveForm');
         [$done, $reason] = app(ModelSheetService::class)->approve($id, (string) $data['artifact_id'], auth()->id());
 
-        return $done ? back()->with('success', 'Đã duyệt model sheet — đây chưa phải DESIGN LOCK.') : back()->with('error', $reason);
+        if (! $done) {
+            return back()->with('error', $reason);
+        }
+
+        return back()->with('success', 'Đã duyệt model sheet — đây chưa phải DESIGN LOCK.');
     }
 
     public function rejectModelSheet(Request $request, string $id)
@@ -477,75 +479,6 @@ class VideoProjectsController extends Controller
             default => back()->with('success', 'Đã xử lý lại từ master đã lưu — không gọi model.'),
         };
     }
-
-    public function proxy(string $id)
-    {
-        $project = $this->ownedProject($id);
-
-        return view('video-projects.proxy', [
-            'route' => 'video-projects',
-            'action' => 'video-projects-index',
-            'menu' => 'menu-open',
-            'active' => 'active',
-            'project' => $project,
-            'proxy' => app(YachtProxyService::class)->page($project->id),
-        ]);
-    }
-
-    /** Luu mapping (+ xac nhan gia dinh) thanh revision proxy va dung neu ProxySpec du dieu kien. */
-    public function buildProxy(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate([
-            'mapping' => ['required', 'string'],
-            'confirm' => ['array'],
-            'confirm.*' => ['string'],
-        ], ['mapping.*' => 'Thiếu mapping JSON.']);
-        [$stage, $reason] = app(YachtProxyService::class)->build($id, (string) auth()->user()?->name, (string) $data['mapping'], (array) ($data['confirm'] ?? []));
-
-        if ($stage === null) {
-            return back()->withInput()->with('error', $reason);
-        }
-
-        $status = YachtProxyService::STATUS_LABELS[$stage->output_json['status'] ?? ''] ?? '';
-
-        return back()->with('success', ($reason === 'already_exists' ? 'Dữ liệu không đổi — dùng lại revision ' : 'Đã lưu revision ').$stage->planning_revision.($status !== '' ? ': '.$status : '').'.');
-    }
-
-    /** Tham chieu doi chieu model sheet: de xuat mask, khoanh da giac, xac nhan, danh dau moc. */
-    public function proxyReference(Request $request, string $id, string $action)
-    {
-        $this->ownedProject($id);
-        $service = app(YachtProxyReferenceService::class);
-        $creator = (string) auth()->user()?->name;
-        $view = (string) $request->validate(['view' => ['required', 'string', 'max:8']])['view'];
-        $points = static fn (): array => (array) json_decode((string) $request->input('points', '[]'), true);
-
-        [$artifact, $reason] = match ($action) {
-            'propose' => $service->propose($id, $view, (int) $request->validate(['tolerance' => ['required', 'integer', 'min:1', 'max:60']])['tolerance']),
-            'polygon' => $service->polygon($id, $view, $points()),
-            'confirm' => $service->confirm($id, $view, (string) $request->validate(['proposal_id' => ['required', 'uuid']])['proposal_id'], $creator),
-            'landmarks' => $service->landmarks($id, $view, $points(), $creator),
-            'camera' => app(YachtProxyService::class)->confirmCamera($id, $view, $creator),
-            default => abort(404),
-        };
-
-        return in_array($artifact, [null, false], true)
-            ? back()->with('error', $reason)->withFragment('proxyRef'.$view)
-            : back()->with('success', ['proposed' => "Đã tạo mask đề xuất {$view} — xem rồi xác nhận.", 'confirmed' => "Đã xác nhận mask tham chiếu {$view}.", 'saved' => "Đã lưu mốc tham chiếu {$view}.", 'camera_confirmed' => "Đã xác nhận camera {$view}."][$reason])->withFragment('proxyRef'.$view);
-    }
-
-    public function approveProxy(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate(['stage_id' => ['required', 'uuid']], ['stage_id.*' => 'Thiếu revision proxy cần duyệt.']);
-        [$done, $reason] = app(YachtProxyService::class)->approve($id, (string) $data['stage_id'], auth()->id());
-
-        return $done ? back()->with('success', 'Đã duyệt proxy 3D.') : back()->with('error', $reason);
-    }
-
     public function screenplayFoundation(Request $request, string $id)
     {
         $project = $this->ownedProject($id);

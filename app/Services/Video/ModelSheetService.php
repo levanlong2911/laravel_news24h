@@ -31,13 +31,13 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Model sheet Phase 3 theo luong: thiet ke -> model sheet -> proxy 3D.
+ * Model sheet Phase 3 theo luong: thiet ke -> QA prompt -> render model sheet -> duyet anh.
  *
  * Noi dung prompt: code lap bang du kien tu ban thiet ke (ModelSheetFacts), Sonnet 5.5 QA
  * va bien tap co nguon (ModelSheetQaService), code kiem va ghep prompt cuoi. Mot lan bam
  * Render gui MOT request (variations 1) voi dung prompt da QA, tao MOT anh master 3840x2160,
  * luoi 2 hang x 4 cot MS1-MS8; may chu cat tam o 960x1080 theo toa do co dinh. Nguoi duyet
- * duyet hoac tu choi ca master; mot o sai la ca luot chua dat. Khong phu thuoc proxy.
+ * duyet hoac tu choi ca master; mot o sai la ca luot chua dat.
  */
 final class ModelSheetService
 {
@@ -288,17 +288,17 @@ final class ModelSheetService
     }
 
     /**
-     * Bo model sheet da duyet cua thiet ke hien hanh — dieu kien phia may chu cho proxy 3D.
+     * Bo model sheet da duyet cua thiet ke hien hanh — nguon da duyet cho cac buoc tiep theo.
      * Chi doc: khong mo bo moi. Tim o moi execution duoc ho tro (bo duyet truoc khi doi bo
      * bien dich van hop le), kiem lai thiet ke nguon, file master/o theo sha256 va ban duyet.
      *
-     * `$deep` doc lai file va so sha256 (cong proxy); panel chi kiem file con ton tai.
+     * `$deep` doc lai file va so sha256 (kiem tra nguon); panel chi kiem file con ton tai.
      *
      * @return array{set_id: string, review_stage_id: string, design_stage_id: string, master_image_id: string, master_artifact_id: string, master_artifact_sha256: string}
      */
     public function approvedSheet(string $projectId, bool $deep = true): array
     {
-        [$stage, , $canonicalHash] = $this->context($projectId);
+        [$stage, $canonicalHash] = $this->approvedSource($projectId);
         $supported = array_map('strval', (array) config('video.superyacht.model_sheet.master.supported_executions'));
         $images = VideoDesignImage::query()
             ->where('project_id', $projectId)
@@ -343,7 +343,7 @@ final class ModelSheetService
         }
 
         throw new RuntimeException($problem === null
-            ? 'Model sheet của bản thiết kế hiện hành chưa được duyệt — duyệt model sheet trước proxy 3D.'
+            ? 'Model sheet của bản thiết kế hiện hành chưa được duyệt — duyệt model sheet trước.'
             : 'Model sheet đã duyệt không còn hợp lệ: '.$problem);
     }
 
@@ -359,7 +359,6 @@ final class ModelSheetService
             'design_name' => $design['name'],
             'design_stage_id' => $design['stage_id'],
             'design_warnings' => count($design['check']['warnings'] ?? []),
-            'proxy_ready' => false,
             'source_error' => $sourceError,
             'models' => array_map(static fn (array $entry): array => [
                 'value' => (string) $entry['model'],
@@ -377,12 +376,17 @@ final class ModelSheetService
             'reviewed' => false,
             'qa' => null,
             'sheet' => null,
+            'design_note' => null,
         ];
 
         try {
             $base['sheet'] = $this->approvedSheet($projectId, false);
-            $base['proxy_ready'] = true;
         } catch (RuntimeException) {
+        }
+
+        if ($base['sheet'] !== null && $design['stage_id'] !== null && $base['sheet']['design_stage_id'] === $design['stage_id'] && ! $design['current']) {
+            $base['source_error'] = null;
+            $base['design_note'] = 'Bản thiết kế nguồn là bản đã duyệt của model sheet này và vẫn hiệu lực. Prompt/contract Phase 3 đã có revision mới hơn — chỉ chạy thiết kế mới khi muốn đổi thiết kế (tính phí, phải làm lại model sheet).';
         }
 
         if ($set === null) {
@@ -511,7 +515,7 @@ final class ModelSheetService
 
     /**
      * Loi chan duyet: thieu o, o sai kich thuoc hoac sai lien ket master, xu ly loi, file
-     * master/o mat. `$deep` doc lai file va so sha256 (duyet, xu ly lai, cong proxy); panel
+     * master/o mat. `$deep` doc lai file va so sha256 (duyet, xu ly lai, kiem tra nguon); panel
      * chi kiem file con ton tai.
      */
     private function blockingProblem(VideoDesignImage $image, VideoArtifact $artifact, bool $deep = false): ?string
@@ -712,6 +716,41 @@ final class ModelSheetService
         }
 
         return [$stage, $design, $canonicalHash, (string) $category->id, $workflow];
+    }
+
+
+    /**
+     * Ban thiet ke nguon cua model sheet da duyet: ban hien hanh (khop cau hinh chay moi) neu co;
+     * khong thi luot thiet ke thanh cong MOI NHAT cua du an voi ket qua kiem da luu dat PASS. Doi
+     * prompt/hop dong phase-3 cho luot thiet ke moi khong lam master, QA, canonical da duyet cua ban
+     * cu het hieu luc; chi mot luot thiet ke moi thanh cong moi thay nguon.
+     *
+     * @return array{0: VideoPlanningStage, 1: string}
+     */
+    public function approvedSource(string $projectId): array
+    {
+        try {
+            [$stage, , $canonicalHash] = $this->context($projectId);
+
+            return [$stage, $canonicalHash];
+        } catch (RuntimeException $current) {
+            $project = VideoProject::query()->with('article.category')->find($projectId);
+            $workflow = (string) (config('video.superyacht.contracts.categories')[$project?->article?->category?->slug ?? ''] ?? '');
+            $stage = VideoPlanningStage::query()
+                ->where('project_id', $projectId)
+                ->where('stage', PlanningStageName::YACHT_DESIGN->value)
+                ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+                ->orderByDesc('planning_revision')
+                ->first();
+            $canonicalHash = $stage?->output_json['design']['data']['canonical']['hash'] ?? null;
+
+            if ($workflow === '' || $workflow !== (string) config('video.superyacht.workflow_code') || $stage === null
+                || ($stage->output_json['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($canonicalHash) || $canonicalHash === '') {
+                throw $current;
+            }
+
+            return [$stage, $canonicalHash];
+        }
     }
 
     /** @return array<string, mixed> */

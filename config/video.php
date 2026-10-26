@@ -855,20 +855,9 @@ return [
                 // {target}: muc tieu MS8 cua tung thiet ke (ModelSheetFacts::ms8Target), cung nguon voi nhan goc.
                 'MS8' => 'Close-up camera framed on {target}, lens equivalent to about 85 mm.',
             ],
-            'frames' => [
-                'MS1' => ['projection' => 'orthographic', 'azimuth' => 90, 'elevation' => 0, 'width' => 1536, 'height' => 1024, 'target' => 'yacht'],
-                'MS2' => ['projection' => 'perspective', 'azimuth' => 35, 'eye_height' => 'G7', 'focal_mm' => 85, 'width' => 1536, 'height' => 1024, 'target' => 'yacht'],
-                'MS3' => ['projection' => 'perspective', 'azimuth' => 215, 'eye_height' => 'G7', 'focal_mm' => 85, 'width' => 1536, 'height' => 1024, 'target' => 'yacht'],
-                'MS4' => ['projection' => 'orthographic', 'azimuth' => 0, 'elevation' => 0, 'width' => 1024, 'height' => 1536, 'target' => 'yacht'],
-                'MS5' => ['projection' => 'orthographic', 'azimuth' => 180, 'elevation' => 0, 'width' => 1024, 'height' => 1536, 'target' => 'yacht'],
-                'MS6' => ['projection' => 'orthographic', 'azimuth' => 0, 'elevation' => 90, 'width' => 1024, 'height' => 1536, 'target' => 'yacht'],
-                'MS7' => ['projection' => 'perspective', 'azimuth' => 35, 'elevation' => 30, 'focal_mm' => 85, 'width' => 1536, 'height' => 1024, 'target' => 'yacht'],
-                'MS8' => ['projection' => 'perspective', 'azimuth' => 'G9.0', 'elevation' => 'G9.1', 'focal_mm' => 85, 'width' => 1536, 'height' => 1024, 'target' => 'n1'],
-            ],
             /*
              * Model sheet master: MOT request AI tao MOT anh 3840x2160, luoi 2 hang x 4 cot,
-             * roi may chu cat tam o 960x1080 theo toa do co dinh. Khong dung proxy lam dau vao
-             * (luong: thiet ke -> model sheet -> proxy 3D). Nhan va duong phan cach do giao dien
+             * roi may chu cat tam o 960x1080 theo toa do co dinh. Luot render dung prompt QA da dat. Nhan va duong phan cach do giao dien
              * ve de len; anh nguon giu sach chu.
              *
              * Lech spec v6.3 Phase 3 Step 10 (spec render MS1 truoc roi MS2-MS8 theo MS1): o day
@@ -877,7 +866,7 @@ return [
             'master' => [
                 // v2: noi dung prompt do Sonnet QA bien tap tu ban thiet ke, code kiem va ghep.
                 'execution' => 'model-sheet-master-v2',
-                // Bo da duyet o cac execution nay van la model sheet hop le cho proxy.
+                // Bo da duyet o cac execution nay van la model sheet hop le.
                 'supported_executions' => ['model-sheet-master-v1', 'model-sheet-master-v2'],
                 'size' => '3840x2160',
                 'variations' => 1,
@@ -948,98 +937,7 @@ return [
             'occlusion' => 'Keep every part at its stated shape, size and position. Where this camera cannot see a part, leave it hidden; do not move, duplicate, enlarge or make anything transparent to reveal it.',
         ],
 
-        /*
-         * Proxy 3D (Phase 3P): ProxySpec tu nguon dong bang cua master model sheet da duyet, bo dung
-         * JS chung (public/assets/js/proxy) chay trong worker Node cho artifact chinh thuc. Three.js
-         * thay Blender cua spec; cac yeu cau kiem hinh hoc giu nguyen.
-         */
-        'proxy' => [
-            'execution' => 'proxy-3d-v2',
-            'review_execution' => 'proxy-3d-review-v2',
-            'node_binary' => env('PROXY_NODE_BINARY', 'node'),
-            'worker' => 'scripts/proxy/worker.mjs',
-            // File cua bo dung/worker: hash vao dau vao revision (doi code thi revision cu het hieu luc).
-            'builder_files' => ['public/assets/js/proxy/builder.js', 'public/assets/js/proxy/raster.js', 'public/assets/js/proxy/glb.js', 'scripts/proxy/worker.mjs', 'scripts/proxy/png.mjs'],
-            'worker_timeout' => 300,
-            'fill' => 0.9,
-            // Cong duyet theo spec Phase 3P: IoU tung goc MS1–MS7 va sai so moc <= 3% LOA.
-            'iou_min' => 0.85,
-            'iou_views' => ['MS1', 'MS2', 'MS3', 'MS4', 'MS5', 'MS6', 'MS7'],
-            'landmark_ratio' => 0.03,
-            // Goc co mask/moc tham chieu; MS8 chi danh dau moc (khong ap nguong mask toan than).
-            'reference_views' => ['MS1', 'MS2', 'MS3', 'MS4', 'MS5', 'MS6', 'MS7', 'MS8'],
-            // Nguong buoc mau khi de xuat mask (loang nen tung buoc nho); nguoi dung chinh va xac nhan.
-            'reference_tolerance' => 3,
-            'max_mapping_bytes' => 262144,
-            'assumptions' => [
-                'G1' => ['label' => 'Đường bo mái từ mép boong cao nhất lên đỉnh trên trục tâm (siêu elip)', 'value' => 2.5, 'unit' => 'số mũ'],
-                'G2' => ['label' => 'Thân vỏ dưới thẳng đứng tới cao độ', 'value' => 6, 'unit' => 'm'],
-                'G3' => ['label' => 'Phần dưới nước chữ U (siêu elip số mũ 4); mũi chạm đường nước tại x; ky phẳng từ x đến x', 'value' => [0.047, 0.10, 0.90], 'unit' => 'phần LOA'],
-                'G4' => ['label' => 'Gân N2 đổi hướng dọc đường chéo đi qua mốc ripple_rotation (dọc phía trước, ngang phía sau); G4 × LOA ÷ 2 là bề rộng đoạn bo chỗ đổi hướng; vùng kiểm dọc/ngang cách turn_x ± (G4 + 0.04)', 'value' => 0.05, 'unit' => 'phần LOA'],
-                'G5' => ['label' => 'Gương ở tư thế cất: góc nghiêng đĩa; đường kính trụ đỡ', 'value' => [15, 0.6], 'unit' => '° ; m'],
-                'G6' => ['label' => 'Bề rộng bậc thang đuôi; bề rộng rãnh trượt tender', 'value' => [2.5, 3.5], 'unit' => 'm'],
-                'G7' => ['label' => 'Cao độ camera "eye level"', 'value' => 10, 'unit' => 'm'],
-                'G8' => ['label' => 'Thành hốc terrace mỗi bên', 'value' => 1, 'unit' => 'm'],
-                'G9' => ['label' => 'Camera MS8: phương vị (góc sau bên trái); góc nhìn xuống', 'value' => [135, 30], 'unit' => '°'],
-                'G10' => ['label' => 'Độ lõm tối đa của cửa có mốc so với vỏ proxy (sâu hơn coi là mâu thuẫn, không dựng)', 'value' => 1.5, 'unit' => 'm'],
-                'M1' => ['label' => 'Sơn vỏ: độ nhám; lớp phủ bóng', 'value' => [0.35, 0.8], 'unit' => '0–1'],
-                'M2' => ['label' => 'Nhôm thân trên phủ mờ: độ nhám; độ kim loại', 'value' => [0.6, 0.2], 'unit' => '0–1'],
-                'G11' => ['label' => 'Mũi loe (flared bow): bề rộng đường nước so với mép boong tại mũi; x nơi đạt đủ bề rộng và mặt cắt chuyển từ V sang U', 'value' => [0.55, 0.25], 'unit' => 'tỉ lệ ; phần LOA'],
-                'G12' => ['label' => 'Bán kính bo góc khe canyon (thiết kế ghi "radiused corners", không cho số)', 'value' => 0.5, 'unit' => 'm'],
-                'G13' => ['label' => 'Độ lõm kính cửa hàng W4–W8 sau mặt vỏ (thiết kế không cho số; W1–W3 lõm theo mốc)', 'value' => 0.2, 'unit' => 'm'],
-                'G14' => ['label' => 'Độ sâu rãnh ray lõm của rãnh trượt tender (EXT08 ghi "recessed rails", không cho số)', 'value' => 0.08, 'unit' => 'm'],
-                'M3' => ['label' => 'Sàn terrace (thiết kế không nêu vật liệu): màu đá sáng trung tính', 'value' => '#D9D6CF', 'unit' => ''],
-                'M4' => ['label' => 'Phần dưới nước (thiết kế không nêu sơn chống hà): dùng màu vỏ', 'value' => 'hull', 'unit' => ''],
-                'M5' => ['label' => 'Mã màu cho "matte grey running surfaces" của rãnh trượt (EXT08 chỉ ghi tên màu)', 'value' => '#9A9EA2', 'unit' => ''],
-            ],
-            'tolerances' => [
-                'profile_m' => 0.05,
-                'plan_m' => 0.05,
-                'crest_x' => 0.005,
-                'crest_z_m' => 0.05,
-                'ratio' => 0.02,
-                'landmark_m' => 0.01,
-                'rib_longitudinal_deg' => 10,
-                'rib_transverse_deg' => 80,
-                'detail_m' => 0.1,
-                'detail_dim_m' => 0.01,
-                'window_stretch' => 0.1,
-                'pocket_coverage' => 0.95,
-                'deck_m' => 0.3,
-            ],
-        ],
-
-        'build_state_text' => [
-            'parts' => [
-                'keel_blocks' => 'keel blocks',
-                'hull_shell' => 'hull shell',
-                'main_deck' => 'main deck',
-                'superstructure' => 'superstructure',
-                'glazing' => 'glazing',
-                'hull_doors' => 'hull doors',
-                'observation_blister' => 'observation blister',
-                'helideck' => 'helideck',
-                'mast' => 'mast',
-                'stern_platform' => 'stern platform',
-                'terraces' => 'terraces',
-                'scaffolding_on_hull' => 'scaffolding on the hull',
-            ],
-            'surfaces' => [
-                'scale_model_white' => 'white scale-model finish',
-                'bare_steel' => 'bare steel',
-                'steel_primer' => 'red-oxide primer',
-                'raw_aluminium' => 'raw unpainted aluminium',
-                'protective_film' => 'white protective film',
-                'filler_primer' => 'grey filler and primer',
-                'final_paint' => 'final paint',
-                'final_glass' => 'final glass',
-                'teak' => 'teak',
-                'other_final' => 'final finish',
-            ],
-        ],
-
         'spec_version' => '6.3.0',
-
         'workflow_code' => 'superyacht_v6_3',
         'schema_namespace' => 'superyacht',
         'spec_path' => resource_path('ai/superyacht/spec_v6_3_en.md'),
@@ -1057,7 +955,7 @@ return [
                             'instructions' => [],
                             'executor' => 'none',
                             'model_profile' => null,
-                            'contract_version' => '3',
+                            'contract_version' => '5',
                             'stages' => [
                                 'draft' => ['canonical'],
                                 'lock' => ['canonical', 'constraints'],
@@ -1088,7 +986,7 @@ return [
                             'model_profile' => null,
                             'contract_version' => '2',
                             'outputs' => [
-                                'compiled_shots' => ['namespace' => 'superyacht', 'schema' => 'CompiledShot', 'version' => '6.3.0', 'pointer' => '/data/compiled_shots', 'mode' => 'each_item', 'required' => true, 'items' => ['count' => 1, 'key' => 'shot_id'], 'source' => 'Phase 0 Step 6 data contract: compiled_shots[] (Phase 6C); Phase 6C Output is one item (schema 5); one shot per task'],
+                                'compiled_shots' => ['namespace' => 'superyacht', 'schema' => 'CompiledShot', 'version' => '6.3.1', 'pointer' => '/data/compiled_shots', 'mode' => 'each_item', 'required' => true, 'items' => ['count' => 1, 'key' => 'shot_id'], 'source' => 'Phase 0 Step 6 data contract: compiled_shots[] (Phase 6C); Phase 6C Output is one item (schema 5); one shot per task'],
                             ],
                             'records' => [
                                 'lock/spec' => ['namespace' => 'superyacht', 'schema' => 'LockRecord', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'match' => ['/lock_type' => ['spec']], 'source' => 'Phase 6C Step 7: the compiled spec is written with a lock record; Pipeline map: SPEC FREEZE'],
@@ -1104,9 +1002,9 @@ return [
                         ['phase' => 'phase-7a', 'role' => 'review', 'slot' => 'decision', 'namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'source' => 'ReviewDecision.item_type animatic; reason ANIMATIC_LOW'],
                         ['phase' => 'phase-8', 'role' => 'review', 'slot' => 'decision', 'namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'source' => 'ReviewDecision.item_type clip; Phase 8 UNCERTAIN clips go to the human queue'],
                         ['phase' => 'phase-9q', 'role' => 'review', 'slot' => 'decision', 'namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'source' => 'ReviewDecision.item_type export; reason PUBLISH'],
-                        ['phase' => 'phase-7', 'role' => 'input', 'slot' => 'compiled_shot', 'namespace' => 'superyacht', 'schema' => 'CompiledShot', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 7 Input (v6.3): frozen CompiledShots (Phase 6C)'],
+                        ['phase' => 'phase-7', 'role' => 'input', 'slot' => 'compiled_shot', 'namespace' => 'superyacht', 'schema' => 'CompiledShot', 'version' => '6.3.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 7 Input (v6.3): frozen CompiledShots (Phase 6C)'],
                         ['phase' => 'phase-7', 'role' => 'input', 'slot' => 'render_request', 'namespace' => 'superyacht', 'schema' => 'RenderRequest', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 7 Input (v6.3): a frozen RenderRequest built from them for each call'],
-                        ['phase' => 'phase-8', 'role' => 'input', 'slot' => 'compiled_shot', 'namespace' => 'superyacht', 'schema' => 'CompiledShot', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 8 v6: motion prompts, references and tool parameters come from the frozen compiled spec (Phase 6C)'],
+                        ['phase' => 'phase-8', 'role' => 'input', 'slot' => 'compiled_shot', 'namespace' => 'superyacht', 'schema' => 'CompiledShot', 'version' => '6.3.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 8 v6: motion prompts, references and tool parameters come from the frozen compiled spec (Phase 6C)'],
                         ['phase' => 'phase-8', 'role' => 'input', 'slot' => 'render_request', 'namespace' => 'superyacht', 'schema' => 'RenderRequest', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Schema 8 RenderRequest: frozen right before each provider call, kind video / video_extend / video_edit'],
                     ],
                 ],
@@ -1116,6 +1014,7 @@ return [
         // Thu muc 8 file JSON Schema va base URI dung trong $id cua chung.
         'schema_dir' => resource_path('ai/superyacht/schemas'),
         'schema_base_uri' => 'https://superyacht.local/schemas/',
+        'schema_versions' => ['CompiledShot' => '6.3.1'],
         'schemas' => [
             'CanonicalDesign', 'BuildState', 'Constraint', 'ShotSpec',
             'CompiledShot', 'LockRecord', 'ReviewDecision', 'RenderRequest',
