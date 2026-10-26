@@ -34,6 +34,8 @@ enum DesignImageStatus: string
     case FAILED = 'failed';
     case APPROVED = 'approved';
     case SUPERSEDED = 'superseded';
+    // Nguoi duyet tu choi ca anh (model sheet master): khong duyet mot phan cua cung mot anh.
+    case REJECTED = 'rejected';
 
     /** @return list<string> */
     public static function values(): array
@@ -52,6 +54,7 @@ enum DesignImageStatus: string
             self::FAILED => 'Failed',
             self::APPROVED => 'Approved',
             self::SUPERSEDED => 'Superseded',
+            self::REJECTED => 'Rejected',
         };
     }
 

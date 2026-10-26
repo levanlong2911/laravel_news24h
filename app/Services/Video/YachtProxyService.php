@@ -8,223 +8,198 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoArtifact;
 use App\Models\VideoPlanningStage;
-use App\Video\YachtDesign\YachtDesignCheck;
+use App\Video\Proxy\ProxySpecCompiler;
+use App\Video\Proxy\ProxySpecValidator;
+use App\Video\Proxy\ProxyVerdict;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Str;
+use JsonException;
 use RuntimeException;
 use Throwable;
 
+/**
+ * Proxy 3D (Phase 3P): trang, revision, dieu phoi dung va duyet.
+ *
+ * Moi lan "Luu mapping & dung" = mot revision PROXY_3D (execution proxy-3d-v2): mapping + ProxySpec
+ * bien dich tu nguon dong bang cua master da duyet; spec du dieu kien thi worker Node dung, xuat GLB,
+ * render anh kiem va doi chieu tham chieu. Dau vao trung (nguon, spec, mapping, tham chieu, code bo
+ * dung, nguong) thi tra revision da co, khong dung lai. Mo trang khong dung, khong goi model.
+ */
 final class YachtProxyService
 {
-    public const EXECUTION = 'proxy-3d-v1';
-
-    public const REVIEW_EXECUTION = 'proxy-3d-review-v1';
-
-    public const KINDS = ['clay', 'parts'];
+    public const STATUS_LABELS = [
+        'spec_incomplete' => 'ProxySpec chưa đủ — chưa dựng',
+        'checks_failed' => 'Đã dựng — chưa đạt',
+        'awaiting_reference' => 'Đã dựng — chờ xác nhận tham chiếu',
+        'passed' => 'Đạt — chờ duyệt',
+    ];
 
     public function __construct(
-        private readonly PlanningStageStore $stageStore,
         private readonly YachtDesignService $design,
+        private readonly YachtProxySource $source,
+        private readonly PlanningStageStore $stageStore,
+        private readonly YachtProxyWorker $worker,
+        private readonly YachtProxyReferenceService $references,
         private readonly FilesystemFactory $storage,
     ) {}
-
-    /** @return array<string, mixed> */
-    public function payload(string $projectId): array
-    {
-        $panel = $this->design->panel($projectId);
-
-        if (! $panel['current'] || ($panel['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($panel['stage_id'])) {
-            throw new RuntimeException('Chưa có bản thiết kế Phase 3 hiện hành đạt kiểm tự động.');
-        }
-
-        $stage = VideoPlanningStage::query()->whereKey($panel['stage_id'])->where('project_id', $projectId)->first();
-        $canonical = $stage?->output_json['design']['data']['canonical'] ?? null;
-        $hash = is_array($canonical) ? ($canonical['hash'] ?? null) : null;
-
-        if ($stage === null || $stage->status !== VideoPlanningStageStatus::SUCCEEDED->value || ! is_string($hash) || $hash === '') {
-            throw new RuntimeException('Bản thiết kế nguồn không có dữ liệu canonical hoặc thiếu hash.');
-        }
-
-        $config = (array) config('video.superyacht.proxy');
-        $approved = (array) config('video.superyacht.model_sheet.approved');
-        $data = [
-            'builder' => (string) $config['builder'],
-            'builder_sha256' => (string) hash_file('sha256', public_path('assets/js/yacht-proxy.js')),
-            'design_stage_id' => (string) $stage->id,
-            'design_canonical_hash' => $hash,
-            'canonical' => array_intersect_key($canonical, array_flip((array) $config['canonical_keys'])),
-            'features' => array_values((array) ($approved[$hash]['proxy'] ?? [])),
-            'views' => (array) config('video.superyacht.model_sheet.frames'),
-            'assumptions' => (array) $config['assumptions'],
-            'tolerances' => (array) $config['tolerances'],
-            'fill' => (float) $config['fill'],
-        ];
-        $data['input_sha256'] = hash('sha256', (string) json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-
-        return $data;
-    }
 
     /** @return array<string, mixed> */
     public function page(string $projectId): array
     {
         $design = $this->design->panel($projectId);
+        $base = ['design_name' => $design['name'], 'design_stage_id' => $design['stage_id'], 'source_error' => null, 'mapping' => null, 'proxy_spec' => ['spec' => null, 'errors' => [], 'error' => null], 'references' => [], 'revisions' => [], 'approved_id' => null, 'approved_problem' => null];
 
         try {
-            [$payload, $error] = [$this->payload($projectId), null];
+            $source = $this->source->resolve($projectId);
         } catch (RuntimeException $e) {
-            [$payload, $error] = [null, $e->getMessage()];
+            return ['source_error' => $e->getMessage(), 'proxy_spec' => ['spec' => null, 'errors' => [], 'error' => $e->getMessage()]] + $base;
         }
 
-        $approved = $payload === null ? null : $this->approvedStage($projectId, (string) $payload['input_sha256']);
-        $revisions = VideoPlanningStage::query()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::PROXY_3D->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->orderByDesc('planning_revision')
-            ->get()
-            ->map(fn (VideoPlanningStage $stage): array => [
-                'id' => (string) $stage->id,
-                'revision' => (int) $stage->planning_revision,
-                'created_at' => $stage->finished_at ?? $stage->created_at,
-                'created_by' => (string) ($stage->output_json['created_by'] ?? ''),
-                'current' => $payload !== null && ($stage->input_json['input_sha256'] ?? null) === $payload['input_sha256'],
-                'approved' => $approved !== null && (string) $approved->id === (string) $stage->id,
-                'pass' => ($stage->output_json['verdict']['pass'] ?? false) === true,
-                'failed' => array_values((array) ($stage->output_json['verdict']['failed'] ?? [])),
-                'artifacts' => array_values((array) ($stage->output_json['artifacts'] ?? [])),
-            ])
-            ->all();
+        $latest = $this->revisions($projectId)->first();
+        $mapping = is_array($latest?->output_json['mapping'] ?? null) ? $latest->output_json['mapping'] : ['parts' => [], 'unused' => (object) [], 'confirmed' => (object) []];
+        $spec = (new ProxySpecCompiler)->compile($source, self::specConfig(), $mapping);
+        $approval = $this->approvedState($projectId);
+        $current = $this->currentInput($source) + ['references_sha256' => $this->references->fingerprint($projectId, $source)['sha256']];
 
         return [
-            'design_name' => $design['name'],
-            'design_stage_id' => $design['stage_id'],
-            'payload' => $payload,
-            'error' => $error,
-            'approved_id' => $approved === null ? null : (string) $approved->id,
-            'revisions' => $revisions,
+            'mapping' => $mapping,
+            'proxy_spec' => ['spec' => $spec, 'errors' => (new ProxySpecValidator)->errors($spec), 'error' => null],
+            'references' => $this->references->current($projectId, $source),
+            'revisions' => $this->revisions($projectId)->map(fn (VideoPlanningStage $stage): array => $this->revisionView($stage, $current, $approval['stage']))->all(),
+            'approved_id' => $approval['stage'] === null ? null : (string) $approval['stage']->id,
+            'approved_problem' => $approval['problem'],
+        ] + $base;
+    }
+
+    /** @return array{assumptions: array<string, mixed>, frames: array<string, mixed>, registry: list<string>, tolerances: array<string, mixed>} */
+    public static function specConfig(): array
+    {
+        return [
+            'assumptions' => (array) config('video.superyacht.proxy.assumptions'),
+            'frames' => (array) config('video.superyacht.model_sheet.frames'),
+            'registry' => array_keys((array) config('video.superyacht.build_state_text.parts')),
+            'tolerances' => (array) config('video.superyacht.proxy.tolerances'),
         ];
     }
 
     /**
-     * @param  array{input_sha256: string, report: string, cameras: string}  $data
-     * @param  array<string, mixed>  $images
+     * Luu mapping (+ xac nhan gia dinh) thanh revision va dung neu ProxySpec du dieu kien.
+     *
+     * @param  array<string, string>  $confirm  id gia dinh => gia tri JSON nguoi dung da thay khi tick
      * @return array{0: ?VideoPlanningStage, 1: string}
      */
-    public function save(string $projectId, string $creator, array $data, array $images, ?UploadedFile $glb): array
+    public function build(string $projectId, string $creator, string $mappingJson, array $confirm): array
     {
+        $temp = [];
+
         try {
-            $payload = $this->payload($projectId);
-            [$report, $cameras, $files] = $this->verified($payload, $data, $images, $glb);
-            $verdict = $this->verdict($payload, $report);
+            $source = $this->source->resolve($projectId);
+            $previous = $this->revisions($projectId)->first()?->output_json['mapping']['confirmed'] ?? [];
+            $mapping = self::mapping($mappingJson, (array) $previous);
+            $first = (new ProxySpecCompiler)->compile($source, self::specConfig(), $mapping);
+            $values = array_column($first['assumptions'], 'value', 'id');
+
+            foreach ($confirm as $id => $json) {
+                $seen = json_decode((string) $json, true);
+
+                if (! array_key_exists($id, $values) || ! ProxySpecCompiler::same($seen, $values[$id])) {
+                    throw new RuntimeException("Giả định {$id} đã đổi giá trị so với lúc xác nhận — tải lại trang rồi xác nhận lại.");
+                }
+
+                $mapping['confirmed'][$id] = $values[$id];
+            }
+
+            $spec = (new ProxySpecCompiler)->compile($source, self::specConfig(), $mapping);
+            $errors = (new ProxySpecValidator)->errors($spec);
+            $refs = $this->references->forBuild($projectId, $source);
+            $temp = $refs['temp'];
+            $input = $this->currentInput($source) + [
+                'spec_sha256' => $spec['spec_sha256'],
+                'mapping_sha256' => hash('sha256', (string) json_encode($mapping, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+                'references_sha256' => $refs['sha256'],
+            ];
         } catch (RuntimeException $e) {
+            self::cleanup($temp);
+
             return [null, $e->getMessage()];
         }
 
-        [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::PROXY_3D, [
-            'execution' => self::EXECUTION,
-            'design_stage_id' => $payload['design_stage_id'],
-            'design_canonical_hash' => $payload['design_canonical_hash'],
-            'input_sha256' => $payload['input_sha256'],
-            'builder' => $payload['builder'],
-            'builder_sha256' => $payload['builder_sha256'],
-            'attempt' => (string) Str::uuid(),
-        ]);
+        [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::PROXY_3D, $input);
 
         if ($token === null) {
-            return [null, 'Không ghi được revision proxy ('.$reason.').'];
+            self::cleanup($temp);
+
+            return $reason === 'already_succeeded' ? [$stage, 'already_exists'] : [null, 'Không ghi được revision proxy ('.$reason.').'];
         }
 
         $disk = (string) config('video.openai_image.disk');
-        $written = [];
+        $dir = $projectId.'/proxy/'.$stage->id;
+        $created = [];
 
         try {
-            $artifacts = [];
+            $output = ['created_by' => $creator, 'mapping' => $mapping, 'spec' => $spec, 'spec_errors' => $errors];
 
-            foreach ($files as $key => $file) {
-                $path = $projectId.'/proxy/'.$stage->id.'/'.$key.'.'.$file['extension'];
-                $this->storage->disk($disk)->put($path, $file['bytes']);
-                $written[] = $path;
-                $artifact = VideoArtifact::create([
-                    'project_id' => $projectId,
-                    'artifact_type' => $file['type'],
-                    'role' => 'proxy_'.$file['kind'],
-                    'storage_disk' => $disk,
-                    'storage_path' => $path,
-                    'mime_type' => $file['mime'],
-                    'file_size' => strlen($file['bytes']),
-                    'sha256' => hash('sha256', $file['bytes']),
-                    'width' => $file['width'],
-                    'height' => $file['height'],
-                    'metadata_json' => ['proxy_stage_id' => (string) $stage->id, 'view_id' => $file['view'], 'kind' => $file['kind']],
+            if (! $spec['ready'] || $errors !== []) {
+                $output += ['status' => 'spec_incomplete', 'verdict' => ProxyVerdict::evaluate($spec, $errors, null, self::gate()), 'artifacts' => []];
+            } else {
+                $config = (array) config('video.superyacht.proxy');
+                $result = $this->worker->run([
+                    'job' => 'build',
+                    'spec' => $spec,
+                    'tolerances' => $config['tolerances'],
+                    'fill' => $config['fill'],
+                    'out_dir' => $this->storage->disk($disk)->path($dir),
+                    'references' => $refs['references'],
+                    'iou_views' => $config['iou_views'],
+                    'iou_min' => $config['iou_min'],
+                    'landmark_ratio' => $config['landmark_ratio'],
                 ]);
-                $artifacts[] = [
-                    'key' => $key,
-                    'view_id' => $file['view'],
-                    'kind' => $file['kind'],
-                    'artifact_id' => (string) $artifact->id,
-                    'sha256' => (string) $artifact->sha256,
-                    'width' => $file['width'],
-                    'height' => $file['height'],
+                [$artifacts, $report, $cameras] = $this->collect($projectId, (string) $stage->id, $disk, $dir, (array) $result['files'], $created);
+                $verdict = ProxyVerdict::evaluate($spec, $errors, $report, self::gate(), $refs['cameras']);
+                $output += [
+                    'status' => $verdict['pass'] ? 'passed' : ($verdict['failed'] === [] ? 'awaiting_reference' : 'checks_failed'),
+                    'report' => $report,
+                    'cameras' => $cameras,
+                    'verdict' => $verdict,
+                    'artifacts' => $artifacts,
                 ];
             }
 
-            $saved = $this->stageStore->finishSucceeded((string) $stage->id, $token, '', [
-                'revision' => (int) $stage->planning_revision,
-                'created_by' => $creator,
-                'cameras' => $cameras,
-                'report' => $report,
-                'verdict' => $verdict,
-                'assumptions' => $payload['assumptions'],
-                'artifacts' => $artifacts,
-            ]);
-
-            if (! $saved) {
-                throw new RuntimeException('lượt lưu bị giành mất');
+            if (! $this->stageStore->finishSucceeded((string) $stage->id, $token, '', $output)) {
+                throw new RuntimeException('lượt dựng bị giành mất');
             }
         } catch (Throwable $e) {
             $this->stageStore->finishFailed((string) $stage->id, $token, $e->getMessage());
-            VideoArtifact::query()->whereIn('storage_path', $written)->where('storage_disk', $disk)->delete();
-            $this->storage->disk($disk)->delete($written);
+            VideoArtifact::query()->whereIn('id', $created)->delete();
+            $this->storage->disk($disk)->deleteDirectory($dir);
 
-            return [null, 'Không lưu được revision proxy ('.$e->getMessage().').'];
+            return [null, 'Không dựng được proxy ('.$e->getMessage().').'];
+        } finally {
+            self::cleanup($temp);
         }
 
-        return [VideoPlanningStage::query()->find($stage->id), 'saved'];
+        return [VideoPlanningStage::query()->find($stage->id), 'built'];
     }
 
     /** @return array{0: bool, 1: string} */
     public function approve(string $projectId, string $stageId, ?string $adminId): array
     {
-        try {
-            $payload = $this->payload($projectId);
-        } catch (RuntimeException $e) {
-            return [false, $e->getMessage()];
-        }
-
-        $stage = VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::PROXY_3D->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
+        $stage = $this->revisions($projectId)->first(fn (VideoPlanningStage $s): bool => (string) $s->id === $stageId);
 
         if ($stage === null) {
             return [false, 'Revision proxy không tồn tại trong dự án này.'];
         }
 
-        if (($stage->input_json['input_sha256'] ?? null) !== $payload['input_sha256']) {
-            return [false, 'Revision này dựng từ dữ liệu thiết kế hoặc cấu hình cũ — lưu một revision mới từ trang hiện tại rồi duyệt.'];
-        }
-
-        if (($stage->output_json['verdict']['pass'] ?? false) !== true) {
-            return [false, 'Revision này chưa đạt hết bảng kiểm do server tính lại ('.implode(', ', (array) ($stage->output_json['verdict']['failed'] ?? [])).') — không duyệt được.'];
+        try {
+            $source = $this->source->resolve($projectId);
+            $this->validate($projectId, $stage, $source);
+        } catch (RuntimeException $e) {
+            return [false, $e->getMessage()];
         }
 
         [$review, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::PROXY_3D_REVIEW, [
-            'execution' => self::REVIEW_EXECUTION,
+            'execution' => (string) config('video.superyacht.proxy.review_execution'),
             'proxy_stage_id' => (string) $stage->id,
-            'input_sha256' => $payload['input_sha256'],
+            'source_sha256' => (string) $source['source_sha256'],
         ], true);
 
         if ($token === null) {
@@ -236,256 +211,306 @@ final class YachtProxyService
         return $saved ? [true, 'approved'] : [false, 'Lượt duyệt proxy bị giành mất khi lưu — tải lại trang.'];
     }
 
+    /**
+     * Revision da duyet CON HIEU LUC: cung dieu kien nhu luc duyet (nguon, code bo dung, nguong,
+     * tham chieu/camera, spec, artifact nguyen ven, cong dat) kiem lai moi lan doc — doi bat ky
+     * dieu kien nao sau khi duyet thi khong tra revision cu cho cac phase sau.
+     */
     public function approvedFor(string $projectId): ?VideoPlanningStage
     {
-        try {
-            $payload = $this->payload($projectId);
-        } catch (RuntimeException) {
-            return null;
-        }
-
-        return $this->approvedStage($projectId, (string) $payload['input_sha256']);
+        return $this->approvedState($projectId)['stage'];
     }
 
-    private function approvedStage(string $projectId, string $inputSha): ?VideoPlanningStage
+    /** @return array{stage: ?VideoPlanningStage, problem: ?string} problem: revision da duyet nhung het hieu luc */
+    public function approvedState(string $projectId): array
     {
+        try {
+            $source = $this->source->resolve($projectId);
+        } catch (RuntimeException $e) {
+            return ['stage' => null, 'problem' => null];
+        }
+
         $review = VideoPlanningStage::query()
             ->where('project_id', $projectId)
             ->where('stage', PlanningStageName::PROXY_3D_REVIEW->value)
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->orderByDesc('planning_revision')
             ->get()
-            ->first(fn (VideoPlanningStage $row): bool => ($row->input_json['input_sha256'] ?? null) === $inputSha);
+            ->first(fn (VideoPlanningStage $row): bool => ($row->input_json['execution'] ?? null) === config('video.superyacht.proxy.review_execution') && ($row->input_json['source_sha256'] ?? null) === $source['source_sha256']);
+        $stage = $review === null ? null : $this->revisions($projectId)->first(fn (VideoPlanningStage $s): bool => (string) $s->id === ($review->input_json['proxy_stage_id'] ?? null));
 
-        return $review === null ? null : VideoPlanningStage::query()
-            ->whereKey($review->input_json['proxy_stage_id'] ?? null)
+        if ($stage === null) {
+            return ['stage' => null, 'problem' => null];
+        }
+
+        try {
+            $this->validate($projectId, $stage, $source);
+        } catch (RuntimeException $e) {
+            return ['stage' => null, 'problem' => 'Revision '.$stage->planning_revision.' đã duyệt nhưng hết hiệu lực: '.$e->getMessage()];
+        }
+
+        return ['stage' => $stage, 'problem' => null];
+    }
+
+    /**
+     * Xac nhan camera cua mot goc theo ProxySpec hien hanh (mapping cua revision gan nhat).
+     *
+     * @return array{0: bool, 1: string}
+     */
+    public function confirmCamera(string $projectId, string $view, string $creator): array
+    {
+        try {
+            $source = $this->source->resolve($projectId);
+            $mapping = $this->revisions($projectId)->first()?->output_json['mapping'] ?? [];
+            $spec = (new ProxySpecCompiler)->compile($source, self::specConfig(), (array) $mapping);
+            $camera = collect($spec['cameras'])->firstWhere('view', $view) ?? throw new RuntimeException("ProxySpec không có camera {$view}.");
+        } catch (RuntimeException $e) {
+            return [false, $e->getMessage()];
+        }
+
+        [$artifact, $reason] = $this->references->confirmCamera($projectId, $view, $camera, $creator);
+
+        return [$artifact !== null, $reason];
+    }
+
+    /**
+     * Dieu kien hieu luc cua mot revision cho nguon hien hanh — dung chung khi duyet va khi doc lai.
+     *
+     * @param  array<string, mixed>  $source
+     */
+    private function validate(string $projectId, VideoPlanningStage $stage, array $source): void
+    {
+        foreach ($this->currentInput($source) as $key => $value) {
+            if (($stage->input_json[$key] ?? null) !== $value) {
+                throw new RuntimeException('Revision dựng từ nguồn, code bộ dựng hoặc ngưỡng cũ ('.$key.') — dựng lại từ trang hiện tại.');
+            }
+        }
+
+        $refs = $this->references->fingerprint($projectId, $source);
+
+        if ($refs['sha256'] !== ($stage->input_json['references_sha256'] ?? null)) {
+            throw new RuntimeException('Tham chiếu camera/mask/mốc đã đổi sau khi dựng revision này — dựng lại.');
+        }
+
+        $spec = (array) ($stage->output_json['spec'] ?? []);
+        $errors = (new ProxySpecValidator)->errors($spec);
+
+        if (($spec['spec_sha256'] ?? null) !== ($stage->input_json['spec_sha256'] ?? null) || $errors !== []) {
+            throw new RuntimeException('ProxySpec lưu trong revision không còn hợp lệ: '.implode('; ', array_slice($errors, 0, 3)));
+        }
+
+        $this->intact($stage);
+        $verdict = ProxyVerdict::evaluate($spec, $errors, $stage->output_json['report'] ?? null, self::gate(), $refs['cameras']);
+
+        if (! $verdict['pass']) {
+            throw new RuntimeException('Revision chưa đạt cổng duyệt: '.implode('; ', array_slice([...$verdict['failed'], ...$verdict['pending']], 0, 4)));
+        }
+    }
+
+    /** Nguong cong duyet (config). @return array{iou_views: list<string>, iou_min: float} */
+    public static function gate(): array
+    {
+        return ['iou_views' => array_values((array) config('video.superyacht.proxy.iou_views')), 'iou_min' => (float) config('video.superyacht.proxy.iou_min')];
+    }
+
+    /**
+     * Phan dau vao revision phu thuoc nguon/code/nguong hien hanh (khong gom mapping/spec/tham chieu).
+     *
+     * @param  array<string, mixed>  $source
+     * @return array<string, string>
+     */
+    private function currentInput(array $source): array
+    {
+        $config = (array) config('video.superyacht.proxy');
+
+        return [
+            'execution' => (string) $config['execution'],
+            'source_sha256' => (string) $source['source_sha256'],
+            'builder_sha256' => YachtProxyWorker::builderSha256(),
+            'config_sha256' => hash('sha256', (string) json_encode([$config['tolerances'], $config['fill'], $config['iou_min'], $config['iou_views'], $config['landmark_ratio']], JSON_PRESERVE_ZERO_FRACTION)),
+        ];
+    }
+
+    /**
+     * Mapping nguoi dung nhap: chi parts (danh sach) va unused (moc => ly do); xac nhan cu mang sang.
+     *
+     * @param  array<string, mixed>  $previous
+     * @return array{parts: list<array<string, mixed>>, unused: array<string, string>, confirmed: array<string, mixed>}
+     */
+    private static function mapping(string $json, array $previous): array
+    {
+        if (strlen($json) > (int) config('video.superyacht.proxy.max_mapping_bytes')) {
+            throw new RuntimeException('Mapping quá lớn.');
+        }
+
+        try {
+            $data = json_decode($json, true, 64, JSON_THROW_ON_ERROR);
+        } catch (JsonException $e) {
+            throw new RuntimeException('Mapping không phải JSON hợp lệ: '.$e->getMessage().'.');
+        }
+
+        if (! is_array($data) || array_is_list($data) || array_diff(array_keys($data), ['parts', 'unused']) !== []
+            || ! array_is_list((array) ($data['parts'] ?? [])) || (isset($data['unused']) && (! is_array($data['unused']) || (array_is_list($data['unused']) && $data['unused'] !== [])))) {
+            throw new RuntimeException('Mapping phải là object {"parts": [...], "unused": {"mốc": "lý do"}}.');
+        }
+
+        foreach ((array) ($data['unused'] ?? []) as $name => $reason) {
+            if (! is_string($reason) || trim($reason) === '') {
+                throw new RuntimeException("Mốc unused {$name} phải ghi lý do.");
+            }
+        }
+
+        return ['parts' => array_values((array) ($data['parts'] ?? [])), 'unused' => (array) ($data['unused'] ?? []), 'confirmed' => $previous];
+    }
+
+    /**
+     * Ghi artifact cho tung file worker tao (kiem sha256 tung file), doc report/cameras, va doc lai
+     * GLB o PHP doi chieu so node voi geometry.
+     *
+     * @param  array<string, array{sha256: string, bytes: int}>  $files
+     * @param  list<string>  $created
+     * @return array{0: list<array<string, mixed>>, 1: array<string, mixed>, 2: list<array<string, mixed>>}
+     */
+    private function collect(string $projectId, string $stageId, string $disk, string $dir, array $files, array &$created): array
+    {
+        $artifacts = [];
+        $report = null;
+        $cameras = null;
+        $glbNodes = null;
+
+        foreach ($files as $name => $meta) {
+            $path = $dir.'/'.$name;
+            $bytes = $this->storage->disk($disk)->get($path);
+
+            if (! is_string($bytes) || ! hash_equals((string) $meta['sha256'], hash('sha256', $bytes))) {
+                throw new RuntimeException("File {$name} của worker thiếu hoặc không khớp sha256.");
+            }
+
+            [$kind, $view] = self::kind((string) $name);
+            $info = str_ends_with($name, '.png') ? @getimagesizefromstring($bytes) : false;
+            $artifact = VideoArtifact::create([
+                'project_id' => $projectId,
+                'artifact_type' => match (true) { str_ends_with($name, '.glb') => 'model', str_ends_with($name, '.png') => 'image', $name === 'manifest.json' => 'manifest', default => 'json' },
+                'role' => 'proxy_'.$kind,
+                'storage_disk' => $disk,
+                'storage_path' => $path,
+                'mime_type' => match (true) { str_ends_with($name, '.glb') => 'model/gltf-binary', str_ends_with($name, '.png') => 'image/png', default => 'application/json' },
+                'file_size' => strlen($bytes),
+                'sha256' => hash('sha256', $bytes),
+                'width' => $info === false ? null : $info[0],
+                'height' => $info === false ? null : $info[1],
+                'metadata_json' => ['proxy_stage_id' => $stageId, 'file' => $name, 'kind' => $kind, 'view_id' => $view],
+            ]);
+            $created[] = (string) $artifact->id;
+            $artifacts[] = ['file' => $name, 'kind' => $kind, 'view_id' => $view, 'artifact_id' => (string) $artifact->id, 'sha256' => (string) $artifact->sha256];
+
+            if ($name === 'report.json') {
+                $report = json_decode($bytes, true);
+            } elseif ($name === 'cameras.json') {
+                $cameras = json_decode($bytes, true);
+            } elseif ($name === 'proxy.glb') {
+                $glbNodes = self::glbNodes($bytes);
+            }
+        }
+
+        if (! is_array($report) || ! is_array($cameras) || $glbNodes === null) {
+            throw new RuntimeException('Worker không tạo đủ report.json, cameras.json và proxy.glb.');
+        }
+
+        if ($glbNodes !== ($report['stats']['meshes'] ?? null)) {
+            throw new RuntimeException('proxy.glb đọc ở server có '.$glbNodes.' node, khác '.($report['stats']['meshes'] ?? '?').' mesh của báo cáo.');
+        }
+
+        return [$artifacts, $report, $cameras];
+    }
+
+    /** @return array{0: string, 1: ?string} */
+    private static function kind(string $name): array
+    {
+        return match (true) {
+            $name === 'proxy.glb' => ['glb', null],
+            str_starts_with($name, 'state-') => ['state_glb', substr($name, 6, -4)],
+            preg_match('/^(clay|parts|mask|depth|overlay)-(MS\d+)\.png$/', $name, $m) === 1 => [$m[1], $m[2]],
+            default => [str_replace(['.json', '-'], ['', '_'], $name), null],
+        };
+    }
+
+    /** So node mesh cua GLB (doc header + chunk JSON doc lap voi worker). */
+    private static function glbNodes(string $bytes): int
+    {
+        if (strlen($bytes) < 28 || substr($bytes, 0, 4) !== 'glTF' || unpack('V', substr($bytes, 8, 4))[1] !== strlen($bytes)) {
+            throw new RuntimeException('proxy.glb không phải glTF nhị phân hợp lệ.');
+        }
+
+        $length = unpack('V', substr($bytes, 12, 4))[1];
+        $json = json_decode(substr($bytes, 20, $length), true);
+
+        if (! is_array($json) || ($json['asset']['version'] ?? null) !== '2.0') {
+            throw new RuntimeException('proxy.glb thiếu chunk JSON glTF 2.0.');
+        }
+
+        return count(array_filter((array) $json['nodes'], static fn (array $n): bool => isset($n['mesh'])));
+    }
+
+    /** Artifact cua revision con nguyen (file ton tai, dung sha256). */
+    private function intact(VideoPlanningStage $stage): void
+    {
+        foreach ((array) ($stage->output_json['artifacts'] ?? []) as $entry) {
+            $artifact = VideoArtifact::query()->whereKey($entry['artifact_id'] ?? null)->where('project_id', $stage->project_id)->first();
+            $bytes = $artifact === null ? null : $this->storage->disk((string) $artifact->storage_disk)->get((string) $artifact->storage_path);
+
+            if (! is_string($bytes) || ! hash_equals((string) $entry['sha256'], hash('sha256', $bytes))) {
+                throw new RuntimeException('Artifact '.($entry['file'] ?? '?').' của revision mất hoặc đã bị sửa — không duyệt được.');
+            }
+        }
+    }
+
+    /** @return \Illuminate\Support\Collection<int, VideoPlanningStage> */
+    private function revisions(string $projectId): \Illuminate\Support\Collection
+    {
+        return VideoPlanningStage::query()
             ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::PROXY_3D->value)
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
+            ->orderByDesc('planning_revision')
+            ->get()
+            ->filter(fn (VideoPlanningStage $s): bool => ($s->input_json['execution'] ?? null) === config('video.superyacht.proxy.execution'))
+            ->values();
     }
 
     /**
-     * @param  array<string, mixed>  $payload
-     * @param  array{input_sha256: string, report: string, cameras: string}  $data
-     * @param  array<string, mixed>  $images
-     * @return array{0: array<string, mixed>, 1: array<string, mixed>, 2: array<string, array<string, mixed>>}
+     * @param  array<string, string>  $current
+     * @return array<string, mixed>
      */
-    private function verified(array $payload, array $data, array $images, ?UploadedFile $glb): array
+    private function revisionView(VideoPlanningStage $stage, array $current, ?VideoPlanningStage $approved): array
     {
-        if (! hash_equals((string) $payload['input_sha256'], (string) $data['input_sha256'])) {
-            throw new RuntimeException('Trang proxy đã cũ so với bản thiết kế hoặc cấu hình hiện hành — tải lại trang rồi lưu lại.');
-        }
+        $out = (array) $stage->output_json;
+        $stale = array_keys(array_filter($current, fn (string $v, string $k): bool => ($stage->input_json[$k] ?? null) !== $v, ARRAY_FILTER_USE_BOTH));
 
-        $report = json_decode((string) $data['report'], true);
-        $cameras = json_decode((string) $data['cameras'], true);
-
-        if (! is_array($report) || ($report['input_sha256'] ?? null) !== $payload['input_sha256'] || ! is_array($report['checks'] ?? null) || ! is_bool($report['pass'] ?? null)) {
-            throw new RuntimeException('Báo cáo kiểm không khớp dữ liệu của trang — tải lại trang rồi lưu lại.');
-        }
-
-        $views = (array) $payload['views'];
-
-        if (! is_array($cameras) || array_column($cameras, 'view') !== array_keys($views)) {
-            throw new RuntimeException('Thông số camera gửi lên không đủ '.count($views).' góc theo đúng thứ tự.');
-        }
-
-        $maxPng = (int) config('video.superyacht.proxy.max_png_bytes');
-        $files = [];
-
-        foreach ($views as $view => $frame) {
-            foreach (self::KINDS as $kind) {
-                $key = $view.'_'.$kind;
-                $file = $images[$key] ?? null;
-
-                if (! $file instanceof UploadedFile || ! $file->isValid() || $file->getSize() > $maxPng) {
-                    throw new RuntimeException("Thiếu hoặc lỗi ảnh {$key}.");
-                }
-
-                $bytes = (string) file_get_contents($file->getRealPath());
-                $info = @getimagesizefromstring($bytes);
-
-                if ($info === false || ($info['mime'] ?? null) !== 'image/png' || $info[0] !== (int) $frame['width'] || $info[1] !== (int) $frame['height']) {
-                    throw new RuntimeException("Ảnh {$key} phải là PNG {$frame['width']}×{$frame['height']}.");
-                }
-
-                $files[$key] = ['bytes' => $bytes, 'view' => $view, 'kind' => $kind, 'type' => 'image', 'mime' => 'image/png', 'extension' => 'png', 'width' => $info[0], 'height' => $info[1]];
-            }
-        }
-
-        $glbBytes = $glb instanceof UploadedFile && $glb->isValid() && $glb->getSize() <= (int) config('video.superyacht.proxy.max_glb_bytes')
-            ? (string) file_get_contents($glb->getRealPath())
-            : '';
-
-        if (($error = self::glbError($glbBytes)) !== null) {
-            throw new RuntimeException('File proxy.glb không hợp lệ: '.$error.'.');
-        }
-
-        $files['proxy'] = ['bytes' => $glbBytes, 'view' => null, 'kind' => 'glb', 'type' => 'model', 'mime' => 'model/gltf-binary', 'extension' => 'glb', 'width' => null, 'height' => null];
-
-        return [$report, $cameras, $files];
+        return [
+            'id' => (string) $stage->id,
+            'revision' => (int) $stage->planning_revision,
+            'created_at' => $stage->finished_at ?? $stage->created_at,
+            'created_by' => (string) ($out['created_by'] ?? ''),
+            'status' => (string) ($out['status'] ?? ''),
+            'current' => $stale === [],
+            'stale' => $stale,
+            'approved' => $approved !== null && (string) $approved->id === (string) $stage->id,
+            'verdict' => (array) ($out['verdict'] ?? []),
+            'checks' => (array) ($out['report']['checks'] ?? []),
+            'comparison' => (array) ($out['report']['comparison']['views'] ?? []),
+            'projected' => (array) ($out['report']['comparison']['projected'] ?? []),
+            'states' => (array) ($out['report']['states'] ?? []),
+            'artifacts' => collect((array) ($out['artifacts'] ?? []))->keyBy('file')->all(),
+            'cameras' => (array) ($out['cameras'] ?? []),
+        ];
     }
 
-    /**
-     * @param  array<string, mixed>  $payload
-     * @return list<array{key: string, optional: bool, min: ?float, max: ?float}>
-     */
-    public function requiredChecks(array $payload): array
+    /** @param list<string> $paths */
+    private static function cleanup(array $paths): void
     {
-        $canonical = (array) $payload['canonical'];
-        $tolerance = static fn (string $name): float => (float) ($payload['tolerances'][$name] ?? throw new RuntimeException("Cấu hình proxy thiếu sai số {$name}."));
-        $assumption = static function (string $code) use ($payload): float {
-            $value = $payload['assumptions'][$code]['value'] ?? throw new RuntimeException("Cấu hình proxy thiếu giả định {$code}.");
-
-            return (float) (is_array($value) ? $value[0] : $value);
-        };
-        $number = static fn (mixed $value): bool => is_int($value) || is_float($value);
-        $decks = count(array_filter((array) ($canonical['decks'] ?? []), static fn (mixed $deck): bool => is_array($deck) && $number($deck['floor_z_m'] ?? null) && $number($deck['start_x'] ?? null) && $number($deck['end_x'] ?? null)));
-        $required = [];
-        $add = static function (string $key, ?float $min, ?float $max, bool $optional = false) use (&$required): void {
-            $required[$key] ??= ['key' => $key, 'optional' => $optional, 'min' => $min, 'max' => $max];
-        };
-
-        $add('profile', 0.0, $tolerance('profile_m'));
-        $add('plan', 0.0, $tolerance('plan_m'));
-        $add('decks', (float) $decks, (float) $decks);
-        $crest = $canonical['landmarks']['crest'] ?? null;
-
-        if (is_array($crest) && $number($crest['x'] ?? null) && $number($crest['z'] ?? null)) {
-            $add('crest_x', 0.0, $tolerance('crest_x'));
-            $add('crest_z', 0.0, $tolerance('crest_z_m'));
+        foreach ($paths as $path) {
+            @unlink($path);
         }
-
-        if (is_numeric($canonical['dimensions']['beam']['value'] ?? null)) {
-            $add('ratio', 0.0, $tolerance('ratio'));
-        }
-
-        if (isset($payload['views']['MS6'])) {
-            $add('ms6', 1.0, 1.0);
-        }
-
-        $features = (array) $payload['features'];
-
-        foreach ($features === [] ? [['type' => 'pocket']] : $features as $feature) {
-            $optional = ($feature['optional'] ?? false) === true;
-
-            match ($feature['type'] ?? null) {
-                'slot' => $add('slot', 0.0, $tolerance('detail_m')),
-                'disc' => array_map(static fn (string $ref) => $add('disc:'.$ref, 0.0, $tolerance('landmark_m')), (array) $feature['at']),
-                'pocket' => $add('pockets', $tolerance('pocket_coverage'), null),
-                'ribs' => [$add('rib_long', 0.0, $tolerance('rib_longitudinal_deg')), $add('rib_trans', $tolerance('rib_transverse_deg'), 90.0), $add('rib_spacing', 1.0, $tolerance('rib_spacing_factor'))],
-                'window' => isset($feature['at'])
-                    ? [$add('window:'.$feature['id'], 0.0, $tolerance('landmark_m'), $optional), $add('recess:'.$feature['id'], 0.0, $assumption('G10'), $optional)]
-                    : [$add('window:'.$feature['id'], 0.0, 0.0, $optional), $add('recess:'.$feature['id'], 0.0, $tolerance('detail_dim_m'), $optional)],
-                'bulwark', 'coaming', 'edge', 'rails' => $add('detail:'.$feature['id'], 0.0, $tolerance('detail_dim_m')),
-                default => null,
-            };
-        }
-
-        return array_values($required);
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @param  array<string, mixed>  $report
-     * @return array{pass: bool, failed: list<string>, warned: list<string>}
-     */
-    private function verdict(array $payload, array $report): array
-    {
-        $checks = [];
-
-        foreach ((array) $report['checks'] as $check) {
-            $key = is_array($check) ? ($check['key'] ?? null) : null;
-
-            if (! is_string($key) || isset($checks[$key])) {
-                throw new RuntimeException('Báo cáo kiểm có mục thiếu khoá hoặc trùng khoá — tải lại trang rồi lưu lại.');
-            }
-
-            $checks[$key] = $check;
-        }
-
-        $failed = [];
-        $warned = [];
-
-        foreach ($this->requiredChecks($payload) as $required) {
-            $check = $checks[$required['key']] ?? throw new RuntimeException("Báo cáo kiểm thiếu phép đo bắt buộc {$required['key']} — tải lại trang rồi lưu lại.");
-            $value = $check['value'] ?? null;
-            ['min' => $min, 'max' => $max] = $required;
-
-            $pass = (is_int($value) || is_float($value)) && is_finite((float) $value)
-                && ($min === null || $value >= $min - 1e-9) && ($max === null || $value <= $max + 1e-9);
-
-            if (($check['pass'] ?? null) !== $pass) {
-                throw new RuntimeException("Phép đo {$required['key']} khai kết luận khác kết quả server tính theo ngưỡng cấu hình — không lưu.");
-            }
-
-            if (! $pass && $required['optional']) {
-                $warned[] = $required['key'];
-            } elseif (! $pass) {
-                $failed[] = $required['key'];
-            }
-        }
-
-        $missing = (array) ($report['missing'] ?? ['missing']);
-
-        if ($missing !== []) {
-            $failed[] = 'thiếu dữ liệu: '.implode(', ', array_map('strval', $missing));
-        }
-
-        return ['pass' => $failed === [], 'failed' => $failed, 'warned' => $warned];
-    }
-
-    private static function glbError(string $bytes): ?string
-    {
-        if (strlen($bytes) < 28 || substr($bytes, 0, 4) !== 'glTF') {
-            return 'không phải glTF nhị phân';
-        }
-
-        [, $version, $total] = array_values(unpack('V3', substr($bytes, 0, 12)));
-
-        if ($version !== 2 || $total !== strlen($bytes)) {
-            return 'sai phiên bản hoặc độ dài khai báo';
-        }
-
-        ['l' => $jsonLength, 't' => $jsonType] = unpack('Vl/Vt', substr($bytes, 12, 8));
-
-        if ($jsonType !== 0x4E4F534A || 20 + $jsonLength > $total) {
-            return 'thiếu chunk JSON';
-        }
-
-        $gltf = json_decode(substr($bytes, 20, $jsonLength), true);
-
-        if (! is_array($gltf) || ($gltf['asset']['version'] ?? null) !== '2.0' || empty($gltf['scenes']) || empty($gltf['meshes'])) {
-            return 'JSON không có asset 2.0, scene hoặc mesh';
-        }
-
-        $binOffset = 20 + $jsonLength;
-        $binLength = 0;
-
-        if ($binOffset + 8 <= $total) {
-            ['l' => $binLength, 't' => $binType] = unpack('Vl/Vt', substr($bytes, $binOffset, 8));
-
-            if ($binType !== 0x004E4942 || $binOffset + 8 + $binLength > $total) {
-                return 'chunk BIN hỏng';
-            }
-        }
-
-        $buffer = (int) ($gltf['buffers'][0]['byteLength'] ?? 0);
-
-        if ($buffer <= 0 || $buffer > $binLength) {
-            return 'buffer nhị phân thiếu hoặc ngắn hơn khai báo';
-        }
-
-        foreach ((array) $gltf['meshes'] as $mesh) {
-            foreach ((array) ($mesh['primitives'] ?? []) as $primitive) {
-                $accessor = $gltf['accessors'][$primitive['attributes']['POSITION'] ?? -1] ?? null;
-                $view = is_array($accessor) ? ($gltf['bufferViews'][$accessor['bufferView'] ?? -1] ?? null) : null;
-
-                if (! is_array($view) || (int) ($view['byteOffset'] ?? 0) + (int) ($view['byteLength'] ?? 0) > $buffer || (int) ($accessor['count'] ?? 0) < 3) {
-                    return 'mesh không có toạ độ đỉnh đọc được';
-                }
-            }
-        }
-
-        return null;
     }
 }

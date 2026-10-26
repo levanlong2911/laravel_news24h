@@ -88,7 +88,8 @@ final class SpecRouting
         $derived = match (self::operation($spec)) {
             'environment_plate' => EnvironmentPlatePrompt::TASK,
             'generate' => DesignImageStore::ANCHOR_TYPE,
-            ModelSheetService::OPERATION => ModelSheetService::TASK,
+            // 'model_sheet': o tung goc cua luong cu, con trong lich su.
+            'model_sheet', ModelSheetService::MASTER_OPERATION => ModelSheetService::TASK,
             default => null,
         };
 

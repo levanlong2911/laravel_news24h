@@ -64,7 +64,8 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
      *     role:string,
      *     content:string|list<array<string,mixed>>
      * }>  $messages
-     * @param  array<string,mixed>  $outputSchema
+     * @param  array<string,mixed>  $outputSchema  [] = khong ep grammar o API (schema nam trong
+     *                                           prompt, ben goi tu kiem ket qua)
      */
     public function create(
         string $model,
@@ -101,7 +102,9 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
 
         $this->extendPhpExecutionTime();
 
-        $outputConfig = [
+        // Schema lon vuot gioi han grammar cua API ("compiled grammar is too large"): ben goi
+        // truyen [] va tu kiem ket qua; khi do chi gui effort.
+        $outputConfig = $outputSchema === [] ? [] : [
             'format' => [
                 'type' => 'json_schema',
 
@@ -121,9 +124,11 @@ final class AnthropicStructuredOutputClient implements StructuredOutputLlmClient
             'system' => $system,
 
             'messages' => $messages,
-
-            'output_config' => $outputConfig,
         ];
+
+        if ($outputConfig !== []) {
+            $body['output_config'] = $outputConfig;
+        }
 
         if ($this->stream) {
             $body['stream'] = true;

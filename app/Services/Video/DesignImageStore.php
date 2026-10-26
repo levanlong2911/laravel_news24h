@@ -39,10 +39,16 @@ class DesignImageStore
 
     public const MODEL_SHEET_TYPE = 'model_sheet_view';
 
+    /** Mot anh AI 3840x2160 chua ca tam goc MS1-MS8 (luoi 2x4). */
+    public const MODEL_SHEET_MASTER_TYPE = 'model_sheet_master';
+
+    /** Artifact o da cat tu master; khong gan design_image_id de khong thanh candidate. */
+    public const MODEL_SHEET_CROP_ROLE = 'model_sheet_crop';
+
     /** @var list<string> */
-    private const MODEL_SHEET_IDENTITY_KEYS = [
-        'provider', 'view_id', 'model_sheet_set_id', 'design_stage_id', 'design_canonical_hash',
-        'attempt', 'source_artifact_id', 'source_artifact_sha256', 'aspect_ratio', 'image_size',
+    private const MODEL_SHEET_MASTER_IDENTITY_KEYS = [
+        'provider', 'model_sheet_set_id', 'design_stage_id', 'design_canonical_hash',
+        'attempt', 'layout_sha256', 'layout_guide', 'aspect_ratio', 'image_size', 'qa_stage_id',
     ];
 
     public function __construct(
@@ -388,14 +394,16 @@ class DesignImageStore
     }
 
     /**
+     * Mot lan bam Render master = mot o; bam trung cung ma luot thi tra o da co, khong
+     * mua them mot lan render.
+     *
      * @param  array<string, mixed>  $spec
-     * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
-     *                                                reason: created|already_exists|project_not_found
+     * @return array{0: ?VideoDesignImage, 1: string}
      */
-    public function createModelSheetView(string $projectId, string $creator, array $spec): array
+    public function createModelSheetMaster(string $projectId, string $creator, array $spec): array
     {
         $spec = $this->withPriceSnapshot($spec);
-        $sha = $this->identityHash($spec, self::MODEL_SHEET_IDENTITY_KEYS);
+        $sha = $this->identityHash($spec, self::MODEL_SHEET_MASTER_IDENTITY_KEYS);
 
         try {
             return DB::transaction(function () use ($projectId, $creator, $spec, $sha) {
@@ -410,10 +418,9 @@ class DesignImageStore
                 return [
                     VideoDesignImage::create([
                         'project_id' => $projectId,
-                        'image_code' => $this->nextImageCode($projectId, $creator, '_model_sheet_v'),
-                        'image_type' => self::MODEL_SHEET_TYPE,
-                        'slot_index' => $spec['slot_index'],
-                        'source_image_id' => $spec['source_image_id'] ?? null,
+                        'image_code' => $this->nextImageCode($projectId, $creator, '_model_sheet_master_v'),
+                        'image_type' => self::MODEL_SHEET_MASTER_TYPE,
+                        'slot_index' => 0,
                         'prompt_spec_json' => $spec,
                         'prompt_sha256' => $sha,
                         'status' => 'candidate',
@@ -435,22 +442,193 @@ class DesignImageStore
         }
     }
 
-    /** @return list<array<string, mixed>> */
-    public function modelSheetCellsFor(string $projectId, string $setId): array
+    /**
+     * Cac lan render master cua mot bo, kem tam o da cat cua tung artifact master.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function modelSheetMastersFor(string $projectId, string $setId): array
     {
         $images = $this->whereModelSheetSet(VideoDesignImage::query(), $setId)
             ->where('project_id', $projectId)
-            ->where('image_type', self::MODEL_SHEET_TYPE)
+            ->where('image_type', self::MODEL_SHEET_MASTER_TYPE)
             ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
-            ->orderBy('slot_index')
-            ->orderBy('created_at')
+            ->orderByDesc('created_at')
             ->get();
 
         $cost = $this->costSummaryByImage($projectId, $images->pluck('id')->map('strval')->all());
 
-        return $images
-            ->map(fn (VideoDesignImage $image) => $this->cellView($image, $cost[(string) $image->id]))
+        return $images->map(function (VideoDesignImage $image) use ($projectId, $cost): array {
+            $view = $this->cellView($image, $cost[(string) $image->id]);
+            $view['crops'] = [];
+            $view['processing'] = [];
+
+            foreach ($image->artifacts as $artifact) {
+                $view['crops'][(string) $artifact->id] = $this->modelSheetCrops($projectId, $artifact);
+                $view['processing'][(string) $artifact->id] = (array) (($artifact->metadata_json ?? [])['model_sheet'] ?? []);
+            }
+
+            return $view;
+        })->all();
+    }
+
+    /**
+     * O da cat hien hanh cua mot artifact master, theo thu tu o. O bi thay boi lan xu ly
+     * lai (`superseded_at`) giu lam lich su, khong tra ve.
+     *
+     * @return list<array{id: string, view_id: string, url: string, width: ?int, height: ?int, sha256: string, x: int, y: int, disk: string, path: string}>
+     */
+    public function modelSheetCrops(string $projectId, VideoArtifact $master): array
+    {
+        return VideoArtifact::query()
+            ->where('project_id', $projectId)
+            ->where('role', self::MODEL_SHEET_CROP_ROLE)
+            ->whereNull('design_image_id')
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.master_artifact_id')) = ?", [(string) $master->id])
+            ->whereRaw("JSON_EXTRACT(metadata_json, '$.superseded_at') IS NULL")
+            ->get()
+            ->map(fn (VideoArtifact $crop): array => [
+                'id' => (string) $crop->id,
+                'view_id' => (string) ($crop->metadata_json['view_id'] ?? ''),
+                'index' => (int) ($crop->metadata_json['index'] ?? 0),
+                'url' => route('video-artifacts.show', $crop->id),
+                'width' => $crop->width,
+                'height' => $crop->height,
+                'sha256' => (string) $crop->sha256,
+                'x' => (int) ($crop->metadata_json['x'] ?? 0),
+                'y' => (int) ($crop->metadata_json['y'] ?? 0),
+                'master_sha256' => (string) ($crop->metadata_json['master_sha256'] ?? ''),
+                'disk' => (string) $crop->storage_disk,
+                'path' => (string) $crop->storage_path,
+            ])
+            ->sortBy('index')
+            ->values()
             ->all();
+    }
+
+    /**
+     * Ghi tam o da cat tu master da luu. Khoa dong artifact master TRUOC khi dung toi file:
+     * hai lan xu ly cung mot master chay noi tiep, lan sau thay bo o hop le thi dung, khong
+     * dong vao file nao. Moi lan ghi vao thu muc rieng; loi thi chi don file cua chinh lan
+     * do. Bo o cu thieu/hong duoc danh dau `superseded_at` (giu lich su), khong xoa file.
+     * Khong goi model.
+     *
+     * @param  array<string, array{cell: array<string, int|string>, png: string}>  $crops
+     * @param  array<string, mixed>  $processing
+     * @param  callable(list<array<string, mixed>>, VideoArtifact): bool  $valid  bo o hien hanh (tren dong master da khoa) con dung khong
+     * @return string processed|already_processed
+     */
+    public function storeModelSheetCrops(string $projectId, VideoArtifact $master, string $setId, array $crops, array $processing, callable $valid): string
+    {
+        return DB::transaction(function () use ($projectId, $master, $setId, $crops, $processing, $valid): string {
+            $master = VideoArtifact::query()->whereKey($master->id)->where('project_id', $projectId)->lockForUpdate()->firstOrFail();
+            $existing = $this->modelSheetCrops($projectId, $master);
+
+            if ($existing !== [] && $valid($existing, $master)) {
+                return 'already_processed';
+            }
+
+            $disk = (string) $master->storage_disk;
+            $directory = trim(dirname((string) $master->storage_path), '/.').'/'.$master->id.'-crops/'.Str::uuid();
+            $filesystem = Storage::disk($disk);
+            $written = [];
+
+            try {
+                foreach ($crops as $viewId => $crop) {
+                    $path = $directory.'/'.$viewId.'.png';
+
+                    if (! $filesystem->put($path, $crop['png'])) {
+                        throw new \RuntimeException("Không ghi được ô {$viewId}.");
+                    }
+
+                    $written[$viewId] = $path;
+                }
+
+                if ($existing !== []) {
+                    VideoArtifact::query()->whereIn('id', array_column($existing, 'id'))->get()->each(function (VideoArtifact $old): void {
+                        $metadata = $old->metadata_json ?? [];
+                        $metadata['superseded_at'] = now()->toIso8601String();
+                        $old->forceFill(['metadata_json' => $metadata])->save();
+                    });
+                }
+
+                foreach ($crops as $viewId => $crop) {
+                    VideoArtifact::create([
+                        'project_id' => $projectId,
+                        'artifact_type' => 'image',
+                        'role' => self::MODEL_SHEET_CROP_ROLE,
+                        'storage_disk' => $disk,
+                        'storage_path' => $written[$viewId],
+                        'mime_type' => 'image/png',
+                        'file_size' => strlen($crop['png']),
+                        'sha256' => hash('sha256', $crop['png']),
+                        'width' => (int) $crop['cell']['width'],
+                        'height' => (int) $crop['cell']['height'],
+                        'metadata_json' => [
+                            'model_sheet_set_id' => $setId,
+                            'master_image_id' => (string) $master->design_image_id,
+                            'master_artifact_id' => (string) $master->id,
+                            'master_sha256' => (string) $master->sha256,
+                            'view_id' => (string) $viewId,
+                            'index' => (int) $crop['cell']['index'],
+                            'row' => (int) $crop['cell']['row'],
+                            'column' => (int) $crop['cell']['column'],
+                            'x' => (int) $crop['cell']['x'],
+                            'y' => (int) $crop['cell']['y'],
+                        ],
+                    ]);
+                }
+
+                $metadata = $master->metadata_json ?? [];
+                $metadata['model_sheet'] = $processing;
+                $master->forceFill(['metadata_json' => $metadata])->save();
+            } catch (\Throwable $e) {
+                $filesystem->delete(array_values($written));
+
+                throw $e;
+            }
+
+            return 'processed';
+        });
+    }
+
+    /** Ghi loi xu ly master (file hong, sai kich thuoc...) de giao dien bao va cho xu ly lai. */
+    public function recordModelSheetProcessing(VideoArtifact $master, array $processing): void
+    {
+        $metadata = $master->metadata_json ?? [];
+        $metadata['model_sheet'] = $processing;
+        $master->forceFill(['metadata_json' => $metadata])->save();
+    }
+
+    /**
+     * Tu choi ca anh master (khong duyet mot phan cua cung mot anh).
+     *
+     * @return array{0: bool, 1: string}
+     */
+    public function rejectModelSheetMaster(string $projectId, string $imageId, string $setId): array
+    {
+        return DB::transaction(function () use ($projectId, $imageId, $setId): array {
+            VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+
+            $image = $this->whereModelSheetSet(VideoDesignImage::query(), $setId)
+                ->where('project_id', $projectId)
+                ->where('image_type', self::MODEL_SHEET_MASTER_TYPE)
+                ->whereKey($imageId)
+                ->lockForUpdate()
+                ->first();
+
+            if ($image === null) {
+                return [false, 'Ảnh này không thuộc bộ model sheet hiện tại.'];
+            }
+
+            if ($image->status !== DesignImageStatus::RENDERED->value) {
+                return [false, 'Chỉ từ chối được master đã render và chưa duyệt (trạng thái hiện tại: '.$image->status.').'];
+            }
+
+            $image->forceFill(['status' => DesignImageStatus::REJECTED->value])->save();
+
+            return [true, 'rejected'];
+        });
     }
 
     private function whereModelSheetSet(Builder $query, string $setId): Builder
@@ -912,7 +1090,7 @@ class DesignImageStore
             $this->whereAnchorSubject($query, self::anchorSubjectKey($image));
         }
 
-        if ($image->image_type === self::MODEL_SHEET_TYPE) {
+        if (in_array($image->image_type, [self::MODEL_SHEET_TYPE, self::MODEL_SHEET_MASTER_TYPE], true)) {
             $this->whereModelSheetSet($query, (string) (($image->prompt_spec_json ?? [])['model_sheet_set_id'] ?? ''));
         }
 

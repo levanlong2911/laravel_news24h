@@ -15,24 +15,39 @@ use App\Models\AiPhase;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
+use App\Models\VideoProject;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Media\MediaModelRegistry;
+use App\Video\ModelSheet\ModelSheetFacts;
+use App\Video\ModelSheet\ModelSheetMaster;
+use App\Video\ModelSheet\ModelSheetPromptCompiler;
+use App\Video\ModelSheet\ModelSheetQaValidator;
 use App\Video\YachtDesign\YachtDesignCheck;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
+use Throwable;
 
+/**
+ * Model sheet Phase 3 theo luong: thiet ke -> model sheet -> proxy 3D.
+ *
+ * Noi dung prompt: code lap bang du kien tu ban thiet ke (ModelSheetFacts), Sonnet 5.5 QA
+ * va bien tap co nguon (ModelSheetQaService), code kiem va ghep prompt cuoi. Mot lan bam
+ * Render gui MOT request (variations 1) voi dung prompt da QA, tao MOT anh master 3840x2160,
+ * luoi 2 hang x 4 cot MS1-MS8; may chu cat tam o 960x1080 theo toa do co dinh. Nguoi duyet
+ * duyet hoac tu choi ca master; mot o sai la ca luot chua dat. Khong phu thuoc proxy.
+ */
 final class ModelSheetService
 {
-    public const OPERATION = 'model_sheet';
+    public const MASTER_OPERATION = 'model_sheet_master';
 
     public const TASK = 'model_sheet';
 
-    public const EXECUTION = 'model-sheet-design-v2';
+    public const REVIEW_EXECUTION = 'model-sheet-master-review-v1';
 
-    public const REVIEW_EXECUTION = 'model-sheet-review-v1';
-
-    public const CODE_SUFFIX = '_model_sheet_v';
+    public const CODE_SUFFIX = '_model_sheet_master_v';
 
     public function __construct(
         private readonly PlanningStageStore $stageStore,
@@ -40,8 +55,18 @@ final class ModelSheetService
         private readonly DesignImageDirectRenderer $renderer,
         private readonly MediaModelRegistry $registry,
         private readonly YachtDesignService $design,
-        private readonly YachtProxyService $proxy,
+        private readonly ModelSheetQaService $qa,
     ) {}
+
+    public const PROMPT_APPROVAL_EXECUTION = 'model-sheet-master-prompt-approval-v1';
+
+    /** @var array<string, array<string, mixed>> panel thiet ke trong mot request (doc nhieu lan) */
+    private array $designPanels = [];
+
+    public static function execution(): string
+    {
+        return (string) config('video.superyacht.model_sheet.master.execution');
+    }
 
     /** @return array{0: ?VideoPlanningStage, 1: ?string} */
     private function activeSet(string $projectId): array
@@ -64,7 +89,10 @@ final class ModelSheetService
     }
 
     /**
-     * @param  array{view_id: string, model: string, size: string, quality: string, variations: int, attempt: string, prompt_sha256: string}  $choice
+     * Mot lan bam Render: mot request, mot master, dung prompt cua luot QA da dat. Bam trung
+     * cung ma luot thi tra luot da co, khong mua them.
+     *
+     * @param  array{model: string, quality: string, attempt: string, qa_stage_id: string, prompt_sha256: string}  $choice
      * @return array{0: ?VideoDesignImage, 1: string}
      */
     public function render(string $projectId, string $creator, array $choice): array
@@ -73,31 +101,30 @@ final class ModelSheetService
             [$set, $error] = $this->activeSet($projectId);
             $set ?? throw new RuntimeException((string) $error);
             $snapshot = (array) $set->output_json;
-            $view = $this->view($snapshot, $choice['view_id']);
-
-            if (! hash_equals(hash('sha256', $view['prompt']), $choice['prompt_sha256'])) {
-                throw new RuntimeException("Prompt {$view['id']} trên trang không còn khớp bộ model sheet — tải lại trang.");
-            }
-
             $this->assertCompatible($snapshot);
 
-            if (($snapshot['design_missing'] ?? []) !== []) {
-                throw new RuntimeException('Thiết kế thiếu dữ liệu bắt buộc cho model sheet: '.implode(', ', (array) $snapshot['design_missing']).'.');
+            if (($snapshot['blocking'] ?? []) !== []) {
+                throw new RuntimeException(implode(' ', (array) $snapshot['blocking']));
             }
 
-            [$source, $sourceArtifact] = $view['id'] === $this->firstViewId($snapshot) ? [null, null] : $this->approvedFirstView($projectId, (string) $set->id);
-            $frame = config('video.superyacht.model_sheet.frames.'.$view['id']);
+            $qa = $this->qa->current($projectId, $set);
 
-            if (is_array($frame) && $choice['size'] !== $frame['width'].'x'.$frame['height']) {
-                throw new RuntimeException("Khổ ảnh {$view['id']} phải là {$frame['width']}x{$frame['height']} theo khung proxy đã duyệt.");
+            if ($qa === null || (string) $qa->id !== $choice['qa_stage_id'] || ! ModelSheetQaService::ready($qa)) {
+                throw new RuntimeException('Chưa có lượt QA đạt kiểm cho đúng bộ model sheet này — bấm "QA & hoàn thiện prompt" rồi tải lại trang.');
             }
 
-            $spec = $this->spec($set, $view, $this->settings($choice), $choice['attempt'], $source, $sourceArtifact);
+            if (! hash_equals((string) $qa->output_json['prompt_sha256'], $choice['prompt_sha256'])
+                || ! hash_equals((string) $qa->output_json['prompt_sha256'], hash('sha256', (string) $qa->output_json['prompt']))) {
+                throw new RuntimeException('Prompt trên trang không còn khớp lượt QA đã lưu — tải lại trang.');
+            }
+
+            $spec = $this->spec($set, $qa, $this->settings($choice), $choice['attempt']);
+            $this->approvePrompt($projectId, $qa, $creator);
         } catch (RuntimeException|InvalidArgumentException $e) {
             return [null, $e->getMessage()];
         }
 
-        [$image, $reason] = $this->images->createModelSheetView($projectId, $creator, $spec);
+        [$image, $reason] = $this->images->createModelSheetMaster($projectId, $creator, $spec);
 
         if ($image === null) {
             return [null, 'Không tạo được ô ảnh ('.$reason.').'];
@@ -107,10 +134,82 @@ final class ModelSheetService
             return [$image, 'already_exists'];
         }
 
-        return $this->renderer->renderNow((string) $image->id);
+        [$image, $reason] = $this->renderer->renderNow((string) $image->id);
+
+        if ($reason !== 'rendered' || $image === null) {
+            return [$image, $reason];
+        }
+
+        [$processed, $message] = $this->processArtifact($set, $image, $image->artifacts()->orderBy('created_at')->orderBy('id')->first());
+
+        return [$image, $processed ? 'rendered' : 'processing_failed|'.$message];
     }
 
-    /** @return array{0: bool, 1: string} */
+    /**
+     * Bam "QA & hoan thien prompt": mot luot Sonnet cho bo model sheet hien hanh. Ket qua dat
+     * thi dung lai; `$retry` chi chay lai khi luot da luu chua dat kiem.
+     *
+     * @return array{0: ?VideoPlanningStage, 1: string}
+     */
+    public function qa(string $projectId, bool $retry): array
+    {
+        [$set, $error] = $this->activeSet($projectId);
+
+        if ($set === null) {
+            return [null, (string) $error];
+        }
+
+        if (($problem = $this->compatibilityError((array) $set->output_json)) !== null) {
+            return [null, $problem];
+        }
+
+        return $this->qa->run($projectId, $set, $retry);
+    }
+
+    /** Nguoi dung xac nhan Render = chap nhan gui dung prompt QA nay (MODEL_SHEET_PROMPT_APPROVAL). */
+    private function approvePrompt(string $projectId, VideoPlanningStage $qa, string $creator): void
+    {
+        [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::MODEL_SHEET_PROMPT_APPROVAL, [
+            'execution' => self::PROMPT_APPROVAL_EXECUTION,
+            'qa_stage_id' => (string) $qa->id,
+            'prompt_sha256' => (string) $qa->output_json['prompt_sha256'],
+        ]);
+
+        if ($token !== null) {
+            $this->stageStore->finishSucceeded((string) $stage->id, $token, '', ['approved_by' => $creator, 'approved_at' => now()->toIso8601String()]);
+        } elseif ($reason !== 'already_succeeded') {
+            throw new RuntimeException('Không ghi được xác nhận prompt ('.$reason.').');
+        }
+    }
+
+    /**
+     * Xu ly lai tu master da luu (kiem file, cat tam o). Khong goi model.
+     *
+     * @return array{0: bool, 1: string}
+     */
+    public function process(string $projectId, string $imageId): array
+    {
+        [$set, $error] = $this->activeSet($projectId);
+
+        if ($set === null) {
+            return [false, (string) $error];
+        }
+
+        $image = $this->masterOf($projectId, (string) $set->id, $imageId);
+
+        if ($image === null || ! in_array($image->status, [DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value], true)) {
+            return [false, 'Ảnh này không phải master đã render của bộ model sheet hiện tại.'];
+        }
+
+        return $this->processArtifact($set, $image, $image->artifacts()->orderBy('created_at')->orderBy('id')->first());
+    }
+
+    /**
+     * Duyet CA master trong mot quyet dinh: duyet anh, ghi lan duyet bo model sheet (ID/hash
+     * thiet ke, hash master). Day chua phai DESIGN LOCK.
+     *
+     * @return array{0: bool, 1: string}
+     */
     public function approve(string $projectId, string $artifactId, ?string $adminId): array
     {
         [$set, $error] = $this->activeSet($projectId);
@@ -120,158 +219,479 @@ final class ModelSheetService
         }
 
         $artifact = VideoArtifact::query()->whereKey($artifactId)->where('project_id', $projectId)->first();
-        $image = $artifact?->design_image_id === null ? null : VideoDesignImage::query()->whereKey($artifact->design_image_id)->first();
-        $spec = is_array($image?->prompt_spec_json) ? $image->prompt_spec_json : [];
+        $image = $artifact?->design_image_id === null ? null : $this->masterOf($projectId, (string) $set->id, (string) $artifact->design_image_id);
 
-        if ($image === null || $image->image_type !== DesignImageStore::MODEL_SHEET_TYPE || ($spec['model_sheet_set_id'] ?? null) !== (string) $set->id) {
+        if ($artifact === null || $image === null) {
             return [false, 'Ảnh này không thuộc bộ model sheet hiện tại.'];
         }
 
-        if (($spec['view_id'] ?? null) !== $this->firstViewId((array) $set->output_json)) {
-            $first = $this->approvedFirstView($projectId, (string) $set->id, false);
-
-            if ($first === null || ($spec['source_artifact_id'] ?? null) !== (string) $first[1]->id) {
-                return [false, 'Ảnh này được render từ một MS1 khác MS1 đang duyệt — cần xác nhận lại bằng một lượt render mới.'];
-            }
+        if (($problem = $this->blockingProblem($image, $artifact, true)) !== null) {
+            return [false, $problem];
         }
 
-        [$done, $reason] = $this->images->approve($projectId, $artifactId, $adminId, null, DesignImageStore::MODEL_SHEET_TYPE);
+        $crops = $this->images->modelSheetCrops($projectId, $artifact);
+        $input = $this->reviewInput($set, $image, $artifact);
 
-        return $done ? [true, 'approved'] : [false, 'Không duyệt được ảnh ('.$reason.').'];
+        try {
+            DB::transaction(function () use ($projectId, $artifactId, $adminId, $input, $crops): void {
+                [$done, $reason] = $this->images->approve($projectId, $artifactId, $adminId, null, DesignImageStore::MODEL_SHEET_MASTER_TYPE);
+
+                if (! $done) {
+                    throw new RuntimeException('Không duyệt được ảnh ('.$reason.').');
+                }
+
+                [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::MODEL_SHEET_REVIEW, $input, true);
+
+                if ($token === null) {
+                    throw new RuntimeException('Không ghi được lượt duyệt model sheet ('.$reason.').');
+                }
+
+                $saved = $this->stageStore->finishSucceeded((string) $stage->id, $token, '', [
+                    'approved_by' => $adminId,
+                    'approved_at' => now()->toIso8601String(),
+                    'crops' => array_map(static fn (array $crop): array => [
+                        'view_id' => $crop['view_id'],
+                        'artifact_id' => $crop['id'],
+                        'sha256' => $crop['sha256'],
+                        'x' => $crop['x'],
+                        'y' => $crop['y'],
+                        'width' => $crop['width'],
+                        'height' => $crop['height'],
+                    ], $crops),
+                ]);
+
+                if (! $saved) {
+                    throw new RuntimeException('Lượt duyệt model sheet bị giành mất khi lưu — tải lại trang.');
+                }
+            });
+        } catch (RuntimeException $e) {
+            return [false, $e->getMessage()];
+        }
+
+        return [true, 'approved'];
     }
 
-    /** @return array{0: ?VideoPlanningStage, 1: string} */
-    public function review(string $projectId, ?string $adminId): array
+    /**
+     * Tu choi ca master; lan thu sau tao master moi, giu lich su cu.
+     *
+     * @return array{0: bool, 1: string}
+     */
+    public function reject(string $projectId, string $imageId): array
     {
         [$set, $error] = $this->activeSet($projectId);
 
         if ($set === null) {
-            return [null, (string) $error];
+            return [false, (string) $error];
         }
 
-        $state = $this->views($projectId, $set);
+        return $this->images->rejectModelSheetMaster($projectId, $imageId, (string) $set->id);
+    }
 
-        if ($state['review_input'] === null) {
-            return [null, 'Bộ model sheet chưa đủ tám góc được duyệt và còn hợp lệ.'];
+    /**
+     * Bo model sheet da duyet cua thiet ke hien hanh — dieu kien phia may chu cho proxy 3D.
+     * Chi doc: khong mo bo moi. Tim o moi execution duoc ho tro (bo duyet truoc khi doi bo
+     * bien dich van hop le), kiem lai thiet ke nguon, file master/o theo sha256 va ban duyet.
+     *
+     * `$deep` doc lai file va so sha256 (cong proxy); panel chi kiem file con ton tai.
+     *
+     * @return array{set_id: string, review_stage_id: string, design_stage_id: string, master_image_id: string, master_artifact_id: string, master_artifact_sha256: string}
+     */
+    public function approvedSheet(string $projectId, bool $deep = true): array
+    {
+        [$stage, , $canonicalHash] = $this->context($projectId);
+        $supported = array_map('strval', (array) config('video.superyacht.model_sheet.master.supported_executions'));
+        $images = VideoDesignImage::query()
+            ->where('project_id', $projectId)
+            ->where('image_type', DesignImageStore::MODEL_SHEET_MASTER_TYPE)
+            ->where('status', DesignImageStatus::APPROVED->value)
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(prompt_spec_json, '$.design_stage_id')) = ?", [(string) $stage->id])
+            ->orderByDesc('approved_at')
+            ->get();
+        $problem = null;
+
+        foreach ($images as $image) {
+            $spec = (array) $image->prompt_spec_json;
+            $set = VideoPlanningStage::query()->whereKey($spec['model_sheet_set_id'] ?? null)->where('project_id', $projectId)
+                ->where('stage', PlanningStageName::MODEL_SHEET->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->first();
+            $artifact = $image->selected_artifact_id === null ? null : VideoArtifact::query()->whereKey($image->selected_artifact_id)->where('project_id', $projectId)->first();
+
+            if ($set === null || $artifact === null || ! in_array((string) ($set->input_json['execution'] ?? ''), $supported, true)
+                || ($set->input_json['design_stage_id'] ?? null) !== (string) $stage->id || ($spec['design_canonical_hash'] ?? null) !== $canonicalHash) {
+                continue;
+            }
+
+            if (($problem = $this->blockingProblem($image, $artifact, $deep)) !== null) {
+                continue;
+            }
+
+            $review = $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::MODEL_SHEET_REVIEW, $this->reviewInput($set, $image, $artifact));
+
+            if ($review === null) {
+                $problem = 'không tìm thấy lượt duyệt khớp master hiện hành';
+
+                continue;
+            }
+
+            return [
+                'set_id' => (string) $set->id,
+                'review_stage_id' => (string) $review->id,
+                'design_stage_id' => (string) $stage->id,
+                'master_image_id' => (string) $image->id,
+                'master_artifact_id' => (string) $artifact->id,
+                'master_artifact_sha256' => (string) $artifact->sha256,
+            ];
         }
 
-        [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::MODEL_SHEET_REVIEW, $state['review_input']);
-
-        if ($token === null) {
-            return $reason === 'already_succeeded' ? [$stage, 'already_reviewed'] : [null, 'Không ghi được lượt duyệt bộ ('.$reason.').'];
-        }
-
-        $saved = $this->stageStore->finishSucceeded((string) $stage->id, $token, '', ['approved_by' => $adminId, 'approved_at' => now()->toIso8601String()]);
-
-        return $saved ? [VideoPlanningStage::query()->find($stage->id), 'reviewed'] : [null, 'Lượt duyệt bộ bị giành mất khi lưu — tải lại trang.'];
+        throw new RuntimeException($problem === null
+            ? 'Model sheet của bản thiết kế hiện hành chưa được duyệt — duyệt model sheet trước proxy 3D.'
+            : 'Model sheet đã duyệt không còn hợp lệ: '.$problem);
     }
 
     /** @return array<string, mixed> */
     public function panel(string $projectId, string $creator = ''): array
     {
-        $design = $this->design->panel($projectId);
+        $design = $this->designPanel($projectId);
         [$active, $sourceError] = $this->activeSet($projectId);
         $set = $active ?? $this->currentSet($projectId);
+        $config = (array) config('video.superyacht.model_sheet.master');
 
         $base = [
             'design_name' => $design['name'],
             'design_stage_id' => $design['stage_id'],
             'design_warnings' => count($design['check']['warnings'] ?? []),
-            'proxy_ready' => $design['current'] && ($design['check']['verdict'] ?? null) === YachtDesignCheck::PASS,
+            'proxy_ready' => false,
             'source_error' => $sourceError,
             'models' => array_map(static fn (array $entry): array => [
                 'value' => (string) $entry['model'],
                 'label' => (string) $entry['label'],
                 'default' => $entry['default'] === true,
             ], $this->registry->forTask(self::TASK)),
-            'default_size' => (string) config('video.superyacht.model_sheet.default_size'),
+            'size' => (string) $config['size'],
+            'variations' => (int) $config['variations'],
             'next_image_code' => trim($creator) === '' ? '' : $this->images->nextImageCode($projectId, $creator, self::CODE_SUFFIX),
             'set' => null,
-            'rows' => [],
+            'master' => null,
+            'masters' => [],
+            'approved' => null,
             'complete' => false,
             'reviewed' => false,
+            'qa' => null,
+            'sheet' => null,
         ];
+
+        try {
+            $base['sheet'] = $this->approvedSheet($projectId, false);
+            $base['proxy_ready'] = true;
+        } catch (RuntimeException) {
+        }
 
         if ($set === null) {
             return $base;
         }
 
-        $state = $this->views($projectId, $set);
-        $review = $state['review_input'] === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::MODEL_SHEET_REVIEW, $state['review_input']);
+        $snapshot = (array) $set->output_json;
+        $masters = array_map(fn (array $cell): array => $cell + [
+            'problems' => $this->cellProblems($cell),
+        ], $this->images->modelSheetMastersFor($projectId, (string) $set->id));
+        $approvedCell = array_values(array_filter($masters, static fn (array $cell): bool => $cell['status'] === DesignImageStatus::APPROVED->value))[0] ?? null;
+        $approved = null;
+        $reviewed = false;
+
+        if ($approvedCell !== null && $approvedCell['selected_artifact_id'] !== null) {
+            $image = $this->masterOf($projectId, (string) $set->id, (string) $approvedCell['id']);
+            $artifact = VideoArtifact::query()->whereKey($approvedCell['selected_artifact_id'])->where('project_id', $projectId)->first();
+
+            if ($image !== null && $artifact !== null) {
+                $approved = [
+                    'id' => (string) $image->id,
+                    'artifact_id' => (string) $artifact->id,
+                    'artifact_sha256' => (string) $artifact->sha256,
+                    'problem' => $this->blockingProblem($image, $artifact),
+                ];
+                $reviewed = $approved['problem'] === null
+                    && $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::MODEL_SHEET_REVIEW, $this->reviewInput($set, $image, $artifact)) !== null;
+            }
+        }
 
         return [
             'set' => [
                 'id' => (string) $set->id,
                 'active' => $active !== null,
                 'design_stage_id' => (string) ($set->input_json['design_stage_id'] ?? ''),
-                'phase_revision' => (int) ($set->input_json['phase_revision'] ?? 0),
+                'phase_revision' => (int) ($set->input_json['qa_phase_revision'] ?? $set->input_json['phase_revision'] ?? 0),
                 'current_design' => ($set->input_json['design_stage_id'] ?? null) === $design['stage_id'],
-                'compatible_error' => $this->compatibilityError((array) $set->output_json),
-                'design_missing' => array_values((array) ($set->output_json['design_missing'] ?? [])),
+                'compatible_error' => $this->compatibilityError($snapshot),
+                'blocking' => array_values((array) ($snapshot['blocking'] ?? [])),
             ],
-            'rows' => $state['rows'],
-            'complete' => $state['review_input'] !== null,
-            'reviewed' => $review !== null,
+            'master' => [
+                'draft' => (string) ($snapshot['facts']['draft'] ?? ''),
+                'attempt' => (string) Str::uuid(),
+                'layout_guide' => ($snapshot['layout_guide'] ?? false) === true,
+                'views' => array_values((array) $snapshot['views']),
+            ],
+            'qa' => $active === null ? null : $this->qaState($projectId, $active),
+            'masters' => $masters,
+            'approved' => $approved,
+            'complete' => $approved !== null && $approved['problem'] === null,
+            'reviewed' => $reviewed,
         ] + $base;
     }
 
-    /** @return array{rows: list<array<string, mixed>>, review_input: ?array<string, mixed>} */
-    private function views(string $projectId, VideoPlanningStage $set): array
+    /**
+     * Trang thai QA cua bo dang mo cho panel: prompt cuoi, thay doi, loi kiem, findings, chi phi.
+     *
+     * @return array<string, mixed>
+     */
+    private function qaState(string $projectId, VideoPlanningStage $set): array
     {
         $snapshot = (array) $set->output_json;
-        $cells = $this->images->modelSheetCellsFor($projectId, (string) $set->id);
-        $first = $this->approvedFirstView($projectId, (string) $set->id, false);
-        $firstArtifactId = $first === null ? null : (string) $first[1]->id;
-        $rows = [];
-        $complete = true;
-
-        foreach ($snapshot['views'] as $index => $view) {
-            $isFirst = $index === 0;
-            $viewCells = array_values(array_map(
-                static fn (array $cell): array => $cell + ['stale' => ! $isFirst && $cell['source_artifact_id'] !== $firstArtifactId],
-                array_filter($cells, static fn (array $cell): bool => $cell['view_id'] === $view['id']),
-            ));
-            $approvedCell = array_values(array_filter($viewCells, static fn (array $cell): bool => $cell['status'] === DesignImageStatus::APPROVED->value))[0] ?? null;
-            $approvedArtifact = $approvedCell === null ? null : VideoArtifact::query()->find($approvedCell['selected_artifact_id']);
-            $approved = $approvedCell === null || $approvedArtifact === null ? null : [
-                'id' => $approvedCell['id'],
-                'artifact_id' => (string) $approvedArtifact->id,
-                'artifact_sha256' => (string) $approvedArtifact->sha256,
-                'stale' => $approvedCell['stale'],
-            ];
-            $complete = $complete && $approved !== null && ! $approved['stale'];
-            $rows[] = [
-                'id' => $view['id'],
-                'view' => $view['view'],
-                'prompt' => $view['prompt'],
-                'prompt_sha256' => hash('sha256', $view['prompt']),
-                'size' => ($frame = config('video.superyacht.model_sheet.frames.'.$view['id'])) ? $frame['width'].'x'.$frame['height'] : null,
-                'attempt' => (string) Str::uuid(),
-                'cells' => $viewCells,
-                'approved' => $approved,
-                'locked' => ! $isFirst && $firstArtifactId === null,
-            ];
-        }
+        $stage = $this->qa->current($projectId, $set);
+        $output = (array) ($stage?->output_json ?? []);
+        $status = $stage?->status;
+        $running = $status === VideoPlanningStageStatus::RUNNING->value && $stage->lease_expires_at?->isFuture();
+        $ready = ModelSheetQaService::ready($stage);
+        $config = (array) config('video.superyacht.model_sheet.qa');
 
         return [
-            'rows' => $rows,
-            'review_input' => $complete ? [
-                'execution' => self::REVIEW_EXECUTION,
-                'model_sheet_set_id' => (string) $set->id,
-                'approvals' => array_map(static fn (array $row): array => [
-                    'view_id' => $row['id'],
-                    'image_id' => $row['approved']['id'],
-                    'artifact_id' => $row['approved']['artifact_id'],
-                    'artifact_sha256' => $row['approved']['artifact_sha256'],
-                ], $rows),
-            ] : null,
+            'stage_id' => $stage === null ? null : (string) $stage->id,
+            'status' => $stage === null ? 'none' : ($running ? 'running' : (string) $status),
+            'ready' => $ready,
+            'error' => $status === VideoPlanningStageStatus::FAILED->value ? (string) $stage->error_message : null,
+            'prompt' => $ready ? (string) $output['prompt'] : null,
+            'prompt_sha256' => $ready ? (string) $output['prompt_sha256'] : null,
+            'validation' => self::shortValidation((array) ($output['validation'] ?? [])),
+            'cost_usd' => $stage === null ? null : (float) $stage->cost_usd,
+            'tokens' => $stage === null ? null : ['in' => (int) $stage->tokens_in, 'out' => (int) $stage->tokens_out],
+            'model' => (string) $config['model'],
+            'can_run' => ! $running && ($snapshot['blocking'] ?? []) === [] && $this->compatibilityError($snapshot) === null && ! $ready,
+            'retry' => $stage !== null && $status === VideoPlanningStageStatus::SUCCEEDED->value && ! $ready,
+            'estimate' => '≈ $'.number_format(((float) $config['pricing']['input_usd_per_mtok'] * (int) $config['estimate_tokens']['input'] + (float) $config['pricing']['output_usd_per_mtok'] * (int) $config['estimate_tokens']['output']) / 1000000, 2)
+                .', tối đa ≈ $'.number_format(((float) $config['pricing']['input_usd_per_mtok'] * (int) $config['estimate_tokens']['input'] + (float) $config['pricing']['output_usd_per_mtok'] * (int) $config['max_tokens']) / 1000000, 2),
         ];
     }
 
-    /** @return array{0: VideoPlanningStage, 1: array<string, mixed>, 2: array<string, mixed>} */
-    private function source(string $projectId): array
+    /**
+     * Gioi han so loi hien tren panel; ban day du nam trong output_json cua stage QA.
+     *
+     * @param  array<string, mixed>  $validation
+     * @return array{errors: list<string>, blocking: list<string>, notes: list<string>}
+     */
+    private static function shortValidation(array $validation, int $limit = 20): array
     {
-        $panel = $this->design->panel($projectId);
+        $out = [];
+
+        foreach (['errors', 'blocking', 'notes'] as $key) {
+            $lines = array_values((array) ($validation[$key] ?? []));
+            $out[$key] = count($lines) > $limit
+                ? [...array_slice($lines, 0, $limit), '… và '.(count($lines) - $limit).' dòng khác (đầy đủ trong kết quả lượt QA).']
+                : $lines;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Dau vao cua lan duyet bo: ID/hash thiet ke va hash master. Thiet ke doi thi lan
+     * duyet cu khong con la dau vao hop le.
+     *
+     * @return array<string, mixed>
+     */
+    private function reviewInput(VideoPlanningStage $set, VideoDesignImage $image, VideoArtifact $artifact): array
+    {
+        return [
+            'execution' => self::REVIEW_EXECUTION,
+            'model_sheet_set_id' => (string) $set->id,
+            'design_stage_id' => (string) ($set->input_json['design_stage_id'] ?? ''),
+            'design_canonical_hash' => (string) ($set->input_json['design_canonical_hash'] ?? ''),
+            'master_image_id' => (string) $image->id,
+            'master_artifact_id' => (string) $artifact->id,
+            'master_artifact_sha256' => (string) $artifact->sha256,
+        ];
+    }
+
+    /**
+     * Loi chan duyet: thieu o, o sai kich thuoc hoac sai lien ket master, xu ly loi, file
+     * master/o mat. `$deep` doc lai file va so sha256 (duyet, xu ly lai, cong proxy); panel
+     * chi kiem file con ton tai.
+     */
+    private function blockingProblem(VideoDesignImage $image, VideoArtifact $artifact, bool $deep = false): ?string
+    {
+        if (! in_array($image->status, [DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value], true)) {
+            return 'Master ở trạng thái '.$image->status.' — không duyệt được.';
+        }
+
+        if (($problem = self::fileProblem((string) $artifact->storage_disk, (string) $artifact->storage_path, (string) $artifact->sha256, $deep)) !== null) {
+            return 'File master '.$problem.' — cần render lại.';
+        }
+
+        $processing = (array) (($artifact->metadata_json ?? [])['model_sheet'] ?? []);
+
+        if (($processing['ok'] ?? null) !== true) {
+            return 'Master chưa được xử lý xong'.(is_string($processing['error'] ?? null) ? ' ('.$processing['error'].')' : '').' — bấm "Xử lý lại từ master".';
+        }
+
+        return $this->cropProblem($this->images->modelSheetCrops((string) $image->project_id, $artifact), $artifact, $deep);
+    }
+
+    /**
+     * Bo o hien hanh cua master: du tam o dung thu tu, dung kich thuoc/toa do/hash master,
+     * file con va (khi `$deep`) dung sha256.
+     *
+     * @param  list<array<string, mixed>>  $crops
+     */
+    private function cropProblem(array $crops, VideoArtifact $artifact, bool $deep): ?string
+    {
+        $cells = ModelSheetMaster::fromConfig()->cells();
+
+        if (array_column($crops, 'view_id') !== array_column($cells, 'id')) {
+            return 'Master chưa có đủ '.count($cells).' ô theo đúng thứ tự — bấm "Xử lý lại từ master".';
+        }
+
+        foreach ($crops as $index => $crop) {
+            $cell = $cells[$index];
+
+            if ($crop['width'] !== $cell['width'] || $crop['height'] !== $cell['height'] || $crop['x'] !== $cell['x'] || $crop['y'] !== $cell['y']
+                || $crop['master_sha256'] !== (string) $artifact->sha256) {
+                return "Ô {$crop['view_id']} sai kích thước, tọa độ hoặc liên kết master.";
+            }
+
+            if (($problem = self::fileProblem($crop['disk'], $crop['path'], $crop['sha256'], $deep)) !== null) {
+                return "File ô {$crop['view_id']} {$problem} — bấm \"Xử lý lại từ master\".";
+            }
+        }
+
+        return null;
+    }
+
+    private static function fileProblem(string $disk, string $path, string $sha256, bool $deep): ?string
+    {
+        $filesystem = Storage::disk($disk);
+
+        if ($path === '' || ! $filesystem->exists($path)) {
+            return 'không còn trên đĩa';
+        }
+
+        if ($deep) {
+            $bytes = $filesystem->get($path);
+
+            if (! is_string($bytes) || ! hash_equals($sha256, hash('sha256', $bytes))) {
+                return 'không khớp sha256';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $cell
+     * @return array<string, ?string> artifact_id => loi chan (null neu duyet duoc)
+     */
+    private function cellProblems(array $cell): array
+    {
+        $problems = [];
+        $image = VideoDesignImage::query()->find($cell['id']);
+
+        foreach ($cell['candidates'] as $candidate) {
+            $artifact = VideoArtifact::query()->find($candidate['id']);
+            $problems[(string) $candidate['id']] = $image === null || $artifact === null ? 'Không đọc được master.' : $this->blockingProblem($image, $artifact);
+        }
+
+        return $problems;
+    }
+
+    /**
+     * Kiem file, cat tam o, do canh bao, ghi o va ket qua vao metadata master.
+     *
+     * @return array{0: bool, 1: string}
+     */
+    private function processArtifact(VideoPlanningStage $set, VideoDesignImage $image, ?VideoArtifact $artifact): array
+    {
+        if ($artifact === null) {
+            return [false, 'Master không có file ảnh.'];
+        }
+
+        $valid = fn (array $crops, VideoArtifact $current): bool => (($current->metadata_json ?? [])['model_sheet']['ok'] ?? null) === true
+            && $this->cropProblem($crops, $current, true) === null;
+        $master = ModelSheetMaster::fromConfig();
+        $snapshot = (array) $set->output_json;
+        $filesystem = Storage::disk((string) $artifact->storage_disk);
+
+        try {
+            // Master la nguon cua bo o: kiem truoc moi duong ra, ke ca duong tat ben duoi.
+            $bytes = $filesystem->exists((string) $artifact->storage_path) ? $filesystem->get((string) $artifact->storage_path) : null;
+
+            if (! is_string($bytes) || $bytes === '' || ! hash_equals((string) $artifact->sha256, hash('sha256', $bytes))) {
+                throw new RuntimeException('File master không còn trên đĩa hoặc không khớp sha256 — không xử lý lại được, cần render lại.');
+            }
+
+            if (($snapshot['layout_sha256'] ?? null) !== $master->layoutSha256()) {
+                throw new RuntimeException('Bố cục trong config đã đổi so với lúc mở bộ model sheet.');
+            }
+        } catch (RuntimeException $e) {
+            $this->images->recordModelSheetProcessing($artifact, ['ok' => false, 'error' => $e->getMessage(), 'processed_at' => now()->toIso8601String()]);
+
+            return [false, $e->getMessage()];
+        }
+
+        // Duong tat: bo o da du va dung thi khong cat lai. Thieu/hong thi cat lai tu master
+        // da luu; kho kiem lai tren dong master da khoa truoc khi ghi.
+        if ($valid($this->images->modelSheetCrops((string) $image->project_id, $artifact), $artifact)) {
+            return [true, 'already_processed'];
+        }
+
+        try {
+            $decoded = $master->decode($bytes);
+            $crops = $master->crop($decoded);
+        } catch (RuntimeException $e) {
+            $this->images->recordModelSheetProcessing($artifact, ['ok' => false, 'error' => $e->getMessage(), 'processed_at' => now()->toIso8601String()]);
+
+            return [false, $e->getMessage()];
+        }
+
+        try {
+            $stored = $this->images->storeModelSheetCrops((string) $image->project_id, $artifact, (string) $set->id, $crops, [
+                'ok' => true,
+                'processed_at' => now()->toIso8601String(),
+                'master_sha256' => (string) $artifact->sha256,
+                'layout_sha256' => (string) $snapshot['layout_sha256'],
+            ], $valid);
+        } catch (Throwable $e) {
+            $this->images->recordModelSheetProcessing($artifact->refresh(), ['ok' => false, 'error' => 'Không lưu được ô cắt: '.$e->getMessage(), 'processed_at' => now()->toIso8601String()]);
+
+            return [false, 'Không lưu được ô cắt: '.$e->getMessage()];
+        }
+
+        return [true, $stored];
+    }
+
+    private function masterOf(string $projectId, string $setId, string $imageId): ?VideoDesignImage
+    {
+        $image = VideoDesignImage::query()
+            ->whereKey($imageId)
+            ->where('project_id', $projectId)
+            ->where('image_type', DesignImageStore::MODEL_SHEET_MASTER_TYPE)
+            ->first();
+
+        return $image !== null && (($image->prompt_spec_json ?? [])['model_sheet_set_id'] ?? null) === $setId ? $image : null;
+    }
+
+    /**
+     * Nguon chung cho model sheet: project thuoc workflow cua category yacht, ban thiet ke Phase 3
+     * hien hanh dat kiem, raw JSON va hash canonical. Khong doi truong rieng cua mot tau.
+     *
+     * @return array{0: VideoPlanningStage, 1: array<string, mixed>, 2: string, 3: string, 4: string}
+     */
+    private function context(string $projectId): array
+    {
+        $project = VideoProject::query()->with('article.category')->find($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
+        $category = $project->article?->category ?? throw new RuntimeException('Dự án không gắn bài viết có chủ đề — model sheet không áp dụng.');
+        $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
+
+        if ($workflow === '' || $workflow !== (string) config('video.superyacht.workflow_code')) {
+            throw new RuntimeException("Model sheet chỉ áp dụng cho chủ đề ánh xạ tới workflow ".config('video.superyacht.workflow_code')."; chủ đề {$category->slug} không thuộc workflow này.");
+        }
+
+        $panel = $this->designPanel($projectId);
 
         if (! $panel['current'] || ($panel['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($panel['stage_id'])) {
             throw new RuntimeException('Chưa có bản thiết kế Phase 3 hiện hành đạt kiểm tự động.');
@@ -283,8 +703,6 @@ final class ModelSheetService
             throw new RuntimeException('Bản thiết kế nguồn không thuộc dự án hoặc chưa chạy thành công.');
         }
 
-        $proxyStage = $this->proxy->approvedFor($projectId) ?? throw new RuntimeException('Chưa duyệt proxy 3D cho bản thiết kế này — mở trang Proxy 3D để dựng, lưu và duyệt.');
-
         $raw = (string) $stage->raw_response;
         $design = JsonAnswer::object($raw);
         $canonicalHash = $stage->output_json['design']['data']['canonical']['hash'] ?? null;
@@ -293,322 +711,213 @@ final class ModelSheetService
             throw new RuntimeException('Bản thiết kế nguồn không đọc được JSON hoặc thiếu hash canonical.');
         }
 
-        $config = (array) config('video.superyacht.model_sheet');
-        $phase = AiPhase::query()->find($stage->input_json['phase_id'] ?? null) ?? throw new RuntimeException('Không tìm thấy prompt phase-3 mà bản thiết kế đã dùng.');
-        [$block, $missing, $details] = self::designBlock($design, $canonicalHash);
-        $snapshot = [
-            'execution' => self::EXECUTION,
-            'phase_id' => (string) $phase->id,
-            'phase_revision' => (int) $phase->revision,
-            'prompt_sha256' => (string) $phase->content_sha256,
-            'suffix' => (string) $config['suffix'],
-            'design_block_sha256' => hash('sha256', $block),
-            'design_missing' => $missing,
-            'views' => array_map(static fn (array $view, int $index): array => [
-                'id' => (string) $view['id'],
-                'view' => (string) $view['view'],
-                'prompt' => implode("\n\n", [
-                    $block,
-                    implode("\n", array_filter([
-                        (string) $view['view'],
-                        (string) ($details[$view['id']] ?? ''),
-                        (string) ($config['cameras'][$view['id']] ?? ''),
-                        (string) ($config['framing'][$view['id']] ?? ''),
-                        (string) $config['occlusion'],
-                        $index === 0 ? '' : (string) $config['reference_caption'],
-                    ], static fn (string $line): bool => $line !== '')),
-                    (string) $config['suffix'],
-                ]),
-            ], array_values((array) $config['views']), array_keys(array_values((array) $config['views']))),
-        ];
+        return [$stage, $design, $canonicalHash, (string) $category->id, $workflow];
+    }
 
-        if (($error = $this->compatibilityError($snapshot)) !== null) {
-            throw new RuntimeException($error);
+    /** @return array<string, mixed> */
+    private function designPanel(string $projectId): array
+    {
+        return $this->designPanels[$projectId] ??= $this->design->panel($projectId);
+    }
+
+    /** @return array{0: VideoPlanningStage, 1: array<string, mixed>, 2: array<string, mixed>} */
+    private function source(string $projectId): array
+    {
+        [$stage, $design, $canonicalHash, $categoryId, $workflow] = $this->context($projectId);
+        $config = (array) config('video.superyacht.model_sheet');
+        $designPhase = AiPhase::query()->find($stage->input_json['phase_id'] ?? null) ?? throw new RuntimeException('Không tìm thấy prompt phase-3 mà bản thiết kế đã dùng.');
+        $qaPhase = AiPhase::query()
+            ->where('category_id', $categoryId)
+            ->where('workflow_code', $workflow)
+            ->where('phase_code', (string) $config['qa']['phase_code'])
+            ->where('is_current', true)
+            ->where('status', AiPhase::PUBLISHED)
+            ->get();
+
+        if ($qaPhase->count() !== 1 || ! hash_equals((string) $qaPhase->first()->content_sha256, hash('sha256', (string) $qaPhase->first()->prompt_content))) {
+            throw new RuntimeException('Không có đúng một revision hiện hành hợp lệ của prompt QA '.$config['qa']['phase_code'].' cho chủ đề này.');
         }
 
+        $qaPhase = $qaPhase->first();
+        $dnaStage = VideoPlanningStage::query()->whereKey($stage->input_json['dna_stage_id'] ?? null)->where('project_id', $projectId)->first();
+        $dna = $dnaStage === null ? [] : (array) (JsonAnswer::object((string) ($dnaStage->output_json['raw_text'] ?? ''))['dna'] ?? []);
+        $master = ModelSheetMaster::fromConfig();
+        $views = self::views($config, $master, $design);
+        $facts = (new ModelSheetFacts($design, $dna, array_map(static fn (array $v): array => ['id' => $v['id'], 'view' => $v['view']], $views), (array) $config['qa']['priority']))->snapshot();
+        $guide = ($config['master']['layout_guide'] ?? false) === true;
+        $snapshot = [
+            'execution' => self::execution(),
+            'design_phase' => ['id' => (string) $designPhase->id, 'revision' => (int) $designPhase->revision, 'sha256' => (string) $designPhase->content_sha256],
+            'qa_phase' => ['id' => (string) $qaPhase->id, 'revision' => (int) $qaPhase->revision, 'sha256' => (string) $qaPhase->content_sha256],
+            'layout_sha256' => $master->layoutSha256(),
+            'layout_guide' => $guide,
+            'guide_sha256' => $guide ? hash('sha256', $master->guidePng()) : null,
+            'policy_sha256' => self::policySha256(),
+            // Giu trong snapshot: la mot phan dinh danh cua cac bo model sheet da mo (bo dang chua
+            // master va prompt QA da duyet). Bo khoa nay se doi dinh danh, panel mat bo hien hanh.
+            'expected_ratios' => self::expectedRatios((array) (self::at($design, 'data.canonical') ?? [])),
+            'views' => $views,
+            'facts' => $facts,
+            'facts_sha256' => hash('sha256', (string) json_encode($facts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+            'blocking' => array_values(array_filter([
+                $facts['coordinate_problem'],
+                $facts['minimum_problems'] === [] ? null : 'Thiết kế thiếu dữ liệu nền tảng cho model sheet: '.implode(', ', $facts['minimum_problems']).'.',
+                $facts['conflicts'] === [] ? null : 'Dữ liệu nguồn mâu thuẫn (sửa ở thiết kế): '.implode(' ', $facts['conflicts']),
+                $facts['ms8']['problem'] ?? null,
+            ])),
+        ];
+
         $input = [
-            'execution' => self::EXECUTION,
+            'execution' => self::execution(),
+            'workflow' => $workflow,
             'design_stage_id' => (string) $stage->id,
-            'design_raw_sha256' => hash('sha256', $raw),
+            'design_raw_sha256' => hash('sha256', (string) $stage->raw_response),
             'design_canonical_hash' => $canonicalHash,
-            'phase_id' => (string) $phase->id,
-            'phase_revision' => (int) $phase->revision,
-            'prompt_sha256' => (string) $phase->content_sha256,
+            'dna_stage_id' => $dnaStage === null ? null : (string) $dnaStage->id,
+            'design_phase_id' => (string) $designPhase->id,
+            'qa_phase_id' => (string) $qaPhase->id,
+            'qa_phase_revision' => (int) $qaPhase->revision,
+            'qa_prompt_sha256' => (string) $qaPhase->content_sha256,
+            'layout_sha256' => $snapshot['layout_sha256'],
             'config_sha256' => hash('sha256', (string) json_encode(array_diff_key($snapshot, array_flip(['execution'])), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
-            'proxy_stage_id' => (string) $proxyStage->id,
-            'proxy_input_sha256' => (string) ($proxyStage->input_json['input_sha256'] ?? ''),
-            'proxy_builder_sha256' => (string) ($proxyStage->input_json['builder_sha256'] ?? ''),
         ];
 
         return [$stage, $input, $snapshot];
     }
 
-    /** @param  array<string, mixed>  $snapshot */
+    /**
+     * Ti le canh dai/canh ngan cua khung bao tau theo thiet ke. Chi con nam trong snapshot de giu
+     * dinh danh cac bo model sheet da mo; khong doi cach tinh (doi la doi dinh danh bo).
+     *
+     * @param  array<string, mixed>  $canonical
+     * @return array<string, float>
+     */
+    private static function expectedRatios(array $canonical): array
+    {
+        $number = static fn (mixed $value): ?float => is_int($value) || is_float($value) ? (float) $value : null;
+        $loa = $number($canonical['dimensions']['loa']['value'] ?? null);
+        $beam = $number($canonical['dimensions']['beam']['value'] ?? null);
+        $draft = $number($canonical['dimensions']['draft']['value'] ?? null);
+        $tops = array_filter(array_map(static fn (mixed $point): ?float => is_array($point) ? $number($point[1] ?? null) : null, (array) ($canonical['profile_curve'] ?? [])), static fn (?float $z): bool => $z !== null);
+        $height = $tops === [] || $draft === null ? null : max($tops) + $draft;
+        $ratio = static fn (?float $a, ?float $b): ?float => $a === null || $b === null || min($a, $b) <= 0 ? null : max($a, $b) / min($a, $b);
+
+        return array_filter([
+            'MS1' => $ratio($loa, $height),
+            'MS4' => $ratio($beam, $height),
+            'MS5' => $ratio($beam, $height),
+            'MS6' => $ratio($loa, $beam),
+        ], static fn (?float $value): bool => $value !== null);
+    }
+
+    /**
+     * Phien ban chinh sach ghep (camera, bo cuc, quy tac, trinh bay, phien ban schema/compiler/
+     * bang du kien). Thay vi so nguyen van bang camera trong prompt Phase 3.
+     */
+    private static function policySha256(): string
+    {
+        $config = (array) config('video.superyacht.model_sheet');
+
+        return hash('sha256', (string) json_encode([
+            'views' => $config['views'],
+            'cameras' => $config['cameras'],
+            'prompt' => $config['master']['prompt'],
+            'occlusion' => $config['occlusion'],
+            'suffix' => $config['suffix'],
+            'facts' => ModelSheetFacts::VERSION,
+            'schema' => ModelSheetQaValidator::VERSION,
+            'compiler' => ModelSheetPromptCompiler::VERSION,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * Goc theo thu tu    /**
+     * Goc theo thu tu trong config (MS1..MS8), kem vi tri o. Nhan MS8 lay tu ban thiet ke neu
+     * thiet ke tu khai muc tieu chi tiet.
+     *
+     * @param  array<string, mixed>  $config
+     * @param  array<string, mixed>  $design
+     * @return list<array{id: string, view: string, row: int, column: int, x: int, y: int, width: int, height: int}>
+     */
+    private static function views(array $config, ModelSheetMaster $master, array $design = []): array
+    {
+        $cells = [];
+
+        foreach ($master->cells() as $cell) {
+            $cells[$cell['id']] = $cell;
+        }
+
+        $views = [];
+
+        foreach (array_values((array) $config['views']) as $view) {
+            $cell = $cells[(string) $view['id']] ?? throw new RuntimeException("Góc {$view['id']} không có ô trong bố cục master.");
+            $views[] = ['id' => (string) $view['id'], 'view' => self::designLabel($design, (string) $view['id']) ?? (string) $view['view']] + array_intersect_key($cell, array_flip(['row', 'column', 'x', 'y', 'width', 'height']));
+        }
+
+        if (count($views) !== count($cells)) {
+            throw new RuntimeException('Bố cục master có ô không thuộc danh sách góc model sheet.');
+        }
+
+        return $views;
+    }
+
+    /**
+     * Kiem theo phien ban: bo cuc, chinh sach ghep (camera, quy tac, trinh bay, schema/compiler)
+     * va prompt QA da chot. Khong so nguyen van bang camera/cau nen trong prompt Phase 3.
+     *
+     * @param  array<string, mixed>  $snapshot
+     */
     private function compatibilityError(array $snapshot): ?string
     {
-        $phase = AiPhase::query()->find($snapshot['phase_id'] ?? null);
+        $master = ModelSheetMaster::fromConfig();
 
-        if ($phase === null || (string) $phase->content_sha256 !== (string) ($snapshot['prompt_sha256'] ?? '')) {
-            return 'Prompt phase-3 mà bộ model sheet chốt không còn khớp hash.';
+        if (($snapshot['execution'] ?? null) !== self::execution()) {
+            return 'Bộ model sheet này thuộc execution '.($snapshot['execution'] ?? '?').', không phải '.self::execution().' — chỉ xem, không render.';
         }
 
-        $content = (string) $phase->prompt_content;
-        $ids = array_column($snapshot['views'], 'id');
-        preg_match_all('/^\|\s*(MS\d+)\s*\|/m', $content, $rows);
-
-        if (count(array_unique($ids)) !== count($ids) || $rows[1] !== $ids) {
-            return 'Danh sách góc trong config ('.implode(', ', $ids).') không khớp bảng model sheet của prompt phase-3 ('.implode(', ', $rows[1]).').';
+        if (($snapshot['layout_sha256'] ?? null) !== $master->layoutSha256()) {
+            return 'Bố cục master trong config đã đổi so với lúc mở bộ model sheet.';
         }
 
-        foreach ($snapshot['views'] as $view) {
-            if (! str_contains($content, '| '.$view['id'].' | '.$view['view'].' |')) {
-                return "Mô tả góc {$view['id']} trong config không khớp nguyên văn prompt phase-3.";
+        if (($snapshot['policy_sha256'] ?? null) !== self::policySha256()) {
+            return 'Camera, quy tắc hoặc phiên bản bộ ghép đã đổi so với lúc mở bộ model sheet.';
+        }
+
+        $ids = array_column((array) ($snapshot['views'] ?? []), 'id');
+
+        if ($ids !== array_column($master->cells(), 'id')) {
+            return 'Danh sách góc của bộ ('.implode(', ', $ids).') không khớp bố cục master.';
+        }
+
+        foreach ($ids as $id) {
+            if (trim((string) config('video.superyacht.model_sheet.cameras.'.$id, '')) === '') {
+                return "Config model sheet thiếu thông số camera của {$id}.";
             }
         }
 
-        foreach ($snapshot['views'] as $view) {
-            if (trim((string) config('video.superyacht.model_sheet.cameras.'.$view['id'], '')) === '') {
-                return "Config model sheet thiếu thông số camera của {$view['id']}.";
-            }
-        }
+        $phase = AiPhase::query()->find($snapshot['qa_phase']['id'] ?? null);
 
-        if (preg_match('/^### Step 10\b[^\n]*\n+Each prompt = [^“\n]*“([^”\n]+)”/m', $content, $step) !== 1) {
-            return 'Không tìm thấy câu nền studio trong Step 10 của prompt phase-3.';
-        }
-
-        foreach (explode(', ', (string) $snapshot['suffix']) as $phrase) {
-            if (! in_array($phrase, explode(', ', $step[1]), true)) {
-                return "Cụm \"{$phrase}\" của câu nền studio trong config không có nguyên văn trong câu nền Step 10.";
-            }
+        if ($phase === null || $phase->status !== AiPhase::PUBLISHED || (string) $phase->content_sha256 !== (string) ($snapshot['qa_phase']['sha256'] ?? '')) {
+            return 'Prompt QA model sheet mà bộ chốt không còn khớp hash.';
         }
 
         return null;
     }
 
     /**
+     * Nhan goc ma ban thiet ke tu khai (canonical.model_sheet.views), vi du muc tieu MS8.
+     *
      * @param  array<string, mixed>  $design
-     * @return array{0: string, 1: list<string>, 2: array<string, string>}
      */
-    private static function designBlock(array $design, string $canonicalHash): array
+    private static function designLabel(array $design, string $id): ?string
     {
-        $config = (array) config('video.superyacht.model_sheet.design');
-        $approvedPath = 'video.superyacht.model_sheet.approved['.$canonicalHash.']';
-        $approved = config('video.superyacht.model_sheet.approved')[$canonicalHash] ?? null;
-        $missing = [];
-        $texts = static function (array $paths) use ($design, &$missing): array {
-            $found = [];
-
-            foreach ($paths as $path) {
-                $value = self::at($design, (string) $path);
-
-                if (is_string($value) && trim($value) !== '') {
-                    $found[] = trim($value);
-                } else {
-                    $missing[] = (string) $path;
-                }
-            }
-
-            return $found;
-        };
-
-        $dimensions = self::at($design, (string) $config['dimensions']);
-        $measures = [];
-
-        foreach ((array) $config['dimension_labels'] as $key => $label) {
-            $entry = is_array($dimensions) ? ($dimensions[$key] ?? null) : null;
-
-            if (is_array($entry) && is_numeric($entry['value'] ?? null) && is_string($entry['unit'] ?? null)) {
-                $measures[] = $label.' '.$entry['value'].' '.$entry['unit'];
-            } else {
-                $missing[] = $config['dimensions'].'.'.$key;
+        foreach ((array) (self::at($design, 'data.canonical.model_sheet.views') ?? []) as $view) {
+            if (is_array($view) && ($view['id'] ?? null) === $id && is_string($view['view'] ?? null) && trim($view['view']) !== '') {
+                return $id === 'MS8' ? trim($view['view']) : null;
             }
         }
 
-        $decks = self::at($design, (string) $config['decks']);
-
-        if (is_array($decks) && is_numeric($decks['value'] ?? null) && is_string($decks['unit'] ?? null)) {
-            $measures[] = $decks['value'].' '.$decks['unit'];
-        } else {
-            $missing[] = (string) $config['decks'];
-        }
-
-        $innovations = self::at($design, (string) $config['innovations']);
-        $innovations = is_array($innovations) ? array_values(array_filter($innovations, static fn (mixed $item): bool => is_array($item) && is_string($item['id'] ?? null))) : [];
-        $required = (array) $config['innovation_ids'];
-        $features = [];
-
-        foreach (array_diff(array_unique(array_column($innovations, 'id')), $required) as $extra) {
-            $missing[] = $config['innovations'].'['.$extra.'] (ngoài '.implode(', ', $required).')';
-        }
-
-        foreach ($required as $id) {
-            $matches = array_values(array_filter($innovations, static fn (array $item): bool => $item['id'] === $id));
-
-            if (count($matches) !== 1) {
-                $missing[] = $config['innovations'].'['.$id.']'.($matches === [] ? '' : ' (trùng '.count($matches).' lần)');
-
-                continue;
-            }
-
-            $parts = [];
-
-            foreach ((array) $config['innovation_fields'] as $field) {
-                if (is_string($matches[0][$field] ?? null) && trim($matches[0][$field]) !== '') {
-                    $parts[] = $field === 'name' ? rtrim(trim($matches[0][$field]), '.').'.' : trim($matches[0][$field]);
-                } else {
-                    $missing[] = $config['innovations'].'['.$id.'].'.$field;
-                }
-            }
-
-            $features[] = $id.' '.implode(' ', $parts);
-        }
-
-        $colors = self::at($design, (string) $config['colors']);
-        $colors = is_array($colors) ? array_values($colors) : [];
-        $swatches = [];
-        $roles = [];
-
-        foreach ($colors as $index => $color) {
-            $color = is_array($color) ? $color : [];
-
-            foreach (['name', 'hex', 'role'] as $field) {
-                if (! is_string($color[$field] ?? null) || trim($color[$field]) === '' || ($field === 'hex' && preg_match('/^#[0-9A-Fa-f]{6}$/', $color[$field]) !== 1)) {
-                    $missing[] = $config['colors'].'['.$index.'].'.$field;
-                }
-            }
-
-            if (is_string($color['name'] ?? null) && is_string($color['hex'] ?? null) && is_string($color['role'] ?? null)) {
-                $swatches[] = trim($color['name']).' '.trim($color['hex']).' '.trim($color['role']);
-                $roles[] = trim($color['role']);
-            }
-        }
-
-        foreach ((array) $config['color_roles'] as $role) {
-            if (! in_array($role, $roles, true)) {
-                $missing[] = $config['colors'].'[role='.$role.']';
-            }
-        }
-
-        $avoid = self::at($design, (string) $config['avoid']);
-        $avoid = array_values(array_filter(
-            is_array($avoid) ? array_map(static fn (mixed $line): string => is_string($line) ? trim($line) : '', $avoid) : [],
-            static fn (string $line): bool => $line !== '',
-        ));
-        $limits = self::at($design, (string) $config['operational_limits']);
-        $limits = is_array($limits) ? array_values(array_filter(array_map(static fn (mixed $limit): ?string => is_array($limit) && is_string($limit['feature'] ?? null) ? $limit['feature'] : null, $limits))) : [];
-        $state = '';
-
-        if (! is_array($approved)) {
-            $missing[] = $approvedPath;
-        } else {
-            $interior = array_values((array) ($approved['avoid_interior'] ?? []));
-
-            foreach (array_diff($interior, $avoid) as $line) {
-                $missing[] = $approvedPath.'.avoid_interior: "'.$line.'" không có trong '.$config['avoid'];
-            }
-
-            $avoid = array_values(array_diff($avoid, $interior));
-            $chosen = array_values((array) ($approved['state_features'] ?? []));
-            $state = trim((string) ($approved['state'] ?? ''));
-
-            foreach (array_diff($chosen, $limits) as $feature) {
-                $missing[] = $approvedPath.'.state_features: "'.$feature.'" không có trong '.$config['operational_limits'];
-            }
-
-            if (($chosen === []) !== ($state === '')) {
-                $missing[] = $approvedPath.'.state';
-            }
-        }
-
-        $details = [];
-
-        foreach ((array) $config['view_details'] as $id => $path) {
-            $views = self::at($design, (string) $path);
-            $matches = array_values(array_filter(is_array($views) ? $views : [], static fn (mixed $view): bool => is_array($view) && ($view['id'] ?? null) === $id));
-
-            if (count($matches) === 1 && is_string($matches[0]['view'] ?? null) && trim($matches[0]['view']) !== '') {
-                $details[$id] = trim($matches[0]['view']);
-            } else {
-                $missing[] = $path.'['.$id.']'.(count($matches) > 1 ? ' (trùng '.count($matches).' lần)' : '');
-            }
-        }
-
-        $reference = [];
-        $axis = self::at($design, (string) $config['coordinate_x']);
-
-        if (is_string($axis) && trim($axis) !== '') {
-            $reference[] = 'x: '.trim($axis);
-        } else {
-            $missing[] = (string) $config['coordinate_x'];
-        }
-
-        $landmarks = self::at($design, (string) $config['landmarks']);
-        $landmarks = is_array($landmarks) ? $landmarks : [];
-        $crest = $landmarks[$config['crest']] ?? null;
-
-        if (is_array($crest) && is_numeric($crest['x'] ?? null) && is_numeric($crest['z'] ?? null)) {
-            $reference[] = 'Crest at x='.$crest['x'].', '.$crest['z'].' m above the design waterline.';
-        } else {
-            $missing[] = $config['landmarks'].'.'.$config['crest'];
-        }
-
-        $raised = [];
-
-        foreach ($landmarks as $key => $mark) {
-            if (! is_array($mark) || ($mark['above_profile'] ?? null) !== true) {
-                continue;
-            }
-
-            if (! is_string($mark['above_profile_reason'] ?? null) || trim($mark['above_profile_reason']) === '' || ! is_numeric($mark['z'] ?? null)) {
-                $missing[] = $config['landmarks'].'.'.$key;
-
-                continue;
-            }
-
-            $raised[] = trim($mark['above_profile_reason']).' Its landmark elevation is '.$mark['z'].' m above the design waterline.';
-        }
-
-        array_push($reference, ...array_values(array_unique($raised)));
-
-        $declared = self::at($design, (string) $config['deck_levels']);
-        $declared = is_array($declared) ? array_values($declared) : [];
-
-        foreach ($declared as $index => $deck) {
-            foreach (['name' => is_array($deck) && is_string($deck['name'] ?? null) && trim($deck['name']) !== '', 'floor_z_m' => is_array($deck) && is_numeric($deck['floor_z_m'] ?? null)] as $field => $valid) {
-                if (! $valid) {
-                    $missing[] = $config['deck_levels'].'['.$index.'].'.$field;
-                }
-            }
-        }
-
-        $levels = array_values(array_filter($declared, static fn (mixed $deck): bool => is_array($deck) && is_string($deck['name'] ?? null) && trim($deck['name']) !== '' && is_numeric($deck['floor_z_m'] ?? null)));
-        usort($levels, static fn (array $a, array $b): int => $a['floor_z_m'] <=> $b['floor_z_m']);
-        $below = array_column(array_filter($levels, static fn (array $deck): bool => $deck['floor_z_m'] < 0), 'name');
-
-        foreach (array_unique(array_diff_assoc(array_column($levels, 'name'), array_unique(array_column($levels, 'name')))) as $name) {
-            $missing[] = $config['deck_levels'].'['.$name.'] (trùng tên)';
-        }
-
-        if (is_array($decks) && is_numeric($decks['value'] ?? null) && (int) $decks['value'] !== count($declared)) {
-            $missing[] = $config['deck_levels'].' ('.count($declared).' boong, khác '.$config['decks'].' = '.$decks['value'].')';
-        }
-
-        if ($declared === []) {
-            $missing[] = (string) $config['deck_levels'];
-        } else {
-            $reference[] = 'Decks from lowest: '.implode(', ', array_column($levels, 'name')).'.'
-                .($below === [] ? '' : ' '.implode(' and ', array_filter([implode(', ', array_slice($below, 0, -1)), end($below)])).(count($below) === 1 ? ' has its floor' : ' have floors').' below the design waterline.');
-        }
-
-        $blocks = [
-            implode(' ', array_filter([$measures === [] ? '' : implode(', ', $measures).'.', ...$reference, ...$texts((array) $config['geometry'])])),
-            implode("\n", $features),
-            implode(' ', array_filter([...$texts((array) $config['materials']), $swatches === [] ? '' : implode(', ', $swatches).'.'])),
-            implode(' ', array_filter([...$texts((array) $config['requirements']), ...$avoid, $state])),
-            is_array($approved) ? trim((string) ($approved['emphasis'] ?? '')) : '',
-        ];
-
-        return [implode("\n\n", array_values(array_filter($blocks, static fn (string $block): bool => trim($block) !== ''))), array_values(array_unique($missing)), $details];
+        return null;
     }
 
     /** @param  array<string, mixed>  $design */
@@ -636,19 +945,22 @@ final class ModelSheetService
     }
 
     /**
-     * @param  array{model: string, size: string, quality: string, variations: int}  $choice
+     * Kich thuoc va so anh co dinh theo config master; nguoi dung chi chon model va quality.
+     *
+     * @param  array{model: string, quality: string}  $choice
      * @return array{entry: array<string, mixed>, size: ImageSize, quality: ImageQuality, variations: ImageVariations}
      */
     private function settings(array $choice): array
     {
+        $config = (array) config('video.superyacht.model_sheet.master');
         $entry = $this->registry->find(self::TASK, 'openai:'.$choice['model']) ?? throw new RuntimeException("Model {$choice['model']} không dùng được cho model sheet.");
         $model = ImageModel::tryFrom($choice['model']) ?? throw new RuntimeException("Model {$choice['model']} không có trong ImageModel.");
-        $size = ImageSize::tryFrom($choice['size']);
+        $size = ImageSize::tryFrom((string) $config['size']);
         $quality = ImageQuality::tryFrom($choice['quality']);
-        $variations = ImageVariations::tryFrom($choice['variations']);
+        $variations = ImageVariations::tryFrom((int) $config['variations']);
 
         if ($size === null || ! in_array($size->value, $entry['controls']['sizes'], true)) {
-            throw new RuntimeException("Size {$choice['size']} không dùng được với {$entry['label']}.");
+            throw new RuntimeException("Size {$config['size']} không dùng được với {$entry['label']}.");
         }
 
         if ($quality === null || ! $model->supports($quality)) {
@@ -656,32 +968,39 @@ final class ModelSheetService
         }
 
         if ($variations === null || $variations->value > (int) $entry['max_variations']) {
-            throw new RuntimeException("{$choice['variations']} ảnh vượt mức tối đa của {$entry['label']}.");
+            throw new RuntimeException("{$config['variations']} ảnh vượt mức tối đa của {$entry['label']}.");
         }
 
         return ['entry' => $entry, 'size' => $size, 'quality' => $quality, 'variations' => $variations];
     }
 
     /**
-     * @param  array{id: string, view: string, prompt: string}  $view
+     * Dong bang luot render: prompt, bo cuc, thiet ke nguon, gia (DesignImageStore).
+     *
      * @param  array{entry: array<string, mixed>, size: ImageSize, quality: ImageQuality, variations: ImageVariations}  $settings
      * @return array<string, mixed>
      */
-    private function spec(VideoPlanningStage $set, array $view, array $settings, string $attempt, ?VideoDesignImage $source, ?VideoArtifact $sourceArtifact): array
+    private function spec(VideoPlanningStage $set, VideoPlanningStage $qa, array $settings, string $attempt): array
     {
+        $snapshot = (array) $set->output_json;
+        $prompt = (string) $qa->output_json['prompt'];
+
         return [
             'project_id' => (string) $set->project_id,
-            'operation' => self::OPERATION,
+            'operation' => self::MASTER_OPERATION,
             'task' => self::TASK,
-            'execution' => self::EXECUTION,
+            'execution' => self::execution(),
             'model_sheet_set_id' => (string) $set->id,
             'design_stage_id' => (string) $set->input_json['design_stage_id'],
             'design_canonical_hash' => (string) $set->input_json['design_canonical_hash'],
-            'view_id' => $view['id'],
-            'slot_index' => (int) substr($view['id'], 2),
+            'layout_sha256' => (string) $snapshot['layout_sha256'],
+            'layout_guide' => ($snapshot['layout_guide'] ?? false) === true,
+            'guide_sha256' => $snapshot['guide_sha256'] ?? null,
+            'slot_index' => 0,
             'attempt' => $attempt,
-            'prompt' => $view['prompt'],
-            'prompt_sha256' => hash('sha256', $view['prompt']),
+            'qa_stage_id' => (string) $qa->id,
+            'prompt' => $prompt,
+            'prompt_sha256' => hash('sha256', $prompt),
             'provider' => $settings['entry']['provider'],
             'model' => $settings['entry']['model'],
             'pricing' => $settings['entry']['pricing'],
@@ -690,68 +1009,18 @@ final class ModelSheetService
             'variations' => $settings['variations']->value,
             'aspect_ratio' => null,
             'image_size' => null,
-            'source_image_id' => $source === null ? null : (string) $source->id,
-            'source_artifact_id' => $sourceArtifact === null ? null : (string) $sourceArtifact->id,
-            'source_artifact_sha256' => $sourceArtifact === null ? null : (string) $sourceArtifact->sha256,
         ];
     }
 
     private function currentSet(string $projectId): ?VideoPlanningStage
     {
-        $latest = VideoPlanningStage::query()
+        return VideoPlanningStage::query()
             ->where('project_id', $projectId)
             ->where('stage', PlanningStageName::MODEL_SHEET->value)
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->whereNull('input_json->orphan_of_stage_id')
-            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.execution')) = ?", [self::EXECUTION])
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.execution')) = ?", [self::execution()])
             ->orderByDesc('planning_revision')
             ->first();
-
-        return $latest;
-    }
-
-    /**
-     * @param  array<string, mixed>  $snapshot
-     * @return array{id: string, view: string, prompt: string}
-     */
-    private function view(array $snapshot, string $viewId): array
-    {
-        foreach ($snapshot['views'] as $view) {
-            if ($view['id'] === $viewId) {
-                return $view;
-            }
-        }
-
-        throw new RuntimeException("Góc {$viewId} không có trong bộ model sheet này.");
-    }
-
-    /** @param  array<string, mixed>  $snapshot */
-    private function firstViewId(array $snapshot): string
-    {
-        return (string) ($snapshot['views'][0]['id'] ?? '');
-    }
-
-    /** @return ?array{0: VideoDesignImage, 1: VideoArtifact} */
-    private function approvedFirstView(string $projectId, string $setId, bool $required = true): ?array
-    {
-        $image = VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::MODEL_SHEET_TYPE)
-            ->where('slot_index', 1)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(prompt_spec_json, '$.model_sheet_set_id')) = ?", [$setId])
-            ->first();
-        $artifact = $image === null ? null : VideoArtifact::query()->whereKey($image->selected_artifact_id)->where('project_id', $projectId)->first();
-
-        if ($image === null || $artifact === null) {
-            if ($required) {
-                throw new RuntimeException('Cần duyệt một ảnh MS1 trước khi render các góc còn lại.');
-            }
-
-            return null;
-        }
-
-        return [$image, $artifact];
     }
 }

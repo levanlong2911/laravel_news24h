@@ -1,0 +1,855 @@
+{
+    "version": "proxy-spec-v1",
+    "source": {
+        "project_id": "p",
+        "master_image_id": "i",
+        "master_artifact_id": "a",
+        "master_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "review_stage_id": "r",
+        "set_id": "s",
+        "set_execution": "model-sheet-master-v2",
+        "facts_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "qa_stage_id": "q",
+        "approval_stage_id": "o",
+        "prompt_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "design_stage_id": "d",
+        "canonical_hash": "sha256:x",
+        "crops": [
+            {
+                "view_id": "MS1",
+                "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+                "view_id": "MS2",
+                "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+                "view_id": "MS3",
+                "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+                "view_id": "MS4",
+                "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+                "view_id": "MS5",
+                "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+                "view_id": "MS6",
+                "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+                "view_id": "MS7",
+                "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            {
+                "view_id": "MS8",
+                "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            }
+        ],
+        "source_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "eligible": true
+    },
+    "coordinates": {
+        "design": {
+            "x": "fraction of LOA from bow",
+            "y": "metres from the centreline, positive port",
+            "z": "metres above the design waterline"
+        },
+        "internal": {
+            "X": "m từ mũi, dương về đuôi",
+            "y": "m từ trục giữa, dương mạn trái",
+            "z": "m trên đường nước thiết kế"
+        },
+        "loa_m": 100.0,
+        "to_gltf": [
+            [
+                1,
+                0,
+                0,
+                0
+            ],
+            [
+                0,
+                0,
+                1,
+                0
+            ],
+            [
+                0,
+                1,
+                0,
+                0
+            ],
+            [
+                0,
+                0,
+                0,
+                1
+            ]
+        ]
+    },
+    "geometry": {
+        "hull": {
+            "loa": 100.0,
+            "beam": 20.0,
+            "draft": 4.0,
+            "profile": [
+                [
+                    0.0,
+                    4.0
+                ],
+                [
+                    30.0,
+                    10.0
+                ],
+                [
+                    50.0,
+                    5.5
+                ],
+                [
+                    70.0,
+                    10.0
+                ],
+                [
+                    100.0,
+                    5.0
+                ]
+            ],
+            "plan_port": [
+                [
+                    0.0,
+                    0.0
+                ],
+                [
+                    50.0,
+                    10.0
+                ],
+                [
+                    100.0,
+                    6.0
+                ]
+            ],
+            "symmetry": "design",
+            "shape": {
+                "G1": {
+                    "value": 2.5,
+                    "basis": "assumption",
+                    "source": "config:G1"
+                },
+                "G2": {
+                    "value": 6.0,
+                    "basis": "assumption",
+                    "source": "config:G2"
+                },
+                "G3": {
+                    "value": [
+                        0.047,
+                        0.1,
+                        0.9
+                    ],
+                    "basis": "assumption",
+                    "source": "config:G3"
+                },
+                "G11": {
+                    "value": [
+                        0.55,
+                        0.25
+                    ],
+                    "basis": "assumption",
+                    "source": "config:G11"
+                }
+            },
+            "sources": {
+                "profile": "data.canonical.profile_curve",
+                "plan": "data.canonical.plan_outline"
+            },
+            "provenance": null
+        },
+        "decks": [
+            {
+                "name": "Main",
+                "number": 1,
+                "floor": 2.0,
+                "ceiling": 5.0,
+                "setback": 0.0,
+                "segments": [
+                    [
+                        10.0,
+                        90.0
+                    ]
+                ],
+                "segments_source": "deck_range",
+                "outline": "x_range",
+                "envelope_conflicts": 0,
+                "source": "data.canonical.decks.0"
+            },
+            {
+                "name": "Upper",
+                "number": 2,
+                "floor": 5.0,
+                "ceiling": 8.0,
+                "setback": 1.0,
+                "segments": [
+                    [
+                        20.0,
+                        40.0
+                    ],
+                    [
+                        60.0,
+                        80.0
+                    ]
+                ],
+                "segments_source": "enclosed_segments",
+                "outline": "x_range",
+                "envelope_conflicts": 0,
+                "source": "data.canonical.decks.1"
+            }
+        ],
+        "deck_count": 2,
+        "deck_count_convention": null,
+        "landmarks": [
+            {
+                "id": "L:bow_tip",
+                "name": "bow_tip",
+                "X": 0.0,
+                "y": null,
+                "z": 4.0,
+                "side": "unknown",
+                "pair": null,
+                "above_profile": false,
+                "role": "profile",
+                "source": "data.canonical.landmarks.bow_tip"
+            },
+            {
+                "id": "L:slot_fwd",
+                "name": "slot_fwd",
+                "X": 40.0,
+                "y": null,
+                "z": 5.0,
+                "side": "unknown",
+                "pair": null,
+                "above_profile": false,
+                "role": null,
+                "source": "data.canonical.landmarks.slot_fwd"
+            },
+            {
+                "id": "L:slot_aft",
+                "name": "slot_aft",
+                "X": 60.0,
+                "y": null,
+                "z": 5.0,
+                "side": "unknown",
+                "pair": null,
+                "above_profile": false,
+                "role": null,
+                "source": "data.canonical.landmarks.slot_aft"
+            },
+            {
+                "id": "L:mirror_port",
+                "name": "mirror_port",
+                "X": 30.0,
+                "y": 3.0,
+                "z": 9.5,
+                "side": "port",
+                "pair": "L:mirror_starboard",
+                "above_profile": false,
+                "role": null,
+                "source": "data.canonical.landmarks.mirror_port"
+            },
+            {
+                "id": "L:mirror_starboard",
+                "name": "mirror_starboard",
+                "X": 30.0,
+                "y": -3.0,
+                "z": 9.5,
+                "side": "starboard",
+                "pair": "L:mirror_port",
+                "above_profile": false,
+                "role": null,
+                "source": "data.canonical.landmarks.mirror_starboard"
+            },
+            {
+                "id": "L:hatch",
+                "name": "hatch",
+                "X": 90.0,
+                "y": null,
+                "z": 3.0,
+                "side": "unknown",
+                "pair": null,
+                "above_profile": false,
+                "role": null,
+                "source": "data.canonical.landmarks.hatch"
+            }
+        ],
+        "parts": [
+            {
+                "id": "hull",
+                "op": "base",
+                "label": "Thân vỏ (loft từ profile_curve, plan_outline)",
+                "registry": "hull_shell",
+                "origin": "rule",
+                "importance": "silhouette",
+                "params": [],
+                "instances": []
+            },
+            {
+                "id": "deck_closure",
+                "op": "base",
+                "label": "Mặt boong chính khép vỏ",
+                "registry": "main_deck",
+                "origin": "rule",
+                "importance": "silhouette",
+                "params": [],
+                "instances": []
+            },
+            {
+                "id": "envelope",
+                "op": "base",
+                "label": "Khối thượng tầng theo boong và đường bao",
+                "registry": "superstructure",
+                "origin": "rule",
+                "importance": "silhouette",
+                "params": [],
+                "instances": []
+            },
+            {
+                "id": "N1_slot",
+                "op": "cut",
+                "label": "N1_slot",
+                "innovation": "N1",
+                "registry": "superstructure",
+                "origin": "mapping",
+                "importance": "identity",
+                "facing": null,
+                "sides": [],
+                "deck": null,
+                "of": null,
+                "spans": null,
+                "display_state": null,
+                "reason": null,
+                "simplify": null,
+                "shape": null,
+                "glass": null,
+                "params": {
+                    "from_x": {
+                        "value": 40.0,
+                        "basis": "design",
+                        "source": "data.canonical.landmarks.slot_fwd.x"
+                    },
+                    "to_x": {
+                        "value": 60.0,
+                        "basis": "design",
+                        "source": "data.canonical.landmarks.slot_aft.x"
+                    },
+                    "width": {
+                        "value": 6.0,
+                        "basis": "design",
+                        "source": "data.canonical.dimensions.slot_width.value"
+                    },
+                    "floor_z": {
+                        "value": 5.0,
+                        "basis": "design",
+                        "source": "data.canonical.landmarks.slot_fwd.z"
+                    }
+                },
+                "instances": []
+            },
+            {
+                "id": "N2_facets",
+                "op": "panel",
+                "label": "N2_facets",
+                "innovation": "N2",
+                "registry": "superstructure",
+                "origin": "mapping",
+                "importance": "identity",
+                "facing": "up",
+                "sides": [],
+                "deck": null,
+                "of": null,
+                "spans": null,
+                "display_state": "OL:mirror_tracking",
+                "reason": null,
+                "simplify": null,
+                "shape": null,
+                "glass": null,
+                "params": {
+                    "size_x": {
+                        "value": 3.0,
+                        "basis": "approximate",
+                        "source": "data.yacht_bible.innovations.1.geometry#q1"
+                    },
+                    "size_y": {
+                        "value": 2.0,
+                        "basis": "approximate",
+                        "source": "data.yacht_bible.innovations.1.geometry#q1"
+                    },
+                    "recess": {
+                        "value": 0.3,
+                        "basis": "assumption",
+                        "source": "mapping"
+                    }
+                },
+                "instances": [
+                    {
+                        "landmark": "mirror_port",
+                        "X": 30.0,
+                        "y": 3.0,
+                        "z": 9.5,
+                        "side": "port"
+                    },
+                    {
+                        "landmark": "mirror_starboard",
+                        "X": 30.0,
+                        "y": -3.0,
+                        "z": 9.5,
+                        "side": "starboard"
+                    }
+                ]
+            },
+            {
+                "id": "keel_blocks",
+                "op": "keel_blocks",
+                "label": "keel_blocks",
+                "innovation": null,
+                "registry": "keel_blocks",
+                "origin": "mapping",
+                "importance": "detail",
+                "facing": null,
+                "sides": [],
+                "deck": null,
+                "of": null,
+                "spans": null,
+                "display_state": null,
+                "reason": null,
+                "simplify": null,
+                "shape": null,
+                "glass": null,
+                "params": {
+                    "spacing": {
+                        "value": 6.0,
+                        "basis": "assumption",
+                        "source": "mapping"
+                    },
+                    "height": {
+                        "value": 1.2,
+                        "basis": "assumption",
+                        "source": "mapping"
+                    },
+                    "width": {
+                        "value": 2.0,
+                        "basis": "assumption",
+                        "source": "mapping"
+                    }
+                },
+                "instances": []
+            }
+        ]
+    },
+    "display_state": [
+        {
+            "part_id": "OL:mirror_tracking",
+            "part": "Mirror facets",
+            "state": "Parked flat.",
+            "refs": [],
+            "numbers": []
+        }
+    ],
+    "build_states": [
+        {
+            "id": "BS05",
+            "kind": "scale_model",
+            "present": [
+                "hull_shell"
+            ],
+            "absent": [
+                "keel_blocks",
+                "superstructure"
+            ],
+            "parts": [
+                "hull"
+            ],
+            "surfaces": [],
+            "scale": 25.0,
+            "scale_basis": "assumption",
+            "missing": [],
+            "source": "data.canonical.build_states.0"
+        },
+        {
+            "id": "BS07",
+            "kind": "build",
+            "present": [
+                "hull_shell",
+                "keel_blocks"
+            ],
+            "absent": [
+                "superstructure"
+            ],
+            "parts": [
+                "hull",
+                "keel_blocks"
+            ],
+            "surfaces": [],
+            "scale": null,
+            "scale_basis": null,
+            "missing": [],
+            "source": "data.canonical.build_states.1"
+        },
+        {
+            "id": "BS08",
+            "kind": "build",
+            "present": [
+                "hull_shell",
+                "superstructure"
+            ],
+            "absent": [
+                "keel_blocks"
+            ],
+            "parts": [
+                "hull",
+                "envelope",
+                "N1_slot",
+                "N2_facets"
+            ],
+            "surfaces": [],
+            "scale": null,
+            "scale_basis": null,
+            "missing": [],
+            "source": "data.canonical.build_states.2"
+        }
+    ],
+    "cameras": [
+        {
+            "view": "MS1",
+            "label": "View 1",
+            "projection": "orthographic",
+            "azimuth_deg": 90.0,
+            "elevation_deg": 0.0,
+            "eye_height_m": null,
+            "focal_mm": null,
+            "width": 960,
+            "height": 1080,
+            "target": {
+                "kind": "yacht"
+            },
+            "assumptions": [],
+            "status": "nominal",
+            "source": "config:video.superyacht.model_sheet.frames",
+            "frames_sha256": "ccee08a4642b6650b44aed390232156b583a4025f75b5b6268733824f11c20e3"
+        },
+        {
+            "view": "MS2",
+            "label": "View 2",
+            "projection": "perspective",
+            "azimuth_deg": 35.0,
+            "elevation_deg": null,
+            "eye_height_m": 10.0,
+            "focal_mm": 85.0,
+            "width": 960,
+            "height": 1080,
+            "target": {
+                "kind": "yacht"
+            },
+            "assumptions": [
+                "G7"
+            ],
+            "status": "nominal_assumed",
+            "source": "config:video.superyacht.model_sheet.frames",
+            "frames_sha256": "ccee08a4642b6650b44aed390232156b583a4025f75b5b6268733824f11c20e3"
+        },
+        {
+            "view": "MS3",
+            "label": "View 3",
+            "projection": "perspective",
+            "azimuth_deg": 215.0,
+            "elevation_deg": null,
+            "eye_height_m": 10.0,
+            "focal_mm": 85.0,
+            "width": 960,
+            "height": 1080,
+            "target": {
+                "kind": "yacht"
+            },
+            "assumptions": [
+                "G7"
+            ],
+            "status": "nominal_assumed",
+            "source": "config:video.superyacht.model_sheet.frames",
+            "frames_sha256": "ccee08a4642b6650b44aed390232156b583a4025f75b5b6268733824f11c20e3"
+        },
+        {
+            "view": "MS4",
+            "label": "View 4",
+            "projection": "orthographic",
+            "azimuth_deg": 0.0,
+            "elevation_deg": 0.0,
+            "eye_height_m": null,
+            "focal_mm": null,
+            "width": 960,
+            "height": 1080,
+            "target": {
+                "kind": "yacht"
+            },
+            "assumptions": [],
+            "status": "nominal",
+            "source": "config:video.superyacht.model_sheet.frames",
+            "frames_sha256": "ccee08a4642b6650b44aed390232156b583a4025f75b5b6268733824f11c20e3"
+        },
+        {
+            "view": "MS5",
+            "label": "View 5",
+            "projection": "orthographic",
+            "azimuth_deg": 180.0,
+            "elevation_deg": 0.0,
+            "eye_height_m": null,
+            "focal_mm": null,
+            "width": 960,
+            "height": 1080,
+            "target": {
+                "kind": "yacht"
+            },
+            "assumptions": [],
+            "status": "nominal",
+            "source": "config:video.superyacht.model_sheet.frames",
+            "frames_sha256": "ccee08a4642b6650b44aed390232156b583a4025f75b5b6268733824f11c20e3"
+        },
+        {
+            "view": "MS6",
+            "label": "View 6",
+            "projection": "orthographic",
+            "azimuth_deg": 0.0,
+            "elevation_deg": 90.0,
+            "eye_height_m": null,
+            "focal_mm": null,
+            "width": 960,
+            "height": 1080,
+            "target": {
+                "kind": "yacht"
+            },
+            "assumptions": [],
+            "status": "nominal",
+            "source": "config:video.superyacht.model_sheet.frames",
+            "frames_sha256": "ccee08a4642b6650b44aed390232156b583a4025f75b5b6268733824f11c20e3"
+        },
+        {
+            "view": "MS7",
+            "label": "View 7",
+            "projection": "perspective",
+            "azimuth_deg": 35.0,
+            "elevation_deg": 30.0,
+            "eye_height_m": null,
+            "focal_mm": 85.0,
+            "width": 960,
+            "height": 1080,
+            "target": {
+                "kind": "yacht"
+            },
+            "assumptions": [],
+            "status": "nominal",
+            "source": "config:video.superyacht.model_sheet.frames",
+            "frames_sha256": "ccee08a4642b6650b44aed390232156b583a4025f75b5b6268733824f11c20e3"
+        },
+        {
+            "view": "MS8",
+            "label": "View 8",
+            "projection": "perspective",
+            "azimuth_deg": 135.0,
+            "elevation_deg": 30.0,
+            "eye_height_m": null,
+            "focal_mm": 85.0,
+            "width": 960,
+            "height": 1080,
+            "target": {
+                "kind": "entities",
+                "innovation": "N2",
+                "landmarks": [
+                    "mirror_port",
+                    "mirror_starboard"
+                ]
+            },
+            "assumptions": [],
+            "status": "nominal",
+            "source": "config:video.superyacht.model_sheet.frames",
+            "frames_sha256": "ccee08a4642b6650b44aed390232156b583a4025f75b5b6268733824f11c20e3"
+        }
+    ],
+    "innovations": [
+        {
+            "id": "N1",
+            "name": "Slot"
+        },
+        {
+            "id": "N2",
+            "name": "Mirrors"
+        }
+    ],
+    "identity": [],
+    "assumptions": [
+        {
+            "id": "G1",
+            "label": "Mái = 2.5 số mũ",
+            "value": 2.5,
+            "unit": "số mũ",
+            "affects": "shape",
+            "used_by": [
+                "hull"
+            ],
+            "requires_confirmation": true,
+            "confirmed": true
+        },
+        {
+            "id": "G2",
+            "label": "Thân dưới = 6 m",
+            "value": 6,
+            "unit": "m",
+            "affects": "shape",
+            "used_by": [
+                "hull"
+            ],
+            "requires_confirmation": true,
+            "confirmed": true
+        },
+        {
+            "id": "G3",
+            "label": "Dưới nước = 0.047 ; 0.1 ; 0.9 phần LOA",
+            "value": [
+                0.047,
+                0.1,
+                0.9
+            ],
+            "unit": "phần LOA",
+            "affects": "shape",
+            "used_by": [
+                "hull"
+            ],
+            "requires_confirmation": true,
+            "confirmed": true
+        },
+        {
+            "id": "G11",
+            "label": "Mũi loe = 0.55 ; 0.25 tỉ lệ ; phần LOA",
+            "value": [
+                0.55,
+                0.25
+            ],
+            "unit": "tỉ lệ ; phần LOA",
+            "affects": "shape",
+            "used_by": [
+                "hull"
+            ],
+            "requires_confirmation": true,
+            "confirmed": true
+        },
+        {
+            "id": "N2_facets.size_x",
+            "label": "size_x = 3 m lấy từ cụm trích dẫn \"approximately 2 by 3 m\" (data.yacht_bible.innovations.1.geometry#q1) — giá trị xấp xỉ, chiều đặt theo mapping",
+            "value": 3.0,
+            "unit": null,
+            "affects": "identity",
+            "used_by": [
+                "N2_facets"
+            ],
+            "requires_confirmation": true,
+            "confirmed": true
+        },
+        {
+            "id": "N2_facets.size_y",
+            "label": "size_y = 2 m lấy từ cụm trích dẫn \"approximately 2 by 3 m\" (data.yacht_bible.innovations.1.geometry#q1) — giá trị xấp xỉ, chiều đặt theo mapping",
+            "value": 2.0,
+            "unit": null,
+            "affects": "identity",
+            "used_by": [
+                "N2_facets"
+            ],
+            "requires_confirmation": true,
+            "confirmed": true
+        },
+        {
+            "id": "N2_facets.recess",
+            "label": "recess = 0.3 m — sau tấm che",
+            "value": 0.3,
+            "unit": null,
+            "affects": "identity",
+            "used_by": [
+                "N2_facets"
+            ],
+            "requires_confirmation": true,
+            "confirmed": true
+        },
+        {
+            "id": "keel_blocks.spacing",
+            "label": "spacing = 6 m — spec không ghi",
+            "value": 6.0,
+            "unit": null,
+            "affects": "dimension",
+            "used_by": [
+                "keel_blocks"
+            ],
+            "requires_confirmation": false,
+            "confirmed": false
+        },
+        {
+            "id": "keel_blocks.height",
+            "label": "height = 1.2 m — spec không ghi",
+            "value": 1.2,
+            "unit": null,
+            "affects": "dimension",
+            "used_by": [
+                "keel_blocks"
+            ],
+            "requires_confirmation": false,
+            "confirmed": false
+        },
+        {
+            "id": "keel_blocks.width",
+            "label": "width = 2 m — spec không ghi",
+            "value": 2.0,
+            "unit": null,
+            "affects": "dimension",
+            "used_by": [
+                "keel_blocks"
+            ],
+            "requires_confirmation": false,
+            "confirmed": false
+        },
+        {
+            "id": "BS05.scale",
+            "label": "Tỉ lệ mô hình BS05 = 1:25 theo spec Phase 3P (thiết kế không ghi tỉ lệ)",
+            "value": 25.0,
+            "unit": null,
+            "affects": "shape",
+            "used_by": [
+                "BS05"
+            ],
+            "requires_confirmation": true,
+            "confirmed": true
+        },
+        {
+            "id": "G7",
+            "label": "Eye level = 10 m",
+            "value": 10,
+            "unit": null,
+            "affects": "camera",
+            "used_by": [
+                "MS2",
+                "MS3"
+            ],
+            "requires_confirmation": false,
+            "confirmed": false
+        }
+    ],
+    "gaps": [
+        {
+            "severity": "warning",
+            "scope": "cameras",
+            "subject": "cameras",
+            "message": "Camera là thông số danh nghĩa từ cấu hình hiện hành, chưa đóng băng theo master — phải hiệu chỉnh và lưu camera có phiên bản trước bước đối chiếu chính thức."
+        }
+    ],
+    "versions": {
+        "compiler": "proxy-spec-v1"
+    },
+    "ready": true,
+    "spec_sha256": "dbc6d5a42fdfadde4987343c14b3c1133d775b36e044f77118ed36b924f5cf82"
+}

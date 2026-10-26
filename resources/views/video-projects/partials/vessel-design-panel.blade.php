@@ -11,7 +11,7 @@
                     <span class="grow"></span>
                     @if($yacht['analysed'])<span class="va-tag blue">Đã thiết kế</span>@endif
                     @if($yacht['current'] && ($yachtCheck['verdict'] ?? null) === \App\Video\YachtDesign\YachtDesignCheck::PASS)
-                        <a class="vp-btn sm" href="{{ route('video-projects.proxy', $project->id) }}">Proxy 3D →</a>
+                        <a class="vp-btn sm" href="#modelSheetPanel">Model sheet →</a>
                     @endif
                     @if($yacht['running'])
                         <button class="vp-btn sm" disabled>Đang thiết kế…</button>

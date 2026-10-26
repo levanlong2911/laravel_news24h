@@ -501,6 +501,22 @@ class AppServiceProvider extends ServiceProvider
             ),
         );
 
+        // QA prompt model sheet: luon di Anthropic (Sonnet 5.5), cau hinh rieng.
+        $this->app->bind(
+            'video.model_sheet_qa.client',
+            static fn (Application $app): AnthropicStructuredOutputClient => new AnthropicStructuredOutputClient(
+                http: $app->make(HttpFactory::class),
+                apiKey: (string) config('canonical_concept.anthropic.api_key'),
+                baseUrl: (string) config('canonical_concept.anthropic.base_url'),
+                apiVersion: (string) config('canonical_concept.anthropic.api_version'),
+                timeoutSeconds: (int) config('video.superyacht.model_sheet.qa.timeout_seconds'),
+                retryTimes: 0,
+                retrySleepMs: 0,
+                stream: (bool) config('video.superyacht.model_sheet.qa.stream'),
+                effort: config('video.superyacht.model_sheet.qa.effort'),
+            ),
+        );
+
         $this->app->bind(
             'video.anchor_geometry.client',
             static fn (Application $app): AnthropicStructuredOutputClient => new AnthropicStructuredOutputClient(

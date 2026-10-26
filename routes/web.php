@@ -151,11 +151,14 @@ Route::group(
             Route::post('/{id}/design', [VideoProjectsController::class, 'vesselDesign'])->name('video-projects.vessel-design');
             Route::post('/{id}/design/reset', [VideoProjectsController::class, 'resetVesselDesign'])->name('video-projects.vessel-design-reset');
             Route::get('/{id}/proxy', [VideoProjectsController::class, 'proxy'])->name('video-projects.proxy');
-            Route::post('/{id}/proxy/save', [VideoProjectsController::class, 'saveProxy'])->name('video-projects.proxy-save');
+            Route::post('/{id}/proxy/build', [VideoProjectsController::class, 'buildProxy'])->name('video-projects.proxy-build');
+            Route::post('/{id}/proxy/reference/{action}', [VideoProjectsController::class, 'proxyReference'])->whereIn('action', ['propose', 'polygon', 'confirm', 'landmarks', 'camera'])->name('video-projects.proxy-reference');
             Route::post('/{id}/proxy/approve', [VideoProjectsController::class, 'approveProxy'])->name('video-projects.proxy-approve');
+            Route::post('/{id}/model-sheet/qa', [VideoProjectsController::class, 'qaModelSheet'])->name('video-projects.model-sheet-qa');
             Route::post('/{id}/model-sheet/render',[VideoProjectsController::class, 'renderModelSheet'])->name('video-projects.model-sheet-render');
             Route::post('/{id}/model-sheet/approve', [VideoProjectsController::class, 'approveModelSheet'])->name('video-projects.model-sheet-approve');
-            Route::post('/{id}/model-sheet/review', [VideoProjectsController::class, 'reviewModelSheet'])->name('video-projects.model-sheet-review');
+            Route::post('/{id}/model-sheet/reject', [VideoProjectsController::class, 'rejectModelSheet'])->name('video-projects.model-sheet-reject');
+            Route::post('/{id}/model-sheet/process', [VideoProjectsController::class, 'processModelSheet'])->name('video-projects.model-sheet-process');
 
             Route::middleware('video.v4')->group(function () {
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');

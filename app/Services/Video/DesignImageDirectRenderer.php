@@ -10,6 +10,7 @@ use App\Models\VideoDesignImage;
 use App\Models\VideoRender;
 use App\Video\Media\RenderPriceSnapshot;
 use App\Video\Media\SpecRouting;
+use App\Video\ModelSheet\ModelSheetMaster;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -102,7 +103,7 @@ class DesignImageDirectRenderer
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
                 'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
                 'environment_plate' => $this->environmentPlate($spec, $budget),
-                ModelSheetService::OPERATION => $this->modelSheet($image, $spec, $budget),
+                ModelSheetService::MASTER_OPERATION => $this->modelSheetMaster($spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),
                 default => throw new RuntimeException(
                     'Unknown render operation: '.$spec['operation'],
@@ -217,6 +218,9 @@ class DesignImageDirectRenderer
             'environment_key' => $spec['environment_key'] ?? null,
             'reference_manifest_hash' => (string) ($spec['reference_manifest_hash'] ?? ''),
             'sources' => is_array($spec['sources'] ?? null) ? $spec['sources'] : [],
+            // Chi master model sheet doc: co anh mau luoi va hash luc mo bo.
+            'layout_guide' => ($spec['layout_guide'] ?? false) === true,
+            'guide_sha256' => (string) ($spec['guide_sha256'] ?? ''),
         ];
     }
 
@@ -260,15 +264,21 @@ class DesignImageDirectRenderer
      * @param  array<string, mixed>  $spec
      * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>}
      */
-    private function modelSheet(VideoDesignImage $image, array $spec, int $budget): array
+    private function modelSheetMaster(array $spec, int $budget): array
     {
-        if ($spec['source_artifact_id'] === null) {
+        if (($spec['layout_guide'] ?? false) !== true) {
             return $this->client->generate($spec, $budget);
         }
 
-        $source = $this->sourceArtifact($image, $spec);
+        // Tuy chon thu nghiem: anh mau luoi trong (khong co hinh hoc tau). Tao lai tu config
+        // va so hash luc mo bo; bo cuc da doi thi dung, khong gui request.
+        $guide = ModelSheetMaster::fromConfig()->guidePng();
 
-        return $this->client->edit($spec, $this->verifiedBytes($source, $spec), 'model-sheet-source.'.$this->sourceExtension($source), $budget);
+        if (! hash_equals((string) ($spec['guide_sha256'] ?? ''), hash('sha256', $guide))) {
+            throw new RuntimeException('Ảnh mẫu lưới không còn khớp lúc mở bộ model sheet — không gửi request.');
+        }
+
+        return $this->client->edit($spec, $guide, 'model-sheet-layout.png', $budget);
     }
 
     /**

@@ -24,6 +24,7 @@ use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\DesignDnaService;
 use App\Services\Video\ModelSheetService;
 use App\Services\Video\YachtDesignService;
+use App\Services\Video\YachtProxyReferenceService;
 use App\Services\Video\YachtProxyService;
 use App\Services\Video\ScreenplayExpansionService;
 use App\Services\Video\StoryFoundationService;
@@ -381,7 +382,7 @@ class VideoProjectsController extends Controller
                 : 'Đã lưu bản thiết kế Phase 3 (draft) — xem kết quả kiểm RULE.';
 
             return ($design['check']['verdict'] ?? null) === YachtDesignCheck::PASS
-                ? redirect()->route('video-projects.proxy', $id)->with('success', $message.' Thiết kế đạt kiểm — dựng proxy 3D.')
+                ? redirect()->to(route('video-projects.anchor', $id).'#modelSheetPanel')->with('success', $message.' Thiết kế đạt kiểm — render model sheet.')
                 : back()->with('success', $message);
         }
 
@@ -407,12 +408,10 @@ class VideoProjectsController extends Controller
 
         $data = $this->form->validate($request, 'ModelSheetRenderForm');
         [$image, $reason] = app(ModelSheetService::class)->render($id, (string) auth()->user()?->name, [
-            'view_id' => (string) $data['view_id'],
             'model' => (string) $data['model'],
-            'size' => (string) $data['size'],
             'quality' => (string) $data['quality'],
-            'variations' => (int) $data['variations'],
             'attempt' => (string) $data['attempt'],
+            'qa_stage_id' => (string) $data['qa_stage_id'],
             'prompt_sha256' => (string) $data['prompt_sha256'],
         ]);
 
@@ -420,10 +419,28 @@ class VideoProjectsController extends Controller
             return back()->with('error', $reason);
         }
 
+        if (str_starts_with($reason, 'processing_failed|')) {
+            return back()->with('error', "Đã render master ({$image->image_code}) nhưng xử lý ảnh lỗi: ".substr($reason, strlen('processing_failed|')).' — bấm "Xử lý lại từ master", không cần render lại.');
+        }
+
         return match ($reason) {
-            'rendered' => back()->with('success', "Đã render {$data['view_id']} ({$image->image_code})."),
+            'rendered' => back()->with('success', "Đã render master ({$image->image_code}) và cắt tám ô — kiểm tra rồi duyệt hoặc từ chối cả sheet."),
             'already_exists' => back()->with('error', "Lượt render này đã được gửi trước đó ({$image->image_code}, trạng thái {$image->status}) — không gọi provider lần nữa. Tải lại trang để có lượt mới."),
-            default => back()->with('error', "Render {$data['view_id']} chưa thành công ({$reason}): ".(string) $image->render_error),
+            default => back()->with('error', "Render master chưa thành công ({$reason}): ".(string) $image->render_error),
+        };
+    }
+
+    public function qaModelSheet(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        [, $reason] = app(ModelSheetService::class)->qa($id, $request->boolean('retry'));
+
+        return match ($reason) {
+            'ready' => back()->with('success', 'QA xong — prompt đạt kiểm. Xem prompt cuối, thay đổi và findings rồi bấm Render.'),
+            'not_ready' => back()->with('error', 'QA xong nhưng prompt chưa đạt kiểm — xem lỗi và findings bên dưới. Sửa ở thiết kế nếu là lỗi nguồn, hoặc bấm "QA lại".'),
+            'cached' => back()->with('success', 'QA đã có cho đúng nguồn này — không gọi Sonnet lần nữa.'),
+            default => back()->with('error', $reason),
         };
     }
 
@@ -434,18 +451,31 @@ class VideoProjectsController extends Controller
         $data = $this->form->validate($request, 'AnchorApproveForm');
         [$done, $reason] = app(ModelSheetService::class)->approve($id, (string) $data['artifact_id'], auth()->id());
 
-        return $done ? back()->with('success', 'Đã duyệt ảnh model sheet.') : back()->with('error', $reason);
+        return $done ? back()->with('success', 'Đã duyệt model sheet — đây chưa phải DESIGN LOCK.') : back()->with('error', $reason);
     }
 
-    public function reviewModelSheet(string $id)
+    public function rejectModelSheet(Request $request, string $id)
     {
         $this->ownedProject($id);
 
-        [$review, $reason] = app(ModelSheetService::class)->review($id, auth()->id());
+        $data = $request->validate(['image_id' => ['required', 'uuid']], ['image_id.*' => 'Thiếu master cần từ chối.']);
+        [$done, $reason] = app(ModelSheetService::class)->reject($id, (string) $data['image_id']);
 
-        return $review === null
-            ? back()->with('error', $reason)
-            : back()->with('success', $reason === 'already_reviewed' ? 'Bộ model sheet này đã được duyệt.' : 'Đã duyệt bộ model sheet — đây chưa phải DESIGN LOCK.');
+        return $done ? back()->with('success', 'Đã từ chối cả master — render một master mới.') : back()->with('error', $reason);
+    }
+
+    public function processModelSheet(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate(['image_id' => ['required', 'uuid']], ['image_id.*' => 'Thiếu master cần xử lý.']);
+        [$done, $reason] = app(ModelSheetService::class)->process($id, (string) $data['image_id']);
+
+        return match (true) {
+            ! $done => back()->with('error', $reason),
+            $reason === 'already_processed' => back()->with('success', 'Tám ô cắt đã đủ và khớp sha256 — không cần cắt lại.'),
+            default => back()->with('success', 'Đã xử lý lại từ master đã lưu — không gọi model.'),
+        };
     }
 
     public function proxy(string $id)
@@ -462,25 +492,48 @@ class VideoProjectsController extends Controller
         ]);
     }
 
-    public function saveProxy(Request $request, string $id)
+    /** Luu mapping (+ xac nhan gia dinh) thanh revision proxy va dung neu ProxySpec du dieu kien. */
+    public function buildProxy(Request $request, string $id)
     {
         $this->ownedProject($id);
 
-        try {
-            $data = $this->form->validate($request, 'ProxySaveForm');
-        } catch (ValidationException $e) {
-            return response()->json(['ok' => false, 'message' => implode(' ', $e->validator->errors()->all())], 422);
+        $data = $request->validate([
+            'mapping' => ['required', 'string'],
+            'confirm' => ['array'],
+            'confirm.*' => ['string'],
+        ], ['mapping.*' => 'Thiếu mapping JSON.']);
+        [$stage, $reason] = app(YachtProxyService::class)->build($id, (string) auth()->user()?->name, (string) $data['mapping'], (array) ($data['confirm'] ?? []));
+
+        if ($stage === null) {
+            return back()->withInput()->with('error', $reason);
         }
 
-        [$stage, $reason] = app(YachtProxyService::class)->save($id, (string) auth()->user()?->name, [
-            'input_sha256' => (string) $data['input_sha256'],
-            'report' => (string) $data['report'],
-            'cameras' => (string) $data['cameras'],
-        ], (array) $request->file('images', []), $request->file('glb'));
+        $status = YachtProxyService::STATUS_LABELS[$stage->output_json['status'] ?? ''] ?? '';
 
-        return $stage === null
-            ? response()->json(['ok' => false, 'message' => $reason], 422)
-            : response()->json(['ok' => true, 'message' => "Đã lưu revision proxy {$stage->planning_revision}."]);
+        return back()->with('success', ($reason === 'already_exists' ? 'Dữ liệu không đổi — dùng lại revision ' : 'Đã lưu revision ').$stage->planning_revision.($status !== '' ? ': '.$status : '').'.');
+    }
+
+    /** Tham chieu doi chieu model sheet: de xuat mask, khoanh da giac, xac nhan, danh dau moc. */
+    public function proxyReference(Request $request, string $id, string $action)
+    {
+        $this->ownedProject($id);
+        $service = app(YachtProxyReferenceService::class);
+        $creator = (string) auth()->user()?->name;
+        $view = (string) $request->validate(['view' => ['required', 'string', 'max:8']])['view'];
+        $points = static fn (): array => (array) json_decode((string) $request->input('points', '[]'), true);
+
+        [$artifact, $reason] = match ($action) {
+            'propose' => $service->propose($id, $view, (int) $request->validate(['tolerance' => ['required', 'integer', 'min:1', 'max:60']])['tolerance']),
+            'polygon' => $service->polygon($id, $view, $points()),
+            'confirm' => $service->confirm($id, $view, (string) $request->validate(['proposal_id' => ['required', 'uuid']])['proposal_id'], $creator),
+            'landmarks' => $service->landmarks($id, $view, $points(), $creator),
+            'camera' => app(YachtProxyService::class)->confirmCamera($id, $view, $creator),
+            default => abort(404),
+        };
+
+        return in_array($artifact, [null, false], true)
+            ? back()->with('error', $reason)->withFragment('proxyRef'.$view)
+            : back()->with('success', ['proposed' => "Đã tạo mask đề xuất {$view} — xem rồi xác nhận.", 'confirmed' => "Đã xác nhận mask tham chiếu {$view}.", 'saved' => "Đã lưu mốc tham chiếu {$view}.", 'camera_confirmed' => "Đã xác nhận camera {$view}."][$reason])->withFragment('proxyRef'.$view);
     }
 
     public function approveProxy(Request $request, string $id)
@@ -490,9 +543,7 @@ class VideoProjectsController extends Controller
         $data = $request->validate(['stage_id' => ['required', 'uuid']], ['stage_id.*' => 'Thiếu revision proxy cần duyệt.']);
         [$done, $reason] = app(YachtProxyService::class)->approve($id, (string) $data['stage_id'], auth()->id());
 
-        return $done
-            ? back()->with('success', 'Đã duyệt proxy 3D — bộ model sheet sẽ tự mở cho bản thiết kế này.')
-            : back()->with('error', $reason);
+        return $done ? back()->with('success', 'Đã duyệt proxy 3D.') : back()->with('error', $reason);
     }
 
     public function screenplayFoundation(Request $request, string $id)

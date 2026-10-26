@@ -844,7 +844,6 @@ return [
                 ['id' => 'MS7', 'view' => 'aerial 3/4 from high port bow'],
                 ['id' => 'MS8', 'view' => 'close-up of innovation N1'],
             ],
-            'default_size' => '1536x1024',
             'cameras' => [
                 'MS1' => 'Orthographic exact side elevation at 90 degrees to the centreline, no perspective.',
                 'MS2' => 'Camera about 35 degrees off the bow axis on the port side, at eye level, lens equivalent to about 85 mm.',
@@ -853,10 +852,8 @@ return [
                 'MS5' => 'Orthographic exact rear elevation on the centreline, no perspective.',
                 'MS6' => 'Orthographic view straight down from above, no perspective.',
                 'MS7' => 'Camera about 35 degrees off the bow axis on the port side, looking down 25 to 35 degrees, lens equivalent to about 85 mm.',
-                'MS8' => 'Close-up camera framed on innovation N1, lens equivalent to about 85 mm.',
-            ],
-            'framing' => [
-                'MS1' => 'Show the whole yacht in frame; do not crop the bow or the stern.',
+                // {target}: muc tieu MS8 cua tung thiet ke (ModelSheetFacts::ms8Target), cung nguon voi nhan goc.
+                'MS8' => 'Close-up camera framed on {target}, lens equivalent to about 85 mm.',
             ],
             'frames' => [
                 'MS1' => ['projection' => 'orthographic', 'azimuth' => 90, 'elevation' => 0, 'width' => 1536, 'height' => 1024, 'target' => 'yacht'],
@@ -868,90 +865,112 @@ return [
                 'MS7' => ['projection' => 'perspective', 'azimuth' => 35, 'elevation' => 30, 'focal_mm' => 85, 'width' => 1536, 'height' => 1024, 'target' => 'yacht'],
                 'MS8' => ['projection' => 'perspective', 'azimuth' => 'G9.0', 'elevation' => 'G9.1', 'focal_mm' => 85, 'width' => 1536, 'height' => 1024, 'target' => 'n1'],
             ],
+            /*
+             * Model sheet master: MOT request AI tao MOT anh 3840x2160, luoi 2 hang x 4 cot,
+             * roi may chu cat tam o 960x1080 theo toa do co dinh. Khong dung proxy lam dau vao
+             * (luong: thiet ke -> model sheet -> proxy 3D). Nhan va duong phan cach do giao dien
+             * ve de len; anh nguon giu sach chu.
+             *
+             * Lech spec v6.3 Phase 3 Step 10 (spec render MS1 truoc roi MS2-MS8 theo MS1): o day
+             * tam goc sinh cung mot luot.
+             */
+            'master' => [
+                // v2: noi dung prompt do Sonnet QA bien tap tu ban thiet ke, code kiem va ghep.
+                'execution' => 'model-sheet-master-v2',
+                // Bo da duyet o cac execution nay van la model sheet hop le cho proxy.
+                'supported_executions' => ['model-sheet-master-v1', 'model-sheet-master-v2'],
+                'size' => '3840x2160',
+                'variations' => 1,
+                'columns' => 4,
+                'rows' => 2,
+                'cell' => ['width' => 960, 'height' => 1080],
+                // Thu tu o theo hang, trai sang phai: hang tren MS1-MS4, hang duoi MS5-MS8.
+                'order' => ['MS1', 'MS2', 'MS3', 'MS4', 'MS5', 'MS6', 'MS7', 'MS8'],
+                // Goc chi tiet: duoc phep cat can canh, khong doi chua tron tau.
+                'detail_views' => ['MS8'],
+                // Tuy chon thu nghiem: gui kem anh mau luoi trong (khong co hinh hoc tau) de
+                // huong dan vi tri tam o. Chua co bang chung tot hon prompt thuan chu.
+                'layout_guide' => (bool) env('MODEL_SHEET_LAYOUT_GUIDE', false),
+                'guide_background' => '#D9D9D9',
+                'guide_line' => '#BDBDBD',
+                'prompt' => [
+                    'layout' => 'ONE image of {width}x{height} pixels: a model sheet of this one yacht in {rows} rows by {columns} columns of equal panels, each panel {cell_width}x{cell_height} pixels, covering the whole image edge to edge with no title strip and no caption area.',
+                    'panel' => 'Row {row}, column {column} ({x}-{x_end} px across, {y}-{y_end} px down): {id}, {view}. {camera}',
+                    'framing' => 'In every whole-yacht panel the complete yacht required by that camera is inside the panel with a margin of plain studio background on every side; it never touches or crosses into another panel.',
+                    'detail_framing' => 'Panel {id} is a detail view and may crop close on its subject.',
+                    'rules' => [
+                        'All eight panels show the same yacht with the same design, proportions, number of decks, colors, materials and finish state, under the same studio background and the same lighting.',
+                        'Keep port and starboard exactly as each camera states; do not mirror a panel.',
+                        'Do not add, remove, move or reshape any part between panels.',
+                        // Khong cam "frames": khung guong, khung cua la mot phan cua thiet ke.
+                        'No text, letters, numbers, labels, titles, logos, panel borders or dividing lines anywhere in the image.',
+                    ],
+                    'presentation' => 'Studio presentation: the complete finished yacht stands clear of the water, so its whole outer hull down to the keel is visible; nothing is cut open or made transparent.',
+                    'guide_caption' => 'The attached image is only a layout guide showing the position of the eight panels; it contains no yacht. Place each view inside its panel and do not draw the guide lines.',
+                    // Prompt cuoi vuot nguong thi bao loi, khong cat chuoi.
+                    'max_chars' => 20000,
+                ],
+            ],
+
+            /*
+             * QA prompt model sheet: Sonnet 5.5 doc toan bo ban thiet ke + bang du kien do code
+             * dung, tra JSON co nguon (schema trong ModelSheetQaValidator); code kiem va ghep
+             * prompt cuoi. Prompt QA doc tu DB: phase `phase_code` cua workflow theo category.
+             */
+            'qa' => [
+                'execution' => 'model-sheet-qa-v1',
+                'phase_code' => 'phase-3-model-sheet',
+                'model' => env('MODEL_SHEET_QA_MODEL', 'claude-sonnet-5-5'),
+                'effort' => env('MODEL_SHEET_QA_EFFORT', 'medium'),
+                // Tinh ca thinking: luot that dau tien dung ~24k thinking + ~12k JSON, vuot tran 32k.
+                'max_tokens' => (int) env('MODEL_SHEET_QA_MAX_TOKENS', 64000),
+                // Uoc tinh hien tren nut QA, theo luot do that (50k vao, ~36k ra gom thinking).
+                'estimate_tokens' => ['input' => 50000, 'output' => 36000],
+                'timeout_seconds' => (int) env('MODEL_SHEET_QA_TIMEOUT_SECONDS', 900),
+                'stream' => true,
+                // false: schema dau ra nam trong prompt, may chu kiem (ModelSheetQaValidator). Schema QA
+                // vuot gioi han grammar cua structured output Anthropic ("compiled grammar is too large").
+                'enforce_schema' => (bool) env('MODEL_SHEET_QA_ENFORCE_SCHEMA', false),
+                // Gia theo ClaudeWriterService::MODEL_CATALOG['sonnet55'].
+                'pricing' => ['input_usd_per_mtok' => 2.00, 'output_usd_per_mtok' => 10.00, 'version' => 'anthropic-sonnet55-2026-10'],
+                // Muc tieu mem: nhieu hon thi la ghi chu cho nguoi duyet, khong lam roi noi dung.
+                'negatives_target' => 5,
+                // Uu tien ung vien theo goc (khong phai luat loai bo).
+                'priority' => [
+                    'MS2_max_x' => 0.6,
+                    'MS3_min_x' => 0.4,
+                    'MS4_max_x' => 0.33,
+                    'MS5_min_x' => 0.67,
+                    'MS8_near_loa' => 0.1,
+                ],
+            ],
+
             'occlusion' => 'Keep every part at its stated shape, size and position. Where this camera cannot see a part, leave it hidden; do not move, duplicate, enlarge or make anything transparent to reveal it.',
-            'reference_caption' => 'The attached image is the approved MS1 exterior of this yacht. Keep this exterior design, its silhouette and proportions exactly; change only the camera.',
-            'approved' => [
-                'sha256:370d7ce9e4434eedbfce91d3c8fc6548f9cc7f9f1a898cdd9d3b76bdf05418dd' => [
-                    'state_features' => ['canyon_heliostat_active', 'lee_edge_fins_deployed'],
-                    'state' => 'Heliostat mirrors are parked in their defocused stow position with optical shutters closed; no light beam is shown. Porous terrace-edge fins are retracted flush.',
-                    'emphasis' => 'Keep the canyon on the vessel centreline beneath its slope-following sealed cap; do not reinterpret it as a glazed shaft on the port or starboard side. Keep the aft terraces recessed within the concave lee pocket. Preserve separated vertical and oblique window groups instead of long horizontal glazing strips. Preserve the specified change in rib direction around the crest and aft scoop.',
-                    'avoid_interior' => [
-                        'Interior palettes use cool greys, blue-green tones, pale ash and selected violet textiles; no brown-leather or desert-decoration scheme is used.',
-                        'Cinema, observation lounge and performance space share the canyon room; no piano or separate screen room is included.',
-                        'The owner occupies an offset crest-level leeward suite, not the forward main deck.',
-                        'Guest accommodation spans multiple decks and includes canyon-fed daylight below.',
-                    ],
-                    'proxy' => [
-                        ['part' => 'n1_cap', 'type' => 'slot', 'from' => 'landmarks.canyon_cap_forward', 'to' => 'landmarks.canyon_cap_aft', 'width' => 'design_parameters.canyon_width', 'recess' => 0.15, 'radius' => 'G12'],
-                        ['part' => 'n1_mirror', 'type' => 'disc', 'at' => ['landmarks.heliostat_port', 'landmarks.heliostat_starboard'], 'diameter' => 'design_parameters.mirror_unit_diameter', 'tilt_deg' => 'G5.0', 'pedestal' => 'G5.1'],
-                        ['part' => 'n2_ribs', 'type' => 'ribs', 'from_x' => 0.18, 'turn_x' => 'landmarks.ripple_rotation_port.x', 'turn_y' => 'landmarks.ripple_rotation_port.y', 'to_x' => 0.83, 'pitch' => 'design_parameters.ripple_pitch', 'depth' => 'design_parameters.ripple_depth', 'half_turn' => 'G4'],
-                        ['part' => 'terrace', 'type' => 'pocket', 'from' => 'open_terraces', 'wall' => 'G8'],
-                        ['part' => 'pool', 'type' => 'basin', 'at' => 'landmarks.lee_pool_center', 'length' => 'design_parameters.pool_length', 'width' => 'design_parameters.pool_width', 'depth' => 'design_parameters.pool_water_depth'],
-                        ['part' => 'steps', 'type' => 'steps', 'at' => ['landmarks.stern_steps_port', 'landmarks.stern_steps_starboard'], 'width' => 'G6.0', 'tread' => 0.3],
-                        ['part' => 'slipway', 'type' => 'channel', 'from' => 'landmarks.slipway_head', 'to' => 'landmarks.stern_toe', 'width' => 'G6.1'],
-                        ['id' => 'W1', 'part' => 'windows', 'type' => 'window', 'label' => 'Cửa phòng chủ', 'source' => 'owner_window · INT01 "deep-set oblique side window"', 'at' => 'landmarks.owner_window', 'facing' => 'side', 'sides' => ['port'], 'shape' => 'oblique', 'tilt_deg' => 20, 'width' => 3.0, 'height' => 1.8, 'glass' => 'smoke'],
-                        ['id' => 'W2', 'part' => 'windows', 'type' => 'window', 'label' => 'Kính trước cầu lái', 'source' => 'bridge_forward_window · INT10 "separated window facets"', 'at' => 'landmarks.bridge_forward_window', 'facing' => 'forward', 'facets' => 5, 'spread' => 7.0, 'shape' => 'rect', 'width' => 1.4, 'height' => 1.1, 'glass' => 'clear'],
-                        ['id' => 'W3', 'part' => 'windows', 'type' => 'window', 'label' => 'Kính mạn cầu lái', 'source' => 'bridge_port_window · INT10 "forward and side bridge windows"', 'at' => 'landmarks.bridge_port_window', 'facing' => 'side', 'sides' => ['port', 'starboard'], 'facets' => 3, 'facet_step' => 1.5, 'shape' => 'rect', 'width' => 1.2, 'height' => 1.0, 'glass' => 'clear'],
-                        ['id' => 'W4', 'part' => 'windows', 'type' => 'window', 'label' => 'Cửa oval VIP mũi', 'source' => 'INT02 Main "forward shoulders" · "separated oval side windows above the waterline"', 'deck' => 'Main', 'facing' => 'side', 'sides' => ['port', 'starboard'], 'from_x' => 0.15, 'to_x' => 0.39, 'spacing' => 3.0, 'shape' => 'oval', 'width' => 1.2, 'height' => 0.8, 'glass' => 'smoke'],
-                        ['id' => 'W5', 'part' => 'windows', 'type' => 'window', 'label' => 'Cửa đứng salon', 'source' => 'INT03 Main "midships, port of the canyon" · "separated tall side apertures"', 'deck' => 'Main', 'facing' => 'side', 'sides' => ['port'], 'from_x' => 0.39, 'to_x' => 0.63, 'spacing' => 3.0, 'shape' => 'rect', 'width' => 1.0, 'height' => 2.4, 'glass' => 'smoke'],
-                        ['id' => 'W6', 'part' => 'windows', 'type' => 'window', 'label' => 'Cửa so le phòng ăn', 'source' => 'INT04 Main "midships, starboard of the canyon" · "staggered vertical side windows"', 'deck' => 'Main', 'facing' => 'side', 'sides' => ['starboard'], 'from_x' => 0.39, 'to_x' => 0.63, 'spacing' => 2.0, 'shape' => 'rect', 'width' => 0.8, 'height' => 2.0, 'stagger' => 0.3, 'glass' => 'smoke'],
-                        ['id' => 'W7', 'part' => 'windows', 'type' => 'window', 'label' => 'Cửa mạn sea hall', 'source' => 'INT09 Main "aft, inside the fixed stern access boundary" · "sealed side windows"', 'deck' => 'Main', 'facing' => 'side', 'sides' => ['port', 'starboard'], 'from_x' => 0.63, 'to_x' => 0.87, 'spacing' => 3.0, 'shape' => 'rect', 'width' => 1.0, 'height' => 1.2, 'glass' => 'smoke'],
-                        ['id' => 'W8', 'part' => 'windows', 'type' => 'window', 'label' => 'Cửa xiên cabin Guest', 'source' => 'INT12 Guest "forward of the canyon, outboard" · "separated oblique side window" · guest_deck_cabins', 'deck' => 'Guest', 'facing' => 'side', 'sides' => ['port', 'starboard'], 'from_x' => 0.27, 'to_x' => 0.60, 'count' => 'design_parameters.guest_deck_cabins', 'shape' => 'oblique', 'tilt_deg' => 20, 'width' => 2.0, 'height' => 1.4, 'glass' => 'smoke'],
-                        ['id' => 'E1', 'part' => 'bulwark', 'type' => 'bulwark', 'label' => 'Thành chắn boong mũi', 'source' => 'EXT01 "Iron Blue bulwarks enclose a Chalk Grey walking surface"', 'from_x' => 0, 'to_x' => 'landmarks.slope_start.x', 'height' => 1.1, 'thickness' => 0.15],
-                        ['id' => 'E2', 'part' => 'n1_coaming', 'type' => 'coaming', 'label' => 'Gờ khe canyon', 'source' => 'EXT05 "rests within rounded Chalk Grey coamings"', 'of' => 'n1_cap', 'rim' => 0.3, 'height' => 0.2],
-                        ['id' => 'E3', 'part' => 'accent_edge', 'type' => 'edge', 'label' => 'Viền vây xốp mép terrace', 'source' => 'EXT06 "Oxidized Copper porous fins retract along the edges"', 'of' => 'terrace', 'width' => 0.15],
-                        ['id' => 'E4', 'part' => 'slipway_rail', 'type' => 'rails', 'label' => 'Ray và viền rãnh trượt', 'source' => 'EXT08 "captive cradle follows recessed rails" · "Oxidized Copper edge markers"', 'of' => 'slipway', 'spacing' => 1.2, 'rail' => 0.12, 'depth' => 'G14', 'marker' => 0.15],
-                    ],
-                ],
-            ],
-            'design' => [
-                'dimensions' => 'data.canonical.dimensions',
-                'dimension_labels' => [
-                    'loa' => 'LOA',
-                    'lwl' => 'LWL',
-                    'beam' => 'beam',
-                    'draft' => 'draft',
-                    'crest_height' => 'crest height',
-                    'bow_freeboard' => 'bow freeboard',
-                ],
-                'decks' => 'data.yacht_bible.specs.decks',
-                'coordinate_x' => 'data.canonical.coordinate_system.x',
-                'landmarks' => 'data.canonical.landmarks',
-                'crest' => 'crest',
-                'deck_levels' => 'data.canonical.decks',
-                'geometry' => [
-                    'data.yacht_bible.exterior.silhouette',
-                    'data.yacht_bible.exterior.bow',
-                    'data.yacht_bible.exterior.hull',
-                    'data.yacht_bible.exterior.superstructure',
-                    'data.yacht_bible.exterior.glazing',
-                ],
-                'innovations' => 'data.yacht_bible.innovations',
-                'innovation_ids' => ['N1', 'N2', 'N3'],
-                'innovation_fields' => ['name', 'position', 'geometry', 'visible'],
-                'materials' => [
-                    'data.canonical.surfaces.finished',
-                    'data.canonical.surfaces.glazing',
-                    'data.canonical.surfaces.metal_finishes',
-                ],
-                'colors' => 'data.yacht_bible.colors',
-                'color_roles' => ['hull', 'superstructure', 'accent'],
-                'requirements' => [
-                    'data.yacht_bible.exterior.mast_and_radar',
-                    'data.yacht_bible.exterior.helideck',
-                    'data.yacht_bible.exterior.stern',
-                    'data.yacht_bible.exterior.water_access',
-                ],
-                'avoid' => 'data.yacht_bible.must_avoid_resolution',
-                'operational_limits' => 'data.canonical.operational_limits',
-                'view_details' => ['MS8' => 'data.canonical.model_sheet.views'],
-            ],
         ],
 
+        /*
+         * Proxy 3D (Phase 3P): ProxySpec tu nguon dong bang cua master model sheet da duyet, bo dung
+         * JS chung (public/assets/js/proxy) chay trong worker Node cho artifact chinh thuc. Three.js
+         * thay Blender cua spec; cac yeu cau kiem hinh hoc giu nguyen.
+         */
         'proxy' => [
-            'builder' => 'yacht-proxy-v1',
-            'canonical_keys' => ['dimensions', 'coordinate_system', 'profile_curve', 'plan_outline', 'decks', 'landmarks', 'open_terraces', 'design_parameters', 'surfaces'],
+            'execution' => 'proxy-3d-v2',
+            'review_execution' => 'proxy-3d-review-v2',
+            'node_binary' => env('PROXY_NODE_BINARY', 'node'),
+            'worker' => 'scripts/proxy/worker.mjs',
+            // File cua bo dung/worker: hash vao dau vao revision (doi code thi revision cu het hieu luc).
+            'builder_files' => ['public/assets/js/proxy/builder.js', 'public/assets/js/proxy/raster.js', 'public/assets/js/proxy/glb.js', 'scripts/proxy/worker.mjs', 'scripts/proxy/png.mjs'],
+            'worker_timeout' => 300,
             'fill' => 0.9,
+            // Cong duyet theo spec Phase 3P: IoU tung goc MS1–MS7 va sai so moc <= 3% LOA.
+            'iou_min' => 0.85,
+            'iou_views' => ['MS1', 'MS2', 'MS3', 'MS4', 'MS5', 'MS6', 'MS7'],
+            'landmark_ratio' => 0.03,
+            // Goc co mask/moc tham chieu; MS8 chi danh dau moc (khong ap nguong mask toan than).
+            'reference_views' => ['MS1', 'MS2', 'MS3', 'MS4', 'MS5', 'MS6', 'MS7', 'MS8'],
+            // Nguong buoc mau khi de xuat mask (loang nen tung buoc nho); nguoi dung chinh va xac nhan.
+            'reference_tolerance' => 3,
+            'max_mapping_bytes' => 262144,
             'assumptions' => [
                 'G1' => ['label' => 'Đường bo mái từ mép boong cao nhất lên đỉnh trên trục tâm (siêu elip)', 'value' => 2.5, 'unit' => 'số mũ'],
                 'G2' => ['label' => 'Thân vỏ dưới thẳng đứng tới cao độ', 'value' => 6, 'unit' => 'm'],
@@ -982,15 +1001,12 @@ return [
                 'landmark_m' => 0.01,
                 'rib_longitudinal_deg' => 10,
                 'rib_transverse_deg' => 80,
-                'rib_spacing_factor' => 2.5,
                 'detail_m' => 0.1,
                 'detail_dim_m' => 0.01,
                 'window_stretch' => 0.1,
                 'pocket_coverage' => 0.95,
                 'deck_m' => 0.3,
             ],
-            'max_png_bytes' => 8388608,
-            'max_glb_bytes' => 33554432,
         ],
 
         'build_state_text' => [
