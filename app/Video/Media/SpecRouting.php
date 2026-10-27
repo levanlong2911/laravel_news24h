@@ -90,6 +90,8 @@ final class SpecRouting
             'generate' => DesignImageStore::ANCHOR_TYPE,
             // 'model_sheet': o tung goc cua luong cu, con trong lich su.
             'model_sheet', ModelSheetService::MASTER_OPERATION => ModelSheetService::TASK,
+            // Phase 3R dung cung danh sach model anh OpenAI cua model sheet.
+            DesignImageStore::REFERENCE_PACK_ITEM_TYPE => ModelSheetService::TASK,
             default => null,
         };
 

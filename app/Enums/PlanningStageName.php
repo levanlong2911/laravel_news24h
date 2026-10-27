@@ -27,6 +27,11 @@ enum PlanningStageName: string
     case MODEL_SHEET_REVIEW = 'model_sheet_review';
     case MODEL_SHEET_PROMPT = 'model_sheet_prompt';
     case MODEL_SHEET_PROMPT_APPROVAL = 'model_sheet_prompt_ok';
+    // Phase 3R: ke hoach + snapshot nguon, manifest ung vien, duyet pack; khoa thiet ke.
+    case REFERENCE_PACK_PLAN = 'reference_pack_plan';
+    case REFERENCE_PACK = 'reference_pack';
+    case REFERENCE_PACK_REVIEW = 'reference_pack_review';
+    case DESIGN_LOCK = 'design_lock';
 
     /** @return list<string> */
     public static function values(): array
@@ -56,6 +61,10 @@ enum PlanningStageName: string
             self::MODEL_SHEET_REVIEW => null,
             self::MODEL_SHEET_PROMPT => self::MODEL_SHEET_PROMPT_APPROVAL,
             self::MODEL_SHEET_PROMPT_APPROVAL => null,
+            self::REFERENCE_PACK_PLAN => self::REFERENCE_PACK,
+            self::REFERENCE_PACK => self::REFERENCE_PACK_REVIEW,
+            self::REFERENCE_PACK_REVIEW => null,
+            self::DESIGN_LOCK => null,
         };
     }
 }

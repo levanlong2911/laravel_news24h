@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/ReferencePack",
+  "title": "ReferencePack (Phase 3R, draft contract)",
+  "description": "Manifest of one reference pack revision. Every entry points at a concrete artifact with its hash, origin, quality status and acceptance. Groups follow the Phase 3R keys; readiness is per use level so missing style refs (Phase 5L) or turntable never block exterior use.",
+  "type": "object",
+  "required": ["version", "policy_version", "compiler_version", "content_sha256", "sources", "views", "details", "colors", "rooms", "turntable", "style", "readiness", "validation", "manifest_sha256"],
+  "properties": {
+    "version": {"type": "integer", "minimum": 1},
+    "policy_version": {"type": "string", "minLength": 1},
+    "compiler_version": {"type": "string", "minLength": 1},
+    "content_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$", "description": "Stable fingerprint of sources and each item's method, artifact, hash and acceptance; excludes check evidence. Compares a checked pack with the current content."},
+    "sources": {
+      "type": "object",
+      "required": ["project_id", "design_stage_id", "design_canonical_hash", "design_raw_sha256", "model_sheet", "phase"],
+      "properties": {
+        "project_id": {"type": "string", "minLength": 1},
+        "design_stage_id": {"type": "string", "minLength": 1},
+        "design_canonical_hash": {"type": "string", "minLength": 1},
+        "design_raw_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "model_sheet": {
+          "type": "object",
+          "required": ["set_id", "review_stage_id", "master_image_id", "master_artifact_id", "master_sha256", "crops"],
+          "properties": {
+            "crops": {"type": "array", "minItems": 8, "maxItems": 8}
+          }
+        },
+        "phase": {
+          "type": "object",
+          "required": ["code", "id", "revision", "sha256"]
+        }
+      }
+    },
+    "views": {"type": "array", "minItems": 8, "maxItems": 8, "items": {"$ref": "#/$defs/entry"}},
+    "details": {"type": "array", "items": {"$ref": "#/$defs/entry"}},
+    "colors": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/entry"}]},
+    "rooms": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["finished", "materials"],
+        "properties": {
+          "finished": {"$ref": "#/$defs/entry"},
+          "materials": {"$ref": "#/$defs/entry"}
+        }
+      }
+    },
+    "turntable": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/entry"}]},
+    "style": {"type": "array", "items": {"$ref": "#/$defs/entry"}},
+    "readiness": {
+      "type": "object",
+      "required": ["exterior", "interior", "video", "style"],
+      "properties": {
+        "exterior": {"type": "object", "required": ["status"], "properties": {"status": {"enum": ["ready", "incomplete"]}}},
+        "interior": {"type": "object", "required": ["status"], "properties": {"status": {"enum": ["ready", "partial", "pending", "not_applicable"]}}},
+        "video": {"type": "object", "required": ["status"], "properties": {"status": {"enum": ["ready", "pending", "unsupported", "not_applicable"]}}},
+        "style": {"type": "object", "required": ["status"], "properties": {"status": {"enum": ["ready", "pending_5l"]}}}
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["rule", "violations", "vision"],
+      "properties": {
+        "rule": {"enum": ["pass", "fail"]},
+        "violations": {"type": "array"},
+        "vision": {"enum": ["unchecked", "pass", "fail", "uncertain"]}
+      }
+    },
+    "manifest_sha256": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": ["id", "subject", "requirement", "method", "reason", "sources", "state", "artifact_id", "sha256", "status"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^(view|detail|color|room|video|style)\\."},
+        "subject": {"type": "string"},
+        "requirement": {"enum": ["required", "optional"]},
+        "method": {"enum": ["reuse", "code", "render", "missing_source", "not_applicable", "unsupported", "pending"]},
+        "reason": {"type": "string", "minLength": 1},
+        "sources": {"type": "array", "items": {"type": "string"}},
+        "state": {"type": "string"},
+        "artifact_id": {"type": ["string", "null"]},
+        "sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "status": {
+          "type": "object",
+          "required": ["generation", "rule", "vision", "acceptance", "problems"],
+          "properties": {
+            "rule": {"enum": ["pass", "fail", "skipped"]},
+            "vision": {"enum": ["unchecked", "pass", "fail", "uncertain"]},
+            "acceptance": {"enum": ["none", "inherited", "pending", "accepted", "rejected"]},
+            "problems": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    }
+  }
+}
