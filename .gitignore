@@ -25,3 +25,5 @@ yarn-error.log
 /.tmp_*
 /_inspect_relations.php
 .ai-kit-backup/
+/CLAUDE.local.md
+/.claude/settings.local.json
