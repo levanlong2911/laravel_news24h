@@ -8,8 +8,8 @@
 /storage/*.key
 /vendor
 .env
-.env.backup
-.env.production
+.env.*
+!.env.example
 .phpunit.result.cache
 Homestead.json
 Homestead.yaml
@@ -24,3 +24,4 @@ yarn-error.log
 # Dump tam va script do choi o goc cay — khong thuoc ve lich su
 /.tmp_*
 /_inspect_relations.php
+.ai-kit-backup/

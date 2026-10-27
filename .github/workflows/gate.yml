@@ -1,0 +1,57 @@
+# Cổng quy trình ĐÁNG TIN (trusted gate).
+#
+# Vì sao dùng pull_request_target:
+#   Với sự kiện pull_request, GitHub chạy workflow lấy từ nhánh PR, nên PR có thể sửa luôn validator
+#   hoặc workflow để tự cho mình qua. Với pull_request_target, file workflow luôn lấy từ nhánh gốc (main).
+#   Job dưới đây cũng checkout code của nhánh gốc, nên scripts/ci-gate.js và .github/workflow-gate.json
+#   đều là bản trên main.
+#
+# An toàn: code của PR CHỈ được đọc như dữ liệu (git show / git diff), KHÔNG cài đặt, KHÔNG chạy.
+# Không thêm bước nào chạy composer/npm/php trên code PR vào file này.
+# Token chỉ có quyền đọc.
+
+name: Gate
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read          # đọc lịch sử label: ai đã gắn law-change-approved
+
+concurrency:
+  group: gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  trusted-gate:
+    name: trusted-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout nhánh gốc (validator tin cậy)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Lấy commit của PR (chỉ để đọc)
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head"
+          git fetch --no-tags origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Workflow gate
+        env:
+          GATE_HEAD_REF: refs/remotes/pr/head
+          GATE_BASE_REF: refs/remotes/origin/${{ github.event.pull_request.base.ref }}
+          GH_TOKEN: ${{ github.token }}   # dùng khi requireSignedApproval = true
+        run: node scripts/ci-gate.js
