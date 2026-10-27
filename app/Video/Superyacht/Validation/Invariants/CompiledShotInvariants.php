@@ -22,7 +22,7 @@ final class CompiledShotInvariants implements InvariantSet
 
     /** Fields left out of a CompiledShot's content hash (they change after compilation). */
     /** Source types stored once per shot (artifact key = shot id). */
-    public const PER_SHOT_SOURCES = ['shot_spec', 'clay', 'frame'];
+    public const PER_SHOT_SOURCES = ['shot_spec', 'frame'];
 
     public const NON_CONTENT_FIELDS = ['hash', 'status', 'validation'];
 

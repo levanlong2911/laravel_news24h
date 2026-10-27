@@ -17,8 +17,15 @@ thiết kế → QA prompt đạt → render master → duyệt ảnh. Không t�
   riêng cho schema để không ghi đè CompiledShot 6.3.0 đã phát hành.
 - Giữ ImageProxyService và route image.proxy: đây là chức năng tải ảnh/CORS độc lập.
 - Giữ dữ liệu thiết kế có ý nghĩa riêng: kích thước, đường bao, boong, landmark, build state.
+- Giữ `video.superyacht.build_state_text` (bộ kiểm thiết kế dùng để đối chiếu bộ phận/bề mặt của
+  build state) và giữ `contract_version` của `spec.design` là `3`: output của hợp đồng không đổi,
+  nâng số làm mọi bản thiết kế đã duyệt thành không hiện hành (panel ẩn nội dung và ảnh model sheet).
 
-## DB tại máy triển khai
+## DB đã chuyển đổi (máy DESKTOP-DJJC42L)
+
+Các mục dưới đây là kết quả chạy trên DB của máy DESKTOP-DJJC42L. DB của máy admin
+(`DB_DATABASE=test`) chưa chuyển đổi tính đến 2026-10-26: Phase 3P vẫn hiện hành và các prompt
+hiện hành còn nhắc proxy/clay/3P; cần chạy command ở mục "Triển khai trên máy khác".
 
 - Phát hành revision mới cho prompt bị ảnh hưởng và liên kết schema; không sửa nội dung revision cũ.
   Phase 3 hiện là revision 11, không yêu cầu canonical.proxy_geometry.
@@ -47,8 +54,8 @@ Command mặc định chỉ xem trước. Khi ghi, nó kiểm lại đúng plan 
 reserved, sao lưu prompt/link/payload vào disk local trước khi ghi và áp dụng trong một
 transaction. Prompt tùy chỉnh còn phụ thuộc không nhận dạng được sẽ dừng để đối chiếu,
 không tự xóa. Lần chạy tiếp theo không tạo revision trùng. Revision cũ, schema cũ và dữ liệu
-project đã duyệt được giữ nguyên. Máy hiện tại đã được chuyển đổi: command trả về không có
-phase cần thay đổi và không có job dựng hình chờ xử lý.
+project đã duyệt được giữ nguyên. Máy DESKTOP-DJJC42L đã được chuyển đổi: command trả về không
+có phase cần thay đổi và không có job dựng hình chờ xử lý.
 
 Sau triển khai: clear config/route cache và khởi động lại worker dài hạn bằng quy trình vận
 hành hiện có. Không chạy lại worker bằng code cũ sau khi công đoạn đã ngừng hoạt động.
