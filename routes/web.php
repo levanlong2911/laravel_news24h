@@ -155,13 +155,6 @@ Route::group(
             Route::post('/{id}/model-sheet/approve', [VideoProjectsController::class, 'approveModelSheet'])->name('video-projects.model-sheet-approve');
             Route::post('/{id}/model-sheet/reject', [VideoProjectsController::class, 'rejectModelSheet'])->name('video-projects.model-sheet-reject');
             Route::post('/{id}/model-sheet/process', [VideoProjectsController::class, 'processModelSheet'])->name('video-projects.model-sheet-process');
-            // Phase 3R — bo anh tham chieu
-            Route::post('/{id}/reference-pack/plan', [VideoProjectsController::class, 'referencePackPlan'])->name('video-projects.reference-pack-plan');
-            Route::post('/{id}/reference-pack/render', [VideoProjectsController::class, 'referencePackRender'])->name('video-projects.reference-pack-render');
-            Route::post('/{id}/reference-pack/reject', [VideoProjectsController::class, 'referencePackReject'])->name('video-projects.reference-pack-reject');
-            Route::post('/{id}/reference-pack/check', [VideoProjectsController::class, 'referencePackCheck'])->name('video-projects.reference-pack-check');
-            Route::post('/{id}/reference-pack/approve', [VideoProjectsController::class, 'referencePackApprove'])->name('video-projects.reference-pack-approve');
-            Route::post('/{id}/design-lock', [VideoProjectsController::class, 'designLock'])->name('video-projects.design-lock');
 
             Route::middleware('video.v4')->group(function () {
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');

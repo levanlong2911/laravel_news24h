@@ -24,7 +24,6 @@ use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\DesignDnaService;
 use App\Services\Video\ModelSheetService;
 use App\Services\Video\YachtDesignService;
-use App\Services\Video\YachtReferencePackService;
 use App\Services\Video\ScreenplayExpansionService;
 use App\Services\Video\StoryFoundationService;
 use App\Services\Video\VesselDesignService;
@@ -195,8 +194,7 @@ class VideoProjectsController extends Controller
             'brief' => $brief = $this->videoProjectService->latestInspiration($project->id),
             'dna' => app(DesignDnaService::class)->panel($project->id),
             'yacht' => $phaseThree = VesselDesign::isDesignFirst($project) && $brief['phase_one'] ? app(YachtDesignService::class)->panel($project->id) : null,
-            'modelSheet' => $modelSheet = $phaseThree === null ? null : app(ModelSheetService::class)->panel($project->id, (string) auth()->user()?->name),
-            'referencePack' => $modelSheet === null ? null : app(YachtReferencePackService::class)->panel($project->id, is_string($request->query('reference_plan')) ? $request->query('reference_plan') : null),
+            'modelSheet' => $phaseThree === null ? null : app(ModelSheetService::class)->panel($project->id, (string) auth()->user()?->name),
             'anchorRows' => $anchorRows,
             'compileReason' => $this->anchorMessage('choose_prompt_settings'),
             'nextImageCode' => $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name),
@@ -481,106 +479,6 @@ class VideoProjectsController extends Controller
             default => back()->with('success', 'Đã xử lý lại từ master đã lưu — không gọi model.'),
         };
     }
-
-    /** Phase 3R: lap bo tham chieu tu mot luot duyet model sheet cu the (khong goi AI). */
-    public function referencePackPlan(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate(['review_stage_id' => ['required', 'uuid']], ['review_stage_id.*' => 'Thiếu lượt duyệt model sheet làm nguồn.']);
-        [$plan, $reason] = app(YachtReferencePackService::class)->plan($id, (string) $data['review_stage_id']);
-
-        return $plan === null
-            ? back()->with('error', $reason)
-            : redirect()->to(route('video-projects.anchor', $id).'#referencePackPanel')->with('success', $reason === 'existing'
-                ? 'Nguồn không đổi — dùng lại bộ tham chiếu đã lập.'
-                : 'Đã lập bộ tham chiếu: dùng lại MS1–MS8, dựng bảng màu bằng code, lập danh sách phần còn thiếu. Không gọi AI.');
-    }
-
-    /** Phase 3R: tao cac muc con thieu da chon (tinh phi, dong bo, co gioi han). */
-    public function referencePackRender(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate([
-            'plan_id' => ['required', 'uuid'],
-            'item_ids' => ['required', 'array', 'min:1', 'max:'.YachtReferencePackService::MAX_RENDER_ITEMS],
-            'item_ids.*' => ['required', 'string', 'max:120'],
-            'model' => ['required', 'string', Rule::in(ImageModel::values())],
-            'quality' => ['required', 'string', Rule::in(array_column(ImageQuality::cases(), 'value'))],
-            'attempt' => ['required', 'uuid'],
-        ], [
-            'item_ids.*' => 'Chọn từ 1 đến '.YachtReferencePackService::MAX_RENDER_ITEMS.' mục cần tạo.',
-            'model.*' => 'Chọn model.',
-            'quality.*' => 'Chọn quality.',
-            'attempt.*' => 'Thiếu mã lượt — tải lại trang rồi bấm lại.',
-        ]);
-        [$results, $reason] = app(YachtReferencePackService::class)->render($id, (string) $data['plan_id'], array_values($data['item_ids']),
-            ['model' => (string) $data['model'], 'quality' => (string) $data['quality'], 'attempt' => (string) $data['attempt']], (string) auth()->user()?->name);
-
-        if ($reason !== 'done') {
-            return back()->with('error', $reason);
-        }
-
-        $rendered = count(array_filter($results, static fn (array $r): bool => $r['reason'] === 'rendered'));
-        $summary = implode(' · ', array_map(static fn (array $r): string => $r['item_id'].': '.$r['reason'], $results));
-
-        return redirect()->to(route('video-projects.anchor', ['id' => $id, 'reference_plan' => (string) $data['plan_id']]).'#referencePackPanel')
-            ->with($rendered === count($results) ? 'success' : 'error', "Đã tạo {$rendered}/".count($results).' mục. '.$summary);
-    }
-
-    public function referencePackReject(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate(['plan_id' => ['required', 'uuid'], 'image_id' => ['required', 'uuid']]);
-        [$done, $reason] = app(YachtReferencePackService::class)->reject($id, (string) $data['plan_id'], (string) $data['image_id']);
-
-        return $done ? back()->with('success', 'Đã từ chối ảnh — mục này có thể tạo lại.') : back()->with('error', $reason);
-    }
-
-    public function referencePackCheck(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate(['plan_id' => ['required', 'uuid']]);
-        [$pack, $reason] = app(YachtReferencePackService::class)->check($id, (string) $data['plan_id']);
-
-        if ($pack === null) {
-            return back()->with('error', $reason);
-        }
-
-        $ready = ($pack->output_json['ref_pack']['readiness']['exterior']['status'] ?? null) === 'ready';
-
-        return redirect()->to(route('video-projects.anchor', ['id' => $id, 'reference_plan' => (string) $data['plan_id']]).'#referencePackPanel')->with($ready ? 'success' : 'error', $ready
-            ? 'Đã kiểm bộ: ngoại thất sẵn sàng — xem báo cáo rồi bấm "Duyệt và dùng bộ này".'
-            : 'Đã kiểm bộ: ngoại thất chưa sẵn sàng — còn '.implode(', ', (array) ($pack->output_json['ref_pack']['readiness']['exterior']['blocking'] ?? [])).'.');
-    }
-
-    public function referencePackApprove(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate(['pack_stage_id' => ['required', 'uuid'], 'selection_version' => ['required', 'integer', 'min:0']]);
-        [$done, $reason] = app(YachtReferencePackService::class)->approve($id, (string) $data['pack_stage_id'], (int) $data['selection_version'], 'user:'.auth()->id());
-
-        return $done
-            ? redirect()->to(route('video-projects.anchor', $id).'#referencePackPanel')->with('success', $reason === 'approved'
-                ? 'Đã duyệt và dùng bộ tham chiếu này (thiết kế đã khoá).'
-                : 'Đã duyệt và dùng bộ tham chiếu này — CHƯA có DESIGN LOCK: dùng được cho 3B/4/5L, chưa dùng cho công đoạn yêu cầu nguồn đã khoá.')
-            : back()->with('error', $reason);
-    }
-
-    public function designLock(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate(['plan_id' => ['required', 'uuid']]);
-        [$done, $reason] = app(YachtReferencePackService::class)->lock($id, (string) $data['plan_id'], 'user:'.auth()->id());
-
-        return $done ? back()->with('success', 'Đã ghi DESIGN LOCK.') : back()->with('error', $reason);
-    }
-
     public function screenplayFoundation(Request $request, string $id)
     {
         $project = $this->ownedProject($id);

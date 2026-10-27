@@ -104,7 +104,6 @@ class DesignImageDirectRenderer
                 'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
                 'environment_plate' => $this->environmentPlate($spec, $budget),
                 ModelSheetService::MASTER_OPERATION => $this->modelSheetMaster($spec, $budget),
-                DesignImageStore::REFERENCE_PACK_ITEM_TYPE => $this->referencePackItem($image, $spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),
                 default => throw new RuntimeException(
                     'Unknown render operation: '.$spec['operation'],
@@ -280,41 +279,6 @@ class DesignImageDirectRenderer
         }
 
         return $this->client->edit($spec, $guide, 'model-sheet-layout.png', $budget);
-    }
-
-    /**
-     * Muc Phase 3R: anh nguon theo dung thu tu da ghim trong spec (anh edit truoc), moi anh phai
-     * thuoc project va khop sha256 luc lap ke hoach; khong co anh nguon thi tao moi (vd. phong).
-     *
-     * @param  array<string, mixed>  $spec
-     * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>}
-     */
-    private function referencePackItem(VideoDesignImage $image, array $spec, int $budget): array
-    {
-        $sources = $spec['sources'];
-
-        if ($sources === []) {
-            return $this->client->generate($spec, $budget);
-        }
-
-        if (! array_is_list($sources) || count($sources) > OpenAiImageClient::MAX_SOURCE_IMAGES) {
-            throw new RuntimeException('Ảnh nguồn của mục 3R sai thứ tự hoặc vượt trần '.OpenAiImageClient::MAX_SOURCE_IMAGES.' ảnh — không gửi request.');
-        }
-
-        $images = [];
-
-        foreach ($sources as $position => $entry) {
-            $artifact = VideoArtifact::query()->whereKey($entry['artifact_id'] ?? null)->where('project_id', $image->project_id)->first()
-                ?? throw new RuntimeException('Ảnh nguồn của mục 3R không thuộc dự án — không gửi request.');
-            $images[] = [
-                'bytes' => $this->verifiedBytes($artifact, ['source_artifact_sha256' => $entry['sha256'] ?? '']),
-                'filename' => 'source_'.str_pad((string) $position, 2, '0', STR_PAD_LEFT).'.'.$this->sourceExtension($artifact),
-            ];
-        }
-
-        return count($images) === 1
-            ? $this->client->edit($spec, $images[0]['bytes'], $images[0]['filename'], $budget)
-            : $this->client->editWithSources($spec, $images, $budget);
     }
 
     /**
