@@ -84,6 +84,28 @@ final class ModelSheetQaRegressionTest extends TestCase
         $this->assertRejected('không phải');
     }
 
+    public function test_a_per_field_count_belongs_to_the_innovation_described_with_each_field(): void
+    {
+        $this->addVaneCount('N:N1');
+
+        $result = $this->validate();
+        self::assertTrue($result['ok'], implode("\n", $result['errors']));
+    }
+
+    public function test_a_per_field_count_does_not_belong_to_an_unrelated_innovation(): void
+    {
+        $this->addVaneCount('N:N2');
+
+        $this->assertRejected('không thuộc chủ thể');
+    }
+
+    public function test_a_parameter_with_only_generic_words_does_not_establish_ownership(): void
+    {
+        $this->addVaneCount('N:N1', 'per_count');
+
+        $this->assertRejected('không thuộc chủ thể');
+    }
+
     public function test_display_state_requires_its_own_operational_source(): void
     {
         $this->addStateSource();
@@ -352,6 +374,20 @@ final class ModelSheetQaRegressionTest extends TestCase
             }
         }
         self::fail('Missing fixture fact: '.$path);
+    }
+
+    private function addVaneCount(string $subject, string $property = 'vanes_per_field'): void
+    {
+        $this->design['data']['yacht_bible']['innovations'][0]['geometry'] = 'Each louver field contains 20 transverse vanes.';
+        $this->snapshot['facts'][] = [
+            'id' => 'F900', 'path' => 'data.canonical.dimensions.'.$property.'.value',
+            'quantity' => 'dimensions.'.$property.'.value', 'property' => $property,
+            'value' => 20, 'unit' => 'count', 'render' => '20 count',
+        ];
+        $this->qa['shared'][] = [
+            'text' => 'Each field contains {{F900}} transverse vanes.', 'refs' => [$subject, 'F900'],
+            'numbers' => [['fact' => 'F900', 'subject' => $subject, 'property' => $property]],
+        ];
     }
 
     private function validate(): array

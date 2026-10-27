@@ -458,7 +458,8 @@ final class ModelSheetQaValidator
 
         $texts = strtolower($texts);
         // Chi doi phan TEN BO PHAN cua tham so (canyon trong canyon_width); tu chi loai kich thuoc bo qua.
-        $generic = ['max', 'min', 'unit', 'units', 'value', 'count', 'width', 'length', 'depth', 'height', 'diameter', 'radius', 'pitch', 'volume', 'area', 'thickness', 'spacing', 'water', 'total'];
+        // `per` la quan he (vanes_per_field = "each field contains ... vanes"), khong phai ten bo phan.
+        $generic = ['max', 'min', 'unit', 'units', 'value', 'count', 'width', 'length', 'depth', 'height', 'diameter', 'radius', 'pitch', 'volume', 'area', 'thickness', 'spacing', 'water', 'total', 'per'];
         $words = array_filter(explode('_', strtolower($parameter)), static fn (string $w): bool => strlen($w) > 2 && ! in_array($w, $generic, true));
 
         foreach ($words as $word) {
