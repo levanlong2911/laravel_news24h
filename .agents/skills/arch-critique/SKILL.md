@@ -12,7 +12,7 @@ Lấy `<slug>` từ câu lệnh của người dùng (từ đứng sau `$arch-cr
 Không có slug: liệt kê các thư mục trong `docs/work/` (trừ `_template`) có `02-architecture.md` và hỏi người dùng chọn.
 
 ## Cổng vào
-- Chạy `node scripts/check-clean.js`. Lệnh fail (còn thay đổi code chưa commit) thì DỪNG và báo người dùng: Claude phải commit xong trước.
+- Chạy `node scripts/check-clean.js --capture docs/work/<slug>/.review-baseline.json`. Cho phép code chưa commit; đọc phiên bản hiện tại trên đĩa. Lỗi chụp baseline thì dừng và báo lý do, không yêu cầu commit.
 - Cần `docs/work/<slug>/01-discovery.md` và `02-architecture.md`. Thiếu thì DỪNG và báo người dùng.
 - `Status: APPROVED` đã có: cảnh báo rằng thiết kế đã được duyệt, hỏi người dùng có muốn phản biện tiếp không.
 
@@ -41,9 +41,8 @@ Không có slug: liệt kê các thư mục trong `docs/work/` (trừ `_template
 - Nếu thiết kế tốt: nói rõ là tốt. Không bịa nhận xét để cho đủ số.
 
 ## Trước khi kết thúc (bắt buộc)
-- Chạy lại `node scripts/check-clean.js`. Lệnh phải pass, tức là bạn không sửa file nào ngoài `docs/work/`.
-  Nếu fail vì bạn lỡ sửa code: hoàn tác bằng `git checkout -- <file>` và báo người dùng.
-- Nhắc người dùng commit riêng file của bạn:
+- Chạy `node scripts/check-clean.js --compare docs/work/<slug>/.review-baseline.json`. Phải khớp trạng thái đầu bước ngoài `docs/work/`. Nếu lệch thì dừng, báo file thay đổi và kiểm tra lại; không dùng `git checkout`, reset hay xóa thay đổi có sẵn.
+- Khi người dùng muốn commit, file của bạn phải commit riêng:
   `git add docs/work/<slug>/02-architecture-critique.md && git commit -m "docs(<slug>): 02-architecture-critique"`
 
 ## Kết thúc

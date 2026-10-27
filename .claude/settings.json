@@ -20,7 +20,8 @@
       "Bash(php artisan make:*)",
       "Bash(npm run build:*)",
       "Bash(npm run lint:*)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "Bash(D:/xampp/mysql/bin/mysql.exe -u claude_ro -h 127.0.0.1:*)"
     ],
     "ask": [
       "Bash(git commit:*)",

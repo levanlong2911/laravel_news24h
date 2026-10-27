@@ -24,9 +24,9 @@ Yêu cầu: **$ARGUMENTS**
 3. An toàn DB: trước khi chạy test, chắc chắn `phpunit.xml` trỏ tới DB test riêng (xem `/implement`).
 4. Sửa code, viết hoặc cập nhật test. Chạy: `php vendor/bin/pint`, `php vendor/bin/phpstan analyse --memory-limit=1G`, `php vendor/bin/pest tests/Arch`, `php artisan test --exclude-group=integration`.
 5. Chạy `node scripts/ci-gate.js --local`. Lệnh báo vượt ngưỡng (G2) thì DỪNG và đề nghị chuyển sang quy trình đủ.
-6. Điền phần "Kiểm chứng" trong `00-lite.md`. Commit:
+6. Điền phần "Kiểm chứng" trong `00-lite.md`. Không bắt buộc commit để Codex review. Khi người dùng yêu cầu commit:
    `git add <file> docs/work/<slug>/00-lite.md && git commit -m "chore(<slug>): <mô tả>"`
-7. Chạy `node scripts/check-clean.js`, phải sạch.
+7. Chạy `node scripts/check-clean.js` để xem trạng thái; code chưa commit không chặn review local.
 
 ## Quy tắc
 - **Không gọi API, không chạy chương trình** (AGENTS.md mục 0b). Chỉ viết code và chạy công cụ kiểm tra offline.

@@ -43,7 +43,7 @@ Lần lượt từng bước trong mục "Các bước triển khai" của thi�
 
 ## Quy tắc
 - Không tắt test, không `skip`, không hạ cấu hình lint.
-- Không `git push`. Mỗi bước triển khai một commit. Cuối bước 4 cây làm việc phải sạch (`node scripts/check-clean.js`) để Codex review được.
+- Không `git push`. Không bắt buộc commit để Codex review; chỉ commit khi người dùng yêu cầu. Ghi rõ thay đổi staged, unstaged và file mới trong `04-implementation.md`; giữ nguyên thay đổi ngoài task.
 - Không sửa các file "luật" ở AGENTS.md mục 7. Rule gây cản trở thì báo người dùng.
 - Migration chỉ chạy trên DB test (`php artisan test` tự lo). Không chạy `migrate` trên DB thật.
 

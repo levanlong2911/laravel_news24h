@@ -1,35 +1,32 @@
 #!/usr/bin/env node
-// Codex chạy lệnh này ở đầu và cuối bước 2b, 5, 6.
-// Pass khi KHÔNG có thay đổi chưa commit nào nằm ngoài docs/work/.
-//   - Đầu bước: bảo đảm Claude đã commit xong code, nên Codex review đúng thứ đã commit.
-//   - Cuối bước: bảo đảm Codex không sửa code (chỉ ghi file trong docs/work/).
-const { git } = require("./approval-lib");
-
-let out;
+// Uncommitted code is allowed. Capture/compare detects changes during review.
+const fs = require('fs');
+const path = require('path');
+const { ROOT, git } = require('./approval-lib');
+const { workingTreeHash } = require('./working-tree');
 try {
-  out = git(["status", "--porcelain", "-z", "--untracked-files=all"]);
-} catch (e) {
-  console.error("Không chạy được git status: " + e.message);
+  const [option, file, ...extra] = process.argv.slice(2);
+  if (option) {
+    if (!['--capture', '--compare'].includes(option) || !file || extra.length) throw new Error('Usage: check-clean.js [--capture|--compare docs/work/<slug>/.review-baseline.json]');
+    const absolute = path.resolve(ROOT, file);
+    const work = path.resolve(ROOT, 'docs/work') + path.sep;
+    if (!absolute.startsWith(work) || path.extname(absolute) !== '.json') throw new Error('Snapshot must be a JSON file inside docs/work/.');
+    const hash = workingTreeHash();
+    if (option === '--capture') {
+      if (fs.existsSync(absolute)) throw new Error('Baseline exists; compare it before starting another review.');
+      fs.mkdirSync(path.dirname(absolute), { recursive: true });
+      fs.writeFileSync(absolute, JSON.stringify({ codeTree: hash }, null, 2) + '\n');
+      console.log('Captured working tree: ' + hash);
+    } else {
+      if (JSON.parse(fs.readFileSync(absolute, 'utf8')).codeTree !== hash) throw new Error('Code changed outside docs/work/ during this step. Inspect the diff; do not reset pre-existing changes.');
+      console.log('Working tree unchanged outside docs/work/.');
+      fs.unlinkSync(absolute);
+    }
+  } else {
+    const out = git(['status', '--porcelain', '--untracked-files=all']);
+    console.log(out.trim() ? 'Uncommitted changes are allowed. Use --capture/--compare for a review baseline.' : 'Working tree is clean.');
+  }
+} catch (error) {
+  console.error(error.message);
   process.exit(1);
 }
-// Định dạng -z: "XY path\0", đổi tên: "R  new\0old\0".
-const parts = out.split("\0");
-const files = [];
-for (let i = 0; i < parts.length; i++) {
-  const entry = parts[i];
-  if (!entry) continue;
-  files.push(entry.slice(3));
-  if (entry[0] === "R" || entry[0] === "C") files.push(parts[++i]);
-}
-const dirty = [...new Set(files)].filter((p) => p && !p.startsWith("docs/work/"));
-
-if (dirty.length) {
-  console.error(
-    "⛔ Có thay đổi chưa commit ngoài docs/work/:\n  - " +
-      dirty.join("\n  - ") +
-      "\n\nĐầu bước: Claude cần commit xong (hoặc người dùng tự commit/stash) trước khi Codex chạy." +
-      "\nCuối bước: Codex không được sửa các file này. Hoàn tác bằng: git checkout -- <file> (file mới: xóa đi)."
-  );
-  process.exit(1);
-}
-console.log("✅ Cây làm việc sạch (ngoài docs/work/).");

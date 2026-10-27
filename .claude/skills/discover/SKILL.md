@@ -3,7 +3,7 @@ name: discover
 description: Bước 1 — Discovery. Khảo sát codebase cho một task mới và ghi 01-discovery.md. Chỉ chạy khi người dùng gọi /discover.
 argument-hint: "<mô tả task>"
 disable-model-invocation: true
-allowed-tools: Read, Grep, Glob, Write, Bash(git log:*), Bash(git status:*), Bash(git diff:*), Bash(ls:*), Bash(php artisan route:list:*), Bash(php artisan about:*)
+allowed-tools: Read, Grep, Glob, Write, Bash(git log:*), Bash(git status:*), Bash(git diff:*), Bash(ls:*), Bash(php artisan route:list:*), Bash(php artisan about:*), Bash(D:/xampp/mysql/bin/mysql.exe -u claude_ro -h 127.0.0.1:*)
 ---
 
 # Bước 1 — Discovery (Claude)
@@ -17,7 +17,7 @@ Bạn là người khảo sát. Mục tiêu là HIỂU, không thiết kế, kh�
 2. Đọc `AGENTS.md`, `docs/architecture.md`, các ADR trong `docs/adr/` có liên quan.
 3. Tìm trong code:
    - Điểm vào liên quan: `php artisan route:list --path=<tiền tố>`, controller, Livewire/Inertia page, job, command, listener.
-   - Model và quan hệ liên quan: đọc `app/Models/*.php` và `database/migrations/` (bảng, cột, quan hệ, cast). **Không** chạy lệnh kết nối DB (`model:show`, `tinker`, `db:*`), vì DB dev chứa dữ liệu thật (AGENTS.md mục 0b).
+   - Model và quan hệ liên quan: đọc `app/Models/*.php` và `database/migrations/` (bảng, cột, quan hệ, cast). Dữ liệu thật: chỉ đọc bằng tài khoản chỉ-đọc `claude_ro` (AGENTS.md mục 0b), có `LIMIT`, không lấy cột nhạy cảm. **Không** dùng `model:show`, `tinker`, `db:*` hay tài khoản khác.
    - Policy, FormRequest, middleware đang áp dụng.
    - Phần frontend: `resources/js/` (page, component, module API) và `resources/views/`.
    - Luồng dữ liệu hiện tại từ điểm vào xuống DB/API ngoài.

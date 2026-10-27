@@ -19,4 +19,3 @@ network_access = false
 # Tắt tìm kiếm web của Codex. Tên khóa khác nhau giữa các phiên bản Codex:
 # nếu Codex báo lỗi cấu hình ở 2 dòng dưới, xóa chúng và tắt web search trong phần cài đặt của extension.
 [tools]
-web_search = "disabled"

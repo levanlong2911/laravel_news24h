@@ -11,7 +11,7 @@ Bạn là **người kiểm chứng**. Bạn chứng minh bằng kết quả ch�
 Lấy `<slug>` từ câu lệnh của người dùng. Không có thì hỏi.
 
 ## Cổng vào
-- Chạy `node scripts/check-clean.js`. Lệnh fail (còn thay đổi code chưa commit) thì DỪNG và báo người dùng: Claude phải commit xong trước.
+- Chạy `node scripts/check-clean.js --capture docs/work/<slug>/.review-baseline.json`. Cho phép code chưa commit; lỗi chụp baseline thì dừng và báo lý do.
 - `node scripts/check-approval.js <slug>` phải pass (task rút gọn có `00-lite.md` tự pass bước này).
 - `05-review.md`: lần review mới nhất phải có `Verdict: PASS` hoặc `PASS_WITH_MINOR`, không còn BLOCKER/MAJOR ở trạng thái `OPEN`.
   Nếu không, DỪNG và báo người dùng quay lại bước 5b.
@@ -34,8 +34,8 @@ Lấy `<slug>` từ câu lệnh của người dùng. Không có thì hỏi.
 4. Kiểm tra CI: nếu có Pull Request và dùng được `gh`, chạy `gh pr checks` để lấy trạng thái. Không thì ghi "Chờ CI".
 5. Ghi `docs/work/<slug>/06-verification.md` theo template. **CI đọc 2 dòng bằng máy**:
    - `Verdict: PASS` chỉ khi mọi lệnh pass và mọi tiêu chí chấp nhận ĐẠT. Ngược lại ghi `Verdict: FAIL`.
-   - `Code-Tree: <hash>`: lấy từ `node scripts/code-tree.js`, chạy SAU CÙNG, khi cây làm việc đã sạch.
-     Lệnh báo còn thay đổi chưa commit thì DỪNG: Claude phải commit xong trước. Không tự tạo hash.
+   - `Code-Tree: <hash>`: lấy từ `node scripts/code-tree.js`, chạy SAU CÙNG. Hash bao gồm code hiện tại, kể cả staged, unstaged và file mới không bị ignore; không yêu cầu commit. Không tự tạo hash. Sau này CI so với nội dung commit/PR; nội dung khác bản đã kiểm thì phải verify lại.
+   - `ci-gate.js --local` đọc HEAD, không đọc code chưa commit. Nếu chưa commit, ghi riêng kết quả gate cho HEAD; không dùng nó để khẳng định code trên đĩa đã qua cổng CI.
 
 ## Quy tắc
 - KHÔNG sửa code. Chỉ ghi `06-verification.md`.
@@ -43,9 +43,8 @@ Lấy `<slug>` từ câu lệnh của người dùng. Không có thì hỏi.
 - Không làm tròn kết quả. Một lệnh fail hoặc một tiêu chí chưa chứng minh là chưa đạt.
 
 ## Trước khi kết thúc (bắt buộc)
-- Chạy lại `node scripts/check-clean.js`. Lệnh phải pass, tức là bạn không sửa file nào ngoài `docs/work/`.
-  Nếu fail vì bạn lỡ sửa code: hoàn tác bằng `git checkout -- <file>` và báo người dùng.
-- Nhắc người dùng commit riêng file của bạn:
+- Chạy `node scripts/check-clean.js --compare docs/work/<slug>/.review-baseline.json`. Phải khớp trạng thái đầu bước ngoài `docs/work/`. Nếu lệch thì dừng và kiểm tra lại; không reset/stash hoặc xóa thay đổi có sẵn.
+- Khi người dùng muốn commit, file của bạn phải commit riêng:
   `git add docs/work/<slug>/06-verification.md && git commit -m "docs(<slug>): 06-verification"`
 
 ## Kết thúc

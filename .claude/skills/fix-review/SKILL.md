@@ -21,7 +21,7 @@ Slug: **$ARGUMENTS**
    - **QUESTION**: chuyển câu hỏi cho người dùng.
    - Sửa mà phải lệch lớn khỏi thiết kế: DỪNG, làm như quy tắc ở `/implement`.
 3. Sau khi sửa, chạy lại: `php vendor/bin/pint`, `php vendor/bin/phpstan analyse --memory-limit=1G`, `php vendor/bin/pest tests/Arch`, `php artisan test`, và `npm run build` nếu có đụng JS.
-   Commit: `git commit -m "fix($ARGUMENTS): address R-xx, R-yy"`. Cuối bước cây làm việc phải sạch (`node scripts/check-clean.js`).
+   Không bắt buộc commit trước khi Codex review lại. Chỉ commit khi người dùng yêu cầu, với message `fix($ARGUMENTS): address R-xx, R-yy`.
 4. Cập nhật `04-implementation.md`, mục "Phản hồi review": mã nhận xét → đã sửa / bác bỏ / chờ quyết → commit hoặc lý do.
 
 ## Quy tắc

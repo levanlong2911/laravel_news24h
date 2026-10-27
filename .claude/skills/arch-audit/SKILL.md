@@ -2,7 +2,7 @@
 name: arch-audit
 description: Audit kiến trúc trên code thật trước khi bật Arch test và rule trong AGENTS.md. Đề xuất GIỮ / GIỮ + ignoring / BỎ cho từng rule. Chỉ chạy khi người dùng gọi /arch-audit.
 disable-model-invocation: true
-allowed-tools: Read, Grep, Glob, Write, Bash(git log:*), Bash(git ls-files:*), Bash(php artisan route:list:*), Bash(php artisan about:*), Bash(php vendor/bin/pest tests/Arch:*), Bash(php vendor/bin/phpstan analyse:*)
+allowed-tools: Read, Grep, Glob, Write, Bash(git log:*), Bash(git ls-files:*), Bash(php artisan route:list:*), Bash(php artisan about:*), Bash(php vendor/bin/pest tests/Arch:*), Bash(php vendor/bin/phpstan analyse:*), Bash(D:/xampp/mysql/bin/mysql.exe -u claude_ro -h 127.0.0.1:*)
 ---
 
 # Architecture Audit (Claude) — làm MỘT LẦN khi cài bộ kit, và mỗi khi kiến trúc thay đổi lớn
@@ -16,7 +16,7 @@ Bạn **không sửa** file luật (AGENTS.md, tests/Arch, phpstan…). Bạn ch
 1. Đọc `composer.json`, `composer.lock` (phiên bản PHP, Laravel, package), `package.json`, `config/queue.php`, `config/database.php`.
 2. Lập bản đồ code thật:
    - Thư mục và namespace trong `app/`: đếm số class mỗi loại (Controllers, Actions, Services, Jobs, Models, …). Ghi rõ project dùng tên gì cho lớp nghiệp vụ (Actions? Services? Pipelines? Domain?).
-   - Luồng chính của hệ thống, theo bảng DB và code. Ví dụ pipeline nội dung AI: nguồn tin → raw_articles → prompt (prompt_frameworks, prompt_versions, ai_phases, ai_json_schemas) → gọi Claude (claude_usages, claude_usage_logs) → render (render_attempts) → posts/articles. Dùng `php artisan route:list`, đọc model, migration, Job và Command. Không chạy lệnh kết nối DB hay gọi mạng (AGENTS.md mục 0b).
+   - Luồng chính của hệ thống, theo bảng DB và code. Ví dụ pipeline nội dung AI: nguồn tin → raw_articles → prompt (prompt_frameworks, prompt_versions, ai_phases, ai_json_schemas) → gọi Claude (claude_usages, claude_usage_logs) → render (render_attempts) → posts/articles. Dùng `php artisan route:list`, đọc model, migration, Job và Command. Không gọi mạng; đọc DB chỉ bằng tài khoản chỉ-đọc `claude_ro` (AGENTS.md mục 0b).
    - Job: liệt kê từng Job với `$tries`, `$timeout`, `backoff`, unique/khóa, và cách xử lý lỗi.
    - Nơi gọi API ngoài (Http facade, SDK) và nơi gọi lệnh shell (`exec`, `Process`, `shell_exec`…).
 3. Chạy `php vendor/bin/pest tests/Arch` (nếu đã cài Pest), nếu không thì dùng Grep. Với **từng rule** trong `tests/Arch/ArchitectureTest.php` và từng rule [ARCH] ở AGENTS.md mục 4, ghi:

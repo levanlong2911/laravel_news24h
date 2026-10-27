@@ -7,13 +7,15 @@
 Trả lời người dùng bằng tiếng Việt. Code, tên biến, commit message bằng tiếng Anh.
 
 ## 0b. Chỉ viết code — KHÔNG gọi API, KHÔNG chạy chương trình (BẮT BUỘC, ưu tiên cao nhất)
-Người dùng tự chạy chương trình thủ công. Agent (Claude, Codex) chỉ được **đọc code, viết code, và chạy công cụ kiểm tra offline**.
+Người dùng tự chạy chương trình thủ công. Agent (Claude, Codex) chỉ được **đọc code, viết code, và chạy công cụ kiểm tra offline**. Claude Code được thêm quyền **đọc DB bằng tài khoản chỉ-đọc** (bên dưới).
 
 **Được làm, không cần hỏi:**
 - Đọc và sửa file trong project. Dùng `git status`, `diff`, `log`, `show`, `commit` (theo quyền ở `.claude/settings.json`).
 - Chạy công cụ kiểm tra không gọi mạng: `pint`, `phpstan`, `pest`/`php artisan test`, `npm run build`/`lint`/`test`, các script `node scripts/*.js` của bộ kit.
   Test chạy với `Http::preventStrayRequests()`: mọi request HTTP thật đều làm test fail. Test phải dùng `Http::fake()`.
 - `php artisan make:*`, `route:list`, `about` (chỉ sinh file hoặc đọc thông tin).
+- (Claude Code) Đọc DB bằng tài khoản MariaDB chỉ-đọc `claude_ro` (chỉ có quyền `SELECT`, DB tự từ chối mọi lệnh ghi): `D:/xampp/mysql/bin/mysql.exe -u claude_ro -h 127.0.0.1 --default-character-set=utf8mb4 <db> -e "SELECT …"`.
+  Chỉ dùng đúng lệnh này: không thêm `-u`/`--user` khác, không dùng `root`, không đọc `.env` để lấy mật khẩu. Mỗi truy vấn có `LIMIT`. Không SELECT mật khẩu, token, khóa API hay dữ liệu cá nhân (vd `users.password`, `remember_token`, `personal_access_tokens`, email, số điện thoại). Không xuất dữ liệu ra file. Khi dùng kết quả làm bằng chứng, ghi lại câu truy vấn.
 
 **KHÔNG được làm khi người dùng chưa đồng ý rõ ràng trong chat, cho đúng lần đó:**
 - Gọi **bất kỳ API hay dịch vụ ngoài nào**: `curl`, `wget`, `Invoke-WebRequest`, `gh api`, SDK, gửi request tới Claude/OpenAI/dịch vụ của app, mở URL, tìm kiếm web, gọi MCP tool có kết nối mạng.
@@ -68,7 +70,7 @@ Vượt một trong các điều kiện trên thì CI chặn, và phải chuyể
 - Mỗi bước chỉ làm đúng phần việc của mình. Ví dụ: Discovery không thiết kế, Review không sửa code.
 - Nhánh làm việc đặt tên `feat/<slug>` (hoặc `fix/<slug>`). CI dựa vào tên nhánh để biết PR thuộc task nào. Đặt tên nhánh khác không giúp bỏ qua duyệt (xem "Luồng rút gọn").
 - **Phạm vi file**: mọi file code thay đổi trong PR phải khớp bảng mục 5 của `02-architecture.md`, trừ các file test, factory, seeder, lang và tài liệu. CI tự kiểm tra. Cần thêm file thì sửa thiết kế và duyệt lại.
-- **Commit**: Claude commit sau mỗi bước triển khai. Trước khi Codex chạy bước 5/6, cây làm việc phải sạch (`node scripts/check-clean.js`).
+- **Commit**: không bắt buộc commit trước khi phản biện, review hoặc verification local. Codex đọc cả code đã commit, staged, unstaged và file mới trong phạm vi task. Đầu bước 2b/5/6 chạy `node scripts/check-clean.js --capture docs/work/<slug>/.review-baseline.json`; cuối bước chạy `node scripts/check-clean.js --compare docs/work/<slug>/.review-baseline.json`. Nếu code đổi trong lúc kiểm tra thì dừng và kiểm tra lại; không reset/stash hoặc xóa thay đổi có sẵn. Claude chỉ commit khi người dùng yêu cầu. CI vẫn kiểm tra nội dung commit/PR; kết quả local không thay thế CI.
 - **File của Codex** (`02-architecture-critique.md`, `05-review.md`, `06-verification.md`) commit riêng. Commit đó chỉ được chứa file trong `docs/work/`, CI tự kiểm tra.
 - **Commit duyệt** do `approve.js` tạo, có trailer `Architecture-Approved: <slug> <hash>`. CI kiểm tra người tạo commit có tên trong `.github/workflow-gate.json` và commit không có dấu vết agent.
 - **Review và Verification được CI đọc bằng máy**: `Verdict:` trong `05-review.md` và `06-verification.md`, cột Trạng thái của từng nhận xét, `Code-Tree:` trong `06-verification.md`. Code đổi sau khi verify thì CI chặn.

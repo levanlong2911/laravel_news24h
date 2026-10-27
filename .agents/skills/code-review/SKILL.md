@@ -11,7 +11,7 @@ Bạn là **reviewer độc lập**. Bạn kiểm tra xem code có đúng thiế
 Lấy `<slug>` từ câu lệnh của người dùng. Không có slug thì liệt kê các task trong `docs/work/` có `04-implementation.md` và hỏi.
 
 ## Cổng vào
-- Chạy `node scripts/check-clean.js`. Lệnh fail (còn thay đổi code chưa commit) thì DỪNG và báo người dùng: Claude phải commit xong trước.
+- Chạy `node scripts/check-clean.js --capture docs/work/<slug>/.review-baseline.json`. Cho phép code chưa commit; lỗi chụp baseline thì dừng và báo lý do.
 - Chạy `node scripts/check-approval.js <slug>`. Báo lỗi nghĩa là code được viết khi thiết kế chưa duyệt.
   Ghi đó là BLOCKER `R-00` rồi vẫn review tiếp.
 - Task **đủ** (có `02-architecture.md`): cần `02-architecture.md` và `04-implementation.md`.
@@ -21,6 +21,7 @@ Lấy `<slug>` từ câu lệnh của người dùng. Không có slug thì liệ
 - Đang ở nhánh `feat/<slug>`, `chore/<slug>` hoặc `hotfix/<slug>`: dùng `git diff origin/main...HEAD` (hoặc nhánh gốc ghi trong `.github/workflow-gate.json`).
 - Nếu không: dùng `git diff` và `git diff --staged`, kèm các commit được liệt kê trong `04-implementation.md`.
 - Ghi rõ lệnh diff đã dùng vào đầu file review.
+- Trong mọi trường hợp, đọc thêm `git diff`, `git diff --staged` và các file mới từ `git ls-files --others --exclude-standard` trong phạm vi task. Không chỉ review HEAD khi còn code chưa commit.
 
 ## Làm
 1. Đọc `AGENTS.md`, thiết kế đã duyệt, `04-implementation.md`.
@@ -52,9 +53,8 @@ Lấy `<slug>` từ câu lệnh của người dùng. Không có slug thì liệ
 - Nhận xét phải cụ thể, có vị trí. Không viết chung chung kiểu "nên cải thiện code".
 
 ## Trước khi kết thúc (bắt buộc)
-- Chạy lại `node scripts/check-clean.js`. Lệnh phải pass, tức là bạn không sửa file nào ngoài `docs/work/`.
-  Nếu fail vì bạn lỡ sửa code: hoàn tác bằng `git checkout -- <file>` và báo người dùng.
-- Nhắc người dùng commit riêng file của bạn:
+- Chạy `node scripts/check-clean.js --compare docs/work/<slug>/.review-baseline.json`. Phải khớp trạng thái đầu bước ngoài `docs/work/`. Nếu lệch thì dừng và kiểm tra lại; không reset/stash hoặc xóa thay đổi có sẵn.
+- Khi người dùng muốn commit, file của bạn phải commit riêng:
   `git add docs/work/<slug>/05-review.md && git commit -m "docs(<slug>): 05-review"`
 
 ## Kết thúc
