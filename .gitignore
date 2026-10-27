@@ -24,6 +24,3 @@ yarn-error.log
 # Dump tam va script do choi o goc cay — khong thuoc ve lich su
 /.tmp_*
 /_inspect_relations.php
-.ai-kit-backup/
-/CLAUDE.local.md
-/.claude/settings.local.json

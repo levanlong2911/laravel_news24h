@@ -24,14 +24,10 @@
         "dbrekelmans/bdi": "^1.4",
         "fabpot/goutte": "^4.0",
         "fakerphp/faker": "^1.9.1",
-        "infection/infection": "^0.32.6",
-        "larastan/larastan": "^2.9",
         "laravel/pint": "^1.0",
         "laravel/sail": "^1.18",
         "mockery/mockery": "^1.4.4",
         "nunomaduro/collision": "^7.10",
-        "pestphp/pest": "^2.36",
-        "pestphp/pest-plugin-laravel": "^2.4",
         "phpunit/phpunit": "^10.5.63",
         "spatie/laravel-ignition": "^2.0",
         "symfony/panther": "^2.2"
@@ -74,8 +70,7 @@
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true,
-            "php-http/discovery": true,
-            "infection/extension-installer": true
+            "php-http/discovery": true
         }
     },
     "minimum-stability": "stable",
