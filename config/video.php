@@ -183,6 +183,41 @@ return [
                 ],
             ],
 
+            'location_reference' => [
+                [
+                    'id' => 'openai:gpt-image-2.5-flare',
+                    'provider' => 'openai',
+                    'model' => 'gpt-image-2.5-flare',
+                    'label' => 'GPT Image 2.5 Flare — tạo và sửa ảnh',
+                    'default' => true,
+                    'pricing' => 'estimated',
+                    'max_variations' => 2,
+                    'capabilities' => ['generate', 'edit_sources'],
+                    'max_sources' => 4,
+                    'controls' => [
+                        'sizes' => ['1024x1024', '1536x1024', '1024x1536', '2048x1152', '1152x2048'],
+                        'default_size' => '1152x2048',
+                        'default_quality' => 'low',
+                    ],
+                ],
+                [
+                    'id' => 'openai:gpt-image-2.5-sunburst',
+                    'provider' => 'openai',
+                    'model' => 'gpt-image-2.5-sunburst',
+                    'label' => 'GPT Image 2.5 Sunburst — sửa ảnh chính xác',
+                    'default' => false,
+                    'pricing' => 'estimated',
+                    'max_variations' => 2,
+                    'capabilities' => ['generate', 'edit_sources'],
+                    'max_sources' => 4,
+                    'controls' => [
+                        'sizes' => ['1024x1024', '1536x1024', '1024x1536', '2048x1152', '1152x2048'],
+                        'default_size' => '1152x2048',
+                        'default_quality' => 'low',
+                    ],
+                ],
+            ],
+
             /*
              * O NEO DANH TINH. Ten task trung `DesignImageStore::ANCHOR_TYPE` de khong
              * sinh ra mot he ten thu hai canh `image_type`.
@@ -816,6 +851,15 @@ return [
         ],
     ],
 
+    'locations' => [
+        'workflows' => [
+            'superyacht_v6_3' => [
+                'action' => 'spec.locations',
+                'adapter' => \App\Video\Superyacht\Locations\SuperyachtLocations::class,
+            ],
+        ],
+    ],
+
     'superyacht' => [
         'variables' => [
             'languages' => ['en'],
@@ -882,6 +926,35 @@ return [
                     'construction_run' => 2,
                     'money_shots_outside' => 2,
                 ],
+            ],
+        ],
+
+        'locations' => [
+            'execution' => 'db-phase-5-locations-v1',
+            'model' => env('SUPERYACHT_LOCATIONS_MODEL', 'sonnet55'),
+            'effort' => env('SUPERYACHT_LOCATIONS_EFFORT', 'high'),
+            'max_tokens' => (int) env('SUPERYACHT_LOCATIONS_MAX_TOKENS', 64000),
+            'timeout_seconds' => (int) env('SUPERYACHT_LOCATIONS_TIMEOUT_SECONDS', 900),
+            'check' => [
+                'anchor_max_words' => 250,
+                'kelvin' => [1500, 12000],
+                'clearance_m' => ['length' => 20, 'width' => 10, 'height' => 8],
+                'enclosing_kinds' => ['construction_hall', 'paint_hall'],
+            ],
+            'reference' => [
+                'task' => 'location_reference',
+                'suffix' => [
+                    'location' => 'no yacht, two or three small distant human silhouettes for scale, no text, no signage, no logos',
+                    'interior' => 'no people, no text, no signage, no logos',
+                    'exterior' => 'the yacht exactly as shown in the source images, same hull shape, same deck lines, no people, no text, no signage, no logos',
+                ],
+                'roles' => [
+                    'keep_view' => 'Keep the exact camera position, framing, room geometry and window positions of the first source image; change only what the description above states.',
+                    'identity' => 'Take only materials, shapes and colours from the reference images of this space, never their camera position or framing.',
+                    'setting' => 'Use the image of the surrounding location only as the setting around the yacht, never as a camera reference.',
+                ],
+                'camera_label' => 'Camera:',
+                'palette_label' => 'Colour palette:',
             ],
         ],
 
@@ -1062,6 +1135,19 @@ return [
                             ],
                             'outputs' => [
                                 'script' => ['namespace' => 'superyacht', 'schema' => 'Phase4Script', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 4 Output (format phase4-script-v2): the whole envelope with data.story (spine), data.anchors.character and data.script (17 beats, tour); release database/releases/phase-4-script-v2'],
+                            ],
+                        ],
+                        'spec.locations' => [
+                            'phase' => 'phase-5',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['locations'],
+                            ],
+                            'outputs' => [
+                                'locations' => ['namespace' => 'superyacht', 'schema' => 'Phase5Locations', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 5 Output (format phase5-locations-v1): locations, interior_sets, exterior_amenities, bindings, reference_requests, production_assumptions; release database/releases/phase-5-locations-v1'],
                             ],
                         ],
                         'spec.shot_list' => [

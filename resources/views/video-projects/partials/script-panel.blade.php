@@ -12,7 +12,8 @@
             <b>KỊCH BẢN PHIM</b>
             <em>Phase 4 — câu chuyện + kịch bản hình ảnh từ model sheet đã duyệt</em>
             <span class="grow"></span>
-            @if($step['selection'] !== null && $step['selected_error'] === null)<span class="va-tag ok">Đang dùng: bản rev {{ collect($step['history'])->firstWhere('selected', true)['revision'] ?? '—' }}</span>@endif
+            @if($step['selection'] !== null && $step['selected_error'] === null)<span class="va-tag ok">Đang dùng: bản rev {{ collect($step['history'])->firstWhere('selected', true)['revision'] ?? '—' }}</span>
+                <a class="vp-btn sm" href="{{ route('video-projects.locations', $project->id) }}">Phase 5 — Địa điểm →</a>@endif
             @if($step['running'])
                 <button class="vp-btn sm" disabled>Đang viết…</button>
             @elseif($step['stuck'])

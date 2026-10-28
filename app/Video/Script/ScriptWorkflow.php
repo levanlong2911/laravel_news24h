@@ -6,7 +6,7 @@ namespace App\Video\Script;
 
 use App\Models\VideoProject;
 
-interface ScriptWorkflow
+interface ScriptWorkflow extends CheckedWorkflow
 {
     public function format(): string;
 
@@ -29,18 +29,4 @@ interface ScriptWorkflow
 
     /** @param array<string, mixed> $source */
     public function sourceProblem(string $projectId, array $source): ?string;
-
-    /**
-     * @param  ?array<string, mixed>  $response
-     * @param  array<string, mixed>  $context
-     * @param  list<array{code: string, path: string, message: string}>  $schema
-     * @return array{version: string, format: string, verdict: string, status: ?string, error: ?string, schema: list<string>, issues: list<string>, warnings: list<string>, judge: string}
-     */
-    public function check(?array $response, array $context, array $schema): array;
-
-    /**
-     * @param  array<string, mixed>  $document
-     * @return array<string, mixed>
-     */
-    public function derive(array $document): array;
 }

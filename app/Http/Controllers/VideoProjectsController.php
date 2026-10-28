@@ -23,6 +23,9 @@ use App\Video\Scene\Services\ShotSelectionReconciler;
 use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\DesignDnaService;
 use App\Services\Video\ModelSheetService;
+use App\Services\Video\LocationReferenceService;
+use App\Services\Video\LocationSourceService;
+use App\Services\Video\LocationWriterService;
 use App\Services\Video\ScriptSourceService;
 use App\Services\Video\ScriptWriterService;
 use App\Services\Video\YachtDesignService;
@@ -571,6 +574,116 @@ class VideoProjectsController extends Controller
             ->with('success', $reason === 'replayed'
                 ? 'Lần duyệt này đã được ghi trước đó — không ghi thêm.'
                 : 'Đã duyệt và chọn bản kịch bản này làm nguồn cho các công đoạn sau.');
+    }
+
+    public function locations(Request $request, string $id)
+    {
+        $project = $this->ownedProject($id);
+        $stage = $request->query('stage');
+
+        return view('video-projects.locations', $this->chrome() + [
+            'project' => $project,
+            'id' => $id,
+            'step' => app(LocationWriterService::class)->panel($id, is_string($stage) && Str::isUuid($stage) ? $stage : null),
+        ]);
+    }
+
+    public function writeLocations(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
+        [$stage, $reason] = app(LocationWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id']);
+
+        if ($stage === null) {
+            return back()->with('error', $reason);
+        }
+
+        return redirect()->route('video-projects.locations', ['id' => $id, 'stage' => $stage->id])->with('success', match ($reason) {
+            'cached' => 'Nguồn và prompt không đổi — dùng lại bản mô tả đã lưu, không gọi model.',
+            'replayed' => 'Thao tác này đã chạy trước đó — không gọi model lần nữa.',
+            default => 'Đã lưu bản mô tả bối cảnh — xem kết quả kiểm rồi duyệt.',
+        });
+    }
+
+    public function resetLocations(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = app(LocationWriterService::class)->reset($id);
+
+        return $done ? back()->with('success', 'Đã reset lượt lập bối cảnh bị kẹt.') : back()->with('error', $reason);
+    }
+
+    public function approveLocationText(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'stage_id' => ['required', 'uuid'],
+            'content_hash' => ['required', 'string', 'max:80'],
+            'selection_version' => ['required', 'integer', 'min:0'],
+            'operation_id' => ['required', 'uuid'],
+        ], ['*' => 'Thiếu dữ liệu duyệt — tải lại trang.']);
+        [$decision, $reason] = app(LocationSourceService::class)->approveText($id, (string) $data['stage_id'], (string) $data['content_hash'], (int) $data['selection_version'], (string) $data['operation_id'], auth()->id());
+
+        return $decision === null
+            ? back()->with('error', $reason)
+            : redirect()->route('video-projects.locations', ['id' => $id, 'stage' => $data['stage_id']])->with('success', $reason === 'replayed' ? 'Lần duyệt này đã được ghi trước đó.' : 'Đã duyệt bản mô tả — có thể render ảnh tham chiếu.');
+    }
+
+    public function renderLocationReference(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'request_id' => ['required', 'regex:/^R[0-9]{2}$/'],
+            'image_id' => ['nullable', 'uuid'],
+            'provider_model' => ['nullable', 'string', 'max:120'],
+            'quality' => ['nullable', 'string', 'max:20'],
+            'size' => ['nullable', 'string', 'max:20'],
+            'variations' => ['nullable', 'integer', 'min:1'],
+            'operation_id' => ['required', 'uuid'],
+        ], ['*' => 'Thiết lập render không hợp lệ — tải lại trang.']);
+        $service = app(LocationReferenceService::class);
+        [$image, $reason] = isset($data['image_id'])
+            ? $service->retry($id, (string) $data['image_id'])
+            : $service->render($id, (string) auth()->user()?->name, (string) $data['request_id'], $data, (string) $data['operation_id']);
+
+        return $image === null
+            ? back()->with('error', $reason)
+            : redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', $reason === 'already_exists' ? 'Ảnh với đúng thiết lập này đã có — không render lại.' : 'Render xong — chọn ảnh cho yêu cầu này.');
+    }
+
+    public function chooseLocationReference(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'request_id' => ['required', 'regex:/^R[0-9]{2}$/'],
+            'artifact_id' => ['required', 'uuid'],
+            'selection_version' => ['required', 'integer', 'min:0'],
+        ], ['*' => 'Thiếu dữ liệu chọn ảnh — tải lại trang.']);
+        [$done, $reason] = app(LocationSourceService::class)->choose($id, (string) $data['request_id'], (string) $data['artifact_id'], (int) $data['selection_version']);
+
+        return $done
+            ? redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', 'Đã chọn ảnh cho '.$data['request_id'].'.')
+            : back()->with('error', $reason);
+    }
+
+    public function approveLocationSet(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'selection_version' => ['required', 'integer', 'min:0'],
+            'operation_id' => ['required', 'uuid'],
+        ], ['*' => 'Thiếu dữ liệu duyệt — tải lại trang.']);
+        [$decision, $reason] = app(LocationSourceService::class)->approveSet($id, (int) $data['selection_version'], (string) $data['operation_id'], auth()->id());
+
+        return $decision === null
+            ? back()->with('error', $reason)
+            : redirect()->route('video-projects.locations', $id)->with('success', $reason === 'replayed' ? 'Lần duyệt này đã được ghi trước đó.' : 'Đã duyệt bộ ảnh Phase 5 — bộ bối cảnh sẵn sàng cho công đoạn sau.');
     }
 
     public function screenplayFoundation(Request $request, string $id)

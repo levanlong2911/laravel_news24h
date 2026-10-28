@@ -16,7 +16,7 @@ final class ScriptEvaluation
      * @param  array<string, mixed>  $source  the pinned source of the run
      * @return array{document: ?array<string, mixed>, parse_error: ?string, check: array<string, mixed>, derived: ?array<string, mixed>, contract: string, content_hash: ?string}
      */
-    public static function of(string $raw, array $manifest, array $context, array $source, ScriptWorkflow $adapter): array
+    public static function of(string $raw, array $manifest, array $context, array $source, CheckedWorkflow $adapter): array
     {
         [$decoded, $parseError] = JsonAnswer::parse($raw);
         $document = $parseError === null ? json_decode((string) json_encode($decoded), true) : null;
@@ -36,7 +36,7 @@ final class ScriptEvaluation
 
         $check = $adapter->check($document, $context, $schema);
         $derived = $document !== null && $check['schema'] === [] && $check['status'] !== 'fail' && $check['verdict'] !== 'UNSCORED'
-            ? $adapter->derive($document)
+            ? $adapter->derive($document, $context)
             : null;
 
         return [

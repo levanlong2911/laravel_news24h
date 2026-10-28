@@ -5,6 +5,7 @@ namespace App\Video\Media;
 use App\Services\Video\DesignImageStore;
 use App\Services\Video\ModelSheetService;
 use App\Video\Environment\EnvironmentPlatePrompt;
+use App\Video\Locations\LocationReferencePrompt;
 use InvalidArgumentException;
 
 /**
@@ -87,6 +88,7 @@ final class SpecRouting
     {
         $derived = match (self::operation($spec)) {
             'environment_plate' => EnvironmentPlatePrompt::TASK,
+            LocationReferencePrompt::OPERATION => LocationReferencePrompt::TASK,
             'generate' => DesignImageStore::ANCHOR_TYPE,
             // 'model_sheet': o tung goc cua luong cu, con trong lich su.
             'model_sheet', ModelSheetService::MASTER_OPERATION => ModelSheetService::TASK,

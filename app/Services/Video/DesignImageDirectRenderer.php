@@ -8,6 +8,7 @@ use App\Enums\ImageQuality;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoRender;
+use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Media\RenderPriceSnapshot;
 use App\Video\Media\SpecRouting;
 use App\Video\ModelSheet\ModelSheetMaster;
@@ -103,6 +104,9 @@ class DesignImageDirectRenderer
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
                 'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
                 'environment_plate' => $this->environmentPlate($spec, $budget),
+                LocationReferencePrompt::OPERATION => $spec['sources'] === []
+                    ? $this->client->generate($spec, $budget)
+                    : $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
                 ModelSheetService::MASTER_OPERATION => $this->modelSheetMaster($spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),
                 default => throw new RuntimeException(

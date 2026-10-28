@@ -176,7 +176,7 @@ final class SuperyachtScript implements ScriptWorkflow
         return SuperyachtScriptCheck::evaluate($response, $context, $schema, (array) $context['policy']);
     }
 
-    public function derive(array $document): array
+    public function derive(array $document, array $context): array
     {
         return ScriptProjection::of($document);
     }

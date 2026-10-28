@@ -160,6 +160,14 @@ Route::group(
             Route::post('/{id}/script/reset', [VideoProjectsController::class, 'resetScript'])->name('video-projects.script-reset');
             Route::post('/{id}/script/brief', [VideoProjectsController::class, 'saveScriptBrief'])->name('video-projects.script-brief');
             Route::post('/{id}/script/approve', [VideoProjectsController::class, 'approveScript'])->name('video-projects.script-approve');
+            // phase 5: địa điểm và bối cảnh
+            Route::get('/{id}/locations', [VideoProjectsController::class, 'locations'])->name('video-projects.locations');
+            Route::post('/{id}/locations', [VideoProjectsController::class, 'writeLocations'])->name('video-projects.locations-write');
+            Route::post('/{id}/locations/reset', [VideoProjectsController::class, 'resetLocations'])->name('video-projects.locations-reset');
+            Route::post('/{id}/locations/approve', [VideoProjectsController::class, 'approveLocationText'])->name('video-projects.locations-approve');
+            Route::post('/{id}/locations/render', [VideoProjectsController::class, 'renderLocationReference'])->name('video-projects.locations-render');
+            Route::post('/{id}/locations/choose', [VideoProjectsController::class, 'chooseLocationReference'])->name('video-projects.locations-choose');
+            Route::post('/{id}/locations/approve-set', [VideoProjectsController::class, 'approveLocationSet'])->name('video-projects.locations-approve-set');
 
             Route::middleware('video.v4')->group(function () {
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');

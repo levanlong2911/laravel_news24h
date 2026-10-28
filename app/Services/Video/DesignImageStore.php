@@ -37,6 +37,8 @@ class DesignImageStore
 
     public const ENVIRONMENT_TYPE = 'environment_plate';
 
+    public const LOCATION_REFERENCE_TYPE = 'location_reference';
+
     public const MODEL_SHEET_TYPE = 'model_sheet_view';
 
     /** Mot anh AI 3840x2160 chua ca tam goc MS1-MS8 (luoi 2x4). */
@@ -643,8 +645,29 @@ class DesignImageStore
      */
     public function createEnvironment(string $projectId, string $creator, array $spec): array
     {
+        return $this->createKeyed($projectId, $creator, $spec, self::ENVIRONMENT_TYPE, '_environment_v', ['operation', 'spec_version', 'environment_key']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec  `environment_key` carries the Phase 5 request id
+     * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
+     *                                                reason: created|already_exists|project_not_found
+     */
+    public function createLocationReference(string $projectId, string $creator, array $spec): array
+    {
+        return $this->createKeyed($projectId, $creator, $spec, self::LOCATION_REFERENCE_TYPE, '_location_v', [
+            'operation', 'spec_version', 'environment_key', 'locations_stage_id', 'locations_content_hash', 'reference_manifest_hash', 'attempt',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec
+     * @param  list<string>  $extra
+     * @return array{0: ?VideoDesignImage, 1: string}
+     */
+    private function createKeyed(string $projectId, string $creator, array $spec, string $type, string $suffix, array $extra): array
+    {
         $spec = $this->withPriceSnapshot($spec);
-        $extra = ['operation', 'spec_version', 'environment_key'];
 
         if (($spec['provider'] ?? 'openai') !== 'openai') {
             $extra[] = 'provider';
@@ -653,10 +676,10 @@ class DesignImageStore
         $sha = $this->identityHash($spec, $extra);
 
         try {
-            return DB::transaction(function () use ($projectId, $creator, $spec, $sha) {
+            return DB::transaction(function () use ($projectId, $creator, $spec, $sha, $type, $suffix) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
-                $existing = $this->findEnvironmentByHash($projectId, $sha);
+                $existing = $this->findTypedByHash($projectId, $type, $sha);
 
                 if ($existing !== null) {
                     return [$existing, 'already_exists'];
@@ -665,8 +688,8 @@ class DesignImageStore
                 return [
                     VideoDesignImage::create([
                         'project_id' => $projectId,
-                        'image_code' => $this->nextImageCode($projectId, $creator, '_environment_v'),
-                        'image_type' => self::ENVIRONMENT_TYPE,
+                        'image_code' => $this->nextImageCode($projectId, $creator, $suffix),
+                        'image_type' => $type,
                         'environment_key' => $spec['environment_key'],
                         'prompt_spec_json' => $spec,
                         'prompt_sha256' => $sha,
@@ -679,7 +702,7 @@ class DesignImageStore
         } catch (ModelNotFoundException) {
             return [null, 'project_not_found'];
         } catch (UniqueConstraintViolationException $e) {
-            $existing = $this->findEnvironmentByHash($projectId, $sha);
+            $existing = $this->findTypedByHash($projectId, $type, $sha);
 
             if ($existing === null) {
                 throw $e;
@@ -689,11 +712,11 @@ class DesignImageStore
         }
     }
 
-    private function findEnvironmentByHash(string $projectId, string $sha): ?VideoDesignImage
+    private function findTypedByHash(string $projectId, string $type, string $sha): ?VideoDesignImage
     {
         return VideoDesignImage::query()
             ->where('project_id', $projectId)
-            ->where('image_type', self::ENVIRONMENT_TYPE)
+            ->where('image_type', $type)
             ->where('prompt_sha256', $sha)
             ->first();
     }
@@ -701,9 +724,26 @@ class DesignImageStore
     /** @return list<array<string, mixed>> */
     public function environmentCellsFor(string $projectId): array
     {
+        return $this->keyedCellsFor($projectId, self::ENVIRONMENT_TYPE);
+    }
+
+    /**
+     * @return list<array<string, mixed>> the Phase 5 reference cells of a description stage, each with its request id in `environment_key`
+     */
+    public function locationCellsFor(string $projectId, string $stageId): array
+    {
+        return array_values(array_filter(
+            $this->keyedCellsFor($projectId, self::LOCATION_REFERENCE_TYPE),
+            static fn (array $cell): bool => ($cell['locations_stage_id'] ?? null) === $stageId,
+        ));
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function keyedCellsFor(string $projectId, string $type): array
+    {
         $images = VideoDesignImage::query()
             ->where('project_id', $projectId)
-            ->where('image_type', self::ENVIRONMENT_TYPE)
+            ->where('image_type', $type)
             ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
             ->orderBy('created_at')
             ->get();
@@ -712,7 +752,8 @@ class DesignImageStore
 
         return $images
             ->map(fn (VideoDesignImage $image) => $this->cellView($image, $cost[(string) $image->id])
-                + ['environment_key' => (string) $image->environment_key])
+                + ['environment_key' => (string) $image->environment_key, 'locations_stage_id' => $image->prompt_spec_json['locations_stage_id'] ?? null])
+            ->values()
             ->all();
     }
 

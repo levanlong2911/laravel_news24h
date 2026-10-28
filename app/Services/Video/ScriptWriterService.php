@@ -10,14 +10,9 @@ use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Services\Admin\ClaudeWriterService;
-use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Llm\LlmClient;
-use App\Video\Llm\LlmRequest;
-use App\Video\Llm\LlmUnavailable;
-use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -34,104 +29,17 @@ final class ScriptWriterService
     /** @return array{0: ?VideoPlanningStage, 1: string} */
     public function run(string $projectId, bool $regenerate, string $operationId): array
     {
-        if (! Str::isUuid($operationId)) {
-            return [null, 'Mã thao tác không hợp lệ — tải lại trang.'];
-        }
-
-        $replayed = VideoPlanningStage::query()->where('project_id', $projectId)->where('stage', PlanningStageName::SCRIPT->value)
-            ->where('input_json->'.PlanningStageStore::METADATA_KEY.'->operation_id', $operationId)->orderByDesc('planning_revision')->first();
-
-        if ($replayed !== null) {
-            return self::replay($replayed);
-        }
-
-        try {
-            $run = $this->prepare($projectId);
-        } catch (\Throwable $e) {
-            Log::error('script: prompt, contract or approved source unavailable, no model call made', ['project_id' => $projectId, 'exception' => $e]);
-
-            return [null, 'Chưa gọi model: '.$e->getMessage()];
-        }
-
-        [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::SCRIPT, $run['input'], $regenerate, $run['metadata'] + ['operation_id' => $operationId]);
-
-        if ($token === null) {
-            return match ($reason) {
-                'operation_replayed' => self::replay($stage),
-                'already_succeeded' => [$stage, 'cached'],
-                'claimed_by_other' => [null, 'Đang có một lượt viết kịch bản chạy cho dự án này — đợi xong rồi thử lại.'],
-                default => [null, 'Không tìm thấy dự án.'],
-            };
-        }
-
-        $settings = $run['settings'];
-        $version = $run['prompt_version'];
-        $usage = [];
-        $raw = '';
-
-        $stageId = (string) $stage->id;
-        $onProgress = fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state);
-
-        try {
-            $response = $this->llm->complete(new LlmRequest(
-                $run['system'],
-                $run['payload'],
-                $version,
-                $settings['model'],
-                $settings['max_tokens'],
-                null,
-                $settings['effort'],
-                $settings['timeout_seconds'],
-                1,
-                $onProgress,
-            ));
-            $raw = $response->text;
-            $usage = ClaudeInspirationAnalyst::usageOf($response, $version);
-            $evaluation = ScriptEvaluation::of($raw, $run['metadata']['manifest'], $run['metadata']['context'], $run['metadata']['source'], $run['adapter']);
-
-            if ($evaluation['document'] === null) {
-                $this->stageStore->finishFailed((string) $stage->id, $token, 'Phản hồi không đọc được JSON: '.$evaluation['parse_error'], $usage, $raw, $this->output($run, $evaluation));
-
-                return [null, 'Phản hồi không đọc được JSON — phản hồi và usage đã được lưu.'];
-            }
-
-            $output = $this->output($run, $evaluation);
-
-            if (! $this->stageStore->finishSucceeded((string) $stage->id, $token, $raw, $output, $usage)) {
-                try {
-                    $this->stageStore->recordOrphanAttempt($projectId, PlanningStageName::SCRIPT, $run['input'], $run['metadata'], (string) $stage->id, $token, 'claim_lost', $usage, $raw, $output);
-                } catch (\Throwable $e) {
-                    Log::warning('script: recordOrphanAttempt threw', ['stage_id' => $stage->id, 'exception' => $e]);
-                }
-
-                return [null, 'Lượt viết kịch bản bị giành mất khi lưu — kết quả đã trả tiền không được dùng. Tải lại trang.'];
-            }
-
-            return [VideoPlanningStage::query()->find($stage->id), 'ok'];
-        } catch (\Throwable $e) {
-            Log::error('script: the run failed', ['stage_id' => $stage->id, 'exception' => $e]);
-            $billed = $e instanceof LlmUnavailable ? $e->billed : null;
-
-            $this->stageStore->finishFailed(
-                (string) $stage->id,
-                $token,
-                $e->getMessage(),
-                $usage !== [] ? $usage : ($billed === null ? ['model' => $settings['model'], 'instruction_version' => $version] : ClaudeInspirationAnalyst::usageOf($billed, $version)),
-                $raw !== '' ? $raw : ($billed?->text ?? ''),
-            );
-
-            return [null, $e->getMessage()];
-        }
-    }
-
-    /** @return array{0: ?VideoPlanningStage, 1: string} what a request carrying an operation id that already ran gets back */
-    private static function replay(VideoPlanningStage $stage): array
-    {
-        return match ($stage->status) {
-            VideoPlanningStageStatus::SUCCEEDED->value => [$stage, 'replayed'],
-            VideoPlanningStageStatus::RUNNING->value => [null, 'Thao tác này đang chạy — đợi xong rồi tải lại trang.'],
-            default => [null, 'Thao tác này đã chạy và lỗi: '.$stage->error_message.' — tải lại trang để thử lại.'],
-        };
+        return (new SpecStageRunner($this->stageStore))->run(
+            $projectId,
+            PlanningStageName::SCRIPT,
+            fn (): array => $this->prepare($projectId),
+            $regenerate,
+            $operationId,
+            $this->llm,
+            fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
+            'viết kịch bản',
+            'script',
+        );
     }
 
     /** @return array<string, string> room and exterior zone names from the payload the stage was written with */
