@@ -37,6 +37,10 @@ class VideoSpecLink extends Command
 
         $this->line("Category {$plan['category']['slug']} ({$plan['category']['id']}) · workflow {$plan['workflow']} · bảng ghi: ai_phases, ai_phase_schemas");
 
+        foreach ($plan['deferred'] as $line) {
+            $this->warn("Chờ gói phát hành (schema chưa publish, không ghi liên kết này): {$line}");
+        }
+
         if ($plan['changes'] === []) {
             $this->info('Liên kết của mọi phase đã khớp config: không có revision nào cần tạo.');
 

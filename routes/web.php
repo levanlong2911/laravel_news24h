@@ -155,6 +155,11 @@ Route::group(
             Route::post('/{id}/model-sheet/approve', [VideoProjectsController::class, 'approveModelSheet'])->name('video-projects.model-sheet-approve');
             Route::post('/{id}/model-sheet/reject', [VideoProjectsController::class, 'rejectModelSheet'])->name('video-projects.model-sheet-reject');
             Route::post('/{id}/model-sheet/process', [VideoProjectsController::class, 'processModelSheet'])->name('video-projects.model-sheet-process');
+            // kịch bản
+            Route::post('/{id}/script', [VideoProjectsController::class, 'writeScript'])->name('video-projects.script');
+            Route::post('/{id}/script/reset', [VideoProjectsController::class, 'resetScript'])->name('video-projects.script-reset');
+            Route::post('/{id}/script/brief', [VideoProjectsController::class, 'saveScriptBrief'])->name('video-projects.script-brief');
+            Route::post('/{id}/script/approve', [VideoProjectsController::class, 'approveScript'])->name('video-projects.script-approve');
 
             Route::middleware('video.v4')->group(function () {
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');

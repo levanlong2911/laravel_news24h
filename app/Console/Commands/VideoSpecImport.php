@@ -141,6 +141,7 @@ class VideoSpecImport extends Command
 
         $this->line('Liên kết phase–schema đã xác nhận (video.superyacht.contracts.workflows.<workflow>.links):'.count($plan['links']));
         $this->line('Chờ cấu hình liên kết: '.($plan['pending'] === [] ? 'không còn' : implode(', ', $plan['pending'])));
+        $this->line('Liên kết chờ gói phát hành (schema không có trong spec, chạy video:phase-release sau khi nhập): '.($plan['deferred_links'] === [] ? 'không có' : implode(', ', $plan['deferred_links'])));
     }
 
     /** @param array<string, int> $kinds */

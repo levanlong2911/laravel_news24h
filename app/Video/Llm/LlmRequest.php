@@ -24,6 +24,8 @@ final class LlmRequest
         public readonly ?string $effort = null,
         public readonly ?int $timeoutSeconds = null,
         public readonly ?int $maxAttempts = null,
+        /** @var ?\Closure(array<string, mixed>): (bool|null) receives the stream state while the answer is written; false stops the call */
+        public readonly ?\Closure $onProgress = null,
     ) {
         if ($temperature !== null && (! is_finite($temperature) || $temperature < 0.0 || $temperature > 1.0)) {
             throw new \InvalidArgumentException('temperature must be null or a finite value in [0.0, 1.0]');

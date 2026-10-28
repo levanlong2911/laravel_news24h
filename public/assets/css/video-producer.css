@@ -2088,6 +2088,11 @@ a.vp-btn[disabled] {
     font-weight: 700;
 }
 
+.vs-script-scroll {
+    overflow-x: auto;
+    margin: 8px 0;
+}
+
 @media (max-width: 1200px) {
     .ve-grid {
         grid-template-columns: 1fr;

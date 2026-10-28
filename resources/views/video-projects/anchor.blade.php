@@ -278,6 +278,10 @@
 
     @if(($modelSheet ?? null) !== null)
         @include('video-projects.partials.model-sheet-panel')
+
+        @if(($scriptStep ?? null) !== null)
+            @include('video-projects.partials.script-panel')
+        @endif
     @else
         @include('video-projects.partials.anchor-panel')
 

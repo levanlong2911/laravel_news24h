@@ -128,6 +128,7 @@ final class PhaseRevisions
      *     category: array{id: string, slug: string},
      *     workflow: string,
      *     changes: list<array{phase_code: string, current_id: string, current_revision: int, next_revision: int, added: list<string>, removed: list<string>, changed: list<string>, links: list<array<string, mixed>>}>,
+     *     deferred: list<string>,
      *     plan_hash: string
      * }
      */
@@ -144,6 +145,7 @@ final class PhaseRevisions
             ?? throw new RuntimeException("Category {$categorySlug} has no configured workflow.");
         $desired = [];
         $labels = [];
+        $deferred = [];
 
         foreach (ActionContract::desiredLinks((array) ($this->contracts['workflows'][$workflow] ?? [])) as $index => $row) {
             $absent = array_diff(['phase', 'role', 'slot', 'namespace', 'schema', 'version', 'pointer', 'mode', 'required', 'source'], array_keys((array) $row));
@@ -159,7 +161,9 @@ final class PhaseRevisions
                 ->first();
 
             if ($schema === null || $schema->status !== AiJsonSchema::PUBLISHED) {
-                throw new RuntimeException("links[{$index}] names {$row['namespace']}/{$row['schema']}@{$row['version']}, which is not a published schema.");
+                $deferred[] = "{$row['phase']} {$row['role']}/{$row['slot']} -> {$row['namespace']}/{$row['schema']}@{$row['version']}";
+
+                continue;
             }
 
             $link = [
@@ -242,7 +246,7 @@ final class PhaseRevisions
             ];
         }
 
-        $plan = ['category' => ['id' => $categoryId, 'slug' => $categorySlug], 'workflow' => $workflow, 'changes' => $changes];
+        $plan = ['category' => ['id' => $categoryId, 'slug' => $categorySlug], 'workflow' => $workflow, 'changes' => $changes, 'deferred' => $deferred];
         $plan['plan_hash'] = CanonicalJson::hash($plan);
 
         return $plan;

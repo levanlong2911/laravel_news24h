@@ -85,7 +85,7 @@ final class SpecImporter
         $sha = hash('sha256', $source);
         $phases = $this->phaseRows($source, $sha, $categoryId);
         $schemas = $this->schemaRows();
-        $links = $this->linkRows($phases, $schemas);
+        [$links, $deferred] = $this->linkRows($phases, $schemas);
         $linked = array_column($links, 'schema_id');
         $pending = [];
 
@@ -104,6 +104,7 @@ final class SpecImporter
             'schemas' => $schemas,
             'links' => $links,
             'pending' => $pending,
+            'deferred_links' => $deferred,
         ];
     }
 
@@ -597,7 +598,7 @@ final class SpecImporter
     /**
      * @param  list<array<string, mixed>>  $phases
      * @param  list<array<string, mixed>>  $schemas
-     * @return list<array<string, mixed>>
+     * @return array{0: list<array<string, mixed>>, 1: list<string>} links to write, and configured links whose schema only a later release publishes
      */
     private function linkRows(array $phases, array $schemas): array
     {
@@ -610,6 +611,7 @@ final class SpecImporter
 
         $rows = [];
         $seen = [];
+        $deferred = [];
 
         foreach ($this->links as $index => $link) {
             $label = "phase_schemas[{$index}]";
@@ -627,7 +629,9 @@ final class SpecImporter
             }
 
             if ($link['namespace'] !== $this->schemaNamespace || ! isset($schemaIds[$schemaKey])) {
-                throw new RuntimeException("{$label} names schema {$link['namespace']}/{$schemaKey}, which this import does not contain.");
+                $deferred[] = "{$link['phase']} {$link['role']}/{$link['slot']} -> {$link['namespace']}/{$schemaKey}";
+
+                continue;
             }
 
             if (! in_array($link['role'], AiPhaseSchema::ROLES, true) || ! in_array($link['mode'], AiPhaseSchema::MODES, true)) {
@@ -665,7 +669,7 @@ final class SpecImporter
             ];
         }
 
-        return $rows;
+        return [$rows, $deferred];
     }
 
     /**

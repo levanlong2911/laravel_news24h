@@ -23,6 +23,8 @@ use App\Video\Scene\Services\ShotSelectionReconciler;
 use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\DesignDnaService;
 use App\Services\Video\ModelSheetService;
+use App\Services\Video\ScriptSourceService;
+use App\Services\Video\ScriptWriterService;
 use App\Services\Video\YachtDesignService;
 use App\Services\Video\ScreenplayExpansionService;
 use App\Services\Video\StoryFoundationService;
@@ -195,6 +197,10 @@ class VideoProjectsController extends Controller
             'dna' => app(DesignDnaService::class)->panel($project->id),
             'yacht' => $phaseThree = VesselDesign::isDesignFirst($project) && $brief['phase_one'] ? app(YachtDesignService::class)->panel($project->id) : null,
             'modelSheet' => $phaseThree === null ? null : app(ModelSheetService::class)->panel($project->id, (string) auth()->user()?->name),
+            'scriptStep' => $phaseThree === null ? null : app(ScriptWriterService::class)->panel(
+                $project->id,
+                is_string($request->query('script')) && Str::isUuid($request->query('script')) ? $request->query('script') : null,
+            ),
             'anchorRows' => $anchorRows,
             'compileReason' => $this->anchorMessage('choose_prompt_settings'),
             'nextImageCode' => $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name),
@@ -479,6 +485,94 @@ class VideoProjectsController extends Controller
             default => back()->with('success', 'Đã xử lý lại từ master đã lưu — không gọi model.'),
         };
     }
+
+    public function writeScript(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
+        [$stage, $reason] = app(ScriptWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id']);
+
+        if ($stage === null) {
+            return back()->with('error', $reason);
+        }
+
+        $panel = redirect()->to(route('video-projects.anchor', ['id' => $id, 'script' => $stage->id]).'#scriptPanel');
+
+        return match ($reason) {
+            'cached' => $panel->with('success', 'Nguồn, prompt và brief không đổi — dùng lại bản kịch bản đã lưu, không gọi model.'),
+            'replayed' => $panel->with('success', 'Thao tác này đã chạy trước đó — không gọi model lần nữa.'),
+            default => $panel->with('success', 'Đã lưu bản kịch bản — xem kết quả kiểm rồi duyệt.'),
+        };
+    }
+
+    public function resetScript(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = app(ScriptWriterService::class)->reset($id);
+
+        return $done
+            ? back()->with('success', 'Đã reset lượt viết kịch bản bị kẹt — bản đã duyệt giữ nguyên.')
+            : back()->with('error', $reason);
+    }
+
+    public function saveScriptBrief(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'video_length' => ['nullable', 'integer'],
+            'aspect_ratio' => ['nullable', 'string', 'max:10'],
+            'platform' => ['nullable', 'string', 'max:200'],
+            'tone_notes' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'video_length.*' => 'Thời lượng phải là số nguyên giây.',
+            'aspect_ratio.*' => 'Tỷ lệ khung không hợp lệ.',
+            'platform.*' => 'Nền tảng quá dài.',
+            'tone_notes.*' => 'Ghi chú giọng điệu quá dài.',
+        ]);
+        [$done, $reason] = app(ScriptWriterService::class)->saveBrief($id, $data);
+
+        return $done
+            ? redirect()->to(route('video-projects.anchor', $id).'#scriptPanel')->with('success', 'Đã lưu brief kịch bản của dự án — lượt viết sau dùng brief này; bản đã viết giữ nguyên.')
+            : back()->with('error', $reason);
+    }
+
+    public function approveScript(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'stage_id' => ['required', 'uuid'],
+            'content_hash' => ['required', 'string', 'max:80'],
+            'selection_version' => ['required', 'integer', 'min:0'],
+            'operation_id' => ['required', 'uuid'],
+        ], [
+            'stage_id.*' => 'Thiếu bản kịch bản cần duyệt — tải lại trang.',
+            'content_hash.*' => 'Thiếu hash nội dung — tải lại trang.',
+            'selection_version.*' => 'Thiếu phiên bản lựa chọn — tải lại trang.',
+            'operation_id.*' => 'Thiếu mã thao tác — tải lại trang.',
+        ]);
+        [$decision, $reason] = app(ScriptSourceService::class)->approve(
+            $id,
+            (string) $data['stage_id'],
+            (string) $data['content_hash'],
+            (int) $data['selection_version'],
+            (string) $data['operation_id'],
+            auth()->id(),
+        );
+
+        if ($decision === null) {
+            return back()->with('error', $reason);
+        }
+
+        return redirect()->to(route('video-projects.anchor', ['id' => $id, 'script' => $data['stage_id']]).'#scriptPanel')
+            ->with('success', $reason === 'replayed'
+                ? 'Lần duyệt này đã được ghi trước đó — không ghi thêm.'
+                : 'Đã duyệt và chọn bản kịch bản này làm nguồn cho các công đoạn sau.');
+    }
+
     public function screenplayFoundation(Request $request, string $id)
     {
         $project = $this->ownedProject($id);

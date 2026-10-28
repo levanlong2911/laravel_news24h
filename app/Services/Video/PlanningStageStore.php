@@ -56,9 +56,9 @@ class PlanningStageStore
      *
      * @param  array<string, mixed>  $input
      * @param  bool|\Closure(VideoPlanningStage): bool  $force  a closure decides inside the claim transaction from the succeeded row that would be reused
-     * @param  array<string, mixed>  $metadata
+     * @param  array<string, mixed>  $metadata  a non-empty `operation_id` here is checked under the project lock: a row already holding it is returned, never claimed again
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
-     *                                                              reason: project_not_found|claimed_by_other|already_succeeded|claimed
+     *                                                              reason: project_not_found|operation_replayed|claimed_by_other|already_succeeded|claimed
      */
     public function claimProjectStage(
         string $projectId,
@@ -78,13 +78,24 @@ class PlanningStageStore
         $claimToken = (string) Str::uuid();
 
         try {
-            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force) {
+            $operationId = is_string($metadata['operation_id'] ?? null) && $metadata['operation_id'] !== '' ? $metadata['operation_id'] : null;
+
+            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force, $operationId) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
                 $rows = VideoPlanningStage::query()
                     ->where('project_id', $projectId)
                     ->where('stage', $stage->value)
                     ->get();
+
+                $replayed = $operationId === null ? null : $rows
+                    ->filter(static fn (VideoPlanningStage $row): bool => (self::metadataOf(is_array($row->input_json) ? $row->input_json : null)['operation_id'] ?? null) === $operationId)
+                    ->sortByDesc('planning_revision')
+                    ->first();
+
+                if ($replayed !== null) {
+                    return [$replayed, null, 'operation_replayed'];
+                }
 
                 $live = $rows->first(fn ($r) => $r->status === VideoPlanningStageStatus::RUNNING->value
                     && $r->claim_token !== null
@@ -426,6 +437,21 @@ class PlanningStageStore
             ->where('input_hash', $this->hash($input))
             ->orderByDesc('planning_revision')
             ->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return bool false once the claim is no longer held
+     */
+    public function recordStream(string $stageId, string $claimToken, array $state): bool
+    {
+        $table = (new VideoPlanningStage)->getTable();
+        $path = '$."'.self::METADATA_KEY.'"."stream"';
+
+        return DB::update(
+            "UPDATE {$table} SET input_json = JSON_SET(input_json, '{$path}', JSON_EXTRACT(?, '$')), updated_at = ? WHERE id = ? AND claim_token = ?",
+            [json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), now(), $stageId, $claimToken],
+        ) > 0 || VideoPlanningStage::query()->whereKey($stageId)->where('claim_token', $claimToken)->exists();
     }
 
     public function releaseClaim(string $stageId, string $reason): bool

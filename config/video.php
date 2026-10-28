@@ -801,6 +801,15 @@ return [
     | Spec superyacht v6.3: 8 JSON Schema va 22 rang buoc cheo truong (port tu
     | superyacht-pipeline-starter). Chi dung de kiem tai lieu; pipeline v6.3 chua chay.
     */
+    'script' => [
+        'workflows' => [
+            'superyacht_v6_3' => [
+                'action' => 'spec.script',
+                'adapter' => \App\Video\Superyacht\Script\SuperyachtScript::class,
+            ],
+        ],
+    ],
+
     'superyacht' => [
         'variables' => [
             'languages' => ['en'],
@@ -830,6 +839,49 @@ return [
             'profile_margin_m' => 0.2,
             'near_x' => 0.005,
             'near_z_m' => 0.3,
+        ],
+
+        'script' => [
+            'execution' => 'db-phase-4-script-v2',
+            'model' => env('SUPERYACHT_SCRIPT_MODEL', 'sonnet55'),
+            'effort' => env('SUPERYACHT_SCRIPT_EFFORT', 'high'),
+            'max_tokens' => (int) env('SUPERYACHT_SCRIPT_MAX_TOKENS', 64000),
+            'timeout_seconds' => (int) env('SUPERYACHT_SCRIPT_TIMEOUT_SECONDS', 900),
+            'stream' => [
+                'idle_timeout_seconds' => (int) env('SUPERYACHT_SCRIPT_IDLE_TIMEOUT_SECONDS', 180),
+                'progress_every_seconds' => 5,
+                'thinking' => ['type' => 'adaptive', 'display' => 'summarized'],
+            ],
+            'brief' => [
+                'video_length' => 30,
+                'aspect_ratio' => '9:16',
+                'platform' => 'YouTube Shorts, Facebook Reels',
+                'tone_notes' => '',
+            ],
+            'brief_options' => [
+                'video_length' => [30, 30],
+                'aspect_ratios' => ['9:16', '16:9', '1:1', '4:5'],
+                'platform_max' => 120,
+                'tone_notes_max' => 500,
+            ],
+            'history' => ['enabled' => false],
+            'check' => [
+                'final_cut_sec' => 30,
+                'length_tolerance_sec' => 0.05,
+                'tour' => ['min_sec' => 8, 'max_sec' => 10, 'location_max_sec' => 1.5],
+                'loop_min_distance' => 0.2,
+                'progress_max_share' => 0.15,
+                'card_seconds_per_card' => 10,
+                'card_max_words' => 6,
+                'name_card_from' => 'B5',
+                'warn' => [
+                    'beat_min_sec' => 0.8,
+                    'hero_min_sec' => 2,
+                    'hero_card_share' => 0.5,
+                    'construction_run' => 2,
+                    'money_shots_outside' => 2,
+                ],
+            ],
         ],
 
         'model_sheet' => [
@@ -996,6 +1048,19 @@ return [
                             'records' => [
                                 'lock/design' => ['namespace' => 'superyacht', 'schema' => 'LockRecord', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'match' => ['/lock_type' => ['design']], 'source' => 'Pipeline map: DESIGN LOCK (lock record); Phase 3 Step 11 design lock; LockRecord.lock_type design'],
                                 'review/decision' => ['namespace' => 'superyacht', 'schema' => 'ReviewDecision', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => false, 'match' => ['/item_type' => ['canonical', 'model_sheet']], 'source' => 'ReviewDecision.item_type canonical, model_sheet; reason DESIGN_LOCK'],
+                            ],
+                        ],
+                        'spec.script' => [
+                            'phase' => 'phase-4',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '2',
+                            'stages' => [
+                                'draft' => ['script'],
+                            ],
+                            'outputs' => [
+                                'script' => ['namespace' => 'superyacht', 'schema' => 'Phase4Script', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 4 Output (format phase4-script-v2): the whole envelope with data.story (spine), data.anchors.character and data.script (17 beats, tour); release database/releases/phase-4-script-v2'],
                             ],
                         ],
                         'spec.shot_list' => [
