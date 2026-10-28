@@ -340,7 +340,8 @@ class VideoProjectService
         $result = null;
 
         try {
-            $result = $this->canonicalConceptInputBuilder->buildInspiration($prompt, $articleBlock);
+            $stageId = (string) $stage->id;
+            $result = $this->canonicalConceptInputBuilder->buildInspiration($prompt, $articleBlock, fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state));
 
             if (trim($result->rawResponse) === '') {
                 return $this->failInspirationStage(
@@ -444,6 +445,7 @@ class VideoProjectService
             'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest->error_message,
+            'stream' => PlanningStageStore::streamOf($latest),
             'can_run' => $runError === null && (! $matchesInput || $latest->status === VideoPlanningStageStatus::FAILED->value),
             'prompt' => $next,
             'run_error' => $runError,
@@ -4885,6 +4887,7 @@ class VideoProjectService
             'running' => false,
             'stuck' => false,
             'error' => $reason,
+            'stream' => null,
             'can_run' => true,
             'prompt' => null,
             'run_error' => null,

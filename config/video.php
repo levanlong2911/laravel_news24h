@@ -801,6 +801,12 @@ return [
     | Spec superyacht v6.3: 8 JSON Schema va 22 rang buoc cheo truong (port tu
     | superyacht-pipeline-starter). Chi dung de kiem tai lieu; pipeline v6.3 chua chay.
     */
+    'claude_stream' => [
+        'idle_timeout_seconds' => (int) env('CLAUDE_STREAM_IDLE_TIMEOUT_SECONDS', 180),
+        'progress_every_seconds' => 5,
+        'thinking' => ['type' => 'adaptive', 'display' => 'summarized'],
+    ],
+
     'script' => [
         'workflows' => [
             'superyacht_v6_3' => [
@@ -847,11 +853,6 @@ return [
             'effort' => env('SUPERYACHT_SCRIPT_EFFORT', 'high'),
             'max_tokens' => (int) env('SUPERYACHT_SCRIPT_MAX_TOKENS', 64000),
             'timeout_seconds' => (int) env('SUPERYACHT_SCRIPT_TIMEOUT_SECONDS', 900),
-            'stream' => [
-                'idle_timeout_seconds' => (int) env('SUPERYACHT_SCRIPT_IDLE_TIMEOUT_SECONDS', 180),
-                'progress_every_seconds' => 5,
-                'thinking' => ['type' => 'adaptive', 'display' => 'summarized'],
-            ],
             'brief' => [
                 'video_length' => 30,
                 'aspect_ratio' => '9:16',

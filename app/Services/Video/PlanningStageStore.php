@@ -439,6 +439,24 @@ class PlanningStageStore
             ->first();
     }
 
+    /** @return ?array<string, mixed> the stream state saved on a stage that has not succeeded */
+    public static function streamOf(?VideoPlanningStage $stage): ?array
+    {
+        if ($stage === null || $stage->status === VideoPlanningStageStatus::SUCCEEDED->value) {
+            return null;
+        }
+
+        $stream = self::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['stream'] ?? null;
+
+        return is_array($stream) ? $stream : null;
+    }
+
+    /** @return bool false when the stored tokens and cost are only what was known before the call broke */
+    public static function costKnown(VideoPlanningStage $stage): bool
+    {
+        return $stage->status === VideoPlanningStageStatus::SUCCEEDED->value || (self::streamOf($stage)['usage_complete'] ?? false) === true;
+    }
+
     /**
      * @param  array<string, mixed>  $state
      * @return bool false once the claim is no longer held
@@ -446,10 +464,11 @@ class PlanningStageStore
     public function recordStream(string $stageId, string $claimToken, array $state): bool
     {
         $table = (new VideoPlanningStage)->getTable();
-        $path = '$."'.self::METADATA_KEY.'"."stream"';
+        $meta = '$."'.self::METADATA_KEY.'"';
+        $path = $meta.'."stream"';
 
         return DB::update(
-            "UPDATE {$table} SET input_json = JSON_SET(input_json, '{$path}', JSON_EXTRACT(?, '$')), updated_at = ? WHERE id = ? AND claim_token = ?",
+            "UPDATE {$table} SET input_json = JSON_SET(JSON_INSERT(input_json, '{$meta}', JSON_OBJECT()), '{$path}', JSON_EXTRACT(?, '$')), updated_at = ? WHERE id = ? AND claim_token = ?",
             [json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), now(), $stageId, $claimToken],
         ) > 0 || VideoPlanningStage::query()->whereKey($stageId)->where('claim_token', $claimToken)->exists();
     }

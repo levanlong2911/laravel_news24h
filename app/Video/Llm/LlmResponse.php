@@ -15,6 +15,8 @@ final class LlmResponse
         public readonly string $raw = '',
         public readonly string $providerModel = '',
         public readonly ?int $thinkingTokens = null,
+        /** @var bool false when the final usage never arrived: tokens and cost are what was known, a lower bound */
+        public readonly bool $usageComplete = true,
     ) {
     }
 }

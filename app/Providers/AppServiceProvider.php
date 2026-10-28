@@ -514,6 +514,9 @@ class AppServiceProvider extends ServiceProvider
                 retrySleepMs: 0,
                 stream: (bool) config('video.superyacht.model_sheet.qa.stream'),
                 effort: config('video.superyacht.model_sheet.qa.effort'),
+                thinking: (array) (config('video.superyacht.model_sheet.qa.thinking') ?? config('video.claude_stream.thinking')),
+                idleTimeoutSeconds: (int) (config('video.superyacht.model_sheet.qa.idle_timeout_seconds') ?? config('video.claude_stream.idle_timeout_seconds')),
+                progressEverySeconds: (int) config('video.claude_stream.progress_every_seconds'),
             ),
         );
 

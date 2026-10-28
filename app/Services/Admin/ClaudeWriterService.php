@@ -302,10 +302,68 @@ class ClaudeWriterService
         return new ClaudeResponse('', 0, 0);
     }
 
+    /**
+     * @param  ?float  $deadline  microtime(true) after which waiting stops; null waits as generate() does
+     * @return bool false when the deadline came first: no slot is held and no request may be sent
+     */
+    public function acquireSlot(?float $deadline = null): bool
+    {
+        if (! $this->waitForRpmSlot($deadline, $minuteKey)) {
+            return false;
+        }
+
+        if (! $this->acquireConcurrent($deadline)) {
+            Cache::decrement((string) $minuteKey);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  float  $deadline  microtime(true) after which waiting stops
+     * @return ?string the minute counter the request was counted in, for releaseRequestSlot(); null when the deadline came first
+     */
+    public function acquireRequestSlot(float $deadline): ?string
+    {
+        return $this->waitForRpmSlot($deadline, $taken) ? $taken : null;
+    }
+
+    /** @param string $minuteKey what acquireRequestSlot() returned for a request that was never sent */
+    public function releaseRequestSlot(string $minuteKey): void
+    {
+        Cache::decrement($minuteKey);
+    }
+
+    private static function pause(float $seconds, ?float $deadline): void
+    {
+        $seconds = $deadline === null ? $seconds : min($seconds, $deadline - microtime(true));
+
+        if ($seconds > 0) {
+            usleep((int) ($seconds * 1_000_000));
+        }
+    }
+
+    private static function expired(?float $deadline): bool
+    {
+        return $deadline !== null && microtime(true) >= $deadline;
+    }
+
+    public function releaseSlot(): void
+    {
+        $this->releaseConcurrent();
+    }
+
     // RPM throttle: cho phép song song nhưng giới hạn tổng request/phút
-    private function waitForRpmSlot(): void
+    /** @param ?string $taken the minute counter the slot was taken from */
+    private function waitForRpmSlot(?float $deadline = null, ?string &$taken = null): bool
     {
         while (true) {
+            if (self::expired($deadline)) {
+                return false;
+            }
+
             $minuteKey = 'claude_rpm_'.(int) (time() / 60);
             Cache::add($minuteKey, 0, 65);
             $count = Cache::increment($minuteKey);
@@ -313,35 +371,61 @@ class ClaudeWriterService
             if ($count <= self::RPM_LIMIT) {
                 // Stagger nhẹ khi load cao để tránh burst đồng thời
                 if ($count > (int) (self::RPM_LIMIT * 0.6)) {
-                    usleep(random_int(100, 600) * 1_000); // 100–600ms
+                    self::pause(random_int(100, 600) / 1000, $deadline); // 100–600ms
                 }
 
-                return;
+                if (self::expired($deadline)) {
+                    Cache::decrement($minuteKey);
+
+                    return false;
+                }
+
+                $taken = $minuteKey;
+
+                return true;
             }
 
             // Vượt giới hạn — trả lại slot và chờ sang phút mới
             Cache::decrement($minuteKey);
             $waitSec = max(1, 61 - (time() % 60));
             Log::info("Claude RPM limit ({$count}/".self::RPM_LIMIT."), waiting {$waitSec}s");
+
+            if ($deadline !== null && microtime(true) + $waitSec >= $deadline) {
+                self::pause($waitSec, $deadline);
+
+                return false;
+            }
+
             sleep($waitSec);
         }
     }
 
     // Concurrency semaphore: giới hạn số request đang bay cùng lúc
-    private function acquireConcurrent(): void
+    private function acquireConcurrent(?float $deadline = null): bool
     {
         $key = 'claude_concurrent';
         $waited = 0;
 
         while (true) {
+            if (self::expired($deadline)) {
+                return false;
+            }
+
             Cache::add($key, 0, 120);
             $current = Cache::increment($key);
 
             if ($current <= self::MAX_CONCURRENT) {
-                return;
+                return true;
             }
 
             Cache::decrement($key);
+
+            if ($deadline !== null && microtime(true) + 0.3 >= $deadline) {
+                self::pause(0.3, $deadline);
+
+                return false;
+            }
+
             usleep(300_000); // chờ 300ms rồi thử lại
             $waited += 300;
 
@@ -349,7 +433,7 @@ class ClaudeWriterService
                 Log::warning('Claude concurrent slot timeout — proceeding anyway');
                 Cache::increment($key); // lấy slot dù vượt ngưỡng
 
-                return;
+                return true;
             }
         }
     }

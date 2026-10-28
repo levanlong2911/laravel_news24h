@@ -70,15 +70,7 @@ final class ScriptWriterService
         $raw = '';
 
         $stageId = (string) $stage->id;
-        $onProgress = function (array $state) use ($stageId, $token): bool {
-            try {
-                return $this->stageStore->recordStream($stageId, $token, $state);
-            } catch (\Throwable $e) {
-                Log::warning('script: the stream state could not be saved', ['stage_id' => $stageId, 'exception' => $e]);
-
-                return true;
-            }
-        };
+        $onProgress = fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state);
 
         try {
             $response = $this->llm->complete(new LlmRequest(
@@ -338,7 +330,7 @@ final class ScriptWriterService
             'running' => $latest !== null && $latest->status === VideoPlanningStageStatus::RUNNING->value && $latest->lease_expires_at?->isFuture() === true,
             'stuck' => $latest !== null && $latest->status === VideoPlanningStageStatus::RUNNING->value && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest !== null && $latest->status === VideoPlanningStageStatus::FAILED->value ? $latest->error_message : null,
-            'stream' => $latest === null || $latest->status === VideoPlanningStageStatus::SUCCEEDED->value ? null : (PlanningStageStore::metadataOf(is_array($latest->input_json) ? $latest->input_json : null)['stream'] ?? null),
+            'stream' => PlanningStageStore::streamOf($latest),
             'history' => $stages->map(static fn (VideoPlanningStage $stage): array => [
                 'id' => (string) $stage->id,
                 'revision' => (int) $stage->planning_revision,

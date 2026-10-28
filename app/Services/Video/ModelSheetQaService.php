@@ -11,6 +11,7 @@ use App\Models\VideoPlanningStage;
 use App\Video\Concept\Claude\AnthropicStructuredOutputClient;
 use App\Video\Concept\Claude\AnthropicStructuredOutputResponse;
 use App\Video\Concept\Exceptions\AnthropicRefusalException;
+use App\Video\Concept\Exceptions\AnthropicRequestException;
 use App\Video\Concept\Exceptions\AnthropicTruncatedOutputException;
 use App\Video\Llm\JsonAnswer;
 use App\Video\ModelSheet\ModelSheetFacts;
@@ -156,6 +157,7 @@ Return exactly one JSON object, with no text or code fence around it, that valid
         $raw = '';
         $usage = ['model' => (string) $config['model'], 'instruction_version' => $version];
         $pricing = ['pricing' => 'unpriced', 'pricing_version' => null];
+        $stageId = (string) $stage->id;
 
         try {
             /** @var AnthropicStructuredOutputClient $client */
@@ -165,6 +167,7 @@ Return exactly one JSON object, with no text or code fence around it, that valid
                 [['role' => 'user', 'content' => $this->message($snapshot, $design, $dna)]],
                 self::enforced() ? ModelSheetQaValidator::SCHEMA : [],
                 (int) $config['max_tokens'],
+                fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
             );
             [$usage, $pricing] = self::accounting($response, $config, $version);
             $raw = $response->rawText;
@@ -177,7 +180,7 @@ Return exactly one JSON object, with no text or code fence around it, that valid
             return [VideoPlanningStage::query()->find($stage->id), $output['ready'] ? 'ready' : 'not_ready'];
         } catch (Throwable $e) {
             Log::error('model sheet qa: the run failed', ['stage_id' => $stage->id, 'exception' => $e]);
-            $billed = $e instanceof AnthropicRefusalException || $e instanceof AnthropicTruncatedOutputException ? $e->response : null;
+            $billed = $e instanceof AnthropicRefusalException || $e instanceof AnthropicTruncatedOutputException || $e instanceof AnthropicRequestException ? $e->response : null;
 
             if ($billed !== null) {
                 [$usage, $pricing] = self::accounting($billed, $config, $version);
@@ -185,11 +188,15 @@ Return exactly one JSON object, with no text or code fence around it, that valid
 
             $message = $e->getMessage();
 
+            if ($billed !== null && ! $billed->usageComplete) {
+                $message .= ' Chưa nhận usage cuối: đã biết '.$billed->inputTokens.' token vào và '.$billed->outputTokens.' token ra — chi phí ghi nhận $'.number_format((float) $usage['cost_usd'], 4, '.', '').' chỉ là mức tối thiểu, phí thực tế có thể cao hơn.';
+            }
+
             if (self::enforced() && str_contains(strtolower($message), 'grammar')) {
                 $message = 'Đang bật MODEL_SHEET_QA_ENFORCE_SCHEMA=true (ép grammar tại API) và Anthropic từ chối schema: '.$message.' Tắt cờ này để dùng chế độ mặc định (schema trong prompt, máy chủ kiểm bằng Opis).';
             }
 
-            $this->stageStore->finishFailed((string) $stage->id, $token, $message, $usage, $raw !== '' ? $raw : (string) ($billed?->rawText ?? ''), ['request_id' => $billed?->requestId, 'schema_transport' => self::transport()], $pricing);
+            $this->stageStore->finishFailed((string) $stage->id, $token, $message, $usage, $raw !== '' ? $raw : (string) ($billed?->rawText ?? ''), ['request_id' => $billed?->requestId, 'schema_transport' => self::transport(), 'usage_complete' => $billed?->usageComplete], $pricing);
 
             return [null, 'QA thất bại: '.$message];
         }

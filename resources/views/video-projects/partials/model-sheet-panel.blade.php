@@ -110,6 +110,9 @@
                                     ])
                                 @endif
                             </div>
+                            @if($qa['stream'] !== null)
+                                <div class="va-brief">@include('video-projects.partials.stream-state', ['stream' => $qa['stream']])</div>
+                            @endif
                             @if($qa['error'] !== null)
                                 <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">{{ $qa['error'] }}</div>
                             @endif

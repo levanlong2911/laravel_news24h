@@ -22,6 +22,10 @@ final class ClaudeInspirationAnalyst
 
     public const MAX_TOKENS = 16000;
 
+    public const TIMEOUT_SECONDS = 180;
+
+    public const MAX_ATTEMPTS = 3;
+
     public function __construct(
         private readonly LlmClient $llm,
         private readonly string $model = self::MODEL,
@@ -62,7 +66,8 @@ final class ClaudeInspirationAnalyst
         return implode("\n", $lines);
     }
 
-    public function request(AiPhase $prompt, string $articleBlock): LlmRequest
+    /** @param ?\Closure(array<string, mixed>): (bool|null) $onProgress */
+    public function request(AiPhase $prompt, string $articleBlock, ?\Closure $onProgress = null): LlmRequest
     {
         return new LlmRequest(
             (string) $prompt->prompt_content,
@@ -72,12 +77,16 @@ final class ClaudeInspirationAnalyst
             self::MAX_TOKENS,
             null,
             self::EFFORT,
+            self::TIMEOUT_SECONDS,
+            self::MAX_ATTEMPTS,
+            $onProgress,
         );
     }
 
-    public function analyze(AiPhase $prompt, string $articleBlock): InspirationResult
+    /** @param ?\Closure(array<string, mixed>): (bool|null) $onProgress */
+    public function analyze(AiPhase $prompt, string $articleBlock, ?\Closure $onProgress = null): InspirationResult
     {
-        $request = $this->request($prompt, $articleBlock);
+        $request = $this->request($prompt, $articleBlock, $onProgress);
         $response = $this->llm->complete($request);
 
         return new InspirationResult($response->text, self::usageOf($response, $request->instructionVersion));

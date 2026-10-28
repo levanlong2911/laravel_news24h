@@ -456,6 +456,7 @@ final class ModelSheetService
             'status' => $stage === null ? 'none' : ($running ? 'running' : (string) $status),
             'ready' => $ready,
             'error' => $status === VideoPlanningStageStatus::FAILED->value ? (string) $stage->error_message : null,
+            'stream' => PlanningStageStore::streamOf($stage),
             'prompt' => $ready ? (string) $output['prompt'] : null,
             'prompt_sha256' => $ready ? (string) $output['prompt_sha256'] : null,
             'validation' => self::shortValidation((array) ($output['validation'] ?? [])),

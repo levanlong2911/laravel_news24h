@@ -13,6 +13,8 @@ final class AnthropicStructuredOutputResponse
         public readonly int $inputTokens,
         public readonly int $outputTokens,
         public readonly ?string $requestId = null,
+        /** @var bool false when the final usage never arrived: the tokens are a lower bound */
+        public readonly bool $usageComplete = true,
     ) {}
 
     /**

@@ -54,22 +54,7 @@
                     <div class="line"><span class="k">Prompt</span><span class="v">{{ $step['prompt'] }} · {{ $step['model'] }}</span></div>
                     <div class="line"><span class="k">Lịch sử kênh</span><span class="v">Tắt — chưa có nguồn xác định kênh, không so với phim khác</span></div>
                 @endif
-                @if(is_array($step['stream']))
-                    @php
-                        $stream = $step['stream'];
-                        $phaseLabel = ['waiting' => 'chờ dữ liệu đầu', 'thinking' => 'đang suy nghĩ', 'writing' => 'đang viết JSON'][$stream['phase'] ?? ''] ?? ($stream['phase'] ?? '—');
-                    @endphp
-                    <div class="line"><span class="k">Stream</span><span class="v">
-                        @if(($stream['state'] ?? null) === 'streaming')
-                            {{ $phaseLabel }}
-                        @else
-                            kết thúc: {{ $stream['ended'] ?? '—' }}@if(($stream['stop_reason'] ?? null) !== null) ({{ $stream['stop_reason'] }})@endif
-                        @endif
-                        · {{ (int) ($stream['elapsed_seconds'] ?? 0) }} s · {{ number_format((int) ($stream['events'] ?? 0), 0, ',', '.') }} sự kiện · {{ number_format((int) ($stream['thinking_chars'] ?? 0), 0, ',', '.') }} ký tự suy nghĩ · {{ number_format((int) ($stream['text_chars'] ?? 0), 0, ',', '.') }} ký tự JSON
-                        @if(($stream['last_event_at'] ?? null) !== null) · sự kiện cuối {{ \Illuminate\Support\Carbon::parse($stream['last_event_at'])->format('H:i:s') }}@endif
-                        @if(($stream['request_id'] ?? null) !== null) · {{ $stream['request_id'] }}@endif
-                    </span></div>
-                @endif
+                @include('video-projects.partials.stream-state', ['stream' => $step['stream']])
                 @if($step['error'] !== null)
                     <div class="line"><span class="k">Lượt gần nhất lỗi</span><span class="v" style="color:var(--vp-red)">{{ $step['error'] }}</span></div>
                 @endif

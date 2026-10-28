@@ -28,6 +28,7 @@ final class TextClientStructuredAdapter implements StructuredOutputLlmClient
         array $messages,
         array $outputSchema,
         int $maxTokens,
+        ?\Closure $onProgress = null,
     ): AnthropicStructuredOutputResponse {
         if (trim($model) === '') {
             throw new AnthropicRequestException('Structured output model must not be empty.');

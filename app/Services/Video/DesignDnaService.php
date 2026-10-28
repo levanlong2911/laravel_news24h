@@ -125,6 +125,7 @@ final class DesignDnaService
         $version = self::instructionVersion($run['prompt']);
         $usage = [];
         $raw = '';
+        $stageId = (string) $stage->id;
 
         try {
             $response = $this->llm->complete(new LlmRequest(
@@ -137,6 +138,7 @@ final class DesignDnaService
                 self::EFFORT,
                 self::TIMEOUT_SECONDS,
                 1,
+                fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
             ));
             $raw = $response->text;
             $usage = ClaudeInspirationAnalyst::usageOf($response, $version);
@@ -280,7 +282,7 @@ final class DesignDnaService
         $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::DESIGN_DNA, $run['input']);
         $canRun = $run !== null && $served === null;
         $canRegenerate = $run !== null && $served !== null && $this->replaceable($projectId, $served, $run);
-        $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'stuck' => false, 'error' => null,
+        $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'stuck' => false, 'error' => null, 'stream' => null,
             'source' => null, 'current' => false, 'check' => null, 'judges' => [], 'judges_required' => self::judgesRequired(), 'novelty' => null, 'phase3_ready' => false, 'json' => null, 'json_error' => null];
 
         if ($latest === null) {
@@ -313,6 +315,7 @@ final class DesignDnaService
             'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest->error_message,
+            'stream' => PlanningStageStore::streamOf($latest),
             'can_run' => $canRun,
             'prompt' => $next,
             'run_error' => $runError,

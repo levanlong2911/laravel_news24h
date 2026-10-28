@@ -93,6 +93,7 @@
                             @if($brief['run_error'])
                                 <div class="line"><span class="v" style="color:var(--vp-red)">{{ $brief['run_error'] }}</span></div>
                             @endif
+                            @include('video-projects.partials.stream-state', ['stream' => $brief['stream']])
                             @if($brief['error'])
                                 <div class="line"><span class="v" style="color:var(--vp-red)">{{ $brief['error'] }}</span></div>
                             @elseif(! $brief['analysed'])
@@ -188,6 +189,7 @@
                                 @if($dna['run_error'])
                                     <div class="line"><span class="v" style="color:var(--vp-red)">{{ $dna['run_error'] }}</span></div>
                                 @endif
+                                @include('video-projects.partials.stream-state', ['stream' => $dna['stream']])
                                 @if($dna['error'])
                                     <div class="line"><span class="v" style="color:var(--vp-red)">{{ $dna['error'] }}</span></div>
                                 @elseif(! $dna['analysed'])

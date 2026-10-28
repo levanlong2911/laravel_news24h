@@ -29,8 +29,9 @@ final class CanonicalConceptInputBuilder
         return $this->analyst->settings();
     }
 
-    public function buildInspiration(AiPhase $prompt, string $articleBlock): InspirationResult
+    /** @param ?\Closure(array<string, mixed>): (bool|null) $onProgress */
+    public function buildInspiration(AiPhase $prompt, string $articleBlock, ?\Closure $onProgress = null): InspirationResult
     {
-        return $this->analyst->analyze($prompt, $articleBlock);
+        return $this->analyst->analyze($prompt, $articleBlock, $onProgress);
     }
 }
