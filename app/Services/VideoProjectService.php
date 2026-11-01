@@ -49,8 +49,10 @@ use App\Video\FinalComposition\Deadline;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Inspiration\InspirationResult;
+use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Inspiration\SourceCheck;
 use App\Video\Llm\JsonAnswer;
+use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceView;
 use App\Video\Render\Video\FilmSegmentPrompt;
@@ -304,7 +306,7 @@ class VideoProjectService
         }
 
         try {
-            [$prompt, $articleBlock, $input] = $this->inspirationRun($project);
+            [$prompt, $articleBlock, $input, $system, $manifest] = $this->inspirationRun($project);
         } catch (\Throwable $e) {
             Log::error('inspiration phase-1: prompt or article unavailable, no model call made', [
                 'project_id' => $project->id,
@@ -319,6 +321,13 @@ class VideoProjectService
                 $project->id,
                 PlanningStageName::INSPIRATION,
                 $input,
+                static fn (VideoPlanningStage $done): bool => SourceCheck::answerUnusable(self::sourceCheckOf(
+                    (string) ($done->output_json['raw_text'] ?? ''),
+                    $articleBlock,
+                    (string) ($done->input_json['execution'] ?? ''),
+                    self::inspirationManifest($done),
+                )),
+                ['manifest' => $manifest],
             );
         } catch (\Throwable $e) {
             Log::error('inspiration phase-1: could not open the run', [
@@ -341,7 +350,7 @@ class VideoProjectService
 
         try {
             $stageId = (string) $stage->id;
-            $result = $this->canonicalConceptInputBuilder->buildInspiration($prompt, $articleBlock, fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state));
+            $result = $this->canonicalConceptInputBuilder->buildInspiration($prompt, $articleBlock, fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state), $system);
 
             if (trim($result->rawResponse) === '') {
                 return $this->failInspirationStage(
@@ -353,7 +362,7 @@ class VideoProjectService
                 );
             }
 
-            $output = $this->inspirationOutput($input, $result->rawResponse, $articleBlock);
+            $output = $this->inspirationOutput($input, $result->rawResponse, $articleBlock, $manifest);
 
             if (! $this->stageStore->finishSucceeded(
                 $stage->id,
@@ -404,7 +413,8 @@ class VideoProjectService
         $runError = null;
 
         try {
-            [$prompt, $articleBlock, $input] = $this->inspirationRun($project);
+            $articleBlock = $this->inspirationArticle($project);
+            [$prompt, , $input] = $this->inspirationRun($project, $articleBlock);
         } catch (\Throwable $e) {
             $this->quietLog('inspiration phase-1: prompt or article unavailable', $e, ['project_id' => $project->id]);
             $runError = 'Không lấy được prompt Phase 1 cho chủ đề này — chưa thể chạy lượt mới: '.$e->getMessage();
@@ -427,15 +437,23 @@ class VideoProjectService
         $claimed = $latest->status === VideoPlanningStageStatus::RUNNING->value;
         $stored = $succeeded && is_array($latest->output_json) ? $latest->output_json : [];
         $phaseOne = ClaudeInspirationAnalyst::isPhaseOneRun($latest);
-        $sourceCurrent = $phaseOne && $succeeded && $matchesInput && $runError === null && is_string($articleBlock);
+        $runInput = is_array($latest->input_json) ? $latest->input_json : [];
+        $pinnedProblem = $phaseOne && $succeeded ? $this->pinnedInspirationProblem($latest, $articleBlock) : null;
+        $sourceCurrent = $phaseOne && $succeeded && $pinnedProblem === null;
         $sourceCheck = match (true) {
-            $sourceCurrent => self::sourceCheckOf((string) ($stored['raw_text'] ?? ''), (string) $articleBlock),
+            $sourceCurrent => self::sourceCheckOf((string) ($stored['raw_text'] ?? ''), (string) $articleBlock, (string) ($runInput['execution'] ?? ''), self::inspirationManifest($latest)),
             $phaseOne && is_array($stored['source'] ?? null) => $stored['source'],
             default => null,
         };
         $sourcePassed = $sourceCurrent && ($sourceCheck['verdict'] ?? null) === SourceCheck::RUN;
-        $runInput = is_array($latest->input_json) ? $latest->input_json : [];
+        $newerPrompt = match (true) {
+            ! $sourceCurrent || $prompt === null || $matchesInput => null,
+            (int) ($runInput['phase_revision'] ?? 0) !== (int) $prompt->revision || ($runInput['execution'] ?? null) !== ($input['execution'] ?? null) => $next,
+            default => $next.' — thông số chạy (model, effort) đã đổi',
+        };
         [$parsed, $parseError] = $phaseOne && $succeeded ? JsonAnswer::parse((string) ($stored['raw_text'] ?? '')) : [null, null];
+        $answer = $phaseOne && $succeeded ? JsonAnswer::object((string) ($stored['raw_text'] ?? '')) : null;
+        $evidence = PhaseOneEvidence::format($answer) === PhaseOneEvidence::FORMAT_V2;
         $pretty = static fn (mixed $value): string => (string) json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         return [
@@ -446,7 +464,7 @@ class VideoProjectService
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest->error_message,
             'stream' => PlanningStageStore::streamOf($latest),
-            'can_run' => $runError === null && (! $matchesInput || $latest->status === VideoPlanningStageStatus::FAILED->value),
+            'can_run' => $runError === null && (! $matchesInput || $latest->status === VideoPlanningStageStatus::FAILED->value || ($sourceCurrent && SourceCheck::answerUnusable($sourceCheck))),
             'prompt' => $next,
             'run_error' => $runError,
             'source' => $phaseOne ? $label((int) ($runInput['phase_revision'] ?? 0), (string) ($runInput['workflow'] ?? '')) : null,
@@ -456,9 +474,60 @@ class VideoProjectService
             'source_check' => $sourceCheck,
             'source_current' => $sourceCurrent,
             'source_passed' => $sourcePassed,
+            'pinned_problem' => $pinnedProblem,
+            'newer_prompt' => $newerPrompt,
+            'self_check' => $evidence && is_array($answer['self_check'] ?? null) ? $answer['self_check'] : null,
+            'issues' => $evidence && is_array($answer['issues'] ?? null) ? $answer['issues'] : null,
             'phase_one' => $phaseOne,
             'can_design' => ! $phaseOne && $succeeded,
         ];
+    }
+
+    /**
+     * Mot luot Phase 1 con la nguon dung duoc khi prompt no da dung con nguyen hash, bai viet chua doi
+     * va (v2) hop dong no da ghim con khop DB. Prompt hay thong so moi hon khong lam no het hieu luc.
+     *
+     * @return ?string why the stage can no longer serve as the source; null when it can
+     */
+    private function pinnedInspirationProblem(VideoPlanningStage $stage, ?string $articleBlock): ?string
+    {
+        $input = is_array($stage->input_json) ? $stage->input_json : [];
+        $phase = AiPhase::query()->find($input['phase_id'] ?? null);
+
+        if ($phase === null) {
+            return 'Prompt Phase 1 mà lượt này đã dùng không còn trong DB.';
+        }
+
+        if ($phase->status !== AiPhase::PUBLISHED || ! hash_equals((string) ($input['prompt_sha256'] ?? ''), (string) $phase->content_sha256)
+            || ! hash_equals((string) $phase->content_sha256, hash('sha256', (string) $phase->prompt_content))) {
+            return "Prompt Phase 1 revision {$phase->revision} không còn khớp hash mà lượt này đã ghim.";
+        }
+
+        if ($articleBlock === null) {
+            return 'Không đọc được bài viết hiện tại để đối chiếu lượt Phase 1.';
+        }
+
+        if (! hash_equals((string) ($input['article_sha256'] ?? ''), hash('sha256', $articleBlock))) {
+            return 'Bài viết đã đổi so với lúc chạy lượt Phase 1 này.';
+        }
+
+        if (($input['execution'] ?? null) === ClaudeInspirationAnalyst::EXECUTION_V2) {
+            try {
+                PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest(self::inspirationManifest($stage) ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'));
+            } catch (\Throwable $e) {
+                return 'Hợp đồng mà lượt Phase 1 này đã ghim không còn khớp DB: '.$e->getMessage();
+            }
+        }
+
+        return null;
+    }
+
+    /** @return ?array<string, mixed> */
+    private static function inspirationManifest(VideoPlanningStage $stage): ?array
+    {
+        $manifest = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['manifest'] ?? null;
+
+        return is_array($manifest) ? $manifest : null;
     }
 
     /**
@@ -4898,60 +4967,116 @@ class VideoProjectService
             'source_check' => null,
             'source_current' => false,
             'source_passed' => false,
+            'pinned_problem' => null,
+            'newer_prompt' => null,
+            'self_check' => null,
+            'issues' => null,
             'phase_one' => false,
             'can_design' => false,
         ];
     }
 
-    /** @return array{0: AiPhase, 1: string, 2: array<string, mixed>} [$prompt, $articleBlock, $input] */
-    private function inspirationRun(VideoProject $project): array
+    private function inspirationArticle(VideoProject $project): string
+    {
+        $article = $project->article ?? throw new RuntimeException('Dự án này không gắn với bài viết nào.');
+
+        return $this->canonicalConceptInputBuilder->articleBlock($this->rawArticleFromModel($article));
+    }
+
+    /**
+     * Mot luot Phase 1 moi: system prompt va JSON Schema tu bundle DB cua spec.inspiration, ghim manifest.
+     *
+     * @return array{0: AiPhase, 1: string, 2: array<string, mixed>, 3: string, 4: array<string, mixed>} [$prompt, $articleBlock, $input, $system, $manifest]
+     */
+    private function inspirationRun(VideoProject $project, ?string $articleBlock = null): array
     {
         $category = $project->article?->category
-            ?? throw new \RuntimeException('The article of this project has no category.');
+            ?? throw new RuntimeException('The article of this project has no category.');
         $workflow = config('video.superyacht.contracts.categories')[$category->slug] ?? null;
 
         if (! is_string($workflow) || $workflow === '') {
-            throw new \RuntimeException("Category {$category->slug} has no configured workflow.");
+            throw new RuntimeException("Category {$category->slug} has no configured workflow.");
         }
 
-        $prompt = AiPhase::currentFor((string) $category->id, $workflow, ClaudeInspirationAnalyst::PHASE_CODE);
-        $articleBlock = $this->canonicalConceptInputBuilder->articleBlock($this->rawArticleFromModel($project->article));
+        $articleBlock ??= $this->inspirationArticle($project);
+        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject((string) $project->id, ClaudeInspirationAnalyst::ACTION);
+
+        if (! $bundle->ready()) {
+            throw new RuntimeException('Hợp đồng '.ClaudeInspirationAnalyst::ACTION.' chưa sẵn sàng: '.implode('; ', $bundle->mismatches()).' — phát hành gói phase-1-inspiration-v3 cho chủ đề này trước, không gọi model.');
+        }
+
+        $manifest = $bundle->manifest();
+        $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
+
+        foreach ([PhaseOneEvidence::FORMAT_V2, 'Input format: `'.PhaseOneEvidence::INPUT_FORMAT.'`'] as $marker) {
+            if (! str_contains((string) $prompt->prompt_content, $marker)) {
+                throw new RuntimeException("Prompt phase-1 revision {$prompt->revision} không khai {$marker} mà code đang dùng — phát hành revision tương thích trước, không gọi model.");
+            }
+        }
+
+        $schemas = array_map(
+            static fn (array $schema): string => '## '.ClaudeInspirationAnalyst::SCHEMA_HEADING." — {$schema['label']}\n\n```json\n".trim($schema['content'])."\n```",
+            $bundle->outputSchemas(),
+        );
 
         return [$prompt, $articleBlock, [
-            'execution' => ClaudeInspirationAnalyst::EXECUTION,
+            'execution' => ClaudeInspirationAnalyst::EXECUTION_V2,
             'article_id' => (string) $project->article->id,
             'category_id' => (string) $category->id,
             'workflow' => $workflow,
+            'bundle_hash' => $bundle->bundleHash(),
             'phase_id' => (string) $prompt->id,
             'phase_revision' => (int) $prompt->revision,
             'prompt_sha256' => (string) $prompt->content_sha256,
             'article_sha256' => hash('sha256', $articleBlock),
-        ] + $this->canonicalConceptInputBuilder->inspirationSettings()];
+        ] + $this->canonicalConceptInputBuilder->inspirationSettings(), implode("\n\n", [...array_column($bundle->parts(), 'content'), ...$schemas]), $manifest];
     }
 
     /**
      * @param  array<string, mixed>  $input
+     * @param  array<string, mixed>  $manifest  the contract the run pinned
      * @return array<string, mixed>
      */
-    private function inspirationOutput(array $input, string $rawText, string $articleBlock): array
+    private function inspirationOutput(array $input, string $rawText, string $articleBlock, array $manifest): array
     {
         [$json, $error] = JsonAnswer::parse($rawText);
 
         return [
-            'execution' => ClaudeInspirationAnalyst::EXECUTION,
+            'execution' => (string) $input['execution'],
+            'format' => PhaseOneEvidence::format(JsonAnswer::object($rawText)),
             'checked' => false,
-            'prompt' => array_intersect_key($input, array_flip(['phase_id', 'phase_revision', 'prompt_sha256', 'workflow', 'category_id'])),
+            'prompt' => array_intersect_key($input, array_flip(['phase_id', 'phase_revision', 'prompt_sha256', 'workflow', 'category_id', 'bundle_hash'])),
             'raw_text' => $rawText,
             'parsed_json' => $json,
             'json_parse_error' => $error,
-            'source' => self::sourceCheckOf($rawText, $articleBlock),
+            'source' => self::sourceCheckOf($rawText, $articleBlock, (string) $input['execution'], $manifest),
         ];
     }
 
-    /** @return array<string, mixed> */
-    private static function sourceCheckOf(string $rawText, string $articleBlock): array
+    /**
+     * Danh gia nguon theo hop dong ma luot da ghim (execution), khong theo format cau tra loi tu khai:
+     * luot v1 kiem nhu cu; luot v2 chi nhan cau tra loi v2 va kiem truoc JSON Schema da ghim.
+     *
+     * @param  ?array<string, mixed>  $manifest  the contract the run pinned; only a v2 run needs it
+     * @return array<string, mixed>
+     */
+    private static function sourceCheckOf(string $rawText, string $articleBlock, string $execution, ?array $manifest = null): array
     {
-        return SourceCheck::evaluate(JsonAnswer::object($rawText), $articleBlock);
+        $answer = JsonAnswer::object($rawText);
+
+        if ($execution !== ClaudeInspirationAnalyst::EXECUTION_V2) {
+            return SourceCheck::evaluate($answer, $articleBlock, null, SourceCheck::FORMAT);
+        }
+
+        try {
+            [$decoded] = JsonAnswer::parse($rawText);
+            $schemas = PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))->outputSchemas();
+            $errors = PhaseOneEvidence::schemaErrors($decoded, $schemas);
+        } catch (\Throwable $e) {
+            $errors = ['không kiểm được JSON Schema đã ghim: '.$e->getMessage()];
+        }
+
+        return SourceCheck::evaluate($answer, $articleBlock, $errors, PhaseOneEvidence::FORMAT_V2);
     }
 
     /** @return array{0: ?int, 1: string} [$shotCount, $reason] */

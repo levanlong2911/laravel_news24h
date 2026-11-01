@@ -244,22 +244,8 @@ class VideoProjectsController extends Controller
         }
 
         return back()->with('success', $reason === 'cached'
-            ? 'Prompt Phase 2 và kết quả Phase 1 không đổi — dùng lại DNA đã lưu, không gọi Sonnet.'
+            ? 'Prompt Phase 2 và kết quả Phase 1 không đổi — dùng lại DNA đã lưu, không gọi model.'
             : 'Đã lưu Design DNA theo prompt Phase 2.');
-    }
-
-    public function judgeDesignDna(Request $request, string $id, string $kind)
-    {
-        $this->ownedProject($id);
-        [$output, $reason] = app(DesignDnaService::class)->judge($id, $kind, $request->boolean('rejudge'));
-
-        if ($output === null) {
-            return back()->with('error', $reason);
-        }
-
-        return back()->with('success', $reason === 'cached'
-            ? "DNA và prompt không đổi — dùng lại kết quả JUDGE {$kind} đã lưu, không gọi model."
-            : "Đã lưu kết quả JUDGE {$kind}: ".($output['verdict'] ?? '').' ('.($output['total'] ?? '—').'/10).');
     }
 
     public function resetDesignDna(string $id)
@@ -592,17 +578,20 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
-        $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
-        [$stage, $reason] = app(LocationWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id']);
+        $data = $request->validate([
+            'operation_id' => ['required', 'uuid'],
+            'effort' => ['nullable', 'string', Rule::in((array) config('video.superyacht.locations.efforts'))],
+        ], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.', 'effort.*' => 'Mức effort không hợp lệ.']);
+        [$stage, $reason] = app(LocationWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id'], isset($data['effort']) ? (string) $data['effort'] : null);
 
         if ($stage === null) {
             return back()->with('error', $reason);
         }
 
         return redirect()->route('video-projects.locations', ['id' => $id, 'stage' => $stage->id])->with('success', match ($reason) {
-            'cached' => 'Nguồn và prompt không đổi — dùng lại bản mô tả đã lưu, không gọi model.',
+            'cached' => 'Nguồn và prompt không đổi — dùng lại bộ địa điểm và bối cảnh đã lưu, không gọi model.',
             'replayed' => 'Thao tác này đã chạy trước đó — không gọi model lần nữa.',
-            default => 'Đã lưu bản mô tả bối cảnh — xem kết quả kiểm rồi duyệt.',
+            default => 'Đã lưu địa điểm và bối cảnh — xem kết quả kiểm và prompt rồi render.',
         });
     }
 
@@ -612,24 +601,7 @@ class VideoProjectsController extends Controller
 
         [$done, $reason] = app(LocationWriterService::class)->reset($id);
 
-        return $done ? back()->with('success', 'Đã reset lượt lập bối cảnh bị kẹt.') : back()->with('error', $reason);
-    }
-
-    public function approveLocationText(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate([
-            'stage_id' => ['required', 'uuid'],
-            'content_hash' => ['required', 'string', 'max:80'],
-            'selection_version' => ['required', 'integer', 'min:0'],
-            'operation_id' => ['required', 'uuid'],
-        ], ['*' => 'Thiếu dữ liệu duyệt — tải lại trang.']);
-        [$decision, $reason] = app(LocationSourceService::class)->approveText($id, (string) $data['stage_id'], (string) $data['content_hash'], (int) $data['selection_version'], (string) $data['operation_id'], auth()->id());
-
-        return $decision === null
-            ? back()->with('error', $reason)
-            : redirect()->route('video-projects.locations', ['id' => $id, 'stage' => $data['stage_id']])->with('success', $reason === 'replayed' ? 'Lần duyệt này đã được ghi trước đó.' : 'Đã duyệt bản mô tả — có thể render ảnh tham chiếu.');
+        return $done ? back()->with('success', 'Đã reset lượt tạo địa điểm và bối cảnh bị kẹt.') : back()->with('error', $reason);
     }
 
     public function renderLocationReference(Request $request, string $id)
@@ -637,8 +609,13 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
 
         $data = $request->validate([
-            'request_id' => ['required', 'regex:/^R[0-9]{2}$/'],
+            'request_id' => ['required', 'regex:/^P[0-9]{2}$/'],
             'image_id' => ['nullable', 'uuid'],
+            'stage_id' => ['required_without:image_id', 'nullable', 'uuid'],
+            'content_hash' => ['required_without:image_id', 'nullable', 'string', 'max:80'],
+            'prompts_hash' => ['required_without:image_id', 'nullable', 'string', 'max:80'],
+            'prompt_sha256' => ['required_without:image_id', 'nullable', 'string', 'max:80'],
+            'selection_version' => ['required_without:image_id', 'nullable', 'integer', 'min:0'],
             'provider_model' => ['nullable', 'string', 'max:120'],
             'quality' => ['nullable', 'string', 'max:20'],
             'size' => ['nullable', 'string', 'max:20'],
@@ -648,11 +625,17 @@ class VideoProjectsController extends Controller
         $service = app(LocationReferenceService::class);
         [$image, $reason] = isset($data['image_id'])
             ? $service->retry($id, (string) $data['image_id'])
-            : $service->render($id, (string) auth()->user()?->name, (string) $data['request_id'], $data, (string) $data['operation_id']);
+            : $service->render($id, (string) auth()->user()?->name, (string) $data['request_id'], $data, (string) $data['operation_id'], [
+                'stage_id' => (string) $data['stage_id'],
+                'content_hash' => (string) $data['content_hash'],
+                'prompts_hash' => (string) $data['prompts_hash'],
+                'prompt_sha256' => (string) $data['prompt_sha256'],
+                'selection_version' => (int) $data['selection_version'],
+            ], auth()->id());
 
         return $image === null
             ? back()->with('error', $reason)
-            : redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', $reason === 'already_exists' ? 'Ảnh với đúng thiết lập này đã có — không render lại.' : 'Render xong — chọn ảnh cho yêu cầu này.');
+            : redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', $reason === 'already_exists' ? 'Ảnh với đúng thiết lập này đã có — không render lại.' : 'Render xong — duyệt ảnh cho bối cảnh này.');
     }
 
     public function chooseLocationReference(Request $request, string $id)
@@ -660,30 +643,15 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
 
         $data = $request->validate([
-            'request_id' => ['required', 'regex:/^R[0-9]{2}$/'],
+            'request_id' => ['required', 'regex:/^P[0-9]{2}$/'],
             'artifact_id' => ['required', 'uuid'],
             'selection_version' => ['required', 'integer', 'min:0'],
         ], ['*' => 'Thiếu dữ liệu chọn ảnh — tải lại trang.']);
         [$done, $reason] = app(LocationSourceService::class)->choose($id, (string) $data['request_id'], (string) $data['artifact_id'], (int) $data['selection_version']);
 
         return $done
-            ? redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', 'Đã chọn ảnh cho '.$data['request_id'].'.')
+            ? redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', 'Đã duyệt ảnh cho '.$data['request_id'].'.')
             : back()->with('error', $reason);
-    }
-
-    public function approveLocationSet(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate([
-            'selection_version' => ['required', 'integer', 'min:0'],
-            'operation_id' => ['required', 'uuid'],
-        ], ['*' => 'Thiếu dữ liệu duyệt — tải lại trang.']);
-        [$decision, $reason] = app(LocationSourceService::class)->approveSet($id, (int) $data['selection_version'], (string) $data['operation_id'], auth()->id());
-
-        return $decision === null
-            ? back()->with('error', $reason)
-            : redirect()->route('video-projects.locations', $id)->with('success', $reason === 'replayed' ? 'Lần duyệt này đã được ghi trước đó.' : 'Đã duyệt bộ ảnh Phase 5 — bộ bối cảnh sẵn sàng cho công đoạn sau.');
     }
 
     public function screenplayFoundation(Request $request, string $id)

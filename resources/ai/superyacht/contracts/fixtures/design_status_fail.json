@@ -1,17 +1,29 @@
 {
   "action": "spec.design",
-  "about": "A well-formed envelope with status fail is never applicable",
+  "about": "A well-formed envelope with status fail and empty data is never applicable",
   "expect": {"violations": [], "applicable": false},
   "output": {
+    "format": "phase3-design-v2",
     "phase": "3",
-    "prompt_version": "6.3.0",
+    "prompt_version": "superyacht_v6_3/phase-3@rev9",
     "project_id": "contract-fixture-project",
     "status": "fail",
-    "data": {
-      "canonical": {"$fixture": "CanonicalDesign/valid_locked_rev1.json"},
-      "constraints": []
-    },
-    "flags": ["MODEL_SHEET_REJECTED"],
-    "notes": ""
+    "data": {},
+    "flags": ["DNA_NOT_BUILDABLE"],
+    "notes": "",
+    "self_check": [
+      {"check": "dna_fidelity", "result": "open", "note": "The DNA's silhouette and its third innovation need the same hull volume; no design keeps both."},
+      {"check": "specs_and_basis", "result": "passed", "note": ""},
+      {"check": "geometry", "result": "passed", "note": ""},
+      {"check": "exterior_and_innovations", "result": "passed", "note": ""},
+      {"check": "interior_design", "result": "passed", "note": ""},
+      {"check": "spatial_connections", "result": "passed", "note": ""},
+      {"check": "operational_limits", "result": "passed", "note": ""},
+      {"check": "build_states", "result": "passed", "note": ""},
+      {"check": "materials_and_lighting", "result": "passed", "note": ""},
+      {"check": "anchors", "result": "passed", "note": ""},
+      {"check": "identity_and_names", "result": "passed", "note": ""},
+      {"check": "contract", "result": "passed", "note": ""}
+    ]
   }
 }

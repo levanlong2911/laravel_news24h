@@ -8,20 +8,16 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
-use App\Services\Video\OpenAiImageClient;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\ScriptSourceService;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Locations\LocationReferencePlanner;
 use App\Video\Locations\LocationWorkflow;
+use App\Video\YachtDesign\YachtDesignCheck;
 use RuntimeException;
 
 final class SuperyachtLocations implements LocationWorkflow
 {
-    private const BIBLE_KEYS = ['name', 'specs', 'decks', 'rooms', 'exterior_zones'];
-
-    private const BEAT_KEYS = ['id', 'bs', 'location', 'time_light', 'rooms', 'visual', 'action', 'camera_family'];
-
     private const HEIGHT_KEYS = ['air_draft', 'height', 'crest_height'];
 
     private const TOUR_BEAT = 'B14';
@@ -43,6 +39,11 @@ final class SuperyachtLocations implements LocationWorkflow
         return LocationReferencePlanner::VERSION;
     }
 
+    public function inputsVersion(): string
+    {
+        return SuperyachtLocationsPayload::VERSION;
+    }
+
     public function settings(): array
     {
         $config = (array) config('video.superyacht.locations');
@@ -51,8 +52,11 @@ final class SuperyachtLocations implements LocationWorkflow
             'execution' => (string) $config['execution'],
             'model' => (string) $config['model'],
             'effort' => (string) $config['effort'],
+            'efforts' => array_values(array_map('strval', (array) $config['efforts'])),
             'max_tokens' => (int) $config['max_tokens'],
             'timeout_seconds' => (int) $config['timeout_seconds'],
+            'schema_heading' => (string) $config['schema_heading'],
+            'semantic_review' => (string) $config['semantic_review'],
             'reference' => (array) $config['reference'],
         ];
     }
@@ -68,55 +72,57 @@ final class SuperyachtLocations implements LocationWorkflow
         $scriptContext = (array) ($meta['context'] ?? []);
 
         if (! is_array($pinned) || ! is_array($pinned['yacht_bible'] ?? null) || ! is_array($pinned['anchors'] ?? null)) {
-            throw new RuntimeException('Kịch bản đã duyệt không còn payload thiết kế đã ghim — không lập được bối cảnh.');
+            throw new RuntimeException('Kịch bản đã duyệt không còn payload thiết kế đã ghim — không tạo được địa điểm và bối cảnh.');
         }
 
-        $bible = [];
-
-        foreach (self::BIBLE_KEYS as $key) {
-            $bible[$key] = $pinned['yacht_bible'][$key] ?? throw new RuntimeException("yacht_bible đã ghim của kịch bản thiếu {$key}.");
+        if (! SuperyachtLocationsPayload::spatial($pinned)) {
+            throw new RuntimeException('Kịch bản đã duyệt được viết từ bản thiết kế định dạng cũ '.YachtDesignCheck::LEGACY_FORMAT.': các bộ địa điểm và bối cảnh đã có của nó vẫn giữ nguyên để xem và dùng tiếp, nhưng không tạo bộ mới từ nó. Tạo thiết kế mới ('.YachtDesignCheck::FORMAT.'), duyệt model sheet rồi viết và duyệt lại kịch bản.');
         }
 
-        $data = (array) $script['document']['data'];
-        $beats = array_map(static fn (array $beat): array => array_intersect_key($beat, array_flip(self::BEAT_KEYS)), (array) $data['script']['beats']);
-        $stops = array_values((array) $data['script']['tour']['stops']);
-        $dimensions = $this->dimensions($projectId, $design, (array) $bible['specs']);
+        $answer = $this->designAnswer($projectId, $design);
+        $built = SuperyachtLocationsPayload::build(
+            (array) $script['document']['data'],
+            $pinned,
+            SuperyachtLocationsPayload::designOf($answer),
+            $this->dimensions($answer, (array) ($pinned['yacht_bible']['specs'] ?? [])),
+            self::TOUR_BEAT,
+            array_values((array) ($scriptContext['source_names'] ?? [])),
+        );
 
         return [
-            'payload' => [
-                'script' => ['beats' => $beats, 'tour' => ['stops' => $stops]],
-                'yacht_bible' => $bible,
-                'dimensions' => $dimensions,
-                'anchors' => [
-                    'interior' => $pinned['anchors']['interior'] ?? [],
-                    'exterior' => $pinned['anchors']['exterior'] ?? [],
-                    'surface_states' => $pinned['anchors']['surface_states'] ?? [],
-                ],
-                'build_states' => $pinned['build_states'] ?? [],
-                'canonical' => $pinned['canonical'] ?? [],
-                'avoid_names' => array_values((array) ($scriptContext['source_names'] ?? [])),
-            ],
+            'payload' => $built['payload'],
             'source' => [
                 'script' => $script['token'],
                 'design' => $design,
             ],
-            'context' => [
+            'context' => $built['context'] + [
                 'format' => $this->format(),
-                'rooms' => array_values(array_map(static fn (array $room): string => (string) $room['id'], (array) $bible['rooms'])),
-                'exterior_zones' => array_values(array_filter(array_map(static fn (mixed $zone): ?string => is_array($zone) && is_string($zone['id'] ?? null) ? $zone['id'] : null, (array) $bible['exterior_zones']))),
-                'beats' => array_map(static fn (array $beat): array => [
-                    'id' => (string) $beat['id'],
-                    'rooms' => array_map(static fn (array $room): array => ['id' => (string) $room['id'], 'state' => (string) $room['set_state']], (array) ($beat['rooms'] ?? [])),
-                ], $beats),
-                'tour' => array_map(static fn (array $stop, int $index): array => ['index' => $index, 'source_id' => (string) $stop['source_id'], 'match_bare_beat' => $stop['match_bare_beat'] ?? null], $stops, array_keys($stops)),
-                'tour_beat' => self::TOUR_BEAT,
-                'yacht' => $dimensions,
                 'forbidden' => array_values((array) ($scriptContext['forbidden'] ?? [])),
                 'source_names' => array_values((array) ($scriptContext['source_names'] ?? [])),
-                'max_sources' => OpenAiImageClient::MAX_SOURCE_IMAGES,
                 'policy' => (array) config('video.superyacht.locations.check'),
             ],
         ];
+    }
+
+    public function completeContext(string $projectId, array $context, array $source): array
+    {
+        $context['policy'] = (array) ($context['policy'] ?? []) + (array) config('video.superyacht.locations.check');
+
+        if (array_key_exists('innovations', (array) ($context['design'] ?? []))) {
+            return $context;
+        }
+
+        $stage = VideoPlanningStage::query()->whereKey($source['script']['stage_id'] ?? null)->where('project_id', $projectId)->first()
+            ?? throw new RuntimeException('Kịch bản mà bản này ghim không còn — không bổ sung được trường thiết kế.');
+        $pinned = json_decode((string) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['payload'] ?? ''), true);
+
+        if (! is_array($pinned) || ! is_array($pinned['yacht_bible'] ?? null)) {
+            throw new RuntimeException('Kịch bản mà bản này ghim không còn payload thiết kế — không bổ sung được trường thiết kế.');
+        }
+
+        $context['design'] = SuperyachtLocationsPayload::designContext($pinned, SuperyachtLocationsPayload::designOf($this->designAnswer($projectId, (array) ($source['design'] ?? []))));
+
+        return $context;
     }
 
     public function sourceProblem(string $projectId, array $source): ?string
@@ -127,7 +133,7 @@ final class SuperyachtLocations implements LocationWorkflow
             return $e->getMessage();
         }
 
-        return $current['token'] == ($source['script'] ?? null) ? null : 'Kịch bản được chọn hoặc nguồn của nó đã đổi so với lúc lập bối cảnh này.';
+        return $current['token'] == ($source['script'] ?? null) ? null : 'Kịch bản được chọn hoặc nguồn của nó đã đổi so với lúc tạo bộ địa điểm và bối cảnh này.';
     }
 
     public function check(?array $response, array $context, array $schema): array
@@ -137,15 +143,14 @@ final class SuperyachtLocations implements LocationWorkflow
 
     public function derive(array $document, array $context): array
     {
-        return LocationReferencePlanner::plan($document);
+        return LocationReferencePlanner::plan($document, $context);
     }
 
     /**
      * @param  array<string, mixed>  $design  the design source the script pinned
-     * @param  array<string, mixed>  $specs
-     * @return array{loa_m: ?float, beam_m: ?float, height_m: ?float}
+     * @return array<string, mixed> the data of the pinned design answer, once it still matches the hash the script pinned
      */
-    private function dimensions(string $projectId, array $design, array $specs): array
+    private function designAnswer(string $projectId, array $design): array
     {
         $stage = VideoPlanningStage::query()->whereKey($design['design_stage_id'] ?? null)->where('project_id', $projectId)
             ->where('stage', PlanningStageName::YACHT_DESIGN->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->first();
@@ -154,7 +159,17 @@ final class SuperyachtLocations implements LocationWorkflow
             throw new RuntimeException('Bản thiết kế mà kịch bản đã ghim không còn hoặc không còn nguyên vẹn.');
         }
 
-        $canonical = (array) (JsonAnswer::object((string) $stage->raw_response)['data']['canonical']['dimensions'] ?? []);
+        return (array) (JsonAnswer::object((string) $stage->raw_response)['data'] ?? []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $answer
+     * @param  array<string, mixed>  $specs
+     * @return array{loa_m: ?float, beam_m: ?float, height_m: ?float}
+     */
+    private function dimensions(array $answer, array $specs): array
+    {
+        $canonical = (array) ($answer['canonical']['dimensions'] ?? []);
         $value = static fn (mixed $entry): ?float => is_array($entry) && is_numeric($entry['value'] ?? null) ? (float) $entry['value'] : null;
         $height = null;
 

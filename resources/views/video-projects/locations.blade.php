@@ -6,7 +6,8 @@
 @endsection
 
 @section('content')
-<div class="container-fluid vp">
+<div class="container-fluid vp" id="locationsPage">
+    <div id="locationsFlash" hidden data-ajax-part data-ajax-flash data-success="{{ session('success') }}" data-error="{{ session('error') ?? $errors->first() }}"></div>
 
     @if($errors->any())
         <div class="alert alert-danger">
@@ -20,29 +21,36 @@
 
     @php
         $shown = $step['shown'];
-        $doc = $shown['document']['data'] ?? null;
         $check = $shown['check'] ?? null;
-        $refs = collect($step['references']);
-        $required = $refs->where('request.required', true);
-        $readyCount = $required->where('problem', null)->count();
-        $media = $step['media'];
+        $plan = $shown['plan'] ?? null;
         $spaceLabel = static fn (array $space): string => $space['id'].($space['state'] !== null ? ' · '.$space['state'] : '');
+        $refs = collect($step['references']);
+        $readyCount = $refs->where('problem', null)->count();
+        $media = $step['media'];
+        $pinnedShown = $shown !== null && $shown['text_approved'] && $refs->isNotEmpty();
+        $pinnedRows = $refs->keyBy('request.id');
+        $gridRows = collect($shown['images'] ?? [])->map(fn (array $row): array => $pinnedShown && $pinnedRows->has($row['request']['id'])
+            ? ['prompt' => $row['prompt'], 'sha256' => $row['sha256']] + $pinnedRows->get($row['request']['id'])
+            : $row + ['cells' => $shown['cells'][$row['request']['id']] ?? [], 'chosen' => null, 'problem' => null, 'can_render' => false]);
+        $renderable = $shown !== null && $shown['renderable'] && ! $media['error'] && $media['default'] !== null;
+        $kinds = ['location' => 'địa điểm ngoài tàu', 'interior' => 'phòng nội thất', 'exterior' => 'khu ngoài trời trên tàu'];
+        $sourceTypes = ['script_id' => 'kịch bản ghi ID', 'mapped_id' => 'khớp ID thiết kế', 'location' => 'địa điểm của bộ này'];
+        $quoteOf = static fn (?array $evidence): string => $evidence === null ? 'giả định' : $evidence['beat'].($evidence['tour_stop'] === null ? '' : ' #'.$evidence['tour_stop']).' '.$evidence['field'].': "'.$evidence['quote'].'"';
     @endphp
 
     <div class="va-page">
         <div>
             <h1>Locations & Sets</h1>
-            <p>Phase 5 — địa điểm ngoài tàu, phòng nội thất theo trạng thái thi công và khu ngoài trời trên tàu, lập từ kịch bản đã duyệt</p>
+            <p>Phase 5 — địa điểm ngoài tàu, phòng nội thất theo trạng thái thi công và khu ngoài trời trên tàu, lập từ kịch bản đã duyệt; mỗi ảnh bối cảnh dựng riêng từ prompt, không ảnh nguồn</p>
             <p style="margin:0;color:var(--vp-dim)">
                 Nguồn: kịch bản đã duyệt và bản thiết kế mà kịch bản đã ghim
-                @if($step['prompt'] !== null) &middot; {{ $step['prompt'] }} &middot; {{ $step['model'] }} @endif
+                @if($step['prompt'] !== null) &middot; {{ $step['prompt'] }} &middot; {{ $step['model'] }} (effort mặc định {{ $step['effort'] }}) @endif
             </p>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center" id="locationsTools" data-ajax-part>
             @if($step['text_error'] === null && $refs->isNotEmpty())
-                <span class="va-tag {{ $readyCount === $required->count() ? 'ok' : 'mute' }}">{{ $readyCount }} / {{ $required->count() }} ẢNH BẮT BUỘC ĐÃ CHỌN</span>
+                <span class="va-tag {{ $readyCount === $refs->count() ? 'ok' : 'mute' }}">{{ $readyCount }} / {{ $refs->count() }} ĐÃ DUYỆT</span>
             @endif
-            @if($step['set_approved'])<span class="va-tag ok">BỘ ẢNH ĐÃ DUYỆT</span>@endif
             <a class="vp-btn" href="{{ route('video-projects.anchor', $id) }}#scriptPanel">← Kịch bản</a>
         </div>
     </div>
@@ -50,61 +58,66 @@
     <div class="vp-panel" id="locationsText">
         <div class="va-head">
             <span class="n">1</span>
-            <b>MÔ TẢ BỐI CẢNH</b>
-            <em>LOC · INT · EXT, ánh sáng, bindings và danh sách ảnh tham chiếu</em>
+            <b>BỐI CẢNH VÀ PROMPT</b>
+            <em>địa điểm LOC, bối cảnh từ LOC · INT · EXT và yêu cầu ảnh bối cảnh kèm prompt đầy đủ</em>
             <span class="grow"></span>
             @if($step['running'])
-                <button class="vp-btn sm" disabled>Đang lập…</button>
+                <button class="vp-btn sm" disabled>Đang tạo…</button>
             @elseif($step['stuck'])
-                <form method="POST" action="{{ route('video-projects.locations-reset', $id) }}">
+                <form method="POST" action="{{ route('video-projects.locations-reset', $id) }}" data-ajax-whole>
                     @csrf
                     <button class="vp-btn sm dg">Reset lượt bị kẹt</button>
                 </form>
             @elseif($step['can_run'] || $step['can_rewrite'])
-                <form method="POST" action="{{ route('video-projects.locations-write', $id) }}" id="locationsWriteForm" data-modal="confirmLocationsWrite" onsubmit="return vpLockForm(this)">
+                <form method="POST" action="{{ route('video-projects.locations-write', $id) }}" id="locationsWriteForm" data-modal="confirmLocationsWrite" data-ajax-whole onsubmit="return vpLockForm(this)">
                     @csrf
                     <input type="hidden" name="operation_id" value="{{ $step['operation_id'] }}">
                     @if($step['can_rewrite'])<input type="hidden" name="rewrite" value="1">@endif
                 </form>
-                <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmLocationsWrite" data-busy="Đang lập…">{{ $step['can_rewrite'] ? 'Lập lại (tính phí)' : 'Lập bối cảnh' }}</button>
+                <select class="ctl" name="effort" form="locationsWriteForm" title="Effort của riêng lượt này">
+                    @foreach($step['efforts'] as $effort)
+                        <option value="{{ $effort }}" @selected($effort === $step['effort'])>effort {{ $effort }}{{ $effort === $step['effort'] ? ' (mặc định)' : '' }}</option>
+                    @endforeach
+                </select>
+                <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmLocationsWrite" data-busy="Đang tạo…">{{ $step['can_rewrite'] ? 'Tạo lại địa điểm và bối cảnh' : 'Tạo địa điểm và bối cảnh' }}</button>
                 @include('modal.confirm_action', [
                     'id' => 'confirmLocationsWrite',
                     'form' => 'locationsWriteForm',
-                    'content' => 'Gọi '.$step['model'].' lập địa điểm, bộ cảnh nội thất và danh sách ảnh tham chiếu từ kịch bản đã duyệt — tác vụ này tính tiền.',
+                    'content' => 'Gọi '.$step['model'].' (effort chọn ở ô bên cạnh) một lần để tạo địa điểm ngoài tàu và bộ bối cảnh dùng chung từ kịch bản đã duyệt — tác vụ này tính tiền. Tạo xong không tự render và không thay bộ đang dùng.',
                     'detail' => 'Tối đa '.number_format((int) $step['max_tokens'], 0, ',', '.').' token đầu ra, chờ tối đa '.$step['timeout_minutes'].' phút; trả về dạng stream, tiến độ xem được khi tải lại trang ở tab khác.',
                 ])
             @else
-                <button class="vp-btn sm" disabled title="{{ $step['run_error'] }}">Lập bối cảnh</button>
+                <button class="vp-btn sm" disabled title="{{ $step['run_error'] }}">Tạo địa điểm và bối cảnh</button>
             @endif
         </div>
 
         <div class="va-body">
-            <div class="va-brief">
+            <div class="va-brief" id="locationsBrief" data-ajax-part>
                 @if($step['run_error'] !== null)
-                    <div class="line"><span class="k">Chưa lập được</span><span class="v" style="color:var(--vp-red)">{{ $step['run_error'] }}</span></div>
+                    <div class="line"><span class="k">Chưa tạo được</span><span class="v" style="color:var(--vp-red)">{{ $step['run_error'] }}</span></div>
                 @endif
                 @include('video-projects.partials.stream-state', ['stream' => $step['stream']])
                 @if($step['error'] !== null)
                     <div class="line"><span class="k">Lượt gần nhất lỗi</span><span class="v" style="color:var(--vp-red)">{{ $step['error'] }}</span></div>
                 @endif
                 @if($step['text_error'] !== null)
-                    <div class="line"><span class="k">Bản mô tả đã duyệt</span><span class="v" style="color:var(--vp-red)">{{ $step['text_error'] }}</span></div>
+                    <div class="line"><span class="k">Bộ đang dùng</span><span class="v" style="color:var(--vp-red)">{{ $step['text_error'] }}</span></div>
                 @endif
                 @if($step['history'] !== [])
                     <div class="line"><span class="k">Các lượt</span><span class="v">
                         @foreach($step['history'] as $row)
                             <a href="{{ route('video-projects.locations', ['id' => $id, 'stage' => $row['id']]) }}">rev {{ $row['revision'] }}</a>
-                            {{ $row['status'] }}{{ $row['verdict'] ? ' · '.$row['verdict'] : '' }}{{ $row['text_approved'] ? ' · đã duyệt' : '' }}@if(! $loop->last) &middot; @endif
+                            {{ $row['status'] }}{{ $row['effort'] ? ' · effort '.$row['effort'] : '' }}{{ $row['verdict'] ? ' · '.$row['verdict'] : '' }}{{ $row['text_approved'] ? ' · đang dùng' : '' }}@if(! $loop->last) &middot; @endif
                         @endforeach
                     </span></div>
                 @endif
             </div>
 
             @if($shown !== null)
-                <div class="va-lbl">
+                <div class="va-lbl" id="locationsRev" data-ajax-part>
                     BẢN REV {{ $shown['revision'] }}
-                    @if($shown['text_approved'])<span class="va-tag ok">ĐÃ DUYỆT MÔ TẢ</span>@endif
-                    @if($check !== null)<span class="va-tag {{ $check['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $check['verdict'] }}</span><span class="va-tag mute">VISION: not_run</span>@endif
+                    @if($shown['text_approved'])<span class="va-tag ok">ĐANG DÙNG</span>@endif
+                    @if($check !== null)<span class="va-tag {{ $check['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $check['verdict'] }}</span><span class="va-tag mute">VISION: not_run</span>@if($shown['legacy'] === null)<span class="va-tag mute">KIỂM NGHĨA: {{ $step['semantic_review'] === 'manual' ? 'người duyệt' : $step['semantic_review'] }}</span>@endif @endif
                     @if($shown['cost_usd'] !== null)<em>{{ $shown['tokens']['in'] }}/{{ $shown['tokens']['out'] }} token · ${{ number_format($shown['cost_usd'], 3) }}</em>@endif
                 </div>
                 @if($shown['integrity_error'] !== null)
@@ -119,305 +132,297 @@
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-amber-fg)">WARN: {{ $warning }}</div>
                     @endforeach
                 @endif
+                @if($shown['legacy'] !== null)
+                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Bản theo định dạng cũ {{ $shown['legacy'] }} — hiện kết quả kiểm lúc chạy và bảng địa điểm, chỉ để xem và truy vết; không render. Bấm "Tạo địa điểm và bối cảnh" để có bản mới; bản cũ, ảnh cũ và quyết định cũ vẫn giữ.</div>
+                @endif
+                @if($shown['flags'] !== [])
+                    <div class="va-lbl">GHI CHÚ CỦA MODEL (FLAGS — chưa được hệ thống kiểm chứng)</div>
+                    @foreach($shown['flags'] as $flag)
+                        <div class="va-lbl" style="font-weight:400">· {{ $flag }}</div>
+                    @endforeach
+                @endif
 
-                @if(is_array($doc))
+                @if($shown['locations'] !== [])
                     <div class="va-lbl">ĐỊA ĐIỂM</div>
                     <div class="vs-script-scroll">
                         <table class="vr-needs">
-                            <thead><tr><th>ID</th><th>Loại</th><th>Không gian</th><th>Kích thước (m)</th><th>Ánh sáng</th><th>Anchor</th></tr></thead>
+                            <thead><tr><th>ID</th><th>Loại</th><th>Không gian</th><th>Kích thước (m)</th><th>Chứa</th><th>Bề mặt · thiết bị</th><th>Giả định</th></tr></thead>
                             <tbody>
-                                @foreach($doc['locations'] as $location)
+                                @foreach($shown['locations'] as $location)
+                                    @php $fit = is_array($location['fit'] ?? null) ? $location['fit'] : null; @endphp
                                     <tr>
-                                        <td><b>{{ $location['id'] }}</b><br><em>{{ $location['name'] }}</em></td>
-                                        <td>{{ $location['kind'] }}</td>
-                                        <td>{{ $location['space'] }}</td>
-                                        <td>@foreach(['length_m' => 'dài', 'width_m' => 'rộng', 'height_m' => 'cao'] as $axis => $word){{ $word }} {{ $location['dimensions'][$axis]['value'] ?? '—' }} <em>({{ $location['dimensions'][$axis]['basis'] }})</em><br>@endforeach</td>
-                                        <td>@foreach($location['lighting'] as $light)<b>{{ $light['id'] }}</b> {{ $light['time'] }} · {{ $light['key']['source'] }} {{ $light['key']['kelvin'] }}K<br>@endforeach</td>
-                                        <td>{{ $location['anchor'] }}</td>
+                                        <td><b>{{ $location['id'] ?? '—' }}</b><br><em>{{ $location['name'] ?? '' }}</em></td>
+                                        <td>{{ $location['kind'] ?? '—' }}</td>
+                                        <td>{{ $location['space'] ?? '—' }}</td>
+                                        <td>@foreach(['length_m' => 'dài', 'width_m' => 'rộng', 'height_m' => 'cao'] as $axis => $word){{ $word }} {{ $location['dimensions'][$axis]['value'] ?? '—' }} <em>({{ $location['dimensions'][$axis]['basis'] ?? '—' }})</em><br>@endforeach</td>
+                                        <td>@if($fit !== null)<b>{{ $fit['subject'] }}</b>{{ $fit['beats'] !== [] ? ' · '.implode(', ', $fit['beats']) : '' }}<br>
+                                            <em>{{ $fit['footprint'] }} · trên đầu {{ $fit['overhead'] }} · thông thủy {{ $fit['clear_height_m']['value'] ?? '—' }} ({{ $fit['clear_height_m']['basis'] }})</em><br>
+                                            {{ $fit['basis'] }}@else — @endif</td>
+                                        <td>{{ implode(', ', (array) ($location['surfaces'] ?? [])) }}@if(($location['fixed_equipment'] ?? []) !== [])<br><em>{{ implode(', ', (array) $location['fixed_equipment']) }}</em>@endif</td>
+                                        <td>@foreach((array) ($location['assumptions'] ?? []) as $assumption){{ $assumption['subject'] }}: {{ $assumption['value'] }} — {{ $assumption['reason'] }}<br>@endforeach</td>
                                     </tr>
                                 @endforeach
                             </tbody>
                         </table>
                     </div>
-
-                    <div class="va-lbl">PHÒNG NỘI THẤT</div>
-                    <div class="vs-script-scroll">
-                        <table class="vr-needs">
-                            <thead><tr><th>Phòng</th><th>Nhận dạng</th><th>Trạng thái · anchor</th><th>Ánh sáng</th></tr></thead>
-                            <tbody>
-                                @foreach($doc['interior_sets'] as $set)
-                                    <tr>
-                                        <td><b>{{ $set['room'] }}</b></td>
-                                        <td>{{ $set['identity']['geometry'] }}<br><em>{{ $set['identity']['window'] }} · {{ $set['identity']['structure'] }}</em></td>
-                                        <td>@foreach($set['states'] as $state)<b>{{ $state['state'] }}</b>: {{ $state['anchor'] }}<br>@endforeach</td>
-                                        <td>@foreach($set['lighting'] as $light)<b>{{ $light['id'] }}</b> {{ $light['time'] }} · {{ $light['key']['kelvin'] }}K<br>@endforeach</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-
-                    @if($doc['exterior_amenities'] !== [])
-                        <div class="va-lbl">KHU NGOÀI TRỜI TRÊN TÀU</div>
-                        <div class="vs-script-scroll">
-                            <table class="vr-needs">
-                                <thead><tr><th>Vùng</th><th>Đặt trong</th><th>Vận hành</th><th>Anchor</th></tr></thead>
-                                <tbody>
-                                    @foreach($doc['exterior_amenities'] as $amenity)
-                                        <tr><td><b>{{ $amenity['zone'] }}</b></td><td>{{ $amenity['setting'] ?? '—' }}</td><td>{{ $amenity['operating'] ?? '—' }}</td><td>{{ $amenity['anchor'] }}</td></tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @endif
-
-                    <div class="va-lbl">BINDINGS — BEAT VÀ TOUR</div>
-                    <div class="vs-script-scroll">
-                        <table class="vr-needs">
-                            <thead><tr><th>Beat</th><th>Tour</th><th>Phần</th><th>Không gian</th><th>Ánh sáng</th></tr></thead>
-                            <tbody>
-                                @foreach($doc['bindings'] as $binding)
-                                    <tr><td><b>{{ $binding['beat'] }}</b></td><td>{{ $binding['tour_stop'] === null ? '—' : '#'.$binding['tour_stop'] }}</td><td>{{ $binding['part'] }}</td><td>{{ $binding['space']['kind'] }} {{ $spaceLabel($binding['space']) }}</td><td>{{ $binding['lighting'] }}</td></tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-
-                    @if($doc['production_assumptions'] !== [])
-                        <div class="va-lbl">GIẢ ĐỊNH SẢN XUẤT</div>
-                        @foreach($doc['production_assumptions'] as $assumption)
-                            <div class="va-lbl" style="font-weight:400">· {{ $assumption['subject'] }}: {{ $assumption['value'] }} — {{ $assumption['reason'] }}</div>
-                        @endforeach
-                    @endif
                 @endif
 
-                @if($shown['approvable'])
-                    @php
-                        $planned = collect($shown['plan']['requests'] ?? []);
-                    @endphp
-                    <form method="POST" action="{{ route('video-projects.locations-approve', $id) }}" onsubmit="return vpLockForm(this)">
-                        @csrf
-                        <input type="hidden" name="stage_id" value="{{ $shown['id'] }}">
-                        <input type="hidden" name="content_hash" value="{{ $shown['content_hash'] }}">
-                        <input type="hidden" name="selection_version" value="{{ $step['selection']['version'] }}">
-                        <input type="hidden" name="operation_id" value="{{ $step['operation_id'] }}">
-                        <div class="va-foot">
-                            <span class="va-lbl" style="font-weight:400">{{ $planned->where('required', true)->count() }} ảnh bắt buộc · {{ $planned->where('required', false)->count() }} ảnh hỗ trợ</span>
-                            <button type="submit" class="vp-btn sm pri" data-busy="Đang duyệt…">Duyệt mô tả</button>
-                        </div>
-                    </form>
-                @elseif($check !== null && $check['verdict'] !== 'PASS')
-                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Bản này chỉ để xem: chỉ bản status ok và đạt RULE mới duyệt được.</div>
+                @if(($plan['conflicts'] ?? []) !== [])
+                    <div class="va-lbl">XUNG ĐỘT KỊCH BẢN / THIẾT KẾ — CHẶN BỐI CẢNH LIÊN QUAN</div>
+                    <div class="vs-script-scroll">
+                        <table class="vr-needs">
+                            <thead><tr><th>Beat</th><th>Bối cảnh</th><th>Nội dung lệch</th><th>Thiết kế</th><th>Kịch bản</th><th>Ghi chú</th></tr></thead>
+                            <tbody>
+                                @foreach($plan['conflicts'] as $conflict)
+                                    <tr><td><b>{{ $conflict['beat'] ?? '—' }}</b></td><td>{{ $conflict['background'] ?? '—' }}</td><td>{{ $conflict['field'] }}</td><td>{{ $conflict['design'] }}</td><td>{{ $conflict['script'] }}</td><td>{{ $conflict['note'] }}</td></tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+                @if(($plan['unresolved'] ?? []) !== [])
+                    <div class="va-lbl">MỤC CHƯA XÁC ĐỊNH — CHƯA BÀN GIAO ĐƯỢC</div>
+                    @foreach($plan['unresolved'] as $entry)
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">· {{ $entry['beat'] }}{{ $entry['tour_stop'] !== null ? ' #'.$entry['tour_stop'] : '' }}{{ $entry['space'] !== null ? ' · '.$entry['space']['kind'].' '.$spaceLabel($entry['space']) : '' }} {{ $entry['part'] }}: {{ $entry['text'] }} — {{ $entry['reason'] }}{{ $entry['candidates'] !== [] ? ' · ứng viên '.implode(', ', $entry['candidates']) : '' }}</div>
+                    @endforeach
+                @endif
+                @if(($plan['unplated'] ?? []) !== [])
+                    <div class="va-lbl">PHÂN ĐOẠN KHÔNG CẦN ẢNH RIÊNG</div>
+                    @foreach($plan['unplated'] as $entry)
+                        <div class="va-lbl" style="font-weight:400">· {{ $entry['beat'] }}{{ $entry['tour_stop'] !== null ? ' #'.$entry['tour_stop'] : '' }}{{ $entry['space'] !== null ? ' · '.$entry['space']['kind'].' '.$spaceLabel($entry['space']) : '' }} {{ $entry['part'] }}: {{ $entry['reason'] }} · bàn giao: {{ $entry['handoff'] }}</div>
+                    @endforeach
+                @endif
+                @if(($plan['continuity'] ?? []) !== [] || ($plan['script_continuity'] ?? []) !== [])
+                    <div class="va-lbl">NỐI CẢNH</div>
+                    @foreach($plan['script_continuity'] ?? [] as $match)
+                        <div class="va-lbl" style="font-weight:400">· kịch bản: điểm dừng #{{ $match['index'] }} {{ $match['room'] }} giữ góc máy của {{ $match['beat'] }} ({{ implode(', ', [...$match['bare'], ...$match['stop']]) }}): "{{ $match['requirement'] }}"</div>
+                    @endforeach
+                    @foreach($plan['continuity'] ?? [] as $entry)
+                        <div class="va-lbl" style="font-weight:400">· {{ implode(', ', $entry['backgrounds']) }} ({{ implode(', ', $entry['beats']) }}): {{ $entry['requirement'] }}</div>
+                    @endforeach
+                @endif
+                @if($shown['images_error'] !== null)
+                    <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">{{ $shown['images_error'] }}</div>
+                @endif
+
+                @if($gridRows->isNotEmpty())
+                    <div class="va-lbl" id="locationsGridHead" data-ajax-part>
+                        YÊU CẦU ẢNH BỐI CẢNH — {{ $gridRows->count() }} ẢNH
+                        @if($shown['stale'] !== [])<span class="va-tag dg">PROMPT ĐÃ ĐỔI: {{ implode(', ', $shown['stale']) }}</span>@endif
+                    </div>
+
+                    @if($media['error'])
+                        <div class="alert alert-danger">{{ $media['error'] }}</div>
+                    @endif
+
+                    <div class="ve-grid">
+                        <div class="vs-h"><b>1</b> Clean plate prompt</div>
+                        <div class="vs-h"><b>2</b> Render settings</div>
+                        <div class="vs-h"><b>3</b> Rendered plates</div>
+
+                        @foreach($gridRows as $row)
+                            @php
+                                $request = $row['request'];
+                                $key = $request['id'];
+                                $form = 'locForm_'.$key;
+                                $modal = 'confirmLoc_'.$key;
+                                $promptId = 'prompt_'.$key;
+                                $stale = in_array($key, $shown['stale'], true);
+                                $source = $request['source'];
+                                $cards = collect($row['cells'])->flatMap(fn ($cell) => collect($cell['candidates'])->map(fn ($candidate) => ['cell' => $cell, 'candidate' => $candidate]))->values();
+                                $pending = collect($row['cells'])->where('candidates', []);
+                            @endphp
+
+                            <div class="vs-row" id="ref_{{ $key }}">
+                                <div class="vs-c">
+                                    <span class="ve-name">{{ $key }} · {{ $request['name'] }}</span>
+                                    <span class="ve-key">{{ $kinds[$request['kind']] }} {{ $source['id'] }}{{ $request['state'] !== null ? ' · '.$request['state'] : '' }}</span>
+                                    <span id="locTags_{{ $key }}" data-ajax-part>@if($row['chosen'] !== null && $row['problem'] === null)<span class="va-tag ok" style="margin-left:6px">ĐÃ DUYỆT</span>@endif
+                                    @if($row['problem'] !== null && ($row['chosen'] !== null || $stale || $request['blocked']))<span class="va-tag dg">{{ $row['problem'] }}</span>@endif</span>
+                                    <div class="ve-key"><b>Nguồn:</b> {{ $sourceTypes[$source['type']] }} {{ $source['id'] }}{{ $source['reason'] !== null ? ' — '.$source['reason'] : '' }}@foreach($source['evidence'] as $evidence) · {{ $quoteOf($evidence) }}@endforeach</div>
+                                    <div class="ve-key"><b>Không gian · trạng thái:</b> {{ $request['location']['name'] ?? $request['name'] }} · {{ $request['kind'] }} {{ $source['id'] }}{{ $request['state'] !== null ? ' · '.$request['state'] : '' }}{{ $request['condition'] !== [] ? ' · tình trạng: '.implode('; ', array_column($request['condition'], 'text')) : '' }}</div>
+                                    <div class="ve-key"><b>Beat · phần:</b> {{ collect($request['parts'])->map(fn ($part) => $part['beat'].($part['tour_stop'] === null ? '' : ' #'.$part['tour_stop']).' '.$part['part'])->implode(' · ') }}</div>
+                                    <div class="ve-key"><b>Dùng chung / tách:</b> {{ $request['sharing'] }}</div>
+                                    <div class="ve-key"><b>Ánh sáng nền:</b> {{ $request['light']['description'] }} ({{ $quoteOf($request['light']['evidence']) }})</div>
+                                    @if($request['shot_changes'] !== [])
+                                        <div class="ve-key"><b>Đổi ở shot:</b> {{ collect($request['shot_changes'])->map(fn ($change) => implode(', ', $change['beats']).' '.$change['kind'].': '.$change['change'].' — giữ: '.$change['keep'])->implode(' · ') }}</div>
+                                    @endif
+                                    @if($request['must_show'] !== [])
+                                        <div class="ve-key"><b>Chi tiết bắt buộc:</b> {{ implode(' · ', $request['must_show']) }}</div>
+                                    @endif
+                                    @if($request['assumptions'] !== [])
+                                        <div class="ve-key"><b>Giả định:</b> {{ collect($request['assumptions'])->map(fn ($assumption) => $assumption['subject'].': '.$assumption['value'].' — '.$assumption['reason'])->implode(' · ') }}</div>
+                                    @endif
+                                    @if($request['conflicts'] !== [])
+                                        <div class="ve-key" style="color:var(--vp-red)"><b>Xung đột:</b> {{ collect($request['conflicts'])->map(fn ($conflict) => $conflict['field'].': thiết kế "'.$conflict['design'].'" / kịch bản "'.$conflict['script'].'"')->implode(' · ') }}</div>
+                                    @endif
+                                    @if($request['continuity'] !== [] || $request['script_continuity'] !== [])
+                                        <div class="ve-key"><b>Nối cảnh:</b> {{ collect($request['script_continuity'])->map(fn ($match) => 'kịch bản: điểm dừng #'.$match['index'].' giữ góc máy của '.$match['beat'].' — "'.$match['requirement'].'"')->merge(collect($request['continuity'])->map(fn ($entry) => $entry['requirement'].' ('.implode(', ', $entry['beats']).')'))->implode(' · ') }}</div>
+                                    @endif
+                                    <textarea class="va-ta" style="margin-top:8px" id="{{ $promptId }}" readonly>{{ $row['prompt'] }}</textarea>
+                                    <div class="va-count">{{ mb_strlen($row['prompt']) }} ký tự</div>
+                                    <div class="ve-key"><b>Nguồn prompt:</b> {{ implode(' · ', array_values(array_unique(array_column($request['prompt_parts'], 'source')))) }}</div>
+                                    <div id="locStale_{{ $key }}" data-ajax-part>
+                                        @if($stale)
+                                            <div class="ve-key" style="color:var(--vp-red)">Prompt đã đổi so với lần render trước — Render Plate sẽ gửi prompt trên.</div>
+                                        @endif
+                                    </div>
+                                </div>
+
+                                <div class="vs-c">
+                                    @if($media['error'] || $media['default'] === null)
+                                        <div class="ve-locked" style="color:var(--vp-red)">Render đang khoá — danh sách model lỗi cấu hình.</div>
+                                    @elseif(! $renderable)
+                                        <div class="ve-locked">Bộ này chưa đạt RULE — không render.</div>
+                                    @elseif($request['blocked'])
+                                        <div class="ve-locked" style="color:var(--vp-red)">Bối cảnh còn xung đột kịch bản / thiết kế — không render.</div>
+                                    @else
+                                        <form method="POST" action="{{ route('video-projects.locations-render', $id) }}" id="{{ $form }}" data-modal="{{ $modal }}" data-ajax-part onsubmit="return vpLockForm(this)" hidden>
+                                            @csrf
+                                            <input type="hidden" name="request_id" value="{{ $key }}">
+                                            <input type="hidden" name="stage_id" value="{{ $shown['id'] }}">
+                                            <input type="hidden" name="content_hash" value="{{ $shown['content_hash'] }}">
+                                            <input type="hidden" name="prompts_hash" value="{{ $shown['images_hash'] }}">
+                                            <input type="hidden" name="prompt_sha256" value="{{ $row['sha256'] }}">
+                                            <input type="hidden" name="selection_version" value="{{ $step['selection']['version'] }}">
+                                            <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
+                                        </form>
+                                        <div class="ve-set">
+                                            <div class="va-field">
+                                                <label>Model</label>
+                                                <select class="ctl" name="provider_model" form="{{ $form }}" data-row="{{ $key }}" data-role="model" required>
+                                                    @foreach($media['models'] as $entry)
+                                                        <option value="{{ $entry['id'] }}" @selected($entry['id'] === $media['default']['id'])>{{ $entry['label'] }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            @foreach($media['models'] as $entry)
+                                                @php
+                                                    $active = $entry['id'] === $media['default']['id'];
+                                                    $controls = $entry['controls'];
+                                                @endphp
+                                                <div class="ve-set" data-row="{{ $key }}" data-group="{{ $entry['id'] }}" @unless($active) hidden @endunless>
+                                                    <div class="va-field">
+                                                        <label>Quality</label>
+                                                        <select class="ctl" name="quality" form="{{ $form }}" required @disabled(! $active)>
+                                                            @foreach($controls['qualities'] as $quality)
+                                                                <option value="{{ $quality }}" @selected($quality === $controls['default_quality'])>{{ \App\Enums\ImageQuality::tryFrom($quality)?->label() ?? $quality }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </div>
+                                                    <div class="va-field">
+                                                        <label>Size</label>
+                                                        <select class="ctl" name="size" form="{{ $form }}" required @disabled(! $active)>
+                                                            @foreach($controls['sizes'] as $size)
+                                                                <option value="{{ $size }}" @selected($size === $controls['default_size'])>{{ $size }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </div>
+                                                    <div class="va-field">
+                                                        <label>Variations</label>
+                                                        <select class="ctl" name="variations" form="{{ $form }}" required @disabled(! $active)>
+                                                            @for($count = 1; $count <= $entry['max_variations']; $count++)
+                                                                <option value="{{ $count }}" @selected($count === 1)>{{ $count }}</option>
+                                                            @endfor
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                        <div class="va-foot" style="padding-left:0;padding-right:0">
+                                            <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#{{ $modal }}" data-busy="Đang render…">Render Plate</button>
+                                        </div>
+                                        <div id="locModal_{{ $key }}" data-ajax-part>
+                                            @include('modal.confirm_action', [
+                                                'id' => $modal,
+                                                'form' => $form,
+                                                'content' => 'Render bối cảnh '.$key.' ('.$request['kind'].' '.$source['id'].($request['state'] !== null ? ' · '.$request['state'] : '').') — TÁC VỤ NÀY TÍNH TIỀN.',
+                                                'detail' => 'Ước lượng theo chất lượng mặc định: $'.number_format((float) ($media['costs'][$media['default']['controls']['default_quality']] ?? 0), 3).' mỗi ảnh; khổ lớn hơn sẽ đắt hơn.'
+                                                    .($step['pinned'] === null ? ' Lần render đầu tiên dùng bộ rev '.$shown['revision'].' làm bộ bối cảnh.' : ($step['pinned']['id'] !== $shown['id'] ? ' Bộ đang dùng là rev '.$step['pinned']['revision'].'; render ở đây chuyển sang dùng rev '.$shown['revision'].', ảnh đã duyệt của rev '.$step['pinned']['revision'].' không dùng nữa.' : '')),
+                                            ])
+                                        </div>
+                                    @endif
+                                </div>
+
+                                <div class="vs-c" id="plates_{{ $key }}" data-ajax-part>
+                                    @if($cards->isEmpty() && $pending->isEmpty())
+                                        <div class="ve-empty">Chưa có ảnh nào cho bối cảnh này.</div>
+                                    @endif
+                                    @if($cards->isNotEmpty())
+                                        <div class="va-cands">
+                                            @foreach($cards as $card)
+                                                @php
+                                                    $cell = $card['cell'];
+                                                    $candidate = $card['candidate'];
+                                                    $inUse = ($row['chosen']['artifact_id'] ?? null) === $candidate['id'];
+                                                @endphp
+                                                <div class="va-cand">
+                                                    <img src="{{ $candidate['url'] }}" alt="{{ $cell['image_code'] }}" width="{{ $candidate['width'] }}" height="{{ $candidate['height'] }}">
+                                                    <div class="cap">
+                                                        <span>{{ $key }}</span>
+                                                        <span class="act">
+                                                            <b class="{{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</b>
+                                                            @if($inUse)
+                                                                <b class="ok">Đang dùng</b>
+                                                            @elseif($cell['can_approve'] && $pinnedShown && ! $request['blocked'])
+                                                                <form method="POST" action="{{ route('video-projects.locations-choose', $id) }}" onsubmit="return vpLockForm(this)">
+                                                                    @csrf
+                                                                    <input type="hidden" name="request_id" value="{{ $key }}">
+                                                                    <input type="hidden" name="artifact_id" value="{{ $candidate['id'] }}">
+                                                                    <input type="hidden" name="selection_version" value="{{ $step['selection']['version'] }}">
+                                                                    <button class="vp-btn ok sm">✓ Duyệt</button>
+                                                                </form>
+                                                            @endif
+                                                        </span>
+                                                    </div>
+                                                    <div class="meta">
+                                                        <span>{{ $cell['image_code'] }}</span>
+                                                        <span>{{ $candidate['width'] }}×{{ $candidate['height'] }}</span>
+                                                        <span>{{ $cell['render_model'] }} &middot; {{ $cell['quality'] !== '' ? $cell['quality'] : 'không áp dụng' }}
+                                                            @if($cell['cost_recorded_has_ledger']) &middot; @include('video-projects.partials.cost-recorded', ['cell' => $cell]) @endif</span>
+                                                        <span>Created: {{ $candidate['created_at']?->format('Y-m-d H:i:s') ?? '—' }}</span>
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    @endif
+
+                                    @foreach($pending as $cell)
+                                        <div class="va-cell" style="padding-left:0;padding-right:0">
+                                            <span class="code">{{ $cell['image_code'] }}</span>
+                                            <span class="va-tag {{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</span>
+                                        </div>
+                                        @if($cell['render_error'])
+                                            <div class="alert alert-danger">{{ $cell['render_error'] }}</div>
+                                        @endif
+                                        @if($cell['can_render'] && $row['can_render'])
+                                            <form method="POST" action="{{ route('video-projects.locations-render', $id) }}" id="retryLoc_{{ $cell['id'] }}" data-modal="confirmRetryLoc_{{ $cell['id'] }}" onsubmit="return vpLockForm(this)">
+                                                @csrf
+                                                <input type="hidden" name="request_id" value="{{ $key }}">
+                                                <input type="hidden" name="image_id" value="{{ $cell['id'] }}">
+                                                <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
+                                            </form>
+                                            <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#confirmRetryLoc_{{ $cell['id'] }}" data-busy="Đang render…">{{ $cell['has_failed'] ? 'Render lại →' : 'Render →' }}</button>
+                                            @include('modal.confirm_action', [
+                                                'id' => 'confirmRetryLoc_'.$cell['id'],
+                                                'form' => 'retryLoc_'.$cell['id'],
+                                                'content' => 'Render lại ô '.$cell['image_code'].' với đúng thiết lập cũ — TÁC VỤ NÀY TÍNH TIỀN.',
+                                                'detail' => $cell['variations'].' ảnh · '.$cell['quality'].' · '.$cell['size'].' — '.($cell['cost_estimate'] === null ? 'chưa định giá' : 'ước lượng $'.number_format($cell['cost_estimate'], 3)),
+                                            ])
+                                        @endif
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+
+                @if($check !== null && $shown['legacy'] === null && ($check['verdict'] !== 'PASS' || ! in_array($check['status'], ['ok', 'partial'], true)))
+                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Bộ này chỉ để xem: chỉ bộ đạt RULE mới render được.</div>
                 @endif
             @endif
         </div>
     </div>
-
-    @if($refs->isNotEmpty())
-        @if($media['error'])
-            <div class="alert alert-danger">{{ $media['error'] }}</div>
-        @endif
-
-        <div class="ve-grid" style="margin-top:10px">
-            <div class="vs-h"><b>2</b> Reference prompt</div>
-            <div class="vs-h"><b>3</b> Render settings</div>
-            <div class="vs-h"><b>4</b> Rendered references</div>
-
-            @foreach($refs as $row)
-                @php
-                    $request = $row['request'];
-                    $key = $request['id'];
-                    $form = 'locForm_'.$key;
-                    $modal = 'confirmLoc_'.$key;
-                    $cards = collect($row['cells'])->flatMap(fn ($cell) => collect($cell['candidates'])->map(fn ($candidate) => ['cell' => $cell, 'candidate' => $candidate]))->values();
-                    $pending = collect($row['cells'])->where('candidates', []);
-                @endphp
-
-                <div class="vs-row" id="ref_{{ $key }}">
-                    <div class="vs-c">
-                        <span class="ve-name">{{ $key }} · {{ $request['space']['kind'] }} {{ $spaceLabel($request['space']) }}</span>
-                        <span class="ve-key">{{ $request['lighting'] }} · {{ $request['view'] }}{{ $request['uses'] !== [] ? ' · beat '.implode(', ', $request['uses']) : '' }}</span>
-                        @if($request['inputs'] !== [])
-                            <span class="ve-key">Ảnh nguồn: {{ collect($request['inputs'])->map(fn ($input) => ($input['kind'] === 'model_sheet' ? 'model sheet' : $input['id']).' ('.$input['role'].')')->implode(', ') }}</span>
-                        @endif
-                        <span class="va-tag {{ $request['required'] ? 'amber' : 'mute' }}" style="margin-left:6px">{{ $request['required'] ? 'BẮT BUỘC' : 'HỖ TRỢ' }}</span>
-                        @if($row['chosen'] !== null && $row['problem'] === null)<span class="va-tag ok">ĐÃ CHỌN</span>@endif
-                        @if($row['problem'] !== null)<span class="va-tag dg">{{ $row['problem'] }}</span>@endif
-                        <div class="ve-key">{{ $request['purpose'] }}</div>
-                        <textarea class="va-ta" style="margin-top:8px" readonly>{{ $row['prompt'] }}</textarea>
-                        <div class="va-count">{{ mb_strlen($row['prompt']) }} ký tự · {{ \App\Video\Locations\LocationReferencePrompt::VERSION }}</div>
-                    </div>
-
-                    <div class="vs-c">
-                        @if($media['error'] || $media['default'] === null)
-                            <div class="ve-locked" style="color:var(--vp-red)">Render đang khoá — danh sách model lỗi cấu hình.</div>
-                        @elseif(! $row['can_render'])
-                            <div class="ve-locked" style="color:var(--vp-amber-fg)">Chọn ảnh cho {{ implode(', ', $row['waiting_for']) }} trước — yêu cầu này dựng từ ảnh đó.</div>
-                        @else
-                            <form method="POST" action="{{ route('video-projects.locations-render', $id) }}" id="{{ $form }}" data-modal="{{ $modal }}" onsubmit="return vpLockForm(this)" hidden>
-                                @csrf
-                                <input type="hidden" name="request_id" value="{{ $key }}">
-                                <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
-                            </form>
-                            <div class="ve-set">
-                                <div class="va-field">
-                                    <label>Model</label>
-                                    <select class="ctl" name="provider_model" form="{{ $form }}" data-row="{{ $key }}" data-role="model" required>
-                                        @foreach($media['models'] as $entry)
-                                            <option value="{{ $entry['id'] }}" @selected($entry['id'] === $media['default']['id'])>{{ $entry['label'] }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                @foreach($media['models'] as $entry)
-                                    @php
-                                        $active = $entry['id'] === $media['default']['id'];
-                                        $controls = $entry['controls'];
-                                    @endphp
-                                    <div class="ve-set" data-row="{{ $key }}" data-group="{{ $entry['id'] }}" @unless($active) hidden @endunless>
-                                        <div class="va-field">
-                                            <label>Quality</label>
-                                            <select class="ctl" name="quality" form="{{ $form }}" required @disabled(! $active)>
-                                                @foreach($controls['qualities'] as $quality)
-                                                    <option value="{{ $quality }}" @selected($quality === $controls['default_quality'])>{{ \App\Enums\ImageQuality::tryFrom($quality)?->label() ?? $quality }}</option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                        <div class="va-field">
-                                            <label>Size</label>
-                                            <select class="ctl" name="size" form="{{ $form }}" required @disabled(! $active)>
-                                                @foreach($controls['sizes'] as $size)
-                                                    <option value="{{ $size }}" @selected($size === $controls['default_size'])>{{ $size }}</option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                        <div class="va-field">
-                                            <label>Variations</label>
-                                            <select class="ctl" name="variations" form="{{ $form }}" required @disabled(! $active)>
-                                                @for($count = 1; $count <= $entry['max_variations']; $count++)
-                                                    <option value="{{ $count }}" @selected($count === 1)>{{ $count }}</option>
-                                                @endfor
-                                            </select>
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                            <div class="va-foot" style="padding-left:0;padding-right:0">
-                                <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#{{ $modal }}" data-busy="Đang render…">{{ $row['cells'] === [] ? 'Render Reference' : 'Render biến thể mới' }}</button>
-                            </div>
-                            @include('modal.confirm_action', [
-                                'id' => $modal,
-                                'form' => $form,
-                                'content' => 'Render ảnh tham chiếu '.$key.' ('.$request['space']['kind'].' '.$spaceLabel($request['space']).') — TÁC VỤ NÀY TÍNH TIỀN.',
-                                'detail' => 'Ước lượng theo chất lượng mặc định: $'.number_format((float) ($media['costs'][$media['default']['controls']['default_quality']] ?? 0), 3).' mỗi ảnh; khổ lớn hơn sẽ đắt hơn.',
-                            ])
-                        @endif
-                    </div>
-
-                    <div class="vs-c">
-                        @if($cards->isEmpty() && $pending->isEmpty())
-                            <div class="ve-empty">Chưa có ảnh nào cho yêu cầu này.</div>
-                        @endif
-                        @if($cards->isNotEmpty())
-                            <div class="va-cands">
-                                @foreach($cards as $card)
-                                    @php
-                                        $cell = $card['cell'];
-                                        $candidate = $card['candidate'];
-                                        $inUse = ($row['chosen']['artifact_id'] ?? null) === $candidate['id'];
-                                    @endphp
-                                    <div class="va-cand">
-                                        <img src="{{ $candidate['url'] }}" alt="{{ $cell['image_code'] }}" width="{{ $candidate['width'] }}" height="{{ $candidate['height'] }}">
-                                        <div class="cap">
-                                            <span>{{ $key }}</span>
-                                            <span class="act">
-                                                <b class="{{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</b>
-                                                @if($inUse)
-                                                    <b class="ok">Đang dùng</b>
-                                                @elseif($cell['can_approve'])
-                                                    <form method="POST" action="{{ route('video-projects.locations-choose', $id) }}" onsubmit="return vpLockForm(this)">
-                                                        @csrf
-                                                        <input type="hidden" name="request_id" value="{{ $key }}">
-                                                        <input type="hidden" name="artifact_id" value="{{ $candidate['id'] }}">
-                                                        <input type="hidden" name="selection_version" value="{{ $step['selection']['version'] }}">
-                                                        <button class="vp-btn ok sm">✓ Chọn</button>
-                                                    </form>
-                                                @endif
-                                            </span>
-                                        </div>
-                                        <div class="meta">
-                                            <span>{{ $cell['image_code'] }}</span>
-                                            <span>{{ $candidate['width'] }}×{{ $candidate['height'] }}</span>
-                                            <span>{{ $cell['render_model'] }} &middot; {{ $cell['quality'] !== '' ? $cell['quality'] : 'không áp dụng' }}
-                                                @if($cell['cost_recorded_has_ledger']) &middot; @include('video-projects.partials.cost-recorded', ['cell' => $cell]) @endif</span>
-                                            <span>Created: {{ $candidate['created_at']?->format('Y-m-d H:i:s') ?? '—' }}</span>
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @endif
-
-                        @foreach($pending as $cell)
-                            <div class="va-cell" style="padding-left:0;padding-right:0">
-                                <span class="code">{{ $cell['image_code'] }}</span>
-                                <span class="va-tag {{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</span>
-                            </div>
-                            @if($cell['render_error'])
-                                <div class="alert alert-danger">{{ $cell['render_error'] }}</div>
-                            @endif
-                            @if($cell['can_render'])
-                                <form method="POST" action="{{ route('video-projects.locations-render', $id) }}" id="retryLoc_{{ $cell['id'] }}" data-modal="confirmRetryLoc_{{ $cell['id'] }}" onsubmit="return vpLockForm(this)">
-                                    @csrf
-                                    <input type="hidden" name="request_id" value="{{ $key }}">
-                                    <input type="hidden" name="image_id" value="{{ $cell['id'] }}">
-                                    <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
-                                </form>
-                                <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#confirmRetryLoc_{{ $cell['id'] }}" data-busy="Đang render…">{{ $cell['has_failed'] ? 'Render lại →' : 'Render →' }}</button>
-                                @include('modal.confirm_action', [
-                                    'id' => 'confirmRetryLoc_'.$cell['id'],
-                                    'form' => 'retryLoc_'.$cell['id'],
-                                    'content' => 'Render lại ô '.$cell['image_code'].' với đúng thiết lập cũ — TÁC VỤ NÀY TÍNH TIỀN.',
-                                    'detail' => $cell['variations'].' ảnh · '.$cell['quality'].' · '.$cell['size'].' — '.($cell['cost_estimate'] === null ? 'chưa định giá' : 'ước lượng $'.number_format($cell['cost_estimate'], 3)),
-                                ])
-                            @endif
-                        @endforeach
-                    </div>
-                </div>
-            @endforeach
-        </div>
-
-        <div class="vp-panel" style="margin-top:10px" id="locationsSet">
-            <div class="va-head">
-                <span class="n">5</span>
-                <b>DUYỆT BỘ ẢNH PHASE 5</b>
-                <em>mọi ảnh bắt buộc đã chọn, file và hash còn đúng, ảnh nguồn không đổi</em>
-                <span class="grow"></span>
-                @if($step['set_approved'])
-                    <span class="va-tag ok">ĐÃ DUYỆT · SẴN SÀNG CHO CÔNG ĐOẠN SAU</span>
-                @else
-                    <form method="POST" action="{{ route('video-projects.locations-approve-set', $id) }}" onsubmit="return vpLockForm(this)">
-                        @csrf
-                        <input type="hidden" name="selection_version" value="{{ $step['selection']['version'] }}">
-                        <input type="hidden" name="operation_id" value="{{ $step['operation_id'] }}">
-                        <button type="submit" class="vp-btn sm pri" data-busy="Đang duyệt…" @disabled($readyCount !== $required->count())>Duyệt bộ ảnh Phase 5</button>
-                    </form>
-                @endif
-            </div>
-            <div class="va-body">
-                <div class="va-brief">
-                    <div class="line"><span class="k">Kiểm ảnh</span><span class="v">vision: not_run &middot; duyệt tay khi bấm duyệt bộ</span></div>
-                    @foreach($required->where('problem', '!==', null) as $row)
-                        <div class="line"><span class="k">{{ $row['request']['id'] }}</span><span class="v" style="color:var(--vp-red)">{{ $row['problem'] }}</span></div>
-                    @endforeach
-                    @if($step['source_error'] !== null)
-                        <div class="line"><span class="k">Nguồn đầu ra</span><span class="v" style="color:var(--vp-red)">{{ $step['source_error'] }}</span></div>
-                    @endif
-                    @if($step['source'] !== null)
-                        <div class="line"><span class="k">Nguồn đầu ra</span><span class="v">{{ count($step['source']['manifest']) }} ảnh · manifest {{ substr($step['source']['token']['manifest_hash'], 0, 19) }} · {{ $step['source']['review']['vision'] }} / {{ $step['source']['review']['manual_review'] }}</span></div>
-                    @endif
-                </div>
-            </div>
-        </div>
-    @endif
 </div>
 @endsection
 
@@ -425,21 +430,26 @@
 <script src="{{ asset('assets/js/video-producer.js') }}?v={{ filemtime(public_path('assets/js/video-producer.js')) }}"></script>
 <script>
 (function () {
-    document.querySelectorAll('[data-role="model"]').forEach(function (picker) {
-        var row = picker.getAttribute('data-row');
-        var groups = document.querySelectorAll('[data-row="' + row + '"][data-group]');
+    function init() {
+        document.querySelectorAll('[data-role="model"]').forEach(function (picker) {
+            var row = picker.getAttribute('data-row');
+            var groups = document.querySelectorAll('[data-row="' + row + '"][data-group]');
 
-        function sync() {
-            Array.prototype.forEach.call(groups, function (group) {
-                var on = group.getAttribute('data-group') === picker.value;
-                group.hidden = !on;
-                Array.prototype.forEach.call(group.querySelectorAll('select'), function (el) { el.disabled = !on; });
-            });
-        }
+            function sync() {
+                Array.prototype.forEach.call(groups, function (group) {
+                    var on = group.getAttribute('data-group') === picker.value;
+                    group.hidden = !on;
+                    Array.prototype.forEach.call(group.querySelectorAll('select'), function (el) { el.disabled = !on; });
+                });
+            }
 
-        picker.addEventListener('change', sync);
-        sync();
-    });
+            picker.addEventListener('change', sync);
+            sync();
+        });
+    }
+
+    init();
+    vpAjaxPage('locationsPage', init);
 })();
 </script>
 @endsection

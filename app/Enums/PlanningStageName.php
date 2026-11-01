@@ -20,8 +20,6 @@ enum PlanningStageName: string
     case REFERENCE_PROMPT = 'reference_prompt';
     case VESSEL_DESIGN = 'vessel_design';
     case DESIGN_DNA = 'design_dna';
-    case DNA_NOVELTY = 'dna_novelty';
-    case DNA_PLAUSIBILITY = 'dna_plausibility';
     case YACHT_DESIGN = 'yacht_design';
     case MODEL_SHEET = 'model_sheet';
     case MODEL_SHEET_REVIEW = 'model_sheet_review';
@@ -51,8 +49,6 @@ enum PlanningStageName: string
             self::REFERENCE_PROMPT => null,
             self::VESSEL_DESIGN => self::ANCHOR_PROMPT,
             self::DESIGN_DNA => self::YACHT_DESIGN,
-            self::DNA_NOVELTY => self::YACHT_DESIGN,
-            self::DNA_PLAUSIBILITY => self::YACHT_DESIGN,
             self::YACHT_DESIGN => null,
             self::MODEL_SHEET => self::MODEL_SHEET_REVIEW,
             self::MODEL_SHEET_REVIEW => null,

@@ -10,6 +10,15 @@ final class SourceCheck
 
     public const VERSION = 'source-check-v1';
 
+    public const VERSION_V2 = 'source-check-v2';
+
+    public const SOURCE_CONFLICT = 'SOURCE_CONFLICT';
+
+    public const QUOTES_NOT_FOUND = 'QUOTES_NOT_FOUND';
+
+    /** @var list<string> the exact issue paths whose conflict leaves the subject itself in doubt */
+    private const IDENTITY_FIELDS = ['subject', 'subject.article_kind', 'subject.status', 'subject.primary', 'subject.basis', 'inspiration.source_identity.name', 'inspiration.source_identity.builder', 'inspiration.source_identity.designers'];
+
     public const PASS = 'pass';
 
     public const FAIL = 'fail';
@@ -32,12 +41,23 @@ final class SourceCheck
 
     /**
      * @param  array<string, mixed>|null  $response
+     * @param  ?list<string>  $schemaErrors  for a phase1-evidence-v2 answer: its violations of the schema the run pinned
+     * @param  ?string  $contract  the format the run pinned; the answer's own format never chooses the check
      * @return array{version: string, format: string, verdict: string, score_min: int, score_max: int, flags: list<string>, criteria: list<array<string, mixed>>, error: ?string}
      */
-    public static function evaluate(?array $response, string $articleBlock): array
+    public static function evaluate(?array $response, string $articleBlock, ?array $schemaErrors = null, ?string $contract = null): array
     {
         if ($response === null) {
             return self::unscored('Phản hồi không đọc được JSON.');
+        }
+
+        $format = $response['format'] ?? null;
+        $contract ??= $format === PhaseOneEvidence::FORMAT_V2 ? PhaseOneEvidence::FORMAT_V2 : self::FORMAT;
+
+        if ($contract === PhaseOneEvidence::FORMAT_V2) {
+            return $format === PhaseOneEvidence::FORMAT_V2
+                ? self::evidence($response, $articleBlock, $schemaErrors ?? ['không có JSON Schema đã ghim để kiểm'])
+                : ['format' => PhaseOneEvidence::FORMAT_V2, 'version' => self::VERSION_V2] + self::unscored('Lượt này ghim hợp đồng '.PhaseOneEvidence::FORMAT_V2.' nhưng phản hồi khai format '.json_encode($format).' — sai hợp đồng, không dùng tiếp.');
         }
 
         if (($response['format'] ?? null) !== self::FORMAT || ! is_array($response['inspiration'] ?? null)) {
@@ -54,18 +74,220 @@ final class SourceCheck
         $article = self::normalize($articleBlock);
         $captions = self::captions($articleBlock);
 
+        $quotedIn = static fn (string $haystack): \Closure => static fn (array $item): ?string => self::quoted($item['source_quote'] ?? null, $haystack) ? (string) $item['source_quote'] : null;
         $criteria = [
             self::identity($inspiration['source_identity']['identification_quote'], $article),
-            self::listed('exterior', 'Mô tả ≥ 3 chi tiết thiết kế ngoại thất', 3, 3, $inspiration['exterior'], 'feature', $article),
-            self::listed('interior', 'Mô tả ≥ 2 không gian hoặc vật liệu nội thất', 2, 2, $inspiration['interior'], 'feature', $article),
+            self::listed('exterior', 'Mô tả ≥ 3 chi tiết thiết kế ngoại thất', 3, 3, $inspiration['exterior'], 'feature', $quotedIn($article)),
+            self::listed('interior', 'Mô tả ≥ 2 không gian hoặc vật liệu nội thất', 2, 2, $inspiration['interior'], 'feature', $quotedIn($article)),
             self::intent($inspiration['intent'], $article),
-            self::listed('technology', 'Mô tả công nghệ hoặc động lực', 1, 1, $inspiration['technology'], 'feature', $article),
+            self::listed('technology', 'Mô tả công nghệ hoặc động lực', 1, 1, $inspiration['technology'], 'feature', $quotedIn($article)),
             self::scale($inspiration['scale'], $article),
             $captions === []
                 ? self::criterion('visuals', 'Có ảnh hoặc chú thích mô tả diện mạo', 1, self::UNVERIFIED, [], ['Dữ liệu bài không có ảnh hoặc chú thích nào để kiểm.'])
-                : self::listed('visuals', 'Có ảnh hoặc chú thích mô tả diện mạo', 1, 1, $inspiration['visuals'], 'description', implode("\n", $captions)),
+                : self::listed('visuals', 'Có ảnh hoặc chú thích mô tả diện mạo', 1, 1, $inspiration['visuals'], 'description', $quotedIn(implode("\n", $captions))),
         ];
 
+        return self::verdict($criteria, self::VERSION, self::FORMAT, []);
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $check  a result of evaluate()
+     * @return bool true when the answer itself broke the contract (unreadable, wrong format, schema, structure, issue paths, quotes), so a new answer may fix it; false for a thin, ambiguous, conflicting or off-topic source, which a new answer cannot fix
+     */
+    public static function answerUnusable(?array $check): bool
+    {
+        return ($check['verdict'] ?? null) === self::UNSCORED && is_string($check['error'] ?? null);
+    }
+
+    /**
+     * Ket qua phase1-evidence-v2: schema da ghim truoc; roi moi trich dan phai co nguyen van tren mot
+     * dong mang dung the nguon, moi van de nguon tro dung mot truong hoac mot muc da khai; doi tuong
+     * chinh mo ho hoac danh tinh mau thuan (dung truong, khong so tien to) thi chua cham duoc, bai
+     * khong ve mot tau cu the thi dung; thieu truong phu khong chan.
+     *
+     * @param  array<string, mixed>  $answer
+     * @param  list<string>  $schemaErrors
+     * @return array<string, mixed>
+     */
+    private static function evidence(array $answer, string $articleBlock, array $schemaErrors): array
+    {
+        if ($schemaErrors !== []) {
+            return ['format' => PhaseOneEvidence::FORMAT_V2, 'version' => self::VERSION_V2, 'schema_errors' => $schemaErrors]
+                + self::unscored('Phản hồi sai JSON Schema đã ghim: '.implode('; ', array_slice($schemaErrors, 0, 5)).'.');
+        }
+
+        $lines = self::tagged($articleBlock);
+        $checked = 0;
+        $missing = [];
+        $proven = static function (mixed $evidence, string $path) use ($lines, &$checked, &$missing): ?string {
+            $quotes = [];
+
+            foreach (is_array($evidence) ? $evidence : [] as $index => $entry) {
+                $checked++;
+                $quote = self::normalize((string) ($entry['quote'] ?? ''));
+                $found = $quote !== '' && array_filter($lines[(string) ($entry['source'] ?? '')] ?? [], static fn (string $line): bool => str_contains($line, $quote)) !== [];
+
+                if (! $found) {
+                    $missing[] = "{$path}.evidence[{$index}]: ".(string) ($entry['quote'] ?? '');
+                }
+
+                $quotes[] = $found ? (string) $entry['quote'] : null;
+            }
+
+            return $quotes !== [] && ! in_array(null, $quotes, true) ? implode(' | ', $quotes) : null;
+        };
+
+        $data = $answer['inspiration'];
+        $subject = $answer['subject'];
+        $identityProof = $proven($subject['basis'], 'subject.basis');
+
+        foreach ((array) $subject['others'] as $index => $other) {
+            $proven($other['evidence'], "subject.others[{$index}]");
+        }
+
+        $paths = ['subject' => true, 'inspiration.intent' => true];
+
+        foreach (array_keys((array) $subject) as $field) {
+            $paths["subject.{$field}"] = true;
+        }
+
+        foreach (array_keys((array) $data['scale']) as $field) {
+            $paths["inspiration.scale.{$field}"] = true;
+        }
+
+        foreach ($data['source_identity'] as $field => $value) {
+            $paths["inspiration.source_identity.{$field}"] = true;
+
+            if ($field !== 'signatures' && is_array($value)) {
+                $proven($value['evidence'], "source_identity.{$field}");
+            }
+        }
+
+        $structure = [];
+        $proofs = [];
+        $lists = ['exterior' => 'feature', 'interior' => 'feature', 'technology' => 'feature', 'visuals' => 'description', 'claims' => 'claim'];
+
+        foreach ([...$lists, 'signatures' => 'feature'] as $list => $field) {
+            $ids = [];
+            $texts = [];
+            $base = $list === 'signatures' ? 'inspiration.source_identity.signatures' : "inspiration.{$list}";
+            $paths[$base] = true;
+
+            foreach ((array) ($list === 'signatures' ? $data['source_identity']['signatures'] : $data[$list]) as $index => $item) {
+                $id = (string) ($item['id'] ?? '');
+                $text = mb_strtolower(self::normalize((string) ($item[$field] ?? '')));
+                $proofs[$list.'#'.$id] = $proven($item['evidence'] ?? null, "{$list}[{$index}]");
+                $paths["{$base}.{$id}"] = true;
+
+                if ($text === '') {
+                    $structure[] = "{$list}[{$index}] ({$id}): nội dung trống.";
+                } elseif (isset($texts[$text])) {
+                    $structure[] = "{$list}[{$index}] ({$id}): trùng nội dung với {$texts[$text]}.";
+                }
+
+                if (isset($ids[$id])) {
+                    $structure[] = "{$list}[{$index}]: ID {$id} lặp.";
+                }
+
+                $ids[$id] = true;
+                $texts[$text] ??= $id;
+            }
+        }
+
+        $issues = (array) $answer['issues'];
+        $issuePaths = [];
+
+        foreach ($issues as $index => $issue) {
+            if (! isset($paths[(string) $issue['field']])) {
+                $issuePaths[] = "issues[{$index}]: \"{$issue['field']}\" không phải đường dẫn đầy đủ của câu trả lời này.";
+            }
+
+            if ($issue['evidence'] !== []) {
+                $proven($issue['evidence'], "issues[{$index}]");
+            }
+        }
+
+        $conflicts = array_values(array_filter($issues, static fn (array $issue): bool => $issue['kind'] === 'conflict'));
+        $identityConflicts = array_values(array_filter($conflicts, static fn (array $issue): bool => in_array($issue['field'], self::IDENTITY_FIELDS, true)));
+        $label = 'Nói về một siêu du thuyền hoặc thiết kế siêu du thuyền cụ thể';
+        $identity = match (true) {
+            $subject['status'] === 'none' || $subject['article_kind'] === 'not_a_yacht' => self::criterion('identity', $label, 0, self::FAIL, [], []),
+            $subject['status'] === 'ambiguous' => self::criterion('identity', $label, 0, self::UNVERIFIED, [], ['Bài nhắc nhiều tàu nhưng không xác định được đối tượng chính — không gộp thành một hồ sơ.']),
+            $identityConflicts !== [] => self::criterion('identity', $label, 0, self::UNVERIFIED, [], array_map(static fn (array $issue): string => "Mâu thuẫn {$issue['field']}: {$issue['message']}", $identityConflicts)),
+            $identityProof === null => self::criterion('identity', $label, 0, self::UNVERIFIED, [], ['Trích dẫn xác định đối tượng không có nguyên văn trong bài.']),
+            default => self::criterion('identity', $label, 0, self::PASS, ["{$subject['primary']}: {$identityProof}"], []),
+        };
+        $byItem = static fn (string $list): \Closure => static fn (array $item): ?string => $proofs[$list.'#'.(string) ($item['id'] ?? '')] ?? null;
+        $captions = $lines['caption'] ?? [];
+        $intent = $data['intent'];
+        $intentProof = is_array($intent) ? $proven($intent['evidence'], 'intent') : null;
+        $scaleEvidence = [];
+        $scaleIssues = [];
+
+        foreach ($data['scale'] as $field => $measure) {
+            if (! is_array($measure)) {
+                continue;
+            }
+
+            $proof = $proven($measure['evidence'], "scale.{$field}");
+
+            if (! in_array($field, ['loa', 'decks', 'layout'], true)) {
+                continue;
+            }
+
+            if ($proof !== null) {
+                $scaleEvidence[] = "{$field}: {$measure['value']} — {$proof}";
+            } else {
+                $scaleIssues[] = "{$field}: trích dẫn không có nguyên văn trên dòng nguồn đã khai.";
+            }
+        }
+
+        $criteria = [
+            $identity,
+            self::listed('exterior', 'Mô tả ≥ 3 chi tiết thiết kế ngoại thất', 3, 3, $data['exterior'], 'feature', $byItem('exterior')),
+            self::listed('interior', 'Mô tả ≥ 2 không gian hoặc vật liệu nội thất', 2, 2, $data['interior'], 'feature', $byItem('interior')),
+            match (true) {
+                ! is_array($intent) => self::criterion('intent', 'Nêu ý đồ, yêu cầu hoặc concept thiết kế', 2, self::FAIL, [], []),
+                $intentProof !== null => self::criterion('intent', 'Nêu ý đồ, yêu cầu hoặc concept thiết kế', 2, self::PASS, ["{$intent['text']}: {$intentProof}"], []),
+                default => self::criterion('intent', 'Nêu ý đồ, yêu cầu hoặc concept thiết kế', 2, self::UNVERIFIED, [], ['Trích dẫn không có nguyên văn trên dòng nguồn đã khai.']),
+            },
+            self::listed('technology', 'Mô tả công nghệ hoặc động lực', 1, 1, $data['technology'], 'feature', $byItem('technology')),
+            self::criterion('scale', 'Mô tả kích thước, số boong hoặc bố cục', 1, $scaleEvidence !== [] ? self::PASS : ($scaleIssues !== [] ? self::UNVERIFIED : self::FAIL), $scaleEvidence, $scaleIssues),
+            $captions === []
+                ? self::criterion('visuals', 'Có ảnh hoặc chú thích mô tả diện mạo', 1, self::UNVERIFIED, [], ['Dữ liệu bài không có ảnh hoặc chú thích nào để kiểm.'])
+                : self::listed('visuals', 'Có ảnh hoặc chú thích mô tả diện mạo', 1, 1, $data['visuals'], 'description', $byItem('visuals')),
+        ];
+        $flags = array_values(array_filter([
+            count($conflicts) > count($identityConflicts) ? self::SOURCE_CONFLICT : null,
+            $missing !== [] ? self::QUOTES_NOT_FOUND : null,
+        ]));
+        $result = self::verdict($criteria, self::VERSION_V2, PhaseOneEvidence::FORMAT_V2, $flags);
+        $blocking = array_values(array_filter([
+            $structure === [] ? null : 'Mục khai trùng hoặc trống — mỗi mục một ID và một nội dung: '.implode('; ', array_slice($structure, 0, 5)),
+            $issuePaths === [] ? null : 'Vấn đề nguồn trỏ tới trường không có trong câu trả lời — không xác định được mâu thuẫn thuộc trường nào: '.implode('; ', array_slice($issuePaths, 0, 5)),
+            $missing === [] ? null : count($missing).' trích dẫn không có nguyên văn trên dòng nguồn đã khai — giá trị đã khai mà không có bằng chứng thì kết quả chưa dùng tiếp được: '.implode('; ', array_slice($missing, 0, 5)),
+        ]));
+
+        if ($blocking !== []) {
+            $result = ['verdict' => self::UNSCORED, 'flags' => $flags, 'error' => implode(' ', $blocking)] + $result;
+        }
+
+        return $result + [
+            'schema_errors' => [],
+            'structure' => $structure,
+            'issue_paths' => $issuePaths,
+            'evidence' => ['checked' => $checked, 'missing' => $missing],
+            'subject' => ['article_kind' => $subject['article_kind'], 'status' => $subject['status'], 'primary' => $subject['primary']],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $criteria
+     * @param  list<string>  $flags
+     * @return array{version: string, format: string, verdict: string, score_min: int, score_max: int, flags: list<string>, criteria: list<array<string, mixed>>, error: ?string}
+     */
+    private static function verdict(array $criteria, string $version, string $format, array $flags): array
+    {
         $min = 0;
         $max = 0;
 
@@ -83,12 +305,12 @@ final class SourceCheck
         };
 
         return [
-            'version' => self::VERSION,
-            'format' => self::FORMAT,
+            'version' => $version,
+            'format' => $format,
             'verdict' => $verdict,
             'score_min' => $min,
             'score_max' => $max,
-            'flags' => $verdict === self::RUN && $min < self::FULL_MARK ? [self::THIN_SOURCE] : [],
+            'flags' => [...($verdict === self::RUN && $min < self::FULL_MARK ? [self::THIN_SOURCE] : []), ...$flags],
             'criteria' => $criteria,
             'error' => null,
         ];
@@ -250,9 +472,10 @@ final class SourceCheck
 
     /**
      * @param  list<mixed>  $items
+     * @param  \Closure(array<string, mixed>): ?string  $proven  the quote that proves an item in the article, or null
      * @return array<string, mixed>
      */
-    private static function listed(string $key, string $label, int $points, int $needed, array $items, string $field, string $haystack): array
+    private static function listed(string $key, string $label, int $points, int $needed, array $items, string $field, \Closure $proven): array
     {
         if ($items === []) {
             return self::criterion($key, $label, $points, self::FAIL, [], []);
@@ -268,7 +491,6 @@ final class SourceCheck
             $id = is_array($item) && is_scalar($item['id'] ?? null) ? trim((string) $item['id']) : '';
             $name = $id !== '' ? $id : '#'.($index + 1);
             $text = is_array($item) && is_string($item[$field] ?? null) ? self::normalize($item[$field]) : '';
-            $quote = is_array($item) ? ($item['source_quote'] ?? null) : null;
 
             if ($text === '') {
                 $invalid++;
@@ -289,7 +511,9 @@ final class SourceCheck
                 $seenIds[$id] = true;
             }
 
-            if (! self::quoted($quote, $haystack)) {
+            $quote = $proven($item);
+
+            if ($quote === null) {
                 $invalid++;
                 $issues[] = "{$name}: trích dẫn không có nguyên văn trong ".($key === 'visuals' ? 'chú thích ảnh' : 'bài').'.';
 
@@ -328,6 +552,20 @@ final class SourceCheck
         }
 
         return $captions;
+    }
+
+    /** @return array<string, list<string>> source tag in lower case => the normalised text of each of its lines */
+    private static function tagged(string $articleBlock): array
+    {
+        $lines = [];
+
+        foreach (preg_split('/\R/u', $articleBlock) ?: [] as $line) {
+            if (preg_match('/^\[([A-Z]+)\] (.*)$/su', $line, $m) === 1) {
+                $lines[strtolower($m[1])][] = self::normalize($m[2]);
+            }
+        }
+
+        return $lines;
     }
 
     private static function normalize(string $text): string

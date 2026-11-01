@@ -15,7 +15,9 @@ interface LocationWorkflow extends CheckedWorkflow
 
     public function plannerVersion(): string;
 
-    /** @return array{execution: string, model: string, effort: string, max_tokens: int, timeout_seconds: int, reference: array<string, mixed>} */
+    public function inputsVersion(): string;
+
+    /** @return array{execution: string, model: string, effort: string, efforts: list<string>, max_tokens: int, timeout_seconds: int, schema_heading: string, semantic_review: string, reference: array<string, mixed>} */
     public function settings(): array;
 
     /**
@@ -25,6 +27,15 @@ interface LocationWorkflow extends CheckedWorkflow
      * @throws \RuntimeException when no approved script or its source is broken; no model is called
      */
     public function inputs(VideoProject $project, string $prompt): array;
+
+    /**
+     * @param  array<string, mixed>  $context  the check context pinned with a run
+     * @param  array<string, mixed>  $source  the sources pinned with that run
+     * @return array<string, mixed> the context with every design text the current check and prompts read; a run pinned before a text was kept gets it from the same pinned design, never from a newer one
+     *
+     * @throws \RuntimeException when the pinned script or design is gone or no longer matches its hash
+     */
+    public function completeContext(string $projectId, array $context, array $source): array;
 
     /**
      * @param  array<string, mixed>  $source

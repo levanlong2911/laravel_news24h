@@ -107,16 +107,43 @@
                                     <div class="line"><span class="k">Đánh giá nguồn</span><span class="v">Lượt phân tích này chưa có đánh giá nguồn — bấm Analysis để chạy lại.</span></div>
                                 @else
                                     @if(! $brief['source_current'])
-                                        <div class="line"><span class="v" style="color:var(--vp-red)">Đánh giá này thuộc bài viết hoặc prompt cũ — không dùng để tạo thiết kế. Bấm Analysis để chạy lại.</span></div>
+                                        <div class="line"><span class="v" style="color:var(--vp-red)">{{ $brief['pinned_problem'] ?? 'Lượt này không còn dùng được làm nguồn.' }} Không dùng để tạo thiết kế mới — bấm Analysis để chạy lại.</span></div>
+                                    @elseif($brief['newer_prompt'] !== null)
+                                        <div class="line"><span class="k">Nguồn đã ghim</span><span class="v">Vẫn dùng lượt này ({{ $brief['source'] }}). Có bản mới: {{ $brief['newer_prompt'] }} — chỉ áp dụng khi bấm Phân tích lại; thiết kế đã có vẫn giữ nguồn cũ.</span></div>
                                     @endif
                                     <div class="line"><span class="k">Đánh giá nguồn</span><span class="v src-verdict {{ strtolower($check['verdict']) }}">
                                         @switch($check['verdict'])
                                             @case('STOP') Bài viết không nói về một siêu du thuyền hoặc thiết kế cụ thể. Vui lòng chọn bài viết khác. @break
                                             @case('REJECT') Bài viết chưa đủ thông tin thiết kế — {{ $points }}. Vui lòng chọn bài viết khác. @break
-                                            @case('RUN') Đạt — {{ $points }}.@if(in_array('THIN_SOURCE', $check['flags'], true)) Nguồn ít thông tin (THIN_SOURCE).@endif @if($brief['source_passed'] && $designFirst) Bước tiếp theo: Design DNA (Phase 2).@endif @break
+                                            @case('RUN') Đạt — {{ $points }}.@if(in_array('THIN_SOURCE', $check['flags'], true)) Nguồn ít thông tin (THIN_SOURCE).@endif @if(in_array('SOURCE_CONFLICT', $check['flags'], true)) Nguồn có thông số mâu thuẫn — xem vấn đề nguồn.@endif @if($brief['source_passed'] && $designFirst) Bước tiếp theo: Design DNA (Phase 2).@endif @break
                                             @default Chưa thể chấm điểm — {{ $check['error'] ?? 'còn tiêu chí chưa xác minh ('.$points.'), chưa đủ cơ sở kết luận' }}.
                                         @endswitch
                                     </span></div>
+                                    @if($brief['self_check'] !== null)
+                                        @php
+                                            $schemaErrors = $check['schema_errors'] ?? [];
+                                            $missingQuotes = $check['evidence']['missing'] ?? [];
+                                        @endphp
+                                        <div class="line"><span class="k">Kiểm kỹ thuật</span><span class="v">
+                                            @if($schemaErrors !== [])
+                                                Sai JSON Schema đã ghim: {{ implode('; ', array_slice($schemaErrors, 0, 5)) }}
+                                            @elseif(($check['structure'] ?? []) !== [])
+                                                Mục khai trùng hoặc trống: {{ implode('; ', array_slice($check['structure'], 0, 5)) }}
+                                            @elseif(($check['issue_paths'] ?? []) !== [])
+                                                Vấn đề nguồn trỏ sai trường: {{ implode('; ', array_slice($check['issue_paths'], 0, 5)) }}
+                                            @elseif($missingQuotes !== [])
+                                                {{ count($missingQuotes) }}/{{ $check['evidence']['checked'] ?? 0 }} trích dẫn không có nguyên văn trên dòng nguồn đã khai: {{ implode('; ', array_slice($missingQuotes, 0, 5)) }}
+                                            @else
+                                                Đúng JSON Schema; {{ $check['evidence']['checked'] ?? 0 }} trích dẫn đều có nguyên văn trên dòng nguồn đã khai.
+                                            @endif
+                                        </span></div>
+                                        @if(isset($check['subject']))
+                                            <div class="line"><span class="k">Đối tượng chính</span><span class="v">{{ $check['subject']['primary'] ?? '—' }} · {{ $check['subject']['article_kind'] }} · {{ $check['subject']['status'] }}</span></div>
+                                        @endif
+                                        @foreach($brief['issues'] ?? [] as $issue)
+                                            <div class="line"><span class="k">Vấn đề nguồn</span><span class="v">{{ $issue['kind'] ?? '' }} · {{ $issue['field'] ?? '' }}: {{ $issue['message'] ?? '' }}</span></div>
+                                        @endforeach
+                                    @endif
                                 @endif
                                 @if($brief['json'] !== null)
                                     <pre class="raw">{{ $brief['json'] }}</pre>
@@ -157,7 +184,7 @@
                             @include('modal.confirm_action', [
                                 'id' => 'confirmDesignDna',
                                 'form' => 'designDnaForm',
-                                'content' => 'Gọi Claude Sonnet 5.5 tạo Design DNA theo prompt Phase 2 — tác vụ này tính tiền.',
+                                'content' => 'Gọi '.config('video.superyacht.dna.model').' (effort '.config('video.superyacht.dna.effort').') tạo Design DNA theo prompt Phase 2 — tác vụ này tính tiền.',
                             ])
                         @elseif($dna['can_regenerate'])
                             <form method="POST" action="{{ route('video-projects.design-dna', $project->id) }}"
@@ -170,10 +197,10 @@
                             @include('modal.confirm_action', [
                                 'id' => 'confirmDesignDnaRegenerate',
                                 'form' => 'designDnaRegenerateForm',
-                                'content' => 'DNA hiện tại chưa đạt kiểm RULE. Gọi Claude Sonnet 5.5 tạo một bản mới — lượt cũ vẫn được giữ, tác vụ này tính tiền.',
+                                'content' => 'DNA hiện tại chưa đạt kiểm kỹ thuật. Gọi '.config('video.superyacht.dna.model').' (effort '.config('video.superyacht.dna.effort').') tạo một bản mới — lượt cũ vẫn được giữ, tác vụ này tính tiền.',
                             ])
                         @else
-                            <button class="vp-btn sm" disabled title="{{ $dna['run_error'] ?? 'Đã có DNA đạt kiểm RULE cho đúng kết quả Phase 1 và prompt hiện tại' }}">Tạo Design DNA</button>
+                            <button class="vp-btn sm" disabled title="{{ $dna['run_error'] ?? 'Đã có DNA đạt kiểm kỹ thuật cho đúng kết quả Phase 1 và prompt hiện tại' }}">Tạo Design DNA</button>
                         @endif
                     </div>
 
@@ -200,56 +227,16 @@
                                         <div class="line"><span class="v" style="color:var(--vp-red)">DNA này thuộc kết quả Phase 1 hoặc prompt cũ — không dùng để tạo thiết kế.</span></div>
                                     @endif
                                     @if($dnaCheck !== null)
-                                        <div class="line"><span class="k">Kiểm RULE</span><span class="v src-verdict {{ strtolower($dnaCheck['verdict']) }}">
-                                            @switch($dnaCheck['verdict'])
-                                                @case('PASS') Đạt @break
-                                                @case('FAIL') Không đạt — {{ count($dnaCheck['issues']) }} lỗi @break
+                                        @php($technical = $dnaCheck['verdict'] === 'UNSCORED' ? 'unscored' : ($dnaCheck['issues'] === [] ? 'pass' : 'fail'))
+                                        <div class="line"><span class="k">Kiểm kỹ thuật</span><span class="v src-verdict {{ $technical }}">
+                                            @switch($technical)
+                                                @case('pass') Đạt @break
+                                                @case('fail') Không đạt — {{ count($dnaCheck['issues']) }} lỗi @break
                                                 @default Chưa thể kiểm — {{ $dnaCheck['error'] }}
                                             @endswitch
                                         </span></div>
                                         @foreach($dnaCheck['issues'] as $issue)
                                             <div class="line"><span class="v" style="color:var(--vp-red)">{{ $issue }}</span></div>
-                                        @endforeach
-                                        @foreach($dna['judges_required'] ? ['novelty' => 'Novelty', 'plausibility' => 'Plausibility'] : [] as $kind => $kindLabel)
-                                            @php($judge = $dna['judges'][$kind] ?? null)
-                                            <div class="line">
-                                                <span class="k">{{ $kindLabel }}</span>
-                                                <span class="v">
-                                                    @if($judge === null)
-                                                        Chưa kiểm (cần DNA đạt kiểm RULE)
-                                                    @else
-                                                        <span class="src-verdict {{ $judge['verdict'] === 'PASS' ? 'run' : ($judge['verdict'] === 'FAIL' ? 'reject' : 'unscored') }}">{{ ['PASS' => 'Đạt', 'FAIL' => 'Không đạt'][$judge['verdict']] ?? 'Chưa kiểm' }}</span>
-                                                        @if($judge['running']) · đang chấm… @endif
-                                                        @if($judge['error'] || $judge['run_error'])<span style="color:var(--vp-red)"> · {{ $judge['error'] ?? $judge['run_error'] }}</span>@endif
-                                                        @if($judge['can_run'])
-                                                            <form method="POST" action="{{ route('video-projects.design-dna-judge', [$project->id, $kind]) }}"
-                                                                  id="dnaJudge{{ $kind }}Form" data-modal="confirmDnaJudge{{ $kind }}" onsubmit="return vpLockForm(this)">
-                                                                @csrf
-                                                            </form>
-                                                            <button type="button" class="vp-btn sm" data-toggle="modal" data-target="#confirmDnaJudge{{ $kind }}"
-                                                                    data-busy="Đang chấm…">Chấm {{ $kindLabel }}</button>
-                                                            @include('modal.confirm_action', [
-                                                                'id' => 'confirmDnaJudge'.$kind,
-                                                                'form' => 'dnaJudge'.$kind.'Form',
-                                                                'content' => 'Gọi '.config('video.superyacht.judge.model').' chấm '.$kindLabel.' của Design DNA theo rubric Phase 2 — tác vụ này tính tiền.',
-                                                            ])
-                                                        @elseif($judge['can_rejudge'])
-                                                            <form method="POST" action="{{ route('video-projects.design-dna-judge', [$project->id, $kind]) }}"
-                                                                  id="dnaRejudge{{ $kind }}Form" data-modal="confirmDnaRejudge{{ $kind }}" onsubmit="return vpLockForm(this)">
-                                                                @csrf
-                                                                <input type="hidden" name="rejudge" value="1">
-                                                            </form>
-                                                            <button type="button" class="vp-btn sm" data-toggle="modal" data-target="#confirmDnaRejudge{{ $kind }}"
-                                                                    data-busy="Đang chấm…">Chấm lại {{ $kindLabel }} (tính phí)</button>
-                                                            @include('modal.confirm_action', [
-                                                                'id' => 'confirmDnaRejudge'.$kind,
-                                                                'form' => 'dnaRejudge'.$kind.'Form',
-                                                                'content' => 'Kết quả '.$kindLabel.' đã lưu không đọc được. Gọi '.config('video.superyacht.judge.model').' chấm lại — lượt cũ vẫn được giữ, tác vụ này tính tiền.',
-                                                            ])
-                                                        @endif
-                                                    @endif
-                                                </span>
-                                            </div>
                                         @endforeach
                                     @endif
                                     @if($dna['json'] !== null)

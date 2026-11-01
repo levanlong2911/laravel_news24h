@@ -14,24 +14,25 @@ use App\Video\Concept\Exceptions\AnthropicRefusalException;
 use App\Video\Concept\Exceptions\AnthropicRequestException;
 use App\Video\Concept\Exceptions\AnthropicTruncatedOutputException;
 use App\Video\Llm\JsonAnswer;
-use App\Video\ModelSheet\ModelSheetFacts;
-use App\Video\ModelSheet\ModelSheetPromptCompiler;
 use App\Video\ModelSheet\ModelSheetQaSchema;
-use App\Video\ModelSheet\ModelSheetQaValidator;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
 /**
- * QA va bien tap noi dung prompt model sheet bang Sonnet 5.5 (stage MODEL_SHEET_PROMPT).
+ * Prompt model sheet bang Sonnet 5.5 (stage MODEL_SHEET_PROMPT): Sonnet doc ban thiet ke day du mot
+ * lan cung ban nhap, chi muc, camera va quy tac co dinh, viet toan bo `final_prompt` va tu kiem.
  *
- * Chi chay khi nguoi dung bam. Mot ket qua QA hop le duoc dung lai cho moi lan render cua
- * cung bo model sheet; doi nguon (thiet ke, prompt QA, schema, compiler, model) la dau vao
- * moi. Luot goi thanh cong ve ky thuat nhung co loi kiem hoac finding blocking van duoc luu
- * kem usage, chi la chua san sang render.
+ * Chi chay khi nguoi dung bam. Code chi kiem ky thuat (doc duoc, dung cau truc, prompt khong rong;
+ * phan hoi bi cat do het token la loi cua client) roi luu nguyen van prompt, ghi chu, usage va hash
+ * — khong ghep, khong noi them, khong viet lai, khong cham chat luong noi dung. Mot ket qua dat duoc
+ * dung lai cho moi lan render cua cung bo model sheet; doi nguon (thiet ke, prompt QA, schema, model)
+ * la dau vao moi.
  */
 final class ModelSheetQaService
 {
+    public const MESSAGE_VERSION = 'model-sheet-qa-message-v2';
+
     public function __construct(
         private readonly PlanningStageStore $stageStore,
     ) {}
@@ -53,8 +54,7 @@ final class ModelSheetQaService
             'qa_phase_id' => (string) $snapshot['qa_phase']['id'],
             'qa_phase_revision' => (int) $snapshot['qa_phase']['revision'],
             'qa_prompt_sha256' => (string) $snapshot['qa_phase']['sha256'],
-            'schema_version' => ModelSheetQaValidator::VERSION,
-            'compiler_version' => ModelSheetPromptCompiler::VERSION,
+            'message_version' => self::MESSAGE_VERSION,
             'model' => (string) $config['model'],
             'effort' => (string) $config['effort'],
             'max_tokens' => (int) $config['max_tokens'],
@@ -77,7 +77,7 @@ final class ModelSheetQaService
 
     /**
      * Prompt he thong: prompt QA cua DB; khi API khong ep grammar thi noi them schema dau ra (mot
-     * nguon: ModelSheetQaValidator::SCHEMA) de model tra dung khung, may chu kiem lai.
+     * nguon: ModelSheetQaSchema::SCHEMA) de model tra dung khung, may chu kiem lai.
      */
     public static function system(AiPhase $phase): string
     {
@@ -87,10 +87,10 @@ final class ModelSheetQaService
 
 ### Output JSON Schema
 
-Return exactly one JSON object, with no text or code fence around it, that validates against this JSON Schema (".ModelSheetQaValidator::VERSION."):
+Return exactly one JSON object, with no text or code fence around it, that validates against this JSON Schema (".ModelSheetQaSchema::OUTPUT."):
 
 "
-            .json_encode(ModelSheetQaValidator::SCHEMA, JSON_UNESCAPED_SLASHES)."
+            .json_encode(ModelSheetQaSchema::SCHEMA, JSON_UNESCAPED_SLASHES)."
 ";
     }
 
@@ -111,7 +111,8 @@ Return exactly one JSON object, with no text or code fence around it, that valid
         return $stage !== null
             && $stage->status === VideoPlanningStageStatus::SUCCEEDED->value
             && ($stage->output_json['ready'] ?? false) === true
-            && is_string($stage->output_json['prompt'] ?? null);
+            && is_string($stage->output_json['final_prompt'] ?? null)
+            && trim($stage->output_json['final_prompt']) !== '';
     }
 
     /**
@@ -121,7 +122,7 @@ Return exactly one JSON object, with no text or code fence around it, that valid
     {
         try {
             $phase = $this->phase($set);
-            [$design, $dna] = $this->source($set);
+            $design = $this->source($set);
             $client = app('video.model_sheet_qa.client');
         } catch (Throwable $e) {
             Log::error('model sheet qa: input unavailable, no model call made', ['project_id' => $projectId, 'exception' => $e]);
@@ -145,7 +146,7 @@ Return exactly one JSON object, with no text or code fence around it, that valid
 
         if ($token === null) {
             return match (true) {
-                $reason === 'already_succeeded' && ! self::ready($stage) => [$stage, 'QA đã lưu cho đúng nguồn này nhưng chưa đạt kiểm — bấm "QA lại" để chạy lượt mới. Không gọi Sonnet.'],
+                $reason === 'already_succeeded' && ! self::ready($stage) => [$stage, 'Lượt prompt đã lưu cho đúng nguồn này nhưng phản hồi chưa đọc được — bấm "QA lại" để chạy lượt mới. Không gọi Sonnet.'],
                 $reason === 'already_succeeded' => [$stage, 'cached'],
                 $reason === 'claimed_by_other' => [null, 'Đang có một lượt QA model sheet chạy cho dự án này — đợi xong rồi thử lại.'],
                 default => [null, 'Không mở được lượt QA ('.$reason.').'],
@@ -164,14 +165,14 @@ Return exactly one JSON object, with no text or code fence around it, that valid
             $response = $client->create(
                 (string) $config['model'],
                 self::system($phase),
-                [['role' => 'user', 'content' => $this->message($snapshot, $design, $dna)]],
-                self::enforced() ? ModelSheetQaValidator::SCHEMA : [],
+                [['role' => 'user', 'content' => self::message($snapshot, $design)]],
+                self::enforced() ? ModelSheetQaSchema::SCHEMA : [],
                 (int) $config['max_tokens'],
                 fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
             );
             [$usage, $pricing] = self::accounting($response, $config, $version);
             $raw = $response->rawText;
-            $output = $this->output($set, $raw, $design, $dna) + ['request_id' => $response->requestId];
+            $output = $this->output($set, $raw) + ['request_id' => $response->requestId];
 
             if (! $this->stageStore->finishSucceeded((string) $stage->id, $token, $raw, $output, $usage, $pricing)) {
                 return [null, 'Lượt QA bị giành mất khi lưu — tải lại trang. Usage của lượt này nằm trong log.'];
@@ -203,80 +204,60 @@ Return exactly one JSON object, with no text or code fence around it, that valid
     }
 
     /**
-     * Kiem lai ket qua da luu va ghep prompt (dung khi luu va khi can kiem lai bang code moi).
+     * Doc phan hoi theo cau truc da chot va giu nguyen van final_prompt; khong kiem noi dung.
      *
-     * @param  array<string, mixed>  $design
-     * @param  array<string, mixed>  $dna
      * @return array<string, mixed>
      */
-    public function output(VideoPlanningStage $set, string $raw, array $design, array $dna): array
+    public function output(VideoPlanningStage $set, string $raw): array
     {
-        $snapshot = (array) $set->output_json;
-        $config = (array) config('video.superyacht.model_sheet');
-        $checks = ['parse' => 'failed', 'schema' => 'skipped', 'business' => 'skipped', 'findings' => 'skipped', 'compile' => 'skipped'];
-        $validation = ['ok' => false, 'errors' => [], 'blocking' => [], 'notes' => []];
-        $schemaErrors = [];
-        $qa = null;
-        $prompt = null;
+        $checks = ['parse' => 'failed', 'schema' => 'skipped', 'prompt' => 'skipped'];
+        $errors = [];
+        $answer = null;
 
-        // 1. Doc JSON nghiem ngat, giu object/array. 2. Kiem toan bo schema bang Opis TRUOC moi ep kieu.
         [$data, $parseError] = ModelSheetQaSchema::decode($raw);
 
         if ($parseError !== null) {
-            $validation['errors'][] = 'Đọc JSON: '.$parseError;
+            $errors[] = 'Đọc JSON: '.$parseError;
         } else {
             $checks['parse'] = 'passed';
             $schemaErrors = ModelSheetQaSchema::errors($data);
             $checks['schema'] = $schemaErrors === [] ? 'passed' : 'failed';
-            $validation['errors'] = array_map(static fn (string $e): string => 'Cấu trúc: '.$e, $schemaErrors);
+            $errors = array_map(static fn (string $e): string => 'Cấu trúc: '.$e, $schemaErrors);
         }
 
-        // 3. Chi khi dung schema moi chuyen sang mang va kiem nghiep vu; 4. roi moi ghep prompt.
         if ($checks['schema'] === 'passed') {
-            $qa = json_decode((string) json_encode($data, JSON_PRESERVE_ZERO_FRACTION), true);
-            $validator = new ModelSheetQaValidator((array) $snapshot['facts'], $design, $dna, array_column((array) $snapshot['views'], 'id'), (int) $config['qa']['negatives_target'], array_values((array) $config['master']['detail_views']));
-            $validation = $validator->validate($qa);
-            $checks['business'] = $validation['errors'] === [] ? 'passed' : 'failed';
-            $checks['findings'] = $validation['blocking'] === [] ? 'clear' : 'blocking';
+            $answer = ['final_prompt' => (string) $data->final_prompt, 'repairs' => array_values((array) $data->repairs), 'findings' => array_values((array) $data->findings)];
+            $checks['prompt'] = trim($answer['final_prompt']) === '' ? 'failed' : 'passed';
 
-            if ($checks['business'] === 'passed') {
-                try {
-                    $prompt = (new ModelSheetPromptCompiler($config, $validator->facts()))->compile($qa, (array) $snapshot['views'], ($snapshot['layout_guide'] ?? false) === true, (array) $snapshot['facts']['ms8']);
-                    $checks['compile'] = 'passed';
-                } catch (RuntimeException $e) {
-                    $validation['errors'][] = $e->getMessage();
-                    $validation['ok'] = false;
-                    $checks['compile'] = 'failed';
-                }
+            if ($checks['prompt'] === 'failed') {
+                $errors[] = 'final_prompt rỗng.';
             }
         }
 
-        $sha = is_string($prompt) && trim($prompt) !== '' ? hash('sha256', $prompt) : null;
-        $ready = $checks['parse'] === 'passed' && $checks['schema'] === 'passed' && $checks['business'] === 'passed'
-            && $checks['findings'] === 'clear' && $checks['compile'] === 'passed' && $sha !== null && hash_equals($sha, hash('sha256', (string) $prompt));
+        $ready = $checks['prompt'] === 'passed';
+        $prompt = $ready ? $answer['final_prompt'] : null;
 
         return [
-            'execution' => (string) $config['qa']['execution'],
+            'execution' => (string) config('video.superyacht.model_sheet.qa.execution'),
             'model_sheet_set_id' => (string) $set->id,
             'schema_transport' => self::transport(),
-            'schema_version' => ModelSheetQaValidator::VERSION,
             'schema_sha256' => ModelSheetQaSchema::sha256(),
             'structure_check' => ModelSheetQaSchema::VERSION,
             'checks' => $checks + ['ready' => $ready],
-            'schema_errors' => $schemaErrors,
-            'qa' => is_array($qa) ? $qa : null,
-            'validation' => $validation,
+            'errors' => $errors,
+            'repairs' => $answer['repairs'] ?? [],
+            'findings' => $answer['findings'] ?? [],
             'ready' => $ready,
-            'prompt' => $ready ? $prompt : null,
-            'prompt_sha256' => $ready ? $sha : null,
-            'prompt_chars' => $ready ? mb_strlen((string) $prompt) : null,
+            'final_prompt' => $prompt,
+            'prompt_sha256' => $prompt === null ? null : hash('sha256', $prompt),
+            'prompt_chars' => $prompt === null ? null : mb_strlen($prompt),
         ];
     }
 
     /**
-     * Ban thiet ke va DNA nguon cua bo, kiem dung ban ma bo da chot.
+     * Ban thiet ke nguon cua bo, kiem dung ban ma bo da chot (raw JSON hash).
      *
-     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     * @return array<string, mixed>
      */
     public function source(VideoPlanningStage $set): array
     {
@@ -288,11 +269,75 @@ Return exactly one JSON object, with no text or code fence around it, that valid
             throw new RuntimeException('Bản thiết kế nguồn đã khác bản bộ model sheet chốt.');
         }
 
-        $design = JsonAnswer::object($raw) ?? throw new RuntimeException('Không đọc được JSON bản thiết kế nguồn.');
-        $dnaStage = VideoPlanningStage::query()->whereKey($designStage->input_json['dna_stage_id'] ?? null)->where('project_id', $set->project_id)->first();
-        $dna = $dnaStage === null ? [] : (array) (JsonAnswer::object((string) ($dnaStage->output_json['raw_text'] ?? ''))['dna'] ?? []);
+        return JsonAnswer::object($raw) ?? throw new RuntimeException('Không đọc được JSON bản thiết kế nguồn.');
+    }
 
-        return [$design, $dna];
+    /**
+     * Thong so camera da chot va quy uoc phuong vi.
+     *
+     * @return array{convention: string, views: array<string, array<string, mixed>>}
+     */
+    public static function cameras(): array
+    {
+        return [
+            'convention' => (string) config('video.superyacht.model_sheet.camera_convention'),
+            'views' => (array) config('video.superyacht.model_sheet.cameras'),
+        ];
+    }
+
+    /**
+     * Bo cuc, khung hinh, trinh bay va quy tac co dinh tu config; Sonnet dua vao prompt dung mot lan.
+     *
+     * @param  array<string, mixed>  $snapshot  output_json cua bo model sheet
+     * @return array<string, mixed>
+     */
+    public static function fixedRules(array $snapshot): array
+    {
+        $config = (array) config('video.superyacht.model_sheet');
+        $master = (array) $config['master'];
+        $text = (array) $master['prompt'];
+        [$width, $height] = array_map('intval', explode('x', (string) $master['size']));
+        $views = array_values((array) $snapshot['views']);
+        usort($views, static fn (array $a, array $b): int => [$a['row'], $a['column']] <=> [$b['row'], $b['column']]);
+
+        return array_filter([
+            'master' => ['width' => $width, 'height' => $height, 'rows' => (int) $master['rows'], 'columns' => (int) $master['columns'], 'cell_width' => (int) $master['cell']['width'], 'cell_height' => (int) $master['cell']['height']],
+            'layout' => self::fill((string) $text['layout'], [
+                'width' => $width, 'height' => $height, 'rows' => $master['rows'], 'columns' => $master['columns'],
+                'cell_width' => $master['cell']['width'], 'cell_height' => $master['cell']['height'],
+            ]),
+            'panels' => array_map(static fn (array $view): string => self::fill((string) $text['panel'], [
+                'row' => $view['row'], 'column' => $view['column'],
+                'x' => $view['x'], 'x_end' => $view['x'] + $view['width'], 'y' => $view['y'], 'y_end' => $view['y'] + $view['height'],
+                'id' => $view['id'], 'view' => $view['view'],
+            ]), $views),
+            'framing' => (string) $text['framing'],
+            'detail_framing' => array_map(static fn (string $id): string => self::fill((string) $text['detail_framing'], ['id' => $id]), array_values((array) $master['detail_views'])),
+            'rules' => [...array_map('strval', (array) $text['rules']), (string) $config['occlusion']],
+            'presentation' => (string) $text['presentation'],
+            'studio' => (string) $config['suffix'],
+            'layout_guide' => ($snapshot['layout_guide'] ?? false) === true ? (string) $text['guide_caption'] : null,
+            'max_chars' => (int) ($text['max_chars'] ?? 0),
+        ], static fn (mixed $value): bool => $value !== null);
+    }
+
+    /**
+     * Thong diep gui Sonnet: nam nhom dau vao, thiet ke day du mot lan.
+     *
+     * @param  array<string, mixed>  $snapshot  output_json cua bo model sheet
+     * @param  array<string, mixed>  $design
+     */
+    public static function message(array $snapshot, array $design): string
+    {
+        $facts = (array) $snapshot['facts'];
+
+        return (string) json_encode([
+            'design_source' => $design,
+            'draft' => $facts['draft'],
+            'index' => $facts['index'],
+            'cameras' => self::cameras(),
+            'fixed_rules' => self::fixedRules($snapshot),
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     private function phase(VideoPlanningStage $set): AiPhase
@@ -305,43 +350,35 @@ Return exactly one JSON object, with no text or code fence around it, that valid
             throw new RuntimeException('Prompt QA model sheet không còn khớp hash bộ đã chốt.');
         }
 
+        if (($problem = self::contractProblem($phase)) !== null) {
+            throw new RuntimeException($problem);
+        }
+
         return $phase;
     }
 
     /**
-     * @param  array<string, mixed>  $snapshot
-     * @param  array<string, mixed>  $design
-     * @param  array<string, mixed>  $dna
+     * @param  AiPhase  $phase  a revision of the model sheet prompt
+     * @return ?string why that prompt does not describe the message code sends or the answer code reads; checked before any model call
      */
-    private function message(array $snapshot, array $design, array $dna): string
+    public static function contractProblem(AiPhase $phase): ?string
     {
-        $facts = (array) $snapshot['facts'];
-        $candidates = (array) $facts['candidates'];
-        $cameras = (array) config('video.superyacht.model_sheet.cameras');
+        foreach (['Input format: `'.self::MESSAGE_VERSION.'`', 'Output format: `'.ModelSheetQaSchema::OUTPUT.'`'] as $marker) {
+            if (! str_contains((string) $phase->prompt_content, $marker)) {
+                return "Prompt {$phase->phase_code} revision {$phase->revision} không khai {$marker} mà code đang dùng — cần phát hành revision prompt tương thích trước, không gọi Sonnet.";
+            }
+        }
 
-        return (string) json_encode([
-            'design' => $design,
-            'dna' => $dna,
-            // Chi muc day du moi so: "F12 | path | property | render [| formula (not printed): …]".
-            // Cong thuc la cot rieng, khong thuoc render nen khong vao prompt.
-            'facts' => implode("\n", array_map(static fn (array $f): string => $f['id'].' | '.$f['path'].' | '.$f['property'].' | '.$f['render'].(isset($f['formula']) ? ' | formula (not printed): '.$f['formula'] : ''), (array) $facts['facts'])),
-            'entities' => array_map(static fn (array $e): array => array_intersect_key($e, array_flip(['id', 'kind', 'path', 'name', 'from', 'to', 'side', 'side_source', 'level', 'level_source', 'full_beam', 'facing', 'near_side', 'pair', 'facts', 'range_source'])), (array) $facts['entities']),
-            'views' => array_map(static fn (array $v): array => [
-                'id' => $v['id'],
-                'label' => $v['view'],
-                'camera' => ModelSheetPromptCompiler::camera($cameras, $v['id'], (array) $facts['ms8']),
-                'sees_only' => ModelSheetFacts::VIEW_SIDES[$v['id']] ?? null,
-                'detail_view' => in_array($v['id'], (array) config('video.superyacht.model_sheet.master.detail_views'), true),
-                'candidates' => $candidates[$v['id']] ?? [],
-            ], (array) $snapshot['views']),
-            'ms8' => $facts['ms8'],
-            'state_sources' => $facts['state_sources'],
-            'occluders' => $facts['occluders'] ?? [],
-            'coverage' => $facts['coverage'],
-            'source_conflicts' => $facts['conflicts'],
-            'draft' => $facts['draft'],
-            'negatives_target' => (int) config('video.superyacht.model_sheet.qa.negatives_target'),
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return null;
+    }
+
+    /** @param array<string, int|string> $values */
+    private static function fill(string $template, array $values): string
+    {
+        return strtr($template, array_combine(
+            array_map(static fn (string $key): string => '{'.$key.'}', array_keys($values)),
+            array_map('strval', array_values($values)),
+        ));
     }
 
     /**

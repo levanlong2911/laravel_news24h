@@ -50,6 +50,79 @@ final class ResolvedPhase
         return $this->manifest['contract_mismatches'];
     }
 
+    /**
+     * @return list<array{label: string, json_schema_id: string, sha256: string, content: string}> the schema of every output link and the schemas it depends on, as the manifest pins them
+     *
+     * @throws RuntimeException when an output schema or a dependency is missing or does not match the manifest hash
+     */
+    public function outputSchemas(): array
+    {
+        $pinned = [];
+
+        foreach ((array) $this->manifest['schemas'] as $schema) {
+            $pinned[$schema['id']] = $schema;
+        }
+
+        $queue = [];
+
+        foreach ((array) $this->manifest['links'] as $link) {
+            if ($link['role'] === 'output') {
+                $queue[] = $link['schema_id'];
+            }
+        }
+
+        if ($queue === []) {
+            throw new RuntimeException('The bundle has no output schema.');
+        }
+
+        $found = [];
+
+        while ($queue !== []) {
+            $id = (string) array_shift($queue);
+
+            if (isset($found[$id])) {
+                continue;
+            }
+
+            $entry = $pinned[$id] ?? throw new RuntimeException("Schema {$id} is not pinned in the manifest.");
+            $content = $this->schemas[$id]['content'] ?? throw new RuntimeException("Schema {$entry['namespace']}/{$entry['key']}@{$entry['version']} is missing from the bundle.");
+
+            if (! hash_equals((string) $entry['sha256'], hash('sha256', (string) $content))) {
+                throw new RuntimeException("Schema {$entry['namespace']}/{$entry['key']}@{$entry['version']} does not match the manifest hash.");
+            }
+
+            $found[$id] = [
+                'label' => "{$entry['namespace']}/{$entry['key']}@{$entry['version']}",
+                'json_schema_id' => (string) $entry['json_schema_id'],
+                'sha256' => (string) $entry['sha256'],
+                'content' => (string) $content,
+            ];
+            array_push($queue, ...array_values((array) $entry['dependencies']));
+        }
+
+        return array_values($found);
+    }
+
+    /**
+     * @return array<string, int> the word ceiling of every answer path the output schemas declare in their x-word-limits, as the manifest pins them; a path ending in .* covers every key of that object
+     *
+     * @throws RuntimeException when an output schema or a dependency is missing or does not match the manifest hash
+     */
+    public function wordLimits(): array
+    {
+        $limits = [];
+
+        foreach ($this->outputSchemas() as $schema) {
+            foreach ((array) (json_decode($schema['content'], true)['x-word-limits'] ?? []) as $path => $max) {
+                if (is_string($path) && is_int($max) && $max > 0) {
+                    $limits[$path] = $max;
+                }
+            }
+        }
+
+        return $limits;
+    }
+
     /** @return list<array{code: string, kind: string, content: string}> */
     public function parts(): array
     {

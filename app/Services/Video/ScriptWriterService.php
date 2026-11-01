@@ -299,6 +299,13 @@ final class ScriptWriterService
 
         $history = [];
         $inputs = $adapter->inputs($project, $settings['brief'], $history, (string) $phase->prompt_content);
+        $wordLimits = $bundle->wordLimits();
+
+        if ($wordLimits !== []) {
+            $inputs['payload']['variables'] = (array) ($inputs['payload']['variables'] ?? []) + ['word_limits' => $wordLimits];
+            $inputs['context']['word_limits'] = $wordLimits;
+        }
+
         $promptVersion = "{$flow['workflow']}/{$phase->phase_code}@rev{$phase->revision}";
         $payload = (string) json_encode(['project_id' => $projectId, 'prompt_version' => $promptVersion] + $inputs['payload'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $context = ['project_id' => $projectId, 'prompt_version' => $promptVersion] + $inputs['context'];

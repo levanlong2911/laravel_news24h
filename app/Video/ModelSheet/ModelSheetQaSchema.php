@@ -9,20 +9,33 @@ use Opis\JsonSchema\Errors\ErrorFormatter;
 use Opis\JsonSchema\Validator;
 
 /**
- * Kiem CAU TRUC phan hoi QA truoc moi ep kieu: doc JSON nghiem ngat (giu phan biet object/array),
- * root phai la object, roi kiem toan bo ModelSheetQaValidator::SCHEMA bang Opis (kieu, truong bat
- * buoc, kieu phan tu, enum, thuoc tinh ngoai schema, long nhau). Khong them/bo truong, khong ep
- * kieu de "cuu" du lieu. Chi khi dat moi chuyen sang mang cho kiem nghiep vu.
+ * Kiem CAU TRUC phan hoi prompt model sheet truoc moi ep kieu: doc JSON nghiem ngat (giu phan biet
+ * object/array), root phai la object, roi kiem SCHEMA bang Opis (kieu, truong bat buoc, thuoc tinh
+ * ngoai schema). Khong them/bo truong, khong ep kieu de "cuu" du lieu, khong kiem noi dung prompt.
  */
 final class ModelSheetQaSchema
 {
     public const VERSION = 'opis-2.3-draft-2020-12-v1';
 
+    public const OUTPUT = 'model-sheet-final-prompt-v1';
+
+    /** @var array<string, mixed> the one answer Sonnet returns: the whole image prompt and its notes */
+    public const SCHEMA = [
+        'type' => 'object',
+        'additionalProperties' => false,
+        'required' => ['final_prompt', 'repairs', 'findings'],
+        'properties' => [
+            'final_prompt' => ['type' => 'string', 'minLength' => 1],
+            'repairs' => ['type' => 'array', 'items' => ['type' => 'string']],
+            'findings' => ['type' => 'array', 'items' => ['type' => 'string']],
+        ],
+    ];
+
     private const MAX_ERRORS = 200;
 
     public static function sha256(): string
     {
-        return hash('sha256', (string) json_encode(ModelSheetQaValidator::SCHEMA, JSON_UNESCAPED_SLASHES));
+        return hash('sha256', (string) json_encode(self::SCHEMA, JSON_UNESCAPED_SLASHES));
     }
 
     /**
@@ -54,7 +67,7 @@ final class ModelSheetQaSchema
     {
         $validator = new Validator;
         $validator->setMaxErrors(self::MAX_ERRORS);
-        $schema = json_decode((string) json_encode(ModelSheetQaValidator::SCHEMA, JSON_UNESCAPED_SLASHES), false);
+        $schema = json_decode((string) json_encode(self::SCHEMA, JSON_UNESCAPED_SLASHES), false);
         $result = $validator->validate($data, $schema);
 
         if ($result->isValid()) {
@@ -72,7 +85,7 @@ final class ModelSheetQaSchema
         return $errors;
     }
 
-    /** /coverage/0/where -> coverage[0].where */
+    /** /repairs/0 -> repairs[0] */
     private static function field(string $pointer): string
     {
         $out = '';

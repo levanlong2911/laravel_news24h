@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\DesignImageStatus;
-use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Media\MediaModelRegistry;
-use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
@@ -25,16 +23,33 @@ final class LocationReferenceService
 
     /**
      * @param  array{provider_model?: mixed, quality?: mixed, size?: mixed, variations?: mixed}  $settings
+     * @param  ?array{stage_id: string, content_hash: string, prompts_hash: string, prompt_sha256: string, selection_version: int}  $shown  what the page showed: the description, its prompt set and the prompt of this image; a description that is not in use yet, or whose prompts changed, is put in use with exactly these prompts before the render
      * @return array{0: ?VideoDesignImage, 1: string}
      */
-    public function render(string $projectId, string $creator, string $requestId, array $settings, string $operationId): array
+    public function render(string $projectId, string $creator, string $requestId, array $settings, string $operationId, ?array $shown = null, ?string $reviewerId = null): array
     {
         if (! Str::isUuid($operationId)) {
             return [null, 'Mã thao tác không hợp lệ — tải lại trang.'];
         }
 
+        if ($shown !== null) {
+            $text = $this->sources->selection($projectId)['text'];
+
+            if (($text['stage_id'] ?? null) !== $shown['stage_id'] || ($text['prompts_hash'] ?? null) !== $shown['prompts_hash']) {
+                [$decision, $reason] = $this->sources->approveText($projectId, $shown['stage_id'], $shown['content_hash'], $shown['prompts_hash'], $shown['selection_version'], $operationId, $reviewerId);
+
+                if ($decision === null) {
+                    return [null, $reason];
+                }
+            }
+        }
+
         try {
             $spec = $this->spec($projectId, $requestId, $settings, $operationId);
+
+            if ($shown !== null && $spec['prompt_sha256'] !== $shown['prompt_sha256']) {
+                return [null, "Prompt của {$requestId} trên trang khác prompt sẽ gửi — tải lại trang để xem prompt mới."];
+            }
         } catch (RuntimeException|InvalidArgumentException $e) {
             return [null, $e->getMessage()];
         }
@@ -52,7 +67,7 @@ final class LocationReferenceService
         return $this->retry($projectId, (string) $image->id);
     }
 
-    /** @return array{0: ?VideoDesignImage, 1: string} a failed or unfinished cell sent again with its own spec */
+    /** @return array{0: ?VideoDesignImage, 1: string} a failed or unfinished cell sent again with its own spec, only while its prompt is still the approved one */
     public function retry(string $projectId, string $imageId): array
     {
         $image = VideoDesignImage::query()->whereKey($imageId)->where('project_id', $projectId)->where('image_type', DesignImageStore::LOCATION_REFERENCE_TYPE)->first();
@@ -68,25 +83,28 @@ final class LocationReferenceService
         }
 
         $spec = (array) $image->prompt_spec_json;
+        $requestId = (string) ($spec['request_id'] ?? '');
 
         if (($spec['locations_stage_id'] ?? null) !== (string) $text['stage']->id) {
-            return [null, 'Ô ảnh này thuộc một bản mô tả khác bản đang duyệt — không render.'];
+            return [null, 'Ô ảnh này thuộc một bộ bối cảnh khác bộ đang dùng — không render.'];
         }
 
-        $request = $this->sources->request($text, (string) ($spec['request_id'] ?? ''));
+        $request = $this->sources->request($text, $requestId);
 
         if ($request === null) {
-            return [null, 'Bản mô tả đã duyệt không còn yêu cầu ảnh của ô này.'];
+            return [null, 'Bộ bối cảnh đang dùng không còn bối cảnh của ô này.'];
         }
 
-        try {
-            $current = array_column($this->manifest($text, $request), 'artifact_id');
-        } catch (RuntimeException $e) {
-            return [null, $e->getMessage()];
+        if ($request['blocked']) {
+            return [null, "Bối cảnh {$requestId} còn xung đột kịch bản / thiết kế chưa giải quyết — không render."];
         }
 
-        if ($current !== array_column((array) ($spec['sources'] ?? []), 'artifact_id')) {
-            return [null, "Ảnh nguồn của ô này đã đổi so với ảnh đang chọn — không gửi lại ô cũ. Bấm \"Render biến thể mới\" ở {$request['id']} để dựng với ảnh nguồn hiện tại; ô cũ vẫn được giữ."];
+        if (in_array($requestId, $text['stale'], true)) {
+            return [null, "Prompt của {$requestId} đã đổi sau lần render này — bấm Render Plate để render với prompt mới."];
+        }
+
+        if (($spec['prompt_sha256'] ?? null) !== ($text['prompts']['images'][$requestId]['sha256'] ?? null)) {
+            return [null, "Ô này mang prompt cũ của {$requestId} — không gửi lại ô cũ. Bấm Render Plate ở {$requestId} để dựng với prompt hiện tại; ô cũ vẫn được giữ."];
         }
 
         [$done, $reason] = $this->renderer->renderNow((string) $image->id);
@@ -105,19 +123,21 @@ final class LocationReferenceService
     private function spec(string $projectId, string $requestId, array $settings, string $operationId): array
     {
         $text = $this->sources->approvedText($projectId);
-        $request = $this->sources->request($text, $requestId) ?? throw new RuntimeException("Bản mô tả đã duyệt không có yêu cầu ảnh {$requestId}.");
-        $entry = $this->registry->find(LocationReferencePrompt::TASK, (string) ($settings['provider_model'] ?? '')) ?? throw new RuntimeException('Model ảnh không có trong danh sách của Phase 5.');
-        $sources = $this->manifest($text, $request);
-        $capability = $sources === [] ? 'generate' : 'edit_sources';
+        $request = $this->sources->request($text, $requestId) ?? throw new RuntimeException("Bộ bối cảnh đang dùng không có bối cảnh {$requestId}.");
 
-        if (! in_array($capability, (array) ($entry['capabilities'] ?? []), true)) {
-            throw new RuntimeException("Model {$entry['label']} không khai năng lực {$capability} cho Phase 5.");
+        if ($request['blocked']) {
+            throw new RuntimeException("Bối cảnh {$requestId} còn xung đột kịch bản / thiết kế chưa giải quyết — không render.");
         }
 
-        $limit = min((int) ($entry['max_sources'] ?? 0), OpenAiImageClient::MAX_SOURCE_IMAGES);
+        if (in_array($requestId, $text['stale'], true)) {
+            throw new RuntimeException("Prompt của {$requestId} đã đổi so với prompt đang dùng (bộ ghép hoặc cấu hình đổi) — tải lại trang rồi bấm Render Plate.");
+        }
 
-        if (count($sources) > $limit) {
-            throw new RuntimeException("Yêu cầu {$requestId} cần ".count($sources)." ảnh nguồn; model {$entry['label']} nhận tối đa {$limit}.");
+        $approved = $text['prompts']['images'][$requestId] ?? throw new RuntimeException("Chưa có prompt đang dùng cho {$requestId} — tải lại trang rồi bấm Render Plate.");
+        $entry = $this->registry->find(LocationReferencePrompt::TASK, (string) ($settings['provider_model'] ?? '')) ?? throw new RuntimeException('Model ảnh không có trong danh sách của Phase 5.');
+
+        if (! in_array('generate', (array) ($entry['capabilities'] ?? []), true)) {
+            throw new RuntimeException("Model {$entry['label']} không khai năng lực generate cho Phase 5.");
         }
 
         $variations = filter_var($settings['variations'] ?? null, FILTER_VALIDATE_INT);
@@ -129,68 +149,26 @@ final class LocationReferenceService
             throw new RuntimeException('Thiết lập render không hợp lệ cho model này.');
         }
 
-        $settingsOfFlow = $text['flow']['adapter']->settings();
-
         return [
             'project_id' => $projectId,
             'operation' => LocationReferencePrompt::OPERATION,
             'task' => LocationReferencePrompt::TASK,
-            'spec_version' => LocationReferencePrompt::VERSION,
+            'spec_version' => (string) $text['prompts']['composer'],
             'environment_key' => $requestId,
             'request_id' => $requestId,
             'locations_stage_id' => (string) $text['stage']->id,
             'locations_content_hash' => (string) $text['evaluation']['content_hash'],
-            'prompt' => LocationReferencePrompt::compose((array) $text['evaluation']['document'], $request, (array) $settingsOfFlow['reference']),
+            'text_approval_id' => (string) $text['selection']['text']['approval_id'],
+            'prompt' => (string) $approved['prompt'],
+            'prompt_sha256' => (string) $approved['sha256'],
             'provider' => (string) $entry['provider'],
             'model' => (string) $entry['model'],
             'pricing' => (string) $entry['pricing'],
             'variations' => $variations,
             'size' => $size,
             'quality' => $quality,
-            'sources' => $sources,
-            'reference_manifest_hash' => CanonicalJson::hash($sources),
+            'sources' => [],
             'attempt' => $operationId,
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $text
-     * @param  array<string, mixed>  $request
-     * @return list<array{position: int, artifact_id: string, candidate_id: string, sha256: string, input: string, role: string}>
-     */
-    private function manifest(array $text, array $request): array
-    {
-        $chosen = (array) $text['selection']['images'];
-        $sheet = (array) ($this->sources->source($text['stage'])['design']['model_sheet'] ?? []);
-        $sources = [];
-
-        foreach ((array) $request['inputs'] as $position => $input) {
-            if ($input['kind'] === 'model_sheet') {
-                [$artifactId, $imageId, $sha] = [(string) ($sheet['master_artifact_id'] ?? ''), (string) ($sheet['master_image_id'] ?? ''), (string) ($sheet['master_artifact_sha256'] ?? '')];
-                $label = 'model sheet';
-            } else {
-                $pick = $chosen[$input['id']] ?? throw new RuntimeException("Chọn ảnh cho {$input['id']} trước — {$request['id']} dựng từ ảnh đó.");
-                [$artifactId, $imageId, $sha] = [(string) $pick['artifact_id'], (string) $pick['image_id'], (string) $pick['sha256']];
-                $label = (string) $input['id'];
-            }
-
-            $artifact = VideoArtifact::query()->whereKey($artifactId)->where('project_id', $text['stage']->project_id)->first();
-
-            if ($artifact === null || (string) $artifact->design_image_id !== $imageId) {
-                throw new RuntimeException("Ảnh nguồn {$label} không còn thuộc ô ảnh của nó.");
-            }
-
-            if (($problem = LocationSourceService::fileProblem($artifact, $sha)) !== null) {
-                throw new RuntimeException("Ảnh nguồn {$label}: {$problem}.");
-            }
-
-            $sources[] = ['position' => $position, 'artifact_id' => $artifactId, 'candidate_id' => $imageId, 'sha256' => $sha, 'input' => $label, 'role' => (string) $input['role']];
-        }
-
-        if (count($sources) > OpenAiImageClient::MAX_SOURCE_IMAGES) {
-            throw new RuntimeException("Yêu cầu {$request['id']} cần ".count($sources).' ảnh nguồn; tối đa '.OpenAiImageClient::MAX_SOURCE_IMAGES.'.');
-        }
-
-        return $sources;
     }
 }

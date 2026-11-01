@@ -649,14 +649,14 @@ class DesignImageStore
     }
 
     /**
-     * @param  array<string, mixed>  $spec  `environment_key` carries the Phase 5 request id
+     * @param  array<string, mixed>  $spec  `environment_key` carries the Phase 5 image id
      * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
      *                                                reason: created|already_exists|project_not_found
      */
     public function createLocationReference(string $projectId, string $creator, array $spec): array
     {
         return $this->createKeyed($projectId, $creator, $spec, self::LOCATION_REFERENCE_TYPE, '_location_v', [
-            'operation', 'spec_version', 'environment_key', 'locations_stage_id', 'locations_content_hash', 'reference_manifest_hash', 'attempt',
+            'operation', 'spec_version', 'environment_key', 'locations_stage_id', 'locations_content_hash', 'prompt_sha256', 'attempt',
         ]);
     }
 

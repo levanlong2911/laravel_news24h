@@ -146,7 +146,6 @@ Route::group(
             Route::post('/{id}/inspiration/reset', [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
             Route::post('/{id}/design-dna', [VideoProjectsController::class, 'designDna'])->name('video-projects.design-dna');
             Route::post('/{id}/design-dna/reset', [VideoProjectsController::class, 'resetDesignDna'])->name('video-projects.design-dna-reset');
-            Route::post('/{id}/design-dna/judge/{kind}', [VideoProjectsController::class, 'judgeDesignDna'])->whereIn('kind', ['novelty', 'plausibility'])->name('video-projects.design-dna-judge');
             //tạo phân cảnh
             Route::post('/{id}/design', [VideoProjectsController::class, 'vesselDesign'])->name('video-projects.vessel-design');
             Route::post('/{id}/design/reset', [VideoProjectsController::class, 'resetVesselDesign'])->name('video-projects.vessel-design-reset');
@@ -164,10 +163,8 @@ Route::group(
             Route::get('/{id}/locations', [VideoProjectsController::class, 'locations'])->name('video-projects.locations');
             Route::post('/{id}/locations', [VideoProjectsController::class, 'writeLocations'])->name('video-projects.locations-write');
             Route::post('/{id}/locations/reset', [VideoProjectsController::class, 'resetLocations'])->name('video-projects.locations-reset');
-            Route::post('/{id}/locations/approve', [VideoProjectsController::class, 'approveLocationText'])->name('video-projects.locations-approve');
             Route::post('/{id}/locations/render', [VideoProjectsController::class, 'renderLocationReference'])->name('video-projects.locations-render');
             Route::post('/{id}/locations/choose', [VideoProjectsController::class, 'chooseLocationReference'])->name('video-projects.locations-choose');
-            Route::post('/{id}/locations/approve-set', [VideoProjectsController::class, 'approveLocationSet'])->name('video-projects.locations-approve-set');
 
             Route::middleware('video.v4')->group(function () {
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');

@@ -14,13 +14,19 @@ final class ClaudeInspirationAnalyst
 {
     public const EXECUTION = 'db-phase-1-raw-v1';
 
+    public const EXECUTION_V2 = 'db-phase-1-evidence-v2';
+
+    public const ACTION = 'spec.inspiration';
+
+    public const SCHEMA_HEADING = 'Phase 1 output JSON Schema';
+
     public const PHASE_CODE = 'phase-1';
 
     public const MODEL = 'haiku5';
 
-    public const EFFORT = 'medium';
+    public const EFFORT = 'high';
 
-    public const MAX_TOKENS = 16000;
+    public const MAX_TOKENS = 32000;
 
     public const TIMEOUT_SECONDS = 180;
 
@@ -33,7 +39,7 @@ final class ClaudeInspirationAnalyst
 
     public static function isPhaseOneRun(?VideoPlanningStage $stage): bool
     {
-        return is_array($stage?->input_json) && ($stage->input_json['execution'] ?? null) === self::EXECUTION;
+        return is_array($stage?->input_json) && in_array($stage->input_json['execution'] ?? null, [self::EXECUTION, self::EXECUTION_V2], true);
     }
 
     public static function instructionVersion(AiPhase $prompt): string
@@ -66,11 +72,14 @@ final class ClaudeInspirationAnalyst
         return implode("\n", $lines);
     }
 
-    /** @param ?\Closure(array<string, mixed>): (bool|null) $onProgress */
-    public function request(AiPhase $prompt, string $articleBlock, ?\Closure $onProgress = null): LlmRequest
+    /**
+     * @param  ?\Closure(array<string, mixed>): (bool|null)  $onProgress
+     * @param  ?string  $system  the system instruction built from the pinned bundle (prompt and output schema); the prompt alone when null
+     */
+    public function request(AiPhase $prompt, string $articleBlock, ?\Closure $onProgress = null, ?string $system = null): LlmRequest
     {
         return new LlmRequest(
-            (string) $prompt->prompt_content,
+            $system ?? (string) $prompt->prompt_content,
             $articleBlock,
             self::instructionVersion($prompt),
             $this->model,
@@ -83,10 +92,13 @@ final class ClaudeInspirationAnalyst
         );
     }
 
-    /** @param ?\Closure(array<string, mixed>): (bool|null) $onProgress */
-    public function analyze(AiPhase $prompt, string $articleBlock, ?\Closure $onProgress = null): InspirationResult
+    /**
+     * @param  ?\Closure(array<string, mixed>): (bool|null)  $onProgress
+     * @param  ?string  $system  the system instruction built from the pinned bundle
+     */
+    public function analyze(AiPhase $prompt, string $articleBlock, ?\Closure $onProgress = null, ?string $system = null): InspirationResult
     {
-        $request = $this->request($prompt, $articleBlock, $onProgress);
+        $request = $this->request($prompt, $articleBlock, $onProgress, $system);
         $response = $this->llm->complete($request);
 
         return new InspirationResult($response->text, self::usageOf($response, $request->instructionVersion));

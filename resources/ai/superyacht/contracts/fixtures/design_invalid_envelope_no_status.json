@@ -1,16 +1,28 @@
 {
   "action": "spec.design",
   "about": "The envelope has no status and its flags is not a list",
-  "expect": {"violations": ["ENVELOPE"], "applicable": false},
+  "expect": {"violations": ["ENVELOPE", "SCHEMA-Phase3Design"], "applicable": false},
   "output": {
+    "format": "phase3-design-v2",
     "phase": "3",
-    "prompt_version": "6.3.0",
+    "prompt_version": "superyacht_v6_3/phase-3@rev9",
     "project_id": "contract-fixture-project",
-    "data": {
-      "canonical": {"$fixture": "CanonicalDesign/valid_locked_rev1.json"},
-      "constraints": []
-    },
+    "data": {},
     "flags": {},
-    "notes": ""
+    "notes": "",
+    "self_check": [
+      {"check": "dna_fidelity", "result": "open", "note": "No design was written."},
+      {"check": "specs_and_basis", "result": "passed", "note": ""},
+      {"check": "geometry", "result": "passed", "note": ""},
+      {"check": "exterior_and_innovations", "result": "passed", "note": ""},
+      {"check": "interior_design", "result": "passed", "note": ""},
+      {"check": "spatial_connections", "result": "passed", "note": ""},
+      {"check": "operational_limits", "result": "passed", "note": ""},
+      {"check": "build_states", "result": "passed", "note": ""},
+      {"check": "materials_and_lighting", "result": "passed", "note": ""},
+      {"check": "anchors", "result": "passed", "note": ""},
+      {"check": "identity_and_names", "result": "passed", "note": ""},
+      {"check": "contract", "result": "passed", "note": ""}
+    ]
   }
 }

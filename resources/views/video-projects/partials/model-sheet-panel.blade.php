@@ -71,7 +71,8 @@
                     <div>
                         @if(($qa['prompt'] ?? null) !== null)
                             <div class="va-lbl">PROMPT GỬI ĐI <em>(đã QA)</em></div>
-                            <textarea class="va-ta" readonly>{{ $qa['prompt'] }}</textarea>
+                            <textarea class="va-ta" readonly>
+{{ $qa['prompt'] }}</textarea>
                             <div class="va-count"><span>{{ mb_strlen($qa['prompt']) }}</span> ký tự</div>
                         @endif
                         <div class="va-lbl">BẢN NHÁP CODE <em>(trước QA — không gửi đi)</em></div>
@@ -116,11 +117,14 @@
                             @if($qa['error'] !== null)
                                 <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">{{ $qa['error'] }}</div>
                             @endif
-                            @foreach($qa['validation']['errors'] ?? [] as $line)
+                            @foreach($qa['errors'] as $line)
                                 <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Lỗi kiểm: {{ $line }}</div>
                             @endforeach
-                            @foreach($qa['validation']['blocking'] ?? [] as $line)
-                                <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Chặn render: {{ $line }}</div>
+                            @foreach($qa['repairs'] as $line)
+                                <div class="va-lbl" style="font-weight:400">Sonnet đã sửa: {{ $line }}</div>
+                            @endforeach
+                            @foreach($qa['findings'] as $line)
+                                <div class="va-lbl" style="font-weight:400;color:var(--vp-amber-fg)">Vấn đề nguồn: {{ $line }}</div>
                             @endforeach
                         @endif
                     </div>

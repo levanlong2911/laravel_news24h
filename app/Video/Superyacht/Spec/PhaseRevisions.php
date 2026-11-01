@@ -146,6 +146,7 @@ final class PhaseRevisions
         $desired = [];
         $labels = [];
         $deferred = [];
+        $waiting = [];
 
         foreach (ActionContract::desiredLinks((array) ($this->contracts['workflows'][$workflow] ?? [])) as $index => $row) {
             $absent = array_diff(['phase', 'role', 'slot', 'namespace', 'schema', 'version', 'pointer', 'mode', 'required', 'source'], array_keys((array) $row));
@@ -162,6 +163,7 @@ final class PhaseRevisions
 
             if ($schema === null || $schema->status !== AiJsonSchema::PUBLISHED) {
                 $deferred[] = "{$row['phase']} {$row['role']}/{$row['slot']} -> {$row['namespace']}/{$row['schema']}@{$row['version']}";
+                $waiting[$row['phase']] = ($waiting[$row['phase']] ?? false) || $row['role'] === 'output';
 
                 continue;
             }
@@ -207,6 +209,10 @@ final class PhaseRevisions
         $changes = [];
 
         foreach ($currents as $code => $current) {
+            if ($waiting[$code] ?? false) {
+                continue;
+            }
+
             $have = [];
 
             foreach ($current->schemaLinks as $link) {

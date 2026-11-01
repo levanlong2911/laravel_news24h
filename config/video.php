@@ -865,22 +865,21 @@ return [
             'languages' => ['en'],
         ],
 
-        'phase3_requires_judges' => (bool) env('SUPERYACHT_PHASE3_REQUIRES_JUDGES', false),
-
-        'judge' => [
-            'model' => env('SUPERYACHT_JUDGE_MODEL', 'gpt-6.1-sol'),
-            'effort' => env('SUPERYACHT_JUDGE_EFFORT', 'high'),
-            'max_tokens' => (int) env('SUPERYACHT_JUDGE_MAX_TOKENS', 16000),
-            'timeout_seconds' => (int) env('SUPERYACHT_JUDGE_TIMEOUT_SECONDS', 600),
-            'stream' => false,
+        'dna' => [
+            'model' => env('SUPERYACHT_DNA_MODEL', 'opus55'),
+            'effort' => env('SUPERYACHT_DNA_EFFORT', 'high'),
+            'max_tokens' => (int) env('SUPERYACHT_DNA_MAX_TOKENS', 32000),
+            'timeout_seconds' => (int) env('SUPERYACHT_DNA_TIMEOUT_SECONDS', 1200),
+            'stream' => true,
             'retry_times' => 0,
         ],
 
         'design' => [
-            'model' => env('SUPERYACHT_DESIGN_MODEL', 'gpt-6.1-sol'),
-            'effort' => env('SUPERYACHT_DESIGN_EFFORT', 'medium'),
-            'max_tokens' => (int) env('SUPERYACHT_DESIGN_MAX_TOKENS', 48000),
-            'timeout_seconds' => (int) env('SUPERYACHT_DESIGN_TIMEOUT_SECONDS', 1800),
+            'schema_heading' => 'Output JSON Schema',
+            'model' => env('SUPERYACHT_DESIGN_MODEL', 'sonnet55'),
+            'effort' => env('SUPERYACHT_DESIGN_EFFORT', 'high'),
+            'max_tokens' => (int) env('SUPERYACHT_DESIGN_MAX_TOKENS', 128000),
+            'timeout_seconds' => (int) env('SUPERYACHT_DESIGN_TIMEOUT_SECONDS', 3600),
             'stream' => true,
             'retry_times' => 0,
         ],
@@ -892,7 +891,7 @@ return [
         ],
 
         'script' => [
-            'execution' => 'db-phase-4-script-v2',
+            'execution' => 'db-phase-4-script-v3',
             'model' => env('SUPERYACHT_SCRIPT_MODEL', 'sonnet55'),
             'effort' => env('SUPERYACHT_SCRIPT_EFFORT', 'high'),
             'max_tokens' => (int) env('SUPERYACHT_SCRIPT_MAX_TOKENS', 64000),
@@ -930,31 +929,81 @@ return [
         ],
 
         'locations' => [
-            'execution' => 'db-phase-5-locations-v1',
+            'execution' => 'db-phase-5-locations-v4',
+            'schema_heading' => 'Output JSON Schema',
             'model' => env('SUPERYACHT_LOCATIONS_MODEL', 'sonnet55'),
             'effort' => env('SUPERYACHT_LOCATIONS_EFFORT', 'high'),
+            'efforts' => ['high', 'medium'],
             'max_tokens' => (int) env('SUPERYACHT_LOCATIONS_MAX_TOKENS', 64000),
             'timeout_seconds' => (int) env('SUPERYACHT_LOCATIONS_TIMEOUT_SECONDS', 900),
+            'semantic_review' => 'manual',
             'check' => [
-                'anchor_max_words' => 250,
-                'kelvin' => [1500, 12000],
-                'clearance_m' => ['length' => 20, 'width' => 10, 'height' => 8],
-                'enclosing_kinds' => ['construction_hall', 'paint_hall'],
+                'clearance_m' => [
+                    'full_yacht' => ['length' => 20, 'width' => 10, 'height' => 8],
+                    'component' => ['length' => 0, 'width' => 0, 'height' => 0],
+                    'scale_model' => ['length' => 0, 'width' => 0, 'height' => 0],
+                ],
+                'enclosed_kinds' => ['studio', 'visualization_room', 'test_tank', 'construction_hall', 'paint_hall'],
+                'open_water_kinds' => ['sea', 'anchorage'],
+                'short_beat_sec' => 2,
+                'short_beat_max_must_show' => 1,
+                'details_only_reveals' => ['H1'],
+                'unsourced_luxury' => ['marble', 'gold', 'gilded', 'brass', 'crystal', 'chandelier', 'onyx', 'velvet', 'chrome', 'mirror-polished', 'lacquer'],
+                'night_words' => ['night', 'dusk', 'blue hour', 'twilight', 'dawn', 'pre-dawn', 'evening', 'after dark', 'sunset'],
+                'anchor_ignore_words' => ['combines', 'crowns', 'enters', 'follows', 'occupy', 'receives', 'supplies', 'contains', 'meets', 'punctures', 'sits'],
+                'token_min_length' => 5,
+                'generic_words' => [
+                    'floor', 'floors', 'walls', 'ceiling', 'ceilings', 'panel', 'panels', 'upholstery', 'joinery', 'hardware', 'fittings', 'screens',
+                    'table', 'chairs', 'rails', 'seats', 'seating', 'lining', 'linings', 'treads', 'inserts', 'benches', 'cushions', 'frames', 'consoles',
+                    'controls', 'drains', 'pads', 'water', 'light', 'above', 'below', 'beside', 'between', 'through', 'under', 'along', 'beyond', 'their',
+                    'there', 'which', 'while', 'without', 'within', 'where', 'across', 'around', 'separate', 'single', 'small', 'large', 'narrow',
+                ],
             ],
             'reference' => [
                 'task' => 'location_reference',
+                'labels' => [
+                    'space' => 'Space:',
+                    'dimensions' => 'Size:',
+                    'clear_height' => 'Clear height under the lowest overhead structure:',
+                    'deck' => 'Deck:',
+                    'state' => 'State:',
+                    'surface' => 'Surface:',
+                    'materials' => 'Materials on their surfaces:',
+                    'window' => 'Windows and openings:',
+                    'signature' => 'Signature detail:',
+                    'feature' => 'Design feature:',
+                    'elements' => 'Visible elements:',
+                    'effect' => 'Design effect:',
+                    'keep' => 'Must keep:',
+                    'built_ins' => 'Built-in pieces:',
+                    'furniture' => 'Furniture:',
+                    'room_layout' => 'Room layout:',
+                    'lighting' => 'Fixed lights:',
+                    'lighting_signature' => 'Designed lighting:',
+                    'detail' => 'State detail:',
+                    'layout' => 'Arranged in the space:',
+                    'condition' => 'Condition:',
+                    'surfaces' => 'Surfaces:',
+                    'equipment' => 'Fixed equipment:',
+                    'props' => 'Props:',
+                    'palette' => 'Colour palette:',
+                    'composition' => 'Composition:',
+                    'light' => 'Light:',
+                    'environment' => 'Seen beyond the space:',
+                    'must_show' => 'Must show:',
+                    'avoid' => 'Avoid:',
+                ],
+                'style' => [
+                    'location' => 'Photorealistic documentary photograph of a working place where superyachts are designed, built or tested: true perspective, real equipment and materials at full scale, one still frame',
+                    'open_water' => 'Photorealistic marine landscape photograph: true horizon and natural perspective, real water, light and terrain at full scale, one still frame',
+                    'interior' => 'Photorealistic interior photograph of a superyacht: true architectural perspective with straight verticals, every material rendered with its real texture, grain and finish, precise joints, reveals and shadow lines, one still frame',
+                    'exterior' => 'Photorealistic exterior photograph of this area of a superyacht: the exact form and proportions of the design, every surface rendered with its real texture and finish, one still frame',
+                ],
                 'suffix' => [
-                    'location' => 'no yacht, two or three small distant human silhouettes for scale, no text, no signage, no logos',
-                    'interior' => 'no people, no text, no signage, no logos',
-                    'exterior' => 'the yacht exactly as shown in the source images, same hull shape, same deck lines, no people, no text, no signage, no logos',
+                    'location' => 'No yacht, no people, no text, no signage, no logos',
+                    'interior' => 'No people, no text, no signage, no logos',
+                    'exterior' => 'No people, no text, no signage, no logos',
                 ],
-                'roles' => [
-                    'keep_view' => 'Keep the exact camera position, framing, room geometry and window positions of the first source image; change only what the description above states.',
-                    'identity' => 'Take only materials, shapes and colours from the reference images of this space, never their camera position or framing.',
-                    'setting' => 'Use the image of the surrounding location only as the setting around the yacht, never as a camera reference.',
-                ],
-                'camera_label' => 'Camera:',
-                'palette_label' => 'Colour palette:',
             ],
         ],
 
@@ -968,19 +1017,20 @@ return [
                 ['id' => 'MS5', 'view' => 'stern head-on'],
                 ['id' => 'MS6', 'view' => 'top-down plan view'],
                 ['id' => 'MS7', 'view' => 'aerial 3/4 from high port bow'],
-                ['id' => 'MS8', 'view' => 'close-up of innovation N1'],
+                ['id' => 'MS8', 'view' => 'close-up chosen from the design'],
             ],
+            // Thong so camera gui Sonnet; Sonnet viet cau camera vao final_prompt va khong doi MS1-MS7.
             'cameras' => [
-                'MS1' => 'Orthographic exact side elevation at 90 degrees to the centreline, no perspective.',
-                'MS2' => 'Camera about 35 degrees off the bow axis on the port side, at eye level, lens equivalent to about 85 mm.',
-                'MS3' => 'Camera about 35 degrees off the stern axis on the starboard side, at eye level, lens equivalent to about 85 mm.',
-                'MS4' => 'Orthographic exact front elevation on the centreline, no perspective.',
-                'MS5' => 'Orthographic exact rear elevation on the centreline, no perspective.',
-                'MS6' => 'Orthographic view straight down from above, no perspective.',
-                'MS7' => 'Camera about 35 degrees off the bow axis on the port side, looking down 25 to 35 degrees, lens equivalent to about 85 mm.',
-                // {target}: muc tieu MS8 cua tung thiet ke (ModelSheetFacts::ms8Target), cung nguon voi nhan goc.
-                'MS8' => 'Close-up camera framed on {target}, lens equivalent to about 85 mm.',
+                'MS1' => ['azimuth_deg' => 90, 'elevation_deg' => 0, 'projection' => 'orthographic'],
+                'MS2' => ['azimuth_deg' => 45, 'elevation_deg' => 3, 'projection' => 'perspective', 'lens_mm' => 85],
+                'MS3' => ['azimuth_deg' => 225, 'elevation_deg' => 3, 'projection' => 'perspective', 'lens_mm' => 85],
+                'MS4' => ['azimuth_deg' => 0, 'elevation_deg' => 0, 'projection' => 'orthographic'],
+                'MS5' => ['azimuth_deg' => 180, 'elevation_deg' => 0, 'projection' => 'orthographic'],
+                'MS6' => ['azimuth_deg' => null, 'elevation_deg' => 90, 'projection' => 'orthographic', 'bow' => 'toward the top of the panel'],
+                'MS7' => ['azimuth_deg' => 45, 'elevation_deg' => 35, 'projection' => 'perspective', 'lens_mm' => 85],
+                'MS8' => ['azimuth_deg' => null, 'elevation_deg' => null, 'projection' => 'perspective', 'lens_mm' => 85, 'target' => 'a close-up chosen from the design: its own MS8 guidance first, including notes; never a default innovation'],
             ],
+            'camera_convention' => 'Azimuth is measured around the yacht from the bow: 0 = bow, 90 = port, 180 = stern, 270 = starboard. Elevation 0 = eye level, 90 = straight down.',
             /*
              * Model sheet master: MOT request AI tao MOT anh 3840x2160, luoi 2 hang x 4 cot,
              * roi may chu cat tam o 960x1080 theo toa do co dinh. Luot render dung prompt QA da dat. Nhan va duong phan cach do giao dien
@@ -990,10 +1040,10 @@ return [
              * tam goc sinh cung mot luot.
              */
             'master' => [
-                // v2: noi dung prompt do Sonnet QA bien tap tu ban thiet ke, code kiem va ghep.
-                'execution' => 'model-sheet-master-v2',
+                // v3: Sonnet viet toan bo prompt (final_prompt); he thong luu, hien va gui nguyen van.
+                'execution' => 'model-sheet-master-v3',
                 // Bo da duyet o cac execution nay van la model sheet hop le.
-                'supported_executions' => ['model-sheet-master-v1', 'model-sheet-master-v2'],
+                'supported_executions' => ['model-sheet-master-v1', 'model-sheet-master-v2', 'model-sheet-master-v3'],
                 'size' => '3840x2160',
                 'variations' => 1,
                 'columns' => 4,
@@ -1008,9 +1058,10 @@ return [
                 'layout_guide' => (bool) env('MODEL_SHEET_LAYOUT_GUIDE', false),
                 'guide_background' => '#D9D9D9',
                 'guide_line' => '#BDBDBD',
+                // Quy tac co dinh (fixed_rules) gui Sonnet; Sonnet dua vao final_prompt dung mot lan, code khong chen lai.
                 'prompt' => [
                     'layout' => 'ONE image of {width}x{height} pixels: a model sheet of this one yacht in {rows} rows by {columns} columns of equal panels, each panel {cell_width}x{cell_height} pixels, covering the whole image edge to edge with no title strip and no caption area.',
-                    'panel' => 'Row {row}, column {column} ({x}-{x_end} px across, {y}-{y_end} px down): {id}, {view}. {camera}',
+                    'panel' => 'Row {row}, column {column} ({x}-{x_end} px across, {y}-{y_end} px down): {id}, {view}.',
                     'framing' => 'In every whole-yacht panel the complete yacht required by that camera is inside the panel with a margin of plain studio background on every side; it never touches or crosses into another panel.',
                     'detail_framing' => 'Panel {id} is a detail view and may crop close on its subject.',
                     'rules' => [
@@ -1022,42 +1073,32 @@ return [
                     ],
                     'presentation' => 'Studio presentation: the complete finished yacht stands clear of the water, so its whole outer hull down to the keel is visible; nothing is cut open or made transparent.',
                     'guide_caption' => 'The attached image is only a layout guide showing the position of the eight panels; it contains no yacht. Place each view inside its panel and do not draw the guide lines.',
-                    // Prompt cuoi vuot nguong thi bao loi, khong cat chuoi.
+                    // Do dai toi da Sonnet phai giu cho final_prompt.
                     'max_chars' => 20000,
                 ],
             ],
 
             /*
-             * QA prompt model sheet: Sonnet 5.5 doc toan bo ban thiet ke + bang du kien do code
-             * dung, tra JSON co nguon (schema trong ModelSheetQaValidator); code kiem va ghep
-             * prompt cuoi. Prompt QA doc tu DB: phase `phase_code` cua workflow theo category.
+             * Prompt model sheet: Sonnet 5.5 doc ban thiet ke day du mot lan, ban nhap, chi muc,
+             * camera va quy tac co dinh, viet toan bo final_prompt va tu kiem (schema trong
+             * ModelSheetQaSchema). Code chi kiem ky thuat va luu nguyen van. Prompt QA doc tu DB:
+             * phase `phase_code` cua workflow theo category.
              */
             'qa' => [
-                'execution' => 'model-sheet-qa-v1',
+                'execution' => 'model-sheet-qa-v2',
                 'phase_code' => 'phase-3-model-sheet',
                 'model' => env('MODEL_SHEET_QA_MODEL', 'claude-sonnet-5-5'),
-                'effort' => env('MODEL_SHEET_QA_EFFORT', 'medium'),
+                'effort' => env('MODEL_SHEET_QA_EFFORT', 'high'),
                 // Tinh ca thinking: luot that dau tien dung ~24k thinking + ~12k JSON, vuot tran 32k.
                 'max_tokens' => (int) env('MODEL_SHEET_QA_MAX_TOKENS', 64000),
                 // Uoc tinh hien tren nut QA, theo luot do that (50k vao, ~36k ra gom thinking).
                 'estimate_tokens' => ['input' => 50000, 'output' => 36000],
                 'timeout_seconds' => (int) env('MODEL_SHEET_QA_TIMEOUT_SECONDS', 900),
                 'stream' => true,
-                // false: schema dau ra nam trong prompt, may chu kiem (ModelSheetQaValidator). Schema QA
-                // vuot gioi han grammar cua structured output Anthropic ("compiled grammar is too large").
+                // false: schema dau ra nam trong prompt, may chu kiem cau truc (ModelSheetQaSchema).
                 'enforce_schema' => (bool) env('MODEL_SHEET_QA_ENFORCE_SCHEMA', false),
                 // Gia theo ClaudeWriterService::MODEL_CATALOG['sonnet55'].
                 'pricing' => ['input_usd_per_mtok' => 2.00, 'output_usd_per_mtok' => 10.00, 'version' => 'anthropic-sonnet55-2026-10'],
-                // Muc tieu mem: nhieu hon thi la ghi chu cho nguoi duyet, khong lam roi noi dung.
-                'negatives_target' => 5,
-                // Uu tien ung vien theo goc (khong phai luat loai bo).
-                'priority' => [
-                    'MS2_max_x' => 0.6,
-                    'MS3_min_x' => 0.4,
-                    'MS4_max_x' => 0.33,
-                    'MS5_min_x' => 0.67,
-                    'MS8_near_loa' => 0.1,
-                ],
             ],
 
             'occlusion' => 'Keep every part at its stated shape, size and position. Where this camera cannot see a part, leave it hidden; do not move, duplicate, enlarge or make anything transparent to reveal it.',
@@ -1105,19 +1146,37 @@ return [
             'workflows' => [
                 'superyacht_v6_3' => [
                     'actions' => [
+                        'spec.inspiration' => [
+                            'phase' => 'phase-1',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'outputs' => [
+                                'evidence' => ['namespace' => 'superyacht', 'schema' => 'Phase1Evidence', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 1 Output (format phase1-evidence-v2): the subject of the article, its identity, exterior, interior, technology, scale, intent, captions and claims, each value with verbatim evidence and its source tag, the open source issues and the eight self-checks; release database/releases/phase-1-inspiration-v3'],
+                            ],
+                        ],
+                        'spec.dna' => [
+                            'phase' => 'phase-2',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'outputs' => [
+                                'dna' => ['namespace' => 'superyacht', 'schema' => 'Phase2Dna', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 2 Output (format phase2-dna-v2): the design DNA — theme, departures from Phase 1 ids, exactly three innovations, silhouette, must-avoid list, hero moment and emotion — and the ten self-checks the writer ran and repaired before answering; release database/releases/phase-2-design-dna-v4'],
+                            ],
+                        ],
                         'spec.design' => [
                             'phase' => 'phase-3',
                             'instructions' => [],
                             'executor' => 'none',
                             'model_profile' => null,
-                            'contract_version' => '3',
+                            'contract_version' => '11',
                             'stages' => [
-                                'draft' => ['canonical'],
-                                'lock' => ['canonical', 'constraints'],
+                                'draft' => ['design'],
                             ],
                             'outputs' => [
-                                'canonical' => ['namespace' => 'superyacht', 'schema' => 'CanonicalDesign', 'version' => '6.3.0', 'pointer' => '/data/canonical', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 0 Step 6 data contract: canonical (Phase 3); Phase 3 Step 11 example'],
-                                'constraints' => ['namespace' => 'superyacht', 'schema' => 'Constraint', 'version' => '6.3.0', 'pointer' => '/data/constraints', 'mode' => 'each_item', 'required' => true, 'source' => 'Phase 0 Step 6 data contract: constraints[] (Phase 3); Phase 3 Step 11 example'],
+                                'design' => ['namespace' => 'superyacht', 'schema' => 'Phase3Design', 'version' => '3.2.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 3 Output (format phase3-design-v3): the whole answer in one schema — the envelope with its status and flags, and one object-based design record: vessel, parts with their configurations and lights, decks, spaces, connections, routes, innovations with their modes, operational limits, build states from studio to launch (BS01–BS05 design development, BS06–BS12 construction and completion), identity rules, source issues and the model sheet with its eight views and final prompt; design prose sized to its object, without word limits; release database/releases/phase-3-design-v9'],
                             ],
                             'records' => [
                                 'lock/design' => ['namespace' => 'superyacht', 'schema' => 'LockRecord', 'version' => '6.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'match' => ['/lock_type' => ['design']], 'source' => 'Pipeline map: DESIGN LOCK (lock record); Phase 3 Step 11 design lock; LockRecord.lock_type design'],
@@ -1134,7 +1193,7 @@ return [
                                 'draft' => ['script'],
                             ],
                             'outputs' => [
-                                'script' => ['namespace' => 'superyacht', 'schema' => 'Phase4Script', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 4 Output (format phase4-script-v2): the whole envelope with data.story (spine), data.anchors.character and data.script (17 beats, tour); release database/releases/phase-4-script-v2'],
+                                'script' => ['namespace' => 'superyacht', 'schema' => 'Phase4Script', 'version' => '2.1.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 4 Output (format phase4-script-v2): the whole envelope with data.story (spine), data.anchors.character within the x-word-limits of the schema and data.script (17 beats, tour); release database/releases/phase-4-script-v3'],
                             ],
                         ],
                         'spec.locations' => [
@@ -1147,7 +1206,7 @@ return [
                                 'draft' => ['locations'],
                             ],
                             'outputs' => [
-                                'locations' => ['namespace' => 'superyacht', 'schema' => 'Phase5Locations', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 5 Output (format phase5-locations-v1): locations, interior_sets, exterior_amenities, bindings, reference_requests, production_assumptions; release database/releases/phase-5-locations-v1'],
+                                'locations' => ['namespace' => 'superyacht', 'schema' => 'Phase5Locations', 'version' => '4.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 5 Output (format phase5-locations-v4): in one answer the places outside the yacht with their fixed description and fit, and the shared background plates the approved script needs, each from a design id, a design id mapped with evidence, or a location of the same answer, with the design features (by the relation the design gives the space) and night lighting they show; unplated beats, unresolved mappings, conflicts and continuity; release database/releases/phase-5-locations-v12'],
                             ],
                         ],
                         'spec.shot_list' => [

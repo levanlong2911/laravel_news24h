@@ -221,6 +221,16 @@ final class ScriptSourceService
         ];
     }
 
+    /** @param array<string, mixed> $token a token a consumer pinned earlier */
+    public function tokenIsCurrent(string $projectId, array $token): bool
+    {
+        try {
+            return $this->approvedSource($projectId)['token'] == $token;
+        } catch (RuntimeException) {
+            return false;
+        }
+    }
+
     /** @return ?array{stage_id: string, content_hash: string, approval_id: string, version: int, selected_at: string} */
     public function selection(string $projectId): ?array
     {

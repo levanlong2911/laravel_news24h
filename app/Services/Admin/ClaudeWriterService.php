@@ -30,6 +30,13 @@ class ClaudeWriterService
             'output_usd_per_mtok' => 10.00,
             'thinking' => null,
         ],
+        'opus55' => [
+            'id' => 'claude-opus-5-5',
+            'max_tokens' => 32000,
+            'input_usd_per_mtok' => 4.00,
+            'output_usd_per_mtok' => 20.00,
+            'thinking' => null,
+        ],
         'sonnet' => [
             'id' => 'claude-sonnet-4-6',
             'max_tokens' => 8000,

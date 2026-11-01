@@ -104,9 +104,7 @@ class DesignImageDirectRenderer
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
                 'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
                 'environment_plate' => $this->environmentPlate($spec, $budget),
-                LocationReferencePrompt::OPERATION => $spec['sources'] === []
-                    ? $this->client->generate($spec, $budget)
-                    : $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
+                LocationReferencePrompt::OPERATION => $this->client->generate($spec, $budget),
                 ModelSheetService::MASTER_OPERATION => $this->modelSheetMaster($spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),
                 default => throw new RuntimeException(

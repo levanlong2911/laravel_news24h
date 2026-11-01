@@ -1,17 +1,100 @@
 {
   "action": "spec.design",
-  "about": "A slot that is present with the value null is checked, not treated as missing",
-  "expect": {"violations": ["SCHEMA-CanonicalDesign"], "applicable": false},
+  "about": "A complete answer whose data.canonical is null is refused by the one schema of Phase 3, not treated as missing",
+  "expect": {"violations": ["SCHEMA-Phase3Design"], "applicable": false},
   "output": {
+    "format": "phase3-design-v2",
     "phase": "3",
-    "prompt_version": "6.3.0",
+    "prompt_version": "superyacht_v6_3/phase-3@rev9",
     "project_id": "contract-fixture-project",
     "status": "ok",
     "data": {
-      "canonical": null,
-      "constraints": []
+      "yacht_bible": {
+        "name": "Arclight",
+        "specs": {
+          "loa": {"value": 148, "unit": "m", "basis": "CONCEPT_ASSUMPTION"},
+          "beam": {"value": 21, "unit": "m", "basis": "CONCEPT_ASSUMPTION"},
+          "gross_tonnage": {"value": 7200, "unit": "GT", "basis": "CONCEPT_ASSUMPTION"},
+          "decks": {"value": 5, "unit": "decks", "basis": "CONCEPT_ASSUMPTION"},
+          "guests": {"value": 24, "unit": "persons", "basis": "CONCEPT_ASSUMPTION"},
+          "crew": {"value": 60, "unit": "persons", "basis": "CONCEPT_ASSUMPTION"},
+          "justifications": {"decks": "Five long decks under one crest replace the usual stack."}
+        },
+        "fictional_status": "CONCEPT SPECS — NOT A REAL VESSEL",
+        "code_assumption": "Passenger-yacht code for 24 guests.",
+        "decks": [
+          {"name": "Lower", "layout": "Fore: crew; mid: spa, gym and cinema; aft: tender bay."},
+          {"name": "Main", "layout": "Fore: lobby; mid: salon and dining; aft: pool terrace."},
+          {"name": "Upper", "layout": "Fore: VIP suite; mid: guest cabins; aft: open lounge."},
+          {"name": "Owner", "layout": "Fore: owner room under the crest; aft: private terrace."},
+          {"name": "Bridge", "layout": "Fore: wheelhouse; aft: sky lounge and crest roof."}
+        ],
+        "colors": [
+          {"role": "hull", "name": "Basalt Graphite", "hex": "#2B2E33"},
+          {"role": "superstructure", "name": "Salt White", "hex": "#EEECE6"},
+          {"role": "accent", "name": "Oxidized Bronze", "hex": "#6E5A43"}
+        ],
+        "exterior": {
+          "silhouette": "One long crest rises from the bow, holds level over midships and drops to a lower aft terrace above a squared stern.",
+          "bow": "A plumb bow with a fine entry; the crest begins just behind it.",
+          "hull": "A Basalt Graphite gloss hull with a straight sheer and one row of hull windows at the gym.",
+          "superstructure": "Five decks in Salt White step back under the crest; the bridge deck is the shortest and sits forward.",
+          "glazing": "Smoke glazing in separate groups: two tall bow windows on the upper deck, recessed bow windows at the wheelhouse, slot windows at the sky lounge and full-height aft glazing at the salon.",
+          "mast_radar": "No visible mast; radar domes sit flush in the crest roof behind the mirror facets.",
+          "helidecks": "No helideck.",
+          "stern": "A squared transom above a full-width stern platform; the pool terrace sits one deck above it.",
+          "water_access": "A full-width stern platform at the waterline, reached from the lower deck aft."
+        },
+        "innovations": [
+          {"id": "N1", "name": "Crest Mirrors", "purpose": "Sends daylight down to the owner room below the crest.", "position": "Flush mirror facets along the crest roof.", "geometry": "Flat facets 2 by 3 m behind flush shields.", "visible_expression": "Rectangular mirror facets readable from above.", "effect": "A band of daylight crosses the owner room floor.", "plausibility_note": ["Mirrors must never focus light."]},
+          {"id": "N2", "name": "Sunken Pool", "purpose": "Lets guests swim below the wind line.", "position": "A pool recessed into the aft terrace.", "geometry": "A 9 m basin with a stepped edge.", "visible_expression": "The basin sits below the terrace edge.", "effect": null, "plausibility_note": ["Covered at sea."]},
+          {"id": "N3", "name": "Rib Ceiling", "purpose": "Carries the crest load without columns in the salon.", "position": "Curved ribs across the salon ceiling.", "geometry": "Ribs at 1.2 m pitch.", "visible_expression": "Exposed ribs in pale oak.", "effect": null, "plausibility_note": []}
+        ],
+        "exterior_zones": [
+          {"id": "EXT01", "name": "Crest roof", "text": "Crest roof: a closed roof along the crest holding the mirror facets.", "use": "Service access for the mirrors only."},
+          {"id": "EXT02", "name": "Pool terrace", "text": "Pool terrace: an open aft deck around the sunken pool.", "use": "Swimming and lounging at anchor."}
+        ],
+        "rooms": [
+          {"id": "INT01", "name": "Owner room", "position": "Owner deck forward, below the crest", "size_feel": "A long room narrower than the hull.", "use": "The owner's bedroom and retreat.", "activities": ["sleeping"], "privacy": "private", "layout": {"use_zones": "sleeping zone forward", "orientation": "the bed faces the light shaft", "circulation": "a path along the port wall", "focal_point": "the light shaft"}, "built_ins": [{"id": "INT01-B01", "name": "Sleeping platform", "description": "A recessed platform below the shaft."}], "furniture": [{"item": "low bed", "placement": "on the sleeping platform"}], "surfaces": [{"element": "floor", "built_in": null, "material": "honed limestone", "finish": "honed"}], "palette": ["#B7AA96", "#E9E3D8"], "signature_detail": "A daylight shaft ends above the sleeping platform.", "window_type": "A filtered overhead light well.", "lighting": []},
+          {"id": "INT02", "name": "VIP suite", "position": "Upper deck forward", "size_feel": "A square suite.", "use": "The main guest suite.", "activities": ["sleeping"], "privacy": "guests", "layout": {"use_zones": "bed and sitting niche", "orientation": "the bed faces the bow windows", "circulation": "a path at the foot of the bed", "focal_point": "the bow windows"}, "built_ins": [], "furniture": [], "surfaces": [{"element": "floor", "built_in": null, "material": "oak", "finish": "matte oil"}], "palette": ["#E9E3D8", "#B9A78D"], "signature_detail": "Two tall bow windows frame the bed.", "window_type": "Two tall bow windows.", "lighting": []},
+          {"id": "INT03", "name": "Main salon", "position": "Main deck midships", "size_feel": "A broad room under curved ribs.", "use": "Where guests gather.", "activities": ["conversation"], "privacy": "guests", "layout": {"use_zones": "two seating groups", "orientation": "the sofas face the aft glazing", "circulation": "a path along the starboard wall", "focal_point": "the aft glazing"}, "built_ins": [], "furniture": [], "surfaces": [{"element": "floor", "built_in": null, "material": "bleached oak", "finish": "matte oil"}], "palette": ["#E9E3D8", "#6E5A43"], "signature_detail": "Curved oak ribs cross the ceiling.", "window_type": "Aft glazing to the terrace.", "lighting": []},
+          {"id": "INT04", "name": "Dining room", "position": "Main deck forward of the salon", "size_feel": "An elongated room.", "use": "Formal meals.", "activities": ["dining"], "privacy": "mixed", "layout": {"use_zones": "one table", "orientation": "the table follows the room's length", "circulation": "service along the inboard wall", "focal_point": "the table"}, "built_ins": [], "furniture": [], "surfaces": [{"element": "floor", "built_in": null, "material": "oak", "finish": "matte oil"}], "palette": ["#B9A78D", "#EEECE6"], "signature_detail": "An oval aperture over the table.", "window_type": "Two side reveals.", "lighting": []},
+          {"id": "INT05", "name": "Sky lounge", "position": "Bridge deck aft", "size_feel": "A shallow room across the deck.", "use": "Evening drinks.", "activities": ["conversation"], "privacy": "guests", "layout": {"use_zones": "one seating band", "orientation": "seats face aft", "circulation": "a path behind the seats", "focal_point": "the aft view"}, "built_ins": [], "furniture": [], "surfaces": [{"element": "floor", "built_in": null, "material": "cork", "finish": "sealed"}], "palette": ["#A69781", "#2B2E33"], "signature_detail": "Slot windows between thick piers.", "window_type": "Horizontal slot windows.", "lighting": []},
+          {"id": "INT06", "name": "Spa", "position": "Lower deck midships", "size_feel": "A sequence of bays.", "use": "Treatments and steam.", "activities": ["treatment"], "privacy": "guests", "layout": {"use_zones": "three treatment bays", "orientation": "benches face the wall relief", "circulation": "a corridor past the bays", "focal_point": "the stone wall"}, "built_ins": [], "furniture": [], "surfaces": [{"element": "walls", "built_in": null, "material": "limestone", "finish": "honed"}], "palette": ["#A79B87", "#D8D2C6"], "signature_detail": "Heated benches merge with the stone wall.", "window_type": "No windows.", "lighting": []},
+          {"id": "INT07", "name": "Gym", "position": "Lower deck aft", "size_feel": "A compact room.", "use": "Exercise.", "activities": ["exercise"], "privacy": "guests", "layout": {"use_zones": "one equipment zone", "orientation": "machines face the hull windows", "circulation": "a clear centre", "focal_point": "the hull windows"}, "built_ins": [], "furniture": [], "surfaces": [{"element": "floor", "built_in": null, "material": "rubber", "finish": "matte"}], "palette": ["#68655D", "#C9C4BA"], "signature_detail": "Hull windows at eye level.", "window_type": "Hull windows.", "lighting": []},
+          {"id": "INT08", "name": "Cinema", "position": "Lower deck forward of the spa", "size_feel": "A stepped room.", "use": "Films.", "activities": ["watching films"], "privacy": "guests", "layout": {"use_zones": "stepped seating", "orientation": "seats face the screen wall", "circulation": "a side aisle", "focal_point": "the screen wall"}, "built_ins": [], "furniture": [], "surfaces": [{"element": "walls", "built_in": null, "material": "wool felt", "finish": "stretched"}], "palette": ["#3A3A38", "#6E5A43"], "signature_detail": "A curved front wall holds the screen.", "window_type": "No windows.", "lighting": []},
+          {"id": "INT09", "name": "Wheelhouse", "position": "Bridge deck forward", "size_feel": "A transverse working room.", "use": "Navigation.", "activities": ["navigation"], "privacy": "crew", "layout": {"use_zones": "central console and side stations", "orientation": "the console faces the bow windows", "circulation": "behind the console", "focal_point": "the bow windows"}, "built_ins": [], "furniture": [], "surfaces": [{"element": "floor", "built_in": null, "material": "cork", "finish": "sealed"}], "palette": ["#454742", "#A69781"], "signature_detail": "Thick reveal cheeks split the bow windows.", "window_type": "Recessed bow windows.", "lighting": []},
+          {"id": "INT10", "name": "Lobby and stair", "position": "Main deck forward, rising to the owner deck", "size_feel": "A tall stair void.", "use": "Arrival and circulation between decks.", "activities": ["arriving"], "privacy": "mixed", "layout": {"use_zones": "arrival floor and stair", "orientation": "the stair rises around the void", "circulation": "the stair itself", "focal_point": "the void"}, "built_ins": [], "furniture": [], "surfaces": [{"element": "floor", "built_in": null, "material": "oak", "finish": "oiled"}], "palette": ["#C1B5A2", "#EEECE6"], "signature_detail": "The stair winds around one void.", "window_type": "A skylight at the top of the void.", "lighting": []}
+        ],
+        "lighting_signature": "Shielded 2700 K strips light the walking surfaces; the hull stays unlit.",
+        "interior_set_states": {"bare": "Exposed structure, insulation and cable trays.", "fitout": "Installed joinery and linings, floors under protective coverings.", "finished": "The room's surfaces, built-ins, furniture, windows and signature detail are complete."}
+      },
+      "anchors": {
+        "yacht": "A 148-metre motor superyacht under one rising crest, graphite hull, salt-white superstructure, crest mirrors, a sunken aft pool and a squared stern platform.",
+        "geometry": "A 148-metre motor superyacht under one rising crest with a dropped aft terrace and a squared stern platform.",
+        "finished_surface": "Basalt Graphite gloss hull, Salt White superstructure, smoke glazing.",
+        "surface_states": {"BS06": "Steel in primer.", "BS07": "Steel in primer.", "BS08": "Primer and raw aluminium.", "BS09": "Glazing under film.", "BS10": "Grey filler.", "BS11": "Final paint.", "BS12": "Final paint and glass."},
+        "exterior": {"EXT01": "The crest roof holds flush mirror facets.", "EXT02": "The pool terrace surrounds a sunken basin."},
+        "interior": {"INT01": "The owner room under a daylight shaft.", "INT02": "The VIP suite in oak.", "INT03": "The main salon under oak ribs.", "INT04": "The dining room around an oval table.", "INT05": "The sky lounge with slot windows.", "INT06": "The spa with heated benches.", "INT07": "The gym with hull windows.", "INT08": "The cinema with stepped seats.", "INT09": "The wheelhouse with split bow windows.", "INT10": "The lobby and stair wind around one void."}
+      },
+      "build_states": {"BS01": "the yacht as a sketch", "BS02": "the yacht as a concept board", "BS03": "the yacht as a wireframe", "BS04": "the yacht as a clay render", "BS05": "the yacht as a scale model", "BS06": "the yacht as keel blocks", "BS07": "the yacht as a hull", "BS08": "the yacht with its superstructure", "BS09": "the yacht with its glazing", "BS10": "the yacht in filler", "BS11": "the yacht in final colors", "BS12": "the yacht afloat"},
+      "canonical": null
     },
     "flags": [],
-    "notes": ""
+    "notes": "",
+    "self_check": [
+      {"check": "dna_fidelity", "result": "passed", "note": ""},
+      {"check": "specs_and_basis", "result": "passed", "note": ""},
+      {"check": "geometry", "result": "passed", "note": ""},
+      {"check": "exterior_and_innovations", "result": "passed", "note": ""},
+      {"check": "interior_design", "result": "passed", "note": ""},
+      {"check": "spatial_connections", "result": "passed", "note": ""},
+      {"check": "operational_limits", "result": "passed", "note": ""},
+      {"check": "build_states", "result": "passed", "note": ""},
+      {"check": "materials_and_lighting", "result": "passed", "note": ""},
+      {"check": "anchors", "result": "passed", "note": ""},
+      {"check": "identity_and_names", "result": "passed", "note": ""},
+      {"check": "contract", "result": "passed", "note": ""}
+    ]
   }
 }

@@ -9,16 +9,25 @@ final class DesignProse
     /** @var list<string> */
     private const BIBLE_SECTIONS = ['name', 'fictional_status', 'code_assumption', 'specs', 'colors', 'exterior', 'exterior_zones', 'innovations', 'decks', 'rooms'];
 
+    /** @var array<string, string> the list blocks of a phase3-design-v3 record by data key, with their section titles, in record order */
+    private const RECORD_SECTIONS = ['parts' => 'Parts', 'decks' => 'Decks', 'spaces' => 'Spaces', 'connections' => 'Connections', 'routes' => 'Routes', 'innovations' => 'Innovations', 'operational_limits' => 'Operations', 'build_states' => 'Build states', 'identity_rules' => 'Identity rules', 'source_issues' => 'Source issues'];
+
     /**
      * @param  array<mixed>  $data
      * @return list<array{title: string, blocks: list<array{heading: ?string, lines: list<array{label: ?string, text: string|list<string>}>}>}>
      */
     public static function sections(array $data): array
     {
+        if (self::map($data['vessel'] ?? null) !== []) {
+            return self::record($data);
+        }
+
         $bible = self::map($data['yacht_bible'] ?? null);
         $anchors = self::map($data['anchors'] ?? null);
         $canonical = self::map($data['canonical'] ?? null);
         $states = self::map($data['build_states'] ?? null);
+        $spaces = array_column(self::items($canonical['spaces'] ?? null), null, 'id');
+        $relations = array_column(self::items($canonical['innovations'] ?? null), null, 'id');
 
         return array_values(array_filter([
             self::section('Overview', [self::block(
@@ -28,16 +37,19 @@ final class DesignProse
             self::section('Exterior', [
                 self::block(null, [...self::lines(['geometry_anchor' => $anchors['geometry'] ?? null, 'finished_surface' => $anchors['finished_surface'] ?? null]), ...self::lines(self::map($bible['exterior'] ?? null))]),
                 ...array_map(
-                    static fn (array $zone): ?array => self::block(self::title($zone), [...self::lines($zone, ['id']), ...self::lines(['anchor' => self::map($anchors['exterior'] ?? null)[$zone['id'] ?? ''] ?? null])]),
+                    static fn (array $zone): ?array => self::block(self::title($zone), [...self::lines($zone, ['id', 'name']), ...self::space($spaces[$zone['id'] ?? ''] ?? null), ...self::lines(['anchor' => self::map($anchors['exterior'] ?? null)[$zone['id'] ?? ''] ?? null])]),
                     self::items($bible['exterior_zones'] ?? null),
                 ),
             ]),
-            self::section('Innovations', array_map(static fn (array $item): ?array => self::block(self::title($item), self::lines($item, ['id', 'name'])), self::items($bible['innovations'] ?? null))),
+            self::section('Innovations', array_map(static fn (array $item): ?array => self::block(self::title($item), [...self::lines($item, ['id', 'name']), ...self::lines(array_diff_key(self::map($relations[$item['id'] ?? ''] ?? null), ['id' => true]))]), self::items($bible['innovations'] ?? null))),
             self::section('Decks', array_map(static fn (array $deck): ?array => self::block(self::title($deck), self::lines($deck, ['name'])), self::items($bible['decks'] ?? null))),
             self::section('Interior', array_map(
-                static fn (array $room): ?array => self::block(self::title($room), [...self::lines($room, ['id', 'name']), ...self::lines(['anchor' => self::map($anchors['interior'] ?? null)[$room['id'] ?? ''] ?? null])]),
+                static fn (array $room): ?array => self::block(self::title($room), [...self::lines($room, ['id', 'name']), ...self::space($spaces[$room['id'] ?? ''] ?? null), ...self::lines(['anchor' => self::map($anchors['interior'] ?? null)[$room['id'] ?? ''] ?? null])]),
                 self::items($bible['rooms'] ?? null),
             )),
+            self::section('Connections', array_map(static fn (array $item): ?array => self::block(is_string($item['id'] ?? null) ? $item['id'] : null, self::lines($item, ['id'])), self::items($canonical['connections'] ?? null))),
+            self::section('Routes', array_map(static fn (array $item): ?array => self::block(is_string($item['id'] ?? null) ? $item['id'] : null, self::lines($item, ['id'])), self::items($canonical['routes'] ?? null))),
+            self::section('Identity rules', array_map(static fn (array $item): ?array => self::block(is_string($item['id'] ?? null) ? $item['id'] : null, self::lines($item, ['id'])), self::items($canonical['identity_features'] ?? null))),
             self::section('Build states', array_map(
                 static fn (string $id): ?array => self::block($id, self::lines(['state' => $states[$id] ?? null, 'surface_state' => self::map($anchors['surface_states'] ?? null)[$id] ?? null])),
                 array_values(array_unique([...array_keys($states), ...array_keys(self::map($anchors['surface_states'] ?? null))])),
@@ -47,6 +59,31 @@ final class DesignProse
                 self::items($canonical['operational_limits'] ?? null),
             )),
             self::section('Additional information', [self::block(null, self::lines(array_diff_key($bible, array_flip(self::BIBLE_SECTIONS))))]),
+        ]));
+    }
+
+    /**
+     * @param  array<mixed>  $data  the data of a phase3-design-v3 answer
+     * @return list<array{title: string, blocks: list<array{heading: ?string, lines: list<array{label: ?string, text: string|list<string>}>}>}>
+     */
+    private static function record(array $data): array
+    {
+        $vessel = self::map($data['vessel'] ?? null);
+        $sheet = self::map($data['model_sheet'] ?? null);
+        $item = static fn (array $item): ?array => self::block(self::title($item), self::lines($item, ['id', 'name'], null, true));
+
+        return array_values(array_filter([
+            self::section('Vessel', [self::block(is_string($vessel['name'] ?? null) ? $vessel['name'] : null, self::lines($vessel, ['name'], null, true))]),
+            ...array_map(
+                static fn (string $key, string $title): ?array => self::section($title, array_map($item, self::items($data[$key] ?? null))),
+                array_keys(self::RECORD_SECTIONS),
+                array_values(self::RECORD_SECTIONS),
+            ),
+            self::section('Model sheet', [
+                self::block(null, self::lines(['display_configuration' => $sheet['display_configuration'] ?? null])),
+                ...array_map($item, self::items($sheet['views'] ?? null)),
+                self::block(null, self::lines(['final_prompt' => $sheet['final_prompt'] ?? null])),
+            ]),
         ]));
     }
 
@@ -99,9 +136,10 @@ final class DesignProse
     /**
      * @param  array<mixed>  $fields
      * @param  list<string>  $skip
+     * @param  bool  $figures  also write numbers, yes/no values and each {value, unit} figure on its own line
      * @return list<array{label: ?string, text: string|list<string>}>
      */
-    private static function lines(array $fields, array $skip = [], ?string $prefix = null): array
+    private static function lines(array $fields, array $skip = [], ?string $prefix = null, bool $figures = false): array
     {
         $lines = [];
 
@@ -114,18 +152,73 @@ final class DesignProse
 
             if (self::prose($value)) {
                 $lines[] = ['label' => $label, 'text' => trim($value)];
+            } elseif ($figures && (is_int($value) || is_float($value) || is_bool($value))) {
+                $lines[] = ['label' => $label, 'text' => is_bool($value) ? ($value ? 'yes' : 'no') : (string) $value];
+            } elseif ($figures && is_array($value) && (is_int($value['value'] ?? null) || is_float($value['value'] ?? null))) {
+                $lines[] = ['label' => $label, 'text' => $value['value'].(is_string($value['unit'] ?? null) ? ' '.$value['unit'] : '')];
             } elseif (is_array($value) && array_is_list($value)) {
-                $texts = array_values(array_map('trim', array_filter($value, self::prose(...))));
+                $texts = array_values(array_filter(array_map(
+                    static fn (mixed $item): ?string => self::prose($item) ? trim($item) : (is_array($item) && ! array_is_list($item) ? self::inline($item) : null),
+                    $value,
+                ), static fn (?string $text): bool => $text !== null && $text !== ''));
 
                 if ($texts !== []) {
                     $lines[] = ['label' => $label, 'text' => $texts];
                 }
             } elseif (is_array($value)) {
-                array_push($lines, ...self::lines($value, [], $label));
+                array_push($lines, ...self::lines($value, [], $label, $figures));
             }
         }
 
         return $lines;
+    }
+
+    /** @param  array<mixed>  $item  one object of a list, written on one line: each filled field as "label: value" */
+    private static function inline(array $item): string
+    {
+        $parts = [];
+
+        foreach ($item as $key => $value) {
+            $text = match (true) {
+                is_string($value) => trim($value),
+                is_int($value), is_float($value) => (string) $value,
+                is_array($value) && array_is_list($value) => implode(', ', array_filter($value, 'is_string')),
+                default => '',
+            };
+
+            if ($text !== '') {
+                $parts[] = self::label((string) $key).': '.$text;
+            }
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    /**
+     * @param  mixed  $space  the canonical entry of a room or zone
+     * @return list<array{label: ?string, text: string|list<string>}> its decks and every known figure of its size with what the figures measure; an unknown figure says so
+     */
+    private static function space(mixed $space): array
+    {
+        if (! is_array($space)) {
+            return [];
+        }
+
+        $size = self::map($space['dimensions'] ?? null);
+        $figures = [];
+
+        foreach (['length_m' => 'length', 'width_m' => 'width', 'height_m' => 'height'] as $axis => $word) {
+            $value = $size[$axis]['value'] ?? null;
+            $figures[] = is_int($value) || is_float($value) ? "{$word} {$value} m" : "{$word} unknown";
+        }
+
+        $scope = is_string($size['scope'] ?? null) ? ' — '.trim($size['scope']) : '';
+        $decks = implode(', ', array_filter((array) ($space['decks'] ?? []), 'is_string'));
+
+        return [
+            ...($decks === '' ? [] : [['label' => 'Decks', 'text' => $decks]]),
+            ['label' => 'Size', 'text' => implode(', ', $figures).$scope],
+        ];
     }
 
     private static function prose(mixed $value): bool

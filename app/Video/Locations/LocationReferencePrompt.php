@@ -4,100 +4,37 @@ declare(strict_types=1);
 
 namespace App\Video\Locations;
 
-use RuntimeException;
-
 final class LocationReferencePrompt
 {
-    public const VERSION = 'phase5-reference-prompt-v3';
+    public const VERSION = 'phase5-background-prompt-v3';
 
     public const TASK = 'location_reference';
 
     public const OPERATION = 'location_reference';
 
     /**
-     * @param  array<string, mixed>  $document  the approved Phase 5 document
-     * @param  array<string, mixed>  $request  one row of LocationReferencePlanner::plan()
-     * @param  array{suffix: array<string, string>, roles: array<string, string>, camera_label: string, palette_label: string}  $config  video.superyacht.locations.reference
-     * @return string anchor, then for interiors the room identity and the state's detail and palette, the view's camera, the light, the configured suffix and one sentence per input role, each verbatim
+     * @param  array<string, mixed>  $row  one row of LocationReferencePlanner::plan()
+     * @param  array{labels: array<string, string>, style: array<string, string>, suffix: array<string, string>}  $config  video.superyacht.locations.reference
+     * @return string the whole prompt of one background: the style of its kind (open water has its own), every part of the row in order behind its configured label, then the suffix of its kind
      */
-    public static function compose(array $document, array $request, array $config): string
+    public static function compose(array $row, array $config): string
     {
-        $data = (array) $document['data'];
-        $space = (array) $request['space'];
-        $definition = self::definition($data, $space);
-        $parts = [(string) $definition['anchor']];
+        $parts = [self::sentence((string) ($config['style'][$row['style'] ?? $row['kind']] ?? $config['style'][$row['kind']]))];
 
-        if ($space['kind'] === 'interior') {
-            $identity = (array) $definition['identity'];
-            $state = (array) $definition['state'];
-            array_push($parts, (string) $identity['geometry'], (string) $identity['window'], (string) $identity['structure']);
-
-            if ($state['detail'] !== null) {
-                $parts[] = (string) $state['detail'];
-            }
-
-            $parts[] = $config['palette_label'].' '.implode(', ', (array) $state['palette']).'.';
+        foreach ((array) $row['prompt_parts'] as $part) {
+            $label = $config['labels'][$part['key']] ?? null;
+            $parts[] = ($label === null ? '' : $label.' ').self::sentence((string) $part['text']);
         }
 
-        $parts[] = $config['camera_label'].' '.self::pick((array) $definition['views'], (string) $request['view'], 'view', $request)['camera'];
-        $parts[] = (string) self::pick((array) $definition['lighting'], (string) $request['lighting'], 'lighting', $request)['description'];
-        $parts[] = $config['suffix'][$space['kind']].'.';
-        $roles = array_unique(array_column((array) $request['inputs'], 'role'));
+        $parts[] = self::sentence((string) $config['suffix'][$row['kind']]);
 
-        foreach ($config['roles'] as $role => $sentence) {
-            if (in_array($role, $roles, true)) {
-                $parts[] = (string) $sentence;
-            }
-        }
-
-        return implode(' ', array_map(static fn (string $part): string => trim($part), $parts));
+        return implode(' ', $parts);
     }
 
-    /**
-     * @param  array<string, mixed>  $data
-     * @param  array<string, mixed>  $space
-     * @return array{anchor: string, lighting: list<array<string, mixed>>, views: list<array<string, mixed>>, identity?: array<string, mixed>, state?: array<string, mixed>}
-     */
-    private static function definition(array $data, array $space): array
+    private static function sentence(string $text): string
     {
-        $id = (string) $space['id'];
-        $list = match ($space['kind']) {
-            'location' => 'locations',
-            'interior' => 'interior_sets',
-            'exterior' => 'exterior_amenities',
-            default => throw new RuntimeException("Unknown space kind {$space['kind']}."),
-        };
+        $text = trim($text);
 
-        foreach ((array) $data[$list] as $entry) {
-            if ($space['kind'] === 'location' && $entry['id'] === $id || $space['kind'] === 'exterior' && $entry['zone'] === $id) {
-                return ['anchor' => (string) $entry['anchor'], 'lighting' => (array) $entry['lighting'], 'views' => (array) $entry['views']];
-            }
-
-            if ($space['kind'] === 'interior' && $entry['room'] === $id) {
-                foreach ((array) $entry['states'] as $state) {
-                    if ($state['state'] === $space['state']) {
-                        return ['anchor' => (string) $state['anchor'], 'lighting' => (array) $entry['lighting'], 'views' => (array) $entry['views'], 'identity' => (array) $entry['identity'], 'state' => (array) $state];
-                    }
-                }
-            }
-        }
-
-        throw new RuntimeException("{$space['kind']} {$id} ".($space['state'] ?? '').' is not defined.');
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $entries
-     * @param  array<string, mixed>  $request
-     * @return array<string, mixed>
-     */
-    private static function pick(array $entries, string $id, string $label, array $request): array
-    {
-        foreach ($entries as $entry) {
-            if (($entry['id'] ?? null) === $id) {
-                return $entry;
-            }
-        }
-
-        throw new RuntimeException("Request {$request['id']} names {$label} {$id}, which its space does not define.");
+        return $text === '' || preg_match('/[.!?]$/u', $text) === 1 ? $text : $text.'.';
     }
 }

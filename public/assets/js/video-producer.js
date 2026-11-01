@@ -14,7 +14,8 @@ function vpAjaxPage(rootId, onRefresh) {
     var root = document.getElementById(rootId);
     var unknown = 'Chưa xác định kết quả — lượt AI có thể vẫn đang chạy hoặc đã xong. Tải lại trang để xem trạng thái, đừng bấm lại ngay.';
     var waiting = 'Đang có một thao tác chạy trên trang này — chờ nó xong rồi bấm tiếp.';
-    var pending = false;
+    var whole = false;
+    var running = 0;
 
     if (root === null) { return; }
 
@@ -86,23 +87,25 @@ function vpAjaxPage(rootId, onRefresh) {
         window.scrollTo(0, place.scrollY);
     }
 
-    function unlock(form, trigger) {
+    function controlsOf(form) {
+        return form.id ? Array.prototype.slice.call(document.querySelectorAll('[form="' + form.id + '"]')) : [];
+    }
+
+    function unlock(trigger, controls, states) {
         if (trigger) {
             trigger.disabled = false;
             if (trigger.dataset.idle !== undefined) { trigger.textContent = trigger.dataset.idle; }
         }
 
-        if (form.id) {
-            window.setTimeout(function () {
-                document.querySelectorAll('[form="' + form.id + '"]').forEach(function (button) { button.disabled = false; });
-            }, 0);
-        }
+        window.setTimeout(function () {
+            controls.forEach(function (control, index) { control.disabled = states[index]; });
+        }, 0);
     }
 
-    function release(form, place) {
+    function release(form, place, controls, states) {
         var host = place.trigger || (visible(form) ? form : null);
 
-        unlock(form, place.trigger);
+        unlock(place.trigger, controls, states);
 
         if (host !== null) {
             var status = host.parentNode.querySelector('.vp-ajax-status');
@@ -126,6 +129,28 @@ function vpAjaxPage(rootId, onRefresh) {
         notify(holder.dataset.success, true);
     }
 
+    function parts(doc) {
+        return Array.prototype.map.call(doc.querySelectorAll('[data-ajax-part]'), function (element) { return element.id; }).join(' ');
+    }
+
+    function replaceParts(fresh) {
+        fresh.querySelectorAll('[data-ajax-part]').forEach(function (element) {
+            var current = document.getElementById(element.id);
+
+            if (current !== null && current.querySelector('.modal.show') === null) {
+                current.outerHTML = element.outerHTML;
+            }
+        });
+    }
+
+    function replaceWhole(fresh) {
+        var page = fresh.getElementById(rootId);
+
+        if (page === null) { throw new Error('missing ' + rootId); }
+
+        root.innerHTML = page.innerHTML;
+    }
+
     root.addEventListener('submit', function (event) {
         var form = event.target;
 
@@ -135,17 +160,31 @@ function vpAjaxPage(rootId, onRefresh) {
 
         if (window.jQuery && form.dataset.modal) { window.jQuery('#' + form.dataset.modal).modal('hide'); }
 
-        if (pending) {
-            unlock(form, triggerOf(form, event.submitter || null));
+        var exclusive = form.hasAttribute('data-ajax-whole') || root.querySelector('[data-ajax-part]') === null;
+        var trigger = triggerOf(form, event.submitter || null);
+        var controls = controlsOf(form);
+        var states = controls.map(function (control) { return control.disabled; });
+
+        if (whole || (exclusive && running > 0)) {
+            unlock(trigger, controls, states);
             notify(waiting, false);
 
             return;
         }
 
-        pending = true;
-
-        var trigger = triggerOf(form, event.submitter || null);
         var place = placeOf(form, trigger);
+        var target = null;
+        var settled = false;
+
+        function settle() {
+            if (settled) { return; }
+            settled = true;
+            running--;
+            if (exclusive) { whole = false; }
+        }
+
+        whole = exclusive;
+        running++;
         lock(trigger);
         vpLockForm(form);
 
@@ -164,28 +203,40 @@ function vpAjaxPage(rootId, onRefresh) {
                     return null;
                 }
 
+                target = response.url;
+
                 return response.text();
             })
             .then(function (html) {
                 if (html === null) { return; }
 
-                var fresh = new DOMParser().parseFromString(html, 'text/html').getElementById(rootId);
+                var fresh = new DOMParser().parseFromString(html, 'text/html');
+                var swapped = exclusive || parts(fresh) !== parts(document);
 
-                if (fresh === null) { throw new Error('missing ' + rootId); }
+                if (swapped) {
+                    replaceWhole(fresh);
+                } else {
+                    replaceParts(fresh);
+                    unlock(place.trigger, controls, states);
+                }
 
-                pending = false;
-                root.innerHTML = fresh.innerHTML;
-                document.body.classList.remove('modal-open');
-                document.body.style.paddingRight = '';
+                settle();
+
+                if (document.querySelector('.modal.show') === null) {
+                    document.body.classList.remove('modal-open');
+                    document.body.style.paddingRight = '';
+                }
+
                 remember();
+                window.history.replaceState(null, '', target);
                 restore(place);
                 flash();
 
-                if (onRefresh) { onRefresh(root); }
+                if (swapped && onRefresh) { onRefresh(root); }
             })
             .catch(function () {
-                pending = false;
-                release(form, place);
+                settle();
+                release(form, place, controls, states);
             });
     });
 

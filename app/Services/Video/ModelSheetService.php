@@ -20,8 +20,7 @@ use App\Video\Llm\JsonAnswer;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\ModelSheet\ModelSheetFacts;
 use App\Video\ModelSheet\ModelSheetMaster;
-use App\Video\ModelSheet\ModelSheetPromptCompiler;
-use App\Video\ModelSheet\ModelSheetQaValidator;
+use App\Video\ModelSheet\ModelSheetQaSchema;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -33,9 +32,9 @@ use Throwable;
 /**
  * Model sheet Phase 3 theo luong: thiet ke -> QA prompt -> render model sheet -> duyet anh.
  *
- * Noi dung prompt: code lap bang du kien tu ban thiet ke (ModelSheetFacts), Sonnet 5.5 QA
- * va bien tap co nguon (ModelSheetQaService), code kiem va ghep prompt cuoi. Mot lan bam
- * Render gui MOT request (variations 1) voi dung prompt da QA, tao MOT anh master 3840x2160,
+ * Noi dung prompt: code lap chi muc va ban nhap tu ban thiet ke (ModelSheetFacts), Sonnet 5.5
+ * viet toan bo final_prompt (ModelSheetQaService); code luu va hien nguyen van. Mot lan bam
+ * Render gui MOT request (variations 1) voi dung chuoi final_prompt, tao MOT anh master 3840x2160,
  * luoi 2 hang x 4 cot MS1-MS8; may chu cat tam o 960x1080 theo toa do co dinh. Nguoi duyet
  * duyet hoac tu choi ca master; mot o sai la ca luot chua dat.
  */
@@ -114,7 +113,7 @@ final class ModelSheetService
             }
 
             if (! hash_equals((string) $qa->output_json['prompt_sha256'], $choice['prompt_sha256'])
-                || ! hash_equals((string) $qa->output_json['prompt_sha256'], hash('sha256', (string) $qa->output_json['prompt']))) {
+                || ! hash_equals((string) $qa->output_json['prompt_sha256'], hash('sha256', (string) $qa->output_json['final_prompt']))) {
                 throw new RuntimeException('Prompt trên trang không còn khớp lượt QA đã lưu — tải lại trang.');
             }
 
@@ -423,7 +422,7 @@ final class ModelSheetService
                 'blocking' => array_values((array) ($snapshot['blocking'] ?? [])),
             ],
             'master' => [
-                'draft' => (string) ($snapshot['facts']['draft'] ?? ''),
+                'draft' => ModelSheetFacts::preview((array) ($snapshot['facts'] ?? [])),
                 'attempt' => (string) Str::uuid(),
                 'layout_guide' => ($snapshot['layout_guide'] ?? false) === true,
                 'views' => array_values((array) $snapshot['views']),
@@ -437,7 +436,7 @@ final class ModelSheetService
     }
 
     /**
-     * Trang thai QA cua bo dang mo cho panel: prompt cuoi, thay doi, loi kiem, findings, chi phi.
+     * Trang thai QA cua bo dang mo cho panel: final_prompt, repairs, findings nguyen van, loi ky thuat, chi phi.
      *
      * @return array<string, mixed>
      */
@@ -457,9 +456,11 @@ final class ModelSheetService
             'ready' => $ready,
             'error' => $status === VideoPlanningStageStatus::FAILED->value ? (string) $stage->error_message : null,
             'stream' => PlanningStageStore::streamOf($stage),
-            'prompt' => $ready ? (string) $output['prompt'] : null,
+            'prompt' => $ready ? (string) $output['final_prompt'] : null,
             'prompt_sha256' => $ready ? (string) $output['prompt_sha256'] : null,
-            'validation' => self::shortValidation((array) ($output['validation'] ?? [])),
+            'errors' => array_values(array_map('strval', (array) ($output['errors'] ?? []))),
+            'repairs' => array_values(array_map('strval', (array) ($output['repairs'] ?? []))),
+            'findings' => array_values(array_map('strval', (array) ($output['findings'] ?? []))),
             'cost_usd' => $stage === null ? null : (float) $stage->cost_usd,
             'tokens' => $stage === null ? null : ['in' => (int) $stage->tokens_in, 'out' => (int) $stage->tokens_out],
             'model' => (string) $config['model'],
@@ -468,26 +469,6 @@ final class ModelSheetService
             'estimate' => '≈ $'.number_format(((float) $config['pricing']['input_usd_per_mtok'] * (int) $config['estimate_tokens']['input'] + (float) $config['pricing']['output_usd_per_mtok'] * (int) $config['estimate_tokens']['output']) / 1000000, 2)
                 .', tối đa ≈ $'.number_format(((float) $config['pricing']['input_usd_per_mtok'] * (int) $config['estimate_tokens']['input'] + (float) $config['pricing']['output_usd_per_mtok'] * (int) $config['max_tokens']) / 1000000, 2),
         ];
-    }
-
-    /**
-     * Gioi han so loi hien tren panel; ban day du nam trong output_json cua stage QA.
-     *
-     * @param  array<string, mixed>  $validation
-     * @return array{errors: list<string>, blocking: list<string>, notes: list<string>}
-     */
-    private static function shortValidation(array $validation, int $limit = 20): array
-    {
-        $out = [];
-
-        foreach (['errors', 'blocking', 'notes'] as $key) {
-            $lines = array_values((array) ($validation[$key] ?? []));
-            $out[$key] = count($lines) > $limit
-                ? [...array_slice($lines, 0, $limit), '… và '.(count($lines) - $limit).' dòng khác (đầy đủ trong kết quả lượt QA).']
-                : $lines;
-        }
-
-        return $out;
     }
 
     /**
@@ -776,11 +757,9 @@ final class ModelSheetService
         }
 
         $qaPhase = $qaPhase->first();
-        $dnaStage = VideoPlanningStage::query()->whereKey($stage->input_json['dna_stage_id'] ?? null)->where('project_id', $projectId)->first();
-        $dna = $dnaStage === null ? [] : (array) (JsonAnswer::object((string) ($dnaStage->output_json['raw_text'] ?? ''))['dna'] ?? []);
         $master = ModelSheetMaster::fromConfig();
         $views = self::views($config, $master, $design);
-        $facts = (new ModelSheetFacts($design, $dna, array_map(static fn (array $v): array => ['id' => $v['id'], 'view' => $v['view']], $views), (array) $config['qa']['priority']))->snapshot();
+        $facts = (new ModelSheetFacts($design, array_map(static fn (array $v): array => ['id' => $v['id'], 'view' => $v['view']], $views), (array) $config['cameras']))->snapshot();
         $guide = ($config['master']['layout_guide'] ?? false) === true;
         $snapshot = [
             'execution' => self::execution(),
@@ -796,12 +775,7 @@ final class ModelSheetService
             'views' => $views,
             'facts' => $facts,
             'facts_sha256' => hash('sha256', (string) json_encode($facts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
-            'blocking' => array_values(array_filter([
-                $facts['coordinate_problem'],
-                $facts['minimum_problems'] === [] ? null : 'Thiết kế thiếu dữ liệu nền tảng cho model sheet: '.implode(', ', $facts['minimum_problems']).'.',
-                $facts['conflicts'] === [] ? null : 'Dữ liệu nguồn mâu thuẫn (sửa ở thiết kế): '.implode(' ', $facts['conflicts']),
-                $facts['ms8']['problem'] ?? null,
-            ])),
+            'blocking' => ModelSheetFacts::blocking($facts),
         ];
 
         $input = [
@@ -810,7 +784,6 @@ final class ModelSheetService
             'design_stage_id' => (string) $stage->id,
             'design_raw_sha256' => hash('sha256', (string) $stage->raw_response),
             'design_canonical_hash' => $canonicalHash,
-            'dna_stage_id' => $dnaStage === null ? null : (string) $dnaStage->id,
             'design_phase_id' => (string) $designPhase->id,
             'qa_phase_id' => (string) $qaPhase->id,
             'qa_phase_revision' => (int) $qaPhase->revision,
@@ -848,8 +821,8 @@ final class ModelSheetService
     }
 
     /**
-     * Phien ban chinh sach ghep (camera, bo cuc, quy tac, trinh bay, phien ban schema/compiler/
-     * bang du kien). Thay vi so nguyen van bang camera trong prompt Phase 3.
+     * Phien ban chinh sach dau vao Sonnet (camera, bo cuc, quy tac, trinh bay, phien ban chi muc,
+     * thong diep va schema dau ra). Thay vi so nguyen van bang camera trong prompt Phase 3.
      */
     private static function policySha256(): string
     {
@@ -858,12 +831,13 @@ final class ModelSheetService
         return hash('sha256', (string) json_encode([
             'views' => $config['views'],
             'cameras' => $config['cameras'],
+            'camera_convention' => $config['camera_convention'],
             'prompt' => $config['master']['prompt'],
             'occlusion' => $config['occlusion'],
             'suffix' => $config['suffix'],
             'facts' => ModelSheetFacts::VERSION,
-            'schema' => ModelSheetQaValidator::VERSION,
-            'compiler' => ModelSheetPromptCompiler::VERSION,
+            'message' => ModelSheetQaService::MESSAGE_VERSION,
+            'schema' => ModelSheetQaSchema::sha256(),
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
@@ -876,7 +850,7 @@ final class ModelSheetService
      * @param  array<string, mixed>  $design
      * @return list<array{id: string, view: string, row: int, column: int, x: int, y: int, width: int, height: int}>
      */
-    private static function views(array $config, ModelSheetMaster $master, array $design = []): array
+    public static function views(array $config, ModelSheetMaster $master, array $design = []): array
     {
         $cells = [];
 
@@ -927,7 +901,7 @@ final class ModelSheetService
         }
 
         foreach ($ids as $id) {
-            if (trim((string) config('video.superyacht.model_sheet.cameras.'.$id, '')) === '') {
+            if ((array) config('video.superyacht.model_sheet.cameras.'.$id, []) === []) {
                 return "Config model sheet thiếu thông số camera của {$id}.";
             }
         }
@@ -938,7 +912,7 @@ final class ModelSheetService
             return 'Prompt QA model sheet mà bộ chốt không còn khớp hash.';
         }
 
-        return null;
+        return ModelSheetQaService::contractProblem($phase);
     }
 
     /**
@@ -1020,7 +994,7 @@ final class ModelSheetService
     private function spec(VideoPlanningStage $set, VideoPlanningStage $qa, array $settings, string $attempt): array
     {
         $snapshot = (array) $set->output_json;
-        $prompt = (string) $qa->output_json['prompt'];
+        $prompt = (string) $qa->output_json['final_prompt'];
 
         return [
             'project_id' => (string) $set->project_id,

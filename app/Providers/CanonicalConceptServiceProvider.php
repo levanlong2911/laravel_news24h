@@ -15,8 +15,6 @@ use App\Video\Concept\Support\SystemClock;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Llm\ClaudeStreamClient;
 use App\Video\Llm\LlmClient;
-use App\Video\Prompt\OpenAiTextClient;
-use App\Video\Prompt\TextCompletionClient;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
@@ -54,10 +52,6 @@ final class CanonicalConceptServiceProvider extends ServiceProvider
             CanonicalConceptInputBuilder::class
         );
 
-        $this->app->when(DesignDnaService::class)
-            ->needs(LlmClient::class)
-            ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.superyacht.dna_stream'));
-
         $this->app->when(ScriptWriterService::class)
             ->needs(LlmClient::class)
             ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.superyacht.script.stream'));
@@ -66,27 +60,12 @@ final class CanonicalConceptServiceProvider extends ServiceProvider
             ->needs(LlmClient::class)
             ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.superyacht.locations.stream'));
 
-        $openAi = static fn (Application $app, array $settings): OpenAiTextClient => new OpenAiTextClient(
-            http: $app->make(HttpFactory::class),
-            apiKey: (string) config('canonical_concept.openai.api_key'),
-            baseUrl: (string) config('canonical_concept.openai.base_url'),
-            reasoningEffort: (string) $settings['effort'],
-            timeoutSeconds: (int) $settings['timeout_seconds'],
-            retryTimes: (int) $settings['retry_times'],
-            retrySleepMs: 0,
-            stream: (bool) $settings['stream'],
-        );
-
-        $this->app->bind('superyacht.judge_client', static fn (Application $app): OpenAiTextClient => $openAi($app, DesignDnaService::judgeSettings()));
-
-        $this->app->bind('superyacht.design_client', static fn (Application $app): OpenAiTextClient => $openAi($app, YachtDesignService::settings()));
-
         $this->app->when(DesignDnaService::class)
-            ->needs(TextCompletionClient::class)
-            ->give('superyacht.judge_client');
+            ->needs(LlmClient::class)
+            ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.superyacht.dna_stream'));
 
         $this->app->when(YachtDesignService::class)
-            ->needs(TextCompletionClient::class)
-            ->give('superyacht.design_client');
+            ->needs(LlmClient::class)
+            ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.superyacht.design_stream'));
     }
 }

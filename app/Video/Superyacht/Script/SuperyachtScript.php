@@ -10,8 +10,10 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Services\Video\ModelSheetService;
 use App\Video\DesignDna\DnaCheck;
+use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Script\ScriptWorkflow;
+use App\Video\YachtDesign\YachtDesignCheck;
 use RuntimeException;
 
 final class SuperyachtScript implements ScriptWorkflow
@@ -23,6 +25,9 @@ final class SuperyachtScript implements ScriptWorkflow
     private const ANCHOR_TEXTS = ['yacht', 'geometry', 'finished_surface'];
 
     private const ANCHOR_MAPS = ['surface_states', 'exterior', 'interior'];
+
+    /** @var list<string> the canonical lists the script reads: what exists in each build state, every space with its decks and size, how spaces connect, the walking routes, where each innovation is mounted and acts, the identity rules and the operating limits */
+    private const CANONICAL_LISTS = ['build_states', 'spaces', 'connections', 'routes', 'innovations', 'identity_features', 'operational_limits'];
 
     public function __construct(private readonly ModelSheetService $sheets) {}
 
@@ -64,10 +69,14 @@ final class SuperyachtScript implements ScriptWorkflow
         [$design, $data, $rawSha256] = $this->pinnedDesign($projectId, $sheet);
         [, $canonicalHash] = $this->sheets->approvedSource($projectId);
 
+        if ((JsonAnswer::object((string) $design->raw_response)['format'] ?? null) !== YachtDesignCheck::FORMAT) {
+            throw new RuntimeException('Bản thiết kế đã duyệt theo định dạng cũ '.YachtDesignCheck::LEGACY_FORMAT.': kịch bản và bối cảnh đã có của nó vẫn giữ nguyên để xem và dùng tiếp, nhưng không viết kịch bản mới từ nó. Tạo thiết kế mới ('.YachtDesignCheck::FORMAT.') và duyệt model sheet của nó để viết kịch bản.');
+        }
+
         $dnaStage = $this->stage($projectId, $design->input_json['dna_stage_id'] ?? null, PlanningStageName::DESIGN_DNA, 'Design DNA của bản thiết kế');
         $dna = JsonAnswer::object((string) ($dnaStage->output_json['raw_text'] ?? ''))['dna'] ?? null;
         $phaseOne = $this->stage($projectId, $dnaStage->input_json['inspiration_stage_id'] ?? null, PlanningStageName::INSPIRATION, 'Phase 1 của Design DNA');
-        $identity = JsonAnswer::object((string) ($phaseOne->output_json['raw_text'] ?? ''))['inspiration']['source_identity'] ?? null;
+        $identity = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($phaseOne->output_json['raw_text'] ?? '')))['source_identity'] ?? null;
 
         if (! is_array($dna) || array_is_list($dna) || ! is_array($identity) || array_is_list($identity)) {
             throw new RuntimeException('Không đọc được dna hoặc source_identity trong chuỗi nguồn của bản thiết kế.');
@@ -84,7 +93,7 @@ final class SuperyachtScript implements ScriptWorkflow
 
         $canonical = [];
 
-        foreach (['build_states', 'rooms', 'operational_limits'] as $key) {
+        foreach (self::CANONICAL_LISTS as $key) {
             $canonical[$key] = is_array($data['canonical'][$key] ?? null) && array_is_list($data['canonical'][$key])
                 ? $data['canonical'][$key]
                 : throw new RuntimeException("Canonical của bản thiết kế nguồn thiếu danh sách {$key}.");
@@ -227,6 +236,14 @@ final class SuperyachtScript implements ScriptWorkflow
             }
 
             $picked[$key] = $bible[$key];
+        }
+
+        if (array_key_exists('exterior', $bible)) {
+            if (! is_array($bible['exterior']) || array_is_list($bible['exterior'])) {
+                throw new RuntimeException('yacht_bible.exterior của bản thiết kế nguồn phải là object.');
+            }
+
+            $picked['exterior'] = $bible['exterior'];
         }
 
         if (! is_string($picked['name']) || trim($picked['name']) === '' || ! is_array($picked['specs']) || ($picked['specs'] !== [] && array_is_list($picked['specs']))) {

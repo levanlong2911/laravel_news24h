@@ -11,10 +11,14 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\VideoProjectService;
+use App\Video\Inspiration\ClaudeInspirationAnalyst;
+use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
-use App\Video\Prompt\Exceptions\TextCompletionException;
-use App\Video\Prompt\TextCompletionAccounting;
-use App\Video\Prompt\TextCompletionClient;
+use App\Video\Llm\LlmClient;
+use App\Video\Llm\LlmRequest;
+use App\Video\Llm\LlmUnavailable;
+use App\Video\ModelSheet\ModelSheetFacts;
+use App\Video\ModelSheet\ModelSheetMaster;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Support\CanonicalJson;
 use App\Video\YachtDesign\BuildStateText;
@@ -25,7 +29,7 @@ use RuntimeException;
 
 final class YachtDesignService
 {
-    public const EXECUTION = 'db-phase-3-v1';
+    public const EXECUTION = 'db-phase-3-v2';
 
     public const PHASE_CODE = 'phase-3';
 
@@ -36,7 +40,7 @@ final class YachtDesignService
         private readonly VideoProjectRepositoryInterface $projects,
         private readonly VideoProjectService $videoProjects,
         private readonly DesignDnaService $dna,
-        private readonly TextCompletionClient $writer,
+        private readonly LlmClient $writer,
     ) {}
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
@@ -59,7 +63,6 @@ final class YachtDesignService
         $replaceFailing = fn (VideoPlanningStage $served): bool => $regenerate && $this->replaceable($served, $run);
         [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::YACHT_DESIGN, $run['input'], $replaceFailing, [
             'manifest' => $run['manifest'],
-            'judge_gate' => DesignDnaService::judgesRequired() ? 'rule_and_judges' : 'rule_only',
         ]);
 
         if ($token === null) {
@@ -73,36 +76,37 @@ final class YachtDesignService
 
         $model = (string) $run['input']['model'];
         $version = self::instructionVersion($run['prompt']);
+        $stageId = (string) $stage->id;
 
         try {
-            $response = $this->writer->complete(
-                $model,
+            $response = $this->writer->complete(new LlmRequest(
                 $run['system'],
                 $run['payload'],
+                $version,
+                $model,
                 (int) $run['input']['max_tokens'],
-            );
-            [$usage, $pricing] = self::accounting($response->usage, $response->model, $response->inputTokens, $response->outputTokens, $model, $version);
-
-            if ($response->wasTruncated()) {
-                $this->stageStore->finishFailed($stage->id, $token, 'Bản thiết kế bị cắt ở trần token đầu ra — kết quả không hoàn chỉnh.', $usage, $response->text, [], $pricing);
-
-                return [null, 'Bản thiết kế bị cắt ở trần token đầu ra — kết quả không hoàn chỉnh.'];
-            }
+                null,
+                (string) $run['input']['effort'],
+                (int) $run['input']['timeout_seconds'],
+                1,
+                fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
+            ));
+            $usage = ClaudeInspirationAnalyst::usageOf($response, $version);
 
             try {
                 $output = $this->output($run, $response->text);
             } catch (\Throwable $e) {
-                Log::error('yacht design: the check threw on a received answer', ['stage_id' => $stage->id, 'exception' => $e]);
-                $this->stageStore->finishFailed($stage->id, $token, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận: '.$e->getMessage(), $usage, $response->text, [], $pricing);
+                Log::error('yacht design: the check threw on a received answer', ['stage_id' => $stageId, 'exception' => $e]);
+                $this->stageStore->finishFailed($stageId, $token, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận: '.$e->getMessage(), $usage, $response->text);
 
                 return [null, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận — phản hồi và usage đã được lưu: '.$e->getMessage()];
             }
 
-            if (! $this->stageStore->finishSucceeded($stage->id, $token, $response->text, $output, $usage, $pricing)) {
+            if (! $this->stageStore->finishSucceeded($stageId, $token, $response->text, $output, $usage)) {
                 try {
-                    $this->stageStore->recordOrphanAttempt($projectId, PlanningStageName::YACHT_DESIGN, $run['input'], [], (string) $stage->id, $token, 'claim_lost', $usage, $response->text, $output);
+                    $this->stageStore->recordOrphanAttempt($projectId, PlanningStageName::YACHT_DESIGN, $run['input'], [], $stageId, $token, 'claim_lost', $usage, $response->text, $output);
                 } catch (\Throwable $e) {
-                    Log::warning('yacht design: recordOrphanAttempt threw', ['stage_id' => $stage->id, 'exception' => $e]);
+                    Log::warning('yacht design: recordOrphanAttempt threw', ['stage_id' => $stageId, 'exception' => $e]);
                 }
 
                 return [null, 'Lượt thiết kế bị giành mất khi lưu — kết quả đã trả tiền không được dùng. Tải lại trang rồi bấm lại nếu cần.'];
@@ -110,17 +114,15 @@ final class YachtDesignService
 
             return [$output, 'ok'];
         } catch (\Throwable $e) {
-            Log::error('yacht design: the run failed', ['stage_id' => $stage->id, 'exception' => $e]);
-            $billed = $e instanceof TextCompletionException ? $e : null;
-            [$usage, $pricing] = self::accounting(
-                $billed?->usage ?? [],
-                (string) ($billed?->model ?? $model),
-                (int) ($billed?->usage['prompt_tokens'] ?? 0),
-                (int) ($billed?->usage['completion_tokens'] ?? 0),
-                $model,
-                $version,
+            Log::error('yacht design: the run failed', ['stage_id' => $stageId, 'exception' => $e]);
+            $billed = $e instanceof LlmUnavailable ? $e->billed : null;
+            $this->stageStore->finishFailed(
+                $stageId,
+                $token,
+                $e->getMessage(),
+                $billed === null ? ['model' => $model, 'instruction_version' => $version] : ClaudeInspirationAnalyst::usageOf($billed, $version),
+                $billed?->text ?? '',
             );
-            $this->stageStore->finishFailed($stage->id, $token, $e->getMessage(), $usage, (string) ($billed?->raw ?? ''), [], $pricing);
 
             return [null, $e->getMessage()];
         }
@@ -191,8 +193,8 @@ final class YachtDesignService
             // Chi DNA nguon doi moi lam ban thiet ke cu; prompt Phase 3 doi revision thi khong.
             'dna_stale' => $succeeded && $run !== null && ($shown->input_json['dna_stage_id'] ?? null) !== $run['input']['dna_stage_id'],
             'check' => $check,
-            'name' => is_array($data) ? ($data['yacht_bible']['name'] ?? null) : null,
-            'loa' => is_array($data) ? ($data['yacht_bible']['specs']['loa']['value'] ?? null) : null,
+            'name' => is_array($data) ? ($data['yacht_bible']['name'] ?? $data['vessel']['name'] ?? null) : null,
+            'loa' => is_array($data) ? ($data['yacht_bible']['specs']['loa']['value'] ?? $data['vessel']['specs']['loa']['value'] ?? null) : null,
             'yacht_anchor' => is_array($data) ? ($data['anchors']['yacht'] ?? null) : null,
             'prose' => is_array($data) ? DesignProse::text($data) : null,
             'json_error' => $parseError,
@@ -224,16 +226,14 @@ final class YachtDesignService
         $dnaPanel = $this->dna->panel((string) $project->id);
 
         if (! $dnaPanel['phase3_ready'] || ! is_string($dnaPanel['stage_id'])) {
-            throw new RuntimeException(DesignDnaService::judgesRequired()
-                ? 'Design DNA chưa đạt đủ RULE, novelty và plausibility cho đúng Phase 1 và prompt hiện tại.'
-                : 'Design DNA chưa đạt kiểm RULE cho đúng Phase 1 và prompt hiện tại.');
+            throw new RuntimeException('Design DNA chưa đạt kiểm kỹ thuật cho đúng Phase 1 và prompt hiện tại.');
         }
 
         $dnaStage = VideoPlanningStage::query()->findOrFail($dnaPanel['stage_id']);
         $dna = JsonAnswer::object((string) ($dnaStage->output_json['raw_text'] ?? ''))['dna'] ?? null;
         $inspiration = $this->videoProjects->latestInspiration((string) $project->id);
         $phaseOne = is_string($inspiration['stage_id']) ? VideoPlanningStage::query()->find($inspiration['stage_id']) : null;
-        $identity = JsonAnswer::object((string) ($phaseOne?->output_json['raw_text'] ?? ''))['inspiration']['source_identity'] ?? null;
+        $identity = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($phaseOne?->output_json['raw_text'] ?? '')))['source_identity'] ?? null;
 
         if (! is_array($dna) || ! is_array($identity)) {
             throw new RuntimeException('Không đọc được dna hoặc source_identity đã đạt.');
@@ -250,8 +250,10 @@ final class YachtDesignService
         $manifest = $bundle->manifest();
         $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
 
-        if (! str_contains((string) $prompt->prompt_content, YachtDesignCheck::FORMAT)) {
-            throw new RuntimeException("Prompt phase-3 revision {$prompt->revision} chưa yêu cầu định dạng ".YachtDesignCheck::FORMAT.' — cần publish revision tương thích trước khi thiết kế.');
+        foreach ([YachtDesignCheck::FORMAT_V3, 'Input format: `'.YachtDesignCheck::INPUT_FORMAT_V2.'`'] as $marker) {
+            if (! str_contains((string) $prompt->prompt_content, $marker)) {
+                throw new RuntimeException("Prompt phase-3 revision {$prompt->revision} không khai {$marker} mà code đang dùng — phát hành revision tương thích trước khi thiết kế, không gọi model.");
+            }
         }
 
         $payload = (string) json_encode([
@@ -261,11 +263,17 @@ final class YachtDesignService
             'dna' => $dna,
             'novelty' => $dnaPanel['novelty'],
             'inspiration' => ['source_identity' => $identity],
+            'model_sheet' => self::modelSheet(),
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $heading = (string) config('video.superyacht.design.schema_heading');
+        $schemas = array_map(
+            static fn (array $schema): string => "## {$heading} — {$schema['label']}\n\n```json\n".trim($schema['content'])."\n```",
+            $bundle->outputSchemas(),
+        );
 
         return [
             'prompt' => $prompt,
-            'system' => implode("\n\n", array_column($bundle->parts(), 'content')),
+            'system' => implode("\n\n", [...array_column($bundle->parts(), 'content'), ...$schemas]),
             'manifest' => $manifest,
             'payload' => $payload,
             'dna' => $dna,
@@ -284,6 +292,22 @@ final class YachtDesignService
                 'payload_sha256' => hash('sha256', $payload),
             ] + self::settings(),
         ];
+    }
+
+    /** @return array<string, mixed> the pinned model-sheet presentation the design writes its model sheet for, from the model-sheet config */
+    private static function modelSheet(): array
+    {
+        $config = (array) config('video.superyacht.model_sheet');
+        $cameras = ModelSheetQaService::cameras();
+
+        return [
+            'version' => (string) $config['master']['execution'],
+            'cameras' => $cameras['views'],
+            'camera_convention' => $cameras['convention'],
+        ] + ModelSheetQaService::fixedRules([
+            'views' => ModelSheetService::views($config, ModelSheetMaster::fromConfig()),
+            'layout_guide' => ($config['master']['layout_guide'] ?? false) === true,
+        ]);
     }
 
     /** @return array{model: string, effort: string, max_tokens: int, timeout_seconds: int, stream: bool, retry_times: int} */
@@ -328,15 +352,23 @@ final class YachtDesignService
         }
 
         $schemaIssues = [];
+        $wordLimits = [];
 
         try {
-            $result = PhaseResolver::fromConfig((array) config('video.superyacht'))
-                ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
-                ->checkOutput((string) json_encode($decoded), $run['project_id'], 'draft');
+            $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))
+                ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'));
 
-            foreach ($result['report']->violations as $violation) {
-                $schemaIssues[] = trim($violation->path.' '.$violation->message);
+            if (($decoded->format ?? null) === YachtDesignCheck::FORMAT_V3) {
+                $schemaIssues = PhaseOneEvidence::schemaErrors($decoded, $bundle->outputSchemas());
+            } else {
+                $result = $bundle->checkOutput((string) json_encode($decoded), $run['project_id'], 'draft');
+
+                foreach ($result['report']->violations as $violation) {
+                    $schemaIssues[] = trim($violation->path.' '.$violation->message);
+                }
             }
+
+            $wordLimits = $bundle->wordLimits();
         } catch (\Throwable $e) {
             $schemaIssues[] = 'không kiểm được schema: '.$e->getMessage();
         }
@@ -352,7 +384,31 @@ final class YachtDesignService
             $schemaIssues,
             $text,
             self::limits(),
+            $wordLimits,
+            is_array($response) && ($response['format'] ?? null) === YachtDesignCheck::FORMAT ? self::handoff($response) : [],
+            self::instructionVersion($run['prompt']),
         )];
+    }
+
+    /**
+     * @param  array<string, mixed>  $design  a Phase 3 answer with its canonical hash and build-state texts filled in
+     * @return list<string> what keeps the model sheet from opening this design, by the model sheet's own blocking checks
+     */
+    public static function handoff(array $design): array
+    {
+        $config = (array) config('video.superyacht.model_sheet');
+
+        try {
+            $facts = new ModelSheetFacts(
+                $design,
+                array_map(static fn (array $view): array => ['id' => (string) $view['id'], 'view' => (string) $view['view']], array_values((array) $config['views'])),
+                (array) $config['cameras'],
+            );
+
+            return ModelSheetFacts::blocking($facts->snapshot());
+        } catch (\Throwable $e) {
+            return ['không dựng được bảng dữ kiện model sheet: '.$e->getMessage()];
+        }
     }
 
     /** @return array{profile_margin_m: float, near_x: float, near_z_m: float} */
@@ -414,17 +470,6 @@ final class YachtDesignService
             static fn (string $word): string => trim($word, " .\t"),
             explode(',', $match[1]),
         )));
-    }
-
-    /**
-     * @param  array<string, mixed>  $raw
-     * @return array{0: array<string, mixed>, 1: array{pricing: string, pricing_version: ?string}}
-     */
-    private static function accounting(array $raw, string $providerModel, int $input, int $output, string $model, string $version): array
-    {
-        [$usage, $pricing] = TextCompletionAccounting::measure($raw, $providerModel, $input, $output, (array) config('image_prompt.text_pricing'));
-
-        return [$usage + ['model' => $model, 'instruction_version' => $version], $pricing];
     }
 
     private static function label(int $revision): string

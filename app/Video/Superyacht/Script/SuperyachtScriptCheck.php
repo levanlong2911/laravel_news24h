@@ -26,13 +26,13 @@ final class SuperyachtScriptCheck
 
     private const VARIETY = ['location', 'time_light', 'camera_family', 'action'];
 
-    private const CHARACTER_WORDS = [20, 30];
+    private const LEGACY_CHARACTER_WORDS = [20, 30];
 
     private const EPSILON = 0.0001;
 
     /**
      * @param  ?array<string, mixed>  $response
-     * @param  array{project_id: string, prompt_version: string, video_length: int|float, rooms: list<string>, exterior_zones: list<string>, source_names: list<string>, forbidden: list<string>}  $context
+     * @param  array{project_id: string, prompt_version: string, video_length: int|float, rooms: list<string>, exterior_zones: list<string>, source_names: list<string>, forbidden: list<string>, word_limits?: array<string, int>}  $context  word_limits are the ceilings of the contract the run was sent with; a run without them keeps the older 20–30 word range
      * @param  list<array{code: string, path: string, message: string}>  $schema
      * @param  array<string, mixed>  $policy  video.superyacht.script.check, pinned with the run
      * @return array{version: string, format: string, verdict: string, status: ?string, error: ?string, schema: list<string>, issues: list<string>, warnings: list<string>, judge: string}
@@ -67,7 +67,7 @@ final class SuperyachtScriptCheck
         }
 
         if ($schemaLines !== []) {
-            $issues[] = 'Chưa kiểm nghiệp vụ: cấu trúc chưa đúng hợp đồng Phase4Script@2.0.0.';
+            $issues[] = 'Chưa kiểm nghiệp vụ: cấu trúc chưa đúng hợp đồng Phase4Script.';
 
             return self::result(self::FAIL, $status, null, $schemaLines, $issues);
         }
@@ -134,10 +134,14 @@ final class SuperyachtScriptCheck
             $issues[] = 'Đỉnh cảm xúc phải ở B16 (B16 là '.$byId['B16']['emotion'].', cao nhất là '.max($emotions).').';
         }
 
+        $ceiling = $context['word_limits']['anchors.character.*'] ?? null;
+
         foreach ($data['anchors']['character'] as $name => $anchor) {
             $words = self::words($anchor);
 
-            if ($words < self::CHARACTER_WORDS[0] || $words > self::CHARACTER_WORDS[1]) {
+            if (is_int($ceiling) && $words > $ceiling) {
+                $issues[] = "Character anchor {$name} có {$words} từ; tối đa {$ceiling}.";
+            } elseif (! is_int($ceiling) && ($words < self::LEGACY_CHARACTER_WORDS[0] || $words > self::LEGACY_CHARACTER_WORDS[1])) {
                 $issues[] = "Character anchor {$name} có {$words} từ; cần 20–30.";
             }
         }

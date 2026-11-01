@@ -32,7 +32,7 @@
                         @include('modal.confirm_action', [
                             'id' => 'confirmYachtDesign',
                             'form' => 'yachtDesignForm',
-                            'content' => 'Gọi '.$yachtModel.' viết hồ sơ thiết kế theo prompt Phase 3 từ Design DNA đã đạt — tác vụ này tính tiền.'
+                            'content' => 'Gọi '.$yachtModel.' viết hồ sơ thiết kế theo prompt Phase 3 từ Design đã đạt — tác vụ này tính tiền.'
                                 .($yachtKept ? ' Bản thiết kế đã duyệt cùng model sheet vẫn hiệu lực; bản mới sẽ cần model sheet mới.' : ''),
                         ])
                     @else
