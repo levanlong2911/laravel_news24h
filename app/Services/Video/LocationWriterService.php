@@ -15,6 +15,7 @@ use App\Video\Llm\LlmClient;
 use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\Superyacht\Spec\PhaseResolver;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -229,9 +230,18 @@ final class LocationWriterService
         return $rows;
     }
 
-    /** @return array{models: list<array<string, mixed>>, default: ?array<string, mixed>, error: ?string, costs: array<string, float>} */
+    /** @return array{models: list<array<string, mixed>>, default: ?array<string, mixed>, error: ?string, costs: array<string, float>, rendered: list<string>} */
     private function media(): array
     {
+        $rendered = DB::table('video_renders')
+            ->where('render_kind', LocationReferencePrompt::OPERATION)
+            ->where('status', 'succeeded')
+            ->distinct()
+            ->get(['provider', 'model'])
+            ->map(static fn (object $row): string => $row->provider.':'.$row->model)
+            ->values()
+            ->all();
+
         try {
             $registry = app(MediaModelRegistry::class);
 
@@ -240,9 +250,10 @@ final class LocationWriterService
                 'default' => $registry->defaultFor(LocationReferencePrompt::TASK),
                 'error' => null,
                 'costs' => collect(ImageQuality::cases())->mapWithKeys(static fn (ImageQuality $quality): array => [$quality->value => $quality->estimatedCostUsd()])->all(),
+                'rendered' => $rendered,
             ];
         } catch (\InvalidArgumentException $e) {
-            return ['models' => [], 'default' => null, 'error' => 'Danh sách model ảnh Phase 5 lỗi cấu hình: '.$e->getMessage(), 'costs' => []];
+            return ['models' => [], 'default' => null, 'error' => 'Danh sách model ảnh Phase 5 lỗi cấu hình: '.$e->getMessage(), 'costs' => [], 'rendered' => $rendered];
         }
     }
 
@@ -282,11 +293,7 @@ final class LocationWriterService
             throw new RuntimeException('Model tạo địa điểm và bối cảnh '.$settings['model'].' không có trong ClaudeWriterService::MODEL_CATALOG.');
         }
 
-        $schemas = array_map(
-            static fn (array $schema): string => "## {$settings['schema_heading']} — {$schema['label']}\n\n```json\n".trim($schema['content'])."\n```",
-            $bundle->outputSchemas(),
-        );
-        $project = VideoProject::query()->with('article.category')->findOrFail($projectId);
+        $project =VideoProject::query()->with('article.category')->findOrFail($projectId);
         $inputs = $adapter->inputs($project, (string) $phase->prompt_content);
         $promptVersion = "{$flow['workflow']}/{$phase->phase_code}@rev{$phase->revision}";
         $payload = (string) json_encode(['project_id' => $projectId, 'prompt_version' => $promptVersion] + $inputs['payload'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -295,7 +302,7 @@ final class LocationWriterService
         return [
             'adapter' => $adapter,
             'phase' => $phase,
-            'system' => implode("\n\n", [...array_column($bundle->parts(), 'content'), ...$schemas]),
+            'system' => $adapter->systemText(array_column($bundle->parts(), 'content'), $bundle->outputSchemas()),
             'payload' => $payload,
             'prompt_version' => $promptVersion,
             'settings' => $settings,

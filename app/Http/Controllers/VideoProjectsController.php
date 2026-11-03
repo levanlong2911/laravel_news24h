@@ -610,7 +610,7 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
 
         $data = $request->validate([
-            'request_id' => ['required', 'regex:/^P[0-9]{2}$/'],
+            'request_id' => ['required', 'regex:/^(P|BG)[0-9]{2}$/'],
             'image_id' => ['nullable', 'uuid'],
             'stage_id' => ['required_without:image_id', 'nullable', 'uuid'],
             'content_hash' => ['required_without:image_id', 'nullable', 'string', 'max:80'],
@@ -620,6 +620,8 @@ class VideoProjectsController extends Controller
             'provider_model' => ['nullable', 'string', 'max:120'],
             'quality' => ['nullable', 'string', 'max:20'],
             'size' => ['nullable', 'string', 'max:20'],
+            'aspect_ratio' => ['nullable', 'string', 'max:10'],
+            'image_size' => ['nullable', 'string', 'max:10'],
             'variations' => ['nullable', 'integer', 'min:1'],
             'operation_id' => ['required', 'uuid'],
         ], ['*' => 'Thiết lập render không hợp lệ — tải lại trang.']);
@@ -644,7 +646,7 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
 
         $data = $request->validate([
-            'request_id' => ['required', 'regex:/^P[0-9]{2}$/'],
+            'request_id' => ['required', 'regex:/^(P|BG)[0-9]{2}$/'],
             'artifact_id' => ['required', 'uuid'],
             'selection_version' => ['required', 'integer', 'min:0'],
         ], ['*' => 'Thiếu dữ liệu chọn ảnh — tải lại trang.']);

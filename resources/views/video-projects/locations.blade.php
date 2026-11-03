@@ -52,6 +52,7 @@
                 <span class="va-tag {{ $readyCount === $refs->count() ? 'ok' : 'mute' }}">{{ $readyCount }} / {{ $refs->count() }} ĐÃ DUYỆT</span>
             @endif
             <a class="vp-btn" href="{{ route('video-projects.anchor', $id) }}#scriptPanel">← Kịch bản</a>
+            @if($scenesSupported && $step['pinned'] !== null)<a class="vp-btn" href="{{ route('video-projects.scene', $id) }}">Phase 6 — Scene →</a>@endif
         </div>
     </div>
 
@@ -287,12 +288,16 @@
                                             <input type="hidden" name="selection_version" value="{{ $step['selection']['version'] }}">
                                             <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
                                         </form>
+                                        @php
+                                            $pinnedNote = $step['pinned'] === null ? ' Lần render đầu tiên dùng bộ rev '.$shown['revision'].' làm bộ bối cảnh.' : ($step['pinned']['id'] !== $shown['id'] ? ' Bộ đang dùng là rev '.$step['pinned']['revision'].'; render ở đây chuyển sang dùng rev '.$shown['revision'].', ảnh đã duyệt của rev '.$step['pinned']['revision'].' không dùng nữa.' : '');
+                                        @endphp
                                         <div class="ve-set">
                                             <div class="va-field">
                                                 <label>Model</label>
-                                                <select class="ctl" name="provider_model" form="{{ $form }}" data-row="{{ $key }}" data-role="model" required>
+                                                <select class="ctl" name="provider_model" form="{{ $form }}" data-row="{{ $key }}" data-role="model" data-note="{{ $pinnedNote }}" required>
                                                     @foreach($media['models'] as $entry)
-                                                        <option value="{{ $entry['id'] }}" @selected($entry['id'] === $media['default']['id'])>{{ $entry['label'] }}</option>
+                                                        <option value="{{ $entry['id'] }}" data-pricing="{{ $entry['pricing'] }}"
+                                                                @selected($entry['id'] === $media['default']['id'])>{{ $entry['label'] }}{{ $entry['pricing'] === 'unpriced' ? ' · chưa định giá' : '' }}</option>
                                                     @endforeach
                                                 </select>
                                             </div>
@@ -301,23 +306,55 @@
                                                     $active = $entry['id'] === $media['default']['id'];
                                                     $controls = $entry['controls'];
                                                 @endphp
-                                                <div class="ve-set" data-row="{{ $key }}" data-group="{{ $entry['id'] }}" @unless($active) hidden @endunless>
-                                                    <div class="va-field">
-                                                        <label>Quality</label>
-                                                        <select class="ctl" name="quality" form="{{ $form }}" required @disabled(! $active)>
-                                                            @foreach($controls['qualities'] as $quality)
-                                                                <option value="{{ $quality }}" @selected($quality === $controls['default_quality'])>{{ \App\Enums\ImageQuality::tryFrom($quality)?->label() ?? $quality }}</option>
-                                                            @endforeach
-                                                        </select>
-                                                    </div>
-                                                    <div class="va-field">
-                                                        <label>Size</label>
-                                                        <select class="ctl" name="size" form="{{ $form }}" required @disabled(! $active)>
-                                                            @foreach($controls['sizes'] as $size)
-                                                                <option value="{{ $size }}" @selected($size === $controls['default_size'])>{{ $size }}</option>
-                                                            @endforeach
-                                                        </select>
-                                                    </div>
+                                                <div class="ve-set" data-row="{{ $key }}" data-group="{{ $entry['id'] }}"
+                                                     data-provider="{{ $entry['provider'] }}" data-label="{{ $entry['label'] }}"
+                                                     data-default-size="{{ $controls['default_size'] ?? '' }}"
+                                                     data-default-quality="{{ $controls['default_quality'] ?? '' }}"
+                                                     @unless($active) hidden @endunless>
+                                                    @if($entry['provider'] === 'openai')
+                                                        <div class="va-field">
+                                                            <label>Quality</label>
+                                                            <select class="ctl" name="quality" form="{{ $form }}" required @disabled(! $active)>
+                                                                @foreach($controls['qualities'] as $quality)
+                                                                    <option value="{{ $quality }}" title="{{ \App\Enums\ImageQuality::tryFrom($quality)?->hint() }}"
+                                                                            @selected($quality === $controls['default_quality'])>{{ \App\Enums\ImageQuality::tryFrom($quality)?->label() ?? $quality }}</option>
+                                                                @endforeach
+                                                            </select>
+                                                        </div>
+                                                        <div class="va-field">
+                                                            <label>Size</label>
+                                                            <select class="ctl" name="size" form="{{ $form }}" required @disabled(! $active)>
+                                                                @foreach($controls['sizes'] as $size)
+                                                                    <option value="{{ $size }}"
+                                                                            @selected($size === $controls['default_size'])>{{ \App\Enums\ImageSize::tryFrom($size)?->label() ?? $size }}</option>
+                                                                @endforeach
+                                                            </select>
+                                                        </div>
+                                                    @else
+                                                        <div class="va-field">
+                                                            <label>Quality</label>
+                                                            <div class="ve-locked">không áp dụng</div>
+                                                        </div>
+                                                        <div class="va-field">
+                                                            <label>Aspect ratio</label>
+                                                            <select class="ctl" name="aspect_ratio" form="{{ $form }}" required @disabled(! $active)>
+                                                                @foreach($controls['aspect_ratios'] as $ratio)
+                                                                    <option value="{{ $ratio }}"
+                                                                            @selected($ratio === $controls['default_aspect_ratio'])>{{ $ratio }}{{ $ratio === $controls['default_aspect_ratio'] ? ' · khớp keyframe' : '' }}{{ in_array($ratio, $controls['proven_aspect_ratios'], true) ? '' : ' · chưa render thử' }}</option>
+                                                                @endforeach
+                                                            </select>
+                                                        </div>
+                                                        <div class="va-field">
+                                                            <label>Image size</label>
+                                                            <select class="ctl" name="image_size" form="{{ $form }}" required @disabled(! $active)>
+                                                                @foreach($controls['image_sizes'] as $imageSize)
+                                                                    <option value="{{ $imageSize }}"
+                                                                            @isset($controls['prices'][$imageSize]) data-usd="{{ $controls['prices'][$imageSize] }}" @endisset
+                                                                            @selected($imageSize === $controls['default_image_size'])>{{ $imageSize }}{{ in_array($imageSize, $controls['proven_image_sizes'], true) ? '' : ' · chưa render thử' }}</option>
+                                                                @endforeach
+                                                            </select>
+                                                        </div>
+                                                    @endif
                                                     <div class="va-field">
                                                         <label>Variations</label>
                                                         <select class="ctl" name="variations" form="{{ $form }}" required @disabled(! $active)>
@@ -326,6 +363,11 @@
                                                             @endfor
                                                         </select>
                                                     </div>
+                                                    @unless(in_array($entry['id'], $media['rendered'], true))
+                                                        <div class="ve-locked ve-unproven" style="color:var(--vp-amber-fg)">
+                                                            Chưa có lần render Locations thật nào bằng model này.
+                                                        </div>
+                                                    @endunless
                                                 </div>
                                             @endforeach
                                         </div>
@@ -337,8 +379,8 @@
                                                 'id' => $modal,
                                                 'form' => $form,
                                                 'content' => 'Render bối cảnh '.$key.' ('.$request['kind'].' '.$source['id'].($request['state'] !== null ? ' · '.$request['state'] : '').') — TÁC VỤ NÀY TÍNH TIỀN.',
-                                                'detail' => 'Ước lượng theo chất lượng mặc định: $'.number_format((float) ($media['costs'][$media['default']['controls']['default_quality']] ?? 0), 3).' mỗi ảnh; khổ lớn hơn sẽ đắt hơn.'
-                                                    .($step['pinned'] === null ? ' Lần render đầu tiên dùng bộ rev '.$shown['revision'].' làm bộ bối cảnh.' : ($step['pinned']['id'] !== $shown['id'] ? ' Bộ đang dùng là rev '.$step['pinned']['revision'].'; render ở đây chuyển sang dùng rev '.$shown['revision'].', ảnh đã duyệt của rev '.$step['pinned']['revision'].' không dùng nữa.' : '')),
+                                                'detail' => 'Ước lượng theo chất lượng mặc định: $'.number_format((float) ($media['costs'][$media['default']['controls']['default_quality']] ?? 0), 3).' mỗi ảnh; khổ lớn hơn sẽ đắt hơn.'.$pinnedNote,
+                                                'detailId' => 'est_'.$key,
                                             ])
                                         </div>
                                     @endif
@@ -430,20 +472,76 @@
 <script src="{{ asset('assets/js/video-producer.js') }}?v={{ filemtime(public_path('assets/js/video-producer.js')) }}"></script>
 <script>
 (function () {
+    var costs = @json($step['media']['costs'] ?? []);
+
     function init() {
         document.querySelectorAll('[data-role="model"]').forEach(function (picker) {
             var row = picker.getAttribute('data-row');
             var groups = document.querySelectorAll('[data-row="' + row + '"][data-group]');
 
-            function sync() {
+            function field(group, name) {
+                return group.querySelector('[name="' + name + '"]');
+            }
+
+            function activeGroup() {
+                var found = null;
                 Array.prototype.forEach.call(groups, function (group) {
                     var on = group.getAttribute('data-group') === picker.value;
                     group.hidden = !on;
                     Array.prototype.forEach.call(group.querySelectorAll('select'), function (el) { el.disabled = !on; });
+                    if (on) { found = group; }
                 });
+                return found;
+            }
+
+            function sync() {
+                var group = activeGroup();
+                var box = document.getElementById('est_' + row);
+                if (!box) { return; }
+                if (!group) { box.textContent = 'Model không có thiết lập.'; return; }
+
+                var note = picker.getAttribute('data-note') || '';
+                var count = parseInt(field(group, 'variations').value, 10) || 1;
+                var label = group.getAttribute('data-label');
+
+                if (group.getAttribute('data-provider') !== 'openai') {
+                    var sizeField = field(group, 'image_size');
+                    var usd = sizeField.options[sizeField.selectedIndex].getAttribute('data-usd');
+
+                    box.textContent = label + ' · ' + field(group, 'aspect_ratio').value + ' · '
+                        + sizeField.value + ' · ' + count + ' ảnh — '
+                        + (usd === null ? 'chưa định giá' : 'ước tính $' + (parseFloat(usd) * count).toFixed(3)) + note;
+                    box.classList.remove('text-danger');
+                    box.classList.add('text-muted');
+                    return;
+                }
+
+                var quality = field(group, 'quality').value;
+                var size = field(group, 'size').value;
+                var unit = costs[quality];
+                var off = [];
+                if (quality !== group.getAttribute('data-default-quality')) { off.push('chất lượng'); }
+                if (size !== group.getAttribute('data-default-size')) { off.push('khổ'); }
+
+                var text = label + ' · ' + size + ' · ' + quality + ' · ' + count + ' ảnh — ước lượng '
+                    + (unit === undefined ? 'không rõ' : '$' + (unit * count).toFixed(3));
+
+                if (off.length) {
+                    text += ' ⚠ Lệch mặc định: ' + off.join(' và ')
+                        + '. Con số trên chỉ tính theo chất lượng — khổ lớn hơn sẽ đắt hơn.';
+                }
+
+                box.textContent = text + note;
+                box.classList.toggle('text-danger', off.length > 0);
+                box.classList.toggle('text-muted', off.length === 0);
             }
 
             picker.addEventListener('change', sync);
+            Array.prototype.forEach.call(groups, function (group) {
+                Array.prototype.forEach.call(group.querySelectorAll('select'), function (el) {
+                    el.addEventListener('change', sync);
+                });
+            });
             sync();
         });
     }

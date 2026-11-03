@@ -22,7 +22,7 @@ final class LocationReferenceService
     ) {}
 
     /**
-     * @param  array{provider_model?: mixed, quality?: mixed, size?: mixed, variations?: mixed}  $settings
+     * @param  array{provider_model?: mixed, quality?: mixed, size?: mixed, aspect_ratio?: mixed, image_size?: mixed, variations?: mixed}  $settings
      * @param  ?array{stage_id: string, content_hash: string, prompts_hash: string, prompt_sha256: string, selection_version: int}  $shown  what the page showed: the description, its prompt set and the prompt of this image; a description that is not in use yet, or whose prompts changed, is put in use with exactly these prompts before the render
      * @return array{0: ?VideoDesignImage, 1: string}
      */
@@ -141,15 +141,39 @@ final class LocationReferenceService
         }
 
         $variations = filter_var($settings['variations'] ?? null, FILTER_VALIDATE_INT);
-        $size = (string) ($settings['size'] ?? '');
-        $quality = (string) ($settings['quality'] ?? '');
+        $controls = $entry['controls'];
+        $choice = static fn (string $field, string $list): ?string => is_string($settings[$field] ?? null) && in_array($settings[$field], (array) ($controls[$list] ?? []), true) ? $settings[$field] : null;
 
-        if ($variations === false || $variations < 1 || $variations > $entry['max_variations']
-            || ! in_array($size, (array) $entry['controls']['sizes'], true) || ! in_array($quality, (array) $entry['controls']['qualities'], true)) {
+        if ($variations === false || $variations < 1 || $variations > $entry['max_variations']) {
             throw new RuntimeException('Thiết lập render không hợp lệ cho model này.');
         }
 
-        return [
+        if ($entry['provider'] === 'openai') {
+            $size = $choice('size', 'sizes');
+            $quality = $choice('quality', 'qualities');
+            $render = ['size' => $size, 'quality' => $quality];
+            $invalid = $size === null || $quality === null;
+        } else {
+            $aspect = $choice('aspect_ratio', 'aspect_ratios');
+            $imageSize = $choice('image_size', 'image_sizes');
+            $render = [
+                'api_version' => $entry['api_version'],
+                'shape' => $entry['shape'],
+                'aspect_ratio' => $aspect,
+                'image_size' => $imageSize,
+                'size' => $aspect.'@'.$imageSize,
+                'quality' => null,
+                'unit_cost_usd' => $controls['prices'][$imageSize] ?? null,
+                'pricing_version' => $entry['pricing_version'] ?? null,
+            ];
+            $invalid = $aspect === null || $imageSize === null;
+        }
+
+        if ($invalid) {
+            throw new RuntimeException('Thiết lập render không hợp lệ cho model này.');
+        }
+
+        return array_replace([
             'project_id' => $projectId,
             'operation' => LocationReferencePrompt::OPERATION,
             'task' => LocationReferencePrompt::TASK,
@@ -165,10 +189,10 @@ final class LocationReferenceService
             'model' => (string) $entry['model'],
             'pricing' => (string) $entry['pricing'],
             'variations' => $variations,
-            'size' => $size,
-            'quality' => $quality,
+            'size' => null,
+            'quality' => null,
             'sources' => [],
             'attempt' => $operationId,
-        ];
+        ], $render);
     }
 }

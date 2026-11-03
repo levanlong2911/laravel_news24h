@@ -965,6 +965,10 @@ return [
                 'action' => 'spec.locations',
                 'adapter' => \App\Video\Superyacht\Locations\SuperyachtLocations::class,
             ],
+            'harley_custom_v1' => [
+                'action' => 'spec.locations',
+                'adapter' => \App\Video\Moto\MotoLocations::class,
+            ],
         ],
     ],
 
@@ -1012,6 +1016,41 @@ return [
                 'warn' => [
                     'beat_min_sec' => 0.8,
                     'hero_min_sec' => 2,
+                ],
+            ],
+        ],
+
+        'locations' => [
+            'execution' => \App\Video\Moto\MotoContract::LOCATIONS_EXECUTION,
+            'model' => env('MOTO_LOCATIONS_MODEL', 'sonnet55'),
+            'effort' => env('MOTO_LOCATIONS_EFFORT', 'medium'),
+            'efforts' => ['medium', 'high'],
+            'max_tokens' => (int) env('MOTO_LOCATIONS_MAX_TOKENS', 32000),
+            'timeout_seconds' => (int) env('MOTO_LOCATIONS_TIMEOUT_SECONDS', 900),
+            'schema_heading' => 'Output JSON Schema',
+            'semantic_review' => 'manual',
+            'reference' => [
+                'task' => 'location_reference',
+                'labels' => [
+                    'space' => 'Space:',
+                    'dimensions' => 'Size:',
+                    'surfaces' => 'Surfaces:',
+                    'equipment' => 'Fixed equipment:',
+                    'palette' => 'Colour palette:',
+                    'support' => 'Temporary work support, standing empty:',
+                    'ground' => 'Ground surface:',
+                    'props' => 'Props:',
+                    'composition' => 'Composition:',
+                    'light' => 'Light:',
+                    'must_show' => 'Must show:',
+                    'avoid' => 'Avoid:',
+                ],
+                'style' => [
+                    'location' => 'Photorealistic documentary photograph of a working place where custom motorcycles are designed, built or finished: true perspective, real equipment and materials at full scale, one still frame',
+                    'open_ground' => 'Photorealistic location photograph of an open outdoor place: true horizon and natural perspective, real ground, light and terrain at full scale, one still frame',
+                ],
+                'suffix' => [
+                    'location' => 'No motorcycle, no motorcycle parts, no people, no text, no signage, no logos',
                 ],
             ],
         ],
@@ -1404,6 +1443,19 @@ return [
                             ],
                             'outputs' => [
                                 'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '1.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v1): the story, the builder and rider, the flexible beats B1…Bn with build state, time jump, design ids, configurations and situation, the text cards with their sources (the DISCLAIMER card carries the fixed text of the schema) and the music brief; release database/releases/moto-phase-4-script-v2'],
+                            ],
+                        ],
+                        'spec.locations' => [
+                            'phase' => 'phase-5',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['locations'],
+                            ],
+                            'outputs' => [
+                                'locations' => ['namespace' => 'moto', 'schema' => 'MotoLocations', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 5 Output (format moto-locations-v1): the places LOCxx the approved script uses and the background plates BGxx rendered once and shared by its beats, with their support, ground, light, composition and shot changes; unplated beats, conflicts with their evidence and blocking, and continuity; the motorcycle, its parts, mockups, drawings and people are added at the shot step; release database/releases/moto-phase-5-locations-v1'],
                             ],
                         ],
                     ],
