@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Services\Admin\ClaudeWriterService;
 use App\Services\Video\DesignDnaService;
 use App\Services\Video\LocationWriterService;
+use App\Services\Video\SceneWriterService;
 use App\Services\Video\ScriptWriterService;
 use App\Services\Video\YachtDesignService;
 use App\Video\Concept\Orchestration\CanonicalConceptInputBuilder;
@@ -59,6 +60,10 @@ final class CanonicalConceptServiceProvider extends ServiceProvider
         $this->app->when(LocationWriterService::class)
             ->needs(LlmClient::class)
             ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.superyacht.locations.stream'));
+
+        $this->app->when(SceneWriterService::class)
+            ->needs(LlmClient::class)
+            ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.moto.scenes.stream'));
 
         $this->app->when(DesignDnaService::class)
             ->needs(LlmClient::class)

@@ -26,6 +26,8 @@ use App\Services\Video\ModelSheetService;
 use App\Services\Video\LocationReferenceService;
 use App\Services\Video\LocationSourceService;
 use App\Services\Video\LocationWriterService;
+use App\Services\Video\SceneSourceService;
+use App\Services\Video\SceneWriterService;
 use App\Services\Video\ScriptSourceService;
 use App\Services\Video\ScriptWriterService;
 use App\Services\Video\YachtDesignService;
@@ -572,6 +574,7 @@ class VideoProjectsController extends Controller
             'project' => $project,
             'id' => $id,
             'step' => app(LocationWriterService::class)->panel($id, is_string($stage) && Str::isUuid($stage) ? $stage : null),
+            'scenesSupported' => app(SceneSourceService::class)->supports($id),
         ]);
     }
 
@@ -603,6 +606,67 @@ class VideoProjectsController extends Controller
         [$done, $reason] = app(LocationWriterService::class)->reset($id);
 
         return $done ? back()->with('success', 'Đã reset lượt tạo địa điểm và bối cảnh bị kẹt.') : back()->with('error', $reason);
+    }
+
+    public function writeScenes(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
+        [$stage, $reason] = app(SceneWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id']);
+
+        if ($stage === null) {
+            return back()->with('error', $reason);
+        }
+
+        return redirect()->route('video-projects.scene', ['id' => $id, 'stage' => $stage->id])->with('success', match ($reason) {
+            'cached' => 'Nguồn và prompt không đổi — dùng lại bản chia scene đã lưu, không gọi model.',
+            'replayed' => 'Thao tác này đã chạy trước đó — không gọi model lần nữa.',
+            default => 'Đã lưu bản chia scene — xem kết quả kiểm rồi duyệt.',
+        });
+    }
+
+    public function resetScenes(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = app(SceneWriterService::class)->reset($id);
+
+        return $done ? back()->with('success', 'Đã reset lượt chia scene bị kẹt — bản đã duyệt giữ nguyên.') : back()->with('error', $reason);
+    }
+
+    public function approveScenes(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'stage_id' => ['required', 'uuid'],
+            'content_hash' => ['required', 'string', 'max:80'],
+            'selection_version' => ['required', 'integer', 'min:0'],
+            'operation_id' => ['required', 'uuid'],
+        ], [
+            'stage_id.*' => 'Thiếu bản chia scene cần duyệt — tải lại trang.',
+            'content_hash.*' => 'Thiếu hash nội dung — tải lại trang.',
+            'selection_version.*' => 'Thiếu phiên bản lựa chọn — tải lại trang.',
+            'operation_id.*' => 'Thiếu mã thao tác — tải lại trang.',
+        ]);
+        [$decision, $reason] = app(SceneSourceService::class)->approve(
+            $id,
+            (string) $data['stage_id'],
+            (string) $data['content_hash'],
+            (int) $data['selection_version'],
+            (string) $data['operation_id'],
+            auth()->id(),
+        );
+
+        if ($decision === null) {
+            return back()->with('error', $reason);
+        }
+
+        return redirect()->route('video-projects.scene', ['id' => $id, 'stage' => $data['stage_id']])
+            ->with('success', $reason === 'replayed'
+                ? 'Lần duyệt này đã được ghi trước đó — không ghi thêm.'
+                : 'Đã duyệt bản chia scene này làm nguồn cho kế hoạch shot.');
     }
 
     public function renderLocationReference(Request $request, string $id)
@@ -1324,6 +1388,16 @@ class VideoProjectsController extends Controller
     public function scene(string $id, ?string $scene = null, ?string $step = null)
     {
         $project = $this->ownedProject($id);
+
+        if (app(SceneSourceService::class)->supports($id)) {
+            $shown = request()->query('stage');
+
+            return view('video-projects.scene', $this->chrome() + [
+                'id' => $id,
+                'project' => $project,
+                'scenesPanel' => app(SceneWriterService::class)->panel($id, is_string($shown) && Str::isUuid($shown) ? $shown : null),
+            ]);
+        }
 
         $stage = SceneStep::tryFrom((string) ($step ?? SceneStep::PLANNING->value));
 

@@ -7,6 +7,9 @@
 
 @section('content')
 
+@if(isset($scenesPanel))
+    @include('video-projects.partials.scenes-panel', ['step' => $scenesPanel, 'shots' => $shotsPanel ?? null])
+@else
 <div class="container-fluid vp">
 
     <div class="vp-crumb">
@@ -546,10 +549,12 @@
     </div>
   </div>
 </div>
+@endif
 @endsection
 
 @section('script')
 <script src="{{ asset('assets/js/video-producer.js') }}?v={{ filemtime(public_path('assets/js/video-producer.js')) }}"></script>
+@unless(isset($scenesPanel))
 <script src="{{ asset('assets/js/keyframe-preview-gate.js') }}?v={{ filemtime(public_path('assets/js/keyframe-preview-gate.js')) }}"></script>
 <script>
 (function () {
@@ -1153,4 +1158,5 @@
     syncModels();
 })();
 </script>
+@endunless
 @endsection

@@ -165,6 +165,11 @@ Route::group(
             Route::post('/{id}/locations/reset', [VideoProjectsController::class, 'resetLocations'])->name('video-projects.locations-reset');
             Route::post('/{id}/locations/render', [VideoProjectsController::class, 'renderLocationReference'])->name('video-projects.locations-render');
             Route::post('/{id}/locations/choose', [VideoProjectsController::class, 'chooseLocationReference'])->name('video-projects.locations-choose');
+            // phase 6: scene và continuity
+            Route::get('/{id}/scene/{scene?}/{step?}', [VideoProjectsController::class, 'scene'])->middleware('video.v4:scenes')->name('video-projects.scene');
+            Route::post('/{id}/scenes', [VideoProjectsController::class, 'writeScenes'])->name('video-projects.scenes-write');
+            Route::post('/{id}/scenes/reset', [VideoProjectsController::class, 'resetScenes'])->name('video-projects.scenes-reset');
+            Route::post('/{id}/scenes/approve', [VideoProjectsController::class, 'approveScenes'])->name('video-projects.scenes-approve');
 
             Route::middleware('video.v4')->group(function () {
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
@@ -194,7 +199,6 @@ Route::group(
             Route::match(['get', 'post'], '/{id}/reference', [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
             Route::post('/{id}/environment/approve', [VideoProjectsController::class, 'approveEnvironment'])->name('video-projects.environment-approve');
             Route::match(['get', 'post'], '/{id}/environment', [VideoProjectsController::class, 'environment'])->name('video-projects.environment');
-            Route::get('/{id}/scene/{scene?}/{step?}', [VideoProjectsController::class, 'scene'])->name('video-projects.scene');
             Route::post('/{id}/storyboard/generate', [VideoProjectsController::class, 'generateStoryboard'])->name('video-projects.storyboard-generate');
             Route::post('/{id}/storyboard/approve', [VideoProjectsController::class, 'approveStoryboard'])->name('video-projects.storyboard-approve');
             Route::post('/{id}/storyboard/recheck', [VideoProjectsController::class, 'recheckStoryboard'])->name('video-projects.storyboard-recheck');

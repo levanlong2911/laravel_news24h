@@ -27,6 +27,7 @@ enum PlanningStageName: string
     case MODEL_SHEET_PROMPT_APPROVAL = 'model_sheet_prompt_ok';
     case SCRIPT = 'script';
     case LOCATIONS = 'locations';
+    case SCENES = 'scenes';
 
     /** @return list<string> */
     public static function values(): array
@@ -56,6 +57,7 @@ enum PlanningStageName: string
             self::MODEL_SHEET_PROMPT_APPROVAL => null,
             self::SCRIPT => null,
             self::LOCATIONS => null,
+            self::SCENES => null,
         };
     }
 }

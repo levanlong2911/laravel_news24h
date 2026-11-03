@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Enums\PlanningStageName;
 use App\Services\Video\PlanningStageStore;
+use App\Services\Video\SceneSourceService;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use Closure;
 use Illuminate\Http\Request;
@@ -13,13 +14,21 @@ class RefuseV63Project
 {
     public const MESSAGE = 'Chưa hỗ trợ luồng v6.3 — bước này thuộc luồng v4 và không lấy thiết kế cũ để chạy tiếp.';
 
-    public function __construct(private readonly PlanningStageStore $stages) {}
+    public function __construct(
+        private readonly PlanningStageStore $stages,
+        private readonly SceneSourceService $scenes,
+    ) {}
 
-    public function handle(Request $request, Closure $next): Response
+    /** @param  ?string  $except  'scenes' lets a project whose workflow plans scenes through */
+    public function handle(Request $request, Closure $next, ?string $except = null): Response
     {
         $projectId = $request->route('id');
 
         if (! is_string($projectId) || ! $this->isV63($projectId)) {
+            return $next($request);
+        }
+
+        if ($except === 'scenes' && $this->scenes->supports($projectId)) {
             return $next($request);
         }
 

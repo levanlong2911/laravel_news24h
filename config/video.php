@@ -972,6 +972,15 @@ return [
         ],
     ],
 
+    'scenes' => [
+        'workflows' => [
+            'harley_custom_v1' => [
+                'action' => 'spec.scenes',
+                'adapter' => \App\Video\Moto\MotoScenes::class,
+            ],
+        ],
+    ],
+
     'moto' => [
         'brief' => [
             'platform' => null,
@@ -1053,6 +1062,15 @@ return [
                     'location' => 'No motorcycle, no motorcycle parts, no people, no text, no signage, no logos',
                 ],
             ],
+        ],
+
+        'scenes' => [
+            'execution' => \App\Video\Moto\MotoContract::SCENES_EXECUTION,
+            'model' => env('MOTO_SCENES_MODEL', 'sonnet55'),
+            'effort' => env('MOTO_SCENES_EFFORT', 'high'),
+            'max_tokens' => (int) env('MOTO_SCENES_MAX_TOKENS', 64000),
+            'timeout_seconds' => (int) env('MOTO_SCENES_TIMEOUT_SECONDS', 900),
+            'schema_heading' => 'Output JSON Schema',
         ],
 
         'model_sheet' => [
@@ -1456,6 +1474,19 @@ return [
                             ],
                             'outputs' => [
                                 'locations' => ['namespace' => 'moto', 'schema' => 'MotoLocations', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 5 Output (format moto-locations-v1): the places LOCxx the approved script uses and the background plates BGxx rendered once and shared by its beats, with their support, ground, light, composition and shot changes; unplated beats, conflicts with their evidence and blocking, and continuity; the motorcycle, its parts, mockups, drawings and people are added at the shot step; release database/releases/moto-phase-5-locations-v1'],
+                            ],
+                        ],
+                        'spec.scenes' => [
+                            'phase' => 'phase-6',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['scenes'],
+                            ],
+                            'outputs' => [
+                                'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '1.1.1','pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v1): the approved beats grouped into scenes SCxx of consecutive beats in one place, continuous story time and one established build state, each with its purpose, set brief, starting and ending continuity (placement, detached parts, lights on, surface condition, protection per character, weather), continuity link, incoming transition with its evidence and the work its beats show on parts (operation, parts worked with it, place on or off the motorcycle at the start and end, evidence from the beat); conflicts with their evidence and blocking; timing, environment assignments, characters, configurations and states stay with the beats and are derived by code; release database/releases/moto-phase-6-scenes-v3'],
                             ],
                         ],
                     ],
