@@ -77,6 +77,44 @@ final class PhaseRevisions
         });
     }
 
+    /**
+     * @param  list<array{role: string, slot_key: string, schema_id: string, data_pointer: string, validation_mode: string, is_required: bool}>  $links
+     * @return AiPhase the first draft of a phase the category does not have yet
+     */
+    public function createDraft(string $categoryId, string $workflowCode, string $phaseCode, string $name, int $sortOrder, string $content, array $links, string $note, string $by): AiPhase
+    {
+        return DB::transaction(function () use ($categoryId, $workflowCode, $phaseCode, $name, $sortOrder, $content, $links, $note, $by): AiPhase {
+            $revision = 1 + (int) AiPhase::query()
+                ->where('category_id', $categoryId)
+                ->where('workflow_code', $workflowCode)
+                ->where('phase_code', $phaseCode)
+                ->max('revision');
+
+            $draft = AiPhase::query()->create([
+                'category_id' => $categoryId,
+                'workflow_code' => $workflowCode,
+                'phase_code' => $phaseCode,
+                'revision' => $revision,
+                'kind' => 'phase',
+                'name' => $name,
+                'sort_order' => $sortOrder,
+                'prompt_content' => $content,
+                'content_sha256' => hash('sha256', $content),
+                'status' => AiPhase::DRAFT,
+                'is_current' => false,
+                'change_note' => $note,
+                'created_by' => $by,
+            ]);
+
+            foreach ($links as $link) {
+                $this->assertLinkShape($link);
+                AiPhaseSchema::query()->create(['phase_id' => $draft->id] + $link);
+            }
+
+            return $draft->refresh();
+        });
+    }
+
     public function publish(AiPhase $draft, ?string $expectedCurrentId): AiPhase
     {
         return $this->locked($draft, function () use ($draft, $expectedCurrentId): AiPhase {

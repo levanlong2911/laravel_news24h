@@ -29,4 +29,11 @@ interface ScriptWorkflow extends CheckedWorkflow
 
     /** @param array<string, mixed> $source */
     public function sourceProblem(string $projectId, array $source): ?string;
+
+    /**
+     * @param  list<string>  $parts  the pinned prompt parts, in order
+     * @param  list<array{label: string, content: string}>  $schemas  the pinned output schemas
+     * @return string the system text the run sends
+     */
+    public function systemText(array $parts, array $schemas): string;
 }

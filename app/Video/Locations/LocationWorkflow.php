@@ -29,6 +29,13 @@ interface LocationWorkflow extends CheckedWorkflow
     public function inputs(VideoProject $project, string $prompt): array;
 
     /**
+     * @param  list<string>  $parts  the phase prompt parts of the bundle
+     * @param  list<array<string, mixed>>  $schemas  the output schemas of the bundle
+     * @return string the system text of a run: the prompt parts, then each output schema once
+     */
+    public function systemText(array $parts, array $schemas): string;
+
+    /**
      * @param  array<string, mixed>  $context  the check context pinned with a run
      * @param  array<string, mixed>  $source  the sources pinned with that run
      * @return array<string, mixed> the context with every design text the current check and prompts read; a run pinned before a text was kept gets it from the same pinned design, never from a newer one

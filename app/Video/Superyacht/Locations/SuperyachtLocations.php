@@ -13,6 +13,8 @@ use App\Services\Video\ScriptSourceService;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Locations\LocationReferencePlanner;
 use App\Video\Locations\LocationWorkflow;
+use App\Video\Script\ScriptEvaluation;
+use App\Video\Superyacht\Spec\ResolvedPhase;
 use App\Video\YachtDesign\YachtDesignCheck;
 use RuntimeException;
 
@@ -104,9 +106,19 @@ final class SuperyachtLocations implements LocationWorkflow
         ];
     }
 
+    public function systemText(array $parts, array $schemas): string
+    {
+        $heading = (string) config('video.superyacht.locations.schema_heading');
+
+        return implode("\n\n", [
+            ...$parts,
+            ...array_map(static fn (array $schema): string => "## {$heading} — {$schema['label']}\n\n```json\n".trim((string) $schema['content'])."\n```", $schemas),
+        ]);
+    }
+
     public function completeContext(string $projectId, array $context, array $source): array
     {
-        $context['policy'] = (array) ($context['policy'] ?? []) + (array) config('video.superyacht.locations.check');
+        $context['policy'] =(array) ($context['policy'] ?? []) + (array) config('video.superyacht.locations.check');
 
         if (array_key_exists('innovations', (array) ($context['design'] ?? []))) {
             return $context;
@@ -134,6 +146,11 @@ final class SuperyachtLocations implements LocationWorkflow
         }
 
         return $current['token'] == ($source['script'] ?? null) ? null : 'Kịch bản được chọn hoặc nguồn của nó đã đổi so với lúc tạo bộ địa điểm và bối cảnh này.';
+    }
+
+    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
+    {
+        return ScriptEvaluation::envelopeViolations($decoded, $bundle, $projectId);
     }
 
     public function check(?array $response, array $context, array $schema): array

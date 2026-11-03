@@ -6,6 +6,8 @@ namespace App\Video\Script;
 
 use App\Video\Llm\JsonAnswer;
 use App\Video\Superyacht\Spec\PhaseResolver;
+use App\Video\Superyacht\Spec\ResolvedPhase;
+use App\Video\Superyacht\Validation\Violation;
 use RuntimeException;
 
 final class ScriptEvaluation
@@ -25,13 +27,7 @@ final class ScriptEvaluation
         $schema = [];
 
         if ($document !== null) {
-            $result = PhaseResolver::fromConfig((array) config('video.superyacht'))
-                ->fromManifest($manifest)
-                ->checkOutput((string) json_encode($decoded), (string) $context['project_id'], 'draft');
-
-            foreach ($result['report']->violations as $violation) {
-                $schema[] = ['code' => $violation->code, 'path' => (string) $violation->path, 'message' => $violation->message];
-            }
+            $schema = $adapter->schemaViolations($decoded, PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest), (string) $context['project_id']);
         }
 
         $check = $adapter->check($document, $context, $schema);
@@ -47,6 +43,19 @@ final class ScriptEvaluation
             'contract' => $contract,
             'content_hash' => $document === null ? null : ScriptContentHash::of($contract, $document, $source),
         ];
+    }
+
+    /**
+     * @return list<array{code: string, path: string, message: string}>
+     */
+    public static function envelopeViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
+    {
+        $result = $bundle->checkOutput((string) json_encode($decoded), $projectId, 'draft');
+
+        return array_map(
+            static fn (Violation $violation): array => ['code' => $violation->code, 'path' => (string) $violation->path, 'message' => $violation->message],
+            $result['report']->violations,
+        );
     }
 
     /** @param array<string, mixed> $manifest */

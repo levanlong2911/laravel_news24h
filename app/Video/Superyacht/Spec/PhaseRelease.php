@@ -82,13 +82,17 @@ final class PhaseRelease
             $current = AiPhase::query()->where('category_id', $category->id)->where('workflow_code', $workflow)
                 ->where('phase_code', $phase['code'])->where('is_current', true)->with('schemaLinks.schema')->get();
 
-            if ($current->count() !== 1) {
+            if ($current->count() > 1) {
                 throw new RuntimeException("Category {$categorySlug} has {$current->count()} current revisions of {$phase['code']} instead of one.");
             }
 
             $current = $current->first();
 
-            if ($current->status !== AiPhase::PUBLISHED || ! hash_equals((string) $current->content_sha256, hash('sha256', (string) $current->prompt_content))) {
+            if ($current === null && $phase['name'] === null) {
+                throw new RuntimeException("Category {$categorySlug} has no {$phase['code']} yet; its first release needs a name in release.json.");
+            }
+
+            if ($current !== null && ($current->status !== AiPhase::PUBLISHED || ! hash_equals((string) $current->content_sha256, hash('sha256', (string) $current->prompt_content)))) {
                 throw new RuntimeException("Current {$phase['code']} revision {$current->revision} is not published or does not match its hash.");
             }
 
@@ -111,7 +115,7 @@ final class PhaseRelease
             }
 
             usort($links, static fn (array $a, array $b): int => [$a['role'], $a['slot_key']] <=> [$b['role'], $b['slot_key']]);
-            $have = $current->schemaLinks->map(static fn ($link): array => [
+            $have = $current === null ? [] : $current->schemaLinks->map(static fn ($link): array => [
                 'role' => $link->role,
                 'slot_key' => $link->slot_key,
                 'schema' => $link->schema === null ? (string) $link->schema_id : "{$link->schema->namespace}/{$link->schema->schema_key}@{$link->schema->version}",
@@ -121,18 +125,22 @@ final class PhaseRelease
                 'is_required' => (bool) $link->is_required,
             ])->sortBy([['role', 'asc'], ['slot_key', 'asc']])->values()->all();
             $sameLinks = array_map(static fn (array $l): array => array_diff_key($l, ['schema_id' => true]), $links) == array_map(static fn (array $l): array => array_diff_key($l, ['schema_id' => true]), $have);
-            $unchanged = hash_equals((string) $current->content_sha256, $phase['sha256']) && $sameLinks;
+            $unchanged = $current !== null && hash_equals((string) $current->content_sha256, $phase['sha256']) && $sameLinks;
 
             $phases[] = [
                 'code' => $phase['code'],
-                'action' => $unchanged ? 'unchanged' : 'revise',
-                'current_id' => (string) $current->id,
-                'current_revision' => (int) $current->revision,
-                'current_sha256' => (string) $current->content_sha256,
+                'action' => match (true) {
+                    $current === null => 'create',
+                    $unchanged => 'unchanged',
+                    default => 'revise',
+                },
+                'current_id' => $current === null ? null : (string) $current->id,
+                'current_revision' => $current === null ? 0 : (int) $current->revision,
+                'current_sha256' => $current === null ? null : (string) $current->content_sha256,
                 'sha256' => $phase['sha256'],
                 'note' => $phase['note'],
                 'links' => array_map(static fn (array $l): string => "{$l['role']}/{$l['slot_key']} -> {$l['schema']} ".($l['data_pointer'] === '' ? '(whole record)' : $l['data_pointer'])." {$l['validation_mode']}".($l['is_required'] ? ' required' : ' optional'), $links),
-            ];
+            ] + ($current === null ? ['name' => $phase['name'], 'sort_order' => $phase['sort_order']] : []);
         }
 
         $plan = [
@@ -164,7 +172,7 @@ final class PhaseRelease
                     throw new RuntimeException("The release plan is now {$plan['plan_hash']}, not the reviewed {$expectedPlan}. Nothing written.");
                 }
 
-                $changes = in_array('create', array_column($plan['schemas'], 'action'), true) || in_array('revise', array_column($plan['phases'], 'action'), true);
+                $changes = in_array('create', array_column($plan['schemas'], 'action'), true) || array_intersect(['create', 'revise'], array_column($plan['phases'], 'action')) !== [];
                 $backup = $changes ? $this->backup($plan) : null;
                 $created = [];
 
@@ -197,13 +205,22 @@ final class PhaseRelease
 
                 foreach ($package['phases'] as $index => $phase) {
                     $planned = $plan['phases'][$index];
+                    $note = "{$phase['note']} (release {$package['name']}, plan {$plan['plan_hash']})";
+
+                    if ($planned['action'] === 'create') {
+                        $draft = $revisions->createDraft($plan['category']['id'], $plan['workflow'], $phase['code'], (string) $planned['name'], (int) $planned['sort_order'], $phase['content'], $this->links($plan['workflow'], $phase['code']), $note, $by);
+                        $published = $revisions->publish($draft, null);
+                        $written[] = ['code' => $published->phase_code, 'revision' => (int) $published->revision, 'id' => (string) $published->id];
+
+                        continue;
+                    }
 
                     if ($planned['action'] !== 'revise') {
                         continue;
                     }
 
                     $current = AiPhase::query()->findOrFail($planned['current_id']);
-                    $draft = $revisions->saveDraft($current, $phase['content'], $this->links($plan['workflow'], $phase['code']), "{$phase['note']} (release {$package['name']}, plan {$plan['plan_hash']})", $by);
+                    $draft = $revisions->saveDraft($current, $phase['content'], $this->links($plan['workflow'], $phase['code']), $note, $by);
                     $published = $revisions->publish($draft, $current->id);
                     $written[] = ['code' => $published->phase_code, 'revision' => (int) $published->revision, 'id' => (string) $published->id];
                 }
@@ -276,7 +293,7 @@ final class PhaseRelease
     }
 
     /**
-     * @return array{name: string, workflow: string, sha256: string, schemas: list<array{namespace: string, key: string, version: string, title: string, uri: string, content: string, sha256: string, source_file: string}>, phases: list<array{code: string, content: string, sha256: string, note: string}>}
+     * @return array{name: string, workflow: string, sha256: string, schemas: list<array{namespace: string, key: string, version: string, title: string, uri: string, content: string, sha256: string, source_file: string}>, phases: list<array{code: string, content: string, sha256: string, note: string, name: ?string, sort_order: int}>}
      */
     private function package(string $dir): array
     {
@@ -367,7 +384,14 @@ final class PhaseRelease
 
             $content = $this->read($dir.'/'.$entry['file']);
             $hashes[$entry['file']] = hash('sha256', $content);
-            $phases[] = ['code' => $entry['code'], 'content' => $content, 'sha256' => hash('sha256', $content), 'note' => trim($entry['note'])];
+            $phases[] = [
+                'code' => $entry['code'],
+                'content' => $content,
+                'sha256' => hash('sha256', $content),
+                'note' => trim($entry['note']),
+                'name' => is_string($entry['name'] ?? null) && trim($entry['name']) !== '' ? trim($entry['name']) : null,
+                'sort_order' => is_int($entry['sort_order'] ?? null) ? $entry['sort_order'] : 0,
+            ];
         }
 
         if ($schemas === [] && $phases === []) {

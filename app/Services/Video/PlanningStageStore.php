@@ -459,18 +459,19 @@ class PlanningStageStore
 
     /**
      * @param  array<string, mixed>  $state
-     * @return bool false once the claim is no longer held
+     * @return bool false once the claim is no longer held; while it is held by a running stage, the progress is stored and the lease renewed for LEASE_SECONDS in one conditional update
      */
     public function recordStream(string $stageId, string $claimToken, array $state): bool
     {
         $table = (new VideoPlanningStage)->getTable();
         $meta = '$."'.self::METADATA_KEY.'"';
         $path = $meta.'."stream"';
+        $running = VideoPlanningStageStatus::RUNNING->value;
 
         return DB::update(
-            "UPDATE {$table} SET input_json = JSON_SET(JSON_INSERT(input_json, '{$meta}', JSON_OBJECT()), '{$path}', JSON_EXTRACT(?, '$')), updated_at = ? WHERE id = ? AND claim_token = ?",
-            [json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), now(), $stageId, $claimToken],
-        ) > 0 || VideoPlanningStage::query()->whereKey($stageId)->where('claim_token', $claimToken)->exists();
+            "UPDATE {$table} SET input_json = JSON_SET(JSON_INSERT(input_json, '{$meta}', JSON_OBJECT()), '{$path}', JSON_EXTRACT(?, '$')), lease_expires_at = ?, updated_at = ? WHERE id = ? AND claim_token = ? AND status = ?",
+            [json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), now()->addSeconds(self::LEASE_SECONDS), now(), $stageId, $claimToken, $running],
+        ) > 0 || VideoPlanningStage::query()->whereKey($stageId)->where('claim_token', $claimToken)->where('status', $running)->exists();
     }
 
     public function releaseClaim(string $stageId, string $reason): bool

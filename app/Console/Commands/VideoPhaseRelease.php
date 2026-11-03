@@ -45,7 +45,11 @@ class VideoPhaseRelease extends Command
 
         foreach ($plan['phases'] as $phase) {
             $this->line('');
-            $this->line("<options=bold>{$phase['code']}</> revision {$phase['current_revision']} → ".($phase['action'] === 'revise' ? 'revision mới' : 'giữ nguyên (đã khớp gói)'));
+            $this->line("<options=bold>{$phase['code']}</> revision {$phase['current_revision']} → ".match ($phase['action']) {
+                'create' => 'tạo phase mới "'.$phase['name'].'" (thứ tự '.$phase['sort_order'].'), revision 1',
+                'revise' => 'revision mới',
+                default => 'giữ nguyên (đã khớp gói)',
+            });
             $this->line("  prompt: {$phase['current_sha256']} → {$phase['sha256']}");
 
             foreach ($phase['links'] as $line) {

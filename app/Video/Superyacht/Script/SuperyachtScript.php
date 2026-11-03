@@ -12,7 +12,9 @@ use App\Services\Video\ModelSheetService;
 use App\Video\DesignDna\DnaCheck;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
+use App\Video\Script\ScriptEvaluation;
 use App\Video\Script\ScriptWorkflow;
+use App\Video\Superyacht\Spec\ResolvedPhase;
 use App\Video\YachtDesign\YachtDesignCheck;
 use RuntimeException;
 
@@ -180,6 +182,11 @@ final class SuperyachtScript implements ScriptWorkflow
         return null;
     }
 
+    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
+    {
+        return ScriptEvaluation::envelopeViolations($decoded, $bundle, $projectId);
+    }
+
     public function check(?array $response, array $context, array $schema): array
     {
         return SuperyachtScriptCheck::evaluate($response, $context, $schema, (array) $context['policy']);
@@ -188,6 +195,11 @@ final class SuperyachtScript implements ScriptWorkflow
     public function derive(array $document, array $context): array
     {
         return ScriptProjection::of($document);
+    }
+
+    public function systemText(array $parts, array $schemas): string
+    {
+        return implode("\n\n", $parts);
     }
 
     /**

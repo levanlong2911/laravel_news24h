@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace App\Video\Script;
 
+use App\Video\Superyacht\Spec\ResolvedPhase;
+
 interface CheckedWorkflow
 {
+    /**
+     * @return list<array{code: string, path: string, message: string}>
+     */
+    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array;
+
     /**
      * @param  ?array<string, mixed>  $response
      * @param  array<string, mixed>  $context
