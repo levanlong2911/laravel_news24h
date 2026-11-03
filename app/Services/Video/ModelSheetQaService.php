@@ -289,11 +289,12 @@ Return exactly one JSON object, with no text or code fence around it, that valid
      * Bo cuc, khung hinh, trinh bay va quy tac co dinh tu config; Sonnet dua vao prompt dung mot lan.
      *
      * @param  array<string, mixed>  $snapshot  output_json cua bo model sheet
+     * @param  ?array<string, mixed>  $config  the model-sheet config of the category; the superyacht one when null
      * @return array<string, mixed>
      */
-    public static function fixedRules(array $snapshot): array
+    public static function fixedRules(array $snapshot, ?array $config = null): array
     {
-        $config = (array) config('video.superyacht.model_sheet');
+        $config ??= (array) config('video.superyacht.model_sheet');
         $master = (array) $config['master'];
         $text = (array) $master['prompt'];
         [$width, $height] = array_map('intval', explode('x', (string) $master['size']));

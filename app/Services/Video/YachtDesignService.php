@@ -17,12 +17,12 @@ use App\Video\Llm\JsonAnswer;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
 use App\Video\Llm\LlmUnavailable;
-use App\Video\ModelSheet\ModelSheetFacts;
 use App\Video\ModelSheet\ModelSheetMaster;
+use App\Video\Moto\MotoContract;
 use App\Video\Superyacht\Spec\PhaseResolver;
-use App\Video\Superyacht\Support\CanonicalJson;
-use App\Video\YachtDesign\BuildStateText;
 use App\Video\YachtDesign\DesignProse;
+use App\Video\YachtDesign\DesignWorkflow;
+use App\Video\YachtDesign\SuperyachtDesign;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -150,6 +150,7 @@ final class YachtDesignService
         $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'stuck' => false, 'error' => null,
             'current' => false, 'dna_stale' => false, 'check' => null, 'name' => null, 'loa' => null, 'yacht_anchor' => null, 'prose' => null, 'json_error' => null];
         $base = [
+            'moto' => MotoContract::is((string) (config('video.superyacht.contracts.categories')[$project?->article?->category?->slug ?? ''] ?? '')),
             'can_run' => $run !== null && $served === null,
             'can_regenerate' => $run !== null && $served !== null && $this->replaceable($served, $run),
             'prompt' => $run === null ? null : self::label((int) $run['prompt']->revision),
@@ -193,7 +194,7 @@ final class YachtDesignService
             // Chi DNA nguon doi moi lam ban thiet ke cu; prompt Phase 3 doi revision thi khong.
             'dna_stale' => $succeeded && $run !== null && ($shown->input_json['dna_stage_id'] ?? null) !== $run['input']['dna_stage_id'],
             'check' => $check,
-            'name' => is_array($data) ? ($data['yacht_bible']['name'] ?? $data['vessel']['name'] ?? null) : null,
+            'name' => is_array($data) ? ($data['yacht_bible']['name'] ?? $data['vessel']['name'] ?? $data['motorcycle']['name'] ?? null) : null,
             'loa' => is_array($data) ? ($data['yacht_bible']['specs']['loa']['value'] ?? $data['vessel']['specs']['loa']['value'] ?? null) : null,
             'yacht_anchor' => is_array($data) ? ($data['anchors']['yacht'] ?? null) : null,
             'prose' => is_array($data) ? DesignProse::text($data) : null,
@@ -220,7 +221,7 @@ final class YachtDesignService
         return "spec-v6.3-phase-3@rev{$prompt->revision}";
     }
 
-    /** @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string} */
+    /** @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string, model_sheet?: array<string, mixed>, adapter?: DesignWorkflow} */
     private function prepare(VideoProject $project): array
     {
         $dnaPanel = $this->dna->panel((string) $project->id);
@@ -233,7 +234,8 @@ final class YachtDesignService
         $dna = JsonAnswer::object((string) ($dnaStage->output_json['raw_text'] ?? ''))['dna'] ?? null;
         $inspiration = $this->videoProjects->latestInspiration((string) $project->id);
         $phaseOne = is_string($inspiration['stage_id']) ? VideoPlanningStage::query()->find($inspiration['stage_id']) : null;
-        $identity = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($phaseOne?->output_json['raw_text'] ?? '')))['source_identity'] ?? null;
+        $source = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($phaseOne?->output_json['raw_text'] ?? '')));
+        $identity = $source['source_identity'] ?? null;
 
         if (! is_array($dna) || ! is_array($identity)) {
             throw new RuntimeException('Không đọc được dna hoặc source_identity đã đạt.');
@@ -241,6 +243,7 @@ final class YachtDesignService
 
         $category = $project->article?->category ?? throw new RuntimeException('Bài viết của dự án không có chủ đề.');
         $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
+        $adapter = self::adapter($workflow);
         $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject((string) $project->id, self::ACTION);
 
         if (! $bundle->ready()) {
@@ -250,24 +253,20 @@ final class YachtDesignService
         $manifest = $bundle->manifest();
         $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
 
-        foreach ([YachtDesignCheck::FORMAT_V3, 'Input format: `'.YachtDesignCheck::INPUT_FORMAT_V2.'`'] as $marker) {
+        foreach ($adapter->markers() as $marker) {
             if (! str_contains((string) $prompt->prompt_content, $marker)) {
                 throw new RuntimeException("Prompt phase-3 revision {$prompt->revision} không khai {$marker} mà code đang dùng — phát hành revision tương thích trước khi thiết kế, không gọi model.");
             }
         }
 
-        $payload = (string) json_encode([
-            'project_id' => (string) $project->id,
-            'prompt_version' => self::instructionVersion($prompt),
-            'variables' => (array) config('video.superyacht.variables'),
-            'dna' => $dna,
-            'novelty' => $dnaPanel['novelty'],
-            'inspiration' => ['source_identity' => $identity],
-            'model_sheet' => self::modelSheet(),
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $modelSheet = self::modelSheet($adapter->modelSheetConfig());
+        $payload = (string) json_encode(
+            $adapter->payload((string) $project->id, self::instructionVersion($prompt), $dna, $source, $dnaPanel, $modelSheet),
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
+        );
         $heading = (string) config('video.superyacht.design.schema_heading');
         $schemas = array_map(
-            static fn (array $schema): string => "## {$heading} — {$schema['label']}\n\n```json\n".trim($schema['content'])."\n```",
+            static fn (array $schema): string => "## {$heading} — {$schema['label']}\n\n```json\n".$adapter->schemaText((string) $schema['content'])."\n```",
             $bundle->outputSchemas(),
         );
 
@@ -279,8 +278,10 @@ final class YachtDesignService
             'dna' => $dna,
             'source_identity' => $identity,
             'project_id' => (string) $project->id,
+            'model_sheet' => $modelSheet,
+            'adapter' => $adapter,
             'input' => [
-                'execution' => self::EXECUTION,
+                'execution' => $adapter->execution(),
                 'article_id' => (string) $project->article->id,
                 'category_id' => (string) $category->id,
                 'workflow' => $workflow,
@@ -290,24 +291,41 @@ final class YachtDesignService
                 'prompt_sha256' => (string) $prompt->content_sha256,
                 'dna_stage_id' => (string) $dnaStage->id,
                 'payload_sha256' => hash('sha256', $payload),
-            ] + self::settings(),
+            ] + ($adapter->checkVersion() === null ? [] : ['check_version' => $adapter->checkVersion()]) + array_replace(self::settings(), array_intersect_key($adapter->runSettings(), self::settings())),
         ];
     }
 
-    /** @return array<string, mixed> the pinned model-sheet presentation the design writes its model sheet for, from the model-sheet config */
-    private static function modelSheet(): array
+    /**
+     * @param  array<string, mixed>  $design  a Phase 3 answer with its canonical hash and build-state texts filled in
+     * @return list<string> what keeps the model sheet from opening this design, by the model sheet's own blocking checks
+     */
+    public static function handoff(array $design): array
     {
-        $config = (array) config('video.superyacht.model_sheet');
-        $cameras = ModelSheetQaService::cameras();
+        return SuperyachtDesign::handoff($design);
+    }
 
+    public static function adapter(string $workflow): DesignWorkflow
+    {
+        $class = config('video.superyacht.design.adapters')[$workflow] ?? null;
+        $adapter = is_string($class) ? app($class) : null;
+
+        return $adapter instanceof DesignWorkflow ? $adapter : throw new RuntimeException("Workflow {$workflow} chưa có adapter thiết kế (video.superyacht.design.adapters).");
+    }
+
+    /**
+     * @param  array<string, mixed>  $config  the model-sheet config of the category
+     * @return array<string, mixed> the pinned model-sheet presentation the design writes its model sheet for
+     */
+    private static function modelSheet(array $config): array
+    {
         return [
             'version' => (string) $config['master']['execution'],
-            'cameras' => $cameras['views'],
-            'camera_convention' => $cameras['convention'],
+            'cameras' => (array) $config['cameras'],
+            'camera_convention' => (string) $config['camera_convention'],
         ] + ModelSheetQaService::fixedRules([
-            'views' => ModelSheetService::views($config, ModelSheetMaster::fromConfig()),
+            'views' => ModelSheetService::views($config, new ModelSheetMaster((array) $config['master'])),
             'layout_guide' => ($config['master']['layout_guide'] ?? false) === true,
-        ]);
+        ], $config);
     }
 
     /** @return array{model: string, effort: string, max_tokens: int, timeout_seconds: int, stream: bool, retry_times: int} */
@@ -326,104 +344,22 @@ final class YachtDesignService
     }
 
     /**
-     * @param  array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string}  $run
+     * @param  array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string, model_sheet?: array<string, mixed>, adapter?: DesignWorkflow}  $run
      * @param  ?array<string, mixed>  $manifest  the bundle the stage was sent with
      * @return array{0: ?object, 1: array<string, mixed>}
      */
     private function evaluate(string $raw, array $run, ?array $manifest): array
     {
-        [$decoded, $error] = JsonAnswer::parse($raw);
-        $text = BuildStateText::fromConfig();
+        $adapter = is_string($manifest['workflow'] ?? null) ? self::adapter($manifest['workflow']) : $run['adapter'];
 
-        if ($error !== null || ! is_object($decoded)) {
-            return [null, YachtDesignCheck::evaluate(null, $run['project_id'], $run['dna'], $run['source_identity'], [], [], $text, self::limits())];
-        }
-
-        $canonical = $decoded->data->canonical ?? null;
-
-        if (is_object($canonical)) {
-            foreach (is_array($canonical->build_states ?? null) ? $canonical->build_states : [] as $state) {
-                if (is_object($state)) {
-                    $state->compiled_text = $text->compile((array) json_decode((string) json_encode($state), true)) ?? '';
-                }
-            }
-
-            $canonical->hash = CanonicalJson::hash($canonical, ['hash']);
-        }
-
-        $schemaIssues = [];
-        $wordLimits = [];
-
-        try {
-            $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))
-                ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'));
-
-            if (($decoded->format ?? null) === YachtDesignCheck::FORMAT_V3) {
-                $schemaIssues = PhaseOneEvidence::schemaErrors($decoded, $bundle->outputSchemas());
-            } else {
-                $result = $bundle->checkOutput((string) json_encode($decoded), $run['project_id'], 'draft');
-
-                foreach ($result['report']->violations as $violation) {
-                    $schemaIssues[] = trim($violation->path.' '.$violation->message);
-                }
-            }
-
-            $wordLimits = $bundle->wordLimits();
-        } catch (\Throwable $e) {
-            $schemaIssues[] = 'không kiểm được schema: '.$e->getMessage();
-        }
-
-        $response = json_decode((string) json_encode($decoded), true);
-
-        return [$decoded, YachtDesignCheck::evaluate(
-            is_array($response) ? $response : null,
-            $run['project_id'],
-            $run['dna'],
-            $run['source_identity'],
-            self::forbiddenWords((string) $run['prompt']->prompt_content),
-            $schemaIssues,
-            $text,
-            self::limits(),
-            $wordLimits,
-            is_array($response) && ($response['format'] ?? null) === YachtDesignCheck::FORMAT ? self::handoff($response) : [],
-            self::instructionVersion($run['prompt']),
-        )];
+        return $adapter->evaluate($raw, [
+            'prompt_version' => self::instructionVersion($run['prompt']),
+            'forbidden' => self::forbiddenWords((string) $run['prompt']->prompt_content),
+            'model_sheet' => $run['model_sheet'] ?? self::modelSheet($adapter->modelSheetConfig()),
+        ] + $run, $manifest);
     }
 
-    /**
-     * @param  array<string, mixed>  $design  a Phase 3 answer with its canonical hash and build-state texts filled in
-     * @return list<string> what keeps the model sheet from opening this design, by the model sheet's own blocking checks
-     */
-    public static function handoff(array $design): array
-    {
-        $config = (array) config('video.superyacht.model_sheet');
-
-        try {
-            $facts = new ModelSheetFacts(
-                $design,
-                array_map(static fn (array $view): array => ['id' => (string) $view['id'], 'view' => (string) $view['view']], array_values((array) $config['views'])),
-                (array) $config['cameras'],
-            );
-
-            return ModelSheetFacts::blocking($facts->snapshot());
-        } catch (\Throwable $e) {
-            return ['không dựng được bảng dữ kiện model sheet: '.$e->getMessage()];
-        }
-    }
-
-    /** @return array{profile_margin_m: float, near_x: float, near_z_m: float} */
-    private static function limits(): array
-    {
-        $limits = (array) config('video.superyacht.design_check');
-
-        return [
-            'profile_margin_m' => (float) $limits['profile_margin_m'],
-            'near_x' => (float) $limits['near_x'],
-            'near_z_m' => (float) $limits['near_z_m'],
-        ];
-    }
-
-    /** @param array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string} $run */
+    /** @param array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string, model_sheet?: array<string, mixed>, adapter?: DesignWorkflow} $run */
     private function replaceable(VideoPlanningStage $served, array $run): bool
     {
         $check = $this->evaluate((string) (is_array($served->output_json) ? ($served->output_json['raw_text'] ?? '') : ''), $run, self::manifestOf($served))[1];
@@ -440,7 +376,7 @@ final class YachtDesignService
     }
 
     /**
-     * @param  array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string}  $run
+     * @param  array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string, model_sheet?: array<string, mixed>, adapter?: DesignWorkflow}  $run
      * @return array<string, mixed>
      */
     private function output(array $run, string $raw): array
@@ -449,7 +385,7 @@ final class YachtDesignService
         [, $error] = JsonAnswer::parse($raw);
 
         return [
-            'execution' => self::EXECUTION,
+            'execution' => (string) $run['input']['execution'],
             'prompt' => array_intersect_key($run['input'], array_flip(['category_id', 'workflow', 'phase_id', 'phase_revision', 'prompt_sha256'])),
             'dna_stage_id' => $run['input']['dna_stage_id'],
             'raw_text' => $raw,

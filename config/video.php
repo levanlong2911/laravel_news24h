@@ -195,7 +195,10 @@ return [
                     'capabilities' => ['generate', 'edit_sources'],
                     'max_sources' => 4,
                     'controls' => [
-                        'sizes' => ['1024x1024', '1536x1024', '1024x1536', '2048x1152', '1152x2048'],
+                        'sizes' => [
+                            '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152',
+                            '3840x2160', '720x1280', '1152x2048', '2160x3840',
+                        ],
                         'default_size' => '1152x2048',
                         'default_quality' => 'low',
                     ],
@@ -211,9 +214,110 @@ return [
                     'capabilities' => ['generate', 'edit_sources'],
                     'max_sources' => 4,
                     'controls' => [
-                        'sizes' => ['1024x1024', '1536x1024', '1024x1536', '2048x1152', '1152x2048'],
+                        'sizes' => [
+                            '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152',
+                            '3840x2160', '720x1280', '1152x2048', '2160x3840',
+                        ],
                         'default_size' => '1152x2048',
                         'default_quality' => 'low',
+                    ],
+                ],
+                [
+                    'id' => 'openai:gpt-image-2',
+                    'provider' => 'openai',
+                    'model' => 'gpt-image-2',
+                    'label' => 'GPT Image 2',
+                    'default' => false,
+                    'pricing' => 'estimated',
+                    'max_variations' => 2,
+                    'capabilities' => ['generate'],
+                    'controls' => [
+                        'sizes' => [
+                            '1024x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152',
+                            '3840x2160', '720x1280', '1152x2048', '2160x3840',
+                        ],
+                        'default_size' => '1152x2048',
+                        'default_quality' => 'low',
+                    ],
+                ],
+                [
+                    'id' => 'gemini:gemini-3.1-flash-lite-image',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-3.1-flash-lite-image',
+                    'label' => 'Nano Banana 2 Lite',
+                    'default' => false,
+                    'pricing' => 'estimated',
+                    'max_variations' => 1,
+                    'capabilities' => ['generate'],
+                    'api_version' => 'v1',
+                    'shape' => 'image_config',
+                    'controls' => [
+                        'aspect_ratios' => [
+                            '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4',
+                            '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1',
+                        ],
+                        'default_aspect_ratio' => '9:16',
+                        'image_sizes' => ['1K'],
+                        'default_image_size' => '1K',
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_12.json',
+                        'image_config' => 'gemini_image_config_2026_09_13.json',
+                        'capabilities' => 'gemini_image_capabilities.json',
+                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
+                    ],
+                ],
+                [
+                    'id' => 'gemini:gemini-3.1-flash-image',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-3.1-flash-image',
+                    'label' => 'Nano Banana 2',
+                    'default' => false,
+                    'pricing' => 'estimated',
+                    'max_variations' => 1,
+                    'capabilities' => ['generate'],
+                    'api_version' => 'v1',
+                    'shape' => 'image_config',
+                    'controls' => [
+                        'aspect_ratios' => [
+                            '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4',
+                            '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1',
+                        ],
+                        'default_aspect_ratio' => '9:16',
+                        'image_sizes' => ['0.5K', '1K', '2K', '4K'],
+                        'default_image_size' => '1K',
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_12.json',
+                        'image_config' => 'gemini_image_config_2026_09_13.json',
+                        'capabilities' => 'gemini_image_capabilities.json',
+                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
+                    ],
+                ],
+                [
+                    'id' => 'gemini:gemini-3-pro-image',
+                    'provider' => 'gemini',
+                    'model' => 'gemini-3-pro-image',
+                    'label' => 'Nano Banana Pro',
+                    'default' => false,
+                    'pricing' => 'estimated',
+                    'max_variations' => 1,
+                    'capabilities' => ['generate'],
+                    'api_version' => 'v1',
+                    'shape' => 'image_config',
+                    'controls' => [
+                        'aspect_ratios' => [
+                            '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
+                        ],
+                        'default_aspect_ratio' => '9:16',
+                        'image_sizes' => ['1K', '2K', '4K'],
+                        'default_image_size' => '1K',
+                    ],
+                    'evidence' => [
+                        'models' => 'gemini_models_2026_09_12.json',
+                        'image_config' => 'gemini_image_config_2026_09_13.json',
+                        'capabilities' => 'gemini_image_capabilities.json',
+                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
                     ],
                 ],
             ],
@@ -871,6 +975,62 @@ return [
         ],
 
         'concept_history_limit' => 10,
+
+        'design' => [
+            'effort' => env('MOTO_DESIGN_EFFORT', 'medium'),
+        ],
+
+        'model_sheet' => [
+            'suffix' => 'neutral light-grey studio background, soft even light, no text',
+            'views' => [
+                ['id' => 'MS1', 'view' => '3/4 front view from the rider\'s left, eye level'],
+                ['id' => 'MS2', 'view' => 'left side profile, exact side view'],
+                ['id' => 'MS3', 'view' => 'right side profile, exact side view'],
+                ['id' => 'MS4', 'view' => 'front head-on'],
+                ['id' => 'MS5', 'view' => 'rear head-on'],
+                ['id' => 'MS6', 'view' => 'top-down plan view'],
+                ['id' => 'MS7', 'view' => '3/4 rear view from the rider\'s right, eye level'],
+                ['id' => 'MS8', 'view' => 'close-up chosen from the design'],
+            ],
+            'cameras' => [
+                'MS1' => ['azimuth_deg' => 45, 'elevation_deg' => 8, 'projection' => 'perspective', 'lens_mm' => 85],
+                'MS2' => ['azimuth_deg' => 90, 'elevation_deg' => 0, 'projection' => 'orthographic'],
+                'MS3' => ['azimuth_deg' => 270, 'elevation_deg' => 0, 'projection' => 'orthographic'],
+                'MS4' => ['azimuth_deg' => 0, 'elevation_deg' => 0, 'projection' => 'orthographic'],
+                'MS5' => ['azimuth_deg' => 180, 'elevation_deg' => 0, 'projection' => 'orthographic'],
+                'MS6' => ['azimuth_deg' => null, 'elevation_deg' => 90, 'projection' => 'orthographic', 'front' => 'toward the top of the panel'],
+                'MS7' => ['azimuth_deg' => 225, 'elevation_deg' => 8, 'projection' => 'perspective', 'lens_mm' => 85],
+                'MS8' => ['azimuth_deg' => null, 'elevation_deg' => null, 'projection' => 'perspective', 'lens_mm' => 85, 'target' => 'a close-up chosen from the design: a signature feature or the detail that best shows how the build is made'],
+            ],
+            'camera_convention' => 'Azimuth is measured around the motorcycle from its front: 0 = front, 90 = the rider\'s left side, 180 = rear, 270 = the rider\'s right side; left and right are the rider\'s, seated facing forward. Elevation 0 = eye level, 90 = straight down.',
+            'occlusion' => 'Keep every part at its stated shape, size and position. Where this camera cannot see a part, leave it hidden; do not move, duplicate, enlarge or make anything transparent to reveal it.',
+            'master' => [
+                'execution' => 'moto-model-sheet-v1',
+                'size' => '3840x2160',
+                'variations' => 1,
+                'columns' => 4,
+                'rows' => 2,
+                'cell' => ['width' => 960, 'height' => 1080],
+                'order' => ['MS1', 'MS2', 'MS3', 'MS4', 'MS5', 'MS6', 'MS7', 'MS8'],
+                'detail_views' => ['MS8'],
+                'layout_guide' => false,
+                'prompt' => [
+                    'layout' => 'ONE image of {width}x{height} pixels: a model sheet of this one motorcycle in {rows} rows by {columns} columns of equal panels, each panel {cell_width}x{cell_height} pixels, covering the whole image edge to edge with no title strip and no caption area.',
+                    'panel' => 'Row {row}, column {column} ({x}-{x_end} px across, {y}-{y_end} px down)',
+                    'framing' => 'In every whole-motorcycle panel the complete motorcycle required by that camera, from the front tyre to the rear tyre and from the ground to the highest point, is inside the panel with a margin of plain studio background on every side; it never touches or crosses into another panel.',
+                    'detail_framing' => 'The close-up panel is a detail view and may crop close on its subject.',
+                    'rules' => [
+                        'All eight panels show the same motorcycle with the same design, proportions, colours, materials and finish, in the same displayed configuration, under the same studio background and the same lighting.',
+                        'Keep the rider\'s left and right exactly as each camera states; do not mirror a panel.',
+                        'Do not add, remove, move or reshape any part between panels.',
+                        'No rider, no people, no text, letters, numbers, labels, titles, logos, badges, panel borders or dividing lines anywhere in the image.',
+                    ],
+                    'presentation' => 'Studio presentation: the complete finished motorcycle stands upright on a level studio floor, both tyres on the ground. When the side stand is up, a plain low studio stand under the frame holds it upright; the stand is not part of the motorcycle. Nothing is cut open or made transparent.',
+                    'guide_caption' => 'The attached image is only a layout guide showing the position of the eight panels; it contains no motorcycle. Place each view inside its panel and do not draw the guide lines.',
+                    'max_chars' => 20000,
+                ],
+            ],
+        ],
     ],
 
     'superyacht' => [
@@ -895,6 +1055,10 @@ return [
             'timeout_seconds' => (int) env('SUPERYACHT_DESIGN_TIMEOUT_SECONDS', 3600),
             'stream' => true,
             'retry_times' => 0,
+            'adapters' => [
+                'superyacht_v6_3' => \App\Video\YachtDesign\SuperyachtDesign::class,
+                'harley_custom_v1' => \App\Video\Moto\MotoDesign::class,
+            ],
         ],
 
         'design_check' => [
@@ -1178,6 +1342,19 @@ return [
                             'contract_version' => '1',
                             'outputs' => [
                                 'dna' => ['namespace' => 'moto', 'schema' => 'MotoDna', 'version' => '1.1.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 2 Output (format moto-dna-v1): the resolved brief, theme, emotion, departures, kept base features, 1-3 signature features, silhouette, must-avoid list and hero moment of a muscle-bobber concept; release database/releases/moto-phase-2-dna-v2'],
+                            ],
+                        ],
+                        'spec.design' => [
+                            'phase' => 'phase-3',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['design'],
+                            ],
+                            'outputs' => [
+                                'design' => ['namespace' => 'moto', 'schema' => 'MotoDesign', 'version' => '1.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 3 Output (format moto-design-v1): one object-based Harley-Davidson custom design record — motorcycle, parts, systems, rider interface, connections, features, operational limits, build states, identity rules, source issues and the model sheet with its eight views and final prompt; release database/releases/moto-phase-3-design-v8'],
                             ],
                         ],
                     ],

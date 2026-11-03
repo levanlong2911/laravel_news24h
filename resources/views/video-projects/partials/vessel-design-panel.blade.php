@@ -77,7 +77,7 @@
                                 @endforeach
                             @endif
                             @if($yacht['name'])
-                                <div class="line"><span class="k">Tên tàu</span><span class="v">{{ $yacht['name'] }}@if($yacht['loa']) · LOA {{ $yacht['loa'] }} m @endif</span></div>
+                                <div class="line"><span class="k">{{ $yacht['moto'] ? 'Tên xe' : 'Tên tàu' }}</span><span class="v">{{ $yacht['name'] }}@if($yacht['loa']) · LOA {{ $yacht['loa'] }} m @endif</span></div>
                             @endif
                             @if($yacht['yacht_anchor'])
                                 <div class="line"><span class="k">YACHT ANCHOR</span><span class="v">{{ $yacht['yacht_anchor'] }}</span></div>

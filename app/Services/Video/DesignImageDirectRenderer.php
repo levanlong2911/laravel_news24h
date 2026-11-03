@@ -78,8 +78,8 @@ class DesignImageDirectRenderer
                 throw new RuntimeException('Provider chua co client: '.$spec['provider']);
             }
 
-            if ($spec['provider'] === 'gemini' && $spec['operation'] !== 'environment_plate') {
-                throw new RuntimeException('Gemini chi duoc dung cho environment_plate, khong cho '.$spec['operation']);
+            if ($spec['provider'] === 'gemini' && ! in_array($spec['operation'], ['environment_plate', LocationReferencePrompt::OPERATION], true)) {
+                throw new RuntimeException('Gemini chi duoc dung cho environment_plate va '.LocationReferencePrompt::OPERATION.', khong cho '.$spec['operation']);
             }
 
             if ($spec['quality_error'] !== null) {
@@ -103,8 +103,7 @@ class DesignImageDirectRenderer
                 'mirror' => $this->mirror($image, $spec, $claimToken),
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
                 'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
-                'environment_plate' => $this->environmentPlate($spec, $budget),
-                LocationReferencePrompt::OPERATION => $this->client->generate($spec, $budget),
+                'environment_plate', LocationReferencePrompt::OPERATION => $this->byProvider($spec, $budget),
                 ModelSheetService::MASTER_OPERATION => $this->modelSheetMaster($spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),
                 default => throw new RuntimeException(
@@ -255,7 +254,7 @@ class DesignImageDirectRenderer
      * @param  array<string, mixed>  $spec
      * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>}
      */
-    private function environmentPlate(array $spec, int $budget): array
+    private function byProvider(array $spec, int $budget): array
     {
         return $spec['provider'] === 'gemini'
             ? $this->gemini->generate($spec, $budget)

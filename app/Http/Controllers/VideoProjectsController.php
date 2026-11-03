@@ -32,6 +32,7 @@ use App\Services\Video\YachtDesignService;
 use App\Services\Video\ScreenplayExpansionService;
 use App\Services\Video\StoryFoundationService;
 use App\Services\Video\VesselDesignService;
+use App\Video\Moto\MotoContract;
 use App\Video\Screenplay\VesselDesign;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Http\Request;
@@ -369,7 +370,7 @@ class VideoProjectsController extends Controller
             return back()->with('error', $this->anchorMessage($reason));
         }
 
-        if (($design['execution'] ?? null) === YachtDesignService::EXECUTION) {
+        if (in_array($design['execution'] ?? null, [YachtDesignService::EXECUTION, MotoContract::DESIGN_EXECUTION], true)) {
             $message = $reason === 'cached'
                 ? 'DNA và prompt Phase 3 không đổi — dùng lại bản thiết kế đã lưu, không gọi model.'
                 : 'Đã lưu bản thiết kế Phase 3 (draft) — xem kết quả kiểm RULE.';

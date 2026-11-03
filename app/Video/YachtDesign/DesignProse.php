@@ -12,14 +12,21 @@ final class DesignProse
     /** @var array<string, string> the list blocks of a phase3-design-v3 record by data key, with their section titles, in record order */
     private const RECORD_SECTIONS = ['parts' => 'Parts', 'decks' => 'Decks', 'spaces' => 'Spaces', 'connections' => 'Connections', 'routes' => 'Routes', 'innovations' => 'Innovations', 'operational_limits' => 'Operations', 'build_states' => 'Build states', 'identity_rules' => 'Identity rules', 'source_issues' => 'Source issues'];
 
+    /** @var array<string, string> the list blocks of a moto-design-v1 record by data key, with their section titles, in record order */
+    private const MOTO_SECTIONS = ['parts' => 'Parts', 'systems' => 'Systems', 'connections' => 'Connections', 'features' => 'Features', 'operational_limits' => 'Operations', 'build_states' => 'Build states', 'identity_rules' => 'Identity rules', 'source_issues' => 'Source issues'];
+
     /**
      * @param  array<mixed>  $data
      * @return list<array{title: string, blocks: list<array{heading: ?string, lines: list<array{label: ?string, text: string|list<string>}>}>}>
      */
     public static function sections(array $data): array
     {
+        if (self::map($data['motorcycle'] ?? null) !== []) {
+            return self::record($data, 'motorcycle', 'Motorcycle', self::MOTO_SECTIONS);
+        }
+
         if (self::map($data['vessel'] ?? null) !== []) {
-            return self::record($data);
+            return self::record($data, 'vessel', 'Vessel', self::RECORD_SECTIONS);
         }
 
         $bible = self::map($data['yacht_bible'] ?? null);
@@ -63,21 +70,25 @@ final class DesignProse
     }
 
     /**
-     * @param  array<mixed>  $data  the data of a phase3-design-v3 answer
+     * @param  array<mixed>  $data  the data of a phase3-design-v3 or moto-design-v1 answer
+     * @param  string  $subject  the data key of the whole object: vessel or motorcycle
+     * @param  array<string, string>  $sections  the list blocks by data key, with their section titles
      * @return list<array{title: string, blocks: list<array{heading: ?string, lines: list<array{label: ?string, text: string|list<string>}>}>}>
      */
-    private static function record(array $data): array
+    private static function record(array $data, string $subject, string $title, array $sections): array
     {
-        $vessel = self::map($data['vessel'] ?? null);
+        $whole = self::map($data[$subject] ?? null);
+        $rider = self::map($data['rider_interface'] ?? null);
         $sheet = self::map($data['model_sheet'] ?? null);
         $item = static fn (array $item): ?array => self::block(self::title($item), self::lines($item, ['id', 'name'], null, true));
 
         return array_values(array_filter([
-            self::section('Vessel', [self::block(is_string($vessel['name'] ?? null) ? $vessel['name'] : null, self::lines($vessel, ['name'], null, true))]),
+            self::section($title, [self::block(is_string($whole['name'] ?? null) ? $whole['name'] : null, self::lines($whole, ['name'], null, true))]),
+            $rider === [] ? null : self::section('Rider interface', [self::block(null, self::lines($rider, [], null, true))]),
             ...array_map(
                 static fn (string $key, string $title): ?array => self::section($title, array_map($item, self::items($data[$key] ?? null))),
-                array_keys(self::RECORD_SECTIONS),
-                array_values(self::RECORD_SECTIONS),
+                array_keys($sections),
+                array_values($sections),
             ),
             self::section('Model sheet', [
                 self::block(null, self::lines(['display_configuration' => $sheet['display_configuration'] ?? null])),

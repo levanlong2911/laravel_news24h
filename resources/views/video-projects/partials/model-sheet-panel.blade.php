@@ -27,7 +27,7 @@
                     <div class="line"><span class="k">Model sheet đã duyệt</span><span class="v">master {{ substr($sheet['sheet']['master_image_id'], 0, 8) }} · bộ {{ substr($sheet['sheet']['set_id'], 0, 8) }} (bộ trước) — vẫn là model sheet hợp lệ.</span></div>
                 @endif
                 @if($sheet['set'] !== null)
-                    <div class="line"><span class="k">Bộ model sheet</span><span class="v">{{ substr($sheet['set']['id'], 0, 8) }} · prompt QA revision {{ $sheet['set']['phase_revision'] }}</span></div>
+                    <div class="line"><span class="k">Bộ model sheet</span><span class="v">{{ substr($sheet['set']['id'], 0, 8) }} · {{ $sheet['set']['prompt_source'] === 'design' ? 'prompt thiết kế' : 'prompt QA' }} revision {{ $sheet['set']['phase_revision'] }}</span></div>
                     @if(! $sheet['set']['current_design'])
                         <div class="line"><span class="v" style="color:var(--vp-amber-fg)">Bộ này gắn với một bản thiết kế khác bản hiện hành.</span></div>
                     @endif
@@ -70,14 +70,16 @@
 
                     <div>
                         @if(($qa['prompt'] ?? null) !== null)
-                            <div class="va-lbl">PROMPT GỬI ĐI <em>(đã QA)</em></div>
+                            <div class="va-lbl">PROMPT GỬI ĐI <em>({{ $sheet['set']['prompt_source'] === 'design' ? 'viết trong bản thiết kế, đã kiểm' : 'đã QA' }})</em></div>
                             <textarea class="va-ta" readonly>
 {{ $qa['prompt'] }}</textarea>
                             <div class="va-count"><span>{{ mb_strlen($qa['prompt']) }}</span> ký tự</div>
                         @endif
-                        <div class="va-lbl">BẢN NHÁP CODE <em>(trước QA — không gửi đi)</em></div>
-                        <textarea class="va-ta" readonly>{{ $master['draft'] }}</textarea>
-                        <div class="va-count"><span>{{ mb_strlen($master['draft']) }}</span> ký tự</div>
+                        @if($master['draft'] !== '')
+                            <div class="va-lbl">BẢN NHÁP CODE <em>(trước QA — không gửi đi)</em></div>
+                            <textarea class="va-ta" readonly>{{ $master['draft'] }}</textarea>
+                            <div class="va-count"><span>{{ mb_strlen($master['draft']) }}</span> ký tự</div>
+                        @endif
                         @if($master['layout_guide'])
                             <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Thử nghiệm: gửi kèm ảnh mẫu lưới trống (không có hình tàu).</div>
                         @endif
@@ -87,7 +89,7 @@
                                 @if($qa['status'] === 'running')
                                     <span class="va-tag amber">Đang QA…</span>
                                 @elseif($qa['ready'])
-                                    <span class="va-tag ok">QA đạt kiểm</span>
+                                    <span class="va-tag ok">{{ $sheet['set']['prompt_source'] === 'design' ? 'Prompt của bản thiết kế đạt kiểm' : 'QA đạt kiểm' }}</span>
                                 @elseif($qa['status'] === 'none')
                                     <span class="va-tag">Chưa QA</span>
                                 @else
@@ -184,7 +186,7 @@
                             @include('modal.confirm_action', [
                                 'id' => 'confirm'.$formId,
                                 'form' => $formId,
-                                'content' => 'Gửi prompt master đã QA cho model đã chọn: một request tạo một ảnh '.$sheet['size'].' chứa tám góc MS1–MS8 — TÁC VỤ NÀY TÍNH TIỀN.',
+                                'content' => 'Gửi prompt master '.($sheet['set']['prompt_source'] === 'design' ? 'của bản thiết kế' : 'đã QA').' cho model đã chọn: một request tạo một ảnh '.$sheet['size'].' chứa tám góc MS1–MS8 — TÁC VỤ NÀY TÍNH TIỀN.',
                                 'detail' => 'Đang tính…',
                             ])
                         </div>

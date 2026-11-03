@@ -21,6 +21,7 @@ use App\Video\Media\MediaModelRegistry;
 use App\Video\ModelSheet\ModelSheetFacts;
 use App\Video\ModelSheet\ModelSheetMaster;
 use App\Video\ModelSheet\ModelSheetQaSchema;
+use App\Video\Moto\MotoContract;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -62,9 +63,20 @@ final class ModelSheetService
     /** @var array<string, array<string, mixed>> panel thiet ke trong mot request (doc nhieu lan) */
     private array $designPanels = [];
 
-    public static function execution(): string
+    public static function execution(?string $workflow = null): string
     {
-        return (string) config('video.superyacht.model_sheet.master.execution');
+        return (string) config(MotoContract::is($workflow) ? 'video.moto.model_sheet.master.execution' : 'video.superyacht.model_sheet.master.execution');
+    }
+
+    private static function master(?string $workflow): ModelSheetMaster
+    {
+        return MotoContract::is($workflow) ? new ModelSheetMaster((array) config('video.moto.model_sheet.master')) : ModelSheetMaster::fromConfig();
+    }
+
+    /** @return ?string the workflow of a model-sheet execution: moto for the moto execution, null for the superyacht one */
+    private static function workflowOfExecution(string $execution): ?string
+    {
+        return $execution === self::execution(MotoContract::WORKFLOW) ? MotoContract::WORKFLOW : null;
     }
 
     /** @return array{0: ?VideoPlanningStage, 1: ?string} */
@@ -106,19 +118,34 @@ final class ModelSheetService
                 throw new RuntimeException(implode(' ', (array) $snapshot['blocking']));
             }
 
-            $qa = $this->qa->current($projectId, $set);
+            $workflow = (string) ($set->input_json['workflow'] ?? '');
 
-            if ($qa === null || (string) $qa->id !== $choice['qa_stage_id'] || ! ModelSheetQaService::ready($qa)) {
-                throw new RuntimeException('Chưa có lượt QA đạt kiểm cho đúng bộ model sheet này — bấm "QA & hoàn thiện prompt" rồi tải lại trang.');
+            if (MotoContract::is($workflow)) {
+                $designStageId = (string) $set->input_json['design_stage_id'];
+                $prompt = (string) ($snapshot['final_prompt'] ?? '');
+
+                if ($choice['qa_stage_id'] !== $designStageId || ! hash_equals((string) $snapshot['prompt_sha256'], $choice['prompt_sha256'])
+                    || ! hash_equals((string) $snapshot['prompt_sha256'], hash('sha256', $prompt))) {
+                    throw new RuntimeException('Prompt trên trang không còn khớp bản thiết kế đã kiểm — tải lại trang.');
+                }
+
+                $spec = $this->spec($set, null, $prompt, $this->settings($choice, $workflow), $choice['attempt']);
+                $this->approvePrompt($projectId, ['design_stage_id' => $designStageId], (string) $snapshot['prompt_sha256'], $creator);
+            } else {
+                $qa = $this->qa->current($projectId, $set);
+
+                if ($qa === null || (string) $qa->id !== $choice['qa_stage_id'] || ! ModelSheetQaService::ready($qa)) {
+                    throw new RuntimeException('Chưa có lượt QA đạt kiểm cho đúng bộ model sheet này — bấm "QA & hoàn thiện prompt" rồi tải lại trang.');
+                }
+
+                if (! hash_equals((string) $qa->output_json['prompt_sha256'], $choice['prompt_sha256'])
+                    || ! hash_equals((string) $qa->output_json['prompt_sha256'], hash('sha256', (string) $qa->output_json['final_prompt']))) {
+                    throw new RuntimeException('Prompt trên trang không còn khớp lượt QA đã lưu — tải lại trang.');
+                }
+
+                $spec = $this->spec($set, (string) $qa->id, (string) $qa->output_json['final_prompt'], $this->settings($choice, $workflow), $choice['attempt']);
+                $this->approvePrompt($projectId, ['qa_stage_id' => (string) $qa->id], (string) $qa->output_json['prompt_sha256'], $creator);
             }
-
-            if (! hash_equals((string) $qa->output_json['prompt_sha256'], $choice['prompt_sha256'])
-                || ! hash_equals((string) $qa->output_json['prompt_sha256'], hash('sha256', (string) $qa->output_json['final_prompt']))) {
-                throw new RuntimeException('Prompt trên trang không còn khớp lượt QA đã lưu — tải lại trang.');
-            }
-
-            $spec = $this->spec($set, $qa, $this->settings($choice), $choice['attempt']);
-            $this->approvePrompt($projectId, $qa, $creator);
         } catch (RuntimeException|InvalidArgumentException $e) {
             return [null, $e->getMessage()];
         }
@@ -158,6 +185,10 @@ final class ModelSheetService
             return [null, (string) $error];
         }
 
+        if (MotoContract::is($set->input_json['workflow'] ?? null)) {
+            return [null, 'Model sheet của xe dùng prompt viết trong bản thiết kế đã kiểm — không có bước QA.'];
+        }
+
         if (($problem = $this->compatibilityError((array) $set->output_json)) !== null) {
             return [null, $problem];
         }
@@ -165,13 +196,17 @@ final class ModelSheetService
         return $this->qa->run($projectId, $set, $retry);
     }
 
-    /** Nguoi dung xac nhan Render = chap nhan gui dung prompt QA nay (MODEL_SHEET_PROMPT_APPROVAL). */
-    private function approvePrompt(string $projectId, VideoPlanningStage $qa, string $creator): void
+    /**
+     * Nguoi dung xac nhan Render = chap nhan gui dung prompt nay (MODEL_SHEET_PROMPT_APPROVAL).
+     *
+     * @param  array<string, string>  $source  the stage the prompt comes from: qa_stage_id, or design_stage_id for a moto design
+     */
+    private function approvePrompt(string $projectId, array $source, string $promptSha256, string $creator): void
     {
         [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::MODEL_SHEET_PROMPT_APPROVAL, [
             'execution' => self::PROMPT_APPROVAL_EXECUTION,
-            'qa_stage_id' => (string) $qa->id,
-            'prompt_sha256' => (string) $qa->output_json['prompt_sha256'],
+            ...$source,
+            'prompt_sha256' => $promptSha256,
         ]);
 
         if ($token !== null) {
@@ -298,7 +333,7 @@ final class ModelSheetService
     public function approvedSheet(string $projectId, bool $deep = true): array
     {
         [$stage, $canonicalHash] = $this->approvedSource($projectId);
-        $supported = array_map('strval', (array) config('video.superyacht.model_sheet.master.supported_executions'));
+        $supported = [...array_map('strval', (array) config('video.superyacht.model_sheet.master.supported_executions')), self::execution(MotoContract::WORKFLOW)];
         $images = VideoDesignImage::query()
             ->where('project_id', $projectId)
             ->where('image_type', DesignImageStore::MODEL_SHEET_MASTER_TYPE)
@@ -352,7 +387,8 @@ final class ModelSheetService
         $design = $this->designPanel($projectId);
         [$active, $sourceError] = $this->activeSet($projectId);
         $set = $active ?? $this->currentSet($projectId);
-        $config = (array) config('video.superyacht.model_sheet.master');
+        $moto = MotoContract::is($this->workflowOf($projectId));
+        $config = (array) config($moto ? 'video.moto.model_sheet.master' : 'video.superyacht.model_sheet.master');
 
         $base = [
             'design_name' => $design['name'],
@@ -416,23 +452,51 @@ final class ModelSheetService
                 'id' => (string) $set->id,
                 'active' => $active !== null,
                 'design_stage_id' => (string) ($set->input_json['design_stage_id'] ?? ''),
-                'phase_revision' => (int) ($set->input_json['qa_phase_revision'] ?? $set->input_json['phase_revision'] ?? 0),
+                'phase_revision' => (int) ($set->input_json['qa_phase_revision'] ?? $set->input_json['design_phase_revision'] ?? $set->input_json['phase_revision'] ?? 0),
+                'prompt_source' => $moto ? 'design' : 'qa',
                 'current_design' => ($set->input_json['design_stage_id'] ?? null) === $design['stage_id'],
                 'compatible_error' => $this->compatibilityError($snapshot),
                 'blocking' => array_values((array) ($snapshot['blocking'] ?? [])),
             ],
             'master' => [
-                'draft' => ModelSheetFacts::preview((array) ($snapshot['facts'] ?? [])),
+                'draft' => $moto ? '' : ModelSheetFacts::preview((array) ($snapshot['facts'] ?? [])),
                 'attempt' => (string) Str::uuid(),
                 'layout_guide' => ($snapshot['layout_guide'] ?? false) === true,
                 'views' => array_values((array) $snapshot['views']),
             ],
-            'qa' => $active === null ? null : $this->qaState($projectId, $active),
+            'qa' => $active === null ? null : ($moto ? self::designPromptState($active) : $this->qaState($projectId, $active)),
             'masters' => $masters,
             'approved' => $approved,
             'complete' => $approved !== null && $approved['problem'] === null,
             'reviewed' => $reviewed,
         ] + $base;
+    }
+
+    /**
+     * @return array<string, mixed> the prompt state of an open moto set in the shape of qaState(): the design's checked final_prompt, sent verbatim; the render form carries the design stage id
+     */
+    private static function designPromptState(VideoPlanningStage $set): array
+    {
+        $snapshot = (array) $set->output_json;
+
+        return [
+            'stage_id' => (string) ($set->input_json['design_stage_id'] ?? ''),
+            'status' => VideoPlanningStageStatus::SUCCEEDED->value,
+            'ready' => true,
+            'error' => null,
+            'stream' => null,
+            'prompt' => (string) ($snapshot['final_prompt'] ?? ''),
+            'prompt_sha256' => (string) ($snapshot['prompt_sha256'] ?? ''),
+            'errors' => [],
+            'repairs' => [],
+            'findings' => [],
+            'cost_usd' => null,
+            'tokens' => null,
+            'model' => '',
+            'can_run' => false,
+            'retry' => false,
+            'estimate' => '',
+        ];
     }
 
     /**
@@ -511,7 +575,9 @@ final class ModelSheetService
             return 'Master chưa được xử lý xong'.(is_string($processing['error'] ?? null) ? ' ('.$processing['error'].')' : '').' — bấm "Xử lý lại từ master".';
         }
 
-        return $this->cropProblem($this->images->modelSheetCrops((string) $image->project_id, $artifact), $artifact, $deep);
+        $master = self::master(self::workflowOfExecution((string) (($image->prompt_spec_json ?? [])['execution'] ?? '')));
+
+        return $this->cropProblem($this->images->modelSheetCrops((string) $image->project_id, $artifact), $artifact, $deep, $master);
     }
 
     /**
@@ -519,10 +585,11 @@ final class ModelSheetService
      * file con va (khi `$deep`) dung sha256.
      *
      * @param  list<array<string, mixed>>  $crops
+     * @param  ModelSheetMaster  $master  the layout the master was rendered for
      */
-    private function cropProblem(array $crops, VideoArtifact $artifact, bool $deep): ?string
+    private function cropProblem(array $crops, VideoArtifact $artifact, bool $deep, ModelSheetMaster $master): ?string
     {
-        $cells = ModelSheetMaster::fromConfig()->cells();
+        $cells = $master->cells();
 
         if (array_column($crops, 'view_id') !== array_column($cells, 'id')) {
             return 'Master chưa có đủ '.count($cells).' ô theo đúng thứ tự — bấm "Xử lý lại từ master".';
@@ -591,9 +658,9 @@ final class ModelSheetService
             return [false, 'Master không có file ảnh.'];
         }
 
+        $master = self::master($set->input_json['workflow'] ?? null);
         $valid = fn (array $crops, VideoArtifact $current): bool => (($current->metadata_json ?? [])['model_sheet']['ok'] ?? null) === true
-            && $this->cropProblem($crops, $current, true) === null;
-        $master = ModelSheetMaster::fromConfig();
+            && $this->cropProblem($crops, $current, true, $master) === null;
         $snapshot = (array) $set->output_json;
         $filesystem = Storage::disk((string) $artifact->storage_disk);
 
@@ -668,8 +735,8 @@ final class ModelSheetService
         $category = $project->article?->category ?? throw new RuntimeException('Dự án không gắn bài viết có chủ đề — model sheet không áp dụng.');
         $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
 
-        if ($workflow === '' || $workflow !== (string) config('video.superyacht.workflow_code')) {
-            throw new RuntimeException("Model sheet chỉ áp dụng cho chủ đề ánh xạ tới workflow ".config('video.superyacht.workflow_code')."; chủ đề {$category->slug} không thuộc workflow này.");
+        if (! self::sheetWorkflow($workflow)) {
+            throw new RuntimeException('Model sheet chỉ áp dụng cho chủ đề ánh xạ tới workflow '.config('video.superyacht.workflow_code').' hoặc '.MotoContract::WORKFLOW."; chủ đề {$category->slug} không thuộc workflow này.");
         }
 
         $panel = $this->designPanel($projectId);
@@ -688,13 +755,33 @@ final class ModelSheetService
 
         $raw = (string) $stage->raw_response;
         $design = JsonAnswer::object($raw);
-        $canonicalHash = $stage->output_json['design']['data']['canonical']['hash'] ?? null;
+        $canonicalHash = self::designHash($stage, $workflow);
 
         if ($design === null || ! is_string($canonicalHash) || $canonicalHash === '') {
             throw new RuntimeException('Bản thiết kế nguồn không đọc được JSON hoặc thiếu hash canonical.');
         }
 
         return [$stage, $design, $canonicalHash, (string) $category->id, $workflow];
+    }
+
+    private static function sheetWorkflow(string $workflow): bool
+    {
+        return $workflow !== '' && ($workflow === (string) config('video.superyacht.workflow_code') || MotoContract::is($workflow));
+    }
+
+    /** @return mixed the hash that identifies a design stage: the canonical hash of a yacht design, the design hash of a moto design */
+    private static function designHash(VideoPlanningStage $stage, string $workflow): mixed
+    {
+        return MotoContract::is($workflow)
+            ? ($stage->output_json['check']['design_hash'] ?? null)
+            : ($stage->output_json['design']['data']['canonical']['hash'] ?? null);
+    }
+
+    private function workflowOf(string $projectId): string
+    {
+        $slug = VideoProject::query()->with('article.category')->find($projectId)?->article?->category?->slug;
+
+        return (string) (config('video.superyacht.contracts.categories')[$slug ?? ''] ?? '');
     }
 
 
@@ -721,9 +808,9 @@ final class ModelSheetService
                 ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
                 ->orderByDesc('planning_revision')
                 ->first();
-            $canonicalHash = $stage?->output_json['design']['data']['canonical']['hash'] ?? null;
+            $canonicalHash = $stage === null ? null : self::designHash($stage, $workflow);
 
-            if ($workflow === '' || $workflow !== (string) config('video.superyacht.workflow_code') || $stage === null
+            if (! self::sheetWorkflow($workflow) || $stage === null
                 || ($stage->output_json['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($canonicalHash) || $canonicalHash === '') {
                 throw $current;
             }
@@ -742,8 +829,13 @@ final class ModelSheetService
     private function source(string $projectId): array
     {
         [$stage, $design, $canonicalHash, $categoryId, $workflow] = $this->context($projectId);
-        $config = (array) config('video.superyacht.model_sheet');
         $designPhase = AiPhase::query()->find($stage->input_json['phase_id'] ?? null) ?? throw new RuntimeException('Không tìm thấy prompt phase-3 mà bản thiết kế đã dùng.');
+
+        if (MotoContract::is($workflow)) {
+            return self::motoSource($stage, $design, $canonicalHash, $designPhase);
+        }
+
+        $config = (array) config('video.superyacht.model_sheet');
         $qaPhase = AiPhase::query()
             ->where('category_id', $categoryId)
             ->where('workflow_code', $workflow)
@@ -796,6 +888,47 @@ final class ModelSheetService
     }
 
     /**
+     * @param  array<string, mixed>  $design  the decoded moto design answer that passed its check
+     * @return array{0: VideoPlanningStage, 1: array<string, mixed>, 2: array<string, mixed>} the design stage, the set input and the set snapshot with the design's final_prompt
+     */
+    private static function motoSource(VideoPlanningStage $stage, array $design, string $designHash, AiPhase $designPhase): array
+    {
+        $config = (array) config('video.moto.model_sheet');
+        $master = self::master(MotoContract::WORKFLOW);
+        $views = array_map(static function (array $view) use ($design): array {
+            $target = $view['id'] === 'MS8' ? (self::at($design, 'data.model_sheet.views.7.target') ?? null) : null;
+
+            return is_string($target) && trim($target) !== '' ? ['view' => trim($target)] + $view : $view;
+        }, self::views($config, $master));
+        $prompt = (string) (self::at($design, 'data.model_sheet.final_prompt') ?? '');
+        $snapshot = [
+            'execution' => self::execution(MotoContract::WORKFLOW),
+            'design_phase' => ['id' => (string) $designPhase->id, 'revision' => (int) $designPhase->revision, 'sha256' => (string) $designPhase->content_sha256],
+            'layout_sha256' => $master->layoutSha256(),
+            'layout_guide' => false,
+            'guide_sha256' => null,
+            'policy_sha256' => self::policySha256(MotoContract::WORKFLOW),
+            'views' => $views,
+            'final_prompt' => $prompt,
+            'prompt_sha256' => hash('sha256', $prompt),
+            'blocking' => trim($prompt) === '' ? ['Bản thiết kế không có final_prompt cho model sheet.'] : [],
+        ];
+        $input = [
+            'execution' => $snapshot['execution'],
+            'workflow' => MotoContract::WORKFLOW,
+            'design_stage_id' => (string) $stage->id,
+            'design_raw_sha256' => hash('sha256', (string) $stage->raw_response),
+            'design_canonical_hash' => $designHash,
+            'design_phase_id' => (string) $designPhase->id,
+            'design_phase_revision' => (int) $designPhase->revision,
+            'layout_sha256' => $snapshot['layout_sha256'],
+            'config_sha256' => hash('sha256', (string) json_encode(array_diff_key($snapshot, array_flip(['execution'])), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+        ];
+
+        return [$stage, $input, $snapshot];
+    }
+
+    /**
      * Ti le canh dai/canh ngan cua khung bao tau theo thiet ke. Chi con nam trong snapshot de giu
      * dinh danh cac bo model sheet da mo; khong doi cach tinh (doi la doi dinh danh bo).
      *
@@ -824,8 +957,21 @@ final class ModelSheetService
      * Phien ban chinh sach dau vao Sonnet (camera, bo cuc, quy tac, trinh bay, phien ban chi muc,
      * thong diep va schema dau ra). Thay vi so nguyen van bang camera trong prompt Phase 3.
      */
-    private static function policySha256(): string
+    private static function policySha256(?string $workflow = null): string
     {
+        if (MotoContract::is($workflow)) {
+            $config = (array) config('video.moto.model_sheet');
+
+            return hash('sha256', (string) json_encode([
+                'views' => $config['views'],
+                'cameras' => $config['cameras'],
+                'camera_convention' => $config['camera_convention'],
+                'prompt' => $config['master']['prompt'],
+                'occlusion' => $config['occlusion'],
+                'suffix' => $config['suffix'],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
+
         $config = (array) config('video.superyacht.model_sheet');
 
         return hash('sha256', (string) json_encode([
@@ -880,6 +1026,10 @@ final class ModelSheetService
      */
     private function compatibilityError(array $snapshot): ?string
     {
+        if (($snapshot['execution'] ?? null) === self::execution(MotoContract::WORKFLOW)) {
+            return self::motoCompatibilityError($snapshot);
+        }
+
         $master = ModelSheetMaster::fromConfig();
 
         if (($snapshot['execution'] ?? null) !== self::execution()) {
@@ -913,6 +1063,34 @@ final class ModelSheetService
         }
 
         return ModelSheetQaService::contractProblem($phase);
+    }
+
+    /** @param  array<string, mixed>  $snapshot  a moto set */
+    private static function motoCompatibilityError(array $snapshot): ?string
+    {
+        $master = self::master(MotoContract::WORKFLOW);
+
+        if (($snapshot['layout_sha256'] ?? null) !== $master->layoutSha256()) {
+            return 'Bố cục master trong config đã đổi so với lúc mở bộ model sheet.';
+        }
+
+        if (($snapshot['policy_sha256'] ?? null) !== self::policySha256(MotoContract::WORKFLOW)) {
+            return 'Camera, quy tắc hoặc trình bày model sheet đã đổi so với lúc bản thiết kế viết final_prompt — thiết kế lại để có prompt khớp.';
+        }
+
+        $ids = array_column((array) ($snapshot['views'] ?? []), 'id');
+
+        if ($ids !== array_column($master->cells(), 'id')) {
+            return 'Danh sách góc của bộ ('.implode(', ', $ids).') không khớp bố cục master.';
+        }
+
+        foreach ($ids as $id) {
+            if ((array) config('video.moto.model_sheet.cameras.'.$id, []) === []) {
+                return "Config model sheet thiếu thông số camera của {$id}.";
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -959,11 +1137,12 @@ final class ModelSheetService
      * Kich thuoc va so anh co dinh theo config master; nguoi dung chi chon model va quality.
      *
      * @param  array{model: string, quality: string}  $choice
+     * @param  string  $workflow  the workflow of the set
      * @return array{entry: array<string, mixed>, size: ImageSize, quality: ImageQuality, variations: ImageVariations}
      */
-    private function settings(array $choice): array
+    private function settings(array $choice, string $workflow): array
     {
-        $config = (array) config('video.superyacht.model_sheet.master');
+        $config = (array) config(MotoContract::is($workflow) ? 'video.moto.model_sheet.master' : 'video.superyacht.model_sheet.master');
         $entry = $this->registry->find(self::TASK, 'openai:'.$choice['model']) ?? throw new RuntimeException("Model {$choice['model']} không dùng được cho model sheet.");
         $model = ImageModel::tryFrom($choice['model']) ?? throw new RuntimeException("Model {$choice['model']} không có trong ImageModel.");
         $size = ImageSize::tryFrom((string) $config['size']);
@@ -988,19 +1167,19 @@ final class ModelSheetService
     /**
      * Dong bang luot render: prompt, bo cuc, thiet ke nguon, gia (DesignImageStore).
      *
+     * @param  ?string  $qaStageId  the QA stage that wrote the prompt; null when the prompt comes from a moto design
      * @param  array{entry: array<string, mixed>, size: ImageSize, quality: ImageQuality, variations: ImageVariations}  $settings
      * @return array<string, mixed>
      */
-    private function spec(VideoPlanningStage $set, VideoPlanningStage $qa, array $settings, string $attempt): array
+    private function spec(VideoPlanningStage $set, ?string $qaStageId, string $prompt, array $settings, string $attempt): array
     {
         $snapshot = (array) $set->output_json;
-        $prompt = (string) $qa->output_json['final_prompt'];
 
         return [
             'project_id' => (string) $set->project_id,
             'operation' => self::MASTER_OPERATION,
             'task' => self::TASK,
-            'execution' => self::execution(),
+            'execution' => self::execution($set->input_json['workflow'] ?? null),
             'model_sheet_set_id' => (string) $set->id,
             'design_stage_id' => (string) $set->input_json['design_stage_id'],
             'design_canonical_hash' => (string) $set->input_json['design_canonical_hash'],
@@ -1009,7 +1188,7 @@ final class ModelSheetService
             'guide_sha256' => $snapshot['guide_sha256'] ?? null,
             'slot_index' => 0,
             'attempt' => $attempt,
-            'qa_stage_id' => (string) $qa->id,
+            'qa_stage_id' => $qaStageId,
             'prompt' => $prompt,
             'prompt_sha256' => hash('sha256', $prompt),
             'provider' => $settings['entry']['provider'],
@@ -1030,7 +1209,7 @@ final class ModelSheetService
             ->where('stage', PlanningStageName::MODEL_SHEET->value)
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->whereNull('input_json->orphan_of_stage_id')
-            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.execution')) = ?", [self::execution()])
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(input_json, '$.execution')) IN (?, ?)", [self::execution(), self::execution(MotoContract::WORKFLOW)])
             ->orderByDesc('planning_revision')
             ->first();
     }
