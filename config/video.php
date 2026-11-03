@@ -981,6 +981,15 @@ return [
         ],
     ],
 
+    'shots' => [
+        'workflows' => [
+            'harley_custom_v1' => [
+                'action' => 'spec.shots',
+                'adapter' => \App\Video\Moto\MotoShots::class,
+            ],
+        ],
+    ],
+
     'moto' => [
         'brief' => [
             'platform' => null,
@@ -1071,6 +1080,78 @@ return [
             'max_tokens' => (int) env('MOTO_SCENES_MAX_TOKENS', 64000),
             'timeout_seconds' => (int) env('MOTO_SCENES_TIMEOUT_SECONDS', 900),
             'schema_heading' => 'Output JSON Schema',
+        ],
+
+        'shots' => [
+            'execution' => \App\Video\Moto\MotoContract::SHOTS_EXECUTION,
+            'model' => env('MOTO_SHOTS_MODEL', 'sonnet55'),
+            'effort' => env('MOTO_SHOTS_EFFORT', 'high'),
+            'max_tokens' => (int) env('MOTO_SHOTS_MAX_TOKENS', 64000),
+            'timeout_seconds' => (int) env('MOTO_SHOTS_TIMEOUT_SECONDS', 1200),
+            'schema_heading' => 'Output JSON Schema',
+            'clip_task' => 'scene_clip',
+            'keyframe_reference_limit' => 4,
+            'prompt' => [
+                'image' => [
+                    'style' => 'Photorealistic film still of one moment, true perspective and real materials at full scale',
+                    'labels' => [
+                        'frame' => 'Frame:',
+                        'camera' => 'Camera:',
+                        'first_frame' => 'First frame:',
+                        'motorcycle' => 'Motorcycle:',
+                        'stage' => 'Build stage:',
+                        'part' => 'Part in frame:',
+                        'work' => 'Work at the first frame:',
+                        'absent' => 'Not on the motorcycle at this stage:',
+                        'people' => 'People:',
+                        'place' => 'Place:',
+                        'set' => 'Set:',
+                        'light' => 'Light:',
+                        'changes' => 'Changes on the set for this shot:',
+                        'continuity' => 'Continuity:',
+                    ],
+                    'suffix' => 'No face of any person, no readable text, no signage, no logos',
+                ],
+                'video' => [
+                    'lead' => 'The supplied image is the first frame.',
+                    'labels' => [
+                        'work' => 'Work:',
+                        'action' => 'Action:',
+                        'result' => 'Result:',
+                        'timing' => 'Timing:',
+                        'camera' => 'Camera:',
+                        'end_frame' => 'Ends on:',
+                        'end_configuration' => 'Positions at the end:',
+                        'work_end' => 'Parts at the end:',
+                        'continuity' => 'Keep:',
+                    ],
+                    'suffix' => 'No face of any person, no readable text, no morphing of the motorcycle',
+                ],
+                'presentations' => [
+                    'installed' => 'installed',
+                    'being_made' => 'being made',
+                    'awaiting_install' => 'finished, waiting to be fitted',
+                    'removed' => 'removed from the motorcycle',
+                    'drawing' => 'as a drawing',
+                    'model' => 'as a model',
+                ],
+                'work' => [
+                    'operations' => [
+                        'make' => 'making',
+                        'finish' => 'finishing',
+                        'test_fit' => 'test-fitting',
+                        'assemble' => 'assembling',
+                        'paint' => 'painting',
+                        'remove' => 'removing',
+                        'install' => 'installing',
+                        'reinstall' => 'refitting',
+                    ],
+                    'locations' => [
+                        'on_motorcycle' => 'on the motorcycle',
+                        'off_motorcycle' => 'off the motorcycle',
+                    ],
+                ],
+            ],
         ],
 
         'model_sheet' => [
@@ -1487,6 +1568,19 @@ return [
                             ],
                             'outputs' => [
                                 'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '1.1.1','pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v1): the approved beats grouped into scenes SCxx of consecutive beats in one place, continuous story time and one established build state, each with its purpose, set brief, starting and ending continuity (placement, detached parts, lights on, surface condition, protection per character, weather), continuity link, incoming transition with its evidence and the work its beats show on parts (operation, parts worked with it, place on or off the motorcycle at the start and end, evidence from the beat); conflicts with their evidence and blocking; timing, environment assignments, characters, configurations and states stay with the beats and are derived by code; release database/releases/moto-phase-6-scenes-v3'],
+                            ],
+                        ],
+                        'spec.shots' => [
+                            'phase' => 'phase-7',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['shots'],
+                            ],
+                            'outputs' => [
+                                'shots' => ['namespace' => 'moto', 'schema' => 'MotoShots', 'version' => '1.2.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 7 Output (format moto-shots-v1): the shots SCxx_SHyy of every approved scene as data — beat coverage with screen time and result time, purpose, parts and their presentation from the scene plan\'s work or the build state, the work items it shows by id, people as hands, back or silhouette, a numeric camera, first frame, action, result, end frame for first_last, continuity, environment (background, unplated or a requested background), reference needs, render length, mode and kept interval, links and conflicts; code derives timing, sources, reference candidates, readiness, absent parts, limits, cards and the image and video prompts; release database/releases/moto-phase-7-shots-v3'],
                             ],
                         ],
                     ],

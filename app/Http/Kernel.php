@@ -70,5 +70,6 @@ class Kernel extends HttpKernel
         'video.correlation' => \App\Http\Middleware\AttachVideoCorrelationId::class,
         'render.worker.auth' => \App\Http\Middleware\RenderWorkerAuth::class,
         'video.v4' => \App\Http\Middleware\RefuseV63Project::class,
+        'video.shot-plan' => \App\Http\Middleware\RefuseWithoutShotPlan::class,
     ];
 }

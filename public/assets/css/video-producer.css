@@ -2140,3 +2140,72 @@ a.vp-btn[disabled] {
     font-size: .72rem;
     line-height: 1.45;
 }
+
+.vs-shot-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 0;
+    font-size: .74rem;
+}
+
+.vs-shot-item + .vs-shot-item {
+    border-top: 1px dashed var(--vp-line);
+}
+
+.vs-shot-item .vp-btn {
+    align-self: flex-start;
+}
+
+.vs-shot-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    aspect-ratio: 9 / 16;
+    color: var(--vp-faint);
+    font-size: .6rem;
+    text-align: center;
+    background: #f8fafc;
+    border: 1px dashed var(--vp-line-2);
+    border-radius: 6px;
+}
+
+.vs-shot-thumb.tall {
+    width: 100%;
+    max-width: 180px;
+    margin-bottom: 8px;
+}
+
+.vs-shot-detail {
+    grid-column: 1 / -1;
+    padding: 10px;
+    background: #f8fafc;
+    border-bottom: 1px solid var(--vp-line);
+}
+
+.vs-shot-detail[hidden] {
+    display: none;
+}
+
+.vs-shot-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, .8fr);
+    overflow: hidden;
+    background: #fff;
+    border: 1px solid var(--vp-line);
+    border-radius: 8px;
+}
+
+.vs-shot-ref {
+    margin-top: 8px;
+    font-size: .72rem;
+}
+
+.vs-shot-ref img {
+    display: block;
+    max-width: 120px;
+    margin-top: 4px;
+    border: 1px solid var(--vp-line);
+    border-radius: 4px;
+}

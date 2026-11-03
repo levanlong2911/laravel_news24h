@@ -28,6 +28,8 @@ use App\Services\Video\LocationSourceService;
 use App\Services\Video\LocationWriterService;
 use App\Services\Video\SceneSourceService;
 use App\Services\Video\SceneWriterService;
+use App\Services\Video\ShotSourceService;
+use App\Services\Video\ShotWriterService;
 use App\Services\Video\ScriptSourceService;
 use App\Services\Video\ScriptWriterService;
 use App\Services\Video\YachtDesignService;
@@ -667,6 +669,67 @@ class VideoProjectsController extends Controller
             ->with('success', $reason === 'replayed'
                 ? 'Lần duyệt này đã được ghi trước đó — không ghi thêm.'
                 : 'Đã duyệt bản chia scene này làm nguồn cho kế hoạch shot.');
+    }
+
+    public function writeShots(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
+        [$stage, $reason] = app(ShotWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id']);
+
+        if ($stage === null) {
+            return back()->with('error', $reason);
+        }
+
+        return redirect()->route('video-projects.scene', ['id' => $id, 'shots' => $stage->id])->with('success', match ($reason) {
+            'cached' => 'Nguồn và prompt không đổi — dùng lại kế hoạch shot đã lưu, không gọi model.',
+            'replayed' => 'Thao tác này đã chạy trước đó — không gọi model lần nữa.',
+            default => 'Đã lưu kế hoạch shot — xem kết quả kiểm rồi duyệt.',
+        });
+    }
+
+    public function resetShots(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = app(ShotWriterService::class)->reset($id);
+
+        return $done ? back()->with('success', 'Đã reset lượt lập kế hoạch shot bị kẹt — bản đã duyệt giữ nguyên.') : back()->with('error', $reason);
+    }
+
+    public function approveShots(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'stage_id' => ['required', 'uuid'],
+            'content_hash' => ['required', 'string', 'max:80'],
+            'selection_version' => ['required', 'integer', 'min:0'],
+            'operation_id' => ['required', 'uuid'],
+        ], [
+            'stage_id.*' => 'Thiếu kế hoạch shot cần duyệt — tải lại trang.',
+            'content_hash.*' => 'Thiếu hash nội dung — tải lại trang.',
+            'selection_version.*' => 'Thiếu phiên bản lựa chọn — tải lại trang.',
+            'operation_id.*' => 'Thiếu mã thao tác — tải lại trang.',
+        ]);
+        [$decision, $reason] = app(ShotSourceService::class)->approve(
+            $id,
+            (string) $data['stage_id'],
+            (string) $data['content_hash'],
+            (int) $data['selection_version'],
+            (string) $data['operation_id'],
+            auth()->id(),
+        );
+
+        if ($decision === null) {
+            return back()->with('error', $reason);
+        }
+
+        return redirect()->route('video-projects.scene', ['id' => $id, 'shots' => $data['stage_id']])
+            ->with('success', $reason === 'replayed'
+                ? 'Lần duyệt này đã được ghi trước đó — không ghi thêm.'
+                : 'Đã duyệt kế hoạch shot này.');
     }
 
     public function renderLocationReference(Request $request, string $id)
@@ -1391,11 +1454,15 @@ class VideoProjectsController extends Controller
 
         if (app(SceneSourceService::class)->supports($id)) {
             $shown = request()->query('stage');
+            $shots = request()->query('shots');
 
             return view('video-projects.scene', $this->chrome() + [
                 'id' => $id,
                 'project' => $project,
                 'scenesPanel' => app(SceneWriterService::class)->panel($id, is_string($shown) && Str::isUuid($shown) ? $shown : null),
+                'shotsPanel' => app(ShotSourceService::class)->supports($id)
+                    ? app(ShotWriterService::class)->panel($id, is_string($shots) && Str::isUuid($shots) ? $shots : null)
+                    : null,
             ]);
         }
 

@@ -32,6 +32,10 @@ final class MotoContract
 
     public const SCENES_FORMAT = 'moto-scenes-v1';
 
+    public const SHOTS_INPUT = 'moto-shots-input-v3';
+
+    public const SHOTS_FORMAT = 'moto-shots-v1';
+
     public const EVIDENCE_EXECUTION = 'db-moto-phase-1-v1';
 
     public const DNA_EXECUTION = 'db-moto-phase-2-v1';
@@ -43,6 +47,8 @@ final class MotoContract
     public const LOCATIONS_EXECUTION = 'db-moto-phase-5-v1';
 
     public const SCENES_EXECUTION = 'db-moto-phase-6-v1';
+
+    public const SHOTS_EXECUTION = 'db-moto-phase-7-v1';
 
     private const MAKE_PREFIX = '/^(?:Harley-Davidson|Harley Davidson|Harley|H-D)\s+/iu';
 

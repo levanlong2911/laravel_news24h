@@ -170,6 +170,10 @@ Route::group(
             Route::post('/{id}/scenes', [VideoProjectsController::class, 'writeScenes'])->name('video-projects.scenes-write');
             Route::post('/{id}/scenes/reset', [VideoProjectsController::class, 'resetScenes'])->name('video-projects.scenes-reset');
             Route::post('/{id}/scenes/approve', [VideoProjectsController::class, 'approveScenes'])->name('video-projects.scenes-approve');
+            // phase 7: kế hoạch shot
+            Route::post('/{id}/shots', [VideoProjectsController::class, 'writeShots'])->name('video-projects.shots-write');
+            Route::post('/{id}/shots/reset', [VideoProjectsController::class, 'resetShots'])->name('video-projects.shots-reset');
+            Route::post('/{id}/shots/approve', [VideoProjectsController::class, 'approveShots'])->name('video-projects.shots-approve');
 
             Route::middleware('video.v4')->group(function () {
             Route::post('/{id}/concept', [VideoProjectsController::class, 'concept'])->name('video-projects.concept');
@@ -199,6 +203,9 @@ Route::group(
             Route::match(['get', 'post'], '/{id}/reference', [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
             Route::post('/{id}/environment/approve', [VideoProjectsController::class, 'approveEnvironment'])->name('video-projects.environment-approve');
             Route::match(['get', 'post'], '/{id}/environment', [VideoProjectsController::class, 'environment'])->name('video-projects.environment');
+            });
+
+            Route::middleware(['video.shot-plan', 'video.v4'])->group(function () {
             Route::post('/{id}/storyboard/generate', [VideoProjectsController::class, 'generateStoryboard'])->name('video-projects.storyboard-generate');
             Route::post('/{id}/storyboard/approve', [VideoProjectsController::class, 'approveStoryboard'])->name('video-projects.storyboard-approve');
             Route::post('/{id}/storyboard/recheck', [VideoProjectsController::class, 'recheckStoryboard'])->name('video-projects.storyboard-recheck');
