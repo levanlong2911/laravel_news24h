@@ -860,6 +860,19 @@ return [
         ],
     ],
 
+    'moto' => [
+        'brief' => [
+            'platform' => null,
+            'keep' => null,
+            'change_scope' => null,
+            'rider' => null,
+            'purpose' => null,
+            'limits' => null,
+        ],
+
+        'concept_history_limit' => 10,
+    ],
+
     'superyacht' => [
         'variables' => [
             'languages' => ['en'],
@@ -1155,6 +1168,16 @@ return [
                             'contract_version' => '1',
                             'outputs' => [
                                 'evidence' => ['namespace' => 'moto', 'schema' => 'MotoEvidence', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 1 Output (format moto-evidence-v1): the source motorcycle with its platform, the base apart from the build, styling, chassis, powertrain, technology, specs, intent, visuals, claims, issues and the eight self-checks; release database/releases/moto-phase-1-inspiration-v1'],
+                            ],
+                        ],
+                        'spec.dna' => [
+                            'phase' => 'phase-2',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'outputs' => [
+                                'dna' => ['namespace' => 'moto', 'schema' => 'MotoDna', 'version' => '1.1.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 2 Output (format moto-dna-v1): the resolved brief, theme, emotion, departures, kept base features, 1-3 signature features, silhouette, must-avoid list and hero moment of a muscle-bobber concept; release database/releases/moto-phase-2-dna-v2'],
                             ],
                         ],
                     ],

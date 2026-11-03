@@ -18,6 +18,8 @@ use App\Video\Llm\JsonAnswer;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
 use App\Video\Llm\LlmUnavailable;
+use App\Video\Moto\MotoContract;
+use App\Video\Moto\MotoDnaCheck;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -229,24 +231,13 @@ final class DesignDnaService
         return "spec-v6.3-phase-2@rev{$prompt->revision}";
     }
 
-    /** @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, inspiration: array<mixed>, flags: list<string>} */
+    /** @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>} */
     private function prepare(VideoProject $project): array
     {
         $phaseOne = $this->videoProjects->latestInspiration((string) $project->id);
 
         if (! $phaseOne['source_passed'] || ! is_string($phaseOne['stage_id'])) {
             throw new RuntimeException('Phase 1 chưa đạt đánh giá nguồn, hoặc lượt đã ghim không còn khớp bài viết và prompt mà nó đã dùng.');
-        }
-
-        $stage = VideoPlanningStage::query()->findOrFail($phaseOne['stage_id']);
-        $inspiration = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($stage->output_json['raw_text'] ?? '')));
-
-        if (! is_array($inspiration) || array_is_list($inspiration)) {
-            throw new RuntimeException('Không đọc được khối inspiration của lượt Phase 1 đã đạt.');
-        }
-
-        if (DnaCheck::departureIds($inspiration) === []) {
-            throw new RuntimeException('Kết quả Phase 1 không có mục exterior, interior, technology, visual hay signature nào mang ID để departure — không gọi model.');
         }
 
         $category = $project->article?->category ?? throw new RuntimeException('Bài viết của dự án không có chủ đề.');
@@ -256,16 +247,35 @@ final class DesignDnaService
             throw new RuntimeException("Chủ đề {$category->slug} chưa cấu hình workflow.");
         }
 
+        $moto = MotoContract::is($workflow);
+        $stage = VideoPlanningStage::query()->findOrFail($phaseOne['stage_id']);
+        $inspiration = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($stage->output_json['raw_text'] ?? '')));
+
+        if (! is_array($inspiration) || array_is_list($inspiration)) {
+            throw new RuntimeException('Không đọc được khối inspiration của lượt Phase 1 đã đạt.');
+        }
+
+        if ($moto && MotoDnaCheck::departureIds($inspiration) === []) {
+            throw new RuntimeException('Kết quả Phase 1 không có mục signature, styling, chassis, powertrain, technology hay visual nào mang ID để departure — không gọi model.');
+        }
+
+        if (! $moto && DnaCheck::departureIds($inspiration) === []) {
+            throw new RuntimeException('Kết quả Phase 1 không có mục exterior, interior, technology, visual hay signature nào mang ID để departure — không gọi model.');
+        }
+
         $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject((string) $project->id, self::ACTION);
 
         if (! $bundle->ready()) {
-            throw new RuntimeException('Hợp đồng '.self::ACTION.' chưa sẵn sàng: '.implode('; ', $bundle->mismatches()).' — phát hành gói phase-2-design-dna-v4 cho chủ đề này trước, không gọi model.');
+            throw new RuntimeException('Hợp đồng '.self::ACTION.' chưa sẵn sàng: '.implode('; ', $bundle->mismatches()).' — phát hành gói '.($moto ? 'moto-phase-2-dna-v1' : 'phase-2-design-dna-v4').' cho chủ đề này trước, không gọi model.');
         }
 
         $manifest = $bundle->manifest();
         $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
+        $markers = $moto
+            ? [MotoContract::DNA_FORMAT, 'Input format: `'.MotoContract::DNA_INPUT.'`']
+            : [DnaCheck::FORMAT_V2, 'Input format: `'.DnaCheck::INPUT_FORMAT.'`'];
 
-        foreach ([DnaCheck::FORMAT_V2, 'Input format: `'.DnaCheck::INPUT_FORMAT.'`'] as $marker) {
+        foreach ($markers as $marker) {
             if (! str_contains((string) $prompt->prompt_content, $marker)) {
                 throw new RuntimeException("Prompt phase-2 revision {$prompt->revision} không khai {$marker} mà code đang dùng — phát hành revision tương thích trước, không gọi model.");
             }
@@ -276,7 +286,16 @@ final class DesignDnaService
             $bundle->outputSchemas(),
         );
         $flags = array_values(array_filter((array) ($phaseOne['source_check']['flags'] ?? []), 'is_string'));
-        $payload = (string) json_encode(['inspiration' => $inspiration, 'flags' => $flags], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $brief = $moto ? self::motoBrief() : [];
+        [$history, $historyStages] = $moto
+            ? self::conceptHistory($project, ['phase_id' => (string) $prompt->id, 'bundle_hash' => $bundle->bundleHash(), 'inspiration_stage_id' => (string) $stage->id])
+            : [[], []];
+        $payload = (string) json_encode(
+            $moto
+                ? ['inspiration' => $inspiration, 'flags' => $flags, 'brief' => $brief, 'concept_history' => $history]
+                : ['inspiration' => $inspiration, 'flags' => $flags],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
+        );
 
         return [
             'prompt' => $prompt,
@@ -285,8 +304,10 @@ final class DesignDnaService
             'payload' => $payload,
             'inspiration' => $inspiration,
             'flags' => $flags,
+            'brief' => $brief,
+            'history' => $history,
             'input' => [
-                'execution' => self::EXECUTION_V2,
+                'execution' => $moto ? MotoContract::DNA_EXECUTION : self::EXECUTION_V2,
                 'article_id' => (string) $project->article->id,
                 'category_id' => (string) $category->id,
                 'workflow' => $workflow,
@@ -296,32 +317,34 @@ final class DesignDnaService
                 'prompt_sha256' => (string) $prompt->content_sha256,
                 'inspiration_stage_id' => (string) $stage->id,
                 'payload_sha256' => hash('sha256', $payload),
-            ] + self::settings(),
+            ] + ($moto ? ['concept_history_stage_ids' => $historyStages] : []) + self::settings(),
         ];
     }
 
     /**
-     * @param  array{inspiration: array<mixed>, flags: list<string>}  $run
+     * @param  array{inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>, history: list<array<string, mixed>>}  $run
      * @return array<string, mixed> the check of the contract the stage pinned; the answer's own format never chooses it
      */
     private static function checkOf(VideoPlanningStage $stage, array $run): array
     {
         $raw = (string) (is_array($stage->output_json) ? ($stage->output_json['raw_text'] ?? '') : '');
         $input = is_array($stage->input_json) ? $stage->input_json : [];
+        $execution = (string) ($input['execution'] ?? '');
 
-        if (($input['execution'] ?? null) !== self::EXECUTION_V2) {
+        if (! in_array($execution, [self::EXECUTION_V2, MotoContract::DNA_EXECUTION], true)) {
             return DnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], null, DnaCheck::FORMAT);
         }
 
-        return self::checkV2($raw, $run, PlanningStageStore::metadataOf($input)['manifest'] ?? null);
+        return self::checkV2($raw, $run, PlanningStageStore::metadataOf($input)['manifest'] ?? null, $execution);
     }
 
     /**
-     * @param  array{inspiration: array<mixed>, flags: list<string>}  $run
+     * @param  array{inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>, history: list<array<string, mixed>>}  $run
      * @param  mixed  $manifest  the contract the run pinned
+     * @param  string  $execution  the execution the run pinned; a moto run is checked as moto-dna-v1
      * @return array<string, mixed>
      */
-    private static function checkV2(string $raw, array $run, mixed $manifest): array
+    private static function checkV2(string $raw, array $run, mixed $manifest, string $execution): array
     {
         try {
             [$decoded] = JsonAnswer::parse($raw);
@@ -333,10 +356,74 @@ final class DesignDnaService
             $errors = ['không kiểm được JSON Schema đã ghim: '.$e->getMessage()];
         }
 
-        return DnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $errors, DnaCheck::FORMAT_V2);
+        return $execution === MotoContract::DNA_EXECUTION
+            ? MotoDnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $run['brief'], $run['history'], $errors)
+            : DnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $errors, DnaCheck::FORMAT_V2);
     }
 
-    /** @param array{inspiration: array<mixed>, flags: list<string>} $run */
+    /** @return array<string, mixed> the brief the user fixed for a moto build; a null value is left to the model */
+    private static function motoBrief(): array
+    {
+        $config = (array) config('video.moto.brief');
+        $brief = [];
+
+        foreach (['platform', 'keep', 'change_scope', 'rider', 'purpose', 'limits'] as $key) {
+            $brief[$key] = $config[$key] ?? null;
+        }
+
+        return $brief;
+    }
+
+    /**
+     * @param  array{phase_id: string, bundle_hash: string, inspiration_stage_id: string}  $contract  what this DNA run is pinned to
+     * @return array{0: list<array{id: string, theme: string, silhouette: string, features: list<string>, motifs: list<string>}>, 1: list<string>} the passed moto concepts of other projects with the DNA stages they come from: the snapshot a passed run of this project and contract was sent with, or, while there is none, every concept passed before now, newest first
+     */
+    private static function conceptHistory(VideoProject $project, array $contract): array
+    {
+        $passed = static fn () => VideoPlanningStage::query()
+            ->where('stage', PlanningStageName::DESIGN_DNA->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->where('input_json->execution', MotoContract::DNA_EXECUTION)
+            ->whereNull('input_json->orphan_of_stage_id')
+            ->where('output_json->check->verdict', DnaCheck::PASS);
+        $pinned = $passed()
+            ->where('project_id', $project->id)
+            ->where('input_json->phase_id', $contract['phase_id'])
+            ->where('input_json->bundle_hash', $contract['bundle_hash'])
+            ->where('input_json->inspiration_stage_id', $contract['inspiration_stage_id'])
+            ->orderBy('created_at')
+            ->first()?->input_json['concept_history_stage_ids'] ?? null;
+        $stages = is_array($pinned)
+            ? VideoPlanningStage::query()->whereIn('id', $pinned)->get()->sortBy(static fn (VideoPlanningStage $stage): int => (int) array_search((string) $stage->id, $pinned, true))->values()
+            : $passed()->where('project_id', '!=', $project->id)->orderByDesc('finished_at')->get();
+        $history = [];
+        $sources = [];
+
+        foreach ($stages as $stage) {
+            $dna = JsonAnswer::object((string) ($stage->output_json['raw_text'] ?? ''))['dna'] ?? null;
+
+            if (isset($history[$stage->project_id]) || ! is_array($dna)) {
+                continue;
+            }
+
+            $history[$stage->project_id] = [
+                'id' => sprintf('H%02d', count($history) + 1),
+                'theme' => (string) $dna['theme'],
+                'silhouette' => (string) $dna['silhouette'],
+                'features' => array_map(static fn (array $feature): string => "{$feature['name']}: {$feature['what']}", (array) $dna['features']),
+                'motifs' => array_values(array_column((array) $dna['departures'], 'result')),
+            ];
+            $sources[] = (string) $stage->id;
+
+            if (count($history) >= (int) config('video.moto.concept_history_limit')) {
+                break;
+            }
+        }
+
+        return [array_values($history), $sources];
+    }
+
+    /** @param array{inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>, history: list<array<string, mixed>>} $run */
     private function replaceable(VideoPlanningStage $served, array $run): bool
     {
         return self::checkOf($served, $run)['verdict'] !== DnaCheck::PASS;
@@ -351,7 +438,7 @@ final class DesignDnaService
     }
 
     /**
-     * @param  array{input: array<string, mixed>, manifest: array<string, mixed>, inspiration: array<mixed>, flags: list<string>}  $run
+     * @param  array{input: array<string, mixed>, manifest: array<string, mixed>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>}  $run
      * @return array<string, mixed>
      */
     private function output(array $run, string $raw): array
@@ -359,13 +446,13 @@ final class DesignDnaService
         [, $error] = JsonAnswer::parse($raw);
 
         return [
-            'execution' => self::EXECUTION_V2,
+            'execution' => (string) $run['input']['execution'],
             'prompt' => array_intersect_key($run['input'], array_flip(['category_id', 'workflow', 'phase_id', 'phase_revision', 'prompt_sha256', 'bundle_hash'])),
             'inspiration_stage_id' => $run['input']['inspiration_stage_id'],
             'flags' => $run['flags'],
             'raw_text' => $raw,
             'json_parse_error' => $error,
-            'check' => self::checkV2($raw, $run, $run['manifest']),
+            'check' => self::checkV2($raw, $run, $run['manifest'], (string) $run['input']['execution']),
         ];
     }
 
