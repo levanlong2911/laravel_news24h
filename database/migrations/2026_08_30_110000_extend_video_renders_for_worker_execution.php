@@ -3,12 +3,16 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /** @var list<int> the errors of MariaDB (1901) and MySQL (3823) for a CHECK on a column a foreign key sets to NULL */
+    private const CHECK_ON_SET_NULL = [1901, 3823];
+
     public function up(): void
     {
         $this->dropCheckConstraintIfExists('video_renders_one_owner');
@@ -147,7 +151,7 @@ return new class extends Migration
             }
         });
 
-        DB::statement("ALTER TABLE video_renders ADD CONSTRAINT video_renders_one_owner
+        $this->addCheck("ALTER TABLE video_renders ADD CONSTRAINT video_renders_one_owner
             CHECK (
                 (
                     (shot_id IS NOT NULL)
@@ -166,7 +170,7 @@ return new class extends Migration
     public function down(): void
     {
         $this->dropCheckConstraintIfExists('video_renders_one_owner');
-        DB::statement('ALTER TABLE video_renders ADD CONSTRAINT video_renders_one_owner
+        $this->addCheck('ALTER TABLE video_renders ADD CONSTRAINT video_renders_one_owner
             CHECK ((shot_id IS NULL) <> (design_image_id IS NULL))');
 
         Schema::table('video_renders', function (Blueprint $table): void {
@@ -216,6 +220,20 @@ return new class extends Migration
                 }
             }
         });
+    }
+
+    /** @param string $statement the ALTER TABLE that adds the CHECK; a database that refuses a CHECK on a column a foreign key sets to NULL keeps the table without it and the rule rests on the code that writes renders */
+    private function addCheck(string $statement): void
+    {
+        try {
+            DB::statement($statement);
+        } catch (QueryException $e) {
+            if (! in_array((int) ($e->errorInfo[1] ?? 0), self::CHECK_ON_SET_NULL, true)) {
+                throw $e;
+            }
+
+            echo '  video_renders_one_owner: CSDL tu choi CHECK tren cot co khoa ngoai SET NULL — bo qua ('.$e->errorInfo[2].')'.PHP_EOL;
+        }
     }
 
     private function dropCheckConstraintIfExists(string $name): void

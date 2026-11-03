@@ -1,12 +1,16 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /** @var list<int> the errors of MariaDB (1901) and MySQL (3823) for a CHECK on a column a foreign key sets to NULL */
+    private const CHECK_ON_SET_NULL = [1901, 3823];
+
     private const CONSTRAINT = 'video_renders_one_owner';
 
     private const OWNERLESS = 'shot_id IS NULL AND design_image_id IS NULL AND video_session_id IS NULL';
@@ -69,8 +73,17 @@ return new class extends Migration
         }
     }
 
+    /** @param string $clause the CHECK condition; a database that refuses a CHECK on a column a foreign key sets to NULL keeps the table without it and the rule rests on the code that writes renders */
     private function addConstraint(string $clause): void
     {
-        DB::statement('ALTER TABLE video_renders ADD CONSTRAINT '.self::CONSTRAINT.' CHECK ('.$clause.')');
+        try {
+            DB::statement('ALTER TABLE video_renders ADD CONSTRAINT '.self::CONSTRAINT.' CHECK ('.$clause.')');
+        } catch (QueryException $e) {
+            if (! in_array((int) ($e->errorInfo[1] ?? 0), self::CHECK_ON_SET_NULL, true)) {
+                throw $e;
+            }
+
+            echo '  '.self::CONSTRAINT.': CSDL tu choi CHECK tren cot co khoa ngoai SET NULL — bo qua ('.$e->errorInfo[2].')'.PHP_EOL;
+        }
     }
 };
