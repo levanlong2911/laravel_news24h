@@ -13,6 +13,7 @@ use App\Services\Admin\FeedbackPayload;
 use App\Services\Admin\FeedbackService;
 use App\Services\Admin\PreGuard;
 use App\Services\Admin\PreGuardException;
+use App\Services\Admin\RequestContext;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -137,7 +138,17 @@ class WriteArticleJob implements ShouldQueue
             }
 
             // ── STEP 4: AI pipeline ───────────────────────────────────────
-            $result     = $pipeline->run($rawText, $kwName, $categoryId ?? '');
+            // Article da duoc tao o STEP 3 de giu cho, nen id co san TRUOC khi
+            // pipeline goi Claude — moi dong so cai quy duoc ve dung bai viet.
+            $result     = $pipeline->run(
+                $rawText,
+                $kwName,
+                $categoryId ?? '',
+                new RequestContext(
+                    articleId:     $article->id,
+                    pipelineRunId: (string) Str::uuid(),
+                ),
+            );
             $parsed     = $result->parsed;
             $hookResult = $result->hookResult;
             $context    = $result->context;

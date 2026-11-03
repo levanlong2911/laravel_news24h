@@ -62,16 +62,22 @@ class HookEngine
         string     $hookStyle,
         Collection $contentTypes,
         array      $preloadedCandidates = [],
+        ?RequestContext $context = null,
     ): HookResult {
         $detectedType = $this->detectType($rawFacts, $contentTypes);
 
         /** @var FrameworkContentType|null $typeModel */
         $typeModel = $contentTypes->firstWhere('type_code', $detectedType);
 
-        // Skip Claude call if candidates already provided from combined Haiku prompt
-        $candidates = !empty($preloadedCandidates)
-            ? $preloadedCandidates
-            : $this->generateCandidates($typeModel, $hookStyle, $keyword, $rawFacts);
+        // Skip Claude call if candidates already provided from combined Haiku prompt.
+        // $hookUsage giữ null ở nhánh preloaded — không gọi Claude thì không tốn gì.
+        $hookUsage = null;
+
+        if (!empty($preloadedCandidates)) {
+            $candidates = $preloadedCandidates;
+        } else {
+            [$candidates, $hookUsage] = $this->generateCandidates($typeModel, $hookStyle, $keyword, $rawFacts, $context);
+        }
 
         if (empty($candidates)) {
             Log::warning('[HookEngine] All generation failed, using keyword fallback', [
@@ -84,6 +90,7 @@ class HookEngine
                 candidates:   [],
                 bestScore:    0,
                 hookRank:     0, // 0 = fallback, không có candidates
+                usage:        $hookUsage, // vẫn tốn tiền dù kết quả không dùng được
             );
         }
 
@@ -108,6 +115,7 @@ class HookEngine
             candidates:   $candidates,
             bestScore:    $best['score'],
             hookRank:     $hookRank,
+            usage:        $hookUsage,
         );
     }
 
@@ -169,12 +177,18 @@ class HookEngine
     /**
      * Gọi Claude Haiku → parse JSON → nếu < 3 hooks → bổ sung từ template.
      * Luôn trả về ít nhất 3 candidates (template đảm bảo).
+     *
+     * Trả kèm TokenUsage của lượt gọi: lượt này tốn tiền thật, và trước đây nó
+     * bị nuốt ở đây nên không bao giờ tới được chỗ tính giá thành bài viết.
+     *
+     * @return array{0: list<string>, 1: TokenUsage}
      */
     private function generateCandidates(
         ?FrameworkContentType $type,
         string                $hookStyle,
         string                $keyword,
         string                $rawFacts,
+        ?RequestContext       $context = null,
     ): array {
         $typeName    = $type?->type_name    ?? 'General';
         $toneProfile = implode(', ', $type?->tone_profile ?? ['neutral']);
@@ -204,7 +218,8 @@ Example: ["Hook A", "Hook B", "Hook C", "Hook D", "Hook E"]
 PROMPT;
 
         $candidates = [];
-        $resp       = $this->claude->generate($prompt, 'haiku');
+        $resp       = $this->claude->generate($prompt, 'haiku', context: ($context ?? new RequestContext())->withPhase(Phase::Hook));
+        $usage      = $resp->usage;   // trả ngược lên để pipeline cộng vào giá thành
         $raw        = $resp->text;
 
         if (!empty($raw) && preg_match('/\[.*\]/s', $raw, $m)) {
@@ -224,7 +239,7 @@ PROMPT;
             $candidates = array_slice(array_unique(array_merge($candidates, $templates)), 0, 5);
         }
 
-        return array_values($candidates);
+        return [array_values($candidates), $usage];
     }
 
     /**

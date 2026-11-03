@@ -23,11 +23,23 @@ final class PromptPayload
      * Short fingerprint của prompt (12 hex chars).
      * Include cả outputSchema + contentTypesBlock vì chúng ảnh hưởng trực tiếp đến output.
      * Nếu thiếu: cùng fingerprint nhưng output khác → debug production rất khó.
+     *
+     * phase2 cũng phải có mặt. Nó quyết định PRIMARY/SECONDARY TYPE mà HookEngine
+     * dùng để chọn structure_template, nên sửa nó là đổi cả bài viết ra — trước đây
+     * lại là field duy nhất không vào hash, tức sửa phase2 mà fingerprint đứng yên.
      */
     public function fingerprint(): string
     {
         return substr(
-            hash('sha256', $this->system . $this->phase1 . $this->phase3 . $this->outputSchema . $this->contentTypesBlock),
+            hash(
+                'sha256',
+                $this->system
+                . $this->phase1
+                . $this->phase2
+                . $this->phase3
+                . $this->outputSchema
+                . $this->contentTypesBlock
+            ),
             0, 12
         );
     }
@@ -77,11 +89,28 @@ final class PromptPayload
     //   → phase3 contains {structure_template} placeholder
     //   → replaced here at call time (not at PromptBuilder::build() time)
 
+    /**
+     * @param  string[]  $toneProfile  tone_profile của content type đã detect
+     *
+     * typeName + toneProfile thay cho {content_types_block} từng nằm ở đầu phase3.
+     * Khối đó chở cả 6 content type — mỗi cái kèm trigger keywords, tone và
+     * structure template đầy đủ — trong khi Sonnet chỉ dùng đúng một.
+     *
+     * Nó vốn có ba phần, giá trị khác hẳn nhau ở bước này:
+     *   trigger_keywords   → tín hiệu phân loại thuần tuý, việc đó xong từ phase2
+     *   structure_template → đã được inject riêng qua {structure_template}
+     *   tone_profile       → hữu ích, và không có đường nào khác tới Sonnet
+     *
+     * Nên chỉ giữ lại phần thứ ba, của đúng type đã detect. Tiết kiệm ~3.700 ký tự
+     * mỗi bài mà không mất tín hiệu nào.
+     */
     public function sonnetPrompt(
         string $facts,
         string $bestHook,
         string $keyword,
         string $structureTemplate = '',
+        ?string $typeName = null,
+        array $toneProfile = [],
     ): string {
         // Resolve {structure_template} placeholder in phase3
         $defaultStructure = config(
@@ -105,9 +134,19 @@ final class PromptPayload
             $safeFacts = mb_substr($safeFacts, 0, $lastPeriod + 1);
         }
 
+        // Chỉ nêu type đã detect, không kèm cả bảng 6 type như {content_types_block} cũ.
+        $typeLines = '';
+        if ($typeName !== null && $typeName !== '') {
+            $typeLines = "\nCONTENT TYPE: " . strtoupper($typeName);
+        }
+        if ($toneProfile !== []) {
+            $typeLines .= "\nTYPE TONE: " . implode(' · ', $toneProfile);
+        }
+
         return $phase3
             . "\n\nTOPIC: {$safeKeyword}"
             . "\nTITLE ANCHOR (write content to support this hook): {$safeHook}"
+            . $typeLines
             . "\n\nEXTRACTED FACTS:\n---\n{$safeFacts}\n---"
             . "\n\nOUTPUT RULES:"
             . "\n- Return ONLY valid JSON. No markdown, no code block, no extra text."

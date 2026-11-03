@@ -28,7 +28,6 @@ return new class extends Migration
         'bm_render_scores',
         'bm_renders',
         'bm_sessions',
-        'claude_request_ledger',
         'feed_items',
         'feed_sources',
         'filmos_benchmark_results',

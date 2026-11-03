@@ -30,8 +30,15 @@ class ArticlePipelineService
      * @throws \RuntimeException  khi content quá ngắn, Haiku rỗng, PromptGuard fail,
      *                            hoặc JSON vẫn invalid sau retry
      */
-    public function run(string $rawHtml, string $keyword, string $categoryId): PipelineResult
-    {
+    public function run(
+        string $rawHtml,
+        string $keyword,
+        string $categoryId,
+        ?RequestContext $context = null,
+    ): PipelineResult {
+        // Không có context thì vẫn chạy, chỉ là dòng sổ cái thiếu article_id —
+        // sai sót nhìn thấy được trong bảng, không phải tiền mất im lặng.
+        $context ??= new RequestContext();
         // ── 1. Clean + limit ──────────────────────────────────────────────────
         $originalLen = max(strlen($rawHtml), 1);
         $cleanedText = $this->cleaner->limit($this->cleaner->clean($rawHtml));
@@ -43,15 +50,20 @@ class ArticlePipelineService
         $cleanerReductionRatio = round(1 - strlen($cleanedText) / $originalLen, 3);
 
         // ── 2. Build PromptPayload từ category DB ─────────────────────────────
-        $payload      = $this->promptBuilder->build($categoryId);
-        $context      = $categoryId ? CategoryContext::forCategory($categoryId) : null;
-        $contentTypes = $context?->framework?->contentTypes ?? collect();
-        $hookStyle    = $context?->hook_style ?? 'compelling and engaging opener';
+        // KHÔNG đặt tên biến này là $context: tham số $context ở trên là
+        // RequestContext của sổ cái, và gán đè nó ở đây đã làm chết cả pipeline —
+        // mọi lượt gọi Claude bên dưới truyền context: rồi gọi withPhase() lên
+        // một Eloquent model. PHP không cảnh báo gì khi gán đè tham số.
+        $payload         = $this->promptBuilder->build($categoryId);
+        $categoryContext = $categoryId ? CategoryContext::forCategory($categoryId) : null;
+        $contentTypes    = $categoryContext?->framework?->contentTypes ?? collect();
+        $hookStyle       = $categoryContext?->hook_style ?? 'compelling and engaging opener';
 
         // ── 3. Haiku extract facts + hooks (1 call thay vì 2) ────────────────
         $haikuResp = $this->claude->generate(
             $payload->haikuCombinedPrompt($cleanedText, $keyword, $hookStyle),
-            'haiku'
+            'haiku',
+            context: $context->withPhase(Phase::FactExtraction),
         );
 
         if (empty(trim($haikuResp->text))) {
@@ -76,7 +88,7 @@ class ArticlePipelineService
         }
 
         // ── 4. HookEngine → detect content type + best hook ───────────────────
-        $hookResult        = $this->hookEngine->resolve($facts, $keyword, $hookStyle, $contentTypes, $preloadedCandidates);
+        $hookResult        = $this->hookEngine->resolve($facts, $keyword, $hookStyle, $contentTypes, $preloadedCandidates, $context);
         $typeModel         = $contentTypes->firstWhere('type_code', $hookResult->detectedType);
         $structureTemplate = $typeModel?->structure_template ?? config('prompt.default_structure', '');
 
@@ -84,8 +96,15 @@ class ArticlePipelineService
         $this->promptGuard->validateHook($hookResult->bestHook);
 
         // ── 6. Sonnet — retry với fix prompt thay vì lặp lại cùng prompt (tiết kiệm token)
-        $sonnetPrompt = $payload->sonnetPrompt($facts, $hookResult->bestHook, $keyword, $structureTemplate);
-        $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system);
+        $sonnetPrompt = $payload->sonnetPrompt(
+            $facts,
+            $hookResult->bestHook,
+            $keyword,
+            $structureTemplate,
+            $typeModel?->type_name,
+            $typeModel?->tone_profile ?? [],
+        );
+        $sonnetResp   = $this->claude->generate($sonnetPrompt, 'sonnet', $payload->system, context: $context->withPhase(Phase::Write));
         $guardResult  = $this->postGuard->check($sonnetResp->text, $facts);
         $retryCount   = 0;
         $retryReason  = null;
@@ -100,7 +119,7 @@ class ArticlePipelineService
                 . "Fix rule: every \" inside a string value must be escaped as \\\".\n"
                 . "Return ONLY the corrected JSON — no markdown, no explanation.\n\n"
                 . $sonnetResp->text;
-            $retryResp   = $this->claude->generate($fixPrompt, 'sonnet');
+            $retryResp   = $this->claude->generate($fixPrompt, 'sonnet', context: $context->withPhase(Phase::WriteRetry));
             $guardResult = $this->postGuard->check($retryResp->text, $facts);
         }
 
@@ -111,12 +130,28 @@ class ArticlePipelineService
         // ── 7. Tính token usage + cost ────────────────────────────────────────
         $sonnetInputTokens  = $sonnetResp->inputTokens  + ($retryResp?->inputTokens  ?? 0);
         $sonnetOutputTokens = $sonnetResp->outputTokens + ($retryResp?->outputTokens ?? 0);
-        $totalCostUsd       = ClaudeWriterService::costUsd($haikuResp->inputTokens, $haikuResp->outputTokens, 'haiku')
-                            + ClaudeWriterService::costUsd($sonnetInputTokens, $sonnetOutputTokens, 'sonnet');
+
+        // MỌI lượt gọi Claude của bài này, liệt kê tường minh — thiếu một dòng ở
+        // đây là giá thành thiếu bấy nhiêu, và không có gì báo.
+        //
+        // hookResult->usage từng bị bỏ quên hoàn toàn: HookEngine gọi Haiku thật
+        // nhưng HookResult không mang token về, nên khoản đó chưa bao giờ được
+        // tính vào giá bài viết.
+        $usages = array_filter([
+            $haikuResp->usage,      // phase 1 + 2
+            $hookResult->usage,     // sinh hook — null nếu dùng candidates preloaded
+            $sonnetResp->usage,     // phase 3
+            $retryResp?->usage,     // lượt sửa JSON, chỉ có khi parse hỏng
+        ]);
+
+        $totalCostUsd = array_sum(array_map(
+            static fn (TokenUsage $usage): float => ClaudeWriterService::costOf($usage),
+            $usages,
+        ));
 
         Log::debug('[Pipeline] Done', [
             'keyword'            => $keyword,
-            'context_id'         => $context?->id,
+            'context_id'         => $categoryContext?->id,
             'hook_type'          => $hookResult->detectedType,
             'hook_score'         => $hookResult->bestScore,
             'guard_confidence'   => $guardResult->confidence,
@@ -129,7 +164,7 @@ class ArticlePipelineService
         return new PipelineResult(
             parsed:                $guardResult->parsed,
             hookResult:            $hookResult,
-            context:               $context,
+            context:               $categoryContext,
             guardResult:           $guardResult,
             retryCount:            $retryCount,
             retryReason:           $retryReason,

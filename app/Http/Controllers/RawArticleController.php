@@ -7,14 +7,18 @@ use App\Models\Keyword;
 use App\Models\RawArticle;
 use App\Services\Admin\ArticleCrawlerService;
 use App\Services\Admin\FetchKeywordNewsService;
+use App\Support\RequestBudget;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 class RawArticleController extends Controller
 {
+    private const MIN_SECONDS_PER_KEYWORD = 25;
+
     public function index(Request $request)
     {
         $keywordId = $request->get('keyword_id');
@@ -73,15 +77,42 @@ class RawArticleController extends Controller
     public function fetchAll(FetchKeywordNewsService $fetchService)
     {
         $keywords = Keyword::where('is_active', true)->get();
-
-        RawArticle::where('status', '!=', 'generating')->delete();
+        $ok      = 0;
+        $stopped = false;
 
         foreach ($keywords as $kw) {
-            $this->clearQueryCache($kw);
-            $fetchService->fetch($kw);
+            if (RequestBudget::remainingSeconds() < self::MIN_SECONDS_PER_KEYWORD) {
+                $stopped = true;
+                Log::warning('[RawArticle] fetchAll dung som — het thoi gian request', [
+                    'done'      => $ok,
+                    'total'     => $keywords->count(),
+                    'remaining' => round(RequestBudget::remainingSeconds(), 1),
+                ]);
+                break;
+            }
+
+            try {
+                $result = $this->refreshKeyword($kw, $fetchService, function () use ($kw) {
+                    RawArticle::where('keyword_id', $kw->id)
+                        ->where('status', '!=', 'generating')
+                        ->delete();
+                });
+
+                if (($result['saved'] ?? 0) > 0) {
+                    $ok++;
+                }
+            } catch (\Throwable $e) {
+                Log::error("[RawArticle] fetchAll that bai: {$kw->name}", ['exception' => $e]);
+            }
         }
 
-        return back()->with('success', "Đã xóa data cũ và fetch {$keywords->count()} keywords mới.");
+        $message = "Fetch xong {$ok}/{$keywords->count()} keywords.";
+
+        if ($stopped) {
+            return back()->with('warning', $message . ' Dung som vi het thoi gian — bam lai de chay tiep.');
+        }
+
+        return back()->with('success', $message);
     }
 
     public function fetchOne(Request $request, FetchKeywordNewsService $fetchService)
@@ -99,12 +130,12 @@ class RawArticleController extends Controller
         }
         RateLimiter::hit($key, 30);
 
-        RawArticle::where('keyword_id', $keyword->id)
-            ->whereIn('status', ['pending', 'failed'])
-            ->delete();
+        $result = $this->refreshKeyword($keyword, $fetchService, function () use ($keyword) {
+            RawArticle::where('keyword_id', $keyword->id)
+                ->whereIn('status', ['pending', 'failed'])
+                ->delete();
+        });
 
-        $this->clearQueryCache($keyword);
-        $result = $fetchService->fetch($keyword);
 
         return back()->with('success', "Fetched {$keyword->name}: {$result['saved']} new (top={$result['top']}, recent={$result['recent']}).");
     }
@@ -168,12 +199,13 @@ class RawArticleController extends Controller
             return back()->with('error', 'Keyword not found');
         }
 
-        $deleted = RawArticle::where('keyword_id', $keyword->id)
-            ->where('status', '!=', 'generating')
-            ->delete();
+        $deleted = 0;
 
-        $this->clearQueryCache($keyword);
-        $result = $fetchService->fetch($keyword);
+        $result = $this->refreshKeyword($keyword, $fetchService, function () use ($keyword, &$deleted) {
+            $deleted = RawArticle::where('keyword_id', $keyword->id)
+                ->where('status', '!=', 'generating')
+                ->delete();
+        });
 
         return back()->with('success', "Cleared {$deleted} + fetched {$result['saved']} new for {$keyword->name}.");
     }
@@ -228,6 +260,32 @@ class RawArticleController extends Controller
         }
 
         return ['article' => $article, 'reasons' => $reasons];
+    }
+
+    private function refreshKeyword(Keyword $keyword, FetchKeywordNewsService $fetchService, \Closure $delete): array
+    {
+        DB::beginTransaction();
+
+        try {
+            $delete();
+            $this->clearQueryCache($keyword);
+            $result = $fetchService->fetch($keyword);
+
+            if (($result['saved'] ?? 0) > 0) {
+                DB::commit();
+            } else {
+                DB::rollBack();
+                Log::warning('[RawArticle] fetch khong luu duoc gi — rollback, giu du lieu cu', [
+                    'keyword' => $keyword->name,
+                    'raw'     => $result['raw'] ?? 0,
+                ]);
+            }
+
+            return $result;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     private function clearQueryCache(Keyword $keyword): void

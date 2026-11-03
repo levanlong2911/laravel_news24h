@@ -4,9 +4,12 @@ namespace App\Services\Admin;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ClaudeWriterService
 {
+
+    public const PRICING_VERSION = 'anthropic-v2026-09-04';
 
     private const MODEL_CATALOG = [
         'haiku' => [
@@ -15,6 +18,7 @@ class ClaudeWriterService
             'input_usd_per_mtok' => 1.00,
             'output_usd_per_mtok' => 5.00,
             'thinking' => null,
+            'effort' => null,
         ],
         'haiku5' => [
             'id' => 'claude-haiku-5-5',
@@ -22,6 +26,7 @@ class ClaudeWriterService
             'input_usd_per_mtok' => 0.10,
             'output_usd_per_mtok' => 0.50,
             'thinking' => null,
+            'effort' => null,
         ],
         'sonnet55' => [
             'id' => 'claude-sonnet-5-5',
@@ -29,6 +34,7 @@ class ClaudeWriterService
             'input_usd_per_mtok' => 2.00,
             'output_usd_per_mtok' => 10.00,
             'thinking' => null,
+            'effort' => null,
         ],
         'opus55' => [
             'id' => 'claude-opus-5-5',
@@ -36,13 +42,15 @@ class ClaudeWriterService
             'input_usd_per_mtok' => 4.00,
             'output_usd_per_mtok' => 20.00,
             'thinking' => null,
+            'effort' => null,
         ],
         'sonnet' => [
-            'id' => 'claude-sonnet-4-6',
+            'id' => 'claude-sonnet-5',
             'max_tokens' => 8000,
-            'input_usd_per_mtok' => 3.00,
-            'output_usd_per_mtok' => 15.00,
-            'thinking' => null,
+            'input_usd_per_mtok' => 2.00,
+            'output_usd_per_mtok' => 10.00,
+            'thinking' => 'disabled',
+            'effort' => 'medium',
         ],
         'sonnet5' => [
             'id' => 'claude-sonnet-5',
@@ -50,6 +58,7 @@ class ClaudeWriterService
             'input_usd_per_mtok' => 2.00,
             'output_usd_per_mtok' => 10.00,
             'thinking' => 'disabled',
+            'effort' => null,
         ],
     ];
 
@@ -59,6 +68,8 @@ class ClaudeWriterService
     private const CACHE_READ_MULTIPLIER = 0.10;
 
     private const MAX_RETRIES = 5;
+
+    private const MAX_TIMEOUT_ATTEMPTS = 2;
 
     private const TIMEOUT_S = 60;
 
@@ -70,13 +81,17 @@ class ClaudeWriterService
 
     private const MAX_CONCURRENT = 8;   // max đồng thời (parallel workers)
 
+    public function __construct(
+        private readonly RequestLedgerRecorder $ledger = new RequestLedgerRecorder(),
+    ) {}
+
     public static function supports(string $modelType): bool
     {
         return isset(self::MODEL_CATALOG[$modelType]);
     }
 
     /**
-     * @return array{id: string, max_tokens: int, input_usd_per_mtok: float, output_usd_per_mtok: float, thinking: ?string}
+     * @return array{id: string, max_tokens: int, input_usd_per_mtok: float, output_usd_per_mtok: float, thinking: ?string, effort: ?string}
      */
     private static function entry(string $modelType): array
     {
@@ -125,174 +140,216 @@ class ClaudeWriterService
         ) / 1_000_000;
     }
 
-    private function responseFromBody(array $json): ClaudeResponse
+    /** @return float the cost of the usage at its model's price, at the sonnet price for a model the catalog does not have */
+    public static function costOf(TokenUsage $usage): float
     {
-        $text = [];
-        foreach ($json['content'] ?? [] as $block) {
-            if (($block['type'] ?? '') === 'text' && isset($block['text'])) {
-                $text[] = $block['text'];
-            }
-        }
-
-        return new ClaudeResponse(
-            trim(implode('', $text)),
-            $json['usage']['input_tokens'] ?? 0,
-            $json['usage']['output_tokens'] ?? 0,
-            $json['stop_reason'] ?? '',
-            // Luon 0 khi chua bat cache_control — doc de phong, xem
-            // docblock CACHE_WRITE_MULTIPLIER.
-            $json['usage']['cache_creation_input_tokens'] ?? 0,
-            $json['usage']['cache_read_input_tokens'] ?? 0,
-            $json['model'] ?? '',
-            self::measuredThinking($json['usage']['output_tokens_details']['thinking_tokens'] ?? null),
+        return self::costUsd(
+            $usage->inputTokens,
+            $usage->outputTokens,
+            self::supports($usage->modelType) ? $usage->modelType : 'sonnet',
+            $usage->cacheCreationTokens,
+            $usage->cacheReadTokens,
         );
     }
 
-    private static function measuredThinking(mixed $value): ?int
-    {
-        return is_int($value) && $value >= 0 ? $value : null;
-    }
+    public function generate(
+        string  $prompt,
+        string  $modelType = 'haiku',
+        string  $system = '',
+        ?RequestContext $context = null,
+    ): ClaudeResponse {
+        $entry     = self::MODEL_CATALOG[$modelType] ?? null;
+        $model     = ($entry ?? self::MODEL_CATALOG['haiku'])['id'];
+        $maxTokens = $entry['max_tokens'] ?? 2048;
 
-    /** @return array<string, mixed> */
-    private function requestBody(string $prompt, string $modelType, string $model, int $maxTokens, string $system, ?float $temperature, ?string $effort = null): array
-    {
-        $body = [
-            'model' => $model,
+        // Một lượt gọi logic — tối đa MAX_RETRIES dòng sổ cái cùng call_uuid này.
+        $callUuid   = (string) Str::uuid();
+        $promptHash = hash('sha256', $system . "\n" . $prompt);
+
+        $previousRequestId = null;
+        $retryReason       = null;
+
+        $requestBody = [
+            'model'      => $model,
             'max_tokens' => $maxTokens,
-            'messages' => [['role' => 'user', 'content' => $prompt]],
+            'messages'   => [['role' => 'user', 'content' => $prompt]],
         ];
-
-        $thinking = self::entry($modelType)['thinking'] ?? null;
-        if ($thinking !== null) {
-            $body['thinking'] = ['type' => $thinking];
+        if (($entry['effort'] ?? null) !== null) {
+            $requestBody['output_config'] = ['effort' => $entry['effort']];
         }
-
-        // `!== null` chu khong phai truthy: 0.0 la mot temperature hop le.
-        if ($temperature !== null) {
-            $body['temperature'] = $temperature;
+        if (($entry['thinking'] ?? null) !== null) {
+            $requestBody['thinking'] = ['type' => $entry['thinking']];
         }
-
         if ($system !== '') {
-            $body['system'] = $system;
+            $requestBody['system'] = $system;
         }
-
-        if ($effort !== null) {
-            $body['output_config'] = ['effort' => $effort];
-        }
-
-        return $body;
-    }
-
-    /**
-     * @param  int|null  $maxTokens  Trần output cho RIÊNG cú gọi này. null → dùng bảng
-     *                               trần mặc định theo model (hành vi cũ, không đổi cho caller phía CMS).
-     *
-
-     */
-    public function generate(string $prompt, string $modelType = 'haiku', string $system = '', ?int $maxTokens = null, ?float $temperature = null, ?string $effort = null, ?int $timeoutSeconds = null, ?int $maxAttempts = null): ClaudeResponse
-    {
-        $model = self::modelId($modelType);
-        $maxTokens ??= self::maxTokensFor($modelType);
-        $attempts = $maxAttempts ?? self::MAX_RETRIES;
-        $timeout = $timeoutSeconds ?? self::TIMEOUT_S;
-
-        if ($timeoutSeconds !== null && function_exists('set_time_limit')) {
-            @set_time_limit(($timeout + 30) * $attempts);
-        }
-
-        $requestBody = $this->requestBody($prompt, $modelType, $model, $maxTokens, $system, $temperature, $effort);
         $encodedBody = json_encode($requestBody, JSON_UNESCAPED_UNICODE);
         if ($encodedBody === false) {
             // Fallback: strip invalid UTF-8 rồi encode lại
             array_walk_recursive($requestBody, function (&$v) {
-                if (is_string($v)) {
-                    $v = mb_convert_encoding($v, 'UTF-8', 'UTF-8');
-                }
+                if (is_string($v)) $v = mb_convert_encoding($v, 'UTF-8', 'UTF-8');
             });
             $encodedBody = json_encode($requestBody, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
         }
 
         $lastError = '';
 
-        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+        for ($attempt = 1; $attempt <= self::MAX_RETRIES; $attempt++) {
             $this->waitForRpmSlot();       // block nếu đạt RPM_LIMIT
             $this->acquireConcurrent();    // block nếu đạt MAX_CONCURRENT
+
+            $requestId = null;
 
             $ch = curl_init('https://api.anthropic.com/v1/messages');
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => $timeout,
-                CURLOPT_POST => true,
-                CURLOPT_HTTPHEADER => [
-                    'x-api-key: '.config('services.claude.key'),
-                    'anthropic-version: '.config('services.claude.version', '2023-06-01'),
+                CURLOPT_TIMEOUT        => self::TIMEOUT_S,
+                CURLOPT_POST           => true,
+                CURLOPT_HTTPHEADER     => [
+                    'x-api-key: '         . config('services.claude.key'),
+                    'anthropic-version: ' . config('services.claude.version', '2023-06-01'),
                     'content-type: application/json',
                 ],
-                CURLOPT_POSTFIELDS => $encodedBody,
+                CURLOPT_POSTFIELDS     => $encodedBody,
+                CURLOPT_HEADERFUNCTION => function ($ch, string $header) use (&$requestId): int {
+                    if (stripos($header, 'request-id:') === 0) {
+                        $requestId = trim(substr($header, strlen('request-id:')));
+                    }
+
+                    // Bắt buộc trả về số byte đã đọc, nếu không cURL coi là lỗi ghi.
+                    return strlen($header);
+                },
             ]);
 
-            $body = curl_exec($ch);
+            $startedAt  = new \DateTimeImmutable();
+            $startedMs  = microtime(true);
+
+            $body       = curl_exec($ch);
             $httpStatus = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $curlError = curl_error($ch);
+            $curlError  = curl_error($ch);
+            $curlErrno  = curl_errno($ch);
+
+            $latencyMs  = (int) round((microtime(true) - $startedMs) * 1000);
+            $finishedAt = new \DateTimeImmutable();
 
             $this->releaseConcurrent();    // giải phóng slot ngay sau HTTP call
 
+            $httpStatus = $httpStatus > 0 ? (int) $httpStatus : null;
+
+            $json      = is_string($body) ? json_decode($body, true) : null;
+            $usageJson = is_array($json) ? ($json['usage'] ?? null) : null;
+
+            $attemptUsage   = null;
+            $attemptText    = null;
+            $attemptError   = $curlError ?: null;
+
+            if ($httpStatus === 200 && is_array($json)) {
+                $attemptText = '';
+                foreach ($json['content'] ?? [] as $block) {
+                    if (is_array($block) && ($block['type'] ?? null) === 'text') {
+                        $attemptText .= $block['text'] ?? '';
+                    }
+                }
+
+                $attemptUsage = TokenUsage::fromResponse(
+                    $usageJson ?? [],
+                    model:     $model,
+                    modelType: $modelType,
+                    requestId: $requestId,
+                );
+
+                if ($attemptText === '' && $attemptUsage->outputTokens > 0) {
+                    Log::error('Claude 200 nhung khong doc duoc text', [
+                        'model'         => $model,
+                        'stop_reason'   => $json['stop_reason'] ?? null,
+                        'block_types'   => array_column($json['content'] ?? [], 'type'),
+                        'output_tokens' => $attemptUsage->outputTokens,
+                    ]);
+                }
+            } elseif ($attemptError === null) {
+                $attemptError = is_array($json) ? ($json['error']['message'] ?? $body) : $body;
+            }
+
+            $this->ledger->record(
+                callUuid:        $callUuid,
+                attempt:         $attempt,
+                model:           $model,
+                modelType:       $modelType,
+                pricingVersion:  self::PRICING_VERSION,
+                billed:          Billing::fromHttpStatus($httpStatus),
+                startedAt:       $startedAt,
+                finishedAt:      $finishedAt,
+                latencyMs:       $latencyMs,
+                httpStatus:      $httpStatus,
+                requestId:          $requestId,
+                previousRequestId:  $previousRequestId,
+                context:            $context,
+                usage:              $attemptUsage,
+                usageJson:       is_array($usageJson) ? $usageJson : null,
+                promptHash:      $promptHash,
+                responseHash:    $attemptText === null ? null : hash('sha256', $attemptText),
+                retryReason:     $retryReason,
+                error:           $attemptError,
+            );
+
+            // Lượt sau sẽ tham chiếu ngược về lượt này.
+            $previousRequestId = $requestId;
+            $retryReason     = $curlError ? 'network' : ($httpStatus === null ? 'timeout' : 'http_' . $httpStatus);
+
             if ($curlError ?? false) {
                 $lastError = "cURL error: {$curlError}";
-                Log::warning("Claude exception (attempt {$attempt}/{$attempts}): {$lastError}");
+                Log::warning("Claude exception (attempt {$attempt}/" . self::MAX_RETRIES . "): {$lastError}");
+
+                if ($curlErrno === CURLE_OPERATION_TIMEDOUT && $attempt >= self::MAX_TIMEOUT_ATTEMPTS) {
+                    Log::error('Claude timeout — dung retry, moi lan timeout van bi tinh tien', [
+                        'model'    => $model,
+                        'attempts' => $attempt,
+                    ]);
+                    break;
+                }
             } else {
-                $json = json_decode($body, true);
-
                 if ($httpStatus === 200) {
-                    $response = $this->responseFromBody($json);
+                    // Đã parse ở trên để ghi sổ — dùng lại, không parse hai lần.
+                    $stopReason = $json['stop_reason'] ?? '';
+                    $text       = $attemptText ?? '';
+                    $usage      = $attemptUsage ?? TokenUsage::none($model, $modelType);
 
-                    if ($response->stopReason === 'max_tokens') {
-                        // Van TRA VE ban cat do (khong nem o day) — caller CMS
-                        // co the dung duoc doan van dang do. Nhung tu 2026-07-30
-                        // `stop_reason` di THEO ClaudeResponse, nen caller nao
-                        // can nguyen ven (vd trich xuat JSON) tu kiem duoc bang
-                        // `wasTruncated()` thay vi doan qua log.
+                    if ($stopReason === 'max_tokens') {
                         Log::warning('Claude output truncated at max_tokens — returning partial', [
-                            'model' => $model,
-                            'tokens' => $response->outputTokens,
-                            'max_tokens' => $maxTokens,
+                            'model'  => $model,
+                            'tokens' => $usage->outputTokens,
                         ]);
                     } else {
                         Log::debug('Claude OK', [
-                            'model' => $model,
-                            'provider_model' => $response->providerModel,
-                            'thinking_tokens' => $response->thinkingTokens,
-                            'attempt' => $attempt,
-                            'stop_reason' => $response->stopReason,
-                            'input_tokens' => $response->inputTokens,
-                            'output_tokens' => $response->outputTokens,
-                            'cache_write_tokens' => $response->cacheWriteTokens,
-                            'cache_read_tokens' => $response->cacheReadTokens,
-                            'cost_usd' => round(self::costUsd($response->inputTokens, $response->outputTokens, $modelType, $response->cacheWriteTokens, $response->cacheReadTokens), 6),
-                            'chars' => strlen($response->text),
+                            'model'         => $model,
+                            'attempt'       => $attempt,
+                            'stop_reason'   => $stopReason,
+                            'input_tokens'  => $usage->inputTokens,
+                            'output_tokens' => $usage->outputTokens,
+                            'cache_write'   => $usage->cacheCreationTokens,
+                            'cache_read'    => $usage->cacheReadTokens,
+                            'request_id'    => $usage->requestId,
+                            'cost_usd'      => $usage->costUsd(),
+                            'chars'         => strlen($text),
                         ]);
                     }
 
-                    return $response;
+                    return new ClaudeResponse($text, $usage, $stopReason);
                 }
 
                 if ($httpStatus === 400) {
-                    Log::error('Claude 400 Bad Request', ['body' => $body]);
-
-                    $message = is_array($json)
-                        ? (string) ($json['error']['message'] ?? $body)
-                        : (string) $body;
-
-                    throw new \RuntimeException("Claude 400 Bad Request: {$message}");
+                    // 400 không bị tính tiền — usage rỗng là đúng, không phải mất dữ liệu.
+                    Log::error('Claude 400 Bad Request', ['body' => $body, 'request_id' => $requestId]);
+                    return new ClaudeResponse('', TokenUsage::none($model, $modelType));
                 }
 
-                $lastError = "HTTP {$httpStatus}: ".($json['error']['message'] ?? $body);
-                Log::warning("Claude {$httpStatus} (attempt {$attempt}/{$attempts}): {$lastError}");
+                $lastError = "HTTP {$httpStatus}: " . ($json['error']['message'] ?? $body);
+                Log::warning("Claude {$httpStatus} (attempt {$attempt}/" . self::MAX_RETRIES . "): {$lastError}");
             }
 
-            if ($attempt < $attempts) {
-                $is529 = str_contains($lastError, '529');
-                $jitter = random_int(1, 5); // tránh thundering herd khi nhiều worker retry cùng lúc
+            if ($attempt < self::MAX_RETRIES) {
+                $is529    = str_contains($lastError, '529');
+                $jitter   = random_int(1, 5); // tránh thundering herd khi nhiều worker retry cùng lúc
                 $delaySec = $is529
                     ? self::DELAY_529_S * $attempt + $jitter        // ~31-35s, ~61-65s, ...
                     : self::BASE_DELAY_S * (2 ** ($attempt - 1)) + $jitter; // ~4-8s, ~7-11s, ...
@@ -301,12 +358,13 @@ class ClaudeWriterService
             }
         }
 
-        Log::error("Claude failed after {$attempts} attempts", [
-            'model' => $model,
+        Log::error('Claude failed after ' . self::MAX_RETRIES . ' attempts', [
+            'model'      => $model,
             'last_error' => $lastError,
+            'request_id' => $requestId ?? null,
         ]);
 
-        return new ClaudeResponse('', 0, 0);
+        return new ClaudeResponse('', TokenUsage::none($model, $modelType));
     }
 
     /**

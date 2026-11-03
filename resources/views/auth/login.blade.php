@@ -9,11 +9,19 @@
     <div class="card-body login-card-body">
         <form action="{{ route('login') }}" method="post" id="quickForm">
             @csrf
+            {{--
+                AuthController đặt lỗi đăng nhập dưới key 'login' qua withErrors().
+                Trước đây khối này chỉ đọc Session::get('error') — thứ không controller
+                nào set — nên sai mật khẩu là form hiện lại với email cũ mà không có
+                một dòng thông báo nào.
+            --}}
             <div class="form-group">
-                @if (Session::has('error'))
-                    <div style="color:red">
-                        {{ Session::get('error') }}
-                    </div>
+                @error('login')
+                    <div class="alert alert-danger py-2 px-3" role="alert">{{ $message }}</div>
+                @enderror
+
+                @if (session('error'))
+                    <div class="alert alert-danger py-2 px-3" role="alert">{{ session('error') }}</div>
                 @endif
             </div>
             <div class="form-group">
@@ -108,8 +116,11 @@
       toastr.options.tapToDismiss = false;
       toastr.options.positionClass = 'toast-top-right';
       @if (session('error'))
-          toastr.error("{{ session('error') }}");
+          toastr.error(@json(session('error')));
       @endif
+      @error('login')
+          toastr.error(@json($message));
+      @enderror
     });
   </script>
 @endsection

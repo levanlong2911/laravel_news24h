@@ -53,7 +53,7 @@
                     <label class="font-weight-bold">System Prompt <span class="text-danger">*</span></label>
                     <textarea name="system_prompt" rows="5"
                         class="form-control @error('system_prompt') is-invalid @enderror"
-                        placeholder="Claude system instruction...">{{ old('system_prompt', $framework->system_prompt) }}</textarea>
+                        placeholder="Direct instruction to Claude. No placeholders here — all {x} are sent literal to Claude.">{{ old('system_prompt', $framework->system_prompt) }}</textarea>
                     @error('system_prompt')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
 
@@ -66,18 +66,18 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="font-weight-bold">Phase 2 — Diagnose <span class="text-danger">*</span></label>
+                    <label class="font-weight-bold">Phase 2 — Diagnose (REQUIRED {content_types_block}) <span class="text-danger">*</span></label>
                     <textarea name="phase2_diagnose" rows="6"
                         class="form-control @error('phase2_diagnose') is-invalid @enderror"
-                        placeholder="Placeholder: {content_types_block}">{{ old('phase2_diagnose', $framework->phase2_diagnose) }}</textarea>
+                        placeholder="MUST contain {content_types_block} — the list of content types for this category">{{ old('phase2_diagnose', $framework->phase2_diagnose) }}</textarea>
                     @error('phase2_diagnose')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
 
                 <div class="form-group">
-                    <label class="font-weight-bold">Phase 3 — Generate <span class="text-danger">*</span></label>
+                    <label class="font-weight-bold">Phase 3 — Generate (REQUIRED {structure_template}) <span class="text-danger">*</span></label>
                     <textarea name="phase3_generate" rows="6"
                         class="form-control @error('phase3_generate') is-invalid @enderror"
-                        placeholder="Placeholders: {tone_notes} {hook_style} {output_schema}">{{ old('phase3_generate', $framework->phase3_generate) }}</textarea>
+                        placeholder="Placeholders: {domain} {audience} {terminology} {content_types_block} {tone_notes} {hook_style} {structure_template}. MUST have {structure_template}.">{{ old('phase3_generate', $framework->phase3_generate) }}</textarea>
                     @error('phase3_generate')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
 
