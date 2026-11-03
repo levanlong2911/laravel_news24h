@@ -11,7 +11,10 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Services\Admin\ClaudeWriterService;
 use App\Video\Llm\LlmClient;
+use App\Video\Moto\MotoContract;
+use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Spec\PhaseResolver;
+use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -19,6 +22,9 @@ use RuntimeException;
 final class ScriptWriterService
 {
     public const BRIEF_KEY = 'script_brief';
+
+    /** @var list<string> the beat fields a hand revision may replace */
+    private const REVISABLE = ['design_refs', 'in_use', 'configurations', 'situation'];
 
     public function __construct(
         private readonly PlanningStageStore $stageStore,
@@ -42,16 +48,166 @@ final class ScriptWriterService
         );
     }
 
-    /** @return array<string, string> room and exterior zone names from the payload the stage was written with */
+    /**
+     * @param  array{reason?: mixed, beats?: mixed}  $patch  why the script is revised and, per beat id, the design_refs, in_use, configurations or situation that replace its own
+     * @param  ?string  $expected  the patch hash of the preview the reviewer approved; required to write
+     * @return array{passed: bool, reason: string, source: ?array<string, mixed>, prompt: ?string, changes: list<array{path: string, purpose: string, visual: string, before: string, after: string}>, check: ?array<string, mixed>, content_hash: ?string, patch_hash: ?string, revision_stage_id: ?string, revision: ?int} the revised moto script checked against the current contract like a run of the model, only for a run written from the sources the project uses now; previewed or, with $write and the approved patch hash, stored as a new run that names the run it revises; the revised run is not approved and the run it revises stays as it was
+     */
+    public function revise(string $projectId, string $stageId, array $patch, bool $write, ?string $expected, ?string $actor): array
+    {
+        $report = ['passed' => false, 'reason' => '', 'source' => null, 'prompt' => null, 'changes' => [], 'check' => null, 'content_hash' => null, 'patch_hash' => null, 'revision_stage_id' => null, 'revision' => null];
+        $stage = $this->sources->scriptStage($projectId, $stageId);
+
+        if ($stage === null) {
+            return ['reason' => 'Bản kịch bản này không thuộc dự án hoặc chưa chạy thành công.'] + $report;
+        }
+
+        [$evaluation, $problem] = $this->sources->inspect($projectId, $stage);
+
+        if ($problem !== null) {
+            return ['reason' => $problem] + $report;
+        }
+
+        $document = (array) $evaluation['document'];
+
+        if (($document['format'] ?? null) !== MotoContract::SCRIPT_FORMAT) {
+            return ['reason' => 'Sửa tay chỉ áp dụng cho kịch bản '.MotoContract::SCRIPT_FORMAT.'.'] + $report;
+        }
+
+        $beats = $patch['beats'] ?? null;
+        $ids = array_column((array) $document['data']['beats'], 'id');
+
+        if (! is_string($patch['reason'] ?? null) || trim($patch['reason']) === '' || ! is_array($beats) || $beats === [] || array_is_list($beats)) {
+            return ['reason' => 'Bản sửa cần reason và beats theo mã beat.'] + $report;
+        }
+
+        foreach ($beats as $id => $fields) {
+            if (! in_array($id, $ids, true) || ! is_array($fields) || $fields === [] || array_is_list($fields) || array_diff(array_keys($fields), self::REVISABLE) !== []) {
+                return ['reason' => "Bản sửa {$id}: chỉ sửa ".implode(', ', self::REVISABLE).' của một beat có trong kịch bản.'] + $report;
+            }
+        }
+
+        $selection = $this->sources->selection($projectId);
+        $report['source'] = [
+            'stage_id' => (string) $stage->id,
+            'revision' => (int) $stage->planning_revision,
+            'content_hash' => (string) $evaluation['content_hash'],
+            'approved' => $selection !== null && $selection['stage_id'] === (string) $stage->id,
+        ];
+
+        try {
+            $run = $this->prepare($projectId);
+        } catch (\Throwable $e) {
+            return ['reason' => 'Chưa dựng được hợp đồng và nguồn hiện hành: '.$e->getMessage()] + $report;
+        }
+
+        $pinned = (array) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['source'] ?? []);
+        $current = $run['metadata']['source'];
+
+        if (CanonicalJson::hash($pinned) !== CanonicalJson::hash($current)) {
+            return ['reason' => "Bản rev {$stage->planning_revision} viết từ thiết kế ".($pinned['design_stage_id'] ?? '—').' và model sheet '.($pinned['model_sheet']['review_stage_id'] ?? '—')
+                .'; dự án đang dùng thiết kế '.$current['design_stage_id'].' và model sheet '.$current['model_sheet']['review_stage_id']
+                .' — không chuyển kịch bản sang nguồn khác bằng bản sửa tay; viết lại để có bản mới.'] + $report;
+        }
+
+        $report['prompt'] = 'Prompt '.$run['phase']->phase_code.' revision '.$run['phase']->revision;
+        $revised = $document;
+        $revised['prompt_version'] = $run['prompt_version'];
+
+        foreach ($revised['data']['beats'] as &$beat) {
+            foreach ((array) ($beats[$beat['id']] ?? []) as $key => $value) {
+                if ($beat[$key] !== $value) {
+                    $report['changes'][] = [
+                        'path' => "{$beat['id']}.{$key}",
+                        'purpose' => (string) $beat['purpose'],
+                        'visual' => (string) $beat['visual'],
+                        'before' => (string) json_encode($beat[$key], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        'after' => (string) json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    ];
+                    $beat[$key] = $value;
+                }
+            }
+        }
+
+        unset($beat);
+
+        if ($report['changes'] === []) {
+            return ['reason' => 'Bản sửa không đổi trường nào của kịch bản.'] + $report;
+        }
+
+        $raw = (string) json_encode($revised, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $result = ScriptEvaluation::of($raw, $run['metadata']['manifest'], $run['metadata']['context'], $current, $run['adapter']);
+        $report['check'] = $result['check'];
+        $report['content_hash'] = $result['content_hash'];
+        $report['patch_hash'] = CanonicalJson::hash(['of' => $report['source'], 'patch' => $patch, 'contract' => $result['contract'], 'source' => $current, 'content_hash' => $result['content_hash']]);
+        $report['passed'] = $result['content_hash'] !== null && ($result['check']['verdict'] ?? null) === 'PASS' && ($result['check']['status'] ?? null) === 'ok';
+
+        if (! $report['passed']) {
+            return ['reason' => 'Bản sửa chưa qua kiểm của hợp đồng hiện hành.'] + $report;
+        }
+
+        if (! $write) {
+            return ['reason' => 'preview'] + $report;
+        }
+
+        if ($expected === null || ! hash_equals($report['patch_hash'], $expected)) {
+            return ['reason' => 'Mã xem trước không khớp bản sửa này — xem trước lại rồi duyệt đúng mã.'] + $report;
+        }
+
+        $metadata = $run['metadata'] + ['revision' => [
+            'of' => $report['source'],
+            'reason' => trim($patch['reason']),
+            'patch' => $patch,
+            'patch_hash' => $report['patch_hash'],
+            'changes' => $report['changes'],
+            'actor' => $actor,
+            'revised_at' => now()->toIso8601String(),
+        ]];
+        [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::SCRIPT, $run['input'] + ['revision_of' => (string) $stage->id, 'patch_hash' => $report['patch_hash']], false, $metadata);
+
+        if ($token === null) {
+            return $claimReason === 'already_succeeded'
+                ? ['reason' => 'already_applied', 'revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision] + $report
+                : ['reason' => $claimReason === 'claimed_by_other' ? 'Đang có một lượt viết kịch bản chạy cho dự án này — đợi xong rồi thử lại.' : $claimReason] + $report;
+        }
+
+        try {
+            $recorded = $this->stageStore->finishSucceeded((string) $claimed->id, $token, $raw, $this->output($run, $result), ['instruction_version' => $run['prompt_version'], 'tokens_in' => 0, 'tokens_out' => 0, 'cost_usd' => 0]);
+        } catch (\Throwable $e) {
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kịch bản không lưu được');
+
+            throw $e;
+        }
+
+        return ['reason' => $recorded ? 'applied' : 'Lượt lưu bị giành mất — tải lại rồi thử lại.', 'revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision] + $report;
+    }
+
+    /** @return ?array{revision: int, reason: string, changes: list<array<string, string>>} the run a hand revision revises, why and what it changed; null for a run of the model */
+    private static function revisionOf(VideoPlanningStage $stage): ?array
+    {
+        $revision = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['revision'] ?? null;
+
+        return is_array($revision) ? ['revision' => (int) $revision['of']['revision'], 'reason' => (string) $revision['reason'], 'changes' => array_values((array) $revision['changes'])] : null;
+    }
+
+    /** @return array<string, string> the names of the rooms, zones, parts, systems, features and moments the stage's payload holds */
     private static function places(VideoPlanningStage $stage): array
     {
         $payload = json_decode((string) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['payload'] ?? ''), true);
+        $lists = [
+            (array) ($payload['yacht_bible']['rooms'] ?? []),
+            (array) ($payload['yacht_bible']['exterior_zones'] ?? []),
+            (array) ($payload['design']['parts'] ?? []),
+            (array) ($payload['design']['systems'] ?? []),
+            (array) ($payload['design']['features'] ?? []),
+            (array) ($payload['design']['motorcycle']['signature_moments'] ?? []),
+        ];
         $places = [];
 
-        foreach (['rooms', 'exterior_zones'] as $list) {
-            foreach ((array) ($payload['yacht_bible'][$list] ?? []) as $place) {
+        foreach ($lists as $list) {
+            foreach ($list as $place) {
                 if (is_array($place) && is_string($place['id'] ?? null)) {
-                    $places[$place['id']] = mb_substr((string) ($place['name'] ?? $place['text'] ?? ''), 0, 60);
+                    $places[$place['id']] = mb_substr((string) ($place['name'] ?? $place['text'] ?? $place['description'] ?? ''), 0, 60);
                 }
             }
         }
@@ -212,8 +368,10 @@ final class ScriptWriterService
         $settings = $run['settings'] ?? null;
         [$evaluation, $integrity] = $shown === null ? [[], null] : $this->sources->inspect($projectId, $shown);
         $briefForm = null;
+        $sourceProblem = null;
 
         if ($supported) {
+            $sourceProblem = $shown === null ? null : $this->sources->workflowFor($projectId)['adapter']->sourceProblem($projectId, (array) (PlanningStageStore::metadataOf(is_array($shown->input_json) ? $shown->input_json : null)['source'] ?? []));
             $defaults = $this->sources->workflowFor($projectId)['adapter']->settings();
             $override = VideoProject::query()->find($projectId)?->metadata_json[self::BRIEF_KEY] ?? null;
             $briefForm = [
@@ -246,20 +404,24 @@ final class ScriptWriterService
                 'verdict' => $stage->output_json['check']['verdict'] ?? null,
                 'model_status' => $stage->output_json['check']['status'] ?? null,
                 'selected' => $selection !== null && $selection['stage_id'] === (string) $stage->id,
+                'revision_of' => PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['revision']['of']['revision'] ?? null,
                 'cost_usd' => $stage->cost_usd === null ? null : (float) $stage->cost_usd,
             ])->values()->all(),
             'selection' => $selection,
+            'selected_revision' => $selection === null || $stages->firstWhere('id', $selection['stage_id']) === null ? null : (int) $stages->firstWhere('id', $selection['stage_id'])->planning_revision,
             'selected_error' => $selected['error'] ?? null,
             'shown' => $shown === null ? null : [
                 'id' => (string) $shown->id,
                 'revision' => (int) $shown->planning_revision,
+                'revised' => self::revisionOf($shown),
+                'source_problem' => $sourceProblem,
                 'selected' => $selection !== null && $selection['stage_id'] === (string) $shown->id && ! isset($selected['error']),
                 'integrity_error' => $integrity,
                 'places' => self::places($shown),
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
                 'document' => $integrity === null ? ($evaluation['document'] ?? null) : null,
-                'approvable' => $check !== null && $check['verdict'] === 'PASS' && $check['status'] === 'ok',
+                'approvable' => $check !== null && $check['verdict'] === 'PASS' && $check['status'] === 'ok' && $sourceProblem === null,
                 'tokens' => ['in' => (int) $shown->tokens_in, 'out' => (int) $shown->tokens_out],
                 'cost_usd' => $shown->cost_usd === null ? null : (float) $shown->cost_usd,
             ],
@@ -313,7 +475,7 @@ final class ScriptWriterService
         return [
             'adapter' => $adapter,
             'phase' => $phase,
-            'system' => implode("\n\n", array_column($bundle->parts(), 'content')),
+            'system' => $adapter->systemText(array_column($bundle->parts(), 'content'), $bundle->outputSchemas()),
             'payload' => $payload,
             'prompt_version' => $promptVersion,
             'settings' => $settings,

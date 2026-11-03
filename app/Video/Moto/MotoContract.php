@@ -20,11 +20,17 @@ final class MotoContract
 
     public const DESIGN_FORMAT = 'moto-design-v1';
 
+    public const SCRIPT_INPUT = 'moto-script-input-v2';
+
+    public const SCRIPT_FORMAT = 'moto-script-v1';
+
     public const EVIDENCE_EXECUTION = 'db-moto-phase-1-v1';
 
     public const DNA_EXECUTION = 'db-moto-phase-2-v1';
 
     public const DESIGN_EXECUTION = 'db-moto-phase-3-v1';
+
+    public const SCRIPT_EXECUTION = 'db-moto-phase-4-v1';
 
     private const MAKE_PREFIX = '/^(?:Harley-Davidson|Harley Davidson|Harley|H-D)\s+/iu';
 

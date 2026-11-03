@@ -557,7 +557,7 @@ class VideoProjectsController extends Controller
             return back()->with('error', $reason);
         }
 
-        return redirect()->to(route('video-projects.anchor', ['id' => $id, 'script' => $data['stage_id']]).'#scriptPanel')
+        return redirect()->route('video-projects.locations', $id)
             ->with('success', $reason === 'replayed'
                 ? 'Lần duyệt này đã được ghi trước đó — không ghi thêm.'
                 : 'Đã duyệt và chọn bản kịch bản này làm nguồn cho các công đoạn sau.');

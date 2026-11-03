@@ -952,6 +952,10 @@ return [
                 'action' => 'spec.script',
                 'adapter' => \App\Video\Superyacht\Script\SuperyachtScript::class,
             ],
+            'harley_custom_v1' => [
+                'action' => 'spec.script',
+                'adapter' => \App\Video\Moto\MotoScript::class,
+            ],
         ],
     ],
 
@@ -978,6 +982,38 @@ return [
 
         'design' => [
             'effort' => env('MOTO_DESIGN_EFFORT', 'medium'),
+        ],
+
+        'script' => [
+            'execution' => \App\Video\Moto\MotoContract::SCRIPT_EXECUTION,
+            'model' => env('MOTO_SCRIPT_MODEL', 'sonnet55'),
+            'effort' => env('MOTO_SCRIPT_EFFORT', 'high'),
+            'max_tokens' => (int) env('MOTO_SCRIPT_MAX_TOKENS', 64000),
+            'timeout_seconds' => (int) env('MOTO_SCRIPT_TIMEOUT_SECONDS', 900),
+            'schema_heading' => 'Output JSON Schema',
+            'base_card' => true,
+            'brief' => [
+                'video_length' => 30,
+                'aspect_ratio' => '9:16',
+                'platform' => 'YouTube Shorts, Facebook Reels',
+                'tone_notes' => '',
+            ],
+            'brief_options' => [
+                'video_length' => [15, 120],
+                'aspect_ratios' => ['9:16', '16:9', '1:1', '4:5'],
+                'platform_max' => 120,
+                'tone_notes_max' => 500,
+            ],
+            'history' => ['enabled' => false],
+            'check' => [
+                'length_tolerance_sec' => 0.1,
+                'card_max_words' => 8,
+                'card_seconds_per_card' => 10,
+                'warn' => [
+                    'beat_min_sec' => 0.8,
+                    'hero_min_sec' => 2,
+                ],
+            ],
         ],
 
         'model_sheet' => [
@@ -1355,6 +1391,19 @@ return [
                             ],
                             'outputs' => [
                                 'design' => ['namespace' => 'moto', 'schema' => 'MotoDesign', 'version' => '1.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 3 Output (format moto-design-v1): one object-based Harley-Davidson custom design record — motorcycle, parts, systems, rider interface, connections, features, operational limits, build states, identity rules, source issues and the model sheet with its eight views and final prompt; release database/releases/moto-phase-3-design-v8'],
+                            ],
+                        ],
+                        'spec.script' => [
+                            'phase' => 'phase-4',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['script'],
+                            ],
+                            'outputs' => [
+                                'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '1.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v1): the story, the builder and rider, the flexible beats B1…Bn with build state, time jump, design ids, configurations and situation, the text cards with their sources (the DISCLAIMER card carries the fixed text of the schema) and the music brief; release database/releases/moto-phase-4-script-v2'],
                             ],
                         ],
                     ],

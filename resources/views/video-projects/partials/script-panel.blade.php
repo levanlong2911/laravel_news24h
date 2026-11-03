@@ -60,7 +60,7 @@
                     <div class="line"><span class="k">Lượt gần nhất lỗi</span><span class="v" style="color:var(--vp-red)">{{ $step['error'] }}</span></div>
                 @endif
                 @if($step['selected_error'] !== null)
-                    <div class="line"><span class="k">Bản đang chọn</span><span class="v" style="color:var(--vp-red)">{{ $step['selected_error'] }}</span></div>
+                    <div class="line"><span class="k">Bản đang chọn</span><span class="v" style="color:var(--vp-red)">rev {{ $step['selected_revision'] ?? '—' }} — {{ $step['selected_error'] }}</span></div>
                 @endif
                 @if($step['brief_form'] !== null)
                     @php
@@ -92,7 +92,7 @@
                     <div class="line"><span class="k">Các bản</span><span class="v">
                         @foreach($step['history'] as $row)
                             <a href="{{ route('video-projects.anchor', ['id' => $project->id, 'script' => $row['id']]) }}#scriptPanel">rev {{ $row['revision'] }}</a>
-                            ({{ $row['status'] === 'succeeded' ? ($row['verdict'] === 'PASS' ? 'đạt' : 'chưa đạt') : $row['status'] }}@if($row['model_status'] !== null && $row['model_status'] !== 'ok') · {{ $row['model_status'] }}@endif@if($row['selected']) · đang dùng@endif){{ $loop->last ? '' : ' ·' }}
+                            ({{ $row['status'] === 'succeeded' ? ($row['verdict'] === 'PASS' ? 'đạt' : 'chưa đạt') : $row['status'] }}{{ $row['model_status'] !== null && $row['model_status'] !== 'ok' ? ' · '.$row['model_status'] : '' }}{{ $row['revision_of'] !== null ? ' · sửa tay từ rev '.$row['revision_of'] : '' }}{{ $row['selected'] ? ' · đang dùng' : '' }}){{ $loop->last ? '' : ' ·' }}
                         @endforeach
                     </span></div>
                 @endif
@@ -115,6 +115,13 @@
                 @if($shown['integrity_error'] !== null)
                     <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Không dùng được bản này: {{ $shown['integrity_error'] }}</div>
                 @endif
+                <div class="va-lbl" style="font-weight:400;color:{{ $shown['source_problem'] === null ? 'var(--vp-dim)' : 'var(--vp-red)' }}">Nguồn của bản rev {{ $shown['revision'] }}: {{ $shown['source_problem'] === null ? 'thiết kế và model sheet đang duyệt' : 'cũ — '.$shown['source_problem'] }}</div>
+                @if($shown['revised'] !== null)
+                    <div class="va-lbl" style="font-weight:400">Bản sửa tay từ rev {{ $shown['revised']['revision'] }} (không gọi AI): {{ $shown['revised']['reason'] }}</div>
+                    @foreach($shown['revised']['changes'] as $change)
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">{{ $change['path'] }}: {{ $change['before'] }} → {{ $change['after'] }}</div>
+                    @endforeach
+                @endif
 
                 @if($check !== null)
                     @if($check['error'] !== null)
@@ -131,7 +138,66 @@
                     @endforeach
                 @endif
 
-                @if(is_array($doc))
+                @if(is_array($doc) && ($shown['document']['format'] ?? null) === \App\Video\Moto\MotoContract::SCRIPT_FORMAT)
+                    @php
+                        $story = $doc['story'];
+                    @endphp
+                    <div class="va-brief">
+                        <div class="line"><span class="k">Logline</span><span class="v">{{ $story['logline'] }}</span></div>
+                        <div class="line"><span class="k">Trục phim</span><span class="v">{{ $story['spine'] }}</span></div>
+                        <div class="line"><span class="k">Hero</span><span class="v">{{ $story['hero_beat'] }}</span></div>
+                        @foreach($story['obstacles'] as $obstacle)
+                            <div class="line"><span class="k">{{ $obstacle['id'] }} · {{ $obstacle['problem_beat'] }} → {{ $obstacle['solution_beat'] }}</span><span class="v">{{ $obstacle['problem'] }} → {{ $obstacle['solution'] }}</span></div>
+                        @endforeach
+                        @foreach($story['loops'] as $motif)
+                            <div class="line"><span class="k">Loop {{ $motif['plant'] }} → {{ $motif['payoff'] }}</span><span class="v">{{ $motif['motif'] }}</span></div>
+                        @endforeach
+                        @foreach($doc['characters'] as $name => $character)
+                            <div class="line"><span class="k">{{ $name }}</span><span class="v">{{ $character }}</span></div>
+                        @endforeach
+                    </div>
+
+                    <div class="vs-script-scroll">
+                        <table class="vr-needs">
+                            <thead>
+                                <tr><th>Beat</th><th>Hồi</th><th>s</th><th>BS · hé lộ</th><th>Hình</th><th>Địa điểm · thời điểm</th><th>Thiết kế · cấu hình</th><th>Tình huống</th><th>Âm thanh</th><th>Mối nối</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach($doc['beats'] as $beat)
+                                    <tr>
+                                        <td><b>{{ $beat['id'] }}</b>@if($beat['time_jump'] !== 'none')<br><span class="va-tag mute">{{ $beat['time_jump'] }}</span>@endif</td>
+                                        <td>{{ $beat['act'] }}</td>
+                                        <td>{{ $beat['duration_s'] }}</td>
+                                        <td>{{ $beat['state'] ?? '—' }} · {{ $beat['reveal'] }}</td>
+                                        <td>{{ $beat['visual'] }}<br><em>{{ $beat['purpose'] }}</em>@if($beat['on_screen'] !== [])<br><span class="va-tag mute">{{ implode(', ', $beat['on_screen']) }}</span>@endif</td>
+                                        <td>{{ $beat['location'] }} · {{ $beat['time_light'] }}</td>
+                                        <td>{{ collect($beat['design_refs'])->map(fn ($id) => isset($shown['places'][$id]) ? $id.' '.$shown['places'][$id] : $id)->implode(', ') }}@if($beat['configurations'] !== [])<br><em>{{ implode(', ', $beat['configurations']) }}</em>@endif</td>
+                                        <td>@if($beat['situation'] !== null){{ $beat['situation']['mode'] }} · máy {{ $beat['situation']['engine'] ?? '—' }} · chân chống {{ $beat['situation']['side_stand'] ?? '—' }}@if($beat['situation']['speed_kmh'] !== null) · {{ $beat['situation']['speed_kmh'] }} km/h @endif @else — @endif</td>
+                                        <td>{{ implode(', ', $beat['sfx']) }}</td>
+                                        <td>{{ $beat['link'] ?? '—' }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="vs-script-scroll">
+                        <table class="vr-needs">
+                            <thead><tr><th>Card</th><th>Beat</th><th>Từ giây</th><th>Loại</th><th>s</th><th>Nguồn</th></tr></thead>
+                            <tbody>
+                                @foreach($doc['text_cards'] as $card)
+                                    <tr><td>{{ $card['text'] }}</td><td>{{ $card['beat'] }}</td><td>{{ $card['offset_s'] }}</td><td>{{ $card['type'] }}</td><td>{{ $card['sec'] }}</td><td>{{ $card['source_ref'] ?? '—' }}</td></tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="va-brief">
+                        <div class="line"><span class="k">Nhạc</span><span class="v">{{ implode('–', $doc['music_brief']['bpm']) }} BPM · {{ implode(', ', $doc['music_brief']['instruments']) }}</span></div>
+                        <div class="line"><span class="k">Năng lượng</span><span class="v">{{ $doc['music_brief']['energy'] }}</span></div>
+                        <div class="line"><span class="k">Điểm nhấn</span><span class="v">{{ collect($doc['music_brief']['hits'])->map(fn ($h) => $h['moment'].' '.$h['beat'])->implode(' · ') }}</span></div>
+                    </div>
+                @elseif(is_array($doc))
                     @php
                         $story = $doc['story'];
                         $script = $doc['script'];
@@ -238,7 +304,7 @@
                         </div>
                     </form>
                 @elseif($check !== null && ! $shown['approvable'])
-                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Bản này chỉ để xem: chỉ bản status ok và đạt RULE mới duyệt được.</div>
+                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Bản này chỉ để xem: chỉ bản status ok, đạt RULE và viết từ nguồn đang duyệt mới duyệt được.</div>
                 @endif
             </div>
         @endif
