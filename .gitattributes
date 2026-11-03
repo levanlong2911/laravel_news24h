@@ -16,3 +16,4 @@ CHANGELOG.md export-ignore
 # Linux — đúng thứ Source Freeze sinh ra để chặn. Git không được đụng vào chúng.
 tests/Video/fixtures/articles/** -text
 tests/Video/fixtures/recordings/** -text
+database/seeders/data/** -text
