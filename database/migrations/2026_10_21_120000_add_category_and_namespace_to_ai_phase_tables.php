@@ -1,12 +1,16 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /** @var int the MariaDB error for a generated column built on a column with a foreign key, which MariaDB 10.5 refuses and 10.4 accepts */
+    private const GENERATED_ON_FOREIGN_KEY = 1901;
+
     /** @var array<string, string> workflow_code => category slug */
     private const WORKFLOW_CATEGORIES = ['superyacht_v6_3' => 'yacht'];
 
@@ -46,12 +50,20 @@ return new class extends Migration
             $table->dropColumn('current_key');
         });
 
-        Schema::table('ai_phases', function (Blueprint $table) {
-            $table->string('current_key', 170)->nullable()
-                ->storedAs("IF(is_current, CONCAT(category_id, '|', workflow_code, '|', phase_code), NULL)")
-                ->after('is_current');
-            $table->unique('current_key');
-        });
+        try {
+            Schema::table('ai_phases', function (Blueprint $table) {
+                $table->string('current_key', 170)->nullable()
+                    ->storedAs("IF(is_current, CONCAT(category_id, '|', workflow_code, '|', phase_code), NULL)")
+                    ->after('is_current');
+                $table->unique('current_key');
+            });
+        } catch (QueryException $e) {
+            if ((int) ($e->errorInfo[1] ?? 0) !== self::GENERATED_ON_FOREIGN_KEY) {
+                throw $e;
+            }
+
+            echo '  ai_phases.current_key: CSDL tu choi cot sinh tu category_id co khoa ngoai — bo qua ('.$e->errorInfo[2].')'.PHP_EOL;
+        }
 
         Schema::table('ai_json_schemas', function (Blueprint $table) {
             $table->string('namespace', 64)->nullable()->after('id');
@@ -76,13 +88,15 @@ return new class extends Migration
             $table->dropColumn('namespace');
         });
 
-        Schema::table('ai_phases', function (Blueprint $table) {
-            $table->dropUnique(['current_key']);
-        });
+        if (Schema::hasColumn('ai_phases', 'current_key')) {
+            Schema::table('ai_phases', function (Blueprint $table) {
+                $table->dropUnique(['current_key']);
+            });
 
-        Schema::table('ai_phases', function (Blueprint $table) {
-            $table->dropColumn('current_key');
-        });
+            Schema::table('ai_phases', function (Blueprint $table) {
+                $table->dropColumn('current_key');
+            });
+        }
 
         Schema::table('ai_phases', function (Blueprint $table) {
             $table->string('current_key', 140)->nullable()
