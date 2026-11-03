@@ -1142,8 +1142,23 @@ return [
         'contracts' => [
             'categories' => [
                 'yacht' => 'superyacht_v6_3',
+                'moto' => 'harley_custom_v1',
             ],
             'workflows' => [
+                'harley_custom_v1' => [
+                    'actions' => [
+                        'spec.inspiration' => [
+                            'phase' => 'phase-1',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'outputs' => [
+                                'evidence' => ['namespace' => 'moto', 'schema' => 'MotoEvidence', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 1 Output (format moto-evidence-v1): the source motorcycle with its platform, the base apart from the build, styling, chassis, powertrain, technology, specs, intent, visuals, claims, issues and the eight self-checks; release database/releases/moto-phase-1-inspiration-v1'],
+                            ],
+                        ],
+                    ],
+                ],
                 'superyacht_v6_3' => [
                     'actions' => [
                         'spec.inspiration' => [

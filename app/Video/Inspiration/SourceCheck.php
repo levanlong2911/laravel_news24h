@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Video\Inspiration;
 
+use App\Video\Moto\MotoContract;
+
 final class SourceCheck
 {
     public const FORMAT = 'phase1-evidence-v1';
@@ -12,12 +14,19 @@ final class SourceCheck
 
     public const VERSION_V2 = 'source-check-v2';
 
+    public const VERSION_MOTO = 'source-check-moto-v1';
+
     public const SOURCE_CONFLICT = 'SOURCE_CONFLICT';
 
     public const QUOTES_NOT_FOUND = 'QUOTES_NOT_FOUND';
 
+    public const NOT_HARLEY_SOURCE = 'NOT_HARLEY_SOURCE';
+
     /** @var list<string> the exact issue paths whose conflict leaves the subject itself in doubt */
     private const IDENTITY_FIELDS = ['subject', 'subject.article_kind', 'subject.status', 'subject.primary', 'subject.basis', 'inspiration.source_identity.name', 'inspiration.source_identity.builder', 'inspiration.source_identity.designers'];
+
+    /** @var list<string> the exact issue paths whose conflict leaves the motorcycle itself in doubt */
+    private const MOTO_IDENTITY_FIELDS = ['subject', 'subject.article_kind', 'subject.status', 'subject.primary', 'subject.platform', 'subject.basis', 'inspiration.source_identity.name', 'inspiration.source_identity.builder', 'inspiration.source_identity.designers'];
 
     public const PASS = 'pass';
 
@@ -58,6 +67,12 @@ final class SourceCheck
             return $format === PhaseOneEvidence::FORMAT_V2
                 ? self::evidence($response, $articleBlock, $schemaErrors ?? ['không có JSON Schema đã ghim để kiểm'])
                 : ['format' => PhaseOneEvidence::FORMAT_V2, 'version' => self::VERSION_V2] + self::unscored('Lượt này ghim hợp đồng '.PhaseOneEvidence::FORMAT_V2.' nhưng phản hồi khai format '.json_encode($format).' — sai hợp đồng, không dùng tiếp.');
+        }
+
+        if ($contract === MotoContract::EVIDENCE_FORMAT) {
+            return $format === MotoContract::EVIDENCE_FORMAT
+                ? self::motoEvidence($response, $articleBlock, $schemaErrors ?? ['không có JSON Schema đã ghim để kiểm'])
+                : ['format' => MotoContract::EVIDENCE_FORMAT, 'version' => self::VERSION_MOTO] + self::unscored('Lượt này ghim hợp đồng '.MotoContract::EVIDENCE_FORMAT.' nhưng phản hồi khai format '.json_encode($format).' — sai hợp đồng, không dùng tiếp.');
         }
 
         if (($response['format'] ?? null) !== self::FORMAT || ! is_array($response['inspiration'] ?? null)) {
@@ -119,23 +134,7 @@ final class SourceCheck
         $lines = self::tagged($articleBlock);
         $checked = 0;
         $missing = [];
-        $proven = static function (mixed $evidence, string $path) use ($lines, &$checked, &$missing): ?string {
-            $quotes = [];
-
-            foreach (is_array($evidence) ? $evidence : [] as $index => $entry) {
-                $checked++;
-                $quote = self::normalize((string) ($entry['quote'] ?? ''));
-                $found = $quote !== '' && array_filter($lines[(string) ($entry['source'] ?? '')] ?? [], static fn (string $line): bool => str_contains($line, $quote)) !== [];
-
-                if (! $found) {
-                    $missing[] = "{$path}.evidence[{$index}]: ".(string) ($entry['quote'] ?? '');
-                }
-
-                $quotes[] = $found ? (string) $entry['quote'] : null;
-            }
-
-            return $quotes !== [] && ! in_array(null, $quotes, true) ? implode(' | ', $quotes) : null;
-        };
+        $proven = self::prover($lines, $checked, $missing);
 
         $data = $answer['inspiration'];
         $subject = $answer['subject'];
@@ -262,11 +261,7 @@ final class SourceCheck
             $missing !== [] ? self::QUOTES_NOT_FOUND : null,
         ]));
         $result = self::verdict($criteria, self::VERSION_V2, PhaseOneEvidence::FORMAT_V2, $flags);
-        $blocking = array_values(array_filter([
-            $structure === [] ? null : 'Mục khai trùng hoặc trống — mỗi mục một ID và một nội dung: '.implode('; ', array_slice($structure, 0, 5)),
-            $issuePaths === [] ? null : 'Vấn đề nguồn trỏ tới trường không có trong câu trả lời — không xác định được mâu thuẫn thuộc trường nào: '.implode('; ', array_slice($issuePaths, 0, 5)),
-            $missing === [] ? null : count($missing).' trích dẫn không có nguyên văn trên dòng nguồn đã khai — giá trị đã khai mà không có bằng chứng thì kết quả chưa dùng tiếp được: '.implode('; ', array_slice($missing, 0, 5)),
-        ]));
+        $blocking = self::blocking($structure, $issuePaths, $missing);
 
         if ($blocking !== []) {
             $result = ['verdict' => self::UNSCORED, 'flags' => $flags, 'error' => implode(' ', $blocking)] + $result;
@@ -279,6 +274,211 @@ final class SourceCheck
             'evidence' => ['checked' => $checked, 'missing' => $missing],
             'subject' => ['article_kind' => $subject['article_kind'], 'status' => $subject['status'], 'primary' => $subject['primary']],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $answer  a moto-evidence-v1 answer
+     * @param  list<string>  $schemaErrors
+     * @return array<string, mixed>
+     */
+    private static function motoEvidence(array $answer, string $articleBlock, array $schemaErrors): array
+    {
+        if ($schemaErrors !== []) {
+            return ['format' => MotoContract::EVIDENCE_FORMAT, 'version' => self::VERSION_MOTO, 'schema_errors' => $schemaErrors]
+                + self::unscored('Phản hồi sai JSON Schema đã ghim: '.implode('; ', array_slice($schemaErrors, 0, 5)).'.');
+        }
+
+        $lines = self::tagged($articleBlock);
+        $checked = 0;
+        $missing = [];
+        $proven = self::prover($lines, $checked, $missing);
+
+        $data = $answer['inspiration'];
+        $subject = $answer['subject'];
+        $identityProof = $proven($subject['basis'], 'subject.basis');
+
+        foreach ((array) $subject['others'] as $index => $other) {
+            $proven($other['evidence'], "subject.others[{$index}]");
+        }
+
+        $paths = ['subject' => true, 'inspiration.intent' => true];
+
+        foreach (array_keys((array) $subject) as $field) {
+            $paths["subject.{$field}"] = true;
+        }
+
+        $facts = [];
+
+        foreach (['source_identity', 'base'] as $group) {
+            foreach ($data[$group] as $field => $value) {
+                $paths["inspiration.{$group}.{$field}"] = true;
+
+                if ($field !== 'signatures' && is_array($value)) {
+                    $facts["{$group}.{$field}"] = $proven($value['evidence'], "{$group}.{$field}");
+                }
+            }
+        }
+
+        $structure = [];
+        $proofs = [];
+        $lists = ['styling' => 'feature', 'chassis' => 'feature', 'powertrain' => 'feature', 'technology' => 'feature', 'specs' => 'value', 'visuals' => 'description', 'claims' => 'claim', 'signatures' => 'feature'];
+
+        foreach ($lists as $list => $field) {
+            $ids = [];
+            $texts = [];
+            $base = $list === 'signatures' ? 'inspiration.source_identity.signatures' : "inspiration.{$list}";
+            $paths[$base] = true;
+
+            foreach ((array) ($list === 'signatures' ? $data['source_identity']['signatures'] : $data[$list]) as $index => $item) {
+                $id = (string) ($item['id'] ?? '');
+                $text = mb_strtolower(self::normalize((string) ($item[$field] ?? '')));
+                $key = $list === 'specs' && $text !== '' ? "{$item['quantity']} {$item['applies_to']} {$text}" : $text;
+                $proofs[$list.'#'.$id] = $proven($item['evidence'] ?? null, "{$list}[{$index}]");
+                $paths["{$base}.{$id}"] = true;
+
+                if ($text === '') {
+                    $structure[] = "{$list}[{$index}] ({$id}): nội dung trống.";
+                } elseif (isset($texts[$key])) {
+                    $structure[] = "{$list}[{$index}] ({$id}): trùng nội dung với {$texts[$key]}.";
+                }
+
+                if (isset($ids[$id])) {
+                    $structure[] = "{$list}[{$index}]: ID {$id} lặp.";
+                }
+
+                $ids[$id] = true;
+                $texts[$key] ??= $id;
+            }
+        }
+
+        $issues = (array) $answer['issues'];
+        $issuePaths = [];
+
+        foreach ($issues as $index => $issue) {
+            if (! isset($paths[(string) $issue['field']])) {
+                $issuePaths[] = "issues[{$index}]: \"{$issue['field']}\" không phải đường dẫn đầy đủ của câu trả lời này.";
+            }
+
+            if ($issue['evidence'] !== []) {
+                $proven($issue['evidence'], "issues[{$index}]");
+            }
+        }
+
+        $conflicts = array_values(array_filter($issues, static fn (array $issue): bool => $issue['kind'] === 'conflict'));
+        $identityConflicts = array_values(array_filter($conflicts, static fn (array $issue): bool => in_array($issue['field'], self::MOTO_IDENTITY_FIELDS, true)));
+        $label = 'Nói về một chiếc mô tô hoặc bản độ cụ thể';
+        $identity = match (true) {
+            $subject['status'] === 'none' || $subject['article_kind'] === 'not_a_motorcycle' => self::criterion('identity', $label, 0, self::FAIL, [], []),
+            $subject['status'] === 'ambiguous' => self::criterion('identity', $label, 0, self::UNVERIFIED, [], ['Bài nhắc nhiều xe nhưng không xác định được đối tượng chính — không gộp thành một hồ sơ.']),
+            $identityConflicts !== [] => self::criterion('identity', $label, 0, self::UNVERIFIED, [], array_map(static fn (array $issue): string => "Mâu thuẫn {$issue['field']}: {$issue['message']}", $identityConflicts)),
+            $identityProof === null => self::criterion('identity', $label, 0, self::UNVERIFIED, [], ['Trích dẫn xác định đối tượng không có nguyên văn trong bài.']),
+            default => self::criterion('identity', $label, 0, self::PASS, ["{$subject['primary']}: {$identityProof}"], []),
+        };
+        $byItem = static fn (string $list): \Closure => static fn (array $item): ?string => $proofs[$list.'#'.(string) ($item['id'] ?? '')] ?? null;
+        $captions = $lines['caption'] ?? [];
+        $intent = $data['intent'];
+        $intentProof = is_array($intent) ? $proven($intent['evidence'], 'intent') : null;
+        $specEvidence = [];
+        $specIssues = [];
+
+        foreach (['model', 'engine_family'] as $field) {
+            if (! is_array($data['base'][$field])) {
+                continue;
+            }
+
+            if ($facts["base.{$field}"] !== null) {
+                $specEvidence[] = "base.{$field}: {$data['base'][$field]['value']} — {$facts["base.{$field}"]}";
+            } else {
+                $specIssues[] = "base.{$field}: trích dẫn không có nguyên văn trên dòng nguồn đã khai.";
+            }
+        }
+
+        foreach ((array) $data['specs'] as $item) {
+            $proof = $proofs['specs#'.$item['id']] ?? null;
+
+            if ($proof !== null) {
+                $specEvidence[] = "{$item['id']} {$item['quantity']}: {$item['value']} — {$proof}";
+            } else {
+                $specIssues[] = "{$item['id']}: trích dẫn không có nguyên văn trên dòng nguồn đã khai.";
+            }
+        }
+
+        $criteria = [
+            $identity,
+            self::listed('styling', 'Mô tả ≥ 3 chi tiết tạo dáng', 3, 3, $data['styling'], 'feature', $byItem('styling')),
+            self::listed('chassis', 'Mô tả ≥ 2 chi tiết khung gầm (khung, phuộc, bánh, phanh, điều khiển)', 2, 2, $data['chassis'], 'feature', $byItem('chassis')),
+            match (true) {
+                ! is_array($intent) => self::criterion('intent', 'Nêu ý đồ, yêu cầu hoặc concept bản độ', 2, self::FAIL, [], []),
+                $intentProof !== null => self::criterion('intent', 'Nêu ý đồ, yêu cầu hoặc concept bản độ', 2, self::PASS, ["{$intent['text']}: {$intentProof}"], []),
+                default => self::criterion('intent', 'Nêu ý đồ, yêu cầu hoặc concept bản độ', 2, self::UNVERIFIED, [], ['Trích dẫn không có nguyên văn trên dòng nguồn đã khai.']),
+            },
+            self::listed('powertrain', 'Mô tả động cơ hoặc truyền động', 1, 1, $data['powertrain'], 'feature', $byItem('powertrain')),
+            self::criterion('specs', 'Nêu xe nền hoặc thông số kỹ thuật', 1, $specEvidence !== [] ? self::PASS : ($specIssues !== [] ? self::UNVERIFIED : self::FAIL), $specEvidence, $specIssues),
+            $captions === []
+                ? self::criterion('visuals', 'Có ảnh hoặc chú thích mô tả diện mạo', 1, self::UNVERIFIED, [], ['Dữ liệu bài không có ảnh hoặc chú thích nào để kiểm.'])
+                : self::listed('visuals', 'Có ảnh hoặc chú thích mô tả diện mạo', 1, 1, $data['visuals'], 'description', $byItem('visuals')),
+        ];
+        $flags = array_values(array_filter([
+            count($conflicts) > count($identityConflicts) ? self::SOURCE_CONFLICT : null,
+            $missing !== [] ? self::QUOTES_NOT_FOUND : null,
+            $subject['platform'] !== 'harley_davidson' ? self::NOT_HARLEY_SOURCE : null,
+        ]));
+        $result = self::verdict($criteria, self::VERSION_MOTO, MotoContract::EVIDENCE_FORMAT, $flags);
+        $blocking = self::blocking($structure, $issuePaths, $missing);
+
+        if ($blocking !== []) {
+            $result = ['verdict' => self::UNSCORED, 'flags' => $flags, 'error' => implode(' ', $blocking)] + $result;
+        }
+
+        return $result + [
+            'schema_errors' => [],
+            'structure' => $structure,
+            'issue_paths' => $issuePaths,
+            'evidence' => ['checked' => $checked, 'missing' => $missing],
+            'subject' => ['article_kind' => $subject['article_kind'], 'status' => $subject['status'], 'primary' => $subject['primary'], 'platform' => $subject['platform']],
+        ];
+    }
+
+    /**
+     * @param  array<string, list<string>>  $lines  the tagged article lines
+     * @param  int  $checked  counts every quote checked
+     * @param  list<string>  $missing  collects every quote not found on the line of its source tag
+     * @return \Closure(mixed, string): ?string the joined quotes that prove a value, or null when one of them is missing
+     */
+    private static function prover(array $lines, int &$checked, array &$missing): \Closure
+    {
+        return static function (mixed $evidence, string $path) use ($lines, &$checked, &$missing): ?string {
+            $quotes = [];
+
+            foreach (is_array($evidence) ? $evidence : [] as $index => $entry) {
+                $checked++;
+                $quote = self::normalize((string) ($entry['quote'] ?? ''));
+                $found = $quote !== '' && array_filter($lines[(string) ($entry['source'] ?? '')] ?? [], static fn (string $line): bool => str_contains($line, $quote)) !== [];
+
+                if (! $found) {
+                    $missing[] = "{$path}.evidence[{$index}]: ".(string) ($entry['quote'] ?? '');
+                }
+
+                $quotes[] = $found ? (string) $entry['quote'] : null;
+            }
+
+            return $quotes !== [] && ! in_array(null, $quotes, true) ? implode(' | ', $quotes) : null;
+        };
+    }
+
+    /**
+     * @param  list<string>  $structure
+     * @param  list<string>  $issuePaths
+     * @param  list<string>  $missing
+     * @return list<string> why an answer that scored cannot be used yet
+     */
+    private static function blocking(array $structure, array $issuePaths, array $missing): array
+    {
+        return array_values(array_filter([
+            $structure === [] ? null : 'Mục khai trùng hoặc trống — mỗi mục một ID và một nội dung: '.implode('; ', array_slice($structure, 0, 5)),
+            $issuePaths === [] ? null : 'Vấn đề nguồn trỏ tới trường không có trong câu trả lời — không xác định được mâu thuẫn thuộc trường nào: '.implode('; ', array_slice($issuePaths, 0, 5)),
+            $missing === [] ? null : count($missing).' trích dẫn không có nguyên văn trên dòng nguồn đã khai — giá trị đã khai mà không có bằng chứng thì kết quả chưa dùng tiếp được: '.implode('; ', array_slice($missing, 0, 5)),
+        ]));
     }
 
     /**

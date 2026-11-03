@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Video\Inspiration;
 
+use App\Video\Moto\MotoContract;
 use Opis\JsonSchema\Errors\ErrorFormatter;
 use Opis\JsonSchema\Uri;
 use Opis\JsonSchema\Validator;
@@ -57,9 +58,11 @@ final class PhaseOneEvidence
             return null;
         }
 
-        return self::format($answer) === self::FORMAT_V2
-            ? self::flatten($block, is_array($answer['subject'] ?? null) ? $answer['subject'] : [], is_array($answer['issues'] ?? null) ? $answer['issues'] : [])
-            : $block;
+        return match (self::format($answer)) {
+            self::FORMAT_V2 => self::flatten($block, is_array($answer['subject'] ?? null) ? $answer['subject'] : [], is_array($answer['issues'] ?? null) ? $answer['issues'] : []),
+            MotoContract::EVIDENCE_FORMAT => ['subject' => $answer['subject'] ?? null, ...$block, 'issues' => $answer['issues'] ?? []],
+            default => $block,
+        };
     }
 
     /**

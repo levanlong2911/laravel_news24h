@@ -9,6 +9,7 @@ use App\Video\Evidence\EvidenceIndex;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
 use App\Video\Llm\LlmResponse;
+use App\Video\Moto\MotoContract;
 
 final class ClaudeInspirationAnalyst
 {
@@ -39,7 +40,7 @@ final class ClaudeInspirationAnalyst
 
     public static function isPhaseOneRun(?VideoPlanningStage $stage): bool
     {
-        return is_array($stage?->input_json) && in_array($stage->input_json['execution'] ?? null, [self::EXECUTION, self::EXECUTION_V2], true);
+        return is_array($stage?->input_json) && in_array($stage->input_json['execution'] ?? null, [self::EXECUTION, self::EXECUTION_V2, MotoContract::EVIDENCE_EXECUTION], true);
     }
 
     public static function instructionVersion(AiPhase $prompt): string

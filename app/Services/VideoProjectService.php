@@ -52,6 +52,7 @@ use App\Video\Inspiration\InspirationResult;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Inspiration\SourceCheck;
 use App\Video\Llm\JsonAnswer;
+use App\Video\Moto\MotoContract;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceView;
@@ -453,7 +454,7 @@ class VideoProjectService
         };
         [$parsed, $parseError] = $phaseOne && $succeeded ? JsonAnswer::parse((string) ($stored['raw_text'] ?? '')) : [null, null];
         $answer = $phaseOne && $succeeded ? JsonAnswer::object((string) ($stored['raw_text'] ?? '')) : null;
-        $evidence = PhaseOneEvidence::format($answer) === PhaseOneEvidence::FORMAT_V2;
+        $evidence = in_array(PhaseOneEvidence::format($answer), [PhaseOneEvidence::FORMAT_V2, MotoContract::EVIDENCE_FORMAT], true);
         $pretty = static fn (mixed $value): string => (string) json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         return [
@@ -511,7 +512,7 @@ class VideoProjectService
             return 'Bài viết đã đổi so với lúc chạy lượt Phase 1 này.';
         }
 
-        if (($input['execution'] ?? null) === ClaudeInspirationAnalyst::EXECUTION_V2) {
+        if (in_array($input['execution'] ?? null, [ClaudeInspirationAnalyst::EXECUTION_V2, MotoContract::EVIDENCE_EXECUTION], true)) {
             try {
                 PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest(self::inspirationManifest($stage) ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'));
             } catch (\Throwable $e) {
@@ -5001,14 +5002,19 @@ class VideoProjectService
         $articleBlock ??= $this->inspirationArticle($project);
         $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject((string) $project->id, ClaudeInspirationAnalyst::ACTION);
 
+        $moto = MotoContract::is($workflow);
+
         if (! $bundle->ready()) {
-            throw new RuntimeException('Hợp đồng '.ClaudeInspirationAnalyst::ACTION.' chưa sẵn sàng: '.implode('; ', $bundle->mismatches()).' — phát hành gói phase-1-inspiration-v3 cho chủ đề này trước, không gọi model.');
+            throw new RuntimeException('Hợp đồng '.ClaudeInspirationAnalyst::ACTION.' chưa sẵn sàng: '.implode('; ', $bundle->mismatches()).' — phát hành gói '.($moto ? 'moto-phase-1-inspiration-v1' : 'phase-1-inspiration-v3').' cho chủ đề này trước, không gọi model.');
         }
 
         $manifest = $bundle->manifest();
         $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
+        $markers = $moto
+            ? [MotoContract::EVIDENCE_FORMAT, 'Input format: `'.MotoContract::ARTICLE_INPUT.'`']
+            : [PhaseOneEvidence::FORMAT_V2, 'Input format: `'.PhaseOneEvidence::INPUT_FORMAT.'`'];
 
-        foreach ([PhaseOneEvidence::FORMAT_V2, 'Input format: `'.PhaseOneEvidence::INPUT_FORMAT.'`'] as $marker) {
+        foreach ($markers as $marker) {
             if (! str_contains((string) $prompt->prompt_content, $marker)) {
                 throw new RuntimeException("Prompt phase-1 revision {$prompt->revision} không khai {$marker} mà code đang dùng — phát hành revision tương thích trước, không gọi model.");
             }
@@ -5020,7 +5026,7 @@ class VideoProjectService
         );
 
         return [$prompt, $articleBlock, [
-            'execution' => ClaudeInspirationAnalyst::EXECUTION_V2,
+            'execution' => $moto ? MotoContract::EVIDENCE_EXECUTION : ClaudeInspirationAnalyst::EXECUTION_V2,
             'article_id' => (string) $project->article->id,
             'category_id' => (string) $category->id,
             'workflow' => $workflow,
@@ -5063,8 +5069,13 @@ class VideoProjectService
     private static function sourceCheckOf(string $rawText, string $articleBlock, string $execution, ?array $manifest = null): array
     {
         $answer = JsonAnswer::object($rawText);
+        $contract = match ($execution) {
+            ClaudeInspirationAnalyst::EXECUTION_V2 => PhaseOneEvidence::FORMAT_V2,
+            MotoContract::EVIDENCE_EXECUTION => MotoContract::EVIDENCE_FORMAT,
+            default => null,
+        };
 
-        if ($execution !== ClaudeInspirationAnalyst::EXECUTION_V2) {
+        if ($contract === null) {
             return SourceCheck::evaluate($answer, $articleBlock, null, SourceCheck::FORMAT);
         }
 
@@ -5076,7 +5087,7 @@ class VideoProjectService
             $errors = ['không kiểm được JSON Schema đã ghim: '.$e->getMessage()];
         }
 
-        return SourceCheck::evaluate($answer, $articleBlock, $errors, PhaseOneEvidence::FORMAT_V2);
+        return SourceCheck::evaluate($answer, $articleBlock, $errors, $contract);
     }
 
     /** @return array{0: ?int, 1: string} [$shotCount, $reason] */
