@@ -94,6 +94,7 @@ final class AnthropicTransport
                 isset($error['type']) ? (string) $error['type'] : null,
                 isset($error['message']) ? (string) $error['message'] : null,
                 $response->header('request-id') ?: null,
+                retryAfterSeconds: self::retryAfter($response->header('retry-after')),
             );
 
             if ($attempt < $attempts && in_array($response->status(), self::RETRYABLE_STATUSES, true) && microtime(true) + $pause < $deadline) {
@@ -104,6 +105,24 @@ final class AnthropicTransport
 
             throw $last;
         }
+    }
+
+    /** @return ?int the seconds a Retry-After header asks for, given as seconds or as an HTTP date */
+    public static function retryAfter(string $header): ?int
+    {
+        $header = trim($header);
+
+        if ($header === '') {
+            return null;
+        }
+
+        if (ctype_digit($header)) {
+            return (int) $header;
+        }
+
+        $at = strtotime($header);
+
+        return $at === false ? null : max(0, $at - time());
     }
 
     public static function events(Response $response, float $deadline, ?int $idleSeconds): AnthropicEventStream

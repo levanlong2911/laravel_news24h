@@ -26,6 +26,7 @@ final class AnthropicTransportError extends RuntimeException
         public readonly ?string $providerMessage = null,
         public readonly ?string $requestId = null,
         ?\Throwable $previous = null,
+        public readonly ?int $retryAfterSeconds = null,
     ) {
         parent::__construct($message, 0, $previous);
     }

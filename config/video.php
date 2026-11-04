@@ -23,6 +23,37 @@ return [
         'log_retention_days' => env('VIDEO_RUNNER_LOG_RETENTION_DAYS', 21),
     ],
 
+    'async' => [
+        'enabled' => (bool) env('VIDEO_ASYNC_ENABLED', false),
+        'execution_margin_seconds' => (int) env('VIDEO_QUEUE_EXECUTION_MARGIN_SECONDS', 120),
+        'state_directory' => storage_path('framework/cache/video-queue'),
+        'supervisor' => [
+            'tick_seconds' => 1,
+            'ram_reserve_mb' => (int) env('VIDEO_QUEUE_RAM_RESERVE_MB', 1536),
+            'completion_reserve_mb' => (int) env('VIDEO_QUEUE_COMPLETION_RESERVE_MB', 600),
+            'spawn_per_tick' => (int) env('VIDEO_QUEUE_SPAWN_PER_TICK', 4),
+            'db_connections_per_worker' => 1,
+            'process_estimate_mb' => ['api' => 80, 'image' => (int) env('VIDEO_QUEUE_IMAGE_ESTIMATE_MB', 400), 'poll' => 60, 'download' => 120, 'ffmpeg' => 300],
+            'startup_seconds' => 10,
+            'cpu_reserve' => 1,
+            'max_processes' => (int) env('VIDEO_QUEUE_MAX_PROCESSES', 0),
+            'db_connection_ceiling' => 0.8,
+            'stop_wait_seconds' => 30,
+            'recovery_every_seconds' => 60,
+            'recovery_batch' => 50,
+            'pending_grace_seconds' => 600,
+            'heartbeat_stale_seconds' => 30,
+        ],
+        'rate_limit' => [
+            'default_retry_seconds' => 60,
+            'max_delay_seconds' => 600,
+            'max_wait_seconds' => 1800,
+            'cooldown_lock_seconds' => 5,
+            'client_retry' => true,
+            'client_wait_seconds' => (int) env('VIDEO_IMAGE_CLIENT_WAIT_SECONDS', 10),
+        ],
+    ],
+
     'openai_image' => [
         'disk' => env('VIDEO_IMAGE_DISK', 'video_artifacts'),
 

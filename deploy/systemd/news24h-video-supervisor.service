@@ -1,0 +1,19 @@
+[Unit]
+Description=news24h video AI queue supervisor
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nobody
+Group=nobody
+WorkingDirectory=/var/www/laravel_news24h
+ExecStart=/usr/bin/php artisan video:queue-supervisor
+Restart=always
+RestartSec=5
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

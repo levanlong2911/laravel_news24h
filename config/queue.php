@@ -43,7 +43,7 @@ return [
         ],
 
         // Video planning can legitimately spend many minutes in vendor retries.
-        // retry_after must remain greater than BuildVideoPlanJob::$timeout.
+        // retry_after must remain greater than the $timeout of every job in app/Jobs/Video.
         'video' => [
             'driver' => 'database',
             'connection' => env('DB_QUEUE_CONNECTION'),
