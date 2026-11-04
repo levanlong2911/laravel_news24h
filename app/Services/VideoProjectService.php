@@ -28,6 +28,8 @@ use App\Services\Video\DesignImageStore;
 use App\Services\Video\FinalCompositionReconciler;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\ProductionSelectionService;
+use App\Services\Video\QueuedStageService;
+use App\Services\Video\StageQueue;
 use App\Services\Video\ReferencePromptWriter;
 use App\Services\Video\ScreenplayApprovalService;
 use App\Services\Video\ScreenplayExpansionService;
@@ -81,7 +83,7 @@ use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 
-class VideoProjectService
+class VideoProjectService implements QueuedStageService
 {
     private const LOCKED_CAMERA = 'The camera stays exactly where the supplied frame was taken from: '
         .'same position, same lens, same framing, for the whole shot.';
@@ -293,106 +295,110 @@ class VideoProjectService
         return $this->videoProjectRepository->getById($id);
     }
 
-    /** @return array{0: ?array<string, mixed>, 1: string} */
-    public function runInspiration(string $projectId): array
+    /**
+     * @param  ?array{id: string, name: string}  $requester  who sent the run
+     * @return array{0: ?VideoPlanningStage, 1: string} reason queued when a worker runs it later
+     */
+    public function runInspiration(string $projectId, string $operationId, ?array $requester = null): array
     {
-        $project = $this->videoProjectRepository->getById($projectId);
+        return (new StageQueue($this->stageStore))->submit(
+            'inspiration',
+            $projectId,
+            PlanningStageName::INSPIRATION,
+            fn (): array => $this->inspirationPrepared($projectId),
+            static fn (VideoPlanningStage $done, array $run): bool => SourceCheck::answerUnusable(self::sourceCheckOf(
+                (string) ($done->output_json['raw_text'] ?? ''),
+                (string) $run['payload'],
+                (string) ($done->input_json['execution'] ?? ''),
+                self::inspirationManifest($done),
+            )),
+            $operationId,
+            $requester,
+            $this->inspirationPerform(),
+            'phân tích',
+            'inspiration phase-1',
+            null,
+            'Không lấy được prompt Phase 1 hoặc bài viết — chưa gọi Haiku: ',
+        );
+    }
 
-        if ($project === null) {
-            return [null, 'Khong tim thay du an'];
+    /** @return array{0: ?VideoPlanningStage, 1: string} what the queued Phase 1 run became when a worker took it */
+    public function execute(string $stageId, string $token): array
+    {
+        $projectId = VideoPlanningStage::query()->whereKey($stageId)->value('project_id');
+
+        if (! is_string($projectId)) {
+            return [null, 'Lượt phân tích không còn — bỏ qua.'];
         }
 
-        if ($project->article === null) {
-            return [null, 'Du an nay khong gan voi bai viet nao'];
-        }
+        return (new StageQueue($this->stageStore))->execute(
+            $stageId,
+            $token,
+            fn (): array => $this->inspirationPrepared($projectId),
+            $this->inspirationPerform(),
+            'phân tích',
+            'inspiration phase-1',
+            notCalled: 'Không lấy được prompt Phase 1 hoặc bài viết — chưa gọi Haiku: ',
+        );
+    }
 
-        try {
-            [$prompt, $articleBlock, $input, $system, $manifest] = $this->inspirationRun($project);
-        } catch (\Throwable $e) {
-            Log::error('inspiration phase-1: prompt or article unavailable, no model call made', [
-                'project_id' => $project->id,
-                'exception' => $e,
-            ]);
+    /** @return array{prompt: AiPhase, system: string, payload: string, prompt_version: string, settings: array<string, mixed>, input: array<string, mixed>, metadata: array<string, mixed>} */
+    private function inspirationPrepared(string $projectId): array
+    {
+        $project = $this->videoProjectRepository->getById($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
+        [$prompt, $articleBlock, $input, $system, $manifest] = $this->inspirationRun($project);
 
-            return [null, 'Không lấy được prompt Phase 1 hoặc bài viết — chưa gọi Haiku: '.$e->getMessage()];
-        }
+        return [
+            'prompt' => $prompt,
+            'system' => $system,
+            'payload' => $articleBlock,
+            'prompt_version' => ClaudeInspirationAnalyst::instructionVersion($prompt),
+            'settings' => $this->canonicalConceptInputBuilder->inspirationSettings() + ['timeout_seconds' => ClaudeInspirationAnalyst::TIMEOUT_SECONDS, 'attempts' => ClaudeInspirationAnalyst::MAX_ATTEMPTS],
+            'input' => $input,
+            'metadata' => ['manifest' => $manifest],
+        ];
+    }
 
-        try {
-            [$stage, $token, $reason] = $this->stageStore->claimProjectStage(
-                $project->id,
-                PlanningStageName::INSPIRATION,
-                $input,
-                static fn (VideoPlanningStage $done): bool => SourceCheck::answerUnusable(self::sourceCheckOf(
-                    (string) ($done->output_json['raw_text'] ?? ''),
-                    $articleBlock,
-                    (string) ($done->input_json['execution'] ?? ''),
-                    self::inspirationManifest($done),
-                )),
-                ['manifest' => $manifest],
-            );
-        } catch (\Throwable $e) {
-            Log::error('inspiration phase-1: could not open the run', [
-                'project_id' => $project->id,
-                'exception' => $e,
-            ]);
-
-            return [null, 'Khong mo duoc luot phan tich — xem log de biet nguyen nhan.'];
-        }
-
-        if ($token === null) {
-            return match ($reason) {
-                'already_succeeded' => [$stage->output_json, 'cached'],
-                'claimed_by_other' => [null, 'Đang có một lượt phân tích chạy cho dự án này — đợi xong rồi thử lại'],
-                default => [null, 'Khong tim thay du an'],
-            };
-        }
-
-        $result = null;
-
-        try {
+    /** @return \Closure(VideoPlanningStage, string, array<string, mixed>, ?\Closure(\Throwable): ?array): array{0: ?VideoPlanningStage, 1: string} */
+    private function inspirationPerform(): \Closure
+    {
+        return function (VideoPlanningStage $stage, string $token, array $run, ?\Closure $rateLimited): array {
             $stageId = (string) $stage->id;
-            $result = $this->canonicalConceptInputBuilder->buildInspiration($prompt, $articleBlock, fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state), $system);
+            $result = null;
 
-            if (trim($result->rawResponse) === '') {
+            try {
+                $result = $this->canonicalConceptInputBuilder->buildInspiration($run['prompt'], $run['payload'], fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state), $run['system']);
+
+                if (trim($result->rawResponse) === '') {
+                    return $this->failInspirationStage($stageId, $token, 'Haiku trả về phản hồi rỗng', $result->rawResponse, $result->usage);
+                }
+
+                $output = $this->inspirationOutput($run['input'], $result->rawResponse, $run['payload'], $run['metadata']['manifest']);
+
+                if (! $this->stageStore->finishSucceeded($stageId, $token, $result->rawResponse, $output, $result->usage)) {
+                    return $this->inspirationClaimLost((string) $stage->project_id, $run['input'], $stageId, $token, $result, $output);
+                }
+
+                return [VideoPlanningStage::query()->withoutSnapshot()->find($stageId), 'ok'];
+            } catch (\Throwable $e) {
+                $queued = $result === null && $rateLimited !== null ? $rateLimited($e) : null;
+
+                if ($queued !== null) {
+                    return $queued;
+                }
+
+                Log::error('inspiration phase-1: the run failed', ['stage_id' => $stageId, 'exception' => $e]);
+                $billed = $e instanceof \App\Video\Llm\LlmUnavailable ? $e->billed : null;
+
                 return $this->failInspirationStage(
-                    $stage->id,
+                    $stageId,
                     $token,
-                    'Haiku trả về phản hồi rỗng',
-                    $result->rawResponse,
-                    $result->usage,
+                    StageQueue::failure($e),
+                    $result?->rawResponse ?? $billed?->text ?? '',
+                    $result?->usage ?? ($billed === null ? [] : ClaudeInspirationAnalyst::usageOf($billed, (string) $run['prompt_version'])),
                 );
             }
-
-            $output = $this->inspirationOutput($input, $result->rawResponse, $articleBlock, $manifest);
-
-            if (! $this->stageStore->finishSucceeded(
-                $stage->id,
-                $token,
-                $result->rawResponse,
-                $output,
-                $result->usage,
-            )) {
-                return $this->inspirationClaimLost($project->id, $input, $stage->id, $token, $result, $output);
-            }
-
-            return [$output, 'ok'];
-        } catch (\Throwable $e) {
-            Log::error('inspiration phase-1: the run failed', [
-                'stage_id' => $stage->id,
-                'article_id' => $project->article->id,
-                'exception' => $e,
-            ]);
-
-            $billed = $e instanceof \App\Video\Llm\LlmUnavailable ? $e->billed : null;
-
-            return $this->failInspirationStage(
-                $stage->id,
-                $token,
-                $e->getMessage(),
-                $result?->rawResponse ?? $billed?->text ?? '',
-                $result?->usage ?? ($billed === null ? [] : ClaudeInspirationAnalyst::usageOf($billed, ClaudeInspirationAnalyst::instructionVersion($prompt))),
-            );
-        }
+        };
     }
 
     /** @return array<string, mixed> */
@@ -462,10 +468,13 @@ class VideoProjectService
             'analysed' => $succeeded,
             'status' => $latest->status,
             'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
+            'pending' => $latest->status === VideoPlanningStageStatus::PENDING->value,
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest->error_message,
             'stream' => PlanningStageStore::streamOf($latest),
+            'task' => PlanningStageStore::taskOf($latest),
             'can_run' => $runError === null && (! $matchesInput || $latest->status === VideoPlanningStageStatus::FAILED->value || ($sourceCurrent && SourceCheck::answerUnusable($sourceCheck))),
+            'operation_id' => (string) Str::uuid(),
             'prompt' => $next,
             'run_error' => $runError,
             'source' => $phaseOne ? $label((int) ($runInput['phase_revision'] ?? 0), (string) ($runInput['workflow'] ?? '')) : null,
@@ -610,20 +619,7 @@ class VideoProjectService
             return [false, 'Du an nay khong gan voi bai viet nao'];
         }
 
-        [$latest] = $this->stageStore->latestStageForProject(
-            $project->id,
-            PlanningStageName::INSPIRATION,
-            [],
-            skipOrphans: true,
-        );
-
-        if ($latest === null) {
-            return [false, 'Chua co luot phan tich nao'];
-        }
-
-        return $this->stageStore->releaseClaim($latest->id, 'Nguoi dung reset thu cong')
-            ? [true, 'ok']
-            : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
+        return $this->stageStore->resetLatest($project->id, PlanningStageName::INSPIRATION, 'Chua co luot phan tich nao');
     }
 
     /** @return list<array<string, mixed>> */
@@ -4955,10 +4951,13 @@ class VideoProjectService
             'analysed' => false,
             'status' => null,
             'running' => false,
+            'pending' => false,
             'stuck' => false,
             'error' => $reason,
             'stream' => null,
+            'task' => null,
             'can_run' => true,
+            'operation_id' => (string) Str::uuid(),
             'prompt' => null,
             'run_error' => null,
             'source' => null,

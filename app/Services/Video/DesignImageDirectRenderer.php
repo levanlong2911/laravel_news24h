@@ -12,6 +12,7 @@ use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Media\RenderPriceSnapshot;
 use App\Video\Media\SpecRouting;
 use App\Video\ModelSheet\ModelSheetMaster;
+use App\Video\Queue\ProviderRateLimit;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -51,8 +52,8 @@ class DesignImageDirectRenderer
 
     /**
      * @param  list<string>|null  $acceptStatuses
-     * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
-     *                                                reason: rendered|failed|not_enqueueable|image_not_found|<chan doan>
+     * @return array{0: ?VideoDesignImage, 1: string, 2: ?array{status: int, code: string, message: string, retry_after: ?int}} [$image, $reason, $refusal]
+     *                                                reason: rendered|failed|not_enqueueable|image_not_found|<chan doan>; refusal: what the provider answered when it refused the call
      */
     public function renderNow(string $imageId, ?array $acceptStatuses = null): array
     {
@@ -63,7 +64,7 @@ class DesignImageDirectRenderer
         );
 
         if ($claimToken === null) {
-            return [$image, $reason];
+            return [$image, $reason, null];
         }
 
         /*
@@ -134,10 +135,10 @@ class DesignImageDirectRenderer
         );
 
         if ($done === null) {
-            return [$image, $recordReason];
+            return [$image, $recordReason, null];
         }
 
-        return [$done, $done->status === DesignImageStatus::RENDERED->value ? 'rendered' : 'failed'];
+        return [$done, $done->status === DesignImageStatus::RENDERED->value ? 'rendered' : 'failed', is_array($result['refusal'] ?? null) ? $result['refusal'] : null];
     }
 
     /**
@@ -168,10 +169,7 @@ class DesignImageDirectRenderer
 
     private function budgetSeconds(): int
     {
-        return max(
-            (int) config('video.openai_image.timeout', 300),
-            (int) config('video.gemini.image_timeout', 300),
-        ) + 60;
+        return self::leaseSeconds();
     }
 
     /**
@@ -488,5 +486,14 @@ class DesignImageDirectRenderer
                 ],
             ]],
         ];
+    }
+
+    /** @return int how long a claimed cell is held: every call the client may send, the longest wait it keeps between them, and the time to store the result */
+    public static function leaseSeconds(): int
+    {
+        return ProviderRateLimit::IMAGE_ATTEMPTS * max(
+            (int) config('video.openai_image.timeout', 300),
+            (int) config('video.gemini.image_timeout', 300),
+        ) + (int) config('video.async.rate_limit.client_wait_seconds') + 60;
     }
 }

@@ -150,6 +150,7 @@ Route::group(
             Route::post('/{id}/design', [VideoProjectsController::class, 'vesselDesign'])->name('video-projects.vessel-design');
             Route::post('/{id}/design/reset', [VideoProjectsController::class, 'resetVesselDesign'])->name('video-projects.vessel-design-reset');
             Route::post('/{id}/model-sheet/qa', [VideoProjectsController::class, 'qaModelSheet'])->name('video-projects.model-sheet-qa');
+            Route::post('/{id}/model-sheet/qa/reset', [VideoProjectsController::class, 'resetModelSheetQa'])->name('video-projects.model-sheet-qa-reset');
             Route::post('/{id}/model-sheet/render',[VideoProjectsController::class, 'renderModelSheet'])->name('video-projects.model-sheet-render');
             Route::post('/{id}/model-sheet/approve', [VideoProjectsController::class, 'approveModelSheet'])->name('video-projects.model-sheet-approve');
             Route::post('/{id}/model-sheet/reject', [VideoProjectsController::class, 'rejectModelSheet'])->name('video-projects.model-sheet-reject');
@@ -163,6 +164,8 @@ Route::group(
             Route::get('/{id}/locations', [VideoProjectsController::class, 'locations'])->name('video-projects.locations');
             Route::post('/{id}/locations', [VideoProjectsController::class, 'writeLocations'])->name('video-projects.locations-write');
             Route::post('/{id}/locations/reset', [VideoProjectsController::class, 'resetLocations'])->name('video-projects.locations-reset');
+            Route::get('/{id}/planning-stages/{stage}/status', [VideoProjectsController::class, 'stageStatus'])->name('video-projects.stage-status');
+            Route::get('/{id}/tasks', [VideoProjectsController::class, 'tasks'])->name('video-projects.tasks');
             Route::post('/{id}/locations/render', [VideoProjectsController::class, 'renderLocationReference'])->name('video-projects.locations-render');
             Route::post('/{id}/locations/choose', [VideoProjectsController::class, 'chooseLocationReference'])->name('video-projects.locations-choose');
             // phase 6: scene và continuity

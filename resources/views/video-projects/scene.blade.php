@@ -551,6 +551,7 @@
 
 @section('script')
 <script src="{{ asset('assets/js/video-producer.js') }}?v={{ filemtime(public_path('assets/js/video-producer.js')) }}"></script>
+<script>vpTaskWatch({ root: 'scenesPage' });</script>
 @unless(isset($scenesPanel))
 <script src="{{ asset('assets/js/keyframe-preview-gate.js') }}?v={{ filemtime(public_path('assets/js/keyframe-preview-gate.js')) }}"></script>
 <script>

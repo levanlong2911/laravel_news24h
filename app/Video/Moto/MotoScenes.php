@@ -80,7 +80,7 @@ final class MotoScenes implements SceneWorkflow
         $designSource = (array) ($this->locations->source($text['stage'])['design'] ?? []);
         $design = MotoLocations::pinnedDesign($projectId, $designSource);
         $stage = VideoPlanningStage::query()->whereKey($script['stage_id'])->where('project_id', $projectId)->firstOrFail();
-        $pinned = json_decode((string) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['payload'] ?? ''), true);
+        $pinned = json_decode((string) app(PlanningStageStore::class)->payloadOf($stage), true);
 
         if (! is_array($pinned) || ! is_array($pinned['variables'] ?? null)) {
             throw new RuntimeException('Kịch bản đã duyệt không còn payload đã ghim — không chia được scene.');

@@ -75,7 +75,7 @@ final class MotoLocations implements LocationWorkflow
 
         $stage = VideoPlanningStage::query()->whereKey($script['stage_id'])->where('project_id', $projectId)->firstOrFail();
         $meta = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null);
-        $pinned = json_decode((string) ($meta['payload'] ?? ''), true);
+        $pinned = json_decode((string) app(PlanningStageStore::class)->payloadOf($stage), true);
         $source = (array) ($meta['source'] ?? []);
         $scriptContext = (array) ($meta['context'] ?? []);
 

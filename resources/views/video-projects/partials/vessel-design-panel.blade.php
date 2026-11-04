@@ -4,7 +4,7 @@
                 $yachtCheck = $yacht['check'];
                 $yachtKept = ($yacht['stage_id'] ?? null) !== null && ($modelSheet['sheet']['design_stage_id'] ?? null) === $yacht['stage_id'];
             @endphp
-            <div class="vp-panel">
+            <div class="vp-panel" id="designPanel" data-ajax-part>
                 <div class="va-head">
                     <span class="n">4</span>
                     <b>DESIGN</b>
@@ -16,6 +16,8 @@
                     @endif
                     @if($yacht['running'])
                         <button class="vp-btn sm" disabled>Đang thiết kế…</button>
+                    @elseif($yacht['pending'])
+                        @include('video-projects.partials.task-pending', ['reset' => route('video-projects.vessel-design-reset', $project->id)])
                     @elseif($yacht['stuck'])
                         <form method="POST" action="{{ route('video-projects.vessel-design-reset', $project->id) }}">
                             @csrf
@@ -26,6 +28,7 @@
                               id="yachtDesignForm" data-modal="confirmYachtDesign" onsubmit="return vpLockForm(this)">
                             @csrf
                             @if($yacht['can_regenerate'])<input type="hidden" name="force" value="1">@endif
+                            <input type="hidden" name="operation_id" value="{{ $yacht['operation_id'] }}">
                         </form>
                         <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmYachtDesign"
                                 data-busy="Đang thiết kế…">{{ $yachtKept ? 'Thiết kế mới (tuỳ chọn, tính phí)' : ($yacht['can_regenerate'] ? 'Thiết kế lại (tính phí)' : 'Creat design') }}</button>
@@ -47,6 +50,7 @@
                         @if($yacht['run_error'])
                             <div class="line"><span class="v" style="color:var(--vp-red)">{{ $yacht['run_error'] }}</span></div>
                         @endif
+                        @include('video-projects.partials.task-state', ['task' => $yacht['task'], 'projectId' => $project->id])
                         @if($yacht['error'])
                             <div class="line"><span class="v" style="color:var(--vp-red)">{{ $yacht['error'] }}</span></div>
                         @endif

@@ -77,7 +77,7 @@ final class MotoShots implements ShotWorkflow
         $projectId = (string) $project->id;
         $scenes = $this->scenes->approvedSource($projectId);
         $stage = VideoPlanningStage::query()->whereKey($scenes['stage_id'])->where('project_id', $projectId)->firstOrFail();
-        $sceneInput = json_decode((string) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['payload'] ?? ''), true);
+        $sceneInput = json_decode((string) app(PlanningStageStore::class)->payloadOf($stage), true);
         $source = $this->scenes->source($stage);
 
         if (! is_array($sceneInput) || ! is_array($sceneInput['design_states'] ?? null)) {

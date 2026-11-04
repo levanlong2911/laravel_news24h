@@ -57,6 +57,15 @@ class DesignImageQueue
             ]);
     }
 
+    /** @return bool whether a cell no worker holds was marked failed with the reason a queued render was not sent */
+    public function refuse(string $imageId, string $reason): bool
+    {
+        return VideoDesignImage::query()
+            ->whereKey($imageId)
+            ->whereIn('status', DesignImageStatus::enqueueableValues())
+            ->update(['status' => DesignImageStatus::FAILED->value, 'render_error' => $reason]) === 1;
+    }
+
     /**
      * Giu o TRUOC khi goi provider, ngay tren hang du lieu — dung giao thuc ma
      * `PlanningStageStore::claimProjectStage()` dung cho Haiku/Sonnet.

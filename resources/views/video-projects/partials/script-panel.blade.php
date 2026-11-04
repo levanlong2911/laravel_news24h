@@ -6,7 +6,7 @@
         $brief = $step['brief'];
     @endphp
 
-    <div class="vp-panel va-anchor" id="scriptPanel">
+    <div class="vp-panel va-anchor" id="scriptPanel" data-ajax-part>
         <div class="va-head">
             <span class="n">6</span>
             <b>KỊCH BẢN PHIM</b>
@@ -16,6 +16,8 @@
                 <a class="vp-btn sm" href="{{ route('video-projects.locations', $project->id) }}">Phase 5 — Địa điểm →</a>@endif
             @if($step['running'])
                 <button class="vp-btn sm" disabled>Đang viết…</button>
+            @elseif($step['pending'])
+                @include('video-projects.partials.task-pending', ['reset' => route('video-projects.script-reset', $project->id)])
             @elseif($step['stuck'])
                 <form method="POST" action="{{ route('video-projects.script-reset', $project->id) }}">
                     @csrf
@@ -55,6 +57,7 @@
                     <div class="line"><span class="k">Prompt</span><span class="v">{{ $step['prompt'] }} · {{ $step['model'] }}</span></div>
                     <div class="line"><span class="k">Lịch sử kênh</span><span class="v">Tắt — chưa có nguồn xác định kênh, không so với phim khác</span></div>
                 @endif
+                @include('video-projects.partials.task-state', ['task' => $step['task'], 'projectId' => $project->id])
                 @include('video-projects.partials.stream-state', ['stream' => $step['stream']])
                 @if($step['error'] !== null)
                     <div class="line"><span class="k">Lượt gần nhất lỗi</span><span class="v" style="color:var(--vp-red)">{{ $step['error'] }}</span></div>

@@ -17,7 +17,7 @@ use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-final class SceneWriterService
+final class SceneWriterService implements QueuedStageService
 {
     public function __construct(
         private readonly PlanningStageStore $stageStore,
@@ -26,9 +26,10 @@ final class SceneWriterService
     ) {}
 
     /** @return array{0: ?VideoPlanningStage, 1: string} */
-    public function run(string $projectId, bool $regenerate, string $operationId): array
+    public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null): array
     {
-        return (new SpecStageRunner($this->stageStore))->run(
+        return (new SpecStageRunner($this->stageStore))->submit(
+            'scenes',
             $projectId,
             PlanningStageName::SCENES,
             fn (): array => $this->prepare($projectId),
@@ -38,21 +39,34 @@ final class SceneWriterService
             fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
             'chia scene',
             'scenes',
+            $requester,
         );
     }
 
-    /** @return array{0: bool, 1: string} */
-    public function reset(string $projectId): array
+    /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
+    public function execute(string $stageId, string $token): array
     {
-        [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::SCENES, [], skipOrphans: true);
+        $projectId = VideoPlanningStage::query()->whereKey($stageId)->value('project_id');
 
-        if ($latest === null) {
-            return [false, 'Chưa có lượt chia scene nào.'];
+        if (! is_string($projectId)) {
+            return [null, 'Lượt chia scene không còn — bỏ qua.'];
         }
 
-        return $this->stageStore->releaseClaim((string) $latest->id, 'Người dùng reset thủ công')
-            ? [true, 'ok']
-            : [false, 'Lượt này không còn giữ claim — không có gì để reset.'];
+        return (new SpecStageRunner($this->stageStore))->execute(
+            $stageId,
+            $token,
+            fn (): array => $this->prepare($projectId),
+            $this->llm,
+            fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
+            'chia scene',
+            'scenes',
+        );
+    }
+
+    /** @return array{0: bool, 1: string} reason pending when a run still waiting in the queue was cancelled */
+    public function reset(string $projectId): array
+    {
+        return $this->stageStore->resetLatest($projectId, PlanningStageName::SCENES, 'Chưa có lượt chia scene nào.');
     }
 
     /**
@@ -71,7 +85,7 @@ final class SceneWriterService
             $runError = $e->getMessage();
         }
 
-        $stages = VideoPlanningStage::query()->where('project_id', $projectId)->where('stage', PlanningStageName::SCENES->value)
+        $stages = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::SCENES->value)
             ->whereNull('input_json->orphan_of_stage_id')->orderByDesc('planning_revision')->get();
         $latest = $stages->first();
         $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::SCENES, $run['input']);
@@ -111,6 +125,8 @@ final class SceneWriterService
             'timeout_minutes' => intdiv((int) $settings['timeout_seconds'], 60),
             'operation_id' => (string) Str::uuid(),
             'running' => $latest !== null && $latest->status === VideoPlanningStageStatus::RUNNING->value && $latest->lease_expires_at?->isFuture() === true,
+            'pending' => $latest !== null && $latest->status === VideoPlanningStageStatus::PENDING->value && $latest->claim_token !== null,
+            'task' => PlanningStageStore::taskOf($latest),
             'stuck' => $latest !== null && $latest->status === VideoPlanningStageStatus::RUNNING->value && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest !== null && $latest->status === VideoPlanningStageStatus::FAILED->value ? $latest->error_message : null,
             'stream' => PlanningStageStore::streamOf($latest),

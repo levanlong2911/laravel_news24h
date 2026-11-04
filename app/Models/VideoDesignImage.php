@@ -23,6 +23,7 @@ class VideoDesignImage extends Model
         'revision' => 'integer',
         'prompt_spec_json' => 'array',
         'metadata_json' => 'array',
+        'render_queue' => 'array',
         'approved_at' => 'datetime',
         'claimed_at' => 'datetime',
         'lease_expires_at' => 'datetime',

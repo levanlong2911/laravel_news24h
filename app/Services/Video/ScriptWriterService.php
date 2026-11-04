@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-final class ScriptWriterService
+final class ScriptWriterService implements QueuedStageService
 {
     public const BRIEF_KEY = 'script_brief';
 
@@ -32,15 +32,40 @@ final class ScriptWriterService
         private readonly LlmClient $llm,
     ) {}
 
-    /** @return array{0: ?VideoPlanningStage, 1: string} */
-    public function run(string $projectId, bool $regenerate, string $operationId): array
+    /**
+     * @param  ?array{id: string, name: string}  $requester  who sent the run
+     * @return array{0: ?VideoPlanningStage, 1: string} reason queued when a worker runs it later
+     */
+    public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null): array
     {
-        return (new SpecStageRunner($this->stageStore))->run(
+        return (new SpecStageRunner($this->stageStore))->submit(
+            'script',
             $projectId,
             PlanningStageName::SCRIPT,
             fn (): array => $this->prepare($projectId),
             $regenerate,
             $operationId,
+            $this->llm,
+            fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
+            'viết kịch bản',
+            'script',
+            $requester,
+        );
+    }
+
+    /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
+    public function execute(string $stageId, string $token): array
+    {
+        $projectId = VideoPlanningStage::query()->whereKey($stageId)->value('project_id');
+
+        if (! is_string($projectId)) {
+            return [null, 'Lượt viết kịch bản không còn — bỏ qua.'];
+        }
+
+        return (new SpecStageRunner($this->stageStore))->execute(
+            $stageId,
+            $token,
+            fn (): array => $this->prepare($projectId),
             $this->llm,
             fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
             'viết kịch bản',
@@ -193,7 +218,7 @@ final class ScriptWriterService
     /** @return array<string, string> the names of the rooms, zones, parts, systems, features and moments the stage's payload holds */
     private static function places(VideoPlanningStage $stage): array
     {
-        $payload = json_decode((string) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['payload'] ?? ''), true);
+        $payload = json_decode((string) app(PlanningStageStore::class)->payloadOf($stage), true);
         $lists = [
             (array) ($payload['yacht_bible']['rooms'] ?? []),
             (array) ($payload['yacht_bible']['exterior_zones'] ?? []),
@@ -313,15 +338,7 @@ final class ScriptWriterService
     /** @return array{0: bool, 1: string} */
     public function reset(string $projectId): array
     {
-        [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::SCRIPT, [], skipOrphans: true);
-
-        if ($latest === null) {
-            return [false, 'Chưa có lượt viết kịch bản nào.'];
-        }
-
-        return $this->stageStore->releaseClaim((string) $latest->id, 'Người dùng reset thủ công')
-            ? [true, 'ok']
-            : [false, 'Lượt này không còn giữ claim — không có gì để reset.'];
+        return $this->stageStore->resetLatest($projectId, PlanningStageName::SCRIPT, 'Chưa có lượt viết kịch bản nào.');
     }
 
     /** @return array<string, mixed> */
@@ -346,7 +363,7 @@ final class ScriptWriterService
             }
         }
 
-        $stages = VideoPlanningStage::query()->where('project_id', $projectId)->where('stage', PlanningStageName::SCRIPT->value)
+        $stages = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::SCRIPT->value)
             ->whereNull('input_json->orphan_of_stage_id')->orderByDesc('planning_revision')->get();
         $latest = $stages->first();
         $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::SCRIPT, $run['input']);
@@ -394,6 +411,8 @@ final class ScriptWriterService
             'brief_form' => $briefForm,
             'operation_id' => (string) Str::uuid(),
             'running' => $latest !== null && $latest->status === VideoPlanningStageStatus::RUNNING->value && $latest->lease_expires_at?->isFuture() === true,
+            'pending' => $latest !== null && $latest->status === VideoPlanningStageStatus::PENDING->value && $latest->claim_token !== null,
+            'task' => PlanningStageStore::taskOf($latest),
             'stuck' => $latest !== null && $latest->status === VideoPlanningStageStatus::RUNNING->value && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest !== null && $latest->status === VideoPlanningStageStatus::FAILED->value ? $latest->error_message : null,
             'stream' => PlanningStageStore::streamOf($latest),

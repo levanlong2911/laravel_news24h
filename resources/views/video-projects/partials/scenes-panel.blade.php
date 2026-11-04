@@ -42,7 +42,7 @@
         @endif
     </div>
 
-    <div class="vp-panel" id="scenesText">
+    <div class="vp-panel" id="scenesText" data-ajax-part>
         <div class="va-head">
             <span class="n">1</span>
             <b>SCENE VÀ CONTINUITY</b>
@@ -50,6 +50,8 @@
             <span class="grow"></span>
             @if($step['running'])
                 <button class="vp-btn sm" disabled>Đang chia…</button>
+            @elseif($step['pending'])
+                @include('video-projects.partials.task-pending', ['reset' => route('video-projects.scenes-reset', $id)])
             @elseif($step['stuck'])
                 <form method="POST" action="{{ route('video-projects.scenes-reset', $id) }}">
                     @csrf
@@ -79,6 +81,7 @@
                 @if($step['run_error'] !== null)
                     <div class="line"><span class="k">Chưa tạo được</span><span class="v" style="color:var(--vp-red)">{{ $step['run_error'] }}</span></div>
                 @endif
+                @include('video-projects.partials.task-state', ['task' => $step['task'], 'projectId' => $id])
                 @include('video-projects.partials.stream-state', ['stream' => $step['stream']])
                 @if($step['error'] !== null)
                     <div class="line"><span class="k">Lượt gần nhất lỗi</span><span class="v" style="color:var(--vp-red)">{{ $step['error'] }}</span></div>
@@ -322,7 +325,7 @@
         </div>
     @endif
     @if($shots !== null)
-        <div class="vp-panel" id="shotsText">
+        <div class="vp-panel" id="shotsText" data-ajax-part>
             <div class="va-head">
                 <span class="n">2</span>
                 <b>KẾ HOẠCH SHOT</b>
@@ -330,6 +333,8 @@
                 <span class="grow"></span>
                 @if($shots['running'])
                     <button class="vp-btn sm" disabled>Đang lập…</button>
+                @elseif($shots['pending'])
+                    @include('video-projects.partials.task-pending', ['reset' => route('video-projects.shots-reset', $id)])
                 @elseif($shots['stuck'])
                     <form method="POST" action="{{ route('video-projects.shots-reset', $id) }}">
                         @csrf
@@ -359,6 +364,7 @@
                     @if($shots['run_error'] !== null)
                         <div class="line"><span class="k">Chưa tạo được</span><span class="v" style="color:var(--vp-red)">{{ $shots['run_error'] }}</span></div>
                     @endif
+                    @include('video-projects.partials.task-state', ['task' => $shots['task'], 'projectId' => $id])
                     @include('video-projects.partials.stream-state', ['stream' => $shots['stream']])
                     @if($shots['error'] !== null)
                         <div class="line"><span class="k">Lượt gần nhất lỗi</span><span class="v" style="color:var(--vp-red)">{{ $shots['error'] }}</span></div>

@@ -22,6 +22,7 @@ use App\Video\ModelSheet\ModelSheetFacts;
 use App\Video\ModelSheet\ModelSheetMaster;
 use App\Video\ModelSheet\ModelSheetQaSchema;
 use App\Video\Moto\MotoContract;
+use App\Video\Queue\VideoQueues;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -39,7 +40,7 @@ use Throwable;
  * luoi 2 hang x 4 cot MS1-MS8; may chu cat tam o 960x1080 theo toa do co dinh. Nguoi duyet
  * duyet hoac tu choi ca master; mot o sai la ca luot chua dat.
  */
-final class ModelSheetService
+final class ModelSheetService implements QueuedImageService, QueuedStageService
 {
     public const MASTER_OPERATION = 'model_sheet_master';
 
@@ -104,9 +105,10 @@ final class ModelSheetService
      * cung ma luot thi tra luot da co, khong mua them.
      *
      * @param  array{model: string, quality: string, attempt: string, qa_stage_id: string, prompt_sha256: string}  $choice
-     * @return array{0: ?VideoDesignImage, 1: string}
+     * @param  ?array{id: string, name: string}  $requester  who sent the render; a queued render waits on that person's image queue
+     * @return array{0: ?VideoDesignImage, 1: string} reason queued when a worker sends it later
      */
-    public function render(string $projectId, string $creator, array $choice): array
+    public function render(string $projectId, string $creator, array $choice, ?array $requester = null): array
     {
         try {
             [$set, $error] = $this->activeSet($projectId);
@@ -150,50 +152,111 @@ final class ModelSheetService
             return [null, $e->getMessage()];
         }
 
-        [$image, $reason] = $this->images->createModelSheetMaster($projectId, $creator, $spec);
+        $create = function () use ($projectId, $creator, $spec): array {
+            [$image, $reason] = $this->images->createModelSheetMaster($projectId, $creator, $spec);
 
-        if ($image === null) {
-            return [null, 'Không tạo được ô ảnh ('.$reason.').'];
+            return $image === null ? [null, 'Không tạo được ô ảnh ('.$reason.').'] : [$image, $reason];
+        };
+
+        if (VideoQueues::enabled()) {
+            return app(ImageRenderQueue::class)->createQueued(
+                'model_sheet',
+                $create,
+                static fn (VideoDesignImage $image, string $reason): ?array => $reason === 'already_exists' && $image->status !== DesignImageStatus::CANDIDATE->value ? [$image, 'already_exists'] : null,
+                $requester,
+            );
         }
 
-        if ($reason === 'already_exists') {
-            return [$image, 'already_exists'];
+        [$image, $reason] = $create();
+
+        if ($image === null || $reason === 'already_exists') {
+            return [$image, $reason];
         }
 
-        [$image, $reason] = $this->renderer->renderNow((string) $image->id);
+        return array_slice($this->send($set, (string) $image->id), 0, 2);
+    }
+
+    /** @return ?string why a queued master may no longer be sent: its set is no longer the one the project renders */
+    public function checkQueued(VideoDesignImage $image): ?string
+    {
+        [$set, $error] = $this->activeSet((string) $image->project_id);
+
+        return match (true) {
+            $set === null => (string) $error,
+            (((array) $image->prompt_spec_json)['model_sheet_set_id'] ?? null) !== (string) $set->id => 'Bộ model sheet đã đổi sau khi xếp hàng — không gửi render; bấm Render lại nếu cần.',
+            default => null,
+        };
+    }
+
+    /** @return array{0: ?VideoDesignImage, 1: string, 2: ?array<string, mixed>} the master rendered and cut into its eight cells */
+    public function sendQueued(VideoDesignImage $image): array
+    {
+        [$set, $error] = $this->activeSet((string) $image->project_id);
+
+        return $set === null ? [null, (string) $error, null] : $this->send($set, (string) $image->id);
+    }
+
+    /** @return array{0: ?VideoDesignImage, 1: string, 2: ?array<string, mixed>} the master rendered and cut into its eight cells, with what the provider answered when it refused the call */
+    private function send(VideoPlanningStage $set, string $imageId): array
+    {
+        [$image, $reason, $refusal] = $this->renderer->renderNow($imageId);
 
         if ($reason !== 'rendered' || $image === null) {
-            return [$image, $reason];
+            return [$image, $reason, $refusal];
         }
 
         [$processed, $message] = $this->processArtifact($set, $image, $image->artifacts()->orderBy('created_at')->orderBy('id')->first());
 
-        return [$image, $processed ? 'rendered' : 'processing_failed|'.$message];
+        return [$image, $processed ? 'rendered' : 'processing_failed|'.$message, null];
     }
 
     /**
      * Bam "QA & hoan thien prompt": mot luot Sonnet cho bo model sheet hien hanh. Ket qua dat
      * thi dung lai; `$retry` chi chay lai khi luot da luu chua dat kiem.
      *
+     * @param  ?array{id: string, name: string}  $requester  who sent the run
      * @return array{0: ?VideoPlanningStage, 1: string}
      */
-    public function qa(string $projectId, bool $retry): array
+    public function qa(string $projectId, bool $retry, string $operationId, ?array $requester = null): array
+    {
+        try {
+            $set = $this->qaSet($projectId);
+        } catch (RuntimeException $e) {
+            return [null, $e->getMessage()];
+        }
+
+        return $this->qa->run($projectId, $set, $retry, $operationId, $requester);
+    }
+
+    /** @return array{0: ?VideoPlanningStage, 1: string} what the queued QA run became when a worker took it; it runs only for the set the project would send now */
+    public function execute(string $stageId, string $token): array
+    {
+        $projectId = VideoPlanningStage::query()->whereKey($stageId)->value('project_id');
+
+        if (! is_string($projectId)) {
+            return [null, 'Lượt QA model sheet không còn — bỏ qua.'];
+        }
+
+        return $this->qa->execute($stageId, $token, fn (): VideoPlanningStage => $this->qaSet($projectId));
+    }
+
+    private function qaSet(string $projectId): VideoPlanningStage
     {
         [$set, $error] = $this->activeSet($projectId);
 
         if ($set === null) {
-            return [null, (string) $error];
+            throw new RuntimeException((string) $error);
         }
 
         if (MotoContract::is($set->input_json['workflow'] ?? null)) {
-            return [null, 'Model sheet của xe dùng prompt viết trong bản thiết kế đã kiểm — không có bước QA.'];
+            throw new RuntimeException('Model sheet của xe dùng prompt viết trong bản thiết kế đã kiểm — không có bước QA.');
         }
 
         if (($problem = $this->compatibilityError((array) $set->output_json)) !== null) {
-            return [null, $problem];
+            throw new RuntimeException($problem);
         }
 
-        return $this->qa->run($projectId, $set, $retry);
+        return $set;
     }
 
     /**
@@ -424,9 +487,12 @@ final class ModelSheetService
         }
 
         $snapshot = (array) $set->output_json;
+        $cells = $this->images->modelSheetMastersFor($projectId, (string) $set->id);
+        $rows = VideoDesignImage::query()->whereIn('id', array_column($cells, 'id'))->get(['id', 'status', 'claimed_at', 'render_queue'])->keyBy('id');
         $masters = array_map(fn (array $cell): array => $cell + [
             'problems' => $this->cellProblems($cell),
-        ], $this->images->modelSheetMastersFor($projectId, (string) $set->id));
+            'task' => isset($rows[$cell['id']]) ? ImageRenderQueue::taskOf($rows[$cell['id']]) : null,
+        ], $cells);
         $approvedCell = array_values(array_filter($masters, static fn (array $cell): bool => $cell['status'] === DesignImageStatus::APPROVED->value))[0] ?? null;
         $approved = null;
         $reviewed = false;
@@ -485,6 +551,8 @@ final class ModelSheetService
             'ready' => true,
             'error' => null,
             'stream' => null,
+            'task' => null,
+            'operation_id' => null,
             'prompt' => (string) ($snapshot['final_prompt'] ?? ''),
             'prompt_sha256' => (string) ($snapshot['prompt_sha256'] ?? ''),
             'errors' => [],
@@ -511,6 +579,7 @@ final class ModelSheetService
         $output = (array) ($stage?->output_json ?? []);
         $status = $stage?->status;
         $running = $status === VideoPlanningStageStatus::RUNNING->value && $stage->lease_expires_at?->isFuture();
+        $pending = $status === VideoPlanningStageStatus::PENDING->value;
         $ready = ModelSheetQaService::ready($stage);
         $config = (array) config('video.superyacht.model_sheet.qa');
 
@@ -520,6 +589,8 @@ final class ModelSheetService
             'ready' => $ready,
             'error' => $status === VideoPlanningStageStatus::FAILED->value ? (string) $stage->error_message : null,
             'stream' => PlanningStageStore::streamOf($stage),
+            'task' => $stage === null ? null : PlanningStageStore::taskOf($stage),
+            'operation_id' => (string) Str::uuid(),
             'prompt' => $ready ? (string) $output['final_prompt'] : null,
             'prompt_sha256' => $ready ? (string) $output['prompt_sha256'] : null,
             'errors' => array_values(array_map('strval', (array) ($output['errors'] ?? []))),
@@ -528,7 +599,7 @@ final class ModelSheetService
             'cost_usd' => $stage === null ? null : (float) $stage->cost_usd,
             'tokens' => $stage === null ? null : ['in' => (int) $stage->tokens_in, 'out' => (int) $stage->tokens_out],
             'model' => (string) $config['model'],
-            'can_run' => ! $running && ($snapshot['blocking'] ?? []) === [] && $this->compatibilityError($snapshot) === null && ! $ready,
+            'can_run' => ! $running && ! $pending && ($snapshot['blocking'] ?? []) === [] && $this->compatibilityError($snapshot) === null && ! $ready,
             'retry' => $stage !== null && $status === VideoPlanningStageStatus::SUCCEEDED->value && ! $ready,
             'estimate' => '≈ $'.number_format(((float) $config['pricing']['input_usd_per_mtok'] * (int) $config['estimate_tokens']['input'] + (float) $config['pricing']['output_usd_per_mtok'] * (int) $config['estimate_tokens']['output']) / 1000000, 2)
                 .', tối đa ≈ $'.number_format(((float) $config['pricing']['input_usd_per_mtok'] * (int) $config['estimate_tokens']['input'] + (float) $config['pricing']['output_usd_per_mtok'] * (int) $config['max_tokens']) / 1000000, 2),

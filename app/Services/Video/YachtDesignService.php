@@ -11,12 +11,9 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\VideoProjectService;
-use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Llm\LlmClient;
-use App\Video\Llm\LlmRequest;
-use App\Video\Llm\LlmUnavailable;
 use App\Video\ModelSheet\ModelSheetMaster;
 use App\Video\Moto\MotoContract;
 use App\Video\Superyacht\Spec\PhaseResolver;
@@ -24,10 +21,10 @@ use App\Video\YachtDesign\DesignProse;
 use App\Video\YachtDesign\DesignWorkflow;
 use App\Video\YachtDesign\SuperyachtDesign;
 use App\Video\YachtDesign\YachtDesignCheck;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 
-final class YachtDesignService
+final class YachtDesignService implements QueuedStageService
 {
     public const EXECUTION = 'db-phase-3-v2';
 
@@ -43,89 +40,61 @@ final class YachtDesignService
         private readonly LlmClient $writer,
     ) {}
 
-    /** @return array{0: ?array<string, mixed>, 1: string} */
-    public function run(string $projectId, bool $regenerate = false): array
+    /**
+     * @param  ?array{id: string, name: string}  $requester  who sent the run
+     * @return array{0: ?VideoPlanningStage, 1: string} reason queued when a worker runs it later
+     */
+    public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null): array
+    {
+        return (new StageQueue($this->stageStore))->submit(
+            'design',
+            $projectId,
+            PlanningStageName::YACHT_DESIGN,
+            fn (): array => $this->prepare($this->project($projectId)),
+            fn (VideoPlanningStage $served, array $run): bool => $regenerate && $this->replaceable($served, $run),
+            $operationId,
+            $requester,
+            $this->perform(),
+            'thiết kế',
+            'yacht design',
+            fn (?VideoPlanningStage $stage, string $reason, array $run): ?array => $reason === 'already_succeeded' && $stage !== null && $this->replaceable($stage, $run)
+                ? [null, 'Bản thiết kế đã lưu cho đúng DNA và prompt này chưa đạt kiểm RULE hoặc còn cảnh báo — bấm "Thiết kế lại" nếu muốn tạo bản mới. Không gọi model.']
+                : null,
+            'Chưa gọi model thiết kế: ',
+        );
+    }
+
+    /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
+    public function execute(string $stageId, string $token): array
+    {
+        $projectId = VideoPlanningStage::query()->whereKey($stageId)->value('project_id');
+
+        if (! is_string($projectId)) {
+            return [null, 'Lượt thiết kế không còn — bỏ qua.'];
+        }
+
+        return (new StageQueue($this->stageStore))->execute(
+            $stageId,
+            $token,
+            fn (): array => $this->prepare($this->project($projectId)),
+            $this->perform(),
+            'thiết kế',
+            'yacht design',
+            notCalled: 'Chưa gọi model thiết kế: ',
+        );
+    }
+
+    /** @return \Closure(VideoPlanningStage, string, array<string, mixed>, ?\Closure(\Throwable): ?array): array{0: ?VideoPlanningStage, 1: string} */
+    private function perform(): \Closure
+    {
+        return (new StageQueue($this->stageStore))->singleCall($this->writer, PlanningStageName::YACHT_DESIGN, fn (array $run, string $raw): array => $this->output($run, $raw), 'thiết kế', 'yacht design');
+    }
+
+    private function project(string $projectId): VideoProject
     {
         $project = $this->projects->getById($projectId);
 
-        if ($project === null || $project->article === null) {
-            return [null, 'Không tìm thấy dự án hoặc dự án không gắn bài viết.'];
-        }
-
-        try {
-            $run = $this->prepare($project);
-        } catch (\Throwable $e) {
-            Log::error('yacht design: prompt or input unavailable, no model call made', ['project_id' => $projectId, 'exception' => $e]);
-
-            return [null, 'Chưa gọi model thiết kế: '.$e->getMessage()];
-        }
-
-        $replaceFailing = fn (VideoPlanningStage $served): bool => $regenerate && $this->replaceable($served, $run);
-        [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::YACHT_DESIGN, $run['input'], $replaceFailing, [
-            'manifest' => $run['manifest'],
-        ]);
-
-        if ($token === null) {
-            return match (true) {
-                $reason === 'already_succeeded' && $this->replaceable($stage, $run) => [null, 'Bản thiết kế đã lưu cho đúng DNA và prompt này chưa đạt kiểm RULE hoặc còn cảnh báo — bấm "Thiết kế lại" nếu muốn tạo bản mới. Không gọi model.'],
-                $reason === 'already_succeeded' => [$stage->output_json, 'cached'],
-                $reason === 'claimed_by_other' => [null, 'Đang có một lượt thiết kế chạy cho dự án này — đợi xong rồi thử lại.'],
-                default => [null, 'Không tìm thấy dự án.'],
-            };
-        }
-
-        $model = (string) $run['input']['model'];
-        $version = self::instructionVersion($run['prompt']);
-        $stageId = (string) $stage->id;
-
-        try {
-            $response = $this->writer->complete(new LlmRequest(
-                $run['system'],
-                $run['payload'],
-                $version,
-                $model,
-                (int) $run['input']['max_tokens'],
-                null,
-                (string) $run['input']['effort'],
-                (int) $run['input']['timeout_seconds'],
-                1,
-                fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
-            ));
-            $usage = ClaudeInspirationAnalyst::usageOf($response, $version);
-
-            try {
-                $output = $this->output($run, $response->text);
-            } catch (\Throwable $e) {
-                Log::error('yacht design: the check threw on a received answer', ['stage_id' => $stageId, 'exception' => $e]);
-                $this->stageStore->finishFailed($stageId, $token, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận: '.$e->getMessage(), $usage, $response->text);
-
-                return [null, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận — phản hồi và usage đã được lưu: '.$e->getMessage()];
-            }
-
-            if (! $this->stageStore->finishSucceeded($stageId, $token, $response->text, $output, $usage)) {
-                try {
-                    $this->stageStore->recordOrphanAttempt($projectId, PlanningStageName::YACHT_DESIGN, $run['input'], [], $stageId, $token, 'claim_lost', $usage, $response->text, $output);
-                } catch (\Throwable $e) {
-                    Log::warning('yacht design: recordOrphanAttempt threw', ['stage_id' => $stageId, 'exception' => $e]);
-                }
-
-                return [null, 'Lượt thiết kế bị giành mất khi lưu — kết quả đã trả tiền không được dùng. Tải lại trang rồi bấm lại nếu cần.'];
-            }
-
-            return [$output, 'ok'];
-        } catch (\Throwable $e) {
-            Log::error('yacht design: the run failed', ['stage_id' => $stageId, 'exception' => $e]);
-            $billed = $e instanceof LlmUnavailable ? $e->billed : null;
-            $this->stageStore->finishFailed(
-                $stageId,
-                $token,
-                $e->getMessage(),
-                $billed === null ? ['model' => $model, 'instruction_version' => $version] : ClaudeInspirationAnalyst::usageOf($billed, $version),
-                $billed?->text ?? '',
-            );
-
-            return [null, $e->getMessage()];
-        }
+        return $project !== null && $project->article !== null ? $project : throw new RuntimeException('Không tìm thấy dự án hoặc dự án không gắn bài viết.');
     }
 
     /** @return array<string, mixed> */
@@ -147,7 +116,7 @@ final class YachtDesignService
 
         [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::YACHT_DESIGN, $run['input'] ?? [], skipOrphans: true);
         $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::YACHT_DESIGN, $run['input']);
-        $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'stuck' => false, 'error' => null,
+        $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'pending' => false, 'stuck' => false, 'error' => null, 'task' => null,
             'current' => false, 'dna_stale' => false, 'check' => null, 'name' => null, 'loa' => null, 'yacht_anchor' => null, 'prose' => null, 'json_error' => null];
         $base = [
             'moto' => MotoContract::is((string) (config('video.superyacht.contracts.categories')[$project?->article?->category?->slug ?? ''] ?? '')),
@@ -155,6 +124,7 @@ final class YachtDesignService
             'can_regenerate' => $run !== null && $served !== null && $this->replaceable($served, $run),
             'prompt' => $run === null ? null : self::label((int) $run['prompt']->revision),
             'run_error' => $runError,
+            'operation_id' => (string) Str::uuid(),
         ];
 
         if ($latest === null) {
@@ -188,8 +158,10 @@ final class YachtDesignService
             'analysed' => $succeeded,
             'status' => $latest->status,
             'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
+            'pending' => $latest->status === VideoPlanningStageStatus::PENDING->value,
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest->status === VideoPlanningStageStatus::FAILED->value ? $latest->error_message : null,
+            'task' => PlanningStageStore::taskOf($latest),
             'current' => $current,
             // Chi DNA nguon doi moi lam ban thiet ke cu; prompt Phase 3 doi revision thi khong.
             'dna_stale' => $succeeded && $run !== null && ($shown->input_json['dna_stage_id'] ?? null) !== $run['input']['dna_stage_id'],
@@ -202,18 +174,10 @@ final class YachtDesignService
         ];
     }
 
-    /** @return array{0: bool, 1: string} */
+    /** @return array{0: bool, 1: string} reason pending when a queued run was cancelled */
     public function reset(string $projectId): array
     {
-        [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::YACHT_DESIGN, [], skipOrphans: true);
-
-        if ($latest === null) {
-            return [false, 'Chưa có lượt thiết kế nào.'];
-        }
-
-        return $this->stageStore->releaseClaim((string) $latest->id, 'Người dùng reset thủ công')
-            ? [true, 'ok']
-            : [false, 'Lượt này không còn giữ claim — không có gì để reset.'];
+        return $this->stageStore->resetLatest($projectId, PlanningStageName::YACHT_DESIGN, 'Chưa có lượt thiết kế nào.');
     }
 
     public static function instructionVersion(AiPhase $prompt): string
@@ -221,7 +185,7 @@ final class YachtDesignService
         return "spec-v6.3-phase-3@rev{$prompt->revision}";
     }
 
-    /** @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string, model_sheet?: array<string, mixed>, adapter?: DesignWorkflow} */
+    /** @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, prompt_version: string, settings: array<string, mixed>, input: array<string, mixed>, metadata: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string, model_sheet?: array<string, mixed>, adapter?: DesignWorkflow} */
     private function prepare(VideoProject $project): array
     {
         $dnaPanel = $this->dna->panel((string) $project->id);
@@ -269,12 +233,16 @@ final class YachtDesignService
             static fn (array $schema): string => "## {$heading} — {$schema['label']}\n\n```json\n".$adapter->schemaText((string) $schema['content'])."\n```",
             $bundle->outputSchemas(),
         );
+        $settings = array_replace(self::settings(), array_intersect_key($adapter->runSettings(), self::settings()));
 
         return [
             'prompt' => $prompt,
             'system' => implode("\n\n", [...array_column($bundle->parts(), 'content'), ...$schemas]),
             'manifest' => $manifest,
             'payload' => $payload,
+            'prompt_version' => self::instructionVersion($prompt),
+            'settings' => $settings,
+            'metadata' => ['manifest' => $manifest],
             'dna' => $dna,
             'source_identity' => $identity,
             'project_id' => (string) $project->id,
@@ -291,7 +259,7 @@ final class YachtDesignService
                 'prompt_sha256' => (string) $prompt->content_sha256,
                 'dna_stage_id' => (string) $dnaStage->id,
                 'payload_sha256' => hash('sha256', $payload),
-            ] + ($adapter->checkVersion() === null ? [] : ['check_version' => $adapter->checkVersion()]) + array_replace(self::settings(), array_intersect_key($adapter->runSettings(), self::settings())),
+            ] + ($adapter->checkVersion() === null ? [] : ['check_version' => $adapter->checkVersion()]) + $settings,
         ];
     }
 

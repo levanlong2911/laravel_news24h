@@ -2,7 +2,7 @@
         $sheet = $modelSheet;
     @endphp
 
-    <div class="vp-panel va-anchor" id="modelSheetPanel">
+    <div class="vp-panel va-anchor" id="modelSheetPanel" data-ajax-part>
         <div class="va-head">
             <span class="n">5</span>
             <b>MODEL SHEET</b>
@@ -88,6 +88,8 @@
                             <div class="va-foot">
                                 @if($qa['status'] === 'running')
                                     <span class="va-tag amber">Đang QA…</span>
+                                @elseif($qa['status'] === 'pending')
+                                    @include('video-projects.partials.task-pending', ['reset' => route('video-projects.model-sheet-qa-reset', $project->id)])
                                 @elseif($qa['ready'])
                                     <span class="va-tag ok">{{ $sheet['set']['prompt_source'] === 'design' ? 'Prompt của bản thiết kế đạt kiểm' : 'QA đạt kiểm' }}</span>
                                 @elseif($qa['status'] === 'none')
@@ -103,6 +105,7 @@
                                           id="modelSheetQaForm" data-modal="confirmModelSheetQa" onsubmit="return vpLockForm(this)">
                                         @csrf
                                         @if($qa['retry'])<input type="hidden" name="retry" value="1">@endif
+                                        <input type="hidden" name="operation_id" value="{{ $qa['operation_id'] }}">
                                     </form>
                                     <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmModelSheetQa"
                                             data-busy="Đang QA…">{{ $qa['retry'] || $qa['status'] === 'failed' ? 'QA lại' : 'QA & hoàn thiện prompt' }}</button>
@@ -113,6 +116,9 @@
                                     ])
                                 @endif
                             </div>
+                            @if($qa['task'] !== null)
+                                <div class="va-brief">@include('video-projects.partials.task-state', ['task' => $qa['task'], 'projectId' => $project->id])</div>
+                            @endif
                             @if($qa['stream'] !== null)
                                 <div class="va-brief">@include('video-projects.partials.stream-state', ['stream' => $qa['stream']])</div>
                             @endif
@@ -200,6 +206,9 @@
                                 <span class="grow"></span>
                                 <span class="d">{{ $cell['render_model'] }} · {{ $cell['size'] }}</span>
                             </div>
+                            @if($cell['task'] !== null)
+                                <div class="va-brief">@include('video-projects.partials.task-state', ['task' => $cell['task'], 'projectId' => $project->id])</div>
+                            @endif
                             @if($cell['render_error'])
                                 <div class="alert alert-danger">{{ $cell['render_error'] }}</div>
                             @endif

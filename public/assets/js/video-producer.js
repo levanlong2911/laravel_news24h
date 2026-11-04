@@ -10,6 +10,211 @@ function vpLockForm(form) {
     return true;
 }
 
+function vpTaskEdited() {
+    window.vpTaskForms = (window.vpTaskForms || []).filter(function (form) { return document.contains(form); });
+
+    return window.vpTaskForms.length > 0;
+}
+
+function vpTaskHeld(element) {
+    return element.querySelector('.modal.show') !== null
+        || (window.vpTaskForms || []).some(function (form) { return element.contains(form); });
+}
+
+function vpTaskParts(fresh, options) {
+    var ids = function (doc) { return Array.prototype.map.call(doc.querySelectorAll('[data-ajax-part]'), function (element) { return element.id; }).join(' '); };
+    var replaced = [];
+
+    if (ids(document) === '' || ids(fresh) !== ids(document)) {
+        var root = options.root ? document.getElementById(options.root) : null;
+        var page = root === null ? null : fresh.getElementById(options.root);
+
+        if (root === null || page === null || vpTaskHeld(root)) { return null; }
+        root.innerHTML = page.innerHTML;
+        replaced.push(root);
+    } else {
+        fresh.querySelectorAll('[data-ajax-part]').forEach(function (element) {
+            var current = document.getElementById(element.id);
+            var next = document.importNode(element, true);
+
+            if (current === null || vpTaskHeld(current)) { return; }
+            current.replaceWith(next);
+            replaced.push(next);
+        });
+    }
+
+    if (document.querySelector('.modal.show') === null) {
+        document.body.classList.remove('modal-open');
+        document.body.style.paddingRight = '';
+    }
+
+    if (options.refresh) { replaced.forEach(function (element) { options.refresh(element); }); }
+
+    return replaced;
+}
+
+function vpTaskWatch(options) {
+    options = options || window.vpTaskOptions || {};
+    window.vpTaskOptions = options;
+
+    var boxes = Array.prototype.slice.call(document.querySelectorAll('[data-task-endpoint][data-task-kind][data-task-id]:not([data-task-settled])'));
+    var round = (window.vpTaskRound || 0) + 1;
+
+    window.vpTaskRound = round;
+
+    if (window.vpTaskTimer) {
+        window.clearTimeout(window.vpTaskTimer);
+        window.vpTaskTimer = null;
+    }
+
+    if (!window.vpTaskFormsBound) {
+        window.vpTaskFormsBound = true;
+        ['input', 'change'].forEach(function (type) {
+            document.addEventListener(type, function (event) {
+                var form = event.isTrusted && event.target.closest ? event.target.closest('form') : null;
+                window.vpTaskForms = window.vpTaskForms || [];
+                if (form !== null && window.vpTaskForms.indexOf(form) === -1) { window.vpTaskForms.push(form); }
+            }, true);
+        });
+        document.addEventListener('submit', function (event) {
+            window.vpTaskForms = (window.vpTaskForms || []).filter(function (form) { return form !== event.target; });
+        }, true);
+    }
+
+    if (boxes.length === 0) { return; }
+
+    var endpoint = boxes[0].getAttribute('data-task-endpoint');
+
+    function current() {
+        return round === window.vpTaskRound;
+    }
+
+    function schedule() {
+        if (current() && boxes.length > 0) { window.vpTaskTimer = window.setTimeout(poll, 5000); }
+    }
+
+    function clock(seconds) {
+        return new Date(seconds * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function describe(data) {
+        var text = data.status === 'running' ? 'Đang chạy' : 'Đang chờ';
+
+        if (data.requested_by) { text += ' · ' + data.requested_by; }
+        if (data.status === 'running' && data.progress && data.progress.text_chars) { text += ' · đã nhận ' + data.progress.text_chars.toLocaleString('vi-VN') + ' ký tự'; }
+        if (data.status === 'pending' && data.retry_at) { text += ' · chờ hạn mức nhà cung cấp tới ' + clock(data.retry_at); }
+
+        return text + ' — trang tự cập nhật khi xong, đóng trang vẫn chạy tiếp';
+    }
+
+    function settle(box, data) {
+        var label = box.querySelector('[data-task-label]');
+        var link = document.createElement('a');
+
+        box.setAttribute('data-task-settled', '1');
+        if (label === null) { return; }
+        label.textContent = (data.status === 'failed' ? 'Lỗi' + (data.error ? ': ' + data.error : '') : 'Đã xong') + ' — phần này đang được sửa nên không tự cập nhật. ';
+        label.style.color = data.status === 'failed' ? 'var(--vp-red)' : 'var(--vp-green-fg)';
+        link.href = data.result_url || window.location.href;
+        link.textContent = 'Xem kết quả';
+        label.appendChild(link);
+    }
+
+    function refresh(finished) {
+        var target = new URL(finished[0].state.result_url || window.location.href, window.location.href);
+
+        if (target.origin + target.pathname !== window.location.origin + window.location.pathname) {
+            if (vpTaskEdited()) {
+                finished.forEach(function (item) { settle(item.box, item.state); });
+                schedule();
+            } else {
+                window.location.href = target.href;
+            }
+
+            return;
+        }
+
+        fetch(target.origin + target.pathname + target.search, { credentials: 'same-origin', headers: { 'Accept': 'text/html' } })
+            .then(function (response) {
+                if (!response.ok) { throw new Error('HTTP ' + response.status); }
+
+                return response.text();
+            })
+            .then(function (html) {
+                if (!current()) { return; }
+
+                var replaced = vpTaskParts(new DOMParser().parseFromString(html, 'text/html'), options);
+
+                if (replaced === null) {
+                    finished.forEach(function (item) { settle(item.box, item.state); });
+                    schedule();
+
+                    return;
+                }
+
+                window.history.replaceState(null, '', target.pathname + target.search + window.location.hash);
+                finished.forEach(function (item) {
+                    if (document.contains(item.box)) { settle(item.box, item.state); }
+                });
+                vpTaskWatch(options);
+            })
+            .catch(function () {
+                if (!current()) { return; }
+                finished.forEach(function (item) { settle(item.box, item.state); });
+                schedule();
+            });
+    }
+
+    function query() {
+        var groups = {};
+
+        boxes.forEach(function (box) {
+            var kind = box.getAttribute('data-task-kind');
+            groups[kind] = groups[kind] || [];
+            groups[kind].push(box.getAttribute('data-task-id'));
+        });
+
+        return Object.keys(groups).map(function (kind) { return encodeURIComponent(kind) + '=' + encodeURIComponent(groups[kind].join(',')); }).join('&');
+    }
+
+    function poll() {
+        window.vpTaskTimer = null;
+        fetch(endpoint + (endpoint.indexOf('?') === -1 ? '?' : '&') + query(), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function (response) { return response.ok ? response.json() : null; })
+            .then(function (data) {
+                var finished = [];
+
+                if (!current()) { return; }
+                if (data === null) { schedule(); return; }
+
+                boxes = boxes.filter(function (box) {
+                    var state = (data[box.getAttribute('data-task-kind')] || {})[box.getAttribute('data-task-id')];
+                    var label = box.querySelector('[data-task-label]');
+
+                    if (!state) { return true; }
+                    if (!state.done) {
+                        if (label) { label.textContent = describe(state); }
+                        return true;
+                    }
+                    finished.push({ box: box, state: state });
+                    return false;
+                });
+
+                if (finished.length > 0) {
+                    refresh(finished);
+                    return;
+                }
+
+                schedule();
+            })
+            .catch(function () {
+                if (current()) { schedule(); }
+            });
+    }
+
+    schedule();
+}
+
 function vpAjaxPage(rootId, onRefresh) {
     var root = document.getElementById(rootId);
     var unknown = 'Chưa xác định kết quả — lượt AI có thể vẫn đang chạy hoặc đã xong. Tải lại trang để xem trạng thái, đừng bấm lại ngay.';

@@ -64,6 +64,8 @@
             <span class="grow"></span>
             @if($step['running'])
                 <button class="vp-btn sm" disabled>Đang tạo…</button>
+            @elseif($step['pending'])
+                @include('video-projects.partials.task-pending', ['reset' => route('video-projects.locations-reset', $id), 'ajax' => true])
             @elseif($step['stuck'])
                 <form method="POST" action="{{ route('video-projects.locations-reset', $id) }}" data-ajax-whole>
                     @csrf
@@ -97,6 +99,7 @@
                 @if($step['run_error'] !== null)
                     <div class="line"><span class="k">Chưa tạo được</span><span class="v" style="color:var(--vp-red)">{{ $step['run_error'] }}</span></div>
                 @endif
+                @include('video-projects.partials.task-state', ['task' => $step['task'], 'projectId' => $id])
                 @include('video-projects.partials.stream-state', ['stream' => $step['stream']])
                 @if($step['error'] !== null)
                     <div class="line"><span class="k">Lượt gần nhất lỗi</span><span class="v" style="color:var(--vp-red)">{{ $step['error'] }}</span></div>
@@ -430,14 +433,17 @@
                                     @endif
 
                                     @foreach($pending as $cell)
+                                        @php($imageTask = \App\Services\Video\ImageRenderQueue::taskFor((string) $cell['id']))
                                         <div class="va-cell" style="padding-left:0;padding-right:0">
                                             <span class="code">{{ $cell['image_code'] }}</span>
                                             <span class="va-tag {{ $cell['status_tone'] }}">{{ $cell['status_label'] }}</span>
                                         </div>
-                                        @if($cell['render_error'])
+                                        @if($imageTask !== null)
+                                            <div class="va-brief">@include('video-projects.partials.task-state', ['task' => $imageTask, 'projectId' => $id])</div>
+                                        @elseif($cell['render_error'])
                                             <div class="alert alert-danger">{{ $cell['render_error'] }}</div>
                                         @endif
-                                        @if($cell['can_render'] && $row['can_render'])
+                                        @if($imageTask === null && $cell['can_render'] && $row['can_render'])
                                             <form method="POST" action="{{ route('video-projects.locations-render', $id) }}" id="retryLoc_{{ $cell['id'] }}" data-modal="confirmRetryLoc_{{ $cell['id'] }}" onsubmit="return vpLockForm(this)">
                                                 @csrf
                                                 <input type="hidden" name="request_id" value="{{ $key }}">
@@ -474,8 +480,8 @@
 (function () {
     var costs = @json($step['media']['costs'] ?? []);
 
-    function init() {
-        document.querySelectorAll('[data-role="model"]').forEach(function (picker) {
+    function init(scope) {
+        (scope || document).querySelectorAll('[data-role="model"]').forEach(function (picker) {
             var row = picker.getAttribute('data-row');
             var groups = document.querySelectorAll('[data-row="' + row + '"][data-group]');
 
@@ -547,7 +553,11 @@
     }
 
     init();
-    vpAjaxPage('locationsPage', init);
+    vpTaskWatch({ root: 'locationsPage', refresh: init });
+    vpAjaxPage('locationsPage', function () {
+        init();
+        vpTaskWatch();
+    });
 })();
 </script>
 @endsection

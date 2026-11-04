@@ -116,91 +116,149 @@ Return exactly one JSON object, with no text or code fence around it, that valid
     }
 
     /**
-     * @return array{0: ?VideoPlanningStage, 1: string} reason: ready|not_ready|cached|...
+     * @param  ?array{id: string, name: string}  $requester  who sent the run
+     * @return array{0: ?VideoPlanningStage, 1: string} reason: ready|not_ready|cached|queued|...
      */
-    public function run(string $projectId, VideoPlanningStage $set, bool $retry): array
+    public function run(string $projectId, VideoPlanningStage $set, bool $retry, string $operationId, ?array $requester = null): array
     {
-        try {
-            $phase = $this->phase($set);
-            $design = $this->source($set);
-            $client = app('video.model_sheet_qa.client');
-        } catch (Throwable $e) {
-            Log::error('model sheet qa: input unavailable, no model call made', ['project_id' => $projectId, 'exception' => $e]);
+        return (new StageQueue($this->stageStore))->submit(
+            'qa',
+            $projectId,
+            PlanningStageName::MODEL_SHEET_PROMPT,
+            fn (): array => $this->prepared($set),
+            static fn (VideoPlanningStage $served): bool => $retry && ! self::ready($served),
+            $operationId,
+            $requester,
+            $this->perform(),
+            'QA model sheet',
+            'model sheet qa',
+            static fn (?VideoPlanningStage $stage, string $reason): ?array => $reason === 'already_succeeded' && ! self::ready($stage)
+                ? [$stage, 'Lượt prompt đã lưu cho đúng nguồn này nhưng phản hồi chưa đọc được — bấm "QA lại" để chạy lượt mới. Không gọi Sonnet.']
+                : null,
+            'Chưa gọi Sonnet: ',
+        );
+    }
 
-            return [null, 'Chưa gọi Sonnet: '.$e->getMessage()];
-        }
+    /**
+     * @param  \Closure(): VideoPlanningStage  $currentSet  the set the project would send to QA now; it throws when the project has none it may send
+     * @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it
+     */
+    public function execute(string $stageId, string $token, \Closure $currentSet): array
+    {
+        return (new StageQueue($this->stageStore))->execute(
+            $stageId,
+            $token,
+            fn (): array => $this->prepared($currentSet()),
+            $this->perform(),
+            'QA model sheet',
+            'model sheet qa',
+            notCalled: 'Chưa gọi Sonnet: ',
+        );
+    }
 
+    /** @return array{0: bool, 1: string} reason pending when a queued run was cancelled */
+    public function reset(string $projectId): array
+    {
+        return $this->stageStore->resetLatest($projectId, PlanningStageName::MODEL_SHEET_PROMPT, 'Chưa có lượt QA model sheet nào.');
+    }
+
+    /** @return array{system: string, payload: string, prompt_version: string, settings: array<string, mixed>, input: array<string, mixed>, metadata: array<string, mixed>, set: VideoPlanningStage, client: AnthropicStructuredOutputClient} */
+    private function prepared(VideoPlanningStage $set): array
+    {
+        $phase = $this->phase($set);
+        $design = $this->source($set);
+        $client = app('video.model_sheet_qa.client');
         $snapshot = (array) $set->output_json;
 
         if (($snapshot['blocking'] ?? []) !== []) {
-            return [null, 'Chưa gọi Sonnet: '.implode(' ', (array) $snapshot['blocking'])];
-        }
-
-        $input = $this->input($set);
-        [$stage, $token, $reason] = $this->stageStore->claimProjectStage(
-            $projectId,
-            PlanningStageName::MODEL_SHEET_PROMPT,
-            $input,
-            static fn (VideoPlanningStage $served): bool => $retry && ! self::ready($served),
-        );
-
-        if ($token === null) {
-            return match (true) {
-                $reason === 'already_succeeded' && ! self::ready($stage) => [$stage, 'Lượt prompt đã lưu cho đúng nguồn này nhưng phản hồi chưa đọc được — bấm "QA lại" để chạy lượt mới. Không gọi Sonnet.'],
-                $reason === 'already_succeeded' => [$stage, 'cached'],
-                $reason === 'claimed_by_other' => [null, 'Đang có một lượt QA model sheet chạy cho dự án này — đợi xong rồi thử lại.'],
-                default => [null, 'Không mở được lượt QA ('.$reason.').'],
-            };
+            throw new RuntimeException(implode(' ', (array) $snapshot['blocking']));
         }
 
         $config = (array) config('video.superyacht.model_sheet.qa');
-        $version = 'spec-v6.3-'.$phase->phase_code.'@rev'.$phase->revision;
-        $raw = '';
-        $usage = ['model' => (string) $config['model'], 'instruction_version' => $version];
-        $pricing = ['pricing' => 'unpriced', 'pricing_version' => null];
-        $stageId = (string) $stage->id;
 
-        try {
-            /** @var AnthropicStructuredOutputClient $client */
-            $response = $client->create(
-                (string) $config['model'],
-                self::system($phase),
-                [['role' => 'user', 'content' => self::message($snapshot, $design)]],
-                self::enforced() ? ModelSheetQaSchema::SCHEMA : [],
-                (int) $config['max_tokens'],
-                fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
-            );
-            [$usage, $pricing] = self::accounting($response, $config, $version);
-            $raw = $response->rawText;
-            $output = $this->output($set, $raw) + ['request_id' => $response->requestId];
+        return [
+            'system' => self::system($phase),
+            'payload' => self::message($snapshot, $design),
+            'prompt_version' => 'spec-v6.3-'.$phase->phase_code.'@rev'.$phase->revision,
+            'settings' => ['model' => (string) $config['model'], 'max_tokens' => (int) $config['max_tokens'], 'effort' => (string) $config['effort'], 'timeout_seconds' => (int) $config['timeout_seconds']],
+            'input' => $this->input($set),
+            'metadata' => [],
+            'set' => $set,
+            'client' => $client,
+        ];
+    }
 
-            if (! $this->stageStore->finishSucceeded((string) $stage->id, $token, $raw, $output, $usage, $pricing)) {
-                return [null, 'Lượt QA bị giành mất khi lưu — tải lại trang. Usage của lượt này nằm trong log.'];
+    /** @return \Closure(VideoPlanningStage, string, array<string, mixed>, ?\Closure(\Throwable): ?array): array{0: ?VideoPlanningStage, 1: string} */
+    private function perform(): \Closure
+    {
+        return function (VideoPlanningStage $stage, string $token, array $run, ?\Closure $rateLimited): array {
+            $config = (array) config('video.superyacht.model_sheet.qa');
+            $version = (string) $run['prompt_version'];
+            $raw = '';
+            $usage = ['model' => (string) $run['settings']['model'], 'instruction_version' => $version];
+            $pricing = ['pricing' => 'unpriced', 'pricing_version' => null];
+            $stageId = (string) $stage->id;
+
+            try {
+                /** @var AnthropicStructuredOutputClient $client */
+                $client = $run['client'];
+                $response = $client->create(
+                    (string) $run['settings']['model'],
+                    (string) $run['system'],
+                    [['role' => 'user', 'content' => (string) $run['payload']]],
+                    self::enforced() ? ModelSheetQaSchema::SCHEMA : [],
+                    (int) $run['settings']['max_tokens'],
+                    fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
+                );
+                [$usage, $pricing] = self::accounting($response, $config, $version);
+                $raw = $response->rawText;
+                $output = $this->output($run['set'], $raw) + ['request_id' => $response->requestId];
+
+                if (! $this->stageStore->finishSucceeded($stageId, $token, $raw, $output, $usage, $pricing)) {
+                    return [null, 'Lượt QA bị giành mất khi lưu — tải lại trang. Usage của lượt này nằm trong log.'];
+                }
+
+                return [VideoPlanningStage::query()->withoutSnapshot()->find($stageId), $output['ready'] ? 'ready' : 'not_ready'];
+            } catch (Throwable $e) {
+                $queued = $raw === '' && $rateLimited !== null ? $rateLimited($e) : null;
+
+                if ($queued !== null) {
+                    return $queued;
+                }
+
+                return [null, 'QA thất bại: '.$this->failed($stageId, $token, $e, $config, $version, $usage, $pricing, $raw)];
             }
+        };
+    }
 
-            return [VideoPlanningStage::query()->find($stage->id), $output['ready'] ? 'ready' : 'not_ready'];
-        } catch (Throwable $e) {
-            Log::error('model sheet qa: the run failed', ['stage_id' => $stage->id, 'exception' => $e]);
-            $billed = $e instanceof AnthropicRefusalException || $e instanceof AnthropicTruncatedOutputException || $e instanceof AnthropicRequestException ? $e->response : null;
+    /**
+     * @param  array<string, mixed>  $config
+     * @param  array<string, mixed>  $usage
+     * @param  array<string, mixed>  $pricing
+     * @return string why the run failed, as it is stored on the run
+     */
+    private function failed(string $stageId, string $token, Throwable $e, array $config, string $version, array $usage, array $pricing, string $raw): string
+    {
+        Log::error('model sheet qa: the run failed', ['stage_id' => $stageId, 'exception' => $e]);
+        $billed = $e instanceof AnthropicRefusalException || $e instanceof AnthropicTruncatedOutputException || $e instanceof AnthropicRequestException ? $e->response : null;
 
-            if ($billed !== null) {
-                [$usage, $pricing] = self::accounting($billed, $config, $version);
-            }
-
-            $message = $e->getMessage();
-
-            if ($billed !== null && ! $billed->usageComplete) {
-                $message .= ' Chưa nhận usage cuối: đã biết '.$billed->inputTokens.' token vào và '.$billed->outputTokens.' token ra — chi phí ghi nhận $'.number_format((float) $usage['cost_usd'], 4, '.', '').' chỉ là mức tối thiểu, phí thực tế có thể cao hơn.';
-            }
-
-            if (self::enforced() && str_contains(strtolower($message), 'grammar')) {
-                $message = 'Đang bật MODEL_SHEET_QA_ENFORCE_SCHEMA=true (ép grammar tại API) và Anthropic từ chối schema: '.$message.' Tắt cờ này để dùng chế độ mặc định (schema trong prompt, máy chủ kiểm bằng Opis).';
-            }
-
-            $this->stageStore->finishFailed((string) $stage->id, $token, $message, $usage, $raw !== '' ? $raw : (string) ($billed?->rawText ?? ''), ['request_id' => $billed?->requestId, 'schema_transport' => self::transport(), 'usage_complete' => $billed?->usageComplete], $pricing);
-
-            return [null, 'QA thất bại: '.$message];
+        if ($billed !== null) {
+            [$usage, $pricing] = self::accounting($billed, $config, $version);
         }
+
+        $message = StageQueue::failure($e);
+
+        if ($billed !== null && ! $billed->usageComplete) {
+            $message .= ' Chưa nhận usage cuối: đã biết '.$billed->inputTokens.' token vào và '.$billed->outputTokens.' token ra — chi phí ghi nhận $'.number_format((float) $usage['cost_usd'], 4, '.', '').' chỉ là mức tối thiểu, phí thực tế có thể cao hơn.';
+        }
+
+        if (self::enforced() && str_contains(strtolower($message), 'grammar')) {
+            $message = 'Đang bật MODEL_SHEET_QA_ENFORCE_SCHEMA=true (ép grammar tại API) và Anthropic từ chối schema: '.$message.' Tắt cờ này để dùng chế độ mặc định (schema trong prompt, máy chủ kiểm bằng Opis).';
+        }
+
+        $this->stageStore->finishFailed($stageId, $token, $message, $usage, $raw !== '' ? $raw : (string) ($billed?->rawText ?? ''), ['request_id' => $billed?->requestId, 'schema_transport' => self::transport(), 'usage_complete' => $billed?->usageComplete], $pricing);
+
+        return $message;
     }
 
     /**

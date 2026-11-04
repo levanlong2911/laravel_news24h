@@ -19,8 +19,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-final class LocationWriterService
+final class LocationWriterService implements QueuedStageService
 {
+    private const LABEL = 'tạo địa điểm và bối cảnh';
+
     public function __construct(
         private readonly PlanningStageStore $stageStore,
         private readonly LocationSourceService $sources,
@@ -30,11 +32,13 @@ final class LocationWriterService
 
     /**
      * @param  ?string  $effort  the effort of this one run, one of the configured efforts; null keeps the default
-     * @return array{0: ?VideoPlanningStage, 1: string}
+     * @param  ?array{id: string, name: string}  $requester  who sent the run
+     * @return array{0: ?VideoPlanningStage, 1: string} reason queued when a worker runs it later
      */
-    public function run(string $projectId, bool $regenerate, string $operationId, ?string $effort = null): array
+    public function run(string $projectId, bool $regenerate, string $operationId, ?string $effort = null, ?array $requester = null): array
     {
-        return (new SpecStageRunner($this->stageStore))->run(
+        return (new SpecStageRunner($this->stageStore))->submit(
+            'locations',
             $projectId,
             PlanningStageName::LOCATIONS,
             fn (): array => $this->prepare($projectId, $effort),
@@ -42,23 +46,39 @@ final class LocationWriterService
             $operationId,
             $this->llm,
             fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
-            'tạo địa điểm và bối cảnh',
+            self::LABEL,
+            'locations',
+            $requester,
+        );
+    }
+
+    /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
+    public function execute(string $stageId, string $token): array
+    {
+        $stage = VideoPlanningStage::query()->withoutSnapshot()->find($stageId);
+
+        if ($stage === null) {
+            return [null, 'Lượt '.self::LABEL.' không còn — bỏ qua.'];
+        }
+
+        $projectId = (string) $stage->project_id;
+        $effort = is_string($stage->input_json['effort'] ?? null) ? $stage->input_json['effort'] : null;
+
+        return (new SpecStageRunner($this->stageStore))->execute(
+            $stageId,
+            $token,
+            fn (): array => $this->prepare($projectId, $effort),
+            $this->llm,
+            fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
+            self::LABEL,
             'locations',
         );
     }
 
-    /** @return array{0: bool, 1: string} */
+    /** @return array{0: bool, 1: string} reason pending when a run still waiting in the queue was cancelled */
     public function reset(string $projectId): array
     {
-        [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::LOCATIONS, [], skipOrphans: true);
-
-        if ($latest === null) {
-            return [false, 'Chưa có lượt tạo địa điểm và bối cảnh nào.'];
-        }
-
-        return $this->stageStore->releaseClaim((string) $latest->id, 'Người dùng reset thủ công')
-            ? [true, 'ok']
-            : [false, 'Lượt này không còn giữ claim — không có gì để reset.'];
+        return $this->stageStore->resetLatest($projectId, PlanningStageName::LOCATIONS, 'Chưa có lượt tạo địa điểm và bối cảnh nào.');
     }
 
     /**
@@ -86,7 +106,7 @@ final class LocationWriterService
             }
         }
 
-        $stages = VideoPlanningStage::query()->where('project_id', $projectId)->where('stage', PlanningStageName::LOCATIONS->value)
+        $stages = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::LOCATIONS->value)
             ->whereNull('input_json->orphan_of_stage_id')->orderByDesc('planning_revision')->get();
         $latest = $stages->first();
         $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::LOCATIONS, $run['input']);
@@ -130,6 +150,8 @@ final class LocationWriterService
             'semantic_review' => $settings['semantic_review'] ?? null,
             'operation_id' => (string) Str::uuid(),
             'running' => $latest !== null && $latest->status === VideoPlanningStageStatus::RUNNING->value && $latest->lease_expires_at?->isFuture() === true,
+            'pending' => $latest !== null && $latest->status === VideoPlanningStageStatus::PENDING->value && $latest->claim_token !== null,
+            'task' => PlanningStageStore::taskOf($latest),
             'stuck' => $latest !== null && $latest->status === VideoPlanningStageStatus::RUNNING->value && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest !== null && $latest->status === VideoPlanningStageStatus::FAILED->value ? $latest->error_message : null,
             'stream' => PlanningStageStore::streamOf($latest),

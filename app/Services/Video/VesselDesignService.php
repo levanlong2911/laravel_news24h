@@ -75,10 +75,8 @@ TEXT;
             return [null, 'workflow_not_design_first'];
         }
 
-        [$latestInspiration] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::INSPIRATION, [], skipOrphans: true);
-
-        if (ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration)) {
-            return app(YachtDesignService::class)->run($projectId, $force);
+        if ($this->isPhaseDesign($projectId)) {
+            return [null, 'phase_design_runs_on_its_own'];
         }
 
         $brief = $this->stageStore->latestOutputForProject($projectId, PlanningStageName::INSPIRATION);
@@ -1082,12 +1080,18 @@ TEXT;
         return array_values(array_filter(array_map('trim', preg_split('/;\s+(?=[a-z_]+[.\[:])/u', (string) $body) ?: []), static fn (string $line): bool => $line !== ''));
     }
 
-    /** @return array{0: bool, 1: string} */
-    public function reset(string $projectId): array
+    /** @return bool whether the project designs through the Phase 3 contract, which its latest Phase 1 run decides */
+    public function isPhaseDesign(string $projectId): bool
     {
         [$latestInspiration] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::INSPIRATION, [], skipOrphans: true);
 
-        if (ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration)) {
+        return ClaudeInspirationAnalyst::isPhaseOneRun($latestInspiration);
+    }
+
+    /** @return array{0: bool, 1: string} */
+    public function reset(string $projectId): array
+    {
+        if ($this->isPhaseDesign($projectId)) {
             return app(YachtDesignService::class)->reset($projectId);
         }
 

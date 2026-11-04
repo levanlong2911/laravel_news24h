@@ -8,11 +8,12 @@ use App\Enums\DesignImageStatus;
 use App\Models\VideoDesignImage;
 use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Media\MediaModelRegistry;
+use App\Video\Queue\VideoQueues;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
 
-final class LocationReferenceService
+final class LocationReferenceService implements QueuedImageService
 {
     public function __construct(
         private readonly LocationSourceService $sources,
@@ -24,9 +25,10 @@ final class LocationReferenceService
     /**
      * @param  array{provider_model?: mixed, quality?: mixed, size?: mixed, aspect_ratio?: mixed, image_size?: mixed, variations?: mixed}  $settings
      * @param  ?array{stage_id: string, content_hash: string, prompts_hash: string, prompt_sha256: string, selection_version: int}  $shown  what the page showed: the description, its prompt set and the prompt of this image; a description that is not in use yet, or whose prompts changed, is put in use with exactly these prompts before the render
-     * @return array{0: ?VideoDesignImage, 1: string}
+     * @param  ?array{id: string, name: string}  $requester  who sent the render; a queued render waits on that person's image queue
+     * @return array{0: ?VideoDesignImage, 1: string} reason queued when the cell and its job were stored together
      */
-    public function render(string $projectId, string $creator, string $requestId, array $settings, string $operationId, ?array $shown = null, ?string $reviewerId = null): array
+    public function render(string $projectId, string $creator, string $requestId, array $settings, string $operationId, ?array $shown = null, ?string $reviewerId = null, ?array $requester = null): array
     {
         if (! Str::isUuid($operationId)) {
             return [null, 'Mã thao tác không hợp lệ — tải lại trang.'];
@@ -54,21 +56,71 @@ final class LocationReferenceService
             return [null, $e->getMessage()];
         }
 
-        [$image, $reason] = $this->store->createLocationReference($projectId, $creator, $spec);
+        $create = function () use ($projectId, $creator, $spec): array {
+            [$image, $reason] = $this->store->createLocationReference($projectId, $creator, $spec);
 
-        if ($image === null) {
-            return [null, $reason === 'project_not_found' ? 'Không tìm thấy dự án.' : $reason];
+            return $image === null ? [null, $reason === 'project_not_found' ? 'Không tìm thấy dự án.' : $reason] : [$image, $reason];
+        };
+        $made = static fn (VideoDesignImage $image, string $reason): bool => $reason === 'already_exists' && in_array($image->status, [DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value], true);
+
+        if (VideoQueues::enabled()) {
+            return app(ImageRenderQueue::class)->createQueued('location', $create, function (VideoDesignImage $image, string $reason) use ($projectId, $made): ?array {
+                if ($made($image, $reason)) {
+                    return [$image, 'already_exists'];
+                }
+
+                [$sendable, $problem] = $this->sendable($projectId, (string) $image->id);
+
+                return $sendable === null ? [null, $problem] : null;
+            }, $requester);
         }
 
-        if ($reason === 'already_exists' && in_array($image->status, [DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value], true)) {
-            return [$image, 'already_exists'];
+        [$image, $reason] = $create();
+
+        if ($image === null || $made($image, $reason)) {
+            return [$image, $reason];
         }
 
         return $this->retry($projectId, (string) $image->id);
     }
 
-    /** @return array{0: ?VideoDesignImage, 1: string} a failed or unfinished cell sent again with its own spec, only while its prompt is still the approved one */
-    public function retry(string $projectId, string $imageId): array
+    /**
+     * @param  ?array{id: string, name: string}  $requester  who sent the render; a queued render waits on that person's image queue
+     * @return array{0: ?VideoDesignImage, 1: string} a failed or unfinished cell sent again with its own spec, only while its prompt is still the approved one; reason queued when a worker sends it later
+     */
+    public function retry(string $projectId, string $imageId, ?array $requester = null): array
+    {
+        [$image, $problem] = $this->sendable($projectId, $imageId);
+
+        if ($image === null) {
+            return [null, $problem];
+        }
+
+        if (VideoQueues::enabled()) {
+            $problem = app(ImageRenderQueue::class)->submit('location', $imageId, $requester);
+
+            return $problem === null ? [$image->fresh() ?? $image, 'queued'] : [null, 'Chưa đưa vào hàng đợi, không render: '.$problem];
+        }
+
+        return $this->send($imageId);
+    }
+
+    /** @return ?string why a queued cell may no longer be sent: its prompt is no longer the approved one of the set in use */
+    public function checkQueued(VideoDesignImage $image): ?string
+    {
+        [$sendable, $problem] = $this->sendable((string) $image->project_id, (string) $image->id);
+
+        return $sendable === null ? $problem : null;
+    }
+
+    /** @return array{0: ?VideoDesignImage, 1: string, 2: ?array<string, mixed>} */
+    public function sendQueued(VideoDesignImage $image): array
+    {
+        return $this->renderer->renderNow((string) $image->id);
+    }
+
+    /** @return array{0: ?VideoDesignImage, 1: string} the cell when its prompt is still the approved one of the set in use, or why it may not be sent */
+    private function sendable(string $projectId, string $imageId): array
     {
         $image = VideoDesignImage::query()->whereKey($imageId)->where('project_id', $projectId)->where('image_type', DesignImageStore::LOCATION_REFERENCE_TYPE)->first();
 
@@ -107,7 +159,13 @@ final class LocationReferenceService
             return [null, "Ô này mang prompt cũ của {$requestId} — không gửi lại ô cũ. Bấm Render Plate ở {$requestId} để dựng với prompt hiện tại; ô cũ vẫn được giữ."];
         }
 
-        [$done, $reason] = $this->renderer->renderNow((string) $image->id);
+        return [$image, 'ok'];
+    }
+
+    /** @return array{0: ?VideoDesignImage, 1: string} */
+    private function send(string $imageId): array
+    {
+        [$done, $reason] = $this->renderer->renderNow($imageId);
 
         return match ($reason) {
             'rendered' => [$done, 'rendered'],

@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Enums\AnchorStage;
 use App\Enums\DesignImageStatus;
+use App\Enums\PlanningStageName;
+use App\Enums\VideoPlanningStageStatus;
 use App\Enums\ImageModel;
 use App\Enums\ImageQuality;
 use App\Enums\ImageSize;
@@ -11,6 +13,8 @@ use App\Enums\ImageVariations;
 use App\Enums\SceneStep;
 use App\Form\AdminCustomValidator;
 use App\Models\Admin;
+use App\Models\VideoDesignImage;
+use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
 use App\Services\VideoProjectService;
@@ -22,7 +26,11 @@ use App\Video\Scene\Services\ShotIntentService;
 use App\Video\Scene\Services\ShotSelectionReconciler;
 use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\DesignDnaService;
+use App\Services\Video\DesignImageStore;
+use App\Services\Video\ImageRenderQueue;
+use App\Services\Video\ModelSheetQaService;
 use App\Services\Video\ModelSheetService;
+use App\Services\Video\PlanningStageStore;
 use App\Services\Video\LocationReferenceService;
 use App\Services\Video\LocationSourceService;
 use App\Services\Video\LocationWriterService;
@@ -36,7 +44,6 @@ use App\Services\Video\YachtDesignService;
 use App\Services\Video\ScreenplayExpansionService;
 use App\Services\Video\StoryFoundationService;
 use App\Services\Video\VesselDesignService;
-use App\Video\Moto\MotoContract;
 use App\Video\Screenplay\VesselDesign;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Http\Request;
@@ -52,6 +59,8 @@ use Throwable;
 
 class VideoProjectsController extends Controller
 {
+    private const CANCELLED = 'Đã huỷ lượt đang chờ trong hàng đợi — job sẽ bỏ qua lượt này, không gọi model.';
+
     private VideoProjectService $videoProjectService;
     private AdminCustomValidator $form;
     private SceneClipDispatchService $clips;
@@ -221,27 +230,43 @@ class VideoProjectsController extends Controller
     public function inspiration(Request $request, string $id)
     {
         $this->ownedProject($id);
-        [$brief, $reason] = $this->videoProjectService->runInspiration($id);
-        if ($brief === null) {
+        $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
+        [$stage, $reason] = $this->videoProjectService->runInspiration($id, (string) $data['operation_id'], $this->requester());
+
+        if ($stage === null) {
             return back()->with('error', $reason);
         }
-        return back()->with('success', $reason === 'cached'
-            ? 'Prompt Phase 1 và nội dung bài không đổi — dùng lại phản hồi đã lưu, không gọi Haiku.'
-            : 'Đã lưu phản hồi Haiku theo prompt Phase 1 — chưa kiểm nội dung.');
+
+        if ($reason === 'queued') {
+            return $this->queued($request, $id, $stage, 'phân tích', route('video-projects.anchor', $id));
+        }
+
+        return back()->with('success', match ($reason) {
+            'cached' => 'Prompt Phase 1 và nội dung bài không đổi — dùng lại phản hồi đã lưu, không gọi Haiku.',
+            'replayed' => 'Thao tác này đã chạy trước đó — không gọi model lần nữa.',
+            default => 'Đã lưu phản hồi Haiku theo prompt Phase 1 — chưa kiểm nội dung.',
+        });
     }
 
     public function designDna(Request $request, string $id)
     {
         $this->ownedProject($id);
-        [$output, $reason] = app(DesignDnaService::class)->run($id, $request->boolean('regenerate'));
+        $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
+        [$stage, $reason] = app(DesignDnaService::class)->run($id, $request->boolean('regenerate'), (string) $data['operation_id'], $this->requester());
 
-        if ($output === null) {
+        if ($stage === null) {
             return back()->with('error', $reason);
         }
 
-        return back()->with('success', $reason === 'cached'
-            ? 'Prompt Phase 2 và kết quả Phase 1 không đổi — dùng lại DNA đã lưu, không gọi model.'
-            : 'Đã lưu Design DNA theo prompt Phase 2.');
+        if ($reason === 'queued') {
+            return $this->queued($request, $id, $stage, 'tạo DNA', route('video-projects.anchor', $id));
+        }
+
+        return back()->with('success', match ($reason) {
+            'cached' => 'Prompt Phase 2 và kết quả Phase 1 không đổi — dùng lại DNA đã lưu, không gọi model.',
+            'replayed' => 'Thao tác này đã chạy trước đó — không gọi model lần nữa.',
+            default => 'Đã lưu Design DNA theo prompt Phase 2.',
+        });
     }
 
     public function resetDesignDna(string $id)
@@ -250,7 +275,7 @@ class VideoProjectsController extends Controller
         [$done, $reason] = app(DesignDnaService::class)->reset($id);
 
         return $done
-            ? back()->with('success', 'Đã reset lượt tạo DNA bị kẹt.')
+            ? back()->with('success', $reason === 'pending' ? self::CANCELLED : 'Đã reset lượt tạo DNA bị kẹt.')
             : back()->with('error', $reason);
     }
 
@@ -261,7 +286,7 @@ class VideoProjectsController extends Controller
         [$done, $reason] = $this->videoProjectService->resetInspiration($id);
 
         return $done
-            ? back()->with('success', 'Đã reset — bấm Gọi Haiku để chạy lại.')
+            ? back()->with('success', $reason === 'pending' ? self::CANCELLED : 'Đã reset — bấm Gọi Haiku để chạy lại.')
             : back()->with('error', $reason);
     }
 
@@ -359,25 +384,43 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
+        if (app(VesselDesignService::class)->isPhaseDesign($id)) {
+            return $this->phaseDesign($request, $id);
+        }
+
         [$design, $reason] = app(VesselDesignService::class)->author($id, $request->boolean('force'));
 
         if ($design === null) {
             return back()->with('error', $this->anchorMessage($reason));
         }
 
-        if (in_array($design['execution'] ?? null, [YachtDesignService::EXECUTION, MotoContract::DESIGN_EXECUTION], true)) {
-            $message = $reason === 'cached'
-                ? 'DNA và prompt Phase 3 không đổi — dùng lại bản thiết kế đã lưu, không gọi model.'
-                : 'Đã lưu bản thiết kế Phase 3 (draft) — xem kết quả kiểm RULE.';
-
-            return ($design['check']['verdict'] ?? null) === YachtDesignCheck::PASS
-                ? redirect()->to(route('video-projects.anchor', $id).'#modelSheetPanel')->with('success', $message.' Thiết kế đạt kiểm — render model sheet.')
-                : back()->with('success', $message);
-        }
-
         return back()->with('success', $reason === 'cached'
             ? 'Đầu vào không đổi — dùng lại bản thiết kế đã có, không gọi model.'
             : 'Đã thiết kế tàu. Bước tiếp theo: viết prompt anchor.');
+    }
+
+    private function phaseDesign(Request $request, string $id)
+    {
+        $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
+        [$stage, $reason] = app(YachtDesignService::class)->run($id, $request->boolean('force'), (string) $data['operation_id'], $this->requester());
+
+        if ($stage === null) {
+            return back()->with('error', $reason);
+        }
+
+        if ($reason === 'queued') {
+            return $this->queued($request, $id, $stage, 'thiết kế', route('video-projects.anchor', $id));
+        }
+
+        $message = match ($reason) {
+            'cached' => 'DNA và prompt Phase 3 không đổi — dùng lại bản thiết kế đã lưu, không gọi model.',
+            'replayed' => 'Thao tác này đã chạy trước đó — không gọi model lần nữa.',
+            default => 'Đã lưu bản thiết kế Phase 3 (draft) — xem kết quả kiểm RULE.',
+        };
+
+        return ($stage->output_json['check']['verdict'] ?? null) === YachtDesignCheck::PASS
+            ? redirect()->to(route('video-projects.anchor', $id).'#modelSheetPanel')->with('success', $message.' Thiết kế đạt kiểm — render model sheet.')
+            : back()->with('success', $message);
     }
 
     public function resetVesselDesign(string $id)
@@ -387,7 +430,7 @@ class VideoProjectsController extends Controller
         [$done, $reason] = app(VesselDesignService::class)->reset($id);
 
         return $done
-            ? back()->with('success', 'Đã reset — bấm Thiết kế tàu để chạy lại.')
+            ? back()->with('success', $reason === 'pending' ? self::CANCELLED : 'Đã reset — bấm Thiết kế tàu để chạy lại.')
             : back()->with('error', $reason);
     }
 
@@ -402,10 +445,14 @@ class VideoProjectsController extends Controller
             'attempt' => (string) $data['attempt'],
             'qa_stage_id' => (string) $data['qa_stage_id'],
             'prompt_sha256' => (string) $data['prompt_sha256'],
-        ]);
+        ], $this->requester());
 
         if ($image === null) {
             return back()->with('error', $reason);
+        }
+
+        if ($reason === 'queued') {
+            return redirect()->to(route('video-projects.anchor', $id).'#modelSheetPanel')->with('success', "Đã đưa render master ({$image->image_code}) vào hàng đợi — chạy nền trên server, tự cắt tám ô khi xong; đóng trang vẫn chạy tiếp, trang tự cập nhật khi xong.");
         }
 
         if (str_starts_with($reason, 'processing_failed|')) {
@@ -423,14 +470,31 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
-        [, $reason] = app(ModelSheetService::class)->qa($id, $request->boolean('retry'));
+        $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
+        [$stage, $reason] = app(ModelSheetService::class)->qa($id, $request->boolean('retry'), (string) $data['operation_id'], $this->requester());
+
+        if ($stage !== null && $reason === 'queued') {
+            return $this->queued($request, $id, $stage, 'QA model sheet', route('video-projects.anchor', $id).'#modelSheetPanel');
+        }
 
         return match ($reason) {
             'ready' => back()->with('success', 'QA xong — prompt đạt kiểm. Xem prompt cuối, thay đổi và findings rồi bấm Render.'),
             'not_ready' => back()->with('error', 'QA xong nhưng prompt chưa đạt kiểm — xem lỗi và findings bên dưới. Sửa ở thiết kế nếu là lỗi nguồn, hoặc bấm "QA lại".'),
             'cached' => back()->with('success', 'QA đã có cho đúng nguồn này — không gọi Sonnet lần nữa.'),
+            'replayed' => back()->with('success', 'Thao tác này đã chạy trước đó — không gọi Sonnet lần nữa.'),
             default => back()->with('error', $reason),
         };
+    }
+
+    public function resetModelSheetQa(string $id)
+    {
+        $this->ownedProject($id);
+
+        [$done, $reason] = app(ModelSheetQaService::class)->reset($id);
+
+        return $done
+            ? back()->with('success', $reason === 'pending' ? self::CANCELLED : 'Đã reset lượt QA model sheet.')
+            : back()->with('error', $reason);
     }
 
     public function approveModelSheet(Request $request, string $id)
@@ -476,10 +540,14 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
 
         $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
-        [$stage, $reason] = app(ScriptWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id']);
+        [$stage, $reason] = app(ScriptWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id'], $this->requester());
 
         if ($stage === null) {
             return back()->with('error', $reason);
+        }
+
+        if ($reason === 'queued') {
+            return $this->queued($request, $id, $stage, 'viết kịch bản', route('video-projects.anchor', $id).'#scriptPanel');
         }
 
         $panel = redirect()->to(route('video-projects.anchor', ['id' => $id, 'script' => $stage->id]).'#scriptPanel');
@@ -498,7 +566,7 @@ class VideoProjectsController extends Controller
         [$done, $reason] = app(ScriptWriterService::class)->reset($id);
 
         return $done
-            ? back()->with('success', 'Đã reset lượt viết kịch bản bị kẹt — bản đã duyệt giữ nguyên.')
+            ? back()->with('success', $reason === 'pending' ? self::CANCELLED : 'Đã reset lượt viết kịch bản bị kẹt — bản đã duyệt giữ nguyên.')
             : back()->with('error', $reason);
     }
 
@@ -579,10 +647,14 @@ class VideoProjectsController extends Controller
             'operation_id' => ['required', 'uuid'],
             'effort' => ['nullable', 'string', Rule::in((array) config('video.superyacht.locations.efforts'))],
         ], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.', 'effort.*' => 'Mức effort không hợp lệ.']);
-        [$stage, $reason] = app(LocationWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id'], isset($data['effort']) ? (string) $data['effort'] : null);
+        [$stage, $reason] = app(LocationWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id'], isset($data['effort']) ? (string) $data['effort'] : null, $this->requester());
 
         if ($stage === null) {
             return back()->with('error', $reason);
+        }
+
+        if ($reason === 'queued') {
+            return $this->queued($request, $id, $stage, 'tạo địa điểm và bối cảnh', route('video-projects.locations', $id));
         }
 
         return redirect()->route('video-projects.locations', ['id' => $id, 'stage' => $stage->id])->with('success', match ($reason) {
@@ -598,7 +670,117 @@ class VideoProjectsController extends Controller
 
         [$done, $reason] = app(LocationWriterService::class)->reset($id);
 
-        return $done ? back()->with('success', 'Đã reset lượt tạo địa điểm và bối cảnh bị kẹt.') : back()->with('error', $reason);
+        if (! $done) {
+            return back()->with('error', $reason);
+        }
+
+        return back()->with('success', $reason === 'pending' ? self::CANCELLED : 'Đã reset lượt tạo địa điểm và bối cảnh bị kẹt.');
+    }
+
+    /** @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse a run taken into the queue: 202 for a script, the page with a notice for a form */
+    private function queued(Request $request, string $id, VideoPlanningStage $stage, string $label, string $page)
+    {
+        return $request->expectsJson()
+            ? response()->json(['status' => (string) $stage->status, 'stage_id' => (string) $stage->id, 'status_url' => route('video-projects.stage-status', [$id, $stage->id])], 202)
+            : redirect()->to($page)->with('success', "Đã đưa lượt {$label} vào hàng đợi — chạy nền trên server; đóng trang vẫn chạy tiếp, trang tự cập nhật khi xong.");
+    }
+
+    public function stageStatus(string $id, string $stage)
+    {
+        $this->ownedProject($id);
+
+        $row = Str::isUuid($stage)
+            ? VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $id)->find($stage)
+            : null;
+
+        abort_if($row === null, 404);
+
+        return response()->json($this->stageState($id, $row));
+    }
+
+    public function tasks(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+        $ids = static fn (string $kind): array => array_slice(array_values(array_filter(explode(',', (string) $request->query($kind, '')), static fn (string $value): bool => Str::isUuid($value))), 0, 50);
+
+        return response()->json([
+            'stages' => VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $id)->whereIn('id', $ids('stages'))->get()
+                ->mapWithKeys(fn (VideoPlanningStage $row): array => [(string) $row->id => $this->stageState($id, $row)])
+                ->all(),
+            'images' => VideoDesignImage::query()->where('project_id', $id)->whereIn('id', $ids('images'))->get(['id', 'project_id', 'image_type', 'status', 'render_error', 'prompt_spec_json', 'claimed_at', 'render_queue'])
+                ->mapWithKeys(fn (VideoDesignImage $image): array => [(string) $image->id => $this->imageState($id, $image)])
+                ->all(),
+        ]);
+    }
+
+    /** @return array<string, mixed> what a page shows of a cell render while a job waits for it or a worker sends it, and where its result is shown once it ended */
+    private function imageState(string $id, VideoDesignImage $image): array
+    {
+        $task = ImageRenderQueue::taskOf($image);
+        $failed = $task === null && $image->status === DesignImageStatus::FAILED->value;
+
+        return [
+            'image_id' => (string) $image->id,
+            'status' => $task['status'] ?? ($failed ? 'failed' : (string) $image->status),
+            'done' => $task === null,
+            'requested_by' => $task['requested_by'] ?? null,
+            'queued_at' => $task['queued_at'] ?? null,
+            'started_at' => $task['started_at'] ?? null,
+            'retry_at' => $task['retry_at'] ?? null,
+            'progress' => null,
+            'error' => $failed ? Str::limit((string) $image->render_error, 500) : null,
+            'result_url' => $task !== null ? null : ($image->image_type === DesignImageStore::LOCATION_REFERENCE_TYPE
+                ? route('video-projects.locations', $id).'#ref_'.(((array) $image->prompt_spec_json)['request_id'] ?? '')
+                : route('video-projects.anchor', $id).'#modelSheetPanel'),
+        ];
+    }
+
+    /** @return array<string, mixed> what a page shows of a run while it waits, runs or has ended; never its snapshot */
+    private function stageState(string $id, VideoPlanningStage $row): array
+    {
+        $task = PlanningStageStore::taskOf($row);
+        $done = in_array($row->status, [VideoPlanningStageStatus::SUCCEEDED->value, VideoPlanningStageStatus::FAILED->value], true);
+        $stream = PlanningStageStore::streamOf($row);
+
+        return [
+            'stage_id' => (string) $row->id,
+            'step' => (string) $row->stage,
+            'revision' => (int) $row->planning_revision,
+            'status' => (string) $row->status,
+            'done' => $done,
+            'requested_by' => $task['requested_by'] ?? (PlanningStageStore::metadataOf(is_array($row->input_json) ? $row->input_json : null)['requested_by']['name'] ?? null),
+            'queued_at' => $task['queued_at'] ?? null,
+            'started_at' => $row->started_at?->toIso8601String(),
+            'finished_at' => $row->finished_at?->toIso8601String(),
+            'retry_at' => $task['retry_at'] ?? null,
+            'progress' => $stream === null ? null : array_intersect_key($stream, array_flip(['state', 'phase', 'text_chars', 'thinking_chars', 'output_tokens', 'elapsed_seconds'])),
+            'error' => $row->status === VideoPlanningStageStatus::FAILED->value ? Str::limit((string) $row->error_message, 500) : null,
+            'result_url' => $done ? $this->resultUrl($id, $row) : null,
+        ];
+    }
+
+    /** @return string the page that shows a finished run: the run itself when it succeeded, the step page when it failed */
+    private function resultUrl(string $id, VideoPlanningStage $row): string
+    {
+        $succeeded = $row->status === VideoPlanningStageStatus::SUCCEEDED->value;
+
+        return match ($row->stage) {
+            PlanningStageName::LOCATIONS->value => route('video-projects.locations', $succeeded ? ['id' => $id, 'stage' => $row->id] : ['id' => $id]),
+            PlanningStageName::SCRIPT->value => route('video-projects.anchor', $succeeded ? ['id' => $id, 'script' => $row->id] : ['id' => $id]).'#scriptPanel',
+            PlanningStageName::SCENES->value => route('video-projects.scene', $succeeded ? ['id' => $id, 'stage' => $row->id] : ['id' => $id]),
+            PlanningStageName::SHOTS->value => route('video-projects.scene', $succeeded ? ['id' => $id, 'shots' => $row->id] : ['id' => $id]),
+            PlanningStageName::YACHT_DESIGN->value => route('video-projects.anchor', $id).($succeeded && ($row->output_json['check']['verdict'] ?? null) === YachtDesignCheck::PASS ? '#modelSheetPanel' : ''),
+            PlanningStageName::MODEL_SHEET_PROMPT->value => route('video-projects.anchor', $id).'#modelSheetPanel',
+            default => route('video-projects.anchor', $id),
+        };
+    }
+
+    /** @return ?array{id: string, name: string} */
+    private function requester(): ?array
+    {
+        $user = auth()->user();
+
+        return $user === null ? null : ['id' => (string) $user->getAuthIdentifier(), 'name' => (string) ($user->name ?? '')];
     }
 
     public function writeScenes(Request $request, string $id)
@@ -606,10 +788,14 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
 
         $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
-        [$stage, $reason] = app(SceneWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id']);
+        [$stage, $reason] = app(SceneWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id'], $this->requester());
 
         if ($stage === null) {
             return back()->with('error', $reason);
+        }
+
+        if ($reason === 'queued') {
+            return $this->queued($request, $id, $stage, 'chia scene', route('video-projects.scene', $id));
         }
 
         return redirect()->route('video-projects.scene', ['id' => $id, 'stage' => $stage->id])->with('success', match ($reason) {
@@ -625,7 +811,7 @@ class VideoProjectsController extends Controller
 
         [$done, $reason] = app(SceneWriterService::class)->reset($id);
 
-        return $done ? back()->with('success', 'Đã reset lượt chia scene bị kẹt — bản đã duyệt giữ nguyên.') : back()->with('error', $reason);
+        return $done ? back()->with('success', $reason === 'pending' ? self::CANCELLED : 'Đã reset lượt chia scene bị kẹt — bản đã duyệt giữ nguyên.') : back()->with('error', $reason);
     }
 
     public function approveScenes(Request $request, string $id)
@@ -667,10 +853,14 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
 
         $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
-        [$stage, $reason] = app(ShotWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id']);
+        [$stage, $reason] = app(ShotWriterService::class)->run($id, $request->boolean('rewrite'), (string) $data['operation_id'], $this->requester());
 
         if ($stage === null) {
             return back()->with('error', $reason);
+        }
+
+        if ($reason === 'queued') {
+            return $this->queued($request, $id, $stage, 'lập kế hoạch shot', route('video-projects.scene', $id));
         }
 
         return redirect()->route('video-projects.scene', ['id' => $id, 'shots' => $stage->id])->with('success', match ($reason) {
@@ -686,7 +876,7 @@ class VideoProjectsController extends Controller
 
         [$done, $reason] = app(ShotWriterService::class)->reset($id);
 
-        return $done ? back()->with('success', 'Đã reset lượt lập kế hoạch shot bị kẹt — bản đã duyệt giữ nguyên.') : back()->with('error', $reason);
+        return $done ? back()->with('success', $reason === 'pending' ? self::CANCELLED : 'Đã reset lượt lập kế hoạch shot bị kẹt — bản đã duyệt giữ nguyên.') : back()->with('error', $reason);
     }
 
     public function approveShots(Request $request, string $id)
@@ -745,18 +935,22 @@ class VideoProjectsController extends Controller
         ], ['*' => 'Thiết lập render không hợp lệ — tải lại trang.']);
         $service = app(LocationReferenceService::class);
         [$image, $reason] = isset($data['image_id'])
-            ? $service->retry($id, (string) $data['image_id'])
+            ? $service->retry($id, (string) $data['image_id'], $this->requester())
             : $service->render($id, (string) auth()->user()?->name, (string) $data['request_id'], $data, (string) $data['operation_id'], [
                 'stage_id' => (string) $data['stage_id'],
                 'content_hash' => (string) $data['content_hash'],
                 'prompts_hash' => (string) $data['prompts_hash'],
                 'prompt_sha256' => (string) $data['prompt_sha256'],
                 'selection_version' => (int) $data['selection_version'],
-            ], auth()->id());
+            ], auth()->id(), $this->requester());
 
         return $image === null
             ? back()->with('error', $reason)
-            : redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', $reason === 'already_exists' ? 'Ảnh với đúng thiết lập này đã có — không render lại.' : 'Render xong — duyệt ảnh cho bối cảnh này.');
+            : redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', match ($reason) {
+                'already_exists' => 'Ảnh với đúng thiết lập này đã có — không render lại.',
+                'queued' => "Đã đưa render {$data['request_id']} vào hàng đợi — chạy nền trên server; đóng trang vẫn chạy tiếp, trang tự cập nhật khi xong.",
+                default => 'Render xong — duyệt ảnh cho bối cảnh này.',
+            });
     }
 
     public function chooseLocationReference(Request $request, string $id)

@@ -5,15 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Video\Media\MediaModelRegistry;
+use App\Video\Queue\ProviderRateLimit;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
-use Throwable;
 
 final class GeminiImageClient
 {
@@ -99,11 +98,9 @@ final class GeminiImageClient
         $startedAt = microtime(true);
 
         try {
-            $response = $this->http
+            $response = ProviderRateLimit::imageRetry($this->http
                 ->withHeaders(['x-goog-api-key' => $this->apiKey])
-                ->timeout($this->timeoutSeconds)
-                ->retry(2, 1000, when: static fn (Throwable $e): bool => $e instanceof RequestException
-                    && $e->response->status() === 429, throw: false)
+                ->timeout($this->timeoutSeconds))
                 ->post(sprintf(
                     '%s/%s/models/%s:generateContent',
                     rtrim($this->baseUrl, '/'),
@@ -132,11 +129,14 @@ final class GeminiImageClient
     private function parse(Response $response, array $spec, array $payload, float $startedAt): array
     {
         if ($response->failed()) {
-            return $this->fail(sprintf(
-                'Gemini %d: %s',
-                $response->status(),
-                Str::limit((string) ($response->json('error.message') ?? $response->body()), 300),
-            ));
+            $message = Str::limit((string) ($response->json('error.message') ?? $response->body()), 300);
+
+            return $this->fail(sprintf('Gemini %d: %s', $response->status(), $message), [
+                'status' => $response->status(),
+                'code' => (string) ($response->json('error.status') ?? 'unknown'),
+                'message' => $message,
+                'retry_after' => ProviderRateLimit::imageRetryAfter($response),
+            ]);
         }
 
         $blocked = $response->json('promptFeedback.blockReason');
@@ -323,10 +323,13 @@ final class GeminiImageClient
         ];
     }
 
-    /** @return array{ok: bool, error: string, renders: list<array<string, mixed>>} */
-    private function fail(string $error): array
+    /**
+     * @param  ?array{status: int, code: string, message: string, retry_after: ?int}  $refusal  what the provider answered when it refused the call, for the queue to tell a rate limit from a spent quota
+     * @return array{ok: bool, error: string, renders: list<array<string, mixed>>, refusal: ?array<string, mixed>}
+     */
+    private function fail(string $error, ?array $refusal = null): array
     {
-        return ['ok' => false, 'error' => $error, 'renders' => []];
+        return ['ok' => false, 'error' => $error, 'renders' => [], 'refusal' => $refusal];
     }
 
     private function extendPhpLimits(int $budgetSeconds): void

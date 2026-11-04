@@ -12,19 +12,16 @@ use App\Models\VideoProject;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\VideoProjectService;
 use App\Video\DesignDna\DnaCheck;
-use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Llm\LlmClient;
-use App\Video\Llm\LlmRequest;
-use App\Video\Llm\LlmUnavailable;
 use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoDnaCheck;
 use App\Video\Superyacht\Spec\PhaseResolver;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 
-final class DesignDnaService
+final class DesignDnaService implements QueuedStageService
 {
     public const EXECUTION = 'db-phase-2-v1';
 
@@ -43,88 +40,63 @@ final class DesignDnaService
         private readonly LlmClient $writer,
     ) {}
 
-    /** @return array{0: ?array<string, mixed>, 1: string} */
-    public function run(string $projectId, bool $regenerate = false): array
+    /**
+     * @param  ?array{id: string, name: string}  $requester  who sent the run
+     * @return array{0: ?VideoPlanningStage, 1: string} reason queued when a worker runs it later
+     */
+    public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null): array
+    {
+        return (new StageQueue($this->stageStore))->submit(
+            'dna',
+            $projectId,
+            PlanningStageName::DESIGN_DNA,
+            fn (): array => $this->prepare($this->project($projectId)),
+            fn (VideoPlanningStage $served, array $run): bool => $regenerate && $this->replaceable($served, $run),
+            $operationId,
+            $requester,
+            $this->perform(),
+            'tạo DNA',
+            'design dna',
+            fn (?VideoPlanningStage $stage, string $reason, array $run): ?array => $reason === 'already_succeeded' && $stage !== null && $this->replaceable($stage, $run)
+                ? [null, 'DNA đã lưu cho đúng Phase 1 và prompt này chưa đạt kiểm kỹ thuật — bấm "Tạo lại DNA" để tạo bản mới. Không gọi model.']
+                : null,
+            'Chưa gọi model DNA: ',
+        );
+    }
+
+    /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
+    public function execute(string $stageId, string $token): array
+    {
+        $stage = VideoPlanningStage::query()->withoutSnapshot()->find($stageId);
+
+        if ($stage === null) {
+            return [null, 'Lượt tạo DNA không còn — bỏ qua.'];
+        }
+
+        $history = is_array($stage->input_json) ? ($stage->input_json['concept_history_stage_ids'] ?? null) : null;
+
+        return (new StageQueue($this->stageStore))->execute(
+            $stageId,
+            $token,
+            fn (): array => $this->prepare($this->project((string) $stage->project_id), is_array($history) ? $history : null),
+            $this->perform(),
+            'tạo DNA',
+            'design dna',
+            notCalled: 'Chưa gọi model DNA: ',
+        );
+    }
+
+    /** @return \Closure(VideoPlanningStage, string, array<string, mixed>, ?\Closure(\Throwable): ?array): array{0: ?VideoPlanningStage, 1: string} */
+    private function perform(): \Closure
+    {
+        return (new StageQueue($this->stageStore))->singleCall($this->writer, PlanningStageName::DESIGN_DNA, fn (array $run, string $raw): array => $this->output($run, $raw), 'tạo DNA', 'design dna');
+    }
+
+    private function project(string $projectId): VideoProject
     {
         $project = $this->projects->getById($projectId);
 
-        if ($project === null || $project->article === null) {
-            return [null, 'Không tìm thấy dự án hoặc dự án không gắn bài viết.'];
-        }
-
-        try {
-            $run = $this->prepare($project);
-        } catch (\Throwable $e) {
-            Log::error('design dna: prompt or input unavailable, no model call made', ['project_id' => $projectId, 'exception' => $e]);
-
-            return [null, 'Chưa gọi model DNA: '.$e->getMessage()];
-        }
-
-        $replaceFailing = fn (VideoPlanningStage $served): bool => $regenerate && $this->replaceable($served, $run);
-
-        try {
-            [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::DESIGN_DNA, $run['input'], $replaceFailing, ['manifest' => $run['manifest']]);
-        } catch (\Throwable $e) {
-            Log::error('design dna: could not open the run', ['project_id' => $projectId, 'exception' => $e]);
-
-            return [null, 'Không mở được lượt tạo DNA — xem log.'];
-        }
-
-        if ($token === null) {
-            return match (true) {
-                $reason === 'already_succeeded' && $this->replaceable($stage, $run) => [null, 'DNA đã lưu cho đúng Phase 1 và prompt này chưa đạt kiểm kỹ thuật — bấm "Tạo lại DNA" để tạo bản mới. Không gọi model.'],
-                $reason === 'already_succeeded' => [$stage->output_json, 'cached'],
-                $reason === 'claimed_by_other' => [null, 'Đang có một lượt tạo DNA chạy cho dự án này — đợi xong rồi thử lại.'],
-                default => [null, 'Không tìm thấy dự án.'],
-            };
-        }
-
-        $model = (string) $run['input']['model'];
-        $version = self::instructionVersion($run['prompt']);
-        $stageId = (string) $stage->id;
-
-        try {
-            $response = $this->writer->complete(new LlmRequest(
-                $run['system'],
-                $run['payload'],
-                $version,
-                $model,
-                (int) $run['input']['max_tokens'],
-                null,
-                (string) $run['input']['effort'],
-                (int) $run['input']['timeout_seconds'],
-                1,
-                fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
-            ));
-            $usage = ClaudeInspirationAnalyst::usageOf($response, $version);
-
-            try {
-                $output = $this->output($run, $response->text);
-            } catch (\Throwable $e) {
-                Log::error('design dna: the check threw on a received answer', ['stage_id' => $stageId, 'exception' => $e]);
-                $this->stageStore->finishFailed($stageId, $token, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận: '.$e->getMessage(), $usage, $response->text);
-
-                return [null, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận — phản hồi và usage đã được lưu: '.$e->getMessage()];
-            }
-
-            if (! $this->stageStore->finishSucceeded($stageId, $token, $response->text, $output, $usage)) {
-                return $this->claimLost($projectId, PlanningStageName::DESIGN_DNA, $run['input'], $stageId, $token, $usage, $response->text, $output);
-            }
-
-            return [$output, 'ok'];
-        } catch (\Throwable $e) {
-            Log::error('design dna: the run failed', ['stage_id' => $stageId, 'exception' => $e]);
-            $billed = $e instanceof LlmUnavailable ? $e->billed : null;
-            $this->stageStore->finishFailed(
-                $stageId,
-                $token,
-                $e->getMessage(),
-                $billed === null ? ['model' => $model, 'instruction_version' => $version] : ClaudeInspirationAnalyst::usageOf($billed, $version),
-                $billed?->text ?? '',
-            );
-
-            return [null, $e->getMessage()];
-        }
+        return $project !== null && $project->article !== null ? $project : throw new RuntimeException('Không tìm thấy dự án hoặc dự án không gắn bài viết.');
     }
 
     /** @return array{model: string, effort: string, max_tokens: int, timeout_seconds: int, stream: bool, retry_times: int} */
@@ -169,11 +141,11 @@ final class DesignDnaService
         $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::DESIGN_DNA, $run['input']);
         $canRun = $run !== null && $served === null;
         $canRegenerate = $run !== null && $served !== null && $this->replaceable($served, $run);
-        $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'stuck' => false, 'error' => null, 'stream' => null,
+        $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'pending' => false, 'stuck' => false, 'error' => null, 'stream' => null, 'task' => null,
             'source' => null, 'current' => false, 'check' => null, 'novelty' => null, 'phase3_ready' => false, 'json' => null, 'json_error' => null];
 
         if ($latest === null) {
-            return ['can_run' => $canRun, 'can_regenerate' => false, 'prompt' => $next, 'run_error' => $runError] + $empty;
+            return ['can_run' => $canRun, 'can_regenerate' => false, 'prompt' => $next, 'run_error' => $runError, 'operation_id' => (string) Str::uuid()] + $empty;
         }
 
         $succeeded = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value;
@@ -193,12 +165,15 @@ final class DesignDnaService
             'analysed' => $succeeded,
             'status' => $latest->status,
             'running' => $claimed && $latest->lease_expires_at?->isFuture() === true,
+            'pending' => $latest->status === VideoPlanningStageStatus::PENDING->value,
             'stuck' => $claimed && $latest->lease_expires_at?->isFuture() !== true,
             'error' => $latest->error_message,
             'stream' => PlanningStageStore::streamOf($latest),
+            'task' => PlanningStageStore::taskOf($latest),
             'can_run' => $canRun,
             'prompt' => $next,
             'run_error' => $runError,
+            'operation_id' => (string) Str::uuid(),
             'source' => isset($recorded['phase_revision']) ? self::label((int) $recorded['phase_revision'], (string) ($recorded['workflow'] ?? '')) : null,
             'current' => $current,
             'check' => $check,
@@ -212,18 +187,10 @@ final class DesignDnaService
         ];
     }
 
-    /** @return array{0: bool, 1: string} */
+    /** @return array{0: bool, 1: string} reason pending when a queued run was cancelled */
     public function reset(string $projectId): array
     {
-        [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::DESIGN_DNA, [], skipOrphans: true);
-
-        if ($latest === null) {
-            return [false, 'Chưa có lượt tạo DNA nào.'];
-        }
-
-        return $this->stageStore->releaseClaim((string) $latest->id, 'Người dùng reset thủ công')
-            ? [true, 'ok']
-            : [false, 'Lượt này không còn giữ claim — không có gì để reset.'];
+        return $this->stageStore->resetLatest($projectId, PlanningStageName::DESIGN_DNA, 'Chưa có lượt tạo DNA nào.');
     }
 
     public static function instructionVersion(AiPhase $prompt): string
@@ -231,8 +198,11 @@ final class DesignDnaService
         return "spec-v6.3-phase-2@rev{$prompt->revision}";
     }
 
-    /** @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>} */
-    private function prepare(VideoProject $project): array
+    /**
+     * @param  ?list<string>  $queuedHistory  the concept history stages a queued run was sent with, so a concept passed by another project while it waited changes nothing
+     * @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, prompt_version: string, settings: array<string, mixed>, input: array<string, mixed>, metadata: array<string, mixed>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>}
+     */
+    private function prepare(VideoProject $project, ?array $queuedHistory = null): array
     {
         $phaseOne = $this->videoProjects->latestInspiration((string) $project->id);
 
@@ -288,7 +258,7 @@ final class DesignDnaService
         $flags = array_values(array_filter((array) ($phaseOne['source_check']['flags'] ?? []), 'is_string'));
         $brief = $moto ? self::motoBrief() : [];
         [$history, $historyStages] = $moto
-            ? self::conceptHistory($project, ['phase_id' => (string) $prompt->id, 'bundle_hash' => $bundle->bundleHash(), 'inspiration_stage_id' => (string) $stage->id])
+            ? self::conceptHistory($project, ['phase_id' => (string) $prompt->id, 'bundle_hash' => $bundle->bundleHash(), 'inspiration_stage_id' => (string) $stage->id], $queuedHistory)
             : [[], []];
         $payload = (string) json_encode(
             $moto
@@ -302,6 +272,9 @@ final class DesignDnaService
             'system' => implode("\n\n", [...array_column($bundle->parts(), 'content'), ...$schemas]),
             'manifest' => $manifest,
             'payload' => $payload,
+            'prompt_version' => self::instructionVersion($prompt),
+            'settings' => self::settings(),
+            'metadata' => ['manifest' => $manifest],
             'inspiration' => $inspiration,
             'flags' => $flags,
             'brief' => $brief,
@@ -376,9 +349,10 @@ final class DesignDnaService
 
     /**
      * @param  array{phase_id: string, bundle_hash: string, inspiration_stage_id: string}  $contract  what this DNA run is pinned to
-     * @return array{0: list<array{id: string, theme: string, silhouette: string, features: list<string>, motifs: list<string>}>, 1: list<string>} the passed moto concepts of other projects with the DNA stages they come from: the snapshot a passed run of this project and contract was sent with, or, while there is none, every concept passed before now, newest first
+     * @param  ?list<string>  $queued  the history stages a queued run was sent with; they win over every other source
+     * @return array{0: list<array{id: string, theme: string, silhouette: string, features: list<string>, motifs: list<string>}>, 1: list<string>} the passed moto concepts of other projects with the DNA stages they come from: the snapshot a queued run or a passed run of this project and contract was sent with, or, while there is none, every concept passed before now, newest first
      */
-    private static function conceptHistory(VideoProject $project, array $contract): array
+    private static function conceptHistory(VideoProject $project, array $contract, ?array $queued = null): array
     {
         $passed = static fn () => VideoPlanningStage::query()
             ->where('stage', PlanningStageName::DESIGN_DNA->value)
@@ -386,7 +360,7 @@ final class DesignDnaService
             ->where('input_json->execution', MotoContract::DNA_EXECUTION)
             ->whereNull('input_json->orphan_of_stage_id')
             ->where('output_json->check->verdict', DnaCheck::PASS);
-        $pinned = $passed()
+        $pinned = $queued ?? $passed()
             ->where('project_id', $project->id)
             ->where('input_json->phase_id', $contract['phase_id'])
             ->where('input_json->bundle_hash', $contract['bundle_hash'])
@@ -454,23 +428,6 @@ final class DesignDnaService
             'json_parse_error' => $error,
             'check' => self::checkV2($raw, $run, $run['manifest'], (string) $run['input']['execution']),
         ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $input
-     * @param  array<string, mixed>  $usage
-     * @param  array<string, mixed>  $output
-     * @return array{0: null, 1: string}
-     */
-    private function claimLost(string $projectId, PlanningStageName $stageName, array $input, string $stageId, string $token, array $usage, string $raw, array $output): array
-    {
-        try {
-            $this->stageStore->recordOrphanAttempt($projectId, $stageName, $input, [], $stageId, $token, 'claim_lost', $usage, $raw, $output);
-        } catch (\Throwable $e) {
-            Log::warning('design dna: recordOrphanAttempt threw', ['stage_id' => $stageId, 'exception' => $e]);
-        }
-
-        return [null, 'Lượt chạy bị giành mất khi lưu — kết quả đã trả tiền không được dùng. Tải lại trang rồi bấm lại nếu cần.'];
     }
 
     private static function label(int $revision, string $workflow): string

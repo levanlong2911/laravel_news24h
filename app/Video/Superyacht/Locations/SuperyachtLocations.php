@@ -69,7 +69,7 @@ final class SuperyachtLocations implements LocationWorkflow
         $script = $this->scripts->approvedSource($projectId);
         $stage = VideoPlanningStage::query()->whereKey($script['stage_id'])->where('project_id', $projectId)->firstOrFail();
         $meta = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null);
-        $pinned = json_decode((string) ($meta['payload'] ?? ''), true);
+        $pinned = json_decode((string) app(PlanningStageStore::class)->payloadOf($stage), true);
         $design = (array) ($meta['source'] ?? []);
         $scriptContext = (array) ($meta['context'] ?? []);
 
@@ -126,7 +126,7 @@ final class SuperyachtLocations implements LocationWorkflow
 
         $stage = VideoPlanningStage::query()->whereKey($source['script']['stage_id'] ?? null)->where('project_id', $projectId)->first()
             ?? throw new RuntimeException('Kịch bản mà bản này ghim không còn — không bổ sung được trường thiết kế.');
-        $pinned = json_decode((string) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['payload'] ?? ''), true);
+        $pinned = json_decode((string) app(PlanningStageStore::class)->payloadOf($stage), true);
 
         if (! is_array($pinned) || ! is_array($pinned['yacht_bible'] ?? null)) {
             throw new RuntimeException('Kịch bản mà bản này ghim không còn payload thiết kế — không bổ sung được trường thiết kế.');

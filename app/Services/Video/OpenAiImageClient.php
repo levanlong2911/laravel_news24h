@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
+use App\Video\Queue\ProviderRateLimit;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
-use Throwable;
 
 final class OpenAiImageClient
 {
@@ -78,19 +77,12 @@ final class OpenAiImageClient
         $startedAt = microtime(true);
 
         try {
-            $response = $this->http
+            $response = ProviderRateLimit::imageRetry($this->http
                 ->withHeaders([
                     'Authorization' => 'Bearer '.$this->apiKey,
                     'content-type' => 'application/json',
                 ])
-                ->timeout($this->timeoutSeconds)
-                ->retry(
-                    2,
-                    1000,
-                    when: static fn (Throwable $exception): bool => $exception instanceof RequestException
-                        && $exception->response->status() === 429,
-                    throw: false,
-                )
+                ->timeout($this->timeoutSeconds))
                 ->post(rtrim($this->baseUrl, '/').self::ENDPOINT, $payload);
         } catch (ConnectionException $exception) {
             return $this->connectionFail($exception);
@@ -198,16 +190,9 @@ final class OpenAiImageClient
         $this->extendPhpLimits($budgetSeconds);
         $startedAt = microtime(true);
 
-        $request = $this->http
+        $request = ProviderRateLimit::imageRetry($this->http
             ->withHeaders(['Authorization' => 'Bearer '.$this->apiKey])
-            ->timeout($this->timeoutSeconds)
-            ->retry(
-                2,
-                1000,
-                when: static fn (Throwable $exception): bool => $exception instanceof RequestException
-                    && $exception->response->status() === 429,
-                throw: false,
-            );
+            ->timeout($this->timeoutSeconds));
 
         foreach ($images as $image) {
             $request = $request->attach($field, $image['bytes'], $image['filename']);
@@ -242,13 +227,15 @@ final class OpenAiImageClient
     ): array {
         if ($response->failed()) {
             $error = $response->json('error') ?? [];
+            $code = (string) ($error['code'] ?? $error['type'] ?? 'unknown');
+            $message = (string) ($error['message'] ?? mb_substr($response->body(), 0, 300));
 
-            return $this->fail(sprintf(
-                'OpenAI %d (%s): %s',
-                $response->status(),
-                (string) ($error['code'] ?? $error['type'] ?? 'unknown'),
-                (string) ($error['message'] ?? mb_substr($response->body(), 0, 300)),
-            ));
+            return $this->fail(sprintf('OpenAI %d (%s): %s', $response->status(), $code, $message), [
+                'status' => $response->status(),
+                'code' => $code,
+                'message' => $message,
+                'retry_after' => ProviderRateLimit::imageRetryAfter($response),
+            ]);
         }
 
         $providerMs = (int) round((microtime(true) - $startedAt) * 1000);
@@ -358,10 +345,13 @@ final class OpenAiImageClient
         ));
     }
 
-    /** @return array{ok: bool, error: string, renders: list<array<string, mixed>>} */
-    private function fail(string $error): array
+    /**
+     * @param  ?array{status: int, code: string, message: string, retry_after: ?int}  $refusal  what the provider answered when it refused the call, for the queue to tell a rate limit from a spent quota
+     * @return array{ok: bool, error: string, renders: list<array<string, mixed>>, refusal: ?array<string, mixed>}
+     */
+    private function fail(string $error, ?array $refusal = null): array
     {
-        return ['ok' => false, 'error' => $error, 'renders' => []];
+        return ['ok' => false, 'error' => $error, 'renders' => [], 'refusal' => $refusal];
     }
 
     private function extendPhpLimits(int $budgetSeconds): void

@@ -52,7 +52,7 @@
                 </div>
             </div>
 
-            <div class="vp-panel">
+            <div class="vp-panel" id="inspirationPanel" data-ajax-part>
                 <div class="va-head">
                     <span class="n">2</span>
                     <b>INSPIRATION</b>
@@ -60,6 +60,8 @@
                     @if($brief['analysed'])<span class="va-tag blue">Đã phân tích</span>@endif
                     @if($brief['running'])
                         <button class="vp-btn sm" disabled>Đang phân tích…</button>
+                    @elseif($brief['pending'])
+                        @include('video-projects.partials.task-pending', ['reset' => route('video-projects.inspiration-reset', $project->id)])
                     @elseif($brief['stuck'])
                         <form method="POST" action="{{ route('video-projects.inspiration-reset', $project->id) }}">
                             @csrf
@@ -69,6 +71,7 @@
                         <form method="POST" action="{{ route('video-projects.inspiration', $project->id) }}"
                               id="inspirationForm" data-modal="confirmInspiration" onsubmit="return vpLockForm(this)">
                             @csrf
+                            <input type="hidden" name="operation_id" value="{{ $brief['operation_id'] }}">
                         </form>
                         <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmInspiration"
                                 data-busy="Đang phân tích…">{{ $brief['analysed'] ? 'Phân tích lại' : 'Analysis' }}</button>
@@ -93,6 +96,7 @@
                             @if($brief['run_error'])
                                 <div class="line"><span class="v" style="color:var(--vp-red)">{{ $brief['run_error'] }}</span></div>
                             @endif
+                            @include('video-projects.partials.task-state', ['task' => $brief['task'], 'projectId' => $project->id])
                             @include('video-projects.partials.stream-state', ['stream' => $brief['stream']])
                             @if($brief['error'])
                                 <div class="line"><span class="v" style="color:var(--vp-red)">{{ $brief['error'] }}</span></div>
@@ -161,7 +165,7 @@
             </div>
 
             @if($designFirst)
-                <div class="vp-panel">
+                <div class="vp-panel" id="dnaPanel" data-ajax-part>
                     <div class="va-head">
                         <span class="n">3</span>
                         <b>DESIGN DNA</b>
@@ -169,6 +173,8 @@
                         @if($dna['analysed'])<span class="va-tag blue">Đã tạo</span>@endif
                         @if($dna['running'])
                             <button class="vp-btn sm" disabled>Đang tạo DNA…</button>
+                        @elseif($dna['pending'])
+                            @include('video-projects.partials.task-pending', ['reset' => route('video-projects.design-dna-reset', $project->id)])
                         @elseif($dna['stuck'])
                             <form method="POST" action="{{ route('video-projects.design-dna-reset', $project->id) }}">
                                 @csrf
@@ -178,6 +184,7 @@
                             <form method="POST" action="{{ route('video-projects.design-dna', $project->id) }}"
                                   id="designDnaForm" data-modal="confirmDesignDna" onsubmit="return vpLockForm(this)">
                                 @csrf
+                                <input type="hidden" name="operation_id" value="{{ $dna['operation_id'] }}">
                             </form>
                             <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmDesignDna"
                                     data-busy="Đang tạo DNA…">{{ $dna['analysed'] ? 'Tạo lại DNA' : 'Tạo Design DNA' }}</button>
@@ -191,6 +198,7 @@
                                   id="designDnaRegenerateForm" data-modal="confirmDesignDnaRegenerate" onsubmit="return vpLockForm(this)">
                                 @csrf
                                 <input type="hidden" name="regenerate" value="1">
+                                <input type="hidden" name="operation_id" value="{{ $dna['operation_id'] }}">
                             </form>
                             <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmDesignDnaRegenerate"
                                     data-busy="Đang tạo DNA…">Tạo lại DNA (tính phí)</button>
@@ -216,6 +224,7 @@
                                 @if($dna['run_error'])
                                     <div class="line"><span class="v" style="color:var(--vp-red)">{{ $dna['run_error'] }}</span></div>
                                 @endif
+                                @include('video-projects.partials.task-state', ['task' => $dna['task'], 'projectId' => $project->id])
                                 @include('video-projects.partials.stream-state', ['stream' => $dna['stream']])
                                 @if($dna['error'])
                                     <div class="line"><span class="v" style="color:var(--vp-red)">{{ $dna['error'] }}</span></div>
@@ -383,6 +392,7 @@
 
     if (page) {
         init(page);
+        vpTaskWatch({ root: 'anchorPage', refresh: init });
         // vpAjaxPage('anchorPage', init);
     }
 })();

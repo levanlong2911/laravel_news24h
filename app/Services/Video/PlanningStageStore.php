@@ -19,6 +19,9 @@ class PlanningStageStore
 
     private const PRICING_METADATA_KEYS = ['pricing', 'pricing_version', 'design_repair'];
 
+    /** @var array<string, ?string> the snapshot payloads already read in this request, by stage id */
+    private array $payloads = [];
+
     /**
      * @param  array<string, mixed>|null  $inputJson
      * @return array<string, mixed>
@@ -67,6 +70,47 @@ class PlanningStageStore
         bool|\Closure $force = false,
         array $metadata = [],
     ): array {
+        return $this->openProjectStage($projectId, $stage, $input, $force, $metadata, VideoPlanningStageStatus::RUNNING, null, null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @param  bool|\Closure(VideoPlanningStage): bool  $force
+     * @param  array<string, mixed>  $metadata
+     * @param  string  $snapshot  the request a worker sends later, kept apart from input_json
+     * @param  ?\Closure(VideoPlanningStage, string): void  $push  inserts the job of the pending row inside the same transaction, on the same connection
+     * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
+     *                                                              reason: project_not_found|operation_replayed|claimed_by_other|already_succeeded|queued
+     */
+    public function queueProjectStage(
+        string $projectId,
+        PlanningStageName $stage,
+        array $input,
+        bool|\Closure $force,
+        array $metadata,
+        string $snapshot,
+        ?\Closure $push,
+    ): array {
+        return $this->openProjectStage($projectId, $stage, $input, $force, $metadata, VideoPlanningStageStatus::PENDING, $snapshot, $push);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
+     * @param  bool|\Closure(VideoPlanningStage): bool  $force
+     * @param  array<string, mixed>  $metadata
+     * @param  ?\Closure(VideoPlanningStage, string): void  $push
+     * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string}
+     */
+    private function openProjectStage(
+        string $projectId,
+        PlanningStageName $stage,
+        array $input,
+        bool|\Closure $force,
+        array $metadata,
+        VideoPlanningStageStatus $status,
+        ?string $snapshot,
+        ?\Closure $push,
+    ): array {
         if (array_key_exists(self::METADATA_KEY, $input)) {
             throw new \InvalidArgumentException(
                 'Planning stage input may not carry a reserved '.self::METADATA_KEY.' key.'
@@ -80,10 +124,11 @@ class PlanningStageStore
         try {
             $operationId = is_string($metadata['operation_id'] ?? null) && $metadata['operation_id'] !== '' ? $metadata['operation_id'] : null;
 
-            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force, $operationId) {
+            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force, $operationId, $status, $snapshot, $push) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
                 $rows = VideoPlanningStage::query()
+                    ->withoutSnapshot()
                     ->where('project_id', $projectId)
                     ->where('stage', $stage->value)
                     ->get();
@@ -97,9 +142,10 @@ class PlanningStageStore
                     return [$replayed, null, 'operation_replayed'];
                 }
 
-                $live = $rows->first(fn ($r) => $r->status === VideoPlanningStageStatus::RUNNING->value
-                    && $r->claim_token !== null
-                    && $r->lease_expires_at?->isFuture());
+                $live = $rows->first(fn ($r) => $r->claim_token !== null && (
+                    ($r->status === VideoPlanningStageStatus::RUNNING->value && $r->lease_expires_at?->isFuture())
+                    || $r->status === VideoPlanningStageStatus::PENDING->value
+                ));
 
                 if ($live !== null) {
                     return [$live, null, 'claimed_by_other'];
@@ -114,14 +160,16 @@ class PlanningStageStore
                     return [$done, null, 'already_succeeded'];
                 }
 
+                $running = $status === VideoPlanningStageStatus::RUNNING;
                 $attributes = [
-                    'status' => VideoPlanningStageStatus::RUNNING->value,
+                    'status' => $status->value,
                     'input_json' => $stored,
                     'input_hash' => $hash,
+                    'request_snapshot' => $snapshot,
                     'claim_token' => $claimToken,
-                    'claimed_at' => now(),
-                    'lease_expires_at' => now()->addSeconds(self::LEASE_SECONDS),
-                    'started_at' => now(),
+                    'claimed_at' => $running ? now() : null,
+                    'lease_expires_at' => $running ? now()->addSeconds(self::LEASE_SECONDS) : null,
+                    'started_at' => $running ? now() : null,
                     'error_message' => null,
                 ];
 
@@ -129,23 +177,137 @@ class PlanningStageStore
 
                 if ($expired !== null) {
                     $expired->update($attributes);
-
-                    return [$expired, $claimToken, 'claimed'];
-                }
-
-                return [
-                    VideoPlanningStage::create($attributes + [
+                    $row = $expired;
+                } else {
+                    $row = VideoPlanningStage::create($attributes + [
                         'project_id' => $projectId,
                         'planning_revision' => ((int) $rows->max('planning_revision')) + 1,
                         'stage' => $stage->value,
-                    ]),
-                    $claimToken,
-                    'claimed',
-                ];
+                    ]);
+                }
+
+                if ($push !== null) {
+                    $push($row, $claimToken);
+                }
+
+                return [$row, $claimToken, $running ? 'claimed' : 'queued'];
             });
         } catch (ModelNotFoundException $e) {
             return [null, null, 'project_not_found'];
         }
+    }
+
+    public function acceptQueued(string $stageId, string $claimToken): bool
+    {
+        return VideoPlanningStage::query()
+            ->whereKey($stageId)
+            ->where('claim_token', $claimToken)
+            ->where('status', VideoPlanningStageStatus::PENDING->value)
+            ->update([
+                'status' => VideoPlanningStageStatus::RUNNING->value,
+                'claimed_at' => now(),
+                'lease_expires_at' => now()->addSeconds(self::LEASE_SECONDS),
+                'started_at' => now(),
+            ]) > 0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $retry
+     * @param  \Closure(string): void  $push  inserts the delayed job for the new claim token inside the same transaction
+     * @return bool false when the run no longer holds this claim, so a reset or a recovered run is never brought back
+     */
+    public function requeue(string $stageId, string $claimToken, array $retry, \Closure $push): bool
+    {
+        $table = (new VideoPlanningStage)->getTable();
+        $meta = '$."'.self::METADATA_KEY.'"';
+        $path = $meta.'."retry"';
+
+        return DB::transaction(function () use ($table, $meta, $path, $stageId, $claimToken, $retry, $push): bool {
+            $next = (string) Str::uuid();
+            $moved = DB::update(
+                "UPDATE {$table} SET status = ?, claim_token = ?, claimed_at = NULL, lease_expires_at = NULL, input_json = JSON_SET(JSON_INSERT(input_json, '{$meta}', JSON_OBJECT()), '{$path}', JSON_EXTRACT(?, '$')), updated_at = ? WHERE id = ? AND claim_token = ? AND status = ?",
+                [VideoPlanningStageStatus::PENDING->value, $next, json_encode($retry, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), now(), $stageId, $claimToken, VideoPlanningStageStatus::RUNNING->value],
+            ) > 0;
+
+            if ($moved) {
+                $push($next);
+            }
+
+            return $moved;
+        });
+    }
+
+    public function snapshotOf(string $stageId): ?string
+    {
+        $snapshot = VideoPlanningStage::query()->whereKey($stageId)->value('request_snapshot');
+
+        return is_string($snapshot) ? $snapshot : null;
+    }
+
+    /**
+     * @param  \Closure(string): bool  $hasJob  whether the queue still holds a job for a pending stage id
+     * @return array{running: int, pending: int} the runs marked failed in this pass
+     */
+    public function recoverExpired(int $limit, int $pendingGraceSeconds, \Closure $hasJob): array
+    {
+        $recovered = ['running' => 0, 'pending' => 0];
+        $expired = VideoPlanningStage::query()
+            ->where('status', VideoPlanningStageStatus::RUNNING->value)
+            ->whereNotNull('claim_token')
+            ->where('lease_expires_at', '<', now())
+            ->orderBy('lease_expires_at')
+            ->limit($limit)
+            ->get(['id', 'claim_token']);
+
+        foreach ($expired as $row) {
+            $recovered['running'] += VideoPlanningStage::query()
+                ->whereKey($row->id)
+                ->where('claim_token', $row->claim_token)
+                ->where('status', VideoPlanningStageStatus::RUNNING->value)
+                ->where('lease_expires_at', '<', now())
+                ->update($this->recoveredAttributes('Lease hết hạn — tiến trình chạy lượt này đã dừng hoặc mất kết nối. Không tự gửi lại yêu cầu tính phí; bấm tạo lại nếu cần.'));
+        }
+
+        $orphans = VideoPlanningStage::query()
+            ->where('status', VideoPlanningStageStatus::PENDING->value)
+            ->whereNotNull('claim_token')
+            ->where('updated_at', '<', now()->subSeconds($pendingGraceSeconds))
+            ->orderBy('updated_at')
+            ->limit($limit)
+            ->get(['id', 'claim_token']);
+
+        foreach ($orphans as $row) {
+            if ($hasJob((string) $row->id)) {
+                continue;
+            }
+
+            $recovered['pending'] += VideoPlanningStage::query()
+                ->whereKey($row->id)
+                ->where('claim_token', $row->claim_token)
+                ->where('status', VideoPlanningStageStatus::PENDING->value)
+                ->update($this->recoveredAttributes('Lượt chờ không còn job trong hàng đợi — chưa gọi model. Bấm tạo lại nếu cần.'));
+        }
+
+        return $recovered;
+    }
+
+    /** @param array<string, mixed> $input */
+    public function inputHash(array $input): string
+    {
+        return $this->hash($input);
+    }
+
+    /** @return array<string, mixed> */
+    private function recoveredAttributes(string $error): array
+    {
+        return [
+            'status' => VideoPlanningStageStatus::FAILED->value,
+            'error_message' => $error,
+            'claim_token' => null,
+            'claimed_at' => null,
+            'lease_expires_at' => null,
+            'finished_at' => now(),
+        ];
     }
 
     /**
@@ -451,6 +613,26 @@ class PlanningStageStore
         return is_array($stream) ? $stream : null;
     }
 
+    /** @return ?array{stage_id: string, status: string, requested_by: ?string, queued_at: ?string, started_at: ?string, retry_at: ?int} the run still waiting or running, as a page and the status endpoint show it */
+    public static function taskOf(?VideoPlanningStage $stage): ?array
+    {
+        if ($stage === null || $stage->claim_token === null || ! in_array($stage->status, [VideoPlanningStageStatus::PENDING->value, VideoPlanningStageStatus::RUNNING->value], true)) {
+            return null;
+        }
+
+        $metadata = self::metadataOf(is_array($stage->input_json) ? $stage->input_json : null);
+        $retryAt = $metadata['retry']['retry_at'] ?? null;
+
+        return [
+            'stage_id' => (string) $stage->id,
+            'status' => (string) $stage->status,
+            'requested_by' => is_string($metadata['requested_by']['name'] ?? null) ? $metadata['requested_by']['name'] : null,
+            'queued_at' => is_string($metadata['queued_at'] ?? null) ? $metadata['queued_at'] : null,
+            'started_at' => $stage->started_at?->toIso8601String(),
+            'retry_at' => $stage->status === VideoPlanningStageStatus::PENDING->value && is_int($retryAt) ? $retryAt : null,
+        ];
+    }
+
     /** @return bool false when the stored tokens and cost are only what was known before the call broke */
     public static function costKnown(VideoPlanningStage $stage): bool
     {
@@ -472,6 +654,52 @@ class PlanningStageStore
             "UPDATE {$table} SET input_json = JSON_SET(JSON_INSERT(input_json, '{$meta}', JSON_OBJECT()), '{$path}', JSON_EXTRACT(?, '$')), lease_expires_at = ?, updated_at = ? WHERE id = ? AND claim_token = ? AND status = ?",
             [json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), now()->addSeconds(self::LEASE_SECONDS), now(), $stageId, $claimToken, $running],
         ) > 0 || VideoPlanningStage::query()->whereKey($stageId)->where('claim_token', $claimToken)->where('status', $running)->exists();
+    }
+
+    /** @return array{0: bool, 1: string} the latest run of a step reset; reason pending when it was still waiting in the queue */
+    public function resetLatest(string $projectId, PlanningStageName $stage, string $none): array
+    {
+        [$latest] = $this->latestStageForProject($projectId, $stage, [], skipOrphans: true);
+
+        if ($latest === null) {
+            return [false, $none];
+        }
+
+        $pending = $latest->status === VideoPlanningStageStatus::PENDING->value;
+
+        return $this->releaseClaim((string) $latest->id, $pending ? 'Người dùng huỷ lượt đang chờ trong hàng đợi' : 'Người dùng reset thủ công')
+            ? [true, $pending ? 'pending' : 'ok']
+            : [false, 'Lượt này không còn giữ claim — không có gì để reset.'];
+    }
+
+    /** @return ?string the payload a stage was sent with: its snapshot for a run queued with one, its metadata for a run made before snapshots */
+    public function payloadOf(VideoPlanningStage $stage): ?string
+    {
+        $id = (string) $stage->id;
+
+        if (array_key_exists($id, $this->payloads)) {
+            return $this->payloads[$id];
+        }
+
+        $input = is_array($stage->input_json) ? $stage->input_json : [];
+        $raw = $this->snapshotOf($id);
+
+        if ($raw === null) {
+            $metadata = self::metadataOf($input);
+
+            return $this->payloads[$id] = is_string($metadata['payload'] ?? null) ? $metadata['payload'] : null;
+        }
+
+        $snapshot = json_decode($raw, true);
+        $payload = is_array($snapshot) ? ($snapshot['payload'] ?? null) : null;
+
+        if (! is_array($snapshot) || ($snapshot['format'] ?? null) !== StageQueue::SNAPSHOT_FORMAT || ! is_string($payload)
+            || ! is_string($snapshot['payload_sha256'] ?? null) || ! hash_equals($snapshot['payload_sha256'], hash('sha256', $payload))
+            || (isset($input['payload_sha256']) && ! hash_equals((string) $input['payload_sha256'], hash('sha256', $payload)))) {
+            throw new \RuntimeException("Bản chụp yêu cầu của lượt {$id} hỏng, sai định dạng hoặc không khớp mã băm — không dùng được lượt này.");
+        }
+
+        return $this->payloads[$id] = $payload;
     }
 
     public function releaseClaim(string $stageId, string $reason): bool
