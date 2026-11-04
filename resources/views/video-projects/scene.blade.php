@@ -69,9 +69,6 @@
                     data-action="{{ route('video-projects.storyboard-recheck', $id) }}"
                     title="Kiểm lại câu trả lời AI thất bại đã lưu bằng code hiện tại — không gọi AI, không tính tiền">Kiểm lại câu trả lời đã lưu</button>
         @endif
-
-        <a class="vp-btn sm" href="{{ route('video-projects.anchor', $id) }}#storyboard-panel"
-           title="Nút lập storyboard nằm ngay sau phần Phân cảnh đầy đủ">{{ $revision > 0 ? 'Lập lại storyboard ở trang Kịch bản' : 'Lập storyboard ở trang Kịch bản' }}</a>
     </div>
 
     <div class="vs-c" id="storyboardStatus" style="margin-bottom:10px;{{ in_array($storyboardRun['status'] ?? null, ['running', 'interrupted', 'failed'], true) ? '' : 'display:none;' }}color:{{ ($storyboardRun['status'] ?? null) === 'failed' ? 'var(--vp-red)' : 'var(--vp-amber-fg)' }}">

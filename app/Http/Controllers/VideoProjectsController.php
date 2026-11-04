@@ -186,9 +186,6 @@ class VideoProjectsController extends Controller
             }
         }
 
-        $screenplayCharacters = $this->screenplayExpansion->latestCast(
-            $project->id, 'characters', $screenplayFoundation['stage_id'],
-        );
         // dd(app(VesselDesignService::class)->panel($project->id));
 
         // $vesselDesign = app(VesselDesignService::class)->panel($project->id);
@@ -212,14 +209,8 @@ class VideoProjectsController extends Controller
             'anchorRows' => $anchorRows,
             'compileReason' => $this->anchorMessage('choose_prompt_settings'),
             'nextImageCode' => $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name),
-            'screenplay' => $this->videoProjectService->latestScreenplayScenes($project->id),
             'screenplayFoundation' => $screenplayFoundation,
-            'screenplayCharacters' => $screenplayCharacters,
-            'screenplayLocations' => $this->screenplayExpansion->latestCast(
-                $project->id, 'locations', $screenplayFoundation['stage_id'], $screenplayCharacters['stage_id'],
-            ),
             'anchorPrompt' => $this->videoProjectService->latestAnchorPrompt($project->id),
-            'storyboardPanel' => $this->videoProjectService->storyboardPanel($project->id),
             'designFirst' => VesselDesign::isDesignFirst($project),
             'vesselDesign' => VesselDesign::isDesignFirst($project)
                 ? app(VesselDesignService::class)->panel($project->id)
