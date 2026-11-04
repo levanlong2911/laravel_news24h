@@ -33,7 +33,7 @@ class ProbeVideoJob implements ShouldQueue
     {
         $started = microtime(true);
         sleep($this->seconds);
-        File::ensureDirectoryExists(self::directory($this->runId));
+        File::makeDirectory(self::directory($this->runId), 0775, true, true);
         file_put_contents(self::directory($this->runId).'/'.$this->label.'.json', (string) json_encode([
             'label' => $this->label,
             'queue' => (string) $this->job?->getQueue(),

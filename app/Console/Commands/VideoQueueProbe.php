@@ -41,6 +41,7 @@ class VideoQueueProbe extends Command
         }
 
         $runId = now()->format('Ymd-His').'-'.Str::lower(Str::random(4));
+        File::ensureDirectoryExists(ProbeVideoJob::directory($runId));
         $sentAt = microtime(true);
 
         for ($job = 1; $job <= $jobs; $job++) {
