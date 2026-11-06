@@ -163,19 +163,16 @@
                     <div class="vs-script-scroll">
                         <table class="vr-needs">
                             <thead>
-                                <tr><th>Beat</th><th>Hồi</th><th>s</th><th>BS · hé lộ</th><th>Hình</th><th>Địa điểm · thời điểm</th><th>Thiết kế · cấu hình</th><th>Tình huống</th><th>Âm thanh</th><th>Mối nối</th></tr>
+                                <tr><th>Beat</th><th>Hình</th><th>Địa điểm · thời điểm</th><th>Thiết kế · cấu hình</th><th>Tình huống</th><th>Âm thanh</th><th>Mối nối</th></tr>
                             </thead>
                             <tbody>
                                 @foreach($doc['beats'] as $beat)
                                     <tr>
-                                        <td><b>{{ $beat['id'] }}</b>@if($beat['time_jump'] !== 'none')<br><span class="va-tag mute">{{ $beat['time_jump'] }}</span>@endif</td>
-                                        <td>{{ $beat['act'] }}</td>
-                                        <td>{{ $beat['duration_s'] }}</td>
-                                        <td>{{ $beat['state'] ?? '—' }} · {{ $beat['reveal'] }}</td>
-                                        <td>{{ $beat['visual'] }}<br><em>{{ $beat['purpose'] }}</em>@if($beat['on_screen'] !== [])<br><span class="va-tag mute">{{ implode(', ', $beat['on_screen']) }}</span>@endif</td>
+                                        <td><b>{{ $beat['id'] }}</b><br><span class="va-tag mute">{{ $beat['time_jump'] }}</span><br>hồi: {{ $beat['act'] }}<br>s: {{ $beat['duration_s'] }}<br>BS: {{ $beat['state'] ?? '—' }}<br>hé lộ: {{ $beat['reveal'] }}</td>
+                                        <td>{{ $beat['visual'] }}<br><em>{{ $beat['purpose'] }}</em><br><span class="va-tag mute">{{ implode(', ', $beat['on_screen']) ?: '—' }}</span></td>
                                         <td>{{ $beat['location'] }} · {{ $beat['time_light'] }}</td>
-                                        <td>{{ collect($beat['design_refs'])->map(fn ($id) => isset($shown['places'][$id]) ? $id.' '.$shown['places'][$id] : $id)->implode(', ') }}@if($beat['configurations'] !== [])<br><em>{{ implode(', ', $beat['configurations']) }}</em>@endif</td>
-                                        <td>@if($beat['situation'] !== null){{ $beat['situation']['mode'] }} · máy {{ $beat['situation']['engine'] ?? '—' }} · chân chống {{ $beat['situation']['side_stand'] ?? '—' }}@if($beat['situation']['speed_kmh'] !== null) · {{ $beat['situation']['speed_kmh'] }} km/h @endif @else — @endif</td>
+                                        <td>{{ collect($beat['design_refs'])->map(fn ($id) => isset($shown['places'][$id]) ? $id.' '.$shown['places'][$id] : $id)->implode(', ') }}<br><em>{{ implode(', ', $beat['configurations']) ?: '—' }}</em><br>Đang dùng: {{ implode(', ', $beat['in_use'] ?? []) ?: '—' }}</td>
+                                        <td>@if($beat['situation'] !== null){{ $beat['situation']['mode'] }} · máy {{ $beat['situation']['engine'] ?? '—' }} · chân chống {{ $beat['situation']['side_stand'] ?? '—' }} · {{ $beat['situation']['speed_kmh'] ?? '—' }} km/h · nghiêng {{ isset($beat['situation']['lean_angle_deg']) ? $beat['situation']['lean_angle_deg'].'°' : '—' }} · đường {{ ($beat['situation']['dry_road'] ?? null) === null ? '—' : ($beat['situation']['dry_road'] ? 'khô' : 'không khô') }} · quy trình {{ implode(', ', $beat['situation']['procedures'] ?? []) ?: '—' }}@else — @endif</td>
                                         <td>{{ implode(', ', $beat['sfx']) }}</td>
                                         <td>{{ $beat['link'] ?? '—' }}</td>
                                     </tr>

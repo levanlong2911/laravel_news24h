@@ -234,7 +234,7 @@ final class ScriptWriterService implements QueuedStageService
         foreach ($lists as $list) {
             foreach ($list as $place) {
                 if (is_array($place) && is_string($place['id'] ?? null)) {
-                    $places[$place['id']] = mb_substr((string) ($place['name'] ?? $place['text'] ?? $place['description'] ?? ''), 0, 60);
+                    $places[$place['id']] = (string) ($place['name'] ?? $place['text'] ?? $place['description'] ?? '');
                 }
             }
         }

@@ -6,6 +6,9 @@ namespace App\Video\YachtDesign;
 
 final class DesignProse
 {
+    /** @var string how a field stored without content is written on a complete record */
+    private const NOTHING = '—';
+
     /** @var list<string> */
     private const BIBLE_SECTIONS = ['name', 'fictional_status', 'code_assumption', 'specs', 'colors', 'exterior', 'exterior_zones', 'innovations', 'decks', 'rooms'];
 
@@ -73,7 +76,7 @@ final class DesignProse
      * @param  array<mixed>  $data  the data of a phase3-design-v3 or moto-design-v1 answer
      * @param  string  $subject  the data key of the whole object: vessel or motorcycle
      * @param  array<string, string>  $sections  the list blocks by data key, with their section titles
-     * @return list<array{title: string, blocks: list<array{heading: ?string, lines: list<array{label: ?string, text: string|list<string>}>}>}>
+     * @return list<array{title: string, blocks: list<array{heading: ?string, lines: list<array{label: ?string, text: string|list<string>}>}>}> every value stored in the record, a field unknown to this class included
      */
     private static function record(array $data, string $subject, string $title, array $sections): array
     {
@@ -86,15 +89,19 @@ final class DesignProse
             self::section($title, [self::block(is_string($whole['name'] ?? null) ? $whole['name'] : null, self::lines($whole, ['name'], null, true))]),
             $rider === [] ? null : self::section('Rider interface', [self::block(null, self::lines($rider, [], null, true))]),
             ...array_map(
-                static fn (string $key, string $title): ?array => self::section($title, array_map($item, self::items($data[$key] ?? null))),
+                static fn (string $key, string $title): ?array => self::section($title, array_key_exists($key, $data) && self::items($data[$key]) === []
+                    ? [self::block(null, self::lines([$key => $data[$key]], [], null, true))]
+                    : array_map($item, self::items($data[$key] ?? null))),
                 array_keys($sections),
                 array_values($sections),
             ),
             self::section('Model sheet', [
-                self::block(null, self::lines(['display_configuration' => $sheet['display_configuration'] ?? null])),
+                self::block(null, self::lines(['display_configuration' => $sheet['display_configuration'] ?? null], [], null, true)),
                 ...array_map($item, self::items($sheet['views'] ?? null)),
-                self::block(null, self::lines(['final_prompt' => $sheet['final_prompt'] ?? null])),
+                self::block(null, self::lines(['final_prompt' => $sheet['final_prompt'] ?? null], [], null, true)),
+                self::block(null, self::lines(array_diff_key($sheet, array_flip(['display_configuration', 'views', 'final_prompt'])), [], null, true)),
             ]),
+            self::section('Additional information', [self::block(null, self::lines(array_diff_key($data, $sections + [$subject => true, 'rider_interface' => true, 'model_sheet' => true]), [], null, true))]),
         ]));
     }
 
@@ -147,29 +154,34 @@ final class DesignProse
     /**
      * @param  array<mixed>  $fields
      * @param  list<string>  $skip
-     * @param  bool  $figures  also write numbers, yes/no values and each {value, unit} figure on its own line
+     * @param  bool  $complete  write every stored value: numbers, yes/no values, colours, basis and fields stored empty too
      * @return list<array{label: ?string, text: string|list<string>}>
      */
-    private static function lines(array $fields, array $skip = [], ?string $prefix = null, bool $figures = false): array
+    private static function lines(array $fields, array $skip = [], ?string $prefix = null, bool $complete = false): array
     {
         $lines = [];
 
         foreach ($fields as $key => $value) {
-            if ($key === 'basis' || in_array($key, $skip, true)) {
+            if (in_array($key, $skip, true) || (! $complete && $key === 'basis')) {
                 continue;
             }
 
             $label = ($prefix === null ? '' : $prefix.' — ').self::label((string) $key);
 
-            if (self::prose($value)) {
+            if ($complete && (! is_array($value) || $value === [])) {
+                $lines[] = ['label' => $label, 'text' => self::written($value)];
+            } elseif ($complete && (is_int($value['value'] ?? null) || is_float($value['value'] ?? null))) {
+                $lines[] = ['label' => $label, 'text' => $value['value'].(is_string($value['unit'] ?? null) ? ' '.$value['unit'] : '').(is_string($value['basis'] ?? null) ? ' · Basis: '.$value['basis'] : '')];
+                array_push($lines, ...self::lines(array_diff_key($value, ['value' => true, 'unit' => true, 'basis' => true]), [], $label, true));
+            } elseif (self::prose($value)) {
                 $lines[] = ['label' => $label, 'text' => trim($value)];
-            } elseif ($figures && (is_int($value) || is_float($value) || is_bool($value))) {
-                $lines[] = ['label' => $label, 'text' => is_bool($value) ? ($value ? 'yes' : 'no') : (string) $value];
-            } elseif ($figures && is_array($value) && (is_int($value['value'] ?? null) || is_float($value['value'] ?? null))) {
-                $lines[] = ['label' => $label, 'text' => $value['value'].(is_string($value['unit'] ?? null) ? ' '.$value['unit'] : '')];
             } elseif (is_array($value) && array_is_list($value)) {
                 $texts = array_values(array_filter(array_map(
-                    static fn (mixed $item): ?string => self::prose($item) ? trim($item) : (is_array($item) && ! array_is_list($item) ? self::inline($item) : null),
+                    static fn (mixed $item): ?string => match (true) {
+                        ! $complete => self::prose($item) ? trim($item) : (is_array($item) && ! array_is_list($item) ? self::inline($item) : null),
+                        is_array($item) && $item !== [] && array_is_list($item) => '['.self::written($item).']',
+                        default => self::written($item),
+                    },
                     $value,
                 ), static fn (?string $text): bool => $text !== null && $text !== ''));
 
@@ -177,25 +189,27 @@ final class DesignProse
                     $lines[] = ['label' => $label, 'text' => $texts];
                 }
             } elseif (is_array($value)) {
-                array_push($lines, ...self::lines($value, [], $label, $figures));
+                array_push($lines, ...self::lines($value, [], $label, $complete));
             }
         }
 
         return $lines;
     }
 
-    /** @param  array<mixed>  $item  one object of a list, written on one line: each filled field as "label: value" */
-    private static function inline(array $item): string
+    /** @param  array<mixed>  $item  one object of a list, written on one line: each filled field as "label: value"; complete also writes yes/no values, nested values and fields stored empty */
+    private static function inline(array $item, bool $complete = false): string
     {
         $parts = [];
 
         foreach ($item as $key => $value) {
-            $text = match (true) {
-                is_string($value) => trim($value),
-                is_int($value), is_float($value) => (string) $value,
-                is_array($value) && array_is_list($value) => implode(', ', array_filter($value, 'is_string')),
-                default => '',
-            };
+            $text = $complete
+                ? (is_array($value) && $value !== [] && ! array_is_list($value) ? '('.self::inline($value, true).')' : self::written($value))
+                : match (true) {
+                    is_string($value) => trim($value),
+                    is_int($value), is_float($value) => (string) $value,
+                    is_array($value) && array_is_list($value) => implode(', ', array_filter($value, 'is_string')),
+                    default => '',
+                };
 
             if ($text !== '') {
                 $parts[] = self::label((string) $key).': '.$text;
@@ -203,6 +217,23 @@ final class DesignProse
         }
 
         return implode(' · ', $parts);
+    }
+
+    /** @return string a stored value of any shape on one line; nothing is left out */
+    private static function written(mixed $value): string
+    {
+        return match (true) {
+            $value === null, $value === [], is_string($value) && trim($value) === '' => self::NOTHING,
+            is_string($value) => trim($value),
+            is_bool($value) => $value ? 'yes' : 'no',
+            ! is_array($value) => (string) $value,
+            array_is_list($value) => implode(', ', array_map(static fn (mixed $item): string => match (true) {
+                ! is_array($item) || $item === [] => self::written($item),
+                array_is_list($item) => '['.self::written($item).']',
+                default => '('.self::inline($item, true).')',
+            }, $value)),
+            default => self::inline($value, true),
+        };
     }
 
     /**
