@@ -26,6 +26,9 @@ class AiPhaseSeeder extends Seeder
                 $this->createIfMissing('ai_json_schemas', $row, "schema {$row['namespace']}/{$row['schema_key']}@{$row['version']}");
             }
 
+            // Before the inserts: a new current revision hits ai_phases_current_key_unique while the old one is current.
+            $this->demoteSuperseded($data['phases']);
+
             foreach ($data['phases'] as $row) {
                 $slug = $row['category'];
                 unset($row['category']);
@@ -100,6 +103,22 @@ class AiPhaseSeeder extends Seeder
         }
 
         $this->command->info(sprintf('%-7s %s', $created ? 'created' : 'kept', $label));
+    }
+
+    /**
+     * A database seeded earlier still marks as current a revision the data file has replaced. Only the flag
+     * moves, as a publish does: the revision itself stays, and a revision the file does not know is left alone.
+     *
+     * @param list<array<string, mixed>> $phases
+     */
+    private function demoteSuperseded(array $phases): void
+    {
+        $superseded = array_column(array_filter($phases, static fn (array $row): bool => ! $row['is_current']), 'id');
+
+        foreach (DB::table('ai_phases')->whereIn('id', $superseded)->where('is_current', true)->get(['id', 'phase_code', 'revision']) as $row) {
+            DB::table('ai_phases')->where('id', $row->id)->update(['is_current' => false]);
+            $this->command->info(sprintf('%-7s phase %s rev %d', 'demoted', $row->phase_code, $row->revision));
+        }
     }
 
     private function assertOneCurrentPerPhase(): void

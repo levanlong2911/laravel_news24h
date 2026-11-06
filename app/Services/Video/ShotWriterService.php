@@ -330,7 +330,9 @@ final class ShotWriterService implements QueuedStageService
                 'id' => (string) $stage->id,
                 'revision' => (int) $stage->planning_revision,
                 'status' => $stage->status,
-                'verdict' => $stage->output_json['check']['verdict'] ?? null,
+                // The run on screen was checked again just now; the others show what was stored when they ran.
+                'verdict' => $check !== null && (string) $stage->id === (string) $shown?->id ? $check['verdict'] : ($stage->output_json['check']['verdict'] ?? null),
+                'check_version' => $check !== null && (string) $stage->id === (string) $shown?->id ? $check['version'] : null,
                 'model_status' => $stage->output_json['check']['status'] ?? null,
                 'approved' => $selection !== null && $selection['stage_id'] === (string) $stage->id,
                 'stale' => $stage->status === VideoPlanningStageStatus::SUCCEEDED->value ? $stale($stage) : null,
@@ -348,6 +350,7 @@ final class ShotWriterService implements QueuedStageService
                 'integrity_error' => $integrity,
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
+                'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version'])),
                 'flags' => array_values(array_filter(is_array($document['flags'] ?? null) ? $document['flags'] : [], 'is_string')),
                 'plan' => $plan,
                 'resources' => $resources,

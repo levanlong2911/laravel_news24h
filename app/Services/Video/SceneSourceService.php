@@ -107,6 +107,35 @@ final class SceneSourceService
         return (array) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['source'] ?? []);
     }
 
+    /**
+     * RULE PASS is the approval of a scene plan: nobody is asked. The decision keeps reviewer_id empty and basis rule_pass,
+     * so it never reads as a person's review; a run that fails the check, or whose source moved, stays unapproved.
+     *
+     * @return array{0: ?VideoReviewDecision, 1: string}
+     */
+    public function approvePassed(string $projectId, string $stageId): array
+    {
+        $stage = $this->sceneStage($projectId, $stageId);
+
+        if ($stage === null) {
+            return [null, 'Bản chia scene này không thuộc dự án hoặc chưa chạy thành công.'];
+        }
+
+        [$evaluation, $problem] = $this->inspect($projectId, $stage);
+
+        if ($problem !== null) {
+            return [null, $problem];
+        }
+
+        $selection = $this->selection($projectId);
+
+        if (($selection['stage_id'] ?? null) === $stageId && ($selection['content_hash'] ?? null) === $evaluation['content_hash']) {
+            return [null, 'already_approved'];
+        }
+
+        return $this->approve($projectId, $stageId, (string) $evaluation['content_hash'], (int) ($selection['version'] ?? 0), (string) Str::uuid(), null);
+    }
+
     /** @return array{0: ?VideoReviewDecision, 1: string} */
     public function approve(string $projectId, string $stageId, string $expectedHash, int $expectedVersion, string $operationId, ?string $reviewerId): array
     {
@@ -186,6 +215,7 @@ final class SceneSourceService
                 'metadata_json' => [
                     'operation_id' => $operationId,
                     'operation_payload_hash' => $payloadHash,
+                    'basis' => $reviewerId === null ? 'rule_pass' : 'reviewer',
                     'content_hash' => $evaluation['content_hash'],
                     'contract' => $evaluation['contract'],
                     'format' => $flow['adapter']->format(),

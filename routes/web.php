@@ -172,7 +172,6 @@ Route::group(
             Route::get('/{id}/scene/{scene?}/{step?}', [VideoProjectsController::class, 'scene'])->middleware('video.v4:scenes')->name('video-projects.scene');
             Route::post('/{id}/scenes', [VideoProjectsController::class, 'writeScenes'])->name('video-projects.scenes-write');
             Route::post('/{id}/scenes/reset', [VideoProjectsController::class, 'resetScenes'])->name('video-projects.scenes-reset');
-            Route::post('/{id}/scenes/approve', [VideoProjectsController::class, 'approveScenes'])->name('video-projects.scenes-approve');
             // phase 7: kế hoạch shot
             Route::post('/{id}/shots', [VideoProjectsController::class, 'writeShots'])->name('video-projects.shots-write');
             Route::post('/{id}/shots/reset', [VideoProjectsController::class, 'resetShots'])->name('video-projects.shots-reset');

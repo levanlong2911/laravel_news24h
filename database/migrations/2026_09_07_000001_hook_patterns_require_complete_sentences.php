@@ -43,7 +43,17 @@ return new class extends Migration
         foreach (PromptFramework::all() as $framework) {
             $text = $framework->phase3_generate;
 
+            // Framework video (video_*) co prompt rieng, khong co phan hook de thay.
+            if (! str_contains($text, 'SHOCK STAT')) {
+                continue;
+            }
+
             foreach ($replacements as [$old, $new]) {
+                // Lan chay truoc dung giua chung da luu xong chuoi nay: khong thay lai, khong bao loi.
+                if (substr_count($text, $old) === 0 && substr_count($text, $new) === 1) {
+                    continue;
+                }
+
                 if (substr_count($text, $old) !== 1) {
                     throw new RuntimeException(sprintf(
                         '[%s] khong tim thay dung 1 lan chuoi: %s',
