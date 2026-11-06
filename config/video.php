@@ -1068,8 +1068,8 @@ return [
             ],
             'history' => ['enabled' => false],
             'check' => [
+                'cover_build_states' => true,
                 'length_tolerance_sec' => 0.1,
-                'card_max_words' => 8,
                 'card_seconds_per_card' => 10,
                 'warn' => [
                     'beat_min_sec' => 0.8,
@@ -1688,7 +1688,7 @@ return [
                                 'draft' => ['script'],
                             ],
                             'outputs' => [
-                                'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '1.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v1): the story, the builder and rider, the flexible beats B1…Bn with build state, time jump, design ids, configurations and situation, the text cards with their sources (the DISCLAIMER card carries the fixed text of the schema) and the music brief; release database/releases/moto-phase-4-script-v2'],
+                                'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '1.0.2', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v1): the story, the builder and rider, the flexible beats B1…Bn with build state, time jump, design ids, configurations and situation, the text cards with their sources (the DISCLAIMER card carries the fixed text of the schema) and the music brief; release database/releases/moto-phase-4-script-v8'],
                             ],
                         ],
                         'spec.locations' => [

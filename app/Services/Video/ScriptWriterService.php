@@ -24,7 +24,7 @@ final class ScriptWriterService implements QueuedStageService
     public const BRIEF_KEY = 'script_brief';
 
     /** @var list<string> the beat fields a hand revision may replace */
-    private const REVISABLE = ['design_refs', 'in_use', 'configurations', 'situation'];
+    private const REVISABLE = ['purpose', 'visual', 'location', 'on_screen', 'design_refs', 'in_use', 'configurations', 'situation', 'link', 'sfx'];
 
     public function __construct(
         private readonly PlanningStageStore $stageStore,
@@ -74,7 +74,7 @@ final class ScriptWriterService implements QueuedStageService
     }
 
     /**
-     * @param  array{reason?: mixed, beats?: mixed}  $patch  why the script is revised and, per beat id, the design_refs, in_use, configurations or situation that replace its own
+     * @param  array{reason?: mixed, beats?: mixed}  $patch  why the script is revised and, per beat id, the fields of REVISABLE that replace its own; the act, state, time jump and duration of a beat stay as written
      * @param  ?string  $expected  the patch hash of the preview the reviewer approved; required to write
      * @return array{passed: bool, reason: string, source: ?array<string, mixed>, prompt: ?string, changes: list<array{path: string, purpose: string, visual: string, before: string, after: string}>, check: ?array<string, mixed>, content_hash: ?string, patch_hash: ?string, revision_stage_id: ?string, revision: ?int} the revised moto script checked against the current contract like a run of the model, only for a run written from the sources the project uses now; previewed or, with $write and the approved patch hash, stored as a new run that names the run it revises; the revised run is not approved and the run it revises stays as it was
      */
@@ -131,7 +131,7 @@ final class ScriptWriterService implements QueuedStageService
 
         if (CanonicalJson::hash($pinned) !== CanonicalJson::hash($current)) {
             return ['reason' => "Bản rev {$stage->planning_revision} viết từ thiết kế ".($pinned['design_stage_id'] ?? '—').' và model sheet '.($pinned['model_sheet']['review_stage_id'] ?? '—')
-                .'; dự án đang dùng thiết kế '.$current['design_stage_id'].' và model sheet '.$current['model_sheet']['review_stage_id']
+                .'; dự án đang dùng thiết kế '.$current['design_stage_id'].' và model sheet '.($current['model_sheet']['review_stage_id'] ?? '—')
                 .' — không chuyển kịch bản sang nguồn khác bằng bản sửa tay; viết lại để có bản mới.'] + $report;
         }
 
@@ -140,12 +140,14 @@ final class ScriptWriterService implements QueuedStageService
         $revised['prompt_version'] = $run['prompt_version'];
 
         foreach ($revised['data']['beats'] as &$beat) {
+            $original = $beat;
+
             foreach ((array) ($beats[$beat['id']] ?? []) as $key => $value) {
                 if ($beat[$key] !== $value) {
                     $report['changes'][] = [
                         'path' => "{$beat['id']}.{$key}",
-                        'purpose' => (string) $beat['purpose'],
-                        'visual' => (string) $beat['visual'],
+                        'purpose' => (string) $original['purpose'],
+                        'visual' => (string) $original['visual'],
                         'before' => (string) json_encode($beat[$key], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                         'after' => (string) json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                     ];

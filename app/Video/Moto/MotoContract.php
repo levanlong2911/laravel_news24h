@@ -20,7 +20,7 @@ final class MotoContract
 
     public const DESIGN_FORMAT = 'moto-design-v1';
 
-    public const SCRIPT_INPUT = 'moto-script-input-v2';
+    public const SCRIPT_INPUT = 'moto-script-input-v3';
 
     public const SCRIPT_FORMAT = 'moto-script-v1';
 

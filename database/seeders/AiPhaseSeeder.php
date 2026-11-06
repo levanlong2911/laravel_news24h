@@ -15,7 +15,10 @@ class AiPhaseSeeder extends Seeder
         /** @var array{schemas: list<array<string, mixed>>, phases: list<array<string, mixed>>, links: list<array<string, mixed>>} $data */
         $data = ['schemas' => [], 'phases' => [], 'links' => []];
 
-        foreach (glob(self::DATA_FILES) ?: [] as $file) {
+        $files = glob(self::DATA_FILES) ?: [];
+        natsort($files);
+
+        foreach ($files as $file) {
             $data = array_merge_recursive($data, require $file);
         }
 

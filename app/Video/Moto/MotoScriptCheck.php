@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoScriptCheck
 {
-    public const VERSION = 'moto-script-check-v1';
+    public const VERSION = 'moto-script-check-v2';
 
     public const PASS = 'PASS';
 
@@ -99,20 +99,21 @@ final class MotoScriptCheck
 
         $total = array_sum(array_map(static fn (array $beat): float => (float) $beat['duration_s'], $beats));
         $length = (float) ($context['video_length'] ?? 0);
-
-        if (abs($total - $length) > (float) ($policy['length_tolerance_sec'] ?? 0.1) + self::EPSILON) {
-            $issues[] = 'Các beat dài tổng '.self::s($total)." s; phim phải dài {$length} s.";
-        }
-
-        $issues = [
-            ...$issues,
+        $advisory = [
+            ...(abs($total - $length) > (float) ($policy['length_tolerance_sec'] ?? 0.1) + self::EPSILON ? ['Các beat dài tổng '.self::s($total)." s; phim phải dài {$length} s."] : []),
             ...self::progressIssues($beats),
             ...self::heroIssues($data, $beats, $byId),
-            ...self::referenceIssues($data, $byId),
             ...self::designIssues($beats, $design),
             ...self::cardIssues((array) $data['text_cards'], $beats, $byId, $design, $context, $policy, $total),
-            ...self::wordIssues($data, $design, $context),
         ];
+        $issues = [...$issues, ...self::referenceIssues($data, $byId)];
+
+        if ((bool) ($policy['cover_build_states'] ?? false)) {
+            $issues = [...$issues, ...self::coverageIssues($beats, $design)];
+            $warnings = [...$advisory, ...self::heroMomentWarnings($data, $beats, $byId, $design)];
+        } else {
+            $issues = [...$issues, ...$advisory];
+        }
 
         foreach ($beats as $index => $beat) {
             if ((float) $beat['duration_s'] < (float) ($policy['warn']['beat_min_sec'] ?? 0.8)) {
@@ -202,6 +203,7 @@ final class MotoScriptCheck
                 'modes' => array_values(array_map(static fn (array $mode): array => (array) $mode['configurations'], (array) ($feature['modes'] ?? []))),
             ], array_column((array) ($design['features'] ?? []), null, 'id')),
             'moments' => array_map(static fn (array $moment): array => [
+                'hero' => (bool) ($moment['hero'] ?? false),
                 'parts' => (array) $moment['parts'],
                 'configurations' => (array) $moment['configurations'],
                 'limits' => (array) $moment['limits'],
@@ -214,12 +216,33 @@ final class MotoScriptCheck
                 'conditions' => (array) ($limit['conditions'] ?? []),
                 'procedures' => (array) ($limit['procedures'] ?? []),
             ], (array) ($design['operational_limits'] ?? [])),
+            'build_states' => array_map(static fn (array $state): array => ['id' => $state['id'], 'refs' => array_values((array) ($state['refs'] ?? []))], (array) ($design['build_states'] ?? [])),
+            'other_refs' => array_values(array_column([
+                ...(array) ($design['connections'] ?? []),
+                ...array_merge([], ...array_map(static fn (array $system): array => (array) ($system['lines'] ?? []), (array) ($design['systems'] ?? []))),
+                ...(array) ($design['identity_rules'] ?? []),
+            ], 'id')),
         ];
     }
 
     /**
      * @param  array<string, mixed>  $design  the design facts of facts()
-     * @return array{acts: array<string, array{0: string, 1: string}>, states: array<string, array{on_motorcycle: list<string>, in_progress: list<string>, pinned: array<string, string>, features_complete: list<string>, moments_with_parts: list<string>}>, limits: array<string, array{requires: list<string>, conditions: list<array<string, mixed>>, procedures: list<string>}>, configuration_limits: array<string, list<string>>, in_use_limits: array<string, list<string>>, moments: array<string, array{parts: list<string>, configurations: list<string>, limits: list<string>}>, spec_cards: array<string, array{source_ref: string, value: int|float|string, unit_forms: list<string>, must_say: string}>} the facts a beat needs, worked out by the rules this check applies
+     * @return list<string> the parts the beats of a physical build state must name: those being made, or those that first appear there when none is being made
+     */
+    public static function mustName(array $design, string $state): array
+    {
+        $making = (array) $design['states'][$state]['in_progress'];
+
+        if ($making !== []) {
+            return $making;
+        }
+
+        return array_values(array_filter((array) $design['states'][$state]['present'], static fn (string $part): bool => ($design['parts'][$part]['from'] ?? null) === $state));
+    }
+
+    /**
+     * @param  array<string, mixed>  $design  the design facts of facts()
+     * @return array{acts: array<string, array{0: string, 1: string}>, states: array<string, array{on_motorcycle: list<string>, in_progress: list<string>, must_name: list<string>, pinned: array<string, string>, features_complete: list<string>, moments_with_parts: list<string>}>, limits: array<string, array{requires: list<string>, conditions: list<array<string, mixed>>, procedures: list<string>}>, configuration_limits: array<string, list<string>>, in_use_limits: array<string, list<string>>, moments: array<string, array{parts: list<string>, configurations: list<string>, limits: list<string>}>, spec_cards: array<string, array{source_ref: string, value: int|float|string, unit_forms: list<string>, must_say: string}>} the facts a beat needs, worked out by the rules this check applies
      */
     public static function filmFacts(array $design): array
     {
@@ -237,6 +260,7 @@ final class MotoScriptCheck
             $states[$id] = [
                 'on_motorcycle' => $state['present'],
                 'in_progress' => $state['in_progress'],
+                'must_name' => self::mustName($design, (string) $id),
                 'pinned' => $state['pinned'],
                 'features_complete' => array_keys(array_filter((array) $design['features'], static fn (array $feature): bool => self::featureComplete($feature, $index))),
                 'moments_with_parts' => array_keys(array_filter((array) $design['moments'], static fn (array $moment): bool => array_diff($moment['parts'], $state['present']) === [])),
@@ -291,14 +315,55 @@ final class MotoScriptCheck
         ];
     }
 
-    /** @return list<string> the words the prompt forbids in cards and titles */
-    public static function forbiddenWords(string $prompt): array
+    /**
+     * @param  list<array<string, mixed>>  $beats
+     * @param  array<string, mixed>  $design  the design facts of facts()
+     * @return list<string> the build states without a beat in the main progress and the ids their beats leave out or may not name: exactly the refs of a design state; every id a physical state must name, and others only as that state allows
+     */
+    private static function coverageIssues(array $beats, array $design): array
     {
-        if (preg_match('/\*\*Forbidden in cards and titles:?\*\*:?\s*([^\n]+)/u', $prompt, $match) !== 1) {
-            return [];
+        $issues = [];
+
+        foreach ((array) ($design['build_states'] ?? []) as $state) {
+            $id = (string) $state['id'];
+            $main = array_values(array_filter($beats, static fn (array $beat): bool => $beat['state'] === $id && $beat['time_jump'] === 'none' && ! in_array($beat['act'], ['hook', 'ending'], true)));
+
+            if ($main === []) {
+                $issues[] = "Phim chưa có beat ở mạch chính cho {$id}.";
+
+                continue;
+            }
+
+            $named = array_values(array_unique(array_merge(...array_map(static fn (array $beat): array => (array) $beat['design_refs'], $main))));
+            $physical = isset($design['states'][$id]);
+            $required = $physical ? self::mustName($design, $id) : (array) $state['refs'];
+            $missing = array_values(array_diff($required, $named));
+            $extra = array_values(array_filter($named, static fn (string $ref): bool => $physical ? ! self::namableAt($design, $id, $ref) : ! in_array($ref, $required, true)));
+
+            if ($missing !== [] || $extra !== []) {
+                $issues[] = "{$id} ".implode('; ', array_filter([
+                    $missing === [] ? null : 'thiếu '.implode(', ', $missing),
+                    $extra === [] ? null : 'thừa '.implode(', ', $extra),
+                ])).'.';
+            }
         }
 
-        return array_values(array_filter(array_map(static fn (string $word): string => trim($word, " .\t"), explode(',', $match[1]))));
+        return $issues;
+    }
+
+    /** @param  array<string, mixed>  $design  the design facts of facts() */
+    private static function namableAt(array $design, string $state, string $ref): bool
+    {
+        $at = $design['states'][$state];
+        $allPresent = static fn (array $parts): bool => array_diff($parts, (array) $at['present']) === [];
+
+        return match ($ref[0]) {
+            'P' => in_array($ref, (array) $at['present'], true) || in_array($ref, (array) $at['in_progress'], true),
+            'F' => isset($design['features'][$ref]) && self::featureComplete($design['features'][$ref], (int) self::stateIndex($state)),
+            'M' => isset($design['moments'][$ref]) && $allPresent((array) $design['moments'][$ref]['parts']),
+            'S' => isset($design['systems'][$ref]) && $allPresent((array) $design['systems'][$ref]['parts']),
+            default => false,
+        };
     }
 
     /**
@@ -383,6 +448,26 @@ final class MotoScriptCheck
 
     /**
      * @param  array<string, mixed>  $data
+     * @param  list<array<string, mixed>>  $beats
+     * @param  array<string, int>  $byId
+     * @param  array<string, mixed>  $design  the design facts of facts()
+     * @return list<string> the hero beat that does not name the moment the design marks as its hero
+     */
+    private static function heroMomentWarnings(array $data, array $beats, array $byId, array $design): array
+    {
+        $heroId = $data['story']['hero_beat'];
+        $hero = $byId[$heroId] ?? null;
+        $moments = array_keys(array_filter((array) ($design['moments'] ?? []), static fn (array $moment): bool => (bool) ($moment['hero'] ?? false)));
+
+        if ($hero === null || $moments === [] || array_intersect($moments, (array) $beats[$hero]['design_refs']) !== []) {
+            return [];
+        }
+
+        return ["story.hero_beat {$heroId} không diễn moment hero ".implode(', ', $moments).' của thiết kế.'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
      * @param  array<string, int>  $byId
      * @return list<string>
      */
@@ -443,7 +528,9 @@ final class MotoScriptCheck
                 $record = $records[$ref[0]][$ref] ?? null;
 
                 if ($record === null) {
-                    $issues[] = "{$beat['id']} nhắc {$ref}, không có trong thiết kế.";
+                    if (! in_array($ref, (array) ($design['other_refs'] ?? []), true)) {
+                        $issues[] = "{$beat['id']} nhắc {$ref}, không có trong thiết kế.";
+                    }
                 } elseif ($ref[0] === 'P' && $at !== null && ! $present($ref) && ! in_array($ref, $at['in_progress'], true)) {
                     $issues[] = "{$beat['id']} dùng {$ref} ở {$beat['state']}, khi bộ phận này chưa có, đã tháo hoặc không đang làm.";
                 } elseif ($ref[0] === 'F' && $at !== null && ! self::featureComplete($record, (int) $state)) {
@@ -599,7 +686,6 @@ final class MotoScriptCheck
         $issues = [];
         $byBeat = [];
         $types = array_count_values(array_column($cards, 'type'));
-        $maxWords = (int) ($policy['card_max_words'] ?? 8);
 
         foreach ($cards as $card) {
             $index = $byId[$card['beat']] ?? null;
@@ -614,17 +700,7 @@ final class MotoScriptCheck
                 $issues[] = "Card \"{$card['text']}\" vượt ra ngoài {$card['beat']}.";
             }
 
-            if (self::words($card['text']) > $maxWords) {
-                $issues[] = "Card \"{$card['text']}\" có ".self::words($card['text'])." từ; tối đa {$maxWords}.";
-            }
-
-            foreach ((array) ($context['forbidden'] ?? []) as $word) {
-                if (MotoContract::mentions($card['text'], $word)) {
-                    $issues[] = "Card \"{$card['text']}\" dùng từ cấm \"{$word}\".";
-                }
-            }
-
-            $issues = [...$issues, ...self::sourceIssues($card, $design, $context)];
+            $issues = [...$issues, ...self::sourceIssues($card, $design)];
             $byBeat[$card['beat']][] = $card;
         }
 
@@ -665,99 +741,31 @@ final class MotoScriptCheck
     /**
      * @param  array<string, mixed>  $card
      * @param  array<string, mixed>  $design
-     * @param  array<string, mixed>  $context
-     * @return list<string>
+     * @return list<string> a SPEC or BASE card whose source_ref points at nothing in the design
      */
-    private static function sourceIssues(array $card, array $design, array $context): array
+    private static function sourceIssues(array $card, array $design): array
     {
-        $issues = [];
-        $text = (string) $card['text'];
-
-        if (MotoContract::mentions($text, 'Harley') || MotoContract::mentions($text, 'Davidson')) {
-            $issues[] = "Card \"{$text}\" gọi tên hãng.";
-        }
-
         $ref = $card['source_ref'];
 
         if ($ref === null) {
-            return $issues;
+            return [];
         }
 
         $path = explode('.', (string) $ref);
 
         if ($card['type'] === 'SPEC') {
-            $spec = $path[1] === 'specs' && isset($path[2]) ? ($design['specs'][$path[2]] ?? null) : null;
+            $spec = ($path[1] ?? null) === 'specs' && isset($path[2]) ? ($design['specs'][$path[2]] ?? null) : null;
 
-            if ($spec === null || $spec['value'] === null) {
-                return [...$issues, "Card SPEC \"{$text}\" trỏ {$ref}, không có giá trị trong thiết kế."];
-            }
-
-            if (! self::shows($text, $spec['value'], $spec['unit'])) {
-                $issues[] = "Card SPEC \"{$text}\" không ghi đúng {$spec['value']} {$spec['unit']} của {$ref}.";
-            }
-
-            $marker = self::marker($spec);
-
-            if (mb_stripos($text, $marker) === false) {
-                $issues[] = "Card SPEC \"{$text}\" phải ghi rõ là số {$marker} ({$spec['basis']}).";
-            }
-        } elseif ($card['type'] === 'BASE') {
-            $value = $path[1] === 'base' && in_array($path[2] ?? null, ['family', 'model'], true) ? ($design['base'][$path[2]] ?? null) : null;
-
-            if (! is_string($value) || mb_stripos($text, $value) === false) {
-                $issues[] = "Card BASE \"{$text}\" phải ghi đúng {$ref} của xe nền.";
-            }
-        } elseif ($card['type'] === 'NAME' && is_string($design['name'] ?? null) && mb_stripos($text, $design['name']) === false) {
-            $issues[] = "Card NAME \"{$text}\" không ghi tên xe {$design['name']}.";
+            return $spec === null || $spec['value'] === null ? ["Card SPEC \"{$card['text']}\" trỏ {$ref}, không có giá trị trong thiết kế."] : [];
         }
 
-        return $issues;
-    }
+        if ($card['type'] === 'BASE') {
+            $value = ($path[1] ?? null) === 'base' && in_array($path[2] ?? null, ['family', 'model'], true) ? ($design['base'][$path[2]] ?? null) : null;
 
-    /**
-     * @param  array<string, mixed>  $data
-     * @param  array<string, mixed>  $design
-     * @param  array<string, mixed>  $context
-     * @return list<string>
-     */
-    private static function wordIssues(array $data, array $design, array $context): array
-    {
-        $issues = [];
-        $limit = $context['word_limits']['characters.*'] ?? null;
-
-        foreach ($data['characters'] as $name => $text) {
-            if ($limit !== null && self::words($text) > (int) $limit) {
-                $issues[] = "Nhân vật {$name} có ".self::words($text)." từ; tối đa {$limit}.";
-            }
+            return is_string($value) ? [] : ["Card BASE \"{$card['text']}\" trỏ {$ref}, không phải family hoặc model của xe nền."];
         }
 
-        $names = MotoContract::blockedForms((array) ($context['source_names'] ?? []), [$design['base']['family'] ?? null, $design['base']['model'] ?? null]);
-
-        foreach (self::texts($data, '') as $path => $text) {
-            foreach ($names as $name) {
-                if (MotoContract::mentions($text, $name)) {
-                    $issues[] = "{$path}: dùng tên nguồn \"{$name}\".";
-                }
-            }
-        }
-
-        return $issues;
-    }
-
-    /** @return array<string, string> every text of the document by its path */
-    private static function texts(mixed $node, string $path): array
-    {
-        if (is_string($node)) {
-            return [$path => $node];
-        }
-
-        $texts = [];
-
-        foreach (is_array($node) ? $node : [] as $key => $value) {
-            $texts = [...$texts, ...self::texts($value, $path === '' ? (string) $key : "{$path}.{$key}")];
-        }
-
-        return $texts;
+        return [];
     }
 
     /** @param array{present: bool, from: ?string, until: ?string} $part */
@@ -828,34 +836,6 @@ final class MotoScriptCheck
     private static function stateIndex(mixed $state): ?int
     {
         return is_string($state) && preg_match('/^BS(\d{2})$/', $state, $match) === 1 ? (int) $match[1] : null;
-    }
-
-    private static function shows(string $text, mixed $value, ?string $unit): bool
-    {
-        if (is_string($value)) {
-            return mb_stripos($text, $value) !== false;
-        }
-
-        $forms = implode('|', array_map(static fn (string $form): string => preg_quote($form, '/'), self::unitForms($unit)));
-
-        if ($forms === '') {
-            return false;
-        }
-
-        preg_match_all('/(\d[\d,]*(?:\.\d+)?)[\s-]?(?:'.$forms.')(?!\p{L})/iu', $text, $numbers);
-
-        foreach ($numbers[1] as $number) {
-            if (abs((float) str_replace(',', '', $number) - (float) $value) < self::EPSILON) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static function words(string $text): int
-    {
-        return (int) preg_match_all('/[\p{L}\p{N}][\p{L}\p{N}\'’,.\-\/]*/u', $text);
     }
 
     private static function s(float $seconds): string

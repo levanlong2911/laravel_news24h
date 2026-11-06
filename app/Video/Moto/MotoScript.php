@@ -20,25 +20,16 @@ final class MotoScript implements ScriptWorkflow
     public const PROJECTION_VERSION = 'moto-script-timeline-v1';
 
     /** @var list<string> */
-    private const MOTORCYCLE_KEYS = ['name', 'concept', 'base', 'departures', 'signature_moments', 'specs', 'silhouette', 'palette', 'materials', 'lighting_signature'];
+    private const MOTORCYCLE_COORDINATES = ['coordinate_system', 'profile_curve'];
 
     /** @var list<string> */
-    private const PART_KEYS = ['id', 'kind', 'name', 'origin', 'parent', 'present', 'description', 'configurations', 'lighting', 'from_state', 'until_state'];
-
-    /** @var list<string> the craft details kept for the parts a feature, a moment, a departure, an identity rule or a build state names */
-    private const PART_DETAIL_KEYS = ['surfaces', 'elements', 'relations'];
+    private const PART_COORDINATES = ['extent', 'points'];
 
     /** @var list<string> */
-    private const SYSTEM_KEYS = ['id', 'kind', 'name', 'function', 'parts', 'service_access'];
+    private const CONNECTION_COORDINATES = ['point'];
 
     /** @var list<string> */
-    private const CONNECTION_KEYS = ['id', 'kind', 'between', 'description'];
-
-    /** @var list<string> */
-    private const FEATURE_KEYS = ['id', 'name', 'kind', 'purpose', 'principle', 'visible_expression', 'effect', 'parts', 'modes', 'use_sequence', 'measures', 'visible_at_rest', 'from_state', 'risks'];
-
-    /** @var list<string> */
-    private const RIDER_KEYS = ['rider', 'riding_position', 'contact_points', 'controls_use', 'passenger'];
+    private const RIDER_COORDINATES = ['seat_point', 'grip_points', 'peg_points'];
 
     public function __construct(private readonly ModelSheetService $sheets) {}
 
@@ -85,12 +76,11 @@ final class MotoScript implements ScriptWorkflow
         }
 
         $dnaStage = $this->stage($projectId, $design->input_json['dna_stage_id'] ?? null, PlanningStageName::DESIGN_DNA, 'Design DNA của bản thiết kế');
-        $dna = JsonAnswer::object((string) ($dnaStage->output_json['raw_text'] ?? ''))['dna'] ?? null;
         $phaseOne = $this->stage($projectId, $dnaStage->input_json['inspiration_stage_id'] ?? null, PlanningStageName::INSPIRATION, 'Phase 1 của Design DNA');
         $identity = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($phaseOne->output_json['raw_text'] ?? '')))['source_identity'] ?? null;
 
-        if (! is_array($dna) || array_is_list($dna) || ! is_array($identity) || array_is_list($identity)) {
-            throw new RuntimeException('Không đọc được dna hoặc source_identity trong chuỗi nguồn của bản thiết kế.');
+        if (! is_array($identity) || array_is_list($identity)) {
+            throw new RuntimeException('Không đọc được source_identity trong chuỗi nguồn của bản thiết kế.');
         }
 
         $selected = self::select($data);
@@ -106,25 +96,14 @@ final class MotoScript implements ScriptWorkflow
                     'tone_notes' => $brief['tone_notes'],
                     'base_card' => (bool) $config['base_card'],
                 ],
-                'dna' => $dna,
                 'design' => $selected,
                 'film_facts' => MotoScriptCheck::filmFacts($facts),
-                'source_identity' => $identity,
                 'channel_history' => $history,
             ],
             'source' => [
                 'design_stage_id' => (string) $design->id,
                 'design_raw_sha256' => $rawSha256,
                 'design_hash' => (string) $designHash,
-                'model_sheet' => [
-                    'set_id' => $sheet['set_id'],
-                    'review_stage_id' => $sheet['review_stage_id'],
-                    'master_image_id' => $sheet['master_image_id'],
-                    'master_artifact_id' => $sheet['master_artifact_id'],
-                    'master_artifact_sha256' => $sheet['master_artifact_sha256'],
-                ],
-                'dna_stage_id' => (string) $dnaStage->id,
-                'inspiration_stage_id' => (string) $phaseOne->id,
             ],
             'context' => [
                 'format' => $this->format(),
@@ -132,7 +111,6 @@ final class MotoScript implements ScriptWorkflow
                 'base_card' => (bool) $config['base_card'],
                 'design' => $facts,
                 'source_names' => self::sourceNames($identity),
-                'forbidden' => MotoScriptCheck::forbiddenWords($prompt),
                 'policy' => (array) $config['check'],
             ],
         ];
@@ -146,19 +124,8 @@ final class MotoScript implements ScriptWorkflow
             return $e->getMessage();
         }
 
-        $now = [
-            'design_stage_id' => $sheet['design_stage_id'],
-            'review_stage_id' => $sheet['review_stage_id'],
-            'master_artifact_sha256' => $sheet['master_artifact_sha256'],
-        ];
-        $pinned = [
-            'design_stage_id' => $source['design_stage_id'] ?? null,
-            'review_stage_id' => $source['model_sheet']['review_stage_id'] ?? null,
-            'master_artifact_sha256' => $source['model_sheet']['master_artifact_sha256'] ?? null,
-        ];
-
-        if ($now !== $pinned) {
-            return 'Model sheet đã duyệt hoặc bản thiết kế nguồn đã đổi so với lúc viết kịch bản này.';
+        if ($sheet['design_stage_id'] !== ($source['design_stage_id'] ?? null)) {
+            return 'Bản thiết kế nguồn đã đổi so với lúc viết kịch bản này.';
         }
 
         try {
@@ -219,53 +186,18 @@ final class MotoScript implements ScriptWorkflow
 
     /**
      * @param  array<string, mixed>  $data  the data block of the approved design
-     * @return array<string, mixed> the records a film needs without coordinates, points or the model-sheet prompt; craft details for the parts the story can show, and only the lines and mountings another kept record names
+     * @return array<string, mixed> the whole design for the film, without its model sheet and coordinates
      */
     public static function select(array $data): array
     {
-        $pick = static fn (array $record, array $keys): array => array_intersect_key($record, array_flip($keys));
-        $features = (array) ($data['features'] ?? []);
-        $states = (array) ($data['build_states'] ?? []);
-        $named = [
-            ...array_merge([], ...array_map(static fn (array $feature): array => (array) $feature['parts'], $features)),
-            ...array_merge([], ...array_map(static fn (array $moment): array => (array) $moment['parts'], (array) ($data['motorcycle']['signature_moments'] ?? []))),
-            ...array_merge([], ...array_map(static fn (array $departure): array => (array) $departure['refs'], (array) ($data['motorcycle']['departures'] ?? []))),
-            ...array_merge([], ...array_map(static fn (array $rule): array => [...(array) $rule['scope'], ...(array) $rule['refs']], (array) ($data['identity_rules'] ?? []))),
-            ...array_merge([], ...array_map(static fn (array $state): array => [
-                ...(array) ($state['refs'] ?? []),
-                ...array_column((array) ($state['in_progress'] ?? []), 'part'),
-                ...array_column((array) ($state['exceptions'] ?? []), 'part'),
-            ], $states)),
-        ];
-        $featureParts = array_fill_keys(array_merge([], ...array_map(static fn (array $feature): array => (array) $feature['parts'], $features)), true);
-        $wanted = array_fill_keys(array_filter($named, 'is_string'), true);
-        $systems = array_map(static function (array $system) use ($pick, $wanted, $featureParts): array {
-            $lines = array_values(array_filter((array) ($system['lines'] ?? []), static fn (array $line): bool => isset($wanted[$line['id']]) || isset($featureParts[$line['from']]) || isset($featureParts[$line['to']])));
+        $without = static fn (array $record, array $keys): array => array_diff_key($record, array_flip($keys));
 
-            return $pick($system, self::SYSTEM_KEYS) + ($lines === [] ? [] : ['lines' => $lines]);
-        }, (array) ($data['systems'] ?? []));
-
-        foreach ($systems as $system) {
-            foreach ((array) ($system['lines'] ?? []) as $line) {
-                $wanted[$line['from']] = $wanted[$line['to']] = true;
-            }
-        }
-
-        return [
-            'motorcycle' => $pick((array) ($data['motorcycle'] ?? []), self::MOTORCYCLE_KEYS),
-            'parts' => array_map(static fn (array $part): array => $pick($part, isset($wanted[$part['id']]) ? [...self::PART_KEYS, ...self::PART_DETAIL_KEYS] : self::PART_KEYS), (array) ($data['parts'] ?? [])),
-            'systems' => $systems,
-            'connections' => array_values(array_map(
-                static fn (array $connection): array => $pick($connection, self::CONNECTION_KEYS),
-                array_filter((array) ($data['connections'] ?? []), static fn (array $connection): bool => isset($wanted[$connection['id']])),
-            )),
-            'rider_interface' => $pick((array) ($data['rider_interface'] ?? []), self::RIDER_KEYS),
-            'features' => array_map(static fn (array $feature): array => $pick($feature, self::FEATURE_KEYS), $features),
-            'operational_limits' => (array) ($data['operational_limits'] ?? []),
-            'identity_rules' => (array) ($data['identity_rules'] ?? []),
-            'build_states' => $states,
-            'source_issues' => (array) ($data['source_issues'] ?? []),
-        ];
+        return array_replace($without($data, ['model_sheet']), [
+            'motorcycle' => $without((array) ($data['motorcycle'] ?? []), self::MOTORCYCLE_COORDINATES),
+            'parts' => array_map(static fn (array $part): array => $without($part, self::PART_COORDINATES), (array) ($data['parts'] ?? [])),
+            'connections' => array_map(static fn (array $connection): array => $without($connection, self::CONNECTION_COORDINATES), (array) ($data['connections'] ?? [])),
+            'rider_interface' => $without((array) ($data['rider_interface'] ?? []), self::RIDER_COORDINATES),
+        ]);
     }
 
     /**

@@ -60,6 +60,12 @@ class AiPhaseSeederTest extends TestCase
         self::assertTrue($bundle->ready(), implode('; ', $bundle->mismatches()));
         self::assertSame('https://superyacht.local/schemas/MotoReferencePrompt', json_decode((string) $bundle->outputSchemas()[0]['content'], true)['$id']);
 
+        $script = AiPhase::currentFor($category, MotoContract::WORKFLOW, 'phase-4');
+        self::assertSame(11, (int) $script->revision, 'the data files load in natural order, so a later revision follows the one it is based on');
+        self::assertSame([0, 0, 0, 0], array_map(static fn (int $revision): int => (int) DB::table('ai_phases')->where('category_id', $category)->where('workflow_code', MotoContract::WORKFLOW)->where('phase_code', 'phase-4')->where('revision', $revision)->value('is_current'), [7, 8, 9, 10]));
+        $scriptBundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forCategory($category, 'spec.script');
+        self::assertTrue($scriptBundle->ready(), implode('; ', $scriptBundle->mismatches()));
+
         $counts = static fn (): array => [DB::table('ai_json_schemas')->count(), DB::table('ai_phases')->count(), DB::table('ai_phase_schemas')->count()];
         $before = $counts();
         $current = DB::table('ai_phases')->orderBy('id')->pluck('is_current', 'id');

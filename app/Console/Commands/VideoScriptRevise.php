@@ -10,7 +10,7 @@ class VideoScriptRevise extends Command
     protected $signature = 'video:script-revise
         {project : Video project id}
         {stage : Script stage id the revision is written against}
-        {patch : Path to the revision JSON file (reason, beats by id with design_refs, in_use, configurations or situation)}
+        {patch : Path to the revision JSON file (reason, beats by id with purpose, visual, location, on_screen, design_refs, in_use, configurations, situation, link or sfx)}
         {--apply : Store the revised script as a new run when every check passes}
         {--expected= : With --apply, the patch hash of the approved preview}';
 
