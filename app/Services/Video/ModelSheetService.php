@@ -22,6 +22,7 @@ use App\Video\ModelSheet\ModelSheetFacts;
 use App\Video\ModelSheet\ModelSheetMaster;
 use App\Video\ModelSheet\ModelSheetQaSchema;
 use App\Video\Moto\MotoContract;
+use App\Video\Moto\MotoSheetPrompt;
 use App\Video\Queue\VideoQueues;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Support\Facades\DB;
@@ -249,7 +250,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         }
 
         if (MotoContract::is($set->input_json['workflow'] ?? null)) {
-            throw new RuntimeException('Model sheet của xe dùng prompt viết trong bản thiết kế đã kiểm — không có bước QA.');
+            throw new RuntimeException('Model sheet của xe dùng prompt ghép từ bản thiết kế đã kiểm — không có bước QA.');
         }
 
         if (($problem = $this->compatibilityError((array) $set->output_json)) !== null) {
@@ -539,7 +540,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
     }
 
     /**
-     * @return array<string, mixed> the prompt state of an open moto set in the shape of qaState(): the design's checked final_prompt, sent verbatim; the render form carries the design stage id
+     * @return array<string, mixed> the prompt state of an open moto set in the shape of qaState(): the prompt the set wrote from its design, sent verbatim; the render form carries the design stage id
      */
     private static function designPromptState(VideoPlanningStage $set): array
     {
@@ -548,7 +549,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         return [
             'stage_id' => (string) ($set->input_json['design_stage_id'] ?? ''),
             'status' => VideoPlanningStageStatus::SUCCEEDED->value,
-            'ready' => true,
+            'ready' => ($snapshot['blocking'] ?? []) === [],
             'error' => null,
             'stream' => null,
             'task' => null,
@@ -960,7 +961,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
 
     /**
      * @param  array<string, mixed>  $design  the decoded moto design answer that passed its check
-     * @return array{0: VideoPlanningStage, 1: array<string, mixed>, 2: array<string, mixed>} the design stage, the set input and the set snapshot with the design's final_prompt
+     * @return array{0: VideoPlanningStage, 1: array<string, mixed>, 2: array<string, mixed>} the design stage, the set input and the set snapshot with the prompt written from the design
      */
     private static function motoSource(VideoPlanningStage $stage, array $design, string $designHash, AiPhase $designPhase): array
     {
@@ -971,9 +972,12 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
 
             return is_string($target) && trim($target) !== '' ? ['view' => trim($target)] + $view : $view;
         }, self::views($config, $master));
-        $prompt = (string) (self::at($design, 'data.model_sheet.final_prompt') ?? '');
+        $data = (array) self::at($design, 'data');
+        $pinned = ModelSheetQaService::fixedRules(['views' => $views, 'layout_guide' => false], $config);
+        $prompt = MotoSheetPrompt::compile($data, $config, $pinned);
         $snapshot = [
             'execution' => self::execution(MotoContract::WORKFLOW),
+            'prompt_version' => MotoSheetPrompt::VERSION,
             'design_phase' => ['id' => (string) $designPhase->id, 'revision' => (int) $designPhase->revision, 'sha256' => (string) $designPhase->content_sha256],
             'layout_sha256' => $master->layoutSha256(),
             'layout_guide' => false,
@@ -982,7 +986,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             'views' => $views,
             'final_prompt' => $prompt,
             'prompt_sha256' => hash('sha256', $prompt),
-            'blocking' => trim($prompt) === '' ? ['Bản thiết kế không có final_prompt cho model sheet.'] : [],
+            'blocking' => MotoSheetPrompt::problems($data, $pinned, $prompt),
         ];
         $input = [
             'execution' => $snapshot['execution'],
@@ -1146,7 +1150,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         }
 
         if (($snapshot['policy_sha256'] ?? null) !== self::policySha256(MotoContract::WORKFLOW)) {
-            return 'Camera, quy tắc hoặc trình bày model sheet đã đổi so với lúc bản thiết kế viết final_prompt — thiết kế lại để có prompt khớp.';
+            return 'Camera, quy tắc hoặc trình bày model sheet đã đổi so với lúc mở bộ này — tải lại trang để ghép prompt mới.';
         }
 
         $ids = array_column((array) ($snapshot['views'] ?? []), 'id');

@@ -70,7 +70,7 @@
 
                     <div>
                         @if(($qa['prompt'] ?? null) !== null)
-                            <div class="va-lbl">PROMPT GỬI ĐI <em>({{ $sheet['set']['prompt_source'] === 'design' ? 'viết trong bản thiết kế, đã kiểm' : 'đã QA' }})</em></div>
+                            <div class="va-lbl">PROMPT GỬI ĐI <em>({{ $sheet['set']['prompt_source'] === 'design' ? 'ghép từ dữ liệu thiết kế, đã kiểm' : 'đã QA' }})</em></div>
                             <textarea class="va-ta" readonly>
 {{ $qa['prompt'] }}</textarea>
                             <div class="va-count"><span>{{ mb_strlen($qa['prompt']) }}</span> ký tự</div>
@@ -95,7 +95,7 @@
                                 @elseif($qa['status'] === 'none')
                                     <span class="va-tag">Chưa QA</span>
                                 @else
-                                    <span class="va-tag dg">QA chưa đạt</span>
+                                    <span class="va-tag dg">{{ $sheet['set']['prompt_source'] === 'design' ? 'Prompt chưa đạt kiểm' : 'QA chưa đạt' }}</span>
                                 @endif
                                 @if($qa['cost_usd'] !== null && $qa['status'] !== 'none')
                                     <span class="va-lbl" style="font-weight:400;color:var(--vp-dim)">{{ $qa['model'] }} · {{ $qa['tokens']['in'] }}/{{ $qa['tokens']['out'] }} token · ${{ number_format($qa['cost_usd'], 3) }}</span>

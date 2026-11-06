@@ -926,7 +926,7 @@ final class MotoDesignCheck
      * @param  array<string, mixed>  $modelSheet  the pinned presentation
      * @return list<string>
      */
-    private static function promptIssues(array $data, array $modelSheet): array
+    public static function promptIssues(array $data, array $modelSheet): array
     {
         $issues = [];
         $prompt = $data['model_sheet']['final_prompt'];
