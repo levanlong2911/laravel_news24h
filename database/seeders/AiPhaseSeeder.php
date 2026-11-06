@@ -8,13 +8,18 @@ use RuntimeException;
 
 class AiPhaseSeeder extends Seeder
 {
-    private const DATA_FILE = __DIR__.'/data/ai_phases.php';
+    private const DATA_FILES = __DIR__.'/data/ai_phases*.php';
 
     public function run(): void
     {
         /** @var array{schemas: list<array<string, mixed>>, phases: list<array<string, mixed>>, links: list<array<string, mixed>>} $data */
-        $data = require self::DATA_FILE;
-        $categories = $this->categoryIds(array_values(array_unique(array_column($data['phases'], 'category'))));
+        $data = ['schemas' => [], 'phases' => [], 'links' => []];
+
+        foreach (glob(self::DATA_FILES) ?: [] as $file) {
+            $data = array_merge_recursive($data, require $file);
+        }
+
+        $categories =$this->categoryIds(array_values(array_unique(array_column($data['phases'], 'category'))));
 
         DB::transaction(function () use ($data, $categories): void {
             foreach ($data['schemas'] as $row) {
@@ -24,7 +29,7 @@ class AiPhaseSeeder extends Seeder
             foreach ($data['phases'] as $row) {
                 $slug = $row['category'];
                 unset($row['category']);
-                $this->createIfMissing('ai_phases', ['category_id' => $categories[$slug]] + $row, "phase {$slug}/{$row['phase_code']} rev {$row['revision']}");
+                $this->placePhase($categories[$slug], $row, "phase {$slug}/{$row['phase_code']} rev {$row['revision']}");
             }
 
             foreach ($data['links'] as $row) {
@@ -54,6 +59,35 @@ class AiPhaseSeeder extends Seeder
         }
 
         return $ids;
+    }
+
+    /**
+     * @param array<string, mixed> $row a phase revision of the data files: a stored one stays as it is; a new one takes over as current only from a lower revision, which stays published as history, and below the current revision it is stored as history itself
+     *
+     * @throws RuntimeException when the table holds this revision under another id or text, or this id under another revision
+     */
+    private function placePhase(string $category, array $row, string $label): void
+    {
+        $phase = fn () => DB::table('ai_phases')->where('category_id', $category)->where('workflow_code', $row['workflow_code'])->where('phase_code', $row['phase_code']);
+        $sameRevision = $phase()->where('revision', $row['revision'])->first(['id', 'content_sha256']);
+        $sameId = DB::table('ai_phases')->where('id', $row['id'])->exists();
+
+        if ($sameRevision !== null ? ((string) $sameRevision->id !== (string) $row['id'] || (string) $sameRevision->content_sha256 !== (string) $row['content_sha256']) : $sameId) {
+            throw new RuntimeException("{$label} ({$row['id']}) conflicts with the stored row of that revision or id. Nothing was written.");
+        }
+
+        if ($sameRevision === null && $row['is_current']) {
+            $current = $phase()->where('is_current', true)->first(['id', 'revision']);
+
+            if ($current !== null && (int) $current->revision > (int) $row['revision']) {
+                $row['is_current'] = 0;
+                $label .= " (history, rev {$current->revision} stays current)";
+            } elseif ($current !== null) {
+                DB::table('ai_phases')->where('id', $current->id)->update(['is_current' => false]);
+            }
+        }
+
+        $this->createIfMissing('ai_phases', ['category_id' => $category] + $row, $label);
     }
 
     /** @param array<string, mixed> $row */
