@@ -32,6 +32,11 @@ class RefuseV63Project
             return $next($request);
         }
 
+        if ($request->routeIs('video-projects.reference', 'video-projects.parts-detail')
+            && app(\App\Services\Video\PartsDetailService::class)->supports($projectId)) {
+            return $next($request);
+        }
+
         if ($request->expectsJson()) {
             return response()->json(['ok' => false, 'message' => self::MESSAGE], 409);
         }

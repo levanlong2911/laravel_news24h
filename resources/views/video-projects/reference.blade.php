@@ -6,6 +6,9 @@
 @endsection
 
 @section('content')
+@if(isset($motoReference))
+    @include('video-projects.partials.moto-reference-panel')
+@else
 <div class="container-fluid vp">
 
     @if($errors->any())
@@ -458,10 +461,34 @@
 
     </div>
 </div>
+@endif
 @endsection
 
 @section('script')
 <script src="{{ asset('assets/js/video-producer.js') }}?v={{ filemtime(public_path('assets/js/video-producer.js')) }}"></script>
+@if(isset($motoReference))
+<script>
+(function () {
+    document.querySelectorAll('.va-row-set').forEach(function (cell) {
+        var model = cell.querySelector('[data-ref-model]');
+        var quality = cell.querySelector('[data-ref-quality]');
+        var price = cell.querySelector('[data-ref-price]');
+
+        if (!model || !quality || !price) { return; }
+
+        var prices = JSON.parse(price.dataset.prices || '{}');
+        var show = function () {
+            var unit = (prices[model.value] || {})[quality.value];
+            price.textContent = unit ? 'Dự toán: $' + Number(unit.usd).toFixed(3) + ' / master (bảng giá ' + unit.version + ')' : 'Dự toán: chưa có giá cho model/chất lượng này';
+        };
+
+        model.addEventListener('change', show);
+        quality.addEventListener('change', show);
+        show();
+    });
+})();
+</script>
+@else
 <script>
 (function () {
     var prompts = @json($referencePrompts);
@@ -574,4 +601,5 @@
     });
 })();
 </script>
+@endif
 @endsection

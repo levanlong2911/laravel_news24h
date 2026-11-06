@@ -36,6 +36,8 @@
         <a href="{{ route('video-projects.locations', $id) }}">Locations & Sets</a>
         <span class="sep">·</span>
         <b>Scenes</b>
+        <span class="sep">·</span>
+        <a href="{{ route('video-projects.reference', $id) }}">Reference →</a>
         <span class="grow"></span>
         @if($plan !== null)
             <span class="m">{{ count($plan['scenes']) }} scene · {{ $seconds($plan['total_ms']) }} s</span>
