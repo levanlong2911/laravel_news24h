@@ -93,7 +93,7 @@
                     <div class="line"><span class="k">Các lượt</span><span class="v">
                         @foreach($step['history'] as $row)
                             <a href="{{ route('video-projects.scene', ['id' => $id, 'stage' => $row['id']]) }}">rev {{ $row['revision'] }}</a>
-                            {{ $row['status'] }}{{ $row['verdict'] ? ' · '.$row['verdict'] : '' }}{{ $row['model_status'] ? ' · '.$row['model_status'] : '' }}{{ $row['revision_of'] !== null ? ' · sửa tay từ rev '.$row['revision_of'] : '' }}{{ $row['approved'] ? ' · đã duyệt' : '' }}{{ $row['stale'] === true ? ' · cần cập nhật' : '' }}@if(! $loop->last) &middot; @endif
+                            {{ $row['status'] }}{{ $row['verdict'] ? ' · '.$row['verdict'] : '' }}{{ $row['check_version'] ? ' ('.$row['check_version'].')' : '' }}{{ $row['model_status'] ? ' · '.$row['model_status'] : '' }}{{ $row['revision_of'] !== null ? ' · sửa tay từ rev '.$row['revision_of'] : '' }}{{ $row['approved'] ? ' · đã duyệt' : '' }}{{ $row['stale'] === true ? ' · cần cập nhật' : '' }}@if(! $loop->last) &middot; @endif
                         @endforeach
                     </span></div>
                 @endif
@@ -103,11 +103,14 @@
             @if($shown !== null)
                 <div class="va-lbl">
                     BẢN REV {{ $shown['revision'] }}
-                    @if($shown['approved'])<span class="va-tag ok">ĐÃ DUYỆT</span>@endif
+                    @if($shown['approved'])<span class="va-tag ok">ĐÃ DUYỆT THEO RULE</span>@endif
                     @if($shown['source_problem'] !== null)<span class="va-tag amber">CẦN CẬP NHẬT</span>@endif
                     @if($check !== null)<span class="va-tag {{ $check['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $check['verdict'] }}</span><span class="va-tag mute">STATUS: {{ $check['status'] ?? '—' }}</span>@endif
                     @if($shown['cost_usd'] !== null)<em>{{ $shown['tokens']['in'] }}/{{ $shown['tokens']['out'] }} token · ${{ number_format($shown['cost_usd'], 3) }}</em>@endif
                 </div>
+                @if($check !== null && ($shown['stored_check']['version'] ?? $check['version']) !== $check['version'])
+                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Lúc chạy: {{ $shown['stored_check']['verdict'] ?? '—' }} · {{ $shown['stored_check']['version'] }}. Kiểm hiện tại: {{ $check['verdict'] }} · {{ $check['version'] }}.</div>
+                @endif
                 @if($shown['integrity_error'] !== null)
                     <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Không dùng được bản này: {{ $shown['integrity_error'] }}</div>
                 @endif
@@ -131,16 +134,6 @@
                     @foreach($shown['flags'] as $flag)
                         <div class="va-lbl" style="font-weight:400">{{ $flag }}</div>
                     @endforeach
-                @endif
-                @if($shown['approvable'])
-                    <form method="POST" action="{{ route('video-projects.scenes-approve', $id) }}" onsubmit="return vpLockForm(this)" style="margin-top:8px">
-                        @csrf
-                        <input type="hidden" name="stage_id" value="{{ $shown['id'] }}">
-                        <input type="hidden" name="content_hash" value="{{ $shown['content_hash'] }}">
-                        <input type="hidden" name="selection_version" value="{{ $step['selection_version'] }}">
-                        <input type="hidden" name="operation_id" value="{{ $step['operation_id'] }}">
-                        <button class="vp-btn sm pri">Duyệt bản chia scene này</button>
-                    </form>
                 @endif
             @endif
         </div>
@@ -376,7 +369,7 @@
                         <div class="line"><span class="k">Các lượt</span><span class="v">
                             @foreach($shots['history'] as $row)
                                 <a href="{{ route('video-projects.scene', ['id' => $id, 'shots' => $row['id']]) }}">rev {{ $row['revision'] }}</a>
-                                {{ $row['status'] }}{{ $row['verdict'] ? ' · '.$row['verdict'] : '' }}{{ $row['model_status'] ? ' · '.$row['model_status'] : '' }}{{ $row['revision_of'] !== null ? ' · sửa tay từ rev '.$row['revision_of'] : '' }}{{ $row['approved'] ? ' · đã duyệt' : '' }}{{ $row['stale'] === true ? ' · cần cập nhật' : '' }}{{ $row['cost_usd'] !== null ? ' · $'.number_format($row['cost_usd'], 3) : '' }}@if(! $loop->last) &middot; @endif
+                                {{ $row['status'] }}{{ $row['verdict'] ? ' · '.$row['verdict'] : '' }}{{ $row['check_version'] ? ' ('.$row['check_version'].')' : '' }}{{ $row['model_status'] ? ' · '.$row['model_status'] : '' }}{{ $row['revision_of'] !== null ? ' · sửa tay từ rev '.$row['revision_of'] : '' }}{{ $row['approved'] ? ' · đã duyệt' : '' }}{{ $row['stale'] === true ? ' · cần cập nhật' : '' }}{{ $row['cost_usd'] !== null ? ' · $'.number_format($row['cost_usd'], 3) : '' }}@if(! $loop->last) &middot; @endif
                             @endforeach
                         </span></div>
                     @endif
@@ -388,11 +381,14 @@
                         BẢN REV {{ $shotShown['revision'] }}
                         @if($shotShown['approved'])<span class="va-tag ok">ĐÃ DUYỆT</span>@endif
                         @if($shotShown['source_problem'] !== null)<span class="va-tag amber">CẦN CẬP NHẬT</span>@endif
-                        @if($shotCheck !== null)<span class="va-tag {{ $shotCheck['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $shotCheck['verdict'] }}</span><span class="va-tag mute">STATUS: {{ $shotCheck['status'] ?? '—' }}</span>@endif
+                        @if($shotCheck !== null)<span class="va-tag {{ $shotCheck['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $shotCheck['verdict'] }}</span><span class="va-tag mute">STATUS: {{ $shotCheck['status'] ?? '—' }}</span><span class="va-tag mute">Nội dung: người duyệt đánh giá</span>@endif
                         @if($shotPlan !== null)<span class="va-tag mute">{{ count($shotPlan['shots']) }} SHOT</span>@endif
                         @foreach($shotShown['readiness'] as $state => $count)<span class="va-tag {{ $readinessLabels[$state][0] ?? 'mute' }}">{{ $count }} {{ $readinessLabels[$state][1] ?? $state }}</span>@endforeach
                         @if($shotShown['cost_usd'] !== null)<em>{{ $shotShown['tokens']['in'] }}/{{ $shotShown['tokens']['out'] }} token · ${{ number_format($shotShown['cost_usd'], 3) }}</em>@endif
                     </div>
+                    @if($shotCheck !== null && ($shotShown['stored_check']['version'] ?? $shotCheck['version']) !== $shotCheck['version'])
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Lúc chạy: {{ $shotShown['stored_check']['verdict'] ?? '—' }} · {{ $shotShown['stored_check']['version'] }}. Kiểm hiện tại: {{ $shotCheck['verdict'] }} · {{ $shotCheck['version'] }}.</div>
+                    @endif
                     @if($shotShown['integrity_error'] !== null)
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Không dùng được bản này: {{ $shotShown['integrity_error'] }}</div>
                     @endif

@@ -814,40 +814,6 @@ class VideoProjectsController extends Controller
         return $done ? back()->with('success', $reason === 'pending' ? self::CANCELLED : 'Đã reset lượt chia scene bị kẹt — bản đã duyệt giữ nguyên.') : back()->with('error', $reason);
     }
 
-    public function approveScenes(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $request->validate([
-            'stage_id' => ['required', 'uuid'],
-            'content_hash' => ['required', 'string', 'max:80'],
-            'selection_version' => ['required', 'integer', 'min:0'],
-            'operation_id' => ['required', 'uuid'],
-        ], [
-            'stage_id.*' => 'Thiếu bản chia scene cần duyệt — tải lại trang.',
-            'content_hash.*' => 'Thiếu hash nội dung — tải lại trang.',
-            'selection_version.*' => 'Thiếu phiên bản lựa chọn — tải lại trang.',
-            'operation_id.*' => 'Thiếu mã thao tác — tải lại trang.',
-        ]);
-        [$decision, $reason] = app(SceneSourceService::class)->approve(
-            $id,
-            (string) $data['stage_id'],
-            (string) $data['content_hash'],
-            (int) $data['selection_version'],
-            (string) $data['operation_id'],
-            auth()->id(),
-        );
-
-        if ($decision === null) {
-            return back()->with('error', $reason);
-        }
-
-        return redirect()->route('video-projects.scene', ['id' => $id, 'stage' => $data['stage_id']])
-            ->with('success', $reason === 'replayed'
-                ? 'Lần duyệt này đã được ghi trước đó — không ghi thêm.'
-                : 'Đã duyệt bản chia scene này làm nguồn cho kế hoạch shot.');
-    }
-
     public function writeShots(Request $request, string $id)
     {
         $this->ownedProject($id);

@@ -14,6 +14,7 @@ use App\Video\Llm\LlmClient;
 use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Support\CanonicalJson;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -28,7 +29,7 @@ final class SceneWriterService implements QueuedStageService
     /** @return array{0: ?VideoPlanningStage, 1: string} */
     public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null): array
     {
-        return (new SpecStageRunner($this->stageStore))->submit(
+        return $this->approvedWhenPassed($projectId, (new SpecStageRunner($this->stageStore))->submit(
             'scenes',
             $projectId,
             PlanningStageName::SCENES,
@@ -40,7 +41,24 @@ final class SceneWriterService implements QueuedStageService
             'chia scene',
             'scenes',
             $requester,
-        );
+        ));
+    }
+
+    /**
+     * @param  array{0: ?VideoPlanningStage, 1: string}  $result  what the run became; a failed approval leaves it as it is
+     * @return array{0: ?VideoPlanningStage, 1: string}
+     */
+    private function approvedWhenPassed(string $projectId, array $result): array
+    {
+        if ($result[0] !== null) {
+            try {
+                $this->sources->approvePassed($projectId, (string) $result[0]->id);
+            } catch (\Throwable $e) {
+                Log::error('scenes: could not record the rule-pass approval', ['stage_id' => $result[0]->id, 'exception' => $e]);
+            }
+        }
+
+        return $result;
     }
 
     /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
@@ -52,7 +70,7 @@ final class SceneWriterService implements QueuedStageService
             return [null, 'Lượt chia scene không còn — bỏ qua.'];
         }
 
-        return (new SpecStageRunner($this->stageStore))->execute(
+        return $this->approvedWhenPassed($projectId, (new SpecStageRunner($this->stageStore))->execute(
             $stageId,
             $token,
             fn (): array => $this->prepare($projectId),
@@ -60,7 +78,7 @@ final class SceneWriterService implements QueuedStageService
             fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
             'chia scene',
             'scenes',
-        );
+        ));
     }
 
     /** @return array{0: bool, 1: string} reason pending when a run still waiting in the queue was cancelled */
@@ -134,14 +152,15 @@ final class SceneWriterService implements QueuedStageService
                 'id' => (string) $stage->id,
                 'revision' => (int) $stage->planning_revision,
                 'status' => $stage->status,
-                'verdict' => $stage->output_json['check']['verdict'] ?? null,
+                // The run on screen was checked again just now; the others show what was stored when they ran.
+                'verdict' => $check !== null && (string) $stage->id === (string) $shown?->id ? $check['verdict'] : ($stage->output_json['check']['verdict'] ?? null),
+                'check_version' => $check !== null && (string) $stage->id === (string) $shown?->id ? $check['version'] : null,
                 'model_status' => $stage->output_json['check']['status'] ?? null,
                 'approved' => $selection !== null && $selection['stage_id'] === (string) $stage->id,
                 'stale' => $stage->status === VideoPlanningStageStatus::SUCCEEDED->value ? $stale($stage) : null,
                 'revision_of' => PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['revision']['of']['revision'] ?? null,
             ])->values()->all(),
             'selection' => $selection,
-            'selection_version' => (int) ($selection['version'] ?? 0),
             'approved_error' => $approvedError,
             'shot_plan_problem' => $this->sources->shotPlanProblem($projectId),
             'shown' => $shown === null ? null : [
@@ -151,11 +170,11 @@ final class SceneWriterService implements QueuedStageService
                 'integrity_error' => $integrity,
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
+                'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version'])),
                 'flags' => array_values(array_filter(is_array($document['flags'] ?? null) ? $document['flags'] : [], 'is_string')),
                 'plan' => $plan,
                 'source_problem' => $sourceProblem,
                 'approved' => $approved,
-                'approvable' => ! $approved && $check !== null && $check['verdict'] === 'PASS' && $check['status'] === 'ok' && $sourceProblem === null,
                 'tokens' => ['in' => (int) $shown->tokens_in, 'out' => (int) $shown->tokens_out],
                 'cost_usd' => $shown->cost_usd === null ? null : (float) $shown->cost_usd,
             ],
@@ -274,6 +293,10 @@ final class SceneWriterService implements QueuedStageService
             $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa scene không lưu được');
 
             throw $e;
+        }
+
+        if ($recorded) {
+            $this->approvedWhenPassed($projectId, [$claimed, 'applied']);
         }
 
         return ['reason' => $recorded ? 'applied' : 'Lượt lưu bị giành mất — tải lại rồi thử lại.', 'revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision] + $report;

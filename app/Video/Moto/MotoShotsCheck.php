@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoShotsCheck
 {
-    public const VERSION = 'moto-shots-check-v4';
+    public const VERSION = 'moto-shots-check-v5';
 
     /** @var string the timing a run pinned from MotoShots@1.2.0 on: code sets the screen time of whole and closing parts and of the shot */
     public const TIMING = 'moto-shots-timing-v1';
@@ -570,7 +570,7 @@ final class MotoShotsCheck
     /**
      * @param  array<string, mixed>  $shot
      * @param  array<string, mixed>  $context
-     * @return list<string> at a build state of an unfinished motorcycle, where the keyframe prompt sends materials instead of finishes: a state with no surface of its own, and a part in frame whose description or faces name, word for word, a finish or a colour its design gives the finished part; the prompt still sends them verbatim, for the reviewer to weigh. Only word-for-word matches are found: not every mismatch between a part's text and its stage, and not a part whose own surface the state's groups (frame, bodywork, engine, wheels) leave unsaid
+     * @return list<string> at a build state of an unfinished motorcycle, where the keyframe prompt sends materials instead of finishes: a state with no surface of its own. What a part's prose says about its finish is left to the reviewer
      */
     private static function surfaceWarnings(array $shot, ?string $state, array $context): array
     {
@@ -583,23 +583,6 @@ final class MotoShotsCheck
 
         if (! is_string($facts['surface'] ?? null) && array_filter((array) ($facts['finishes'] ?? []), 'is_string') === []) {
             $warnings[] = "{$shot['id']}: {$state} không có mô tả bề mặt của giai đoạn (surface, surfaces) — prompt ảnh không nói được bề mặt hiện tại.";
-        }
-
-        foreach ((array) $shot['parts'] as $item) {
-            $record = (array) ($context['part_records'][$item['part']] ?? []);
-            $text = implode(' ', [(string) ($record['description'] ?? ''), ...array_map(static fn (array $face): string => (string) $face['description'], (array) ($record['faces'] ?? []))]);
-            $finishes = [];
-
-            foreach ((array) ($record['surfaces'] ?? []) as $surface) {
-                $colour = $context['palette'][(string) ($surface['color_id'] ?? '')] ?? null;
-                $finishes = [...$finishes, (string) $surface['finish'], ...(is_array($colour) ? [(string) $colour['name']] : [])];
-            }
-
-            $named = array_values(array_unique(array_filter($finishes, static fn (string $finish): bool => trim($finish) !== '' && mb_stripos($text, $finish) !== false)));
-
-            if ($named !== []) {
-                $warnings[] = "{$shot['id']}: {$item['part']} — description/faces nêu lớp hoàn thiện cuối \"".implode('", "', $named)."\" ở {$state}, khi xe chưa hoàn thiện; prompt gửi nguyên văn, người duyệt xem lại.";
-            }
         }
 
         return $warnings;

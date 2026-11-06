@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoScenesCheck
 {
-    public const VERSION = 'moto-scenes-check-v3';
+    public const VERSION = 'moto-scenes-check-v4';
 
     public const PASS = 'PASS';
 
@@ -279,7 +279,7 @@ final class MotoScenesCheck
      * @param  list<string>  $onScreen  the characters the scene's beats show
      * @param  array<string, mixed>  $context
      * @param  array<string, array{location: string, status: string}>  $held  the parts the work holds at that moment, whose status the work decides
-     * @return list<string> detached parts and lights that do not exist or do not fit the build state, and protection for a character the scene does not show or a visor the character's helmet does not have
+     * @return list<string> detached parts and lights that do not exist or do not fit the build state, and protection for a character the scene does not show or named twice. What the protection items mean is prose, left to the reviewer
      */
     private static function continuityIssues(string $label, array $continuity, ?string $state, array $onScreen, array $context, array $held): array
     {
@@ -369,12 +369,6 @@ final class MotoScenesCheck
 
             if (! in_array($character, $onScreen, true)) {
                 $issues[] = "{$label}.protection nêu {$character}, nhưng không beat nào của scene có {$character} trên màn hình.";
-            }
-
-            $visor = array_filter((array) $entry['items'], static fn (string $item): bool => preg_match('/\bvisors?\b/i', $item) === 1) !== [];
-
-            if ($visor && preg_match('/\bvisors?\b/i', (string) ($context['characters'][$character] ?? '')) !== 1) {
-                $issues[] = "{$label}.protection: mô tả {$character} không có mũ kèm kính chắn (visor).";
             }
         }
 
