@@ -7,6 +7,7 @@ use App\Services\Video\LocationWriterService;
 use App\Services\Video\ModelSheetService;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\QueuedStageService;
+use App\Services\Video\ReferenceWriterService;
 use App\Services\Video\SceneWriterService;
 use App\Services\Video\ScriptWriterService;
 use App\Services\Video\ShotWriterService;
@@ -35,6 +36,7 @@ class RunPlanningStageJob implements ShouldQueue
         'script' => ScriptWriterService::class,
         'scenes' => SceneWriterService::class,
         'shots' => ShotWriterService::class,
+        'references' => ReferenceWriterService::class,
     ];
 
     public int $tries = 1;

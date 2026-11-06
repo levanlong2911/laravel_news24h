@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoReferencePlan",
+  "title": "Moto reference plan (moto-reference-plan-v2)",
+  "description": "The reference plan code builds from the approved shots, the approved model sheet and its design: every reference need of every shot, the images code plans for the needs no approved image answers with what a person checks each one against, how each need is bound, the sources the masters need, the default packing of the masters and the pinned sources.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "schema", "needs", "references", "bindings", "dependencies", "sheets", "source_manifest"],
+  "properties": {
+    "version": { "const": "moto-reference-plan-v2" },
+    "schema": { "const": "MotoReferencePlan@1.1.0" },
+    "needs": { "type": "array", "items": { "$ref": "#/$defs/need" } },
+    "references": { "type": "array", "items": { "$ref": "#/$defs/reference" } },
+    "bindings": { "type": "array", "items": { "$ref": "#/$defs/binding" } },
+    "dependencies": { "type": "array", "items": { "$ref": "#/$defs/dependency" } },
+    "sheets": { "type": "array", "items": { "$ref": "#/$defs/sheet" } },
+    "source_manifest": {
+      "type": "object",
+      "required": ["shots", "design_stage_id", "design_raw_sha256", "model_sheet_artifact_id", "model_sheet_sha256", "planner", "surface", "prompt", "schema", "settings"]
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "pattern": "\\S" },
+    "reference_id": { "type": "string", "pattern": "^R[0-9a-f]{10}$" },
+    "need_id": { "type": "string", "pattern": "^SC[0-9]{2}_SH[0-9]{2}#[0-9]+$" },
+    "angle": { "type": ["number", "null"] },
+    "checkpoint": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["after", "before", "label", "text", "done", "pending"],
+          "properties": {
+            "after": { "type": ["string", "null"] },
+            "before": { "type": ["string", "null"] },
+            "label": { "$ref": "#/$defs/text" },
+            "text": { "$ref": "#/$defs/text" },
+            "done": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+            "pending": { "type": "array", "items": { "$ref": "#/$defs/text" } }
+          }
+        }
+      ]
+    },
+    "need": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "shot_id", "index", "kind", "target", "purpose", "state", "placement", "checkpoint", "camera"],
+      "properties": {
+        "id": { "$ref": "#/$defs/need_id" },
+        "shot_id": { "$ref": "#/$defs/text" },
+        "index": { "type": "integer", "minimum": 0 },
+        "kind": { "enum": ["design", "identity", "environment", "continuity"] },
+        "target": { "type": ["string", "null"] },
+        "purpose": { "type": "string" },
+        "state": { "type": ["string", "null"] },
+        "placement": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["presentation", "location", "status", "item", "moment"],
+              "properties": {
+                "presentation": { "$ref": "#/$defs/text" },
+                "location": { "type": ["string", "null"] },
+                "status": { "$ref": "#/$defs/text" },
+                "item": { "type": ["string", "null"] },
+                "moment": { "type": ["string", "null"] }
+              }
+            }
+          ]
+        },
+        "checkpoint": { "$ref": "#/$defs/checkpoint" },
+        "camera": { "type": "object" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["element", "material", "design_finish", "color_id", "status", "text", "basis"],
+      "properties": {
+        "element": { "$ref": "#/$defs/text" },
+        "material": { "$ref": "#/$defs/text" },
+        "design_finish": { "type": "string" },
+        "color_id": { "type": ["string", "null"] },
+        "status": { "enum": ["finished", "unfinished", "digital", "needs_check"] },
+        "text": { "$ref": "#/$defs/text" },
+        "basis": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "object", "required": ["path"], "properties": { "path": { "$ref": "#/$defs/text" } } }
+        }
+      }
+    },
+    "reference_part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["part", "name", "role", "presentation", "location", "status", "components"],
+      "properties": {
+        "part": { "$ref": "#/$defs/text" },
+        "name": { "$ref": "#/$defs/text" },
+        "role": { "enum": ["subject", "context"] },
+        "presentation": { "$ref": "#/$defs/text" },
+        "location": { "type": ["string", "null"] },
+        "status": { "$ref": "#/$defs/text" },
+        "components": { "type": "array", "items": { "$ref": "#/$defs/component" } }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "part_id", "element", "topic", "time", "scope", "value", "source_path", "basis"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^F[0-9]{2,3}$" },
+        "part_id": { "type": ["string", "null"] },
+        "element": { "type": ["string", "null"] },
+        "topic": { "enum": ["identity", "geometry", "surface", "state", "placement", "relation", "view", "shot", "rule", "decision"] },
+        "time": { "enum": ["now", "constant", "target"] },
+        "scope": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "object", "additionalProperties": false, "required": ["state", "checkpoint"], "properties": { "state": { "$ref": "#/$defs/text" }, "checkpoint": { "type": ["string", "null"] } } }
+          ]
+        },
+        "value": { "type": "string" },
+        "source_path": { "$ref": "#/$defs/text" },
+        "basis": { "type": "array" }
+      }
+    },
+    "draft_line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text", "fact_refs", "section", "must_rewrite"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^L[0-9]{2,3}$" },
+        "text": { "$ref": "#/$defs/text" },
+        "fact_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^F[0-9]{2,3}$" } },
+        "section": { "enum": ["must_show", "moment", "framing", "shape", "surface", "exclude"] },
+        "must_rewrite": { "type": "boolean" }
+      }
+    },
+    "shot_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shot", "text"],
+      "properties": {
+        "shot": { "$ref": "#/$defs/text" },
+        "text": { "$ref": "#/$defs/text" }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["must_show", "first_frame", "pose", "view", "done", "pending", "absent", "decisions"],
+      "properties": {
+        "must_show": { "type": "array", "items": { "$ref": "#/$defs/shot_text" } },
+        "first_frame": { "type": "array", "items": { "$ref": "#/$defs/shot_text" } },
+        "pose": { "type": "array", "items": { "$ref": "#/$defs/shot_text" } },
+        "view": { "$ref": "#/$defs/text" },
+        "done": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+        "pending": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+        "absent": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+        "decisions": { "type": "array", "items": { "$ref": "#/$defs/decision" } }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "question", "answer"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^D[0-9a-f]{10}$" },
+        "question": { "$ref": "#/$defs/text" },
+        "answer": { "$ref": "#/$defs/text" }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "key", "kind", "state", "state_kind", "checkpoint", "parts", "camera", "regime", "medium", "blocked", "base", "needs", "shots", "requirement", "earlier_decisions", "draft", "facts", "source_fingerprint", "fingerprint"],
+      "properties": {
+        "id": { "$ref": "#/$defs/reference_id" },
+        "key": { "$ref": "#/$defs/text" },
+        "kind": { "enum": ["part_detail", "detail_set", "state"] },
+        "state": { "$ref": "#/$defs/text" },
+        "state_kind": { "type": "string" },
+        "checkpoint": { "$ref": "#/$defs/checkpoint" },
+        "parts": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/reference_part" } },
+        "camera": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["target", "target_part", "scale", "azimuth_deg", "elevation_deg", "request"],
+          "properties": {
+            "target": { "type": "string" },
+            "target_part": { "type": ["string", "null"] },
+            "scale": { "type": ["string", "null"] },
+            "azimuth_deg": { "$ref": "#/$defs/angle" },
+            "elevation_deg": { "$ref": "#/$defs/angle" },
+            "request": { "type": ["string", "null"] }
+          }
+        },
+        "regime": { "enum": ["grey", "colour"] },
+        "medium": { "enum": ["physical", "digital"] },
+        "blocked": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+        "base": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "needs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/need_id" } },
+        "shots": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } },
+        "requirement": { "$ref": "#/$defs/requirement" },
+        "earlier_decisions": { "type": "array", "items": { "$ref": "#/$defs/decision" } },
+        "draft": { "type": "array", "items": { "$ref": "#/$defs/draft_line" } },
+        "facts": { "type": "array", "items": { "$ref": "#/$defs/fact" } },
+        "source_fingerprint": { "$ref": "#/$defs/text" },
+        "fingerprint": { "$ref": "#/$defs/text" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["need_id", "type", "source", "rule"],
+      "properties": {
+        "need_id": { "$ref": "#/$defs/need_id" },
+        "type": { "enum": ["model_sheet", "model_sheet_candidate", "reference", "environment", "continuity", "none"] },
+        "source": { "type": ["string", "null"] },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "rule": { "enum": ["visible", "confirmed", "confirm", "identity_whole", "identity_scope", "identity_state", "identity_without_detail", "model_sheet_missing", "part_detail", "detail_set", "plate", "requested_background", "previous_shot"] }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "required_by", "source"],
+      "properties": {
+        "id": { "enum": ["model_sheet_master", "model_sheet_greyscale"] },
+        "kind": { "enum": ["approved_image", "derived_image"] },
+        "required_by": { "type": "array", "items": { "$ref": "#/$defs/reference_id" } },
+        "source": { "type": "object" }
+      }
+    },
+    "sheet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "regime", "medium", "cell_ids", "layout", "layout_sha256"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^M[0-9a-f]{10}$" },
+        "regime": { "enum": ["grey", "colour"] },
+        "medium": { "enum": ["physical", "digital"] },
+        "cell_ids": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "$ref": "#/$defs/reference_id" } },
+        "layout": { "type": "object" },
+        "layout_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

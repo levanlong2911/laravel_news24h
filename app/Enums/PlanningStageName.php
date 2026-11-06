@@ -29,6 +29,7 @@ enum PlanningStageName: string
     case LOCATIONS = 'locations';
     case SCENES = 'scenes';
     case SHOTS = 'shots';
+    case REFERENCE_REVIEW = 'reference_review';
 
     /** @return list<string> */
     public static function values(): array
@@ -60,6 +61,7 @@ enum PlanningStageName: string
             self::LOCATIONS => null,
             self::SCENES => null,
             self::SHOTS => null,
+            self::REFERENCE_REVIEW => null,
         };
     }
 }

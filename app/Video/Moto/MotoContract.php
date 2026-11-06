@@ -36,6 +36,14 @@ final class MotoContract
 
     public const SHOTS_FORMAT = 'moto-shots-v1';
 
+    public const REFERENCE_INPUT = 'moto-reference-input-v2';
+
+    public const REFERENCE_FORMAT = 'moto-reference-prompt-v3';
+
+    public const REFERENCE_PLAN_EXECUTION = 'moto-reference-plan-v2';
+
+    public const REFERENCE_EXECUTION = 'db-moto-phase-8-v3';
+
     public const EVIDENCE_EXECUTION = 'db-moto-phase-1-v1';
 
     public const DNA_EXECUTION = 'db-moto-phase-2-v1';
