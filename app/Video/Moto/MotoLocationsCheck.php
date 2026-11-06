@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoLocationsCheck
 {
-    public const VERSION = 'moto-locations-check-v1';
+    public const VERSION = 'moto-locations-check-v2';
 
     public const PASS = 'PASS';
 
@@ -18,12 +18,6 @@ final class MotoLocationsCheck
 
     /** @var list<string> */
     private const MAKE_WORDS = ['Harley', 'Davidson'];
-
-    /** @var list<string> the words that name the motorcycle in a text the plate prompt carries */
-    private const SUBJECT_WORDS = ['motorcycle', 'motorbike', 'bike'];
-
-    /** @var list<string> the words that name a person in a text the plate prompt carries */
-    private const PERSON_WORDS = ['builder', 'rider', 'person', 'people', 'mechanic'];
 
     /** @var list<string> the temporary equipment of a build state, as a place's fixed equipment would name it */
     private const SUPPORT_WORDS = ['lift table', 'frame jig', 'engine stand', 'wheel dolly', 'paddock stand'];
@@ -137,9 +131,8 @@ final class MotoLocationsCheck
             ...$backgroundIssues,
             ...$conflictIssues,
             ...$sizeIssues,
-            ...self::nameIssues($data, $context),
         ];
-        $warnings = [...$conflictWarnings, ...$sizeWarnings, ...self::renderWarnings($places, (array) $data['backgrounds'], $context)];
+        $warnings = [...$conflictWarnings, ...$sizeWarnings, ...self::nameWarnings($data, $context), ...self::renderWarnings($places)];
 
         return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings);
     }
@@ -463,42 +456,38 @@ final class MotoLocationsCheck
     /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $context
-     * @return list<string>
+     * @return list<string> the source names and the make in the answer's own words, for the reviewer; a quote copies its source, so what it quotes is never held against it
      */
-    private static function nameIssues(array $data, array $context): array
+    private static function nameWarnings(array $data, array $context): array
     {
-        $issues = [];
+        $warnings = [];
         $names = [...MotoContract::blockedForms((array) ($context['source_names'] ?? []), (array) ($context['base_names'] ?? [])), ...self::MAKE_WORDS];
 
         foreach (self::texts($data, '') as $path => $text) {
+            if (str_ends_with($path, '.quote')) {
+                continue;
+            }
+
             foreach ($names as $name) {
                 if (MotoContract::mentions($text, $name)) {
-                    $issues[] = "{$path}: dùng tên nguồn hoặc tên hãng \"{$name}\".";
+                    $warnings[] = "{$path}: dùng tên nguồn hoặc tên hãng \"{$name}\" — người duyệt xem lại trước khi render.";
                 }
             }
         }
 
-        return $issues;
+        return $warnings;
     }
 
     /**
      * @param  array<string, array<string, mixed>>  $places
-     * @param  list<array<string, mixed>>  $backgrounds
-     * @param  array<string, mixed>  $context
-     * @return list<string> the warnings a reviewer reads before rendering: a subject named in a text the plate prompt carries, temporary equipment kept as a place's fixed equipment, two places alike in every fixed field
+     * @return list<string> the warnings a reviewer reads before rendering: temporary equipment kept as a place's fixed equipment, two places alike in every fixed field
      */
-    private static function renderWarnings(array $places, array $backgrounds, array $context): array
+    private static function renderWarnings(array $places): array
     {
         $warnings = [];
-        $words = [...self::SUBJECT_WORDS, ...self::PERSON_WORDS, ...array_filter([$context['motorcycle_name'] ?? null], 'is_string')];
-        $texts = [];
         $seen = [];
 
         foreach ($places as $id => $place) {
-            $texts["{$id}.space"] = [$place['space']];
-            $texts["{$id}.surfaces"] = $place['surfaces'];
-            $texts["{$id}.fixed_equipment"] = $place['fixed_equipment'];
-
             foreach ($place['fixed_equipment'] as $item) {
                 foreach (self::SUPPORT_WORDS as $support) {
                     if (MotoContract::mentions($item, $support)) {
@@ -514,23 +503,6 @@ final class MotoLocationsCheck
             }
 
             $seen[$key] = $id;
-        }
-
-        foreach ($backgrounds as $background) {
-            $texts["{$background['id']}.composition"] = [$background['composition']];
-            $texts["{$background['id']}.light"] = [$background['light']['description']];
-            $texts["{$background['id']}.details"] = array_column($background['details'], 'text');
-            $texts["{$background['id']}.must_show"] = $background['must_show'];
-        }
-
-        foreach ($texts as $path => $list) {
-            foreach ($list as $text) {
-                foreach ($words as $word) {
-                    if (MotoContract::mentions((string) $text, $word)) {
-                        $warnings[] = "{$path} nhắc \"{$word}\" — người duyệt xem lại: ảnh nền chỉ chứa môi trường (thiết bị trống, chỗ trống cho chủ thể hay câu phủ định vẫn có thể hợp lệ).";
-                    }
-                }
-            }
         }
 
         return $warnings;

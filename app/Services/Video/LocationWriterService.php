@@ -125,6 +125,7 @@ final class LocationWriterService implements QueuedStageService
         $settings = $run['settings'] ?? null;
         $approvedShown = $shown !== null && $text !== null && (string) $text['stage']->id === (string) $shown->id;
         $preview = $plan !== null && $supported ? $this->preview($projectId, $plan) : ['rows' => [], 'hash' => null, 'error' => null];
+        $sourceProblem = $plan !== null && $supported ? $this->sources->workflowFor($projectId)['adapter']->sourceProblem($projectId, $this->sources->source($shown)) : null;
         $source = null;
         $sourceError = null;
 
@@ -178,7 +179,8 @@ final class LocationWriterService implements QueuedStageService
                 'images_hash' => $preview['hash'],
                 'images_error' => $preview['error'],
                 'cells' => $preview['rows'] === [] ? [] : collect($this->images->locationCellsFor($projectId, (string) $shown->id))->groupBy('environment_key')->map(static fn ($cells): array => $cells->values()->all())->all(),
-                'renderable' => $legacy === null && $check !== null && $check['verdict'] === 'PASS' && in_array($check['status'], ['ok', 'partial'], true) && $preview['error'] === null && $preview['rows'] !== [],
+                'source_problem' => $sourceProblem,
+                'renderable' => $legacy === null && $check !== null && $check['verdict'] === 'PASS' && in_array($check['status'], ['ok', 'partial'], true) && $preview['error'] === null && $preview['rows'] !== [] && $sourceProblem === null,
                 'text_approved' => $approvedShown,
                 'stale' => $approvedShown ? $text['stale'] : [],
                 'tokens' => ['in' => (int) $shown->tokens_in, 'out' => (int) $shown->tokens_out],

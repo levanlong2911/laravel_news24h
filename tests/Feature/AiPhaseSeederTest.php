@@ -66,7 +66,14 @@ class AiPhaseSeederTest extends TestCase
         $scriptBundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forCategory($category, 'spec.script');
         self::assertTrue($scriptBundle->ready(), implode('; ', $scriptBundle->mismatches()));
 
-        $counts = static fn (): array => [DB::table('ai_json_schemas')->count(), DB::table('ai_phases')->count(), DB::table('ai_phase_schemas')->count()];
+        $locations = AiPhase::currentFor($category, MotoContract::WORKFLOW, 'phase-5');
+        self::assertSame(2, (int) $locations->revision);
+        self::assertSame(hash('sha256', (string) $locations->prompt_content), (string) $locations->content_sha256);
+        self::assertSame(0, (int) DB::table('ai_phases')->where('category_id', $category)->where('workflow_code', MotoContract::WORKFLOW)->where('phase_code', 'phase-5')->where('revision', 1)->value('is_current'));
+        $locationsBundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forCategory($category, 'spec.locations');
+        self::assertTrue($locationsBundle->ready(), implode('; ', $locationsBundle->mismatches()));
+
+        $counts =static fn (): array => [DB::table('ai_json_schemas')->count(), DB::table('ai_phases')->count(), DB::table('ai_phase_schemas')->count()];
         $before = $counts();
         $current = DB::table('ai_phases')->orderBy('id')->pluck('is_current', 'id');
         $this->artisan('db:seed', ['--class' => AiPhaseSeeder::class, '--force' => true])->assertExitCode(0);

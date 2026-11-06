@@ -97,7 +97,6 @@ final class MotoLocations implements LocationWorkflow
                 'format' => $this->format(),
                 'source_names' => $names,
                 'base_names' => array_values(array_filter([$design['motorcycle']['base']['family'] ?? null, $design['motorcycle']['base']['model'] ?? null], 'is_string')),
-                'motorcycle_name' => is_string($design['motorcycle']['name'] ?? null) ? $design['motorcycle']['name'] : null,
             ],
         ];
     }

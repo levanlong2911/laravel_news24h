@@ -277,7 +277,7 @@
                                     @if($media['error'] || $media['default'] === null)
                                         <div class="ve-locked" style="color:var(--vp-red)">Render đang khoá — danh sách model lỗi cấu hình.</div>
                                     @elseif(! $renderable)
-                                        <div class="ve-locked">Bộ này chưa đạt RULE — không render.</div>
+                                        <div class="ve-locked">{{ $shown['source_problem'] ?? 'Bộ này chưa đạt RULE — không render.' }}</div>
                                     @elseif($request['blocked'])
                                         <div class="ve-locked" style="color:var(--vp-red)">Bối cảnh còn xung đột kịch bản / thiết kế — không render.</div>
                                     @else
