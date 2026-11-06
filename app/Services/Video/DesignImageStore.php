@@ -482,9 +482,14 @@ class DesignImageStore
      */
     public function modelSheetCrops(string $projectId, VideoArtifact $master): array
     {
+        return $this->sheetCrops($projectId, $master, self::MODEL_SHEET_CROP_ROLE);
+    }
+
+    public function sheetCrops(string $projectId, VideoArtifact $master, string $role): array
+    {
         return VideoArtifact::query()
             ->where('project_id', $projectId)
-            ->where('role', self::MODEL_SHEET_CROP_ROLE)
+            ->where('role', $role)
             ->whereNull('design_image_id')
             ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.master_artifact_id')) = ?", [(string) $master->id])
             ->whereRaw("JSON_EXTRACT(metadata_json, '$.superseded_at') IS NULL")
@@ -522,13 +527,32 @@ class DesignImageStore
      */
     public function storeModelSheetCrops(string $projectId, VideoArtifact $master, string $setId, array $crops, array $processing, callable $valid): string
     {
-        return DB::transaction(function () use ($projectId, $master, $setId, $crops, $processing, $valid): string {
+        return $this->storeSheetCrops($projectId, $master, $setId, $crops, $processing, $valid, self::MODEL_SHEET_CROP_ROLE);
+    }
+
+    /**
+     * @param  ?callable(array<string, mixed>, VideoArtifact): bool  $retain  keeps one existing crop of the master, checked under the master lock; null replaces every crop together
+     */
+    public function storeSheetCrops(string $projectId, VideoArtifact $master, string $setId, array $crops, array $processing, callable $valid, string $role, ?callable $retain = null): string
+    {
+        return DB::transaction(function () use ($projectId, $master, $setId, $crops, $processing, $valid, $role, $retain): string {
             $master = VideoArtifact::query()->whereKey($master->id)->where('project_id', $projectId)->lockForUpdate()->firstOrFail();
-            $existing = $this->modelSheetCrops($projectId, $master);
+            $existing = $this->sheetCrops($projectId, $master, $role);
 
             if ($existing !== [] && $valid($existing, $master)) {
                 return 'already_processed';
             }
+
+            $kept = [];
+            $replaced = [];
+            foreach ($existing as $crop) {
+                if ($retain !== null && isset($crops[$crop['view_id']]) && ! isset($kept[$crop['view_id']]) && $retain($crop, $master)) {
+                    $kept[$crop['view_id']] = $crop['id'];
+                } else {
+                    $replaced[] = $crop['id'];
+                }
+            }
+            $crops = array_diff_key($crops, $kept);
 
             $disk = (string) $master->storage_disk;
             $directory = trim(dirname((string) $master->storage_path), '/.').'/'.$master->id.'-crops/'.Str::uuid();
@@ -546,8 +570,8 @@ class DesignImageStore
                     $written[$viewId] = $path;
                 }
 
-                if ($existing !== []) {
-                    VideoArtifact::query()->whereIn('id', array_column($existing, 'id'))->get()->each(function (VideoArtifact $old): void {
+                if ($replaced !== []) {
+                    VideoArtifact::query()->whereIn('id', $replaced)->get()->each(function (VideoArtifact $old): void {
                         $metadata = $old->metadata_json ?? [];
                         $metadata['superseded_at'] = now()->toIso8601String();
                         $old->forceFill(['metadata_json' => $metadata])->save();
@@ -558,7 +582,7 @@ class DesignImageStore
                     VideoArtifact::create([
                         'project_id' => $projectId,
                         'artifact_type' => 'image',
-                        'role' => self::MODEL_SHEET_CROP_ROLE,
+                        'role' => $role,
                         'storage_disk' => $disk,
                         'storage_path' => $written[$viewId],
                         'mime_type' => 'image/png',
@@ -567,7 +591,7 @@ class DesignImageStore
                         'width' => (int) $crop['cell']['width'],
                         'height' => (int) $crop['cell']['height'],
                         'metadata_json' => [
-                            'model_sheet_set_id' => $setId,
+                            ($role === self::MODEL_SHEET_CROP_ROLE ? 'model_sheet_set_id' : 'parts_detail_plan_id') => $setId,
                             'master_image_id' => (string) $master->design_image_id,
                             'master_artifact_id' => (string) $master->id,
                             'master_sha256' => (string) $master->sha256,
@@ -582,7 +606,7 @@ class DesignImageStore
                 }
 
                 $metadata = $master->metadata_json ?? [];
-                $metadata['model_sheet'] = $processing;
+                $metadata[$role === self::MODEL_SHEET_CROP_ROLE ? 'model_sheet' : 'parts_detail'] = $processing;
                 $master->forceFill(['metadata_json' => $metadata])->save();
             } catch (\Throwable $e) {
                 $filesystem->delete(array_values($written));
@@ -657,6 +681,72 @@ class DesignImageStore
     {
         return $this->createKeyed($projectId, $creator, $spec, self::LOCATION_REFERENCE_TYPE, '_location_v', [
             'operation', 'spec_version', 'environment_key', 'locations_stage_id', 'locations_content_hash', 'prompt_sha256', 'attempt',
+        ]);
+    }
+
+    /**
+     * @return VideoArtifact the greyscale copy of an approved master, made once by code and kept beside it, found again by its source and transform
+     *
+     * @throws \RuntimeException when the master file is gone, changed or cannot be decoded
+     */
+    public function greyscaleSource(string $projectId, VideoArtifact $master, string $role, string $transform): VideoArtifact
+    {
+        return DB::transaction(function () use ($projectId, $master, $role, $transform): VideoArtifact {
+            $master = VideoArtifact::query()->whereKey($master->id)->where('project_id', $projectId)->lockForUpdate()->firstOrFail();
+            $existing = VideoArtifact::query()->where('project_id', $projectId)->where('role', $role)
+                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.source_artifact_id')) = ?", [(string) $master->id])
+                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.source_sha256')) = ?", [(string) $master->sha256])
+                ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.transform')) = ?", [$transform])
+                ->orderBy('created_at')->first();
+            $filesystem = Storage::disk((string) $master->storage_disk);
+
+            if ($existing !== null && $filesystem->exists((string) $existing->storage_path) && hash('sha256', (string) $filesystem->get((string) $existing->storage_path)) === $existing->sha256) {
+                return $existing;
+            }
+
+            $bytes = $filesystem->exists((string) $master->storage_path) ? (string) $filesystem->get((string) $master->storage_path) : '';
+
+            if ($bytes === '' || hash('sha256', $bytes) !== (string) $master->sha256) {
+                throw new \RuntimeException('File master model sheet không còn hoặc đã đổi — không tạo được bản xám.');
+            }
+
+            $image = @imagecreatefromstring($bytes);
+
+            if (! $image instanceof \GdImage || ! imagefilter($image, IMG_FILTER_GRAYSCALE)) {
+                throw new \RuntimeException('Không chuyển được master model sheet sang ảnh xám.');
+            }
+
+            [$width, $height] = [imagesx($image), imagesy($image)];
+            ob_start();
+            imagepng($image);
+            $png = (string) ob_get_clean();
+            $path = trim(dirname((string) $master->storage_path), '/.').'/'.$master->id.'-'.$transform.'/'.Str::uuid().'.png';
+
+            if (! $filesystem->put($path, $png)) {
+                throw new \RuntimeException('Không ghi được bản xám của master model sheet.');
+            }
+
+            return VideoArtifact::create([
+                'project_id' => $projectId,
+                'artifact_type' => 'image',
+                'role' => $role,
+                'storage_disk' => (string) $master->storage_disk,
+                'storage_path' => $path,
+                'mime_type' => 'image/png',
+                'file_size' => strlen($png),
+                'sha256' => hash('sha256', $png),
+                'width' => $width,
+                'height' => $height,
+                'metadata_json' => ['source_artifact_id' => (string) $master->id, 'source_sha256' => (string) $master->sha256, 'transform' => $transform],
+            ]);
+        });
+    }
+
+    public function createPartsDetailMaster(string $projectId, string $creator, array $spec): array
+    {
+        $spec['environment_key'] = null;
+        return $this->createKeyed($projectId, $creator, $spec, 'parts_detail_master', '_parts_detail_v', [
+            'operation', 'plan_id', 'sheet_id', 'plan_hash', 'attempt', 'sources',
         ]);
     }
 

@@ -25,6 +25,7 @@ final class ImageRenderQueue
     public const STEPS = [
         'model_sheet' => ModelSheetService::class,
         'location' => LocationReferenceService::class,
+        'parts_detail' => PartsDetailService::class,
     ];
 
     public function __construct(private readonly DesignImageQueue $images) {}

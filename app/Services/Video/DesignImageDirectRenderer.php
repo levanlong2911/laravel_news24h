@@ -104,6 +104,7 @@ class DesignImageDirectRenderer
                 'mirror' => $this->mirror($image, $spec, $claimToken),
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
                 'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
+                'parts_detail_master' => $this->partsDetailMaster($image, $spec, $budget),
                 'environment_plate', LocationReferencePrompt::OPERATION => $this->byProvider($spec, $budget),
                 ModelSheetService::MASTER_OPERATION => $this->modelSheetMaster($spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),
@@ -165,6 +166,12 @@ class DesignImageDirectRenderer
         return $model !== null && ! $model->supports($quality)
             ? [null, "Quality {$label} khong dung duoc voi model {$model->value} — khong gui request."]
             : [$quality, null];
+    }
+
+    private function partsDetailMaster(VideoDesignImage $image, array $spec, int $budget): array
+    {
+        app(PartsDetailService::class)->assertRenderSpec($image);
+        return $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget);
     }
 
     private function budgetSeconds(): int

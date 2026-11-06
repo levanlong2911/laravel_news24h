@@ -11,6 +11,7 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Services\Video\LocationSourceService;
 use App\Services\Video\ModelSheetService;
+use App\Services\Video\PartsDetailService;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\SceneSourceService;
 use App\Services\Video\ScriptSourceService;
@@ -36,6 +37,7 @@ final class MotoShots implements ShotWorkflow
         private readonly ScriptSourceService $scripts,
         private readonly LocationSourceService $locations,
         private readonly ModelSheetService $sheets,
+        private readonly PartsDetailService $references,
     ) {}
 
     public function format(): string
@@ -179,9 +181,10 @@ final class MotoShots implements ShotWorkflow
         }
 
         $resources = [];
+        $bindings = $this->references->bindings($projectId, array_values((array) ($plan['shots'] ?? [])), array_values((array) ($plan['finished_states'] ?? [])));
 
         foreach ((array) ($plan['shots'] ?? []) as $shot) {
-            $resources[(string) $shot['id']] = self::readiness($shot, $views, $plates, (array) ($plan['finished_states'] ?? []));
+            $resources[(string) $shot['id']] = self::readiness($shot, $views, $plates, (array) ($plan['finished_states'] ?? []), $bindings);
         }
 
         return $resources;
@@ -455,9 +458,10 @@ final class MotoShots implements ShotWorkflow
      * @param  array<string, string>  $views  the artifact of every approved model sheet view
      * @param  array<string, string>  $plates  the artifact of every chosen background image
      * @param  list<string>  $finished  the finished build states the model sheet shows
+     * @param  ?array<string, array{candidate: ?array<string, mixed>, problem: ?string}>  $bindings  the image the Reference plan binds to each design and identity need by need id, null when no plan could be built
      * @return array{readiness: string, needs: list<array<string, mixed>>} each reference need with the image that answers it now, or why none does, and whether the shot waits for a background, a reference or nothing
      */
-    public static function readiness(array $shot, array $views, array $plates, array $finished): array
+    public static function readiness(array $shot, array $views, array $plates, array $finished, ?array $bindings = null): array
     {
         $needs = [];
         $waitingBackground = ($shot['environment']['mode'] ?? null) === 'request';
@@ -468,7 +472,15 @@ final class MotoShots implements ShotWorkflow
             $waitingBackground = true;
         }
 
-        foreach ((array) $shot['reference_needs'] as $need) {
+        foreach (array_values((array) $shot['reference_needs']) as $index => $need) {
+            $bound = $bindings[$shot['id'].'#'.($index + 1)] ?? null;
+
+            if (in_array($need['kind'], ['design', 'identity'], true) && $bindings !== null) {
+                $needs[] = $need + ['candidate' => $bound['candidate'] ?? null, 'problem' => $bound === null ? 'Reference chưa lập được cho nhu cầu này' : $bound['problem']];
+                $waitingReference = $waitingReference || ($bound['candidate'] ?? null) === null;
+
+                continue;
+            }
             $candidate = null;
             $problem = null;
 

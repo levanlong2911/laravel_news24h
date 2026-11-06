@@ -91,7 +91,7 @@ final class SpecRouting
             LocationReferencePrompt::OPERATION => LocationReferencePrompt::TASK,
             'generate' => DesignImageStore::ANCHOR_TYPE,
             // 'model_sheet': o tung goc cua luong cu, con trong lich su.
-            'model_sheet', ModelSheetService::MASTER_OPERATION => ModelSheetService::TASK,
+            'model_sheet', 'parts_detail_master', ModelSheetService::MASTER_OPERATION => ModelSheetService::TASK,
             default => null,
         };
 
