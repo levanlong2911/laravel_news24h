@@ -1193,6 +1193,7 @@ return [
                         'remove' => 'removing',
                         'install' => 'installing',
                         'reinstall' => 'refitting',
+                        'align_check' => 'holding up for alignment without fitting',
                     ],
                     'locations' => [
                         'on_motorcycle' => 'on the motorcycle',
@@ -1755,7 +1756,7 @@ return [
                                 'draft' => ['scenes'],
                             ],
                             'outputs' => [
-                                'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '1.1.1','pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v1): the approved beats grouped into scenes SCxx of consecutive beats in one place, continuous story time and one established build state, each with its purpose, set brief, starting and ending continuity (placement, detached parts, lights on, surface condition, protection per character, weather), continuity link, incoming transition with its evidence and the work its beats show on parts (operation, parts worked with it, place on or off the motorcycle at the start and end, evidence from the beat); conflicts with their evidence and blocking; timing, environment assignments, characters, configurations and states stay with the beats and are derived by code; release database/releases/moto-phase-6-scenes-v3'],
+                                'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '1.1.2','pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v1): the approved beats grouped into scenes SCxx of consecutive beats in one place, continuous story time and one established build state, each with its purpose, set brief, starting and ending continuity (placement, detached parts, lights on, surface condition, protection per character, weather), continuity link, incoming transition with its evidence and the work its beats show on parts (operation, parts worked with it, place on or off the motorcycle at the start and end, evidence from the beat); conflicts with their evidence and blocking; timing, environment assignments, characters, configurations and states stay with the beats and are derived by code; release database/releases/moto-phase-6-scenes-v3'],
                             ],
                         ],
                         'spec.shots' => [

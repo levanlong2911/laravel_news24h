@@ -10,6 +10,12 @@ final class MotoWork
 
     public const OFF = 'off_motorcycle';
 
+    /** @var string the work that holds a part up to its place to compare it, leaving it off the motorcycle */
+    public const ALIGN_CHECK = 'align_check';
+
+    /** @var list<string> every operation a work item may have */
+    private const OPERATIONS = ['make', 'finish', 'test_fit', 'assemble', 'paint', 'remove', 'install', 'reinstall', self::ALIGN_CHECK];
+
     /** @var list<string> the work that moves a part from off to on the motorcycle */
     private const FITTING = ['test_fit', 'install', 'reinstall'];
 
@@ -30,7 +36,7 @@ final class MotoWork
      * @param  array<string, ?string>  $beatStates  the build state of every beat
      * @param  array<string, array<string, mixed>>  $states  the facts of every physical build state the beats use: present, in_progress
      * @param  array{first_states: array<string, ?string>, parents: array<string, ?string>, finished: list<string>}  $design  the first build state with each part of the design on the motorcycle, the part each is mounted on and the finished build states
-     * @return array{issues: list<string>, items: array<string, array{beat: string, part: string, operation: string, parts: array<string, array{start: string, end: string, start_status: string, end_status: string}>}>, beats: array<string, array<string, list<array{location: string, status: string, item: string, moment: string}>>>, scenes: array<string, array{start: array<string, array{location: string, status: string, item: string, moment: string}>, end: array<string, array{location: string, status: string, item: string, moment: string}>}>} work outside its scene, out of beat order, before a physical motorcycle exists or on a part the design does not have; making a part its build state does not list in progress and other work on a part it neither has nor makes; installing a part it only makes, which is test-fitted, removed and refitted while being made and starts off the motorcycle until work of that build state puts it on; a move the work does not make, a first fitting of a part that was on, a first test fit included, and a refitting of one never on; a part that changes place within a build state with no work between; a finished motorcycle left with a part off. For every item, every beat and every scene, where each part the work moves or keeps in place is and how it is shown — the part, the parts worked with it and the parts mounted on them: a beat holds every part where the last work of its build state left it, from its start, then after each of its items
+     * @return array{issues: list<string>, items: array<string, array{beat: string, part: string, operation: string, parts: array<string, array{start: string, end: string, start_status: string, end_status: string}>}>, beats: array<string, array<string, list<array{location: string, status: string, item: string, moment: string}>>>, scenes: array<string, array{start: array<string, array{location: string, status: string, item: string, moment: string}>, end: array<string, array{location: string, status: string, item: string, moment: string}>}>} work outside its scene, out of beat order, before a physical motorcycle exists or on a part the design does not have; making a part its build state does not list in progress and other work on a part it neither has nor makes; installing a part it only makes, which is test-fitted, removed and refitted while being made and starts off the motorcycle until work of that build state puts it on; a move the work does not make, a first fitting of a part that was on, a first test fit included, and a refitting of one never on; a part named by align_check that its build state has on the motorcycle; a part that changes place within a build state with no work between; a finished motorcycle left with a part off. For every item, every beat and every scene, where each part the work moves or keeps in place is and how it is shown — the part, the parts worked with it and the parts mounted on them: a beat holds every part where the last work of its build state left it, from its start, then after each of its items
      */
     public static function trace(array $scenes, array $beatStates, array $states, array $design): array
     {
@@ -111,6 +117,11 @@ final class MotoWork
                         }
 
                         $wasOn = self::wasOn($on, $part, $state, $design);
+
+                        if ($item['operation'] === self::ALIGN_CHECK && in_array($part, $named, true) && $wasOn && $present($part) && ($before === null || $before['state'] !== $state)) {
+                            $issues[] = "{$label}: {$part} đang ở trên xe tại {$state} — align_check chỉ đối chiếu khi chi tiết còn ngoài xe.";
+                        }
+
                         $startStatus = self::status($from, $making($part), $wasOn);
                         $on[$part] = $wasOn || $from === self::ON || $to === self::ON;
                         $endStatus = self::status($to, $making($part), $on[$part]);
@@ -354,7 +365,7 @@ final class MotoWork
     /**
      * @param  array<string, mixed>  $item
      * @param  bool  $wasOn  whether the part has been on the motorcycle before this work
-     * @return list<string> a move the operation does not make, a first fitting of a part that was on and a refitting of one never on
+     * @return list<string> an operation that is not supported, a move the operation does not make, a first fitting of a part that was on and a refitting of one never on
      */
     private static function moveIssues(string $label, array $item, bool $wasOn): array
     {
@@ -362,8 +373,18 @@ final class MotoWork
         $move = [(string) $item['location_start'], (string) $item['location_end']];
         $operation = (string) $item['operation'];
 
-        if (in_array($operation, self::FITTING, true) && $move !== [self::OFF, self::ON]) {
+        if (! in_array($operation, self::OPERATIONS, true)) {
+            return ["{$label}: {$operation} không phải thao tác được hỗ trợ — chọn một trong ".implode(', ', self::OPERATIONS).'.'];
+        }
+
+        if ($operation === 'test_fit' && $move !== [self::OFF, self::ON]) {
+            $issues[] = "{$label}: test_fit nghĩa là đặt thử chi tiết lên xe: cần off_motorcycle → on_motorcycle. Nếu chỉ cầm tới đối chiếu, dùng align_check.";
+        } elseif (in_array($operation, self::FITTING, true) && $move !== [self::OFF, self::ON]) {
             $issues[] = "{$label}: {$operation} đưa part từ ngoài xe lên xe — cần off_motorcycle → on_motorcycle.";
+        }
+
+        if ($operation === self::ALIGN_CHECK && $move !== [self::OFF, self::OFF]) {
+            $issues[] = "{$label}: align_check chỉ đối chiếu khi chi tiết còn ngoài xe: cần off_motorcycle → off_motorcycle.";
         }
 
         if ($operation === 'remove' && $move !== [self::ON, self::OFF]) {
