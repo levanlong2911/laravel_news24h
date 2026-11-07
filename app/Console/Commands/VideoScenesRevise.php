@@ -10,11 +10,11 @@ class VideoScenesRevise extends Command
     protected $signature = 'video:scenes-revise
         {project : Video project id}
         {stage : Scene plan stage id the revision is written against}
-        {patch : Path to the revision JSON file (reason, scenes by id with work, continuity_start or continuity_end)}
+        {patch : Path to the revision JSON file (reason, scenes by id with work, continuity_start, continuity_end or assumptions)}
         {--apply : Store the revised scene plan as a new run when every check passes}
         {--expected= : With --apply, the patch hash of the approved preview}';
 
-    protected $description = 'Preview (or with --apply store) a hand revision of a moto scene plan, checked against the current contract and sources; no model is called and nothing is approved';
+    protected $description = 'Preview (or with --apply store) a hand revision of a moto scene plan, checked against the current contract and sources; no model is called, and a stored revision takes the selection by rule pass like any run';
 
     public function __construct(private readonly SceneWriterService $writer)
     {
@@ -99,12 +99,24 @@ class VideoScenesRevise extends Command
         }
 
         if ($report['reason'] === 'preview') {
-            $this->info('Run again with --apply --expected='.$report['patch_hash'].' to store it as a new run.');
+            if ($report['revision'] !== null) {
+                $this->line("Already stored as rev {$report['revision']} ({$report['revision_stage_id']}); applying it again stores nothing.");
+            }
+
+            $this->info('Run again with --apply --expected='.$report['patch_hash'].' to store it as a new run. A revision that passes takes the selection by rule pass.');
 
             return self::SUCCESS;
         }
 
-        $this->info(($report['reason'] === 'applied' ? 'Stored' : 'Already stored')." as rev {$report['revision']} ({$report['revision_stage_id']}). Not approved — approve it on the Scenes screen.");
+        $stored = ($report['reason'] === 'applied' ? 'Stored' : 'Already stored')." as rev {$report['revision']} ({$report['revision_stage_id']})";
+
+        if (! $report['approved']) {
+            $this->error("{$stored}, but the selection does not point at it: {$report['approval']}");
+
+            return self::FAILURE;
+        }
+
+        $this->info("{$stored}. Approved by rule pass; the selection points at it.");
 
         return self::SUCCESS;
     }
