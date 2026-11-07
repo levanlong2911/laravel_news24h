@@ -268,26 +268,15 @@
 
             @if($designFirst)
                 @include('video-projects.partials.vessel-design-panel')
-            @else
-                @include('video-projects.partials.screenplay-panel')
             @endif
 
         </div>
 
     </div>
 
-    @if(($modelSheet ?? null) !== null)
+    @if($modelSheet !== null)
         @include('video-projects.partials.model-sheet-panel')
-
-        @if(($scriptStep ?? null) !== null)
-            @include('video-projects.partials.script-panel')
-        @endif
-    @else
-        @include('video-projects.partials.anchor-panel')
-
-        @if($designFirst)
-            @include('video-projects.partials.screenplay-panel')
-        @endif
+        @include('video-projects.partials.script-panel')
     @endif
 </div>
 @endsection
@@ -305,35 +294,7 @@
             var box = document.querySelector(button.getAttribute('data-target') + ' .modal-body p:last-child');
             if (!form || !box) { return; }
 
-            var promptBox = document.getElementById(button.getAttribute('data-prompt-box'));
-            var promptCount = document.getElementById(button.getAttribute('data-prompt-count'));
-            var sized = {};
-            try { sized = JSON.parse(button.getAttribute('data-sized-prompts') || '{}') || {}; } catch (e) { sized = {}; }
-            var sizedEnabled = Object.keys(sized).length > 0;
-            var written = {
-                prompt: promptBox ? promptBox.value : '',
-                hash: form.elements.prompt_sha256 ? form.elements.prompt_sha256.value : ''
-            };
-            var sizeUnsupported = false;
-
-            function syncPrompt() {
-                sizeUnsupported = false;
-                if (!sizedEnabled || !promptBox || !form.elements.prompt_sha256) { return; }
-                var size = form.elements.size.value;
-                var entry = size === '' ? null : sized[size];
-                if (size !== '' && !entry) {
-                    sizeUnsupported = true;
-                    form.elements.prompt_sha256.value = '';
-                    return;
-                }
-                var prompt = entry ? entry.prompt : written.prompt;
-                promptBox.value = prompt;
-                form.elements.prompt_sha256.value = entry ? entry.prompt_sha256 : written.hash;
-                if (promptCount) { promptCount.textContent = Array.from(prompt).length; }
-            }
-
             function sync() {
-                syncPrompt();
                 var model = form.elements.model.value;
                 Array.from(form.elements.quality.options).forEach(function (option) {
                     var models = (option.getAttribute('data-models') || '').split(' ');
@@ -354,9 +315,7 @@
                 button.disabled = blocked || !(hasPrompt && missing.length === 0);
                 button.title = blocked
                     ? 'Thiết kế chưa sẵn sàng'
-                    : (sizeUnsupported
-                        ? 'Prompt này không ghép lại được cho tỷ lệ của Size đang chọn — chọn Size cùng tỷ lệ hoặc viết lại prompt'
-                        : (!hasPrompt ? 'Chưa có anchor prompt' : (missing.length ? 'Chưa chọn: ' + missing.join(', ') : '')));
+                    : (!hasPrompt ? 'Chưa có anchor prompt' : (missing.length ? 'Chưa chọn: ' + missing.join(', ') : ''));
 
                 var unit = prices[form.elements.quality.value];
                 var count = parseInt(form.elements.variations.value, 10) || 1;

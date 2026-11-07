@@ -1018,47 +1018,6 @@ TEXT;
             : null;
     }
 
-    /**
-     * @return array{design: ?array<string, mixed>, stage_id: ?string, revision: ?int, content_hash: ?string,
-     *               running: bool, error: ?string, written_at: ?string, lock: ?array<string, mixed>,
-     *               gate: ?array<string, list<string>>, p0: list<array{id: string, statement: string}>}
-     */
-    public function panel(string $projectId): array
-    {
-        [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::VESSEL_DESIGN, []);
-        // dd($latest->output_json);
-        $stage = $this->currentStage($projectId);
-        $output = is_array($stage?->output_json) ? $stage->output_json : [];
-        $snapshot = $stage === null ? null : (PlanningStageStore::metadataOf($stage->input_json)[ScreenplayExpansionService::PROFILE_SNAPSHOT_KEY] ?? null);
-        $failed = $latest?->status === VideoPlanningStageStatus::FAILED->value ? $latest : null;
-        $decoded = $failed === null ? null : json_decode((string) $failed->raw_response, true);
-
-        return [
-            'repair' => self::repairRecord($stage),
-            'failed_repair' => self::repairRecord($failed),
-            'repair_enabled' => (bool) config('video.screenplay.design.repair.enabled'),
-            'errors' => $failed === null ? [] : self::failureLines((string) $failed->error_message),
-            'failed_design' => is_array($decoded) && is_array($decoded[VesselDesign::VESSEL_KEY] ?? null)
-                ? $decoded + (in_array($failed->input_json['contract_version'] ?? null, VesselDesign::V3_CONTRACTS, true) ? ['schema_version' => $failed->input_json['contract_version']] : [])
-                : null,
-            'failed_at' => $failed?->finished_at?->format('d/m/Y H:i'),
-            'gate' => VesselDesign::hasCanonical($output) ? VesselDesign::gate($output, is_array($snapshot) ? $snapshot : []) : null,
-            'p0' => VesselDesign::p0($output),
-            'v3_findings' => VesselDesign::isV3($output) ? VesselDesign::v3Findings($output) : null,
-            'text_warnings' => VesselDesign::isV3($output) ? VesselDesign::textWarnings($output) : [],
-            'design' => $stage?->output_json,
-            'stage_id' => $stage?->id,
-            'revision' => $stage?->planning_revision,
-            'content_hash' => $stage === null ? null : VesselDesign::contentHash($stage->output_json),
-            'running' => $latest?->status === VideoPlanningStageStatus::RUNNING->value
-                && $latest->lease_expires_at?->isFuture() === true,
-            'error' => $latest?->status === VideoPlanningStageStatus::FAILED->value ? $latest->error_message : null,
-            'written_at' => $stage?->finished_at?->format('d/m/Y H:i'),
-            'anchor_selection' => $this->anchorSelection(VideoProject::query()->find($projectId)),
-            'reference_selection' => $this->referenceSelection(VideoProject::query()->find($projectId)),
-        ];
-    }
-
     /** @return array<string, mixed>|null */
     public static function repairRecord(?VideoPlanningStage $stage): ?array
     {

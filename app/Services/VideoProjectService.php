@@ -489,7 +489,6 @@ class VideoProjectService implements QueuedStageService
             'self_check' => $evidence && is_array($answer['self_check'] ?? null) ? $answer['self_check'] : null,
             'issues' => $evidence && is_array($answer['issues'] ?? null) ? $answer['issues'] : null,
             'phase_one' => $phaseOne,
-            'can_design' => ! $phaseOne && $succeeded,
         ];
     }
 
@@ -620,12 +619,6 @@ class VideoProjectService implements QueuedStageService
         }
 
         return $this->stageStore->resetLatest($project->id, PlanningStageName::INSPIRATION, 'Chua co luot phan tich nao');
-    }
-
-    /** @return list<array<string, mixed>> */
-    public function anchorCells(string $projectId): array
-    {
-        return $this->designImageStore->anchorCellsFor($projectId);
     }
 
     /**
@@ -4376,11 +4369,6 @@ class VideoProjectService implements QueuedStageService
         return $profile->environmentKeys() === [] ? null : $profile;
     }
 
-    public function nextImageCode(string $projectId, string $creator): string
-    {
-        return $this->designImageStore->nextImageCode($projectId, $creator);
-    }
-
     /**
      * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
      *                                                reason: created|already_exists|project_not_found
@@ -4509,55 +4497,6 @@ class VideoProjectService implements QueuedStageService
         }
 
         return [$result->compiled, 'ok', []];
-    }
-
-    /**
-     * @return array{foundation: ?array<string, mixed>, stage_id: ?string, revision: ?int,
-     *               selectable: bool, running: bool, error: ?string, written_at: ?string,
-     *               profile_brief_revision: ?int, foundation_brief_revision: ?int, profile_source: ?string}
-     */
-    public function latestScreenplayFoundation(string $projectId): array
-    {
-        $project = $this->videoProjectRepository->getById($projectId);
-        $profile = $project?->article === null
-            ? null
-            : $this->screenplayExpansion->screenplayProfile((string) ($project->article->category?->slug ?? ''));
-        [$latest] = $this->stageStore->latestStageForProject(
-            $projectId,
-            PlanningStageName::SCREENPLAY_FOUNDATION,
-            [],
-        );
-
-        $succeeded = VideoPlanningStage::query()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::SCREENPLAY_FOUNDATION->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->orderByDesc('planning_revision')
-            ->first();
-
-        $stored = $succeeded?->output_json;
-        $foundation = is_array($stored) && $stored !== [] ? $stored : null;
-
-        return [
-            'foundation' => $foundation,
-            'stage_id' => $foundation !== null ? $succeeded->id : null,
-            'revision' => $foundation !== null ? $succeeded->planning_revision : null,
-            'selectable' => $foundation !== null
-                && in_array($foundation['schema_version'] ?? null, (array) config('video.screenplay.scenes.foundation_versions'), true),
-            'running' => $latest?->status === VideoPlanningStageStatus::RUNNING->value
-                && $latest->lease_expires_at?->isFuture() === true,
-            'error' => $latest?->status === VideoPlanningStageStatus::FAILED->value
-                ? $latest->error_message
-                : null,
-            'written_at' => $foundation !== null ? $succeeded->finished_at?->format('d/m/Y H:i') : null,
-            'profile_brief_revision' => $profile === null ? null : (FilmBrief::ofProfile($profile)[0]['revision'] ?? null),
-            'foundation_brief_revision' => $foundation !== null
-                ? (ScreenplayExpansionService::foundationBrief($succeeded)['revision'] ?? null)
-                : null,
-            'profile_source' => $foundation !== null
-                ? ScreenplayExpansionService::profileForFoundation($succeeded, $profile)[1]
-                : null,
-        ];
     }
 
     /** @return array{0: bool, 1: string} */
@@ -4887,29 +4826,6 @@ class VideoProjectService implements QueuedStageService
         return $project->save();
     }
 
-    /**
-     * Trang thai cua chang ANCHOR_PROMPT. Bo qua `$matchesInput` vi cau hoi o
-     * day la "co luot nao dang chay khong", khong phai "co khop dau vao khong".
-     *
-     * @return array{running: bool, error: ?string}
-     */
-    public function latestAnchorPrompt(string $projectId): array
-    {
-        [$latest] = $this->stageStore->latestStageForProject(
-            $projectId,
-            PlanningStageName::ANCHOR_PROMPT,
-            [],
-        );
-
-        return [
-            'running' => $latest?->status === VideoPlanningStageStatus::RUNNING->value
-                && $latest->lease_expires_at?->isFuture() === true,
-            'error' => $latest?->status === VideoPlanningStageStatus::FAILED->value
-                ? $latest->error_message
-                : null,
-        ];
-    }
-
     /** @return array{0: bool, 1: string} */
     public function resetConcept(string $projectId): array
     {
@@ -4972,7 +4888,6 @@ class VideoProjectService implements QueuedStageService
             'self_check' => null,
             'issues' => null,
             'phase_one' => false,
-            'can_design' => false,
         ];
     }
 
