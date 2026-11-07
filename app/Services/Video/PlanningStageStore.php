@@ -79,8 +79,9 @@ class PlanningStageStore
      * @param  array<string, mixed>  $metadata
      * @param  string  $snapshot  the request a worker sends later, kept apart from input_json
      * @param  ?\Closure(VideoPlanningStage, string): void  $push  inserts the job of the pending row inside the same transaction, on the same connection
+     * @param  ?\Closure(): bool  $refuse  read under the project lock, before any claim: true opens no run
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
-     *                                                              reason: project_not_found|operation_replayed|claimed_by_other|already_succeeded|queued
+     *                                                              reason: project_not_found|operation_replayed|refused|claimed_by_other|already_succeeded|queued
      */
     public function queueProjectStage(
         string $projectId,
@@ -90,8 +91,9 @@ class PlanningStageStore
         array $metadata,
         string $snapshot,
         ?\Closure $push,
+        ?\Closure $refuse = null,
     ): array {
-        return $this->openProjectStage($projectId, $stage, $input, $force, $metadata, VideoPlanningStageStatus::PENDING, $snapshot, $push);
+        return $this->openProjectStage($projectId, $stage, $input, $force, $metadata, VideoPlanningStageStatus::PENDING, $snapshot, $push, $refuse);
     }
 
     /**
@@ -99,6 +101,7 @@ class PlanningStageStore
      * @param  bool|\Closure(VideoPlanningStage): bool  $force
      * @param  array<string, mixed>  $metadata
      * @param  ?\Closure(VideoPlanningStage, string): void  $push
+     * @param  ?\Closure(): bool  $refuse
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string}
      */
     private function openProjectStage(
@@ -110,6 +113,7 @@ class PlanningStageStore
         VideoPlanningStageStatus $status,
         ?string $snapshot,
         ?\Closure $push,
+        ?\Closure $refuse = null,
     ): array {
         if (array_key_exists(self::METADATA_KEY, $input)) {
             throw new \InvalidArgumentException(
@@ -124,7 +128,7 @@ class PlanningStageStore
         try {
             $operationId = is_string($metadata['operation_id'] ?? null) && $metadata['operation_id'] !== '' ? $metadata['operation_id'] : null;
 
-            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force, $operationId, $status, $snapshot, $push) {
+            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force, $operationId, $status, $snapshot, $push, $refuse) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
                 $rows = VideoPlanningStage::query()
@@ -140,6 +144,10 @@ class PlanningStageStore
 
                 if ($replayed !== null) {
                     return [$replayed, null, 'operation_replayed'];
+                }
+
+                if ($refuse !== null && $refuse()) {
+                    return [null, null, 'refused'];
                 }
 
                 $live = $rows->first(fn ($r) => $r->claim_token !== null && (

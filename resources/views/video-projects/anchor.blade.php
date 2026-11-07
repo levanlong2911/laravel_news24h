@@ -210,7 +210,7 @@
                                 'content' => 'DNA hiện tại chưa đạt kiểm kỹ thuật. Gọi '.config('video.superyacht.dna.model').' (effort '.config('video.superyacht.dna.effort').') tạo một bản mới — lượt cũ vẫn được giữ, tác vụ này tính tiền.',
                             ])
                         @else
-                            <button class="vp-btn sm" disabled title="{{ $dna['run_error'] ?? 'Đã có DNA đạt kiểm kỹ thuật cho đúng kết quả Phase 1 và prompt hiện tại' }}">Tạo Design DNA</button>
+                            <button class="vp-btn sm" disabled title="{{ $dna['locked'] ? 'Thiết kế của dự án đã duyệt cùng model sheet' : ($dna['run_error'] ?? 'Đã có DNA đạt kiểm kỹ thuật cho đúng kết quả Phase 1 và prompt hiện tại') }}">Tạo Design DNA</button>
                         @endif
                     </div>
 

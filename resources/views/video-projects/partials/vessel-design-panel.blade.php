@@ -1,7 +1,6 @@
             @php
-                $yachtModel = (string) config('video.superyacht.design.model').' (effort '.config('video.superyacht.design.effort').')';
                 $yachtCheck = $yacht['check'];
-                $yachtKept = ($yacht['stage_id'] ?? null) !== null && ($modelSheet['sheet']['design_stage_id'] ?? null) === $yacht['stage_id'];
+                $yachtKept = $yacht['locked'];
             @endphp
             <div class="vp-panel" id="designPanel" data-ajax-part>
                 <div class="va-head">
@@ -30,15 +29,17 @@
                             <input type="hidden" name="operation_id" value="{{ $yacht['operation_id'] }}">
                         </form>
                         <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmYachtDesign"
-                                data-busy="Đang thiết kế…">{{ $yachtKept ? 'Thiết kế mới (tuỳ chọn, tính phí)' : ($yacht['can_regenerate'] ? 'Thiết kế lại (tính phí)' : 'Creat design') }}</button>
+                                data-busy="Đang thiết kế…">{{ $yacht['can_regenerate'] ? 'Thiết kế lại (tính phí)' : 'Creat design' }}</button>
                         @include('modal.confirm_action', [
                             'id' => 'confirmYachtDesign',
                             'form' => 'yachtDesignForm',
-                            'content' => 'Gọi '.$yachtModel.' viết hồ sơ thiết kế theo prompt Phase 3 từ Design đã đạt — tác vụ này tính tiền.'
-                                .($yachtKept ? ' Bản thiết kế đã duyệt cùng model sheet vẫn hiệu lực; bản mới sẽ cần model sheet mới.' : ''),
+                            'content' => 'Gọi '.$yacht['run_model'].' viết hồ sơ thiết kế theo prompt Phase 3 từ Design đã đạt — tác vụ này tính tiền.',
+                            'detail' => ! $yacht['can_regenerate'] ? '' : ($yacht['changes']['design'] !== [] ? 'Thay đổi: '.implode(', ', $yacht['changes']['design']).'. ' : '')
+                                .($yacht['last_cost_usd'] !== null ? 'Lượt trước tốn $'.number_format($yacht['last_cost_usd'], 3).'. ' : '')
+                                .'Bản đang có vẫn nằm trong lịch sử; bản mới sẽ thay nguồn và cần model sheet mới.',
                         ])
                     @else
-                        <button class="vp-btn sm" disabled title="{{ $yacht['run_error'] ?? 'Đã có bản thiết kế đạt kiểm RULE cho đúng DNA và prompt hiện tại' }}">Creat design</button>
+                        <button class="vp-btn sm" disabled title="{{ $yacht['blocked_reason'] }}">Creat design</button>
                     @endif
                 </div>
                 <div class="va-body">
@@ -60,6 +61,21 @@
                         @else
                             @if($yacht['dna_stale'])
                                 <div class="line"><span class="v" style="color:var(--vp-red)">Bản thiết kế này thuộc Design DNA cũ.</span></div>
+                            @endif
+                            @if($yacht['integrity_error'])
+                                <div class="line"><span class="v" style="color:var(--vp-red)">{{ $yacht['integrity_error'] }}</span></div>
+                            @endif
+                            @if($yacht['changes']['design'] !== [])
+                                <div class="line"><span class="k">Đầu vào hiện hành</span><span class="v">Nguồn hoặc hợp đồng đã đổi ({{ implode(', ', $yacht['changes']['design']) }}). {{ $yachtKept ? 'Bản đã duyệt được giữ nguyên.' : 'Bản đang có được giữ; muốn áp dụng thì bấm Thiết kế lại (tính phí).' }}</span></div>
+                            @endif
+                            @if($yacht['changes']['next_sheet'] !== [])
+                                <div class="line"><span class="k">Đầu vào hiện hành</span><span class="v">Cấu hình model sheet hiện hành đã thay đổi ({{ implode(', ', $yacht['changes']['next_sheet']) }}). Bản thiết kế này vẫn sử dụng dữ liệu đã ghim của lượt tạo; thay đổi áp dụng cho lượt model sheet mới.</span></div>
+                            @endif
+                            @if($yacht['changes']['next_run'] !== [])
+                                <div class="line"><span class="k">Đầu vào hiện hành</span><span class="v">Thiết lập cho lượt mới đã đổi ({{ implode(', ', $yacht['changes']['next_run']) }}). Không ảnh hưởng tính hợp lệ của bản thiết kế này.</span></div>
+                            @endif
+                            @if($yacht['history_unverified'])
+                                <div class="line"><span class="k">Bản lịch sử</span><span class="v">Bản lịch sử đang được giữ; chưa kiểm lại đầy đủ theo bộ kiểm mới.</span></div>
                             @endif
                             @if($yachtCheck !== null)
                                 @php

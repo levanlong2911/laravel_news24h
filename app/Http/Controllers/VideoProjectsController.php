@@ -132,9 +132,9 @@ class VideoProjectsController extends Controller
             'active' => 'active',
             'project' => $project,
             'brief' => $brief = $this->videoProjectService->latestInspiration($project->id),
-            'dna' => app(DesignDnaService::class)->panel($project->id),
-            'yacht' => $designFirst ? app(YachtDesignService::class)->panel($project->id) : null,
-            'modelSheet' => $designFirst && $brief['phase_one'] ? app(ModelSheetService::class)->panel($project->id, (string) auth()->user()?->name) : null,
+            'dna' => $dna = app(DesignDnaService::class)->panel($project->id, $brief),
+            'yacht' => $yacht = $designFirst ? app(YachtDesignService::class)->panel($project->id, $dna) : null,
+            'modelSheet' => $designFirst && $brief['phase_one'] ? app(ModelSheetService::class)->panel($project->id, (string) auth()->user()?->name, $yacht) : null,
             'scriptStep' => $designFirst && $brief['phase_one'] ? app(ScriptWriterService::class)->panel(
                 $project->id,
                 is_string($request->query('script')) && Str::isUuid($request->query('script')) ? $request->query('script') : null,

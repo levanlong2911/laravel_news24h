@@ -24,8 +24,17 @@ final class ScriptSourceService
 
     public const TOKEN_VERSION = 'script-source-token-v1';
 
+    /** @var array<string, array{workflow: string, action: string, adapter: ScriptWorkflow, category_id: string, category_slug: string}> one adapter per project, so what it read while building a page is not read again */
+    private array $workflows = [];
+
     /** @return array{workflow: string, action: string, adapter: ScriptWorkflow, category_id: string, category_slug: string} */
     public function workflowFor(string $projectId): array
+    {
+        return $this->workflows[$projectId] ??= $this->readWorkflow($projectId);
+    }
+
+    /** @return array{workflow: string, action: string, adapter: ScriptWorkflow, category_id: string, category_slug: string} */
+    private function readWorkflow(string $projectId): array
     {
         $project = VideoProject::query()->with('article.category')->find($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
         $category = $project->article?->category ?? throw new RuntimeException('Dự án không gắn bài viết có chủ đề — bước Kịch bản không áp dụng.');

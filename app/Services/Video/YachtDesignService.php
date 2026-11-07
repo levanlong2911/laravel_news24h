@@ -10,7 +10,6 @@ use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
-use App\Services\VideoProjectService;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Llm\LlmClient;
@@ -18,6 +17,7 @@ use App\Video\ModelSheet\ModelSheetMaster;
 use App\Video\Moto\MotoContract;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\YachtDesign\DesignProse;
+use App\Video\YachtDesign\DesignRunPolicy;
 use App\Video\YachtDesign\DesignWorkflow;
 use App\Video\YachtDesign\SuperyachtDesign;
 use App\Video\YachtDesign\YachtDesignCheck;
@@ -35,9 +35,9 @@ final class YachtDesignService implements QueuedStageService
     public function __construct(
         private readonly PlanningStageStore $stageStore,
         private readonly VideoProjectRepositoryInterface $projects,
-        private readonly VideoProjectService $videoProjects,
         private readonly DesignDnaService $dna,
         private readonly LlmClient $writer,
+        private readonly DesignApprovalLock $approval,
     ) {}
 
     /**
@@ -51,7 +51,7 @@ final class YachtDesignService implements QueuedStageService
             $projectId,
             PlanningStageName::YACHT_DESIGN,
             fn (): array => $this->prepare($this->project($projectId)),
-            fn (VideoPlanningStage $served, array $run): bool => $regenerate && $this->replaceable($served, $run),
+            fn (VideoPlanningStage $served, array $run): bool => $this->mayReplace($served, $run, $regenerate),
             $operationId,
             $requester,
             $this->perform(),
@@ -61,7 +61,91 @@ final class YachtDesignService implements QueuedStageService
                 ? [null, 'Bản thiết kế đã lưu cho đúng DNA và prompt này chưa đạt kiểm RULE hoặc còn cảnh báo — bấm "Thiết kế lại" nếu muốn tạo bản mới. Không gọi model.']
                 : null,
             'Chưa gọi model thiết kế: ',
+            fn (array $run): ?string => $this->refusal($projectId, $run, $regenerate),
         );
+    }
+
+    /**
+     * @param  array{input: array<string, mixed>, payload: string}  $run  the prepared run
+     * @param  bool  $regenerate  the person chose the paid action that replaces a kept design
+     * @return ?string why this run may not start; null leaves it to the claim, which serves a valid design of the same input as it is
+     */
+    public function refusal(string $projectId, array $run, bool $regenerate): ?string
+    {
+        $decision = $this->decision($projectId, $run);
+
+        return match (true) {
+            $decision['status'] === DesignRunPolicy::LOCKED => DesignApprovalLock::MESSAGE,
+            $decision['create'], $decision['status'] === DesignRunPolicy::CURRENT => null,
+            $decision['regenerate'] => $regenerate ? null : 'Bản thiết kế đang có vẫn được giữ — bấm "Thiết kế lại (tính phí)" nếu muốn tạo bản mới.',
+            default => 'Bản thiết kế đang có vẫn dùng được; thay đổi cấu hình chỉ áp dụng cho lượt sau.',
+        };
+    }
+
+    /** @param array<string, mixed> $run */
+    public function mayReplace(VideoPlanningStage $served, array $run, bool $regenerate): bool
+    {
+        return $regenerate && $this->replaceable($served, $run);
+    }
+
+    /**
+     * What the stored design and the prepared run allow, from the rows as they are now: no model call and no write.
+     *
+     * @param  ?array{input: array<string, mixed>, payload: string}  $run
+     * @return array{design: ?VideoPlanningStage, locked: bool, exact: bool, integrity_error: ?string, changes: array{design: list<string>, next_sheet: list<string>, next_run: list<string>, payload_unread: bool}, history_unverified: bool, evaluated: ?array{0: ?object, 1: array<string, mixed>}, create: bool, regenerate: bool, status: string}
+     */
+    public function decision(string $projectId, ?array $run): array
+    {
+        return $this->decisionFor($projectId, $run, self::workflowOf($this->projects->getById($projectId)), false);
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $run
+     * @param  bool  $live  check a design of the current input again with the current code, as the page does; the claim leaves that to its force closure
+     * @return array{design: ?VideoPlanningStage, locked: bool, exact: bool, integrity_error: ?string, changes: array{design: list<string>, next_sheet: list<string>, next_run: list<string>, payload_unread: bool}, history_unverified: bool, evaluated: ?array{0: ?object, 1: array<string, mixed>}, create: bool, regenerate: bool, status: string}
+     */
+    private function decisionFor(string $projectId, ?array $run, string $workflow, bool $live): array
+    {
+        $design = $this->approval->currentDesign($projectId);
+        $locked = $design !== null && $this->approval->approves($projectId, $design);
+        $exact = $design !== null && $run !== null && hash_equals((string) $design->input_hash, $this->stageStore->inputHash($run['input']));
+        $integrity = $design === null ? null : $this->approval->integrityProblem($projectId, $design, $workflow);
+        $check = $design !== null && is_array($design->output_json['check'] ?? null) ? $design->output_json['check'] : [];
+        $usable = $integrity === null && ($check['verdict'] ?? null) === YachtDesignCheck::PASS;
+        $clean = ($check['warnings'] ?? []) === [];
+        $evaluated = null;
+
+        if ($exact && $live && ! $locked) {
+            $evaluated = $this->evaluate((string) ($design->output_json['raw_text'] ?? ''), $run, self::manifestOf($design));
+            $clean = $evaluated[1]['verdict'] === YachtDesignCheck::PASS && $evaluated[1]['warnings'] === [];
+            $usable = $integrity === null && $clean;
+        }
+
+        $stored = $design === null || $exact ? null : self::payloadOf($this->stageStore->snapshotOf((string) $design->id));
+        $changes = $design === null || $run === null ? DesignRunPolicy::NO_CHANGES : DesignRunPolicy::changes(is_array($design->input_json) ? $design->input_json : [], $run['input'], $stored, (string) $run['payload']);
+
+        return [
+            'design' => $design,
+            'locked' => $locked,
+            'exact' => $exact,
+            'integrity_error' => $integrity,
+            'changes' => $changes,
+            'history_unverified' => $design !== null && ! $exact && $stored === null,
+            'evaluated' => $evaluated,
+        ] + DesignRunPolicy::decide($run !== null, $design !== null, $locked, $exact, $usable, $clean, $changes);
+    }
+
+    private static function workflowOf(?VideoProject $project): string
+    {
+        return (string) (config('video.superyacht.contracts.categories')[$project?->article?->category?->slug ?? ''] ?? '');
+    }
+
+    /** @return ?string the payload a stored request snapshot kept */
+    private static function payloadOf(?string $snapshot): ?string
+    {
+        $decoded = $snapshot === null ? null : json_decode($snapshot, true);
+
+        return is_array($decoded) && is_string($decoded['payload'] ?? null) ? $decoded['payload'] : null;
     }
 
     /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
@@ -76,7 +160,13 @@ final class YachtDesignService implements QueuedStageService
         return (new StageQueue($this->stageStore))->execute(
             $stageId,
             $token,
-            fn (): array => $this->prepare($this->project($projectId)),
+            function () use ($projectId): array {
+                if ($this->approval->holds($projectId)) {
+                    throw new RuntimeException(DesignApprovalLock::MESSAGE);
+                }
+
+                return $this->prepare($this->project($projectId));
+            },
             $this->perform(),
             'thiết kế',
             'yacht design',
@@ -97,8 +187,11 @@ final class YachtDesignService implements QueuedStageService
         return $project !== null && $project->article !== null ? $project : throw new RuntimeException('Không tìm thấy dự án hoặc dự án không gắn bài viết.');
     }
 
-    /** @return array<string, mixed> */
-    public function panel(string $projectId): array
+    /**
+     * @param  ?array<string, mixed>  $dnaPanel  the DNA panel this page already built, so it is not built again
+     * @return array<string, mixed>
+     */
+    public function panel(string $projectId, ?array $dnaPanel = null): array
     {
         $project = $this->projects->getById($projectId);
         $run = null;
@@ -109,21 +202,35 @@ final class YachtDesignService implements QueuedStageService
                 throw new RuntimeException('Không tìm thấy dự án.');
             }
 
-            $run = $this->prepare($project);
+            $run = $this->prepare($project, $dnaPanel);
         } catch (\Throwable $e) {
             $runError = $e->getMessage();
         }
 
         [$latest] = $this->stageStore->latestStageForProject($projectId, PlanningStageName::YACHT_DESIGN, $run['input'] ?? [], skipOrphans: true);
-        $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::YACHT_DESIGN, $run['input']);
+        $workflow = self::workflowOf($project);
+        $decision = $this->decisionFor($projectId, $run, $workflow, true);
         $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'pending' => false, 'stuck' => false, 'error' => null, 'task' => null,
             'current' => false, 'dna_stale' => false, 'check' => null, 'name' => null, 'loa' => null, 'yacht_anchor' => null, 'prose' => null, 'json_error' => null];
         $base = [
-            'moto' => MotoContract::is((string) (config('video.superyacht.contracts.categories')[$project?->article?->category?->slug ?? ''] ?? '')),
-            'can_run' => $run !== null && $served === null,
-            'can_regenerate' => $run !== null && $served !== null && $this->replaceable($served, $run),
-            'prompt' => $run === null ? null : self::label((int) $run['prompt']->revision),
-            'run_error' => $runError,
+            'moto' => MotoContract::is($workflow),
+            'can_run' => $decision['create'],
+            'can_regenerate' => $decision['regenerate'],
+            'locked' => $decision['locked'],
+            'input_matches' => $decision['exact'],
+            'changes' => $decision['changes'],
+            'history_unverified' => $decision['history_unverified'],
+            'integrity_error' => $decision['integrity_error'],
+            'blocked_reason' => match ($decision['status']) {
+                DesignRunPolicy::LOCKED => 'Bản thiết kế này đã duyệt cùng model sheet',
+                DesignRunPolicy::KEPT => 'Bản thiết kế đang có vẫn dùng được; thay đổi cấu hình chỉ áp dụng cho lượt sau',
+                DesignRunPolicy::CURRENT => 'Đã có bản thiết kế đạt kiểm RULE cho đúng DNA và prompt hiện tại',
+                default => $runError,
+            },
+            'prompt' => $run === null || $decision['locked'] ? null : self::label((int) $run['prompt']->revision),
+            'run_model' => $run === null ? null : $run['settings']['model'].' (effort '.$run['settings']['effort'].')',
+            'last_cost_usd' => $decision['design']?->cost_usd === null ? null : (float) $decision['design']->cost_usd,
+            'run_error' => $decision['locked'] ? null : $runError,
             'operation_id' => (string) Str::uuid(),
         ];
 
@@ -135,18 +242,12 @@ final class YachtDesignService implements QueuedStageService
         // Noi dung hien thi: ban thiet ke thanh cong moi nhat, doc tu output da luu. Prompt Phase 3
         // len revision moi chi doi luot Create design moi; khong an noi dung ban da chay. Mot luot
         // moi hon bi loi hoac dang chay cung khong thay noi dung ban da co.
-        $shown = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value ? $latest : VideoPlanningStage::query()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::YACHT_DESIGN->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->whereNull('input_json->orphan_of_stage_id')
-            ->orderByDesc('planning_revision')
-            ->first();
+        $shown = $decision['design'];
         $succeeded = $shown !== null;
         $stored = $succeeded && is_array($shown->output_json) ? $shown->output_json : [];
-        $current = $succeeded && $served !== null && (string) $served->id === (string) $shown->id;
+        $current = $decision['exact'];
         [$filled, $check] = $current
-            ? $this->evaluate((string) ($stored['raw_text'] ?? ''), $run, self::manifestOf($shown))
+            ? ($decision['evaluated'] ?? $this->evaluate((string) ($stored['raw_text'] ?? ''), $run, self::manifestOf($shown)))
             : [null, is_array($stored['check'] ?? null) ? $stored['check'] : null];
         $data = is_object($filled)
             ? json_decode((string) json_encode($filled->data ?? null), true)
@@ -186,9 +287,9 @@ final class YachtDesignService implements QueuedStageService
     }
 
     /** @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, prompt_version: string, settings: array<string, mixed>, input: array<string, mixed>, metadata: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string, model_sheet?: array<string, mixed>, adapter?: DesignWorkflow} */
-    private function prepare(VideoProject $project): array
+    private function prepare(VideoProject $project, ?array $dnaPanel = null): array
     {
-        $dnaPanel = $this->dna->panel((string) $project->id);
+        $dnaPanel ??= $this->dna->panel((string) $project->id);
 
         if (! $dnaPanel['phase3_ready'] || ! is_string($dnaPanel['stage_id'])) {
             throw new RuntimeException('Design DNA chưa đạt kiểm kỹ thuật cho đúng Phase 1 và prompt hiện tại.');
@@ -196,8 +297,8 @@ final class YachtDesignService implements QueuedStageService
 
         $dnaStage = VideoPlanningStage::query()->findOrFail($dnaPanel['stage_id']);
         $dna = JsonAnswer::object((string) ($dnaStage->output_json['raw_text'] ?? ''))['dna'] ?? null;
-        $inspiration = $this->videoProjects->latestInspiration((string) $project->id);
-        $phaseOne = is_string($inspiration['stage_id']) ? VideoPlanningStage::query()->find($inspiration['stage_id']) : null;
+        // A DNA that is phase3_ready ran on the current Phase 1 run: its input names that run, and it was read just now.
+        $phaseOne = VideoPlanningStage::query()->find($dnaStage->input_json['inspiration_stage_id'] ?? null);
         $source = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($phaseOne?->output_json['raw_text'] ?? '')));
         $identity = $source['source_identity'] ?? null;
 
@@ -330,6 +431,10 @@ final class YachtDesignService implements QueuedStageService
     /** @param array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, input: array<string, mixed>, dna: array<mixed>, source_identity: array<mixed>, project_id: string, model_sheet?: array<string, mixed>, adapter?: DesignWorkflow} $run */
     private function replaceable(VideoPlanningStage $served, array $run): bool
     {
+        if ($this->approval->integrityProblem((string) $served->project_id, $served, (string) ($run['input']['workflow'] ?? '')) !== null) {
+            return true;
+        }
+
         $check = $this->evaluate((string) (is_array($served->output_json) ? ($served->output_json['raw_text'] ?? '') : ''), $run, self::manifestOf($served))[1];
 
         return $check['verdict'] !== YachtDesignCheck::PASS || $check['warnings'] !== [];

@@ -38,6 +38,7 @@ final class DesignDnaService implements QueuedStageService
         private readonly VideoProjectRepositoryInterface $projects,
         private readonly VideoProjectService $videoProjects,
         private readonly LlmClient $writer,
+        private readonly DesignApprovalLock $approval,
     ) {}
 
     /**
@@ -61,7 +62,14 @@ final class DesignDnaService implements QueuedStageService
                 ? [null, 'DNA đã lưu cho đúng Phase 1 và prompt này chưa đạt kiểm kỹ thuật — bấm "Tạo lại DNA" để tạo bản mới. Không gọi model.']
                 : null,
             'Chưa gọi model DNA: ',
+            fn (array $run): ?string => $this->refusal($projectId),
         );
+    }
+
+    /** @return ?string why no new DNA may start: once the design is approved with its model sheet, a new DNA could only cost money and mark that design as old */
+    public function refusal(string $projectId): ?string
+    {
+        return $this->approval->holds($projectId) ? DesignApprovalLock::MESSAGE : null;
     }
 
     /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
@@ -78,7 +86,13 @@ final class DesignDnaService implements QueuedStageService
         return (new StageQueue($this->stageStore))->execute(
             $stageId,
             $token,
-            fn (): array => $this->prepare($this->project((string) $stage->project_id), is_array($history) ? $history : null),
+            function () use ($stage, $history): array {
+                if ($this->approval->holds((string) $stage->project_id)) {
+                    throw new RuntimeException(DesignApprovalLock::MESSAGE);
+                }
+
+                return $this->prepare($this->project((string) $stage->project_id), is_array($history) ? $history : null);
+            },
             $this->perform(),
             'tạo DNA',
             'design dna',
@@ -114,8 +128,11 @@ final class DesignDnaService implements QueuedStageService
         ];
     }
 
-    /** @return array<string, mixed> */
-    public function panel(string $projectId): array
+    /**
+     * @param  ?array<string, mixed>  $inspiration  the Phase 1 panel this page already built, so it is not built again
+     * @return array<string, mixed>
+     */
+    public function panel(string $projectId, ?array $inspiration = null): array
     {
         $project = $this->projects->getById($projectId);
         $run = null;
@@ -126,7 +143,7 @@ final class DesignDnaService implements QueuedStageService
                 throw new RuntimeException('Không tìm thấy dự án.');
             }
 
-            $run = $this->prepare($project);
+            $run = $this->prepare($project, null, $inspiration);
         } catch (\Throwable $e) {
             $runError = $e->getMessage();
         }
@@ -139,13 +156,14 @@ final class DesignDnaService implements QueuedStageService
         );
         $next = $run === null ? null : self::label((int) $run['prompt']->revision, (string) $run['input']['workflow']);
         $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::DESIGN_DNA, $run['input']);
-        $canRun = $run !== null && $served === null;
-        $canRegenerate = $run !== null && $served !== null && $this->replaceable($served, $run);
+        $locked = $this->approval->holds($projectId);
+        $canRun = ! $locked && $run !== null && $served === null;
+        $canRegenerate = ! $locked && $run !== null && $served !== null && $this->replaceable($served, $run);
         $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'pending' => false, 'stuck' => false, 'error' => null, 'stream' => null, 'task' => null,
             'source' => null, 'current' => false, 'check' => null, 'novelty' => null, 'phase3_ready' => false, 'json' => null, 'json_error' => null];
 
         if ($latest === null) {
-            return ['can_run' => $canRun, 'can_regenerate' => false, 'prompt' => $next, 'run_error' => $runError, 'operation_id' => (string) Str::uuid()] + $empty;
+            return ['can_run' => $canRun, 'can_regenerate' => false, 'locked' => $locked, 'prompt' => $next, 'run_error' => $runError, 'operation_id' => (string) Str::uuid()] + $empty;
         }
 
         $succeeded = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value;
@@ -179,6 +197,7 @@ final class DesignDnaService implements QueuedStageService
             'check' => $check,
             'novelty' => $phase3Ready ? self::ownNovelty($raw) : null,
             'can_regenerate' => $canRegenerate,
+            'locked' => $locked,
             'phase3_ready' => $phase3Ready,
             'json' => $succeeded && $parseError === null
                 ? (string) json_encode($parsed, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
@@ -200,11 +219,12 @@ final class DesignDnaService implements QueuedStageService
 
     /**
      * @param  ?list<string>  $queuedHistory  the concept history stages a queued run was sent with, so a concept passed by another project while it waited changes nothing
+     * @param  ?array<string, mixed>  $inspiration  the Phase 1 panel when the caller already read it
      * @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, prompt_version: string, settings: array<string, mixed>, input: array<string, mixed>, metadata: array<string, mixed>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>}
      */
-    private function prepare(VideoProject $project, ?array $queuedHistory = null): array
+    private function prepare(VideoProject $project, ?array $queuedHistory = null, ?array $inspiration = null): array
     {
-        $phaseOne = $this->videoProjects->latestInspiration((string) $project->id);
+        $phaseOne = $inspiration ?? $this->videoProjects->latestInspiration((string) $project->id);
 
         if (! $phaseOne['source_passed'] || ! is_string($phaseOne['stage_id'])) {
             throw new RuntimeException('Phase 1 chưa đạt đánh giá nguồn, hoặc lượt đã ghim không còn khớp bài viết và prompt mà nó đã dùng.');
