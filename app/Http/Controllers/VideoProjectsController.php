@@ -2,14 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\AnchorStage;
 use App\Enums\DesignImageStatus;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
-use App\Enums\ImageModel;
-use App\Enums\ImageQuality;
-use App\Enums\ImageSize;
-use App\Enums\ImageVariations;
 use App\Enums\SceneStep;
 use App\Form\AdminCustomValidator;
 use App\Models\Admin;
@@ -18,7 +13,6 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoRender;
 use App\Services\VideoProjectService;
-use App\Video\Concept\Viewpoint;
 use App\Video\Render\Video\SceneClipDispatchService;
 use App\Video\Render\Video\SceneShotFactory;
 use App\Video\Render\Video\VideoRenderExecutionService;
@@ -42,7 +36,6 @@ use App\Services\Video\ScriptSourceService;
 use App\Services\Video\ScriptWriterService;
 use App\Services\Video\YachtDesignService;
 use App\Services\Video\ScreenplayExpansionService;
-use App\Services\Video\StoryFoundationService;
 use App\Services\Video\VesselDesignService;
 use App\Video\Screenplay\VesselDesign;
 use App\Video\YachtDesign\YachtDesignCheck;
@@ -129,77 +122,8 @@ class VideoProjectsController extends Controller
         }
 
         $this->authorizeProject($project);
-        //Hiển thị data màn hình anchior
-        $characters = $this->characterAnchorPromptService->characters($project->id);
-        // view image
-        $cells = $this->videoProjectService->anchorCells($project->id);
-        $primaryObjectId = collect($characters)->firstWhere('kind', 'object')['id'] ?? null;
-        $submittedFor = old('size') === null ? null : (string) old('character_id', '');
-        $anchorRows = [];
 
-        foreach ($characters === [] ? [null] : $characters as $character) {
-            $characterId = $character['id'] ?? null;
-            $preview = $this->videoProjectService->anchorPromptPreview($project->id, $characterId);
-            $submitted = $submittedFor === (string) $characterId;
-            $designed = is_string($character['design_stage_id'] ?? null);
-            $promptError = null;
-
-            if ($designed && ($character['anchor_blockers'] ?? []) === []
-                && ($preview === null || ! VesselDesign::stampedFor($preview, $character) || ! $this->characterAnchorPromptService->isCurrentDesignPrompt($preview)
-                    || $this->characterAnchorPromptService->designSourceChanged($project->id, $preview))) {
-                $promptError = $this->compileDesignAnchorPrompt($project->id, $character);
-                $preview = $this->videoProjectService->anchorPromptPreview($project->id, $characterId);
-            }
-
-            $stalePrompt = $designed && $preview !== null
-                && (! VesselDesign::stampedFor($preview, $character) || ! $this->characterAnchorPromptService->isCurrentDesignPrompt($preview)
-                    || $this->characterAnchorPromptService->designSourceChanged($project->id, $preview));
-            $preview = $stalePrompt ? null : $preview;
-            $rowCells = array_values(array_filter($cells, static fn(array $cell): bool => $character === null
-                || ($cell['character_id'] ?? null) === $characterId
-                || (($cell['character_id'] ?? null) === null && $characterId === $primaryObjectId)));
-
-            $anchorRows[] = [
-                'character' => $character,
-                'stale_prompt' => $stalePrompt,
-                'prompt_error' => $promptError === null ? null : $this->anchorMessage($promptError),
-                'prompt_author' => $preview['lineage']['subject_state_version'] ?? null,
-                'geometry' => $designed && $preview !== null ? $this->characterAnchorPromptService->geometryReview($project->id, $preview) : null,
-                'blockers' => array_map(fn (string $reason): string => $this->anchorMessage($reason), $character['anchor_blockers'] ?? []),
-                'unclassified' => $character['anchor_unclassified'] ?? [],
-                'approved' => collect($rowCells)->contains(static fn(array $cell): bool => $cell['status'] === DesignImageStatus::APPROVED->value
-                    && (! $designed || VesselDesign::stampedFor($cell, $character))),
-                'prompt' => $preview['prompt'] ?? null,
-                'prompt_hash' => $preview['prompt_sha256'] ?? null,
-                'sized_prompts' => $designed && $preview !== null
-                    ? array_map(static fn (string $prompt): array => ['prompt' => $prompt, 'prompt_sha256' => hash('sha256', $prompt)],
-                        $this->characterAnchorPromptService->previewPrompts($project->id, $preview))
-                    : [],
-                'prompt_version' => $preview['lineage']['prompt_version'] ?? null,
-                'size' => ImageSize::tryFrom((string) ($submitted ? old('size') : ($preview['size'] ?? ''))),
-                'model' => ImageModel::tryFrom((string) ($submitted ? old('model') : ($preview['lineage']['model'] ?? ''))),
-                'quality' => $submitted ? ImageQuality::tryFrom((string) old('quality', '')) : null,
-                'variations' => ImageVariations::tryFrom((int) ($submitted ? old('variations', 1) : 1)),
-                'cells' => $rowCells,
-            ];
-        }
-
-        $screenplayFoundation = $this->videoProjectService->latestScreenplayFoundation($project->id);
-
-        if (VesselDesign::isDesignFirst($project)) {
-            $stories = app(StoryFoundationService::class);
-            $story = $stories->latestStoryFoundation($project->id);
-
-            if ($story !== null && $story->id === $screenplayFoundation['stage_id']) {
-                $stories->ensureCast($project->id, $story);
-            }
-        }
-
-        // dd(app(VesselDesignService::class)->panel($project->id));
-
-        // $vesselDesign = app(VesselDesignService::class)->panel($project->id);
-
-        // dd($vesselDesign);
+        $designFirst = VesselDesign::isDesignFirst($project);
 
         return view('video-projects.anchor', [
             'route' => 'video-projects',
@@ -208,22 +132,14 @@ class VideoProjectsController extends Controller
             'active' => 'active',
             'project' => $project,
             'brief' => $brief = $this->videoProjectService->latestInspiration($project->id),
-            'dna' => app(DesignDnaService::class)->panel($project->id),
-            'yacht' => $phaseThree = VesselDesign::isDesignFirst($project) && $brief['phase_one'] ? app(YachtDesignService::class)->panel($project->id) : null,
-            'modelSheet' => $phaseThree === null ? null : app(ModelSheetService::class)->panel($project->id, (string) auth()->user()?->name),
-            'scriptStep' => $phaseThree === null ? null : app(ScriptWriterService::class)->panel(
+            'dna' => $dna = app(DesignDnaService::class)->panel($project->id, $brief),
+            'yacht' => $yacht = $designFirst ? app(YachtDesignService::class)->panel($project->id, $dna) : null,
+            'modelSheet' => $designFirst && $brief['phase_one'] ? app(ModelSheetService::class)->panel($project->id, (string) auth()->user()?->name, $yacht) : null,
+            'scriptStep' => $designFirst && $brief['phase_one'] ? app(ScriptWriterService::class)->panel(
                 $project->id,
                 is_string($request->query('script')) && Str::isUuid($request->query('script')) ? $request->query('script') : null,
-            ),
-            'anchorRows' => $anchorRows,
-            'compileReason' => $this->anchorMessage('choose_prompt_settings'),
-            'nextImageCode' => $this->videoProjectService->nextImageCode($project->id, (string) auth()->user()?->name),
-            'screenplayFoundation' => $screenplayFoundation,
-            'anchorPrompt' => $this->videoProjectService->latestAnchorPrompt($project->id),
-            'designFirst' => VesselDesign::isDesignFirst($project),
-            'vesselDesign' => VesselDesign::isDesignFirst($project)
-                ? app(VesselDesignService::class)->panel($project->id)
-                : null,
+            ) : null,
+            'designFirst' => $designFirst,
         ]);
     }
 
@@ -290,113 +206,11 @@ class VideoProjectsController extends Controller
             : back()->with('error', $reason);
     }
 
-    /** @param array<string, mixed> $character */
-    private function compileDesignAnchorPrompt(string $projectId, array $character): ?string
-    {
-        [$compiled, $reason, $stamped] = $this->characterAnchorPromptService->author(
-            $projectId,
-            (string) $character['id'],
-            AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
-            ImageSize::LANDSCAPE,
-            $this->characterAnchorPromptService->anchorModel(),
-            false,
-            false,
-        );
-
-        if ($compiled === null) {
-            return $reason;
-        }
-
-        $this->videoProjectService->storeAnchorPromptPreview(
-            $projectId,
-            AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
-            Viewpoint::FrontThreeQuarter,
-            ImageSize::LANDSCAPE,
-            $compiled,
-            [],
-            $stamped,
-        );
-
-        return null;
-    }
-
-    public function concept(Request $request, string $id)
-    {
-        $project = $this->ownedProject($id);
-
-        $characterId = $request->string('character_id')->toString();
-
-        if ($characterId === '' && VesselDesign::isDesignFirst($project)) {
-            return back()->with('error', $this->anchorMessage('character_prompt_no_design'));
-        }
-        if ($characterId !== '') {
-            [$compiled, $reason, $character] = $this->characterAnchorPromptService->author(
-                $id,
-                $characterId,
-                AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
-                ImageSize::LANDSCAPE,
-                $this->characterAnchorPromptService->anchorModel(),
-                $request->boolean('force'),
-            );
-
-            if ($compiled === null) {
-                return back()->with('error', $this->anchorMessage($reason));
-            }
-
-            $this->videoProjectService->storeAnchorPromptPreview(
-                $id,
-                AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
-                Viewpoint::FrontThreeQuarter,
-                ImageSize::LANDSCAPE,
-                $compiled,
-                [],
-                $character,
-            );
-
-            $name = (string) ($character['name'] ?? $characterId);
-
-            return back()->with('success', $reason === 'cached'
-                ? "Nhân vật {$name} không đổi — dùng lại prompt đã có, không gọi model."
-                : "Đã viết prompt cho {$name}.");
-        }
-
-        [$compiled, $reason, $concept] = $this->videoProjectService->compiledAnchorPrompt($id);
-
-        if ($compiled === null) {
-            return back()->with('error', $this->anchorMessage($reason));
-        }
-
-        $this->videoProjectService->storeAnchorPromptPreview(
-            $id,
-            AnchorStage::FABRICATION_GEOMETRY_ANCHOR,
-            Viewpoint::FrontThreeQuarter,
-            ImageSize::LANDSCAPE,
-            $compiled,
-            $concept ?? [],
-        );
-
-        return back()->with('success', $reason === 'cached'
-            ? 'Brief không đổi — dùng lại prompt cũ, không gọi model.'
-            : 'Đã viết prompt bằng gpt-5.6-terra.');
-    }
-
     public function vesselDesign(Request $request, string $id)
     {
         $this->ownedProject($id);
 
-        if (app(VesselDesignService::class)->isPhaseDesign($id)) {
-            return $this->phaseDesign($request, $id);
-        }
-
-        [$design, $reason] = app(VesselDesignService::class)->author($id, $request->boolean('force'));
-
-        if ($design === null) {
-            return back()->with('error', $this->anchorMessage($reason));
-        }
-
-        return back()->with('success', $reason === 'cached'
-            ? 'Đầu vào không đổi — dùng lại bản thiết kế đã có, không gọi model.'
-            : 'Đã thiết kế tàu. Bước tiếp theo: viết prompt anchor.');
+        return $this->phaseDesign($request, $id);
     }
 
     private function phaseDesign(Request $request, string $id)
@@ -935,210 +749,6 @@ class VideoProjectsController extends Controller
             : back()->with('error', $reason);
     }
 
-    public function screenplayFoundation(Request $request, string $id)
-    {
-        $project = $this->ownedProject($id);
-
-        $force = $request->boolean('force');
-
-        [$foundation, $reason] = VesselDesign::isDesignFirst($project)
-            ? app(StoryFoundationService::class)->author($id, $force)
-            : [null, 'workflow_not_design_first'];
-
-        if ($foundation === null) {
-            return back()->with('error', $this->anchorMessage($reason));
-        }
-
-        return back()->with('success', $reason === 'cached'
-            ? 'Brief không đổi — dùng lại nội dung đã có, không gọi model.'
-            : ($force ? 'Đã tạo bản nội dung mới. Chưa phân cảnh.' : 'Đã viết nội dung kịch bản. Chưa phân cảnh.'));
-    }
-
-    public function resetScreenplayFoundation(string $id)
-    {
-        $this->ownedProject($id);
-
-        [$done, $reason] = $this->videoProjectService->resetScreenplayFoundation($id);
-
-        return $done
-            ? back()->with('success', 'Đã reset — bấm Viết nội dung kịch bản để chạy lại.')
-            : back()->with('error', $reason);
-    }
-
-    public function screenplayCharacters(Request $request, string $id)
-    {
-        return $this->screenplayCast($request, $id, 'characters');
-    }
-
-    public function screenplayLocations(Request $request, string $id)
-    {
-        return $this->screenplayCast($request, $id, 'locations');
-    }
-
-    public function resetScreenplayCharacters(string $id)
-    {
-        return $this->resetScreenplayCast($id, 'characters');
-    }
-
-    public function resetScreenplayLocations(string $id)
-    {
-        return $this->resetScreenplayCast($id, 'locations');
-    }
-
-    private function screenplayCast(Request $request, string $id, string $part)
-    {
-        $this->ownedProject($id);
-
-        $foundationStageId = $request->string('foundation_stage_id')->toString();
-        $force = $request->boolean('force');
-
-        [$cast, $reason] = $part === 'characters'
-            ? [null, 'screenplay_characters_from_design']
-            : $this->screenplayExpansion->authorLocations(
-                $id, $foundationStageId, $request->string('characters_stage_id')->toString(), $force,
-            );
-
-        if ($cast === null) {
-            return back()->with('error', $this->anchorMessage($reason));
-        }
-
-        $label = $part === 'characters' ? 'nhân vật' : 'địa điểm';
-
-        return back()->with('success', $reason === 'cached'
-            ? "Nội dung kịch bản không đổi — dùng lại danh sách {$label} đã có, không gọi model."
-            : "Đã tạo danh sách {$label}.");
-    }
-
-    private function resetScreenplayCast(string $id, string $part)
-    {
-        $this->ownedProject($id);
-
-        [$done, $reason] = $this->screenplayExpansion->resetCast($id, $part);
-
-        return $done
-            ? back()->with('success', 'Đã reset — bấm tạo lại để chạy lại.')
-            : back()->with('error', $reason);
-    }
-
-    public function screenplay(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        [$screenplay, $reason] = $this->screenplayExpansion->authorScenes(
-            $id,
-            $request->string('foundation_stage_id')->toString(),
-            $request->string('characters_stage_id')->toString(),
-            $request->string('locations_stage_id')->toString(),
-            $request->boolean('force'),
-        );
-
-        if ($screenplay === null) {
-            return back()->with('error', $this->anchorMessage($reason));
-        }
-
-        if ($reason === 'ok_needs_review') {
-            return back()->with('warning', 'Đã tạo phân cảnh — có cảnh báo biên tập, đọc phần cảnh báo bên dưới.');
-        }
-
-        return back()->with('success', $reason === 'cached'
-            ? 'Nội dung kịch bản không đổi — dùng lại phân cảnh đã có, không gọi model.'
-            : 'Đã tạo phân cảnh bằng Claude Sonnet 5.');
-    }
-
-    public function resetScreenplay(string $id)
-    {
-        $this->ownedProject($id);
-
-        [$done, $reason] = $this->videoProjectService->resetScreenplayScenes($id);
-
-        return $done
-            ? back()->with('success', 'Đã reset — bấm Tạo phân cảnh để chạy lại.')
-            : back()->with('error', $reason);
-    }
-
-    public function approveScreenplay(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-        $data = $request->validate([
-            'stage_id' => ['required', 'uuid'],
-            'operation_id' => ['required', 'uuid'],
-            'reason' => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        [$done, $reason] = $this->videoProjectService->approveScreenplay(
-            $id,
-            $data['stage_id'],
-            $this->actorId(),
-            $data['operation_id'],
-            $data['reason'] ?? null,
-        );
-
-        return $done
-            ? back()->with('success', $reason === 'replayed'
-                ? 'Bản phân cảnh này đã được duyệt trước đó.'
-                : 'Đã duyệt bản phân cảnh theo đúng nội dung hiện tại.')
-            : back()->with('error', $this->anchorMessage($reason));
-    }
-
-    public function selectScreenplay(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-        $data = $request->validate([
-            'stage_id' => ['required', 'uuid'],
-            'expected_selection_version' => ['required', 'integer', 'min:0'],
-        ]);
-
-        [$done, $reason] = $this->videoProjectService->selectScreenplayForProduction(
-            $id,
-            $data['stage_id'],
-            (int) $data['expected_selection_version'],
-        );
-
-        return $done
-            ? back()->with('success', $reason === 'already_selected'
-                ? 'Bản phân cảnh này đang được dùng cho production.'
-                : 'Đã chọn bản phân cảnh làm nguồn production.')
-            : back()->with('error', $this->anchorMessage($reason));
-    }
-
-    public function resetConcept(string $id)
-    {
-        $this->ownedProject($id);
-
-        [$done, $reason] = $this->videoProjectService->resetConcept($id);
-
-        return $done
-            ? back()->with('success', 'Đã reset — bấm Creat Prompt để chạy lại.')
-            : back()->with('error', $reason);
-    }
-
-    public function createAnchorImage(Request $request, string $id)
-    {
-        $this->ownedProject($id);
-
-        $data = $this->form->validate($request, 'AnchorImageForm');
-
-        [$image, $reason] = $this->videoProjectService->renderAnchorFromPreview(
-            $id,
-            (string) auth()->user()?->name,
-            (string) $data['prompt_sha256'],
-            ImageSize::from($data['size']),
-            ImageModel::from($data['model']),
-            ImageQuality::from($data['quality']),
-            ImageVariations::from((int) $data['variations']),
-            ($data['character_id'] ?? null) ?: null,
-        );
-
-        if ($image === null) {
-            return back()->with('error', $this->anchorMessage($reason));
-        }
-
-        return back()->with(
-            $reason === 'rendered' ? 'success' : 'error',
-            $this->renderOutcome($reason, $image),
-        );
-    }
-
     public function renderDesignImage(string $id, string $imageId)
     {
         $this->ownedProject($id);
@@ -1153,31 +763,6 @@ class VideoProjectsController extends Controller
             $reason === 'rendered' ? 'success' : 'error',
             $this->renderOutcome($reason, $image),
         );
-    }
-
-    public function approveAnchor(Request $request, string $id)
-    {
-        $project = $this->ownedProject($id);
-
-        $data = $this->form->validate($request, 'AnchorApproveForm');
-
-        [$done, $reason] = $this->videoProjectService->approveAnchor(
-            $id,
-            (string) $data['artifact_id'],
-            auth()->id(),
-        );
-
-        if ($done && VesselDesign::isDesignFirst($project)) {
-            return redirect()
-                ->route('video-projects.reference', $id)
-                ->with('success', 'Đã duyệt ảnh anchor cho bản thiết kế. Bước tiếp theo: tạo, duyệt và chốt bộ ảnh Reference trước khi viết kịch bản.');
-        }
-
-        return $done
-            ? redirect()
-            ->route('video-projects.reference', $id)
-            ->with('success', __('messages.anchor_approved'))
-            : back()->with('error', $this->anchorMessage($reason));
     }
 
     private function renderOutcome(string $reason, \App\Models\VideoDesignImage $image): string
@@ -1363,7 +948,7 @@ class VideoProjectsController extends Controller
         [$done, $reason] = app(VesselDesignService::class)->lockReferences($id, auth()->id());
 
         return $done
-            ? redirect()->to(route('video-projects.anchor', $id).'#screenplay-panel')->with('success', $this->anchorMessage($reason))
+            ? redirect()->route('video-projects.anchor', $id)->with('success', $this->anchorMessage($reason))
             : back()->with('error', $this->anchorMessage($reason));
     }
 

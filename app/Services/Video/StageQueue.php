@@ -31,9 +31,10 @@ final class StageQueue
      * @param  ?array{id: string, name: string}  $requester  who sent the run, kept on it for the worker and the page
      * @param  \Closure(VideoPlanningStage, string, array<string, mixed>, ?\Closure(\Throwable): ?array): array{0: ?VideoPlanningStage, 1: string}  $perform  calls the model for a claimed run and stores what it answered; the last argument queues a rate-limited run again
      * @param  ?\Closure(?VideoPlanningStage, string, array<string, mixed>): ?array{0: ?VideoPlanningStage, 1: string}  $refusal  the answer to a refused claim, null keeps the default one
+     * @param  ?\Closure(array<string, mixed>): ?string  $guard  read under the project lock before the claim, so nothing can slip in after it; a text refuses the run with that reason
      * @return array{0: ?VideoPlanningStage, 1: string} reason queued|cached|replayed|ok|requeued, or why nothing ran
      */
-    public function submit(string $step, string $projectId, PlanningStageName $name, \Closure $prepare, bool|\Closure $force, string $operationId, ?array $requester, \Closure $perform, string $label, string $log, ?\Closure $refusal = null, string $notCalled = 'Chưa gọi model: '): array
+    public function submit(string $step, string $projectId, PlanningStageName $name, \Closure $prepare, bool|\Closure $force, string $operationId, ?array $requester, \Closure $perform, string $label, string $log, ?\Closure $refusal = null, string $notCalled = 'Chưa gọi model: ', ?\Closure $guard = null): array
     {
         if (! Str::isUuid($operationId)) {
             return [null, 'Mã thao tác không hợp lệ — tải lại trang.'];
@@ -61,6 +62,8 @@ final class StageQueue
             return [null, 'Chưa đưa vào hàng đợi, không gọi model: '.$problem];
         }
 
+        $refused = null;
+
         [$stage, $token, $reason] = $this->stageStore->queueProjectStage(
             $projectId,
             $name,
@@ -69,7 +72,16 @@ final class StageQueue
             array_diff_key($run['metadata'], ['payload' => true]) + ['step' => $step, 'operation_id' => $operationId, 'requested_by' => $requester, 'queued_at' => now()->toIso8601String(), 'job_timeout' => $jobTimeout],
             self::snapshot($run),
             $queued ? static fn (VideoPlanningStage $stage, string $token) => self::push($stage, $token, ProviderRateLimit::cooldownRemaining(ProviderRateLimit::ANTHROPIC, (string) $run['settings']['model'])) : null,
+            $guard === null ? null : static function () use ($guard, $run, &$refused): bool {
+                $refused = $guard($run);
+
+                return $refused !== null;
+            },
         );
+
+        if ($refused !== null) {
+            return [null, $notCalled.$refused];
+        }
 
         if ($token === null) {
             return ($refusal === null ? null : $refusal($stage, $reason, $run)) ?? $this->refused($stage, $reason, $label, $queued);

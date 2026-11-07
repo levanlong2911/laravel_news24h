@@ -24,6 +24,7 @@ use App\Video\ModelSheet\ModelSheetQaSchema;
 use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoSheetPrompt;
 use App\Video\Queue\VideoQueues;
+use App\Video\YachtDesign\DesignRunPolicy;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -58,6 +59,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         private readonly MediaModelRegistry $registry,
         private readonly YachtDesignService $design,
         private readonly ModelSheetQaService $qa,
+        private readonly DesignApprovalLock $approval,
     ) {}
 
     public const PROMPT_APPROVAL_EXECUTION = 'model-sheet-master-prompt-approval-v1';
@@ -334,7 +336,9 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         $input = $this->reviewInput($set, $image, $artifact);
 
         try {
-            DB::transaction(function () use ($projectId, $artifactId, $adminId, $input, $crops): void {
+            DB::transaction(function () use ($projectId, $artifactId, $adminId, $input, $crops, $set): void {
+                $this->assertApprovable($projectId, $set);
+
                 [$done, $reason] = $this->images->approve($projectId, $artifactId, $adminId, null, DesignImageStore::MODEL_SHEET_MASTER_TYPE);
 
                 if (! $done) {
@@ -370,6 +374,38 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         }
 
         return [true, 'approved'];
+    }
+
+    /**
+     * Under the project lock a new Design or DNA run takes before its claim: either that run is seen
+     * here and refuses this approval, or this approval is seen by its guard and refuses that run.
+     */
+    private function assertApprovable(string $projectId, VideoPlanningStage $set): void
+    {
+        VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+
+        $active = $this->approval->activeRun($projectId);
+
+        if ($active !== null) {
+            throw new RuntimeException('Đang có lượt '.($active->stage === PlanningStageName::DESIGN_DNA->value ? 'DNA' : 'thiết kế').' chờ hoặc chạy — đợi lượt đó xong hoặc huỷ nó rồi mới duyệt model sheet.');
+        }
+
+        $design = $this->approval->currentDesign($projectId);
+
+        if ($design === null || (string) $design->id !== (string) ($set->input_json['design_stage_id'] ?? '')) {
+            throw new RuntimeException('Bản thiết kế nguồn đã đổi so với bộ model sheet này — tải lại trang.');
+        }
+
+        $workflow = $this->workflowOf($projectId);
+        $problem = $this->approval->sourceProblem($projectId, $design, $workflow);
+
+        if ($problem !== null) {
+            throw new RuntimeException($problem.' Chưa duyệt model sheet — tải lại trang.');
+        }
+
+        if (self::designHash($design, $workflow) !== ($set->input_json['design_canonical_hash'] ?? null)) {
+            throw new RuntimeException('Bản thiết kế không còn khớp hash mà bộ model sheet này đã ghim — tải lại trang.');
+        }
     }
 
     /**
@@ -483,9 +519,16 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             : 'Model sheet đã duyệt không còn hợp lệ: '.$problem);
     }
 
-    /** @return array<string, mixed> */
-    public function panel(string $projectId, string $creator = ''): array
+    /**
+     * @param  ?array<string, mixed>  $designPanel  the design panel this page already built, so it is not built again
+     * @return array<string, mixed>
+     */
+    public function panel(string $projectId, string $creator = '', ?array $designPanel = null): array
     {
+        if ($designPanel !== null) {
+            $this->designPanels[$projectId] = $designPanel;
+        }
+
         $design = $this->designPanel($projectId);
         [$active, $sourceError] = $this->activeSet($projectId);
         $set = $active ?? $this->currentSet($projectId);
@@ -651,7 +694,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
      *
      * @return array<string, mixed>
      */
-    private function reviewInput(VideoPlanningStage $set, VideoDesignImage $image, VideoArtifact $artifact): array
+    public static function reviewInput(VideoPlanningStage $set, VideoDesignImage $image, VideoArtifact $artifact): array
     {
         return [
             'execution' => self::REVIEW_EXECUTION,
@@ -863,6 +906,10 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             throw new RuntimeException('Bản thiết kế nguồn không thuộc dự án hoặc chưa chạy thành công.');
         }
 
+        if (($problem = DesignRunPolicy::integrityProblem($stage, $workflow)) !== null) {
+            throw new RuntimeException($problem);
+        }
+
         $raw = (string) $stage->raw_response;
         $design = JsonAnswer::object($raw);
         $canonicalHash = self::designHash($stage, $workflow);
@@ -880,7 +927,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
     }
 
     /** @return mixed the hash that identifies a design stage: the canonical hash of a yacht design, the design hash of a moto design */
-    private static function designHash(VideoPlanningStage $stage, string $workflow): mixed
+    public static function designHash(VideoPlanningStage $stage, string $workflow): mixed
     {
         return MotoContract::is($workflow)
             ? ($stage->output_json['check']['design_hash'] ?? null)
@@ -921,7 +968,8 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             $canonicalHash = $stage === null ? null : self::designHash($stage, $workflow);
 
             if (! self::sheetWorkflow($workflow) || $stage === null
-                || ($stage->output_json['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($canonicalHash) || $canonicalHash === '') {
+                || ($stage->output_json['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($canonicalHash) || $canonicalHash === ''
+                || DesignRunPolicy::integrityProblem($stage, $workflow) !== null) {
                 throw $current;
             }
 
