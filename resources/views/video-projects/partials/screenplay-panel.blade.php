@@ -2,7 +2,7 @@
                 $storyFirst = (bool) ($designFirst ?? false);
                 $storyStep = $storyFirst ? 'story' : 'foundation';
             @endphp
-            <div class="vp-panel" id="screenplay-panel">
+            <div class="vp-panel" id="screenplay-panel" data-ajax-part>
                 <div class="va-head">
                     <span class="n">{{ $storyFirst ? 6 : 3 }}</span>
                     <b>KỊCH BẢN PHIM</b>

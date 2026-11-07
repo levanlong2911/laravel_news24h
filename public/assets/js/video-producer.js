@@ -215,7 +215,7 @@ function vpTaskWatch(options) {
     schedule();
 }
 
-function vpAjaxPage(rootId, onRefresh) {
+function vpAjaxPage(rootId, onRefresh, onParts) {
     var root = document.getElementById(rootId);
     var unknown = 'Chưa xác định kết quả — lượt AI có thể vẫn đang chạy hoặc đã xong. Tải lại trang để xem trạng thái, đừng bấm lại ngay.';
     var waiting = 'Đang có một thao tác chạy trên trang này — chờ nó xong rồi bấm tiếp.';
@@ -339,13 +339,18 @@ function vpAjaxPage(rootId, onRefresh) {
     }
 
     function replaceParts(fresh) {
+        var replaced = [];
+
         fresh.querySelectorAll('[data-ajax-part]').forEach(function (element) {
             var current = document.getElementById(element.id);
 
             if (current !== null && current.querySelector('.modal.show') === null) {
                 current.outerHTML = element.outerHTML;
+                replaced.push(document.getElementById(element.id));
             }
         });
+
+        return replaced;
     }
 
     function replaceWhole(fresh) {
@@ -417,11 +422,12 @@ function vpAjaxPage(rootId, onRefresh) {
 
                 var fresh = new DOMParser().parseFromString(html, 'text/html');
                 var swapped = exclusive || parts(fresh) !== parts(document);
+                var replaced = [];
 
                 if (swapped) {
                     replaceWhole(fresh);
                 } else {
-                    replaceParts(fresh);
+                    replaced = replaceParts(fresh);
                     unlock(place.trigger, controls, states);
                 }
 
@@ -438,6 +444,7 @@ function vpAjaxPage(rootId, onRefresh) {
                 flash();
 
                 if (swapped && onRefresh) { onRefresh(root); }
+                if (!swapped && onParts) { onParts(replaced); }
             })
             .catch(function () {
                 settle();

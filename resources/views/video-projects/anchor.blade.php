@@ -8,17 +8,19 @@
 @section('content')
 <div class="container-fluid vp" id="anchorPage">
 
-    <div id="anchorFlash" hidden data-ajax-flash data-success="{{ session('success') }}" data-error="{{ session('error') }}"></div>
+    <div id="anchorFlash" hidden data-ajax-part data-ajax-flash data-success="{{ session('success') }}" data-error="{{ session('error') ?? $errors->first() }}"></div>
 
-    @if($errors->any())
-        <div class="alert alert-danger">
-            <ul class="mb-0 pl-3">
-                @foreach($errors->all() as $message)
-                    <li>{{ $message }}</li>
-                @endforeach
-            </ul>
-        </div>
-    @endif
+    <div id="anchorErrors" data-ajax-part>
+        @if($errors->any())
+            <div class="alert alert-danger">
+                <ul class="mb-0 pl-3">
+                    @foreach($errors->all() as $message)
+                        <li>{{ $message }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+    </div>
 
     <div class="va-page">
         <div>
@@ -393,7 +395,13 @@
     if (page) {
         init(page);
         vpTaskWatch({ root: 'anchorPage', refresh: init });
-        // vpAjaxPage('anchorPage', init);
+        vpAjaxPage('anchorPage', function (root) {
+            init(root);
+            vpTaskWatch();
+        }, function (parts) {
+            parts.forEach(function (part) { init(part); });
+            vpTaskWatch();
+        });
     }
 })();
 </script>

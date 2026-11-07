@@ -2,7 +2,7 @@
         $promptModel = config('canonical_concept.'.config('canonical_concept.provider').'.model');
     @endphp
 
-    <div class="vp-panel va-anchor">
+    <div class="vp-panel va-anchor" id="anchorPromptPanel" data-ajax-part>
         <div class="va-head">
             <span class="n">{{ ($designFirst ?? false) ? 5 : 4 }}</span>
             <b>ANCHOR PROMPT</b>

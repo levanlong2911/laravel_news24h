@@ -138,7 +138,7 @@
                     return implode("\n", $lines);
                 };
             @endphp
-            <div class="vp-panel">
+            <div class="vp-panel" id="designPanel" data-ajax-part>
                 <div class="va-head">
                     <span class="n">4</span>
                     <b>DESIGN</b>
