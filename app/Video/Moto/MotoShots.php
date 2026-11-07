@@ -381,6 +381,7 @@ final class MotoShots implements ShotWorkflow
                 'views' => array_map(static fn (array $view): array => array_intersect_key($view, array_flip(['id', 'azimuth_deg', 'elevation_deg', 'projection'])), $views),
                 'total_ms' => (int) $scenePlan['total_ms'],
                 'timing' => MotoShotsCheck::TIMING,
+                'surface_rule' => MotoReferenceSurface::RULE_MATERIAL,
                 'state_records' => array_map(static fn (array $state): array => array_intersect_key($state, array_flip(self::SURFACE_STATE_KEYS)), $records),
                 'ref_parts' => [
                     ...array_column((array) ($design['features'] ?? []), 'parts', 'id'),

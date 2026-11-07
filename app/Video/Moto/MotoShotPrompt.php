@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Video\Moto;
 
+use App\Video\Superyacht\Support\CanonicalJson;
+
 final class MotoShotPrompt
 {
     public const VERSION = 'moto-shot-prompt-v5';
 
     public const CLIP_VERSION = 'moto-clip-prompt-v2';
+
+    public const KEYFRAME_VERSION = 'moto-keyframe-prompt-v1';
 
     /**
      * @param  array<string, mixed>  $context  the check context pinned with the run
@@ -46,7 +50,7 @@ final class MotoShotPrompt
         return MotoReferenceSurface::components($record, $at, (array) ($context['palette'] ?? []), $being, array_values(array_filter([
             is_string($at['surface'] ?? null) ? ['path' => "design.build_states.{$at['id']}.surface", 'text' => $at['surface']] : null,
             ['path' => 'shot.first_frame', 'text' => $firstFrame],
-        ])), (array) $reference['surface_groups'], (array) $reference['finish_labels']);
+        ])), (array) $reference['surface_groups'], (array) $reference['finish_labels'], (string) ($context['surface_rule'] ?? MotoReferenceSurface::RULE_ANY_MATERIAL));
     }
 
     /**
@@ -87,6 +91,18 @@ final class MotoShotPrompt
         ];
 
         return implode("\n", array_values(array_filter($lines, static fn (string $line): bool => $line !== '')));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row  a shot of the plan
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return array{text: string, version: string, surface_rule: string, sha256: string} the prompt a keyframe is sent with, to pin in its request: image() compiled under the current surface rule whatever rule the run was pinned with, so a plan approved under an older rule needs no new run of the model for words code put together. The prompts stored in the plan stay as they were approved
+     */
+    public static function keyframe(array $row, array $context): array
+    {
+        $text = self::image($row, ['surface_rule' => MotoReferenceSurface::RULE_MATERIAL] + $context);
+
+        return ['text' => $text, 'version' => self::KEYFRAME_VERSION, 'surface_rule' => MotoReferenceSurface::RULE_MATERIAL, 'sha256' => CanonicalJson::hashString($text)];
     }
 
     /**
