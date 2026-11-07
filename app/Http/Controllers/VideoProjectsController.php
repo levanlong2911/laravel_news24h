@@ -1404,16 +1404,15 @@ class VideoProjectsController extends Controller
         $this->ownedProject($id);
         $service = app(\App\Services\Video\PartsDetailService::class);
         abort_unless($service->supports($id), 404);
-        $cells = ['cells' => 'required|array|min:1|max:10', 'cells.*' => 'required|string|regex:/^R[0-9a-f]{10}$/'];
+        $cells = ['cells' => 'required|array|min:1|max:100', 'cells.*' => 'required|string|regex:/^R[0-9a-f]{10}$/'];
         $data = $request->validate(match ($action) {
             'plan' => ['hash' => 'required|string|max:80'],
+            'layout' => ['rows' => 'required|integer', 'columns' => 'required|integer', 'size' => 'required|string|max:20', 'model' => 'required|string|max:100', 'quality' => 'required|string|max:30'],
             'review' => ['plan_id' => 'required|uuid', 'operation_id' => 'required|uuid', 'retry' => 'nullable|boolean', 'confirm_cost' => 'accepted'] + $cells,
-            'render' => ['plan_id' => 'required|uuid', 'sheet_hash' => 'required|string|max:80', 'model' => 'required|string|max:100', 'quality' => 'required|string|max:30', 'operation_id' => 'required|uuid', 'confirm_cost' => 'accepted'] + $cells,
+            'render' => ['hash' => 'required|string|max:80', 'sheet_hash' => 'required|string|max:80', 'model' => 'required|string|max:100', 'quality' => 'required|string|max:30', 'operation_id' => 'required|uuid', 'confirm_cost' => 'accepted'] + $cells,
             'accept' => ['plan_id' => 'required|uuid', 'reviews' => 'required|array|min:1|max:10', 'reviews.*' => 'required|uuid'],
             'process' => ['artifact_id' => 'required|uuid'],
-            'decide' => ['artifact_id' => 'required|uuid', 'decision' => 'required|in:approved,rejected'],
-            'confirm' => ['hash' => 'required|string|max:80', 'need_id' => 'required|string|max:40', 'view' => 'required|string|regex:/^MS[1-8]$/', 'decision' => 'required|in:use,refuse'],
-            'split' => ['hash' => 'required|string|max:80', 'need_id' => 'required|string|max:40'],
+            'approve', 'reject', 'revoke' => ['artifact_id' => 'required|uuid'],
             'answer' => ['hash' => 'required|string|max:80', 'reference_id' => 'required|string|regex:/^R[0-9a-f]{10}$/', 'decisions' => 'required|array|min:1|max:20', 'decisions.*.question' => 'required|string|max:2000', 'decisions.*.answer' => 'required|string|max:1000'],
             default => abort(404),
         });
@@ -1425,6 +1424,11 @@ class VideoProjectsController extends Controller
                     $service->save($id, $data['hash']);
 
                     return 'Đã lập kế hoạch Reference từ nguồn đã duyệt — không gọi AI, không render.';
+                })(),
+                'layout' => (function () use ($service, $id, $data): string {
+                    $service->saveGridChoice($id, (int) $data['rows'], (int) $data['columns'], $data['size'], $data['model'], $data['quality']);
+
+                    return 'Đã lưu lưới và cấu hình render — không gọi AI, không render.';
                 })(),
                 'review' => (function () use ($id, $data, $requester): string {
                     [$stage, $reason] = app(\App\Services\Video\ReferenceWriterService::class)->run($id, $data['plan_id'], array_values($data['cells']), (bool) ($data['retry'] ?? false), $data['operation_id'], $requester);
@@ -1440,13 +1444,14 @@ class VideoProjectsController extends Controller
                     };
                 })(),
                 'render' => (function () use ($service, $id, $data, $requester): string {
-                    [$image, $reason] = $service->render($id, $data['plan_id'], array_values($data['cells']), $data['sheet_hash'], $data['model'], $data['quality'], $data['operation_id'], (string) auth()->user()?->name, $requester);
+                    $plan = $service->save($id, $data['hash']);
+                    [$image, $reason] = $service->render($id, (string) $plan->id, array_values($data['cells']), $data['sheet_hash'], $data['model'], $data['quality'], $data['operation_id'], (string) auth()->user()?->name, $requester);
 
                     return match (true) {
                         $image === null => throw new \RuntimeException($reason),
                         $reason === 'queued' => 'Đã xếp hàng render master — máy chạy nền gửi request, cắt ảnh khi xong.',
                         $reason === 'already_exists' => 'Lượt render này đã có ('.$image->status.') — không gọi thêm API.',
-                        $reason === 'rendered' => 'Đã render và cắt master. Duyệt từng ô để dùng cho shot.',
+                        $reason === 'rendered' => 'Đã render và cắt master. Xem rồi duyệt hoặc từ chối cả sheet.',
                         $reason === 'rendered_stale' => throw new \RuntimeException('Master đã render và lưu lịch sử, nhưng nguồn đổi trong lúc render — lập lại kế hoạch trước khi dùng.'),
                         str_starts_with($reason, 'processing_failed|') => throw new \RuntimeException('Đã render nhưng cắt ảnh lỗi: '.substr($reason, 18)),
                         default => throw new \RuntimeException('Render: '.$reason.' — '.($image->render_error ?? 'xem lịch sử lượt render.')),
@@ -1458,20 +1463,20 @@ class VideoProjectsController extends Controller
                     return 'Đã xác nhận nội dung AI viết lại cho '.count($data['reviews']).' ô — master có thể render khi mọi ô đã đạt.';
                 })(),
                 'process' => 'Xử lý ảnh: '.$service->process($id, $data['artifact_id']),
-                'decide' => (function () use ($service, $id, $data): string {
-                    $service->decide($id, $data['artifact_id'], $data['decision'], auth()->id());
+                'approve' => (function () use ($service, $id, $data): string {
+                    $service->approveSheet($id, $data['artifact_id'], auth()->id() === null ? null : (string) auth()->id());
 
-                    return $data['decision'] === 'approved' ? 'Đã duyệt ô — shot dùng ảnh này.' : 'Đã từ chối ô — ô trở lại danh sách cần tạo.';
+                    return 'Đã duyệt cả sheet — các ảnh part được dùng chung cho shot.';
                 })(),
-                'confirm' => (function () use ($service, $id, $data): string {
-                    $service->confirm($id, $data['need_id'], $data['view'], $data['decision'], $data['hash']);
+                'reject' => (function () use ($service, $id, $data): string {
+                    $service->rejectSheet($id, $data['artifact_id'], auth()->id() === null ? null : (string) auth()->id());
 
-                    return $data['decision'] === 'use' ? 'Đã xác nhận dùng ảnh model sheet '.$data['view'].' và lập lại kế hoạch.' : 'Đã bỏ ứng viên model sheet — nhu cầu chuyển sang ảnh cần tạo.';
+                    return 'Đã từ chối cả sheet — các part trở lại danh sách cần tạo.';
                 })(),
-                'split' => (function () use ($service, $id, $data): string {
-                    $service->split($id, $data['need_id'], $data['hash']);
+                'revoke' => (function () use ($service, $id, $data): string {
+                    $service->revokeSheet($id, $data['artifact_id'], auth()->id() === null ? null : (string) auth()->id());
 
-                    return 'Đã tách nhu cầu '.$data['need_id'].' thành ảnh riêng và lập lại kế hoạch.';
+                    return 'Đã thu hồi duyệt — sheet trở về chờ quyết định, các part vẫn giữ ở sheet này. Duyệt lại để dùng, hoặc từ chối cả sheet để render lại.';
                 })(),
                 'answer' => (function () use ($service, $id, $data): string {
                     $service->answer($id, $data['reference_id'], array_values($data['decisions']), $data['hash'], auth()->id() === null ? null : (string) auth()->id());

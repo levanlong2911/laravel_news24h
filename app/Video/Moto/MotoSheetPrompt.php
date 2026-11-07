@@ -222,7 +222,7 @@ final class MotoSheetPrompt
      * @param  bool  $bestOnly  a close-up keeps the one face that looks at the camera most, so the rest of the part does not pull the frame away from its subject
      * @return list<string> the text of the faces this camera sees
      */
-    private static function facesSeen(array $part, array $camera, bool $bestOnly): array
+    public static function facesSeen(array $part, array $camera, bool $bestOnly): array
     {
         $turn = self::turnToCamera($camera);
         $faces = array_values(array_filter((array) $part['faces'], static fn (array $face): bool => isset($turn[$face['facing']])));

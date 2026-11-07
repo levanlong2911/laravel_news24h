@@ -65,6 +65,9 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
     /** @var array<string, array<string, mixed>> panel thiet ke trong mot request (doc nhieu lan) */
     private array $designPanels = [];
 
+    /** @var ?array{panel?: array<string, array<string, mixed>>, sheet?: array<string, array<int, array<string, string>>>} what one chain of source checks has read; null outside such a chain */
+    private static ?array $chain = null;
+
     public static function execution(?string $workflow = null): string
     {
         return (string) config(MotoContract::is($workflow) ? 'video.moto.model_sheet.master.execution' : 'video.superyacht.model_sheet.master.execution');
@@ -395,6 +398,41 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
      * @return array{set_id: string, review_stage_id: string, design_stage_id: string, master_image_id: string, master_artifact_id: string, master_artifact_sha256: string}
      */
     public function approvedSheet(string $projectId, bool $deep = true): array
+    {
+        if (self::$chain === null) {
+            return $this->readApprovedSheet($projectId, $deep);
+        }
+
+        if (! $deep && isset(self::$chain['sheet'][$projectId][true])) {
+            return self::$chain['sheet'][$projectId][true];
+        }
+
+        return self::$chain['sheet'][$projectId][$deep] ??= $this->readApprovedSheet($projectId, $deep);
+    }
+
+    /**
+     * @template T
+     *
+     * @param  \Closure(): T  $read  a chain of source checks that writes nothing
+     * @return T what the chain returns; while it runs every instance reads the design panel and the approved sheet of a project once, and nothing is kept once it ends
+     */
+    public static function readOnce(\Closure $read): mixed
+    {
+        if (self::$chain !== null) {
+            return $read();
+        }
+
+        self::$chain = [];
+
+        try {
+            return $read();
+        } finally {
+            self::$chain = null;
+        }
+    }
+
+    /** @return array{set_id: string, review_stage_id: string, design_stage_id: string, master_image_id: string, master_artifact_id: string, master_artifact_sha256: string} */
+    private function readApprovedSheet(string $projectId, bool $deep): array
     {
         [$stage, $canonicalHash] = $this->approvedSource($projectId);
         $supported = [...array_map('strval', (array) config('video.superyacht.model_sheet.master.supported_executions')), self::execution(MotoContract::WORKFLOW)];
@@ -894,6 +932,10 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
     /** @return array<string, mixed> */
     private function designPanel(string $projectId): array
     {
+        if (self::$chain !== null) {
+            return self::$chain['panel'][$projectId] ??= $this->design->panel($projectId);
+        }
+
         return $this->designPanels[$projectId] ??= $this->design->panel($projectId);
     }
 

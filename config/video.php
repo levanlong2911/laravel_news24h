@@ -1131,6 +1131,9 @@ return [
             'schema_heading' => 'Output JSON Schema',
             'clip_task' => 'scene_clip',
             'keyframe_reference_limit' => 4,
+            'check' => [
+                'cover_design_refs' => true,
+            ],
             'prompt' => [
                 'image' => [
                     'style' => 'Photorealistic film still of one moment, true perspective and real materials at full scale',
@@ -1141,6 +1144,7 @@ return [
                         'motorcycle' => 'Motorcycle:',
                         'stage' => 'Build stage:',
                         'part' => 'Part in frame:',
+                        'off_frame' => 'Out of frame, only its effect shows:',
                         'work' => 'Work at the first frame:',
                         'absent' => 'Not on the motorcycle at this stage:',
                         'people' => 'People:',
@@ -1174,6 +1178,10 @@ return [
                     'removed' => 'removed from the motorcycle',
                     'drawing' => 'as a drawing',
                     'model' => 'as a model',
+                    'digital_model' => 'as a digital model',
+                ],
+                'people_views' => [
+                    'face_hidden' => 'Visible as the beat shows them, with the face hidden; not a dark silhouette.',
                 ],
                 'work' => [
                     'operations' => [
@@ -1209,6 +1217,39 @@ return [
                 ['cells' => 6, 'size' => '3840x2160', 'rows' => 2, 'columns' => 3, 'cell' => ['width' => 1280, 'height' => 1080]],
                 ['cells' => 8, 'size' => '3840x2160', 'rows' => 2, 'columns' => 4, 'cell' => ['width' => 960, 'height' => 1080]],
                 ['cells' => 10, 'size' => '3840x2160', 'rows' => 2, 'columns' => 5, 'cell' => ['width' => 768, 'height' => 1080]],
+            ],
+            'part_sheet' => [
+                'grid' => ['min' => 2, 'max' => 10],
+                'default' => ['rows' => 3, 'columns' => 6, 'size' => '3840x2160', 'quality' => 'high'],
+                'canvas' => 'One image of :width x :height pixels divided into a grid of :rows rows and :columns columns, :cells cells of :cell_width x :cell_height pixels each; every cell is one separate picture, and nothing crosses a cell edge.',
+                'source' => 'The attached image is the approved model sheet of the finished motorcycle, :rows rows by :columns columns of panels. Use it to recognise each part, its proportions and how it is built. The text of each cell decides shape, count and surface.',
+                'lines' => 'Separate the cells with thin, straight, continuous white lines that stand out clearly from the grey background: one line across the whole image between every two rows, and one line down each whole row between every two columns. Every row holds all its columns, and a cell left empty keeps its place.',
+                'rules' => [
+                    'Each cell shows one part, finished as the design states, with every element its text lists, alone: never the whole motorcycle and never another part.',
+                    'A "Do not draw" line names parts that only meet this part where it is mounted: none of them appears in the cell, whatever else the text of the cell mentions.',
+                    'A smaller part with its own entry in the design stays out of the cell unless the text of the cell lists it; do not strip the part down, and do not invent an inside or a hidden face the text does not describe.',
+                    'The part sits wholly inside its cell with plain background on every side, and never touches or crosses a line; no part appears in two cells.',
+                    'Where the attached sheet and the text of a cell differ on shape, count or surface, the text wins.',
+                    'Neutral light-grey studio background and the same soft even studio light in every cell; a light a cell names belongs to that part and is not the studio light.',
+                    'No people, no hands, no tools, no text, labels, numbers or logos.',
+                ],
+                'labels' => [
+                    'shape' => 'Shape:',
+                    'elements' => 'Elements:',
+                    'faces' => 'Faces:',
+                    'size' => 'Size in the design pose:',
+                    'surfaces' => 'Surfaces:',
+                    'configuration' => 'Configuration:',
+                    'lights' => 'Its own light fitting:',
+                    'feature' => 'Feature:',
+                    'must_keep' => 'Must keep:',
+                    'must_not' => 'Must not:',
+                    'not_draw' => 'Do not draw:',
+                    'panels' => 'On the attached sheet it shows in:',
+                    'no_panel' => 'No panel of the attached sheet shows this part clearly: take its shape from this text; the sheet gives only its context.',
+                    'view' => 'View:',
+                    'top_view' => 'from straight above (elevation :elevation°), the end that faces the front of the motorcycle toward the top of the cell',
+                ],
             ],
             'surface_groups' => [
                 'frame' => 'frame',
@@ -1727,7 +1768,7 @@ return [
                                 'draft' => ['shots'],
                             ],
                             'outputs' => [
-                                'shots' => ['namespace' => 'moto', 'schema' => 'MotoShots', 'version' => '1.2.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 7 Output (format moto-shots-v1): the shots SCxx_SHyy of every approved scene as data — beat coverage with screen time and result time, purpose, parts and their presentation from the scene plan\'s work or the build state, the work items it shows by id, people as hands, back or silhouette, a numeric camera, first frame, action, result, end frame for first_last, continuity, environment (background, unplated or a requested background), reference needs, render length, mode and kept interval, links and conflicts; code derives timing, sources, reference candidates, readiness, absent parts, limits, cards and the image and video prompts; release database/releases/moto-phase-7-shots-v3'],
+                                'shots' => ['namespace' => 'moto', 'schema' => 'MotoShots', 'version' => '1.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 7 Output (format moto-shots-v1): the shots SCxx_SHyy of every approved scene as data — beat coverage with screen time and result time, purpose, parts and their presentation from the scene plan\'s work or the build state, parts a beat keeps out of frame with their effect, the work items it shows by id, people as hands, back, silhouette or with the face hidden, a numeric camera, first frame, action, result, end frame for first_last, continuity, environment (background, unplated or a requested background), reference needs, render length, mode and kept interval, links and conflicts; code derives timing, sources, reference candidates, readiness, absent parts, limits, cards and the image and video prompts; release database/releases/moto-phase-7-shots-v5'],
                             ],
                         ],
                         'spec.reference' => [

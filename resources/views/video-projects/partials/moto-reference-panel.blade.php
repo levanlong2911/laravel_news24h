@@ -5,16 +5,15 @@
     $stage = $ref['stage'];
     $references = $ref['references'];
     $labels = $ref['labels'];
+    $choice = $ref['choice'];
+    $grid = $ref['grid'];
     $pixels = static fn (string $size): string => str_replace('x', ' × ', $size);
     $oneImage = static fn (array $layout): bool => (int) ($layout['rows'] ?? 0) * (int) ($layout['columns'] ?? 0) === 1;
     $tag = static fn (string $status): string => '<span class="va-tag '.($labels[$status][0] ?? 'mute').'">'.e($labels[$status][1] ?? $status).'</span>';
     $regimeLabel = ['grey' => 'NGUỒN XÁM — chỉ hình học', 'colour' => 'NGUỒN MÀU — có lớp hoàn thiện'];
-    $roleLabel = ['subject' => 'chính', 'context' => 'ngữ cảnh'];
-    $needsByShot = collect($plan['needs'] ?? [])->groupBy('shot_id');
-    $bindings = collect($plan['bindings'] ?? [])->keyBy('need_id');
-    $factText = static fn (array $reference, array $ids): string => implode(' | ', array_map(static fn (string $id): string => $id.': '.(collect($reference['facts'])->firstWhere('id', $id)['value'] ?? '?'), $ids));
-    $shotPrompts = $ref['shot_prompts'];
     $review = $ref['review'];
+    $model = collect($ref['models'])->firstWhere('model', $choice['model']);
+    $rows = $ref['sheets'] === [] ? [null] : $ref['sheets'];
 @endphp
 
 <div class="container-fluid vp" id="motoReferencePage">
@@ -62,13 +61,6 @@
                             @endif
                         </span>
                     </div>
-                    @if($stage === null)
-                        <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'plan']) }}" onsubmit="return vpLockForm(this)">
-                            @csrf
-                            <input type="hidden" name="hash" value="{{ $preview['hash'] }}">
-                            <button class="vp-btn pri sm" data-busy="Đang lập…">Lập kế hoạch Reference (không gọi AI, không render)</button>
-                        </form>
-                    @endif
                 @endif
                 @if($review['task'] !== null)
                     @include('video-projects.partials.task-state', ['task' => $review['task'], 'projectId' => $id])
@@ -90,296 +82,183 @@
 
     @if($plan !== null)
         <div class="vp-panel va-anchor">
-            <div class="va-head"><b>NHU CẦU THEO SHOT</b><em>part, trạng thái, mốc công việc, góc và ảnh đang đáp ứng</em></div>
-            <div class="vr-needs">
-                <div class="vr-need vr-need-head"><div>Shot · nhu cầu</div><div>Part · trạng thái · mốc</div><div>Góc</div><div>Ảnh đáp ứng</div></div>
-                @foreach($needsByShot as $shotId => $needs)
-                    @foreach($needs as $need)
-                        @continue(! in_array($need['kind'], ['design', 'identity'], true))
-                        @php
-                            $binding = $bindings[$need['id']] ?? null;
-                            $bound = $binding !== null && $binding['type'] === 'reference' ? ($references[$binding['source']] ?? null) : null;
-                            $shared = $bound !== null && count(array_unique(array_map(static fn (string $n): string => (string) strstr($n, '#', true), $bound['needs']))) > 1;
-                        @endphp
-                        <div class="vr-need">
-                            <div><b>{{ $shotId }}</b> · {{ $need['kind'] }}<div class="va-lbl" style="font-weight:400">{{ $need['purpose'] }}</div></div>
-                            <div>
-                                {{ $need['target'] ?? 'toàn bộ phần trong khung' }} · {{ $need['state'] }}
-                                @if($need['placement'] !== null) · {{ $need['placement']['presentation'] }}{{ $need['placement']['location'] !== null ? ', '.$need['placement']['location'] : '' }} @endif
-                                @if($need['checkpoint'] !== null)<div class="va-lbl" style="font-weight:400">Mốc: {{ $need['checkpoint']['text'] }}</div>@endif
-                            </div>
-                            <div>az {{ $need['camera']['azimuth_deg'] ?? 'chưa xác định' }} · el {{ $need['camera']['elevation_deg'] ?? '—' }} · {{ $need['camera']['scale'] ?? '' }}</div>
-                            <div>
-                                @if($binding === null)
-                                    <span class="va-tag dg">CHƯA LIÊN KẾT</span>
-                                @elseif($binding['type'] === 'model_sheet')
-                                    <span class="va-tag ok">MODEL SHEET {{ $binding['source'] }}</span> <span class="va-lbl" style="font-weight:400">{{ $binding['rule'] }}</span>
-                                @elseif($binding['type'] === 'model_sheet_candidate')
-                                    <span class="va-tag amber">CHỜ XÁC NHẬN {{ implode(' / ', $binding['candidates']) }}</span>
-                                    @if($stage !== null)
-                                        @foreach($binding['candidates'] as $view)
-                                            <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'confirm']) }}" style="display:inline" onsubmit="return vpLockForm(this)">
-                                                @csrf
-                                                <input type="hidden" name="hash" value="{{ $preview['hash'] }}"><input type="hidden" name="need_id" value="{{ $need['id'] }}"><input type="hidden" name="view" value="{{ $view }}"><input type="hidden" name="decision" value="use">
-                                                <button class="vp-btn sm ok" data-busy="…">Dùng {{ $view }}</button>
-                                            </form>
-                                        @endforeach
-                                        <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'confirm']) }}" style="display:inline" onsubmit="return vpLockForm(this)">
-                                            @csrf
-                                            <input type="hidden" name="hash" value="{{ $preview['hash'] }}"><input type="hidden" name="need_id" value="{{ $need['id'] }}"><input type="hidden" name="view" value="{{ $binding['candidates'][0] }}"><input type="hidden" name="decision" value="refuse">
-                                            <button class="vp-btn sm dg" data-busy="…">Không dùng — tạo ảnh riêng</button>
-                                        </form>
-                                    @endif
-                                @elseif($bound !== null)
-                                    <span class="va-lbl" style="font-weight:400">{{ $bound['key'] }}</span> {!! $tag($ref['state'][$bound['id']]['status']) !!}
-                                    @if($binding['rule'] === 'identity_scope')<div class="va-lbl" style="font-weight:400">nhận diện vùng đang quay bằng ảnh chi tiết</div>@endif
-                                    @if($shared && $stage !== null)
-                                        <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'split']) }}" style="display:inline" onsubmit="return vpLockForm(this)">
-                                            @csrf
-                                            <input type="hidden" name="hash" value="{{ $preview['hash'] }}"><input type="hidden" name="need_id" value="{{ $need['id'] }}">
-                                            <button class="vp-btn sm" data-busy="…">Tách ảnh riêng</button>
-                                        </form>
-                                    @endif
-                                @else
-                                    <span class="va-tag dg">{{ $binding['rule'] }}</span>
-                                @endif
-                            </div>
-                        </div>
-                    @endforeach
-                @endforeach
-            </div>
-        </div>
+            <div class="va-head"><b>MASTER REFERENCE</b><em>người dùng chọn lưới và size — một master, mỗi part một ô, ô dư để trống</em></div>
+            <div class="va-rows vr-rows">
+                <div class="va-row va-row-head"><div>Lưới</div><div>Master</div><div>Prompt</div><div>Render</div><div>Candidate images</div></div>
+                <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'layout']) }}" id="refLayout" onsubmit="return vpLockForm(this)" hidden>
+                    @csrf
+                    @if($ref['sheets'] === [])
+                        <input type="hidden" name="size" value="{{ $choice['size'] }}">
+                        <input type="hidden" name="model" value="{{ $choice['model'] }}">
+                        <input type="hidden" name="quality" value="{{ $choice['quality'] }}">
+                    @endif
+                </form>
 
-        @if($ref['checks'] !== [])
-            <div class="vp-panel va-anchor">
-                <div class="va-head"><b>CHỜ KIỂM</b><em>ô chưa render được — thiếu dữ kiện, AI báo thiếu hoặc bề mặt chưa xác lập</em></div>
-                <div class="va-body">
-                    @foreach($ref['checks'] as $check)
-                        @php
-                            $reference = $check['reference'];
-                            $formId = 'refRecheck'.$reference['id'];
-                        @endphp
-                        <div class="va-brief">
-                            <div class="line"><span class="k">{{ $reference['key'] }}</span><span class="v">{!! $tag($check['state']['status']) !!}</span></div>
-                            @foreach($reference['blocked'] as $line)
-                                <div class="line"><span class="v" style="color:var(--vp-red)">{{ $line }}</span></div>
-                            @endforeach
-                            @if(($check['state']['review']['gaps'] ?? []) !== [])
-                                <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'answer']) }}" onsubmit="return vpLockForm(this)">
-                                    @csrf
-                                    <input type="hidden" name="hash" value="{{ $preview['hash'] }}"><input type="hidden" name="reference_id" value="{{ $reference['id'] }}">
-                                    @foreach($check['state']['review']['gaps'] as $index => $gap)
-                                        <div class="line"><span class="k">Thiếu</span><span class="v">{{ $gap['missing'] }} — {{ $gap['reason'] }}</span></div>
-                                        <input type="hidden" name="decisions[{{ $index }}][question]" value="{{ $gap['missing'] }}">
-                                        <textarea class="va-ta" name="decisions[{{ $index }}][answer]" rows="2" maxlength="1000" required placeholder="Quyết định của bạn cho điểm này"></textarea>
-                                    @endforeach
-                                    <button class="vp-btn sm" data-busy="Đang lưu…">Lưu quyết định (không gọi AI)</button>
-                                </form>
-                            @endif
-                            @include('video-projects.partials.moto-reference-decisions', ['reference' => $reference, 'editable' => in_array($check['state']['status'], \App\Services\Video\PartsDetailService::ANSWERABLE, true)])
-                            @if($check['estimate'] !== null)
-                                <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'review']) }}" id="{{ $formId }}" data-modal="confirm{{ $formId }}" onsubmit="return vpLockForm(this)" hidden>
-                                    @csrf
-                                    <input type="hidden" name="plan_id" value="{{ $stage->id }}"><input type="hidden" name="cells[]" value="{{ $reference['id'] }}">
-                                    <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}"><input type="hidden" name="retry" value="1"><input type="hidden" name="confirm_cost" value="1">
-                                </form>
-                                <button type="button" class="vp-btn sm" data-toggle="modal" data-target="#confirm{{ $formId }}" data-busy="Đang kiểm…">Kiểm lại ô này</button>
-                                @include('modal.confirm_action', ['id' => 'confirm'.$formId, 'form' => $formId, 'content' => 'Gọi '.$check['estimate']['model'].' kiểm lại prompt của 1 ô — tác vụ này tính tiền ('.$check['estimate']['text'].').'])
-                            @endif
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-        @endif
-
-        <div class="vp-panel va-anchor">
-            <div class="va-head"><b>MASTER REFERENCE</b><em>lưới và size theo số ảnh của master, ô dư để trống — một master chỉ một bộ ảnh đầu vào</em></div>
-            <div class="va-rows">
-                <div class="va-row va-row-head"><div>Master</div><div>Prompt</div><div>Render</div><div>Candidate images</div></div>
-
-                @forelse($ref['sheets'] as $sheet)
-                    @php
-                        $renderId = 'refRender'.$sheet['id'];
-                        $reviewId = 'refReview'.$sheet['id'];
-                    @endphp
+                @foreach($rows as $sheet)
                     <div class="va-row">
                         <div class="va-row-who">
-                            <b>{{ $sheet['id'] }}</b>
-                            <span class="va-tag {{ $sheet['regime'] === 'grey' ? 'mute' : 'blue' }}">{{ $regimeLabel[$sheet['regime']] }}</span>
-                            @if($sheet['medium'] === 'digital')<span class="va-tag blue">MÔ HÌNH SỐ</span>@endif
-                            @if($oneImage($sheet['layout']))
-                                <div class="va-lbl" style="font-weight:400">Một ảnh nguyên tấm {{ $pixels($sheet['layout']['size']) }}, không lưới, không cắt</div>
-                            @else
-                                <div class="va-lbl" style="font-weight:400">Lưới {{ $sheet['layout']['rows'] }} × {{ $sheet['layout']['columns'] }} · {{ $pixels($sheet['layout']['size']) }} · ô {{ $sheet['layout']['cell']['width'] }} × {{ $sheet['layout']['cell']['height'] }} · {{ count($sheet['cell_ids']) }} ảnh, {{ $sheet['layout']['rows'] * $sheet['layout']['columns'] - count($sheet['cell_ids']) }} ô trống</div>
-                            @endif
-                            @foreach($sheet['cells'] as $index => $cell)
-                                <div class="vr-cell">
-                                    @if(! $oneImage($sheet['layout']))
-                                        <div class="va-lbl">Ô {{ $index + 1 }} · hàng {{ intdiv($index, $sheet['layout']['columns']) + 1 }}, cột {{ $index % $sheet['layout']['columns'] + 1 }}</div>
-                                    @endif
-                                    <div class="va-lbl" style="font-weight:400">{{ $cell['reference']['key'] }}</div>
-                                    <div class="va-lbl" style="font-weight:400">{{ implode(' · ', array_map(static fn (array $p): string => $p['part'].' ('.$roleLabel[$p['role']].', '.$p['presentation'].')', $cell['reference']['parts'])) }}</div>
-                                    <div class="va-lbl" style="font-weight:400">Shot: {{ implode(', ', $cell['reference']['shots']) }}</div>
-                                    {!! $tag($cell['state']['status']) !!}
-                                    @if($cell['state']['status'] === 'prompt_failed')
-                                        @foreach($cell['state']['review']['issues'] ?? [] as $issue)
-                                            <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">{{ $issue }}</div>
+                            <div class="vr-grid-fields">
+                                <div class="va-field">
+                                    <label>Hàng</label>
+                                    <select class="ctl" name="rows" form="refLayout" required onchange="this.form.requestSubmit()">
+                                        @foreach(range($grid['min'], $grid['max']) as $number)
+                                            <option value="{{ $number }}" @selected($number === $choice['rows'])>{{ $number }}</option>
                                         @endforeach
-                                    @endif
+                                    </select>
                                 </div>
-                            @endforeach
+                                <div class="va-field">
+                                    <label>Cột</label>
+                                    <select class="ctl" name="columns" form="refLayout" required onchange="this.form.requestSubmit()">
+                                        @foreach(range($grid['min'], $grid['max']) as $number)
+                                            <option value="{{ $number }}" @selected($number === $choice['columns'])>{{ $number }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="va-lbl" style="font-weight:400">Tổng part được yêu cầu: {{ $grid['total'] }}</div>
+                            <div class="va-lbl" style="font-weight:400">Đã có crop được duyệt: {{ $grid['approved'] }}</div>
+                            <div class="va-lbl" style="font-weight:400">Còn thiếu/chưa duyệt: {{ $grid['unapproved'] }}</div>
+                            <div class="va-lbl" style="font-weight:400">Lưới: {{ $choice['rows'] }} × {{ $choice['columns'] }}</div>
+                            <div class="va-lbl" style="font-weight:400">Sức chứa: {{ $grid['capacity'] }} ô</div>
+                            <div class="va-lbl" style="font-weight:400">Sử dụng: {{ $grid['used'] }} ô</div>
+                            <div class="va-lbl" style="font-weight:400">Để trống: {{ $grid['empty'] }} ô</div>
+                            @if($grid['short'] > 0 && ($sheet === null || ! $oneImage($sheet['layout'])))
+                                <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Thiếu {{ $grid['short'] }} ô — tăng Hàng hoặc Cột để render.</div>
+                            @endif
                         </div>
 
-                        <div class="va-row-prompt">
-                            @if($sheet['prompt'] !== null)
-                                <div class="va-lbl">PROMPT GỬI ĐI <em>(code ghép, dòng ô đã qua kiểm và đã xác nhận)</em></div>
-                                <textarea class="va-ta" readonly>{{ $sheet['prompt'] }}</textarea>
-                                <div class="va-count"><span>{{ mb_strlen($sheet['prompt']) }}</span> ký tự</div>
-                            @elseif($sheet['reviewed_prompt'] !== null)
-                                <div class="va-lbl">PROMPT CHỜ XÁC NHẬN <em>(AI đã viết lại — code không xác minh được nghĩa; đọc phần thay đổi bên dưới rồi xác nhận)</em></div>
-                                <textarea class="va-ta" readonly>{{ $sheet['reviewed_prompt'] }}</textarea>
-                                <div class="va-count"><span>{{ mb_strlen($sheet['reviewed_prompt']) }}</span> ký tự</div>
-                            @else
-                                <div class="va-lbl">BẢN NHÁP CODE <em>(chưa kiểm — không gửi đi)</em></div>
-                                <textarea class="va-ta" readonly>{{ $sheet['draft_prompt'] }}</textarea>
-                                <div class="va-count"><span>{{ mb_strlen((string) $sheet['draft_prompt']) }}</span> ký tự</div>
-                            @endif
-                            @if($sheet['prompt_error'] !== null)
-                                <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">{{ $sheet['prompt_error'] }}</div>
-                            @endif
-                            <div class="va-lbl" style="font-weight:400">Ảnh đầu vào: {{ $sheet['regime'] === 'grey' ? 'bản xám do code tạo từ master model sheet đã duyệt' : 'master model sheet đã duyệt' }} ({{ substr($preview['source']['model_sheet_sha256'], 0, 12) }}).</div>
-                            @foreach($sheet['cells'] as $cell)
-                                @include('video-projects.partials.moto-reference-decisions', ['reference' => $cell['reference'], 'editable' => in_array($cell['state']['status'], \App\Services\Video\PartsDetailService::ANSWERABLE, true)])
-                                @if(($accepted = $cell['state']['review']) !== null && in_array($cell['state']['status'], ['prompt_ready', 'prompt_confirm'], true))
-                                    <details class="vr-changes" @if($cell['state']['status'] === 'prompt_confirm') open @endif>
-                                        <summary>{{ $cell['reference']['key'] }} — AI {{ $accepted['edit_status'] === 'unchanged' ? 'giữ nguyên nháp' : 'viết lại' }} (lượt rev {{ $accepted['revision'] }})@if($cell['state']['confirmed'] !== null) · đã xác nhận @endif</summary>
-                                        @foreach($accepted['changes'] as $change)
-                                            @continue($change['kind'] === 'kept')
-                                            <div class="vr-change {{ $change['kind'] === 'added' ? 'add' : 'rewrite' }} visual" title="{{ $factText($cell['reference'], $change['fact_refs']) }}">
-                                                <b>{{ $change['kind'] === 'added' ? 'Thêm' : 'Viết lại '.implode(', ', $change['source_line_ids']) }}</b>: {{ $change['text'] }}
-                                                <div class="va-lbl" style="font-weight:400">Căn cứ: {{ $factText($cell['reference'], $change['fact_refs']) }}</div>
-                                                @if(($change['unsupported'] ?? []) !== [])
-                                                    <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Từ không có trong dữ kiện dẫn: {{ implode(', ', $change['unsupported']) }}</div>
-                                                @endif
-                                            </div>
-                                        @endforeach
-                                        @foreach($accepted['left_out'] ?? [] as $item)
-                                            <div class="vr-change visual">
-                                                <b>AI bỏ {{ $item['fact_ref'] }}</b>: {{ $item['what'] }} — {{ $item['reason'] }}
-                                                <div class="va-lbl" style="font-weight:400">Dữ kiện gốc: {{ $item['value'] }}</div>
-                                            </div>
-                                        @endforeach
-                                        @if($cell['state']['status'] === 'prompt_confirm' && $stage !== null)
-                                            @php
-                                                $recheckId = 'refRecheck'.$cell['reference']['id'];
-                                            @endphp
-                                            @if(! in_array(\App\Services\Video\PartsDetailService::CORRECTION_QUESTION, array_column($cell['reference']['requirement']['decisions'], 'question'), true))
-                                                <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'answer']) }}" onsubmit="return vpLockForm(this)">
-                                                    @csrf
-                                                    <input type="hidden" name="hash" value="{{ $preview['hash'] }}"><input type="hidden" name="reference_id" value="{{ $cell['reference']['id'] }}">
-                                                    <input type="hidden" name="decisions[0][question]" value="{{ \App\Services\Video\PartsDetailService::CORRECTION_QUESTION }}">
-                                                    <textarea class="va-ta" name="decisions[0][answer]" rows="2" maxlength="1000" required placeholder="Điều AI viết sai ở ô này và cần sửa thế nào"></textarea>
-                                                    <button class="vp-btn sm" data-busy="Đang lưu…">Lưu điều cần sửa (không gọi AI)</button>
-                                                </form>
-                                            @endif
-                                            @if($cell['estimate'] !== null)
-                                                <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'review']) }}" id="{{ $recheckId }}" data-modal="confirm{{ $recheckId }}" onsubmit="return vpLockForm(this)" hidden>
-                                                    @csrf
-                                                    <input type="hidden" name="plan_id" value="{{ $stage->id }}"><input type="hidden" name="cells[]" value="{{ $cell['reference']['id'] }}">
-                                                    <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}"><input type="hidden" name="retry" value="1"><input type="hidden" name="confirm_cost" value="1">
-                                                </form>
-                                                <button type="button" class="vp-btn sm" data-toggle="modal" data-target="#confirm{{ $recheckId }}" data-busy="Đang kiểm…">Kiểm lại ô này</button>
-                                                @include('modal.confirm_action', ['id' => 'confirm'.$recheckId, 'form' => $recheckId, 'content' => 'Gọi '.$cell['estimate']['model'].' kiểm lại prompt của 1 ô — tác vụ này tính tiền ('.$cell['estimate']['text'].').'])
-                                            @endif
-                                        @endif
-                                    </details>
+                        @if($sheet === null)
+                            <div class="va-row-who">
+                                @if($grid['waiting'] > 0)
+                                    <div class="va-lbl" style="font-weight:400">Còn {{ $grid['waiting'] }} part đang giữ ở sheet chờ quyết định bên dưới — từ chối sheet đó để render lại.</div>
+                                @else
+                                    <div class="va-lbl" style="font-weight:400">Không còn ô nào cần tạo master.</div>
                                 @endif
-                                @foreach($cell['reference']['shots'] as $shotId)
-                                    @if(($shotPrompts[$shotId] ?? '') !== '')
-                                        <details class="vr-changes"><summary>Prompt ảnh của shot {{ $shotId }} (nguyên văn, để truy vết)</summary><textarea class="va-ta" readonly>{{ $shotPrompts[$shotId] }}</textarea></details>
-                                    @endif
+                            </div>
+                            <div></div>
+                            <div></div>
+                            <div></div>
+                        @else
+                            @php
+                                $renderId = 'refRender'.$sheet['id'];
+                                $parts = array_column($sheet['cells'], 'reference');
+                                $single = $oneImage($sheet['layout']);
+                            @endphp
+                            <div class="va-row-who">
+                                <b>{{ $parts[0]['part'] }}{{ count($parts) > 1 ? '–'.$parts[count($parts) - 1]['part'] : '' }}</b>
+                                @if($single)
+                                    <div class="va-lbl" style="font-weight:400">Một ảnh nguyên tấm {{ $pixels($sheet['layout']['size']) }}, không lưới, không cắt</div>
+                                @else
+                                    <div class="va-lbl" style="font-weight:400">Lưới {{ $sheet['layout']['rows'] }} × {{ $sheet['layout']['columns'] }} · {{ $pixels($sheet['layout']['size']) }} · ô {{ $sheet['cell_size']['width'] }} × {{ $sheet['cell_size']['height'] }} · {{ count($sheet['cell_ids']) }} part</div>
+                                @endif
+                                @foreach($sheet['cells'] as $cell)
+                                    @php
+                                        $part = $cell['reference'];
+                                    @endphp
+                                    <div class="vr-cell">
+                                        <div class="va-lbl" style="font-weight:400">
+                                            @if($single)
+                                                {{ $part['part'] }}: {{ $part['name'] }}
+                                            @elseif($cell['position'] !== null)
+                                                Hàng {{ $cell['position']['row'] }} · cột {{ $cell['position']['column'] }} — {{ $part['part'] }}: {{ $part['name'] }}
+                                            @else
+                                                Chưa xếp được — {{ $part['part'] }}: {{ $part['name'] }}
+                                            @endif
+                                        </div>
+                                    </div>
                                 @endforeach
-                            @endforeach
+                            </div>
 
-                            <div class="va-foot">
-                                @if($sheet['review_cells'] !== [] && $stage !== null && $sheet['estimate'] !== null)
-                                    <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'review']) }}" id="{{ $reviewId }}" data-modal="confirm{{ $reviewId }}" onsubmit="return vpLockForm(this)" hidden>
-                                        @csrf
-                                        <input type="hidden" name="plan_id" value="{{ $stage->id }}">
-                                        @foreach($sheet['review_cells'] as $cellId)<input type="hidden" name="cells[]" value="{{ $cellId }}">@endforeach
-                                        <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
-                                        @if(collect($sheet['cells'])->contains(fn ($c) => $c['state']['status'] === 'prompt_failed'))<input type="hidden" name="retry" value="1">@endif
-                                        <input type="hidden" name="confirm_cost" value="1">
-                                    </form>
-                                    <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirm{{ $reviewId }}" data-busy="Đang kiểm…">Kiểm & hoàn thiện prompt ({{ count($sheet['review_cells']) }} ô)</button>
-                                    @include('modal.confirm_action', ['id' => 'confirm'.$reviewId, 'form' => $reviewId, 'content' => 'Gọi '.$sheet['estimate']['model'].' (effort '.$sheet['estimate']['effort'].') kiểm, bổ sung có căn cứ và viết lại prompt của '.count($sheet['review_cells']).' ô — tác vụ này tính tiền ('.$sheet['estimate']['text'].').'])
-                                @elseif($sheet['confirm_cells'] !== [] && $stage !== null)
-                                    <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'accept']) }}" onsubmit="return vpLockForm(this)">
-                                        @csrf
-                                        <input type="hidden" name="plan_id" value="{{ $stage->id }}">
-                                        @foreach($sheet['confirm_cells'] as $cellId => $reviewStage)<input type="hidden" name="reviews[{{ $cellId }}]" value="{{ $reviewStage }}">@endforeach
-                                        <button class="vp-btn sm ok" data-busy="Đang lưu…">✓ Đã đọc — xác nhận nội dung AI viết lại ({{ count($sheet['confirm_cells']) }} ô)</button>
-                                    </form>
-                                @elseif($sheet['renderable'])
-                                    <span class="va-tag ok">Prompt mọi ô đã qua kiểm</span>
-                                @elseif($stage === null)
-                                    <span class="va-tag">Lập kế hoạch trước khi kiểm prompt</span>
+                            <div class="va-row-prompt">
+                                @if($sheet['prompt'] !== null)
+                                    <div class="va-lbl">PROMPT GỬI ĐI <em>(ghép từ dữ liệu thiết kế)</em></div>
+                                    <textarea class="va-ta" readonly>{{ $sheet['prompt'] }}</textarea>
+                                    <div class="va-count"><span>{{ mb_strlen($sheet['prompt']) }}</span> ký tự</div>
+                                @endif
+                                @if($sheet['prompt_error'] !== null)
+                                    <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">{{ $sheet['prompt_error'] }}</div>
+                                @endif
+                                @if($ref['source_image'] !== null)
+                                    <div class="va-lbl">ẢNH NGUỒN <em>(model sheet đã duyệt, gửi nguyên tấm)</em></div>
+                                    <a href="{{ $ref['source_image']['url'] }}" target="_blank" rel="noopener" class="va-cand vr-source">
+                                        <img src="{{ $ref['source_image']['url'] }}" alt="{{ $ref['source_image']['code'] }}" width="3840" height="2160" loading="lazy">
+                                    </a>
+                                    <div class="va-lbl" style="font-weight:400">{{ $ref['source_image']['code'] }} ({{ substr($preview['source']['model_sheet_sha256'], 0, 12) }})</div>
                                 @endif
                             </div>
-                        </div>
 
-                        <div class="va-row-set">
-                            <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'render']) }}" id="{{ $renderId }}" data-modal="confirm{{ $renderId }}" onsubmit="return vpLockForm(this)" hidden>
-                                @csrf
-                                <input type="hidden" name="plan_id" value="{{ $stage?->id }}">
-                                @foreach($sheet['cell_ids'] as $cellId)<input type="hidden" name="cells[]" value="{{ $cellId }}">@endforeach
-                                <input type="hidden" name="sheet_hash" value="{{ $sheet['hash'] }}">
-                                <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
-                                <input type="hidden" name="confirm_cost" value="1">
-                            </form>
-                            <div class="va-fields">
-                                <div class="va-field"><label>Size <em>(theo số ảnh)</em></label><select class="ctl" disabled><option>{{ $pixels($sheet['layout']['size']) }} ({{ $oneImage($sheet['layout']) ? 'một ảnh' : $sheet['layout']['rows'].' × '.$sheet['layout']['columns'] }})</option></select></div>
-                                <div class="va-field">
-                                    <label>Model</label>
-                                    <select class="ctl" name="model" form="{{ $renderId }}" required data-ref-model>
-                                        @foreach($ref['models'] as $m)
-                                            <option value="{{ $m['model'] }}" @selected($loop->first)>{{ $m['label'] }}</option>
-                                        @endforeach
-                                    </select>
+                            <div class="va-row-set">
+                                <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'render']) }}" id="{{ $renderId }}" data-modal="confirm{{ $renderId }}" onsubmit="return vpLockForm(this)" hidden>
+                                    @csrf
+                                    <input type="hidden" name="hash" value="{{ $preview['hash'] }}">
+                                    @foreach($sheet['cell_ids'] as $cellId)<input type="hidden" name="cells[]" value="{{ $cellId }}">@endforeach
+                                    <input type="hidden" name="sheet_hash" value="{{ $sheet['hash'] }}">
+                                    <input type="hidden" name="model" value="{{ $choice['model'] }}">
+                                    <input type="hidden" name="quality" value="{{ $choice['quality'] }}">
+                                    <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
+                                    <input type="hidden" name="confirm_cost" value="1">
+                                </form>
+                                <div class="va-fields">
+                                    <div class="va-field">
+                                        <label>Asset Name <em>(mã dự kiến)</em></label>
+                                        <div class="ctl"><span>{{ $ref['next_image_code'] }}</span><span class="cnt">{{ strlen($ref['next_image_code']) }}/100</span></div>
+                                    </div>
+                                    <div class="va-field">
+                                        <label>Size</label>
+                                        <select class="ctl" name="size" form="refLayout" required onchange="this.form.requestSubmit()">
+                                            @foreach((array) ($model['controls']['sizes'] ?? []) as $size)
+                                                <option value="{{ $size }}" @selected($size === $choice['size'])>{{ $pixels($size) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div class="va-field">
+                                        <label>Model</label>
+                                        <select class="ctl" name="model" form="refLayout" required data-ref-model onchange="this.form.requestSubmit()">
+                                            @foreach($ref['models'] as $m)
+                                                <option value="{{ $m['model'] }}" @selected($m['model'] === $choice['model'])>{{ $m['label'] }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div class="va-field">
+                                        <label>Quality</label>
+                                        <select class="ctl" name="quality" form="refLayout" required data-ref-quality onchange="this.form.requestSubmit()">
+                                            @foreach((array) ($model['controls']['qualities'] ?? []) as $quality)
+                                                <option value="{{ $quality }}" @selected($quality === $choice['quality'])>{{ $quality }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div class="va-field"><label>Variations <em>(cố định)</em></label><select class="ctl" disabled><option>1</option></select></div>
                                 </div>
-                                <div class="va-field">
-                                    <label>Quality</label>
-                                    <select class="ctl" name="quality" form="{{ $renderId }}" required data-ref-quality>
-                                        @foreach(collect($ref['models'])->pluck('controls.qualities')->flatten()->unique() as $quality)
-                                            <option value="{{ $quality }}" @selected($quality === 'high')>{{ $quality }}</option>
-                                        @endforeach
-                                    </select>
+                                <div class="va-lbl" style="font-weight:400">Mỗi ô: {{ $sheet['cell_size']['width'] }} × {{ $sheet['cell_size']['height'] }} px</div>
+                                <div class="va-lbl" style="font-weight:400" data-ref-price data-prices='@json($ref['prices'])'>Dự toán: —</div>
+                                <div class="va-foot">
+                                    <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#confirm{{ $renderId }}"
+                                            @if(! $sheet['renderable']) disabled title="{{ $sheet['prompt_error'] ?? 'Master này chưa render được' }}" @endif
+                                            data-busy="Đang render…">Render Image</button>
+                                    @include('modal.confirm_action', ['id' => 'confirm'.$renderId, 'form' => $renderId, 'content' => 'Gửi prompt master '.$sheet['id'].' ('.($single ? 'một ảnh, không lưới' : count($sheet['cell_ids']).' part, lưới '.$sheet['layout']['rows'].' × '.$sheet['layout']['columns']).') kèm ảnh nguồn cho model đã chọn: một request, một ảnh '.$pixels($sheet['layout']['size']).' — TÁC VỤ NÀY TÍNH TIỀN.', 'detail' => 'Xem dự toán ở cột Render.'])
                                 </div>
-                                <div class="va-field"><label>Variations <em>(cố định)</em></label><select class="ctl" disabled><option>1</option></select></div>
                             </div>
-                            <div class="va-lbl" style="font-weight:400" data-ref-price data-prices='@json($ref['prices'])'>Dự toán: —</div>
-                            <div class="va-foot">
-                                <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#confirm{{ $renderId }}"
-                                        @if(! $sheet['renderable'] || $stage === null) disabled title="Cần kế hoạch đã lập và prompt mọi ô đã qua kiểm" @endif
-                                        data-busy="Đang render…">Render master</button>
-                                @include('modal.confirm_action', ['id' => 'confirm'.$renderId, 'form' => $renderId, 'content' => 'Gửi prompt master '.$sheet['id'].' ('.($oneImage($sheet['layout']) ? 'một ảnh, không lưới' : count($sheet['cell_ids']).' ảnh, lưới '.$sheet['layout']['rows'].' × '.$sheet['layout']['columns']).') kèm ảnh đầu vào cho model đã chọn: một request, một ảnh '.$pixels($sheet['layout']['size']).' — TÁC VỤ NÀY TÍNH TIỀN.', 'detail' => 'Xem dự toán ở cột Render.'])
-                            </div>
-                        </div>
 
-                        <div class="va-row-cands">
-                            <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Chưa có master cho các ô này — master đã render nằm ở các hàng bên dưới.</div>
-                        </div>
+                            <div class="va-row-cands">
+                                <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Chưa có master cho các ô này — master đã render nằm ở các hàng bên dưới.</div>
+                            </div>
+                        @endif
                     </div>
-                @empty
-                    <div class="va-row"><div class="va-lbl" style="font-weight:400">Không còn ô nào cần tạo master.</div></div>
-                @endforelse
+                @endforeach
 
                 @foreach($ref['masters'] as $entry)
                     @php
                         $image = $entry['image'];
                         $spec = (array) $image->prompt_spec_json;
+                        $layout = (array) ($spec['layout'] ?? []);
+                        $columns = max(1, (int) ($layout['columns'] ?? 1));
+                        $pinnedCells = array_column((array) ($spec['cells'] ?? []), null, 'id');
                     @endphp
                     <div class="va-row">
+                        <div class="va-row-who">
+                            <div class="va-lbl" style="font-weight:400">Lưới: {{ $layout['rows'] ?? '—' }} × {{ $layout['columns'] ?? '—' }}</div>
+                            <div class="va-lbl" style="font-weight:400">{{ $spec['size'] ?? '' }}</div>
+                        </div>
                         <div class="va-row-who">
                             <b>{{ $image->image_code }}</b>
                             <span class="va-tag">{{ $image->status }}</span>
@@ -389,7 +268,11 @@
                                     $current = $references[$cell['id']] ?? null;
                                 @endphp
                                 <div class="vr-cell">
-                                    <div class="va-lbl">Ô {{ $index + 1 }} · {{ $current['key'] ?? $cell['id'] }}</div>
+                                    @if(isset($cell['part']))
+                                        <div class="va-lbl">Hàng {{ intdiv($index, $columns) + 1 }} · cột {{ $index % $columns + 1 }} — {{ $cell['part'] }}{{ $current === null ? '' : ': '.$current['name'] }}</div>
+                                    @else
+                                        <div class="va-lbl">Ô {{ $index + 1 }} · {{ $current['key'] ?? $cell['id'] }}</div>
+                                    @endif
                                     @if($current === null || $current['fingerprint'] !== $cell['fingerprint'])
                                         <span class="va-tag dg">KHÔNG CÒN KHỚP KẾ HOẠCH</span>
                                     @else
@@ -425,7 +308,12 @@
                                 </div>
                                 <div class="va-cands">
                                     <div class="va-cand">
-                                        <img src="{{ route('video-artifacts.show', $artifact->id) }}" alt="Master {{ $image->image_code }}" width="{{ $artifact->width }}" height="{{ $artifact->height }}">
+                                        <div class="vr-overlay">
+                                            <img src="{{ route('video-artifacts.show', $artifact->id) }}" alt="Master {{ $image->image_code }}" width="{{ $artifact->width }}" height="{{ $artifact->height }}">
+                                            @foreach((array) ($item['processing']['boxes'] ?? []) as $box)
+                                                <span class="vr-box" style="left:{{ round($box['x'] / $artifact->width * 100, 3) }}%;top:{{ round($box['y'] / $artifact->height * 100, 3) }}%;width:{{ round($box['width'] / $artifact->width * 100, 3) }}%;height:{{ round($box['height'] / $artifact->height * 100, 3) }}%"></span>
+                                            @endforeach
+                                        </div>
                                         <div class="meta">
                                             <span>{{ $image->image_code }}</span>
                                             <span>Model: {{ $spec['model'] ?? '' }}</span>
@@ -440,43 +328,50 @@
                                 <div class="vr-crops">
                                     @foreach($item['crops'] as $crop)
                                         @php
-                                            $decision = $ref['decisions']->get($crop['id'])?->first()?->decision;
-                                            $inUse = isset($ref['selected_crops'][$crop['id']]);
+                                            $cropPart = $pinnedCells[$crop['view_id']]['part'] ?? null;
                                         @endphp
                                         <div class="vr-crop">
-                                            @if($oneImage((array) ($spec['layout'] ?? [])))
+                                            @if($oneImage($layout))
                                                 <div class="va-lbl" style="font-weight:400">Một ảnh nguyên tấm, không cắt</div>
                                             @else
                                                 <a href="{{ $crop['url'] }}" target="_blank" rel="noopener" class="va-cand" title="{{ $crop['view_id'] }} · ({{ $crop['x'] }}, {{ $crop['y'] }}) · {{ $crop['width'] }}×{{ $crop['height'] }}">
-                                                    <img src="{{ $crop['url'] }}" alt="{{ $crop['view_id'] }}" width="{{ $crop['width'] }}" height="{{ $crop['height'] }}" loading="lazy">
-                                                    <span class="va-tag vr-crop-tag">Ô {{ array_search($crop['view_id'], array_column((array) ($spec['cells'] ?? []), 'id'), true) + 1 }}</span>
+                                                    <img src="{{ $crop['url'] }}" alt="{{ $cropPart ?? $crop['view_id'] }}" width="{{ $crop['width'] }}" height="{{ $crop['height'] }}" loading="lazy">
                                                 </a>
                                             @endif
-                                            <div class="va-lbl" style="font-weight:400">{{ $references[$crop['view_id']]['key'] ?? $crop['view_id'] }}</div>
-                                            @if($inUse)
-                                                <span class="va-tag ok">Đã duyệt · đang dùng</span>
-                                            @elseif($decision !== null)
-                                                <span class="va-tag {{ $decision === 'approved' ? 'ok' : 'dg' }}">{{ $decision === 'approved' ? 'Đã duyệt' : 'Đã từ chối' }}</span>
-                                            @endif
-                                            <div class="va-foot">
-                                                @foreach(['approved' => ['ok', '✓ Duyệt'], 'rejected' => ['dg', '✕ Từ chối']] as $value => [$tone, $label])
-                                                    <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'decide']) }}" onsubmit="return vpLockForm(this)">
-                                                        @csrf
-                                                        <input type="hidden" name="artifact_id" value="{{ $crop['id'] }}"><input type="hidden" name="decision" value="{{ $value }}">
-                                                        <button class="vp-btn sm {{ $tone }}" data-busy="…" @disabled($decision === $value && ($value === 'rejected' || $inUse))>{{ $label }}</button>
-                                                    </form>
-                                                @endforeach
-                                            </div>
+                                            <div class="va-lbl" style="font-weight:400">{{ $cropPart === null ? ($references[$crop['view_id']]['key'] ?? $crop['view_id']) : $cropPart.($references[$crop['view_id']]['name'] ?? null ? ': '.$references[$crop['view_id']]['name'] : '') }}</div>
+                                            <div class="va-lbl" style="font-weight:400">{{ $crop['width'] }} × {{ $crop['height'] }}</div>
                                         </div>
                                     @endforeach
                                 </div>
-                                @if($image->status === 'rendered' && (! $oneImage((array) ($spec['layout'] ?? [])) || $item['crops'] === []))
-                                    <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'process']) }}" onsubmit="return vpLockForm(this)">
-                                        @csrf
-                                        <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
-                                        <button class="vp-btn sm" data-busy="Đang xử lý…">{{ $oneImage((array) ($spec['layout'] ?? [])) ? 'Lưu ảnh để duyệt' : ($item['crops'] === [] ? 'Cắt ảnh từ master' : 'Xử lý lại từ master') }}</button>
-                                    </form>
+                                @if($item['revoked'])
+                                    <div class="va-lbl" style="font-weight:400">Đã thu hồi duyệt — sheet đang chờ quyết định: duyệt lại để dùng, hoặc từ chối cả sheet để render lại các part.</div>
                                 @endif
+                                <div class="va-foot">
+                                    @if($image->status === 'approved')
+                                        <span class="va-tag ok">Đã duyệt cả sheet</span>
+                                        <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'revoke']) }}" onsubmit="return vpLockForm(this)">
+                                            @csrf
+                                            <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
+                                            <button class="vp-btn sm" data-busy="Đang thu hồi…">↩ Thu hồi duyệt</button>
+                                        </form>
+                                    @elseif($image->status === 'rendered')
+                                        <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'process']) }}" onsubmit="return vpLockForm(this)">
+                                            @csrf
+                                            <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
+                                            <button class="vp-btn sm" data-busy="Đang xử lý…">{{ $oneImage($layout) ? 'Lưu ảnh để duyệt' : ($item['crops'] === [] ? 'Cắt ảnh từ master' : 'Xử lý lại từ master') }}</button>
+                                        </form>
+                                        <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'reject']) }}" onsubmit="return vpLockForm(this)">
+                                            @csrf
+                                            <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
+                                            <button class="vp-btn sm dg" data-busy="Đang từ chối…">✕ Từ chối cả sheet</button>
+                                        </form>
+                                        <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'approve']) }}" onsubmit="return vpLockForm(this)">
+                                            @csrf
+                                            <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
+                                            <button class="vp-btn sm ok" data-busy="Đang duyệt…" @disabled(! $item['approvable'])>✓ Duyệt và dùng cả sheet</button>
+                                        </form>
+                                    @endif
+                                </div>
                             @empty
                                 <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Chưa có ảnh.</div>
                             @endforelse

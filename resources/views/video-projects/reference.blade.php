@@ -479,7 +479,7 @@
         var prices = JSON.parse(price.dataset.prices || '{}');
         var show = function () {
             var unit = (prices[model.value] || {})[quality.value];
-            price.textContent = unit ? 'Dự toán: $' + Number(unit.usd).toFixed(3) + ' / master (bảng giá ' + unit.version + ')' : 'Dự toán: chưa có giá cho model/chất lượng này';
+            price.textContent = unit ? 'Dự toán: $' + Number(unit.usd).toFixed(3) + ' / master (bảng giá ' + unit.version + ', chưa phản ánh size)' : 'Dự toán: chưa có giá cho model/chất lượng này';
         };
 
         model.addEventListener('change', show);
