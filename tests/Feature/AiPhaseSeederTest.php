@@ -41,6 +41,25 @@ class AiPhaseSeederTest extends TestCase
         }
     }
 
+    public function test_the_phase_5_6_and_7_rows_are_the_release_packages_byte_for_byte(): void
+    {
+        foreach (['ai_phases_moto_phase_5_v2.php' => ['moto-phase-5-locations-v2', 'phase-5.md'], 'ai_phases_moto_phase_6_v5.php' => ['moto-phase-6-scenes-v4', 'phase-6.md'], 'ai_phases_moto_phase_7_v5.php' => ['moto-phase-7-shots-v5', 'phase-7.md']] as $file => [$release, $prompt]) {
+            $data = require database_path('seeders/data/'.$file);
+            $package = base_path("database/releases/{$release}/");
+
+            if (! is_dir($package)) {
+                self::markTestSkipped('The release packages stay off git: '.$release);
+            }
+
+            self::assertSame(file_get_contents($package.$prompt), $data['phases'][0]['prompt_content'], $release);
+            self::assertSame(hash('sha256', $data['phases'][0]['prompt_content']), $data['phases'][0]['content_sha256'], $release);
+        }
+
+        $shots = (require database_path('seeders/data/ai_phases_moto_phase_7_v5.php'))['schemas'][0];
+        self::assertSame(file_get_contents(base_path('database/releases/moto-phase-7-shots-v5/MotoShots.schema.json')), $shots['schema_content']);
+        self::assertSame(hash('sha256', $shots['schema_content']), $shots['schema_sha256']);
+    }
+
     public function test_seeding_publishes_the_newest_phase_8_revision_keeps_the_older_ones_as_history_and_a_second_run_changes_nothing(): void
     {
         $this->categories();
@@ -72,6 +91,14 @@ class AiPhaseSeederTest extends TestCase
         self::assertSame(0, (int) DB::table('ai_phases')->where('category_id', $category)->where('workflow_code', MotoContract::WORKFLOW)->where('phase_code', 'phase-5')->where('revision', 1)->value('is_current'));
         $locationsBundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forCategory($category, 'spec.locations');
         self::assertTrue($locationsBundle->ready(), implode('; ', $locationsBundle->mismatches()));
+
+        foreach (['phase-6' => 'spec.scenes', 'phase-7' => 'spec.shots'] as $code => $action) {
+            $phase = AiPhase::currentFor($category, MotoContract::WORKFLOW, $code);
+            self::assertSame(5, (int) $phase->revision, $code);
+            self::assertSame(hash('sha256', (string) $phase->prompt_content), (string) $phase->content_sha256, $code);
+            $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forCategory($category, $action);
+            self::assertTrue($bundle->ready(), $code.': '.implode('; ', $bundle->mismatches()));
+        }
 
         $counts =static fn (): array => [DB::table('ai_json_schemas')->count(), DB::table('ai_phases')->count(), DB::table('ai_phase_schemas')->count()];
         $before = $counts();

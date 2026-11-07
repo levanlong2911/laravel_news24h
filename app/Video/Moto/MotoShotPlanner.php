@@ -8,7 +8,7 @@ use App\Video\Superyacht\Support\CanonicalJson;
 
 final class MotoShotPlanner
 {
-    public const VERSION = 'moto-shots-plan-v4';
+    public const VERSION = 'moto-shots-plan-v5';
 
     /** @var int the width in degrees of one angle group of a fingerprint */
     private const ANGLE_GROUP = 30;

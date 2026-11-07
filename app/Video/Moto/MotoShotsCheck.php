@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoShotsCheck
 {
-    public const VERSION = 'moto-shots-check-v5';
+    public const VERSION = 'moto-shots-check-v6';
 
     /** @var string the timing a run pinned from MotoShots@1.2.0 on: code sets the screen time of whole and closing parts and of the shot */
     public const TIMING = 'moto-shots-timing-v1';
@@ -107,6 +107,10 @@ final class MotoShotsCheck
             }
         }
 
+        if (($context['cover_design_refs'] ?? false) === true) {
+            $issues = [...$issues, ...self::designRefIssues($shots, $beats, $scenes, $context, (array) ($placed['shots'] ?? []))];
+        }
+
         $issues = [...$issues, ...self::conflictIssues($conflicts, $order, $beats, (array) $context['input'])];
         $blocking = array_filter($conflicts, static fn (array $conflict): bool => (bool) $conflict['blocking']) !== [];
 
@@ -119,6 +123,64 @@ final class MotoShotsCheck
         }
 
         return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots
+     * @param  array<string, array<string, mixed>>  $beats
+     * @param  array<string, array<string, mixed>>  $scenes
+     * @param  array<string, mixed>  $context
+     * @param  array<string, array<string, array{location: string}>>  $placed  where the work holds each part at the first frame of each shot, MotoWork::shotPlaces()
+     * @return list<string> by beat over the shots that cover it: a part its design_refs names that is neither in frame nor recorded out of frame, a feature, system or moment it names with none of its parts in frame; and an out-of-frame part the design does not have, that is also in frame, that no covered beat names or that is not on the motorcycle at the shot's first frame: where the work holds it, otherwise as its build state has it
+     */
+    private static function designRefIssues(array $shots, array $beats, array $scenes, array $context, array $placed): array
+    {
+        $issues = [];
+        $seen = [];
+        $inFrame = [];
+
+        foreach ($shots as $shot) {
+            $id = (string) $shot['id'];
+            $parts = array_column((array) $shot['parts'], 'part');
+            $away = array_column((array) ($shot['off_frame'] ?? []), 'part');
+            $covered = array_values(array_unique(array_column((array) $shot['coverage'], 'beat')));
+            $present = (array) ($context['states'][(string) ($scenes[$shot['scene']]['state'] ?? '')]['present'] ?? []);
+
+            foreach ($covered as $beat) {
+                $seen[$beat] = [...($seen[$beat] ?? []), ...$parts, ...$away];
+                $inFrame[$beat] = [...($inFrame[$beat] ?? []), ...$parts];
+            }
+
+            foreach ($away as $part) {
+                $named = array_merge([], ...array_map(static fn (string $beat): array => (array) ($beats[$beat]['design_refs'] ?? []), $covered));
+                $held = $placed[$id][$part]['location'] ?? null;
+                $problem = match (true) {
+                    ! isset($context['parts'][$part]) => 'không có trong parts của thiết kế',
+                    in_array($part, $parts, true) => 'vừa ở trong khung vừa ở ngoài khung',
+                    ! in_array($part, $named, true) => 'không có trong design_refs của beat nào shot phủ',
+                    ! ($held === null ? in_array($part, $present, true) : $held === MotoWork::ON) => 'không ở trên xe lúc mở shot',
+                    default => null,
+                };
+
+                if ($problem !== null) {
+                    $issues[] = "{$id}: off_frame {$part} {$problem}.";
+                }
+            }
+        }
+
+        foreach ($beats as $id => $beat) {
+            foreach ((array) ($beat['design_refs'] ?? []) as $ref) {
+                $group = $context['ref_parts'][$ref] ?? null;
+
+                if (is_array($group) && array_intersect($group, $inFrame[$id] ?? []) === []) {
+                    $issues[] = "{$id} nêu {$ref} nhưng không shot nào phủ beat này có part của {$ref} trong khung.";
+                } elseif (isset($context['parts'][$ref]) && ! in_array($ref, $seen[$id] ?? [], true)) {
+                    $issues[] = "{$id} nêu {$ref} nhưng không shot nào phủ beat này ghi {$ref} trong parts hoặc off_frame.";
+                }
+            }
+        }
+
+        return $issues;
     }
 
     /**
@@ -570,19 +632,24 @@ final class MotoShotsCheck
     /**
      * @param  array<string, mixed>  $shot
      * @param  array<string, mixed>  $context
-     * @return list<string> at a build state of an unfinished motorcycle, where the keyframe prompt sends materials instead of finishes: a state with no surface of its own. What a part's prose says about its finish is left to the reviewer
+     * @return list<string> at a build state of an unfinished motorcycle, a state with no surface of its own; at any build state, the parts in frame whose finish at the first frame the sources do not establish, for the reviewer to check before a keyframe. What a part's prose says about its finish is left to the reviewer
      */
     private static function surfaceWarnings(array $shot, ?string $state, array $context): array
     {
-        if (MotoShotPrompt::finishShown($state, $context)) {
-            return [];
-        }
-
-        $facts = (array) $context['states'][$state];
         $warnings = [];
 
-        if (! is_string($facts['surface'] ?? null) && array_filter((array) ($facts['finishes'] ?? []), 'is_string') === []) {
-            $warnings[] = "{$shot['id']}: {$state} không có mô tả bề mặt của giai đoạn (surface, surfaces) — prompt ảnh không nói được bề mặt hiện tại.";
+        if (! MotoShotPrompt::finishShown($state, $context)) {
+            $facts = (array) $context['states'][$state];
+
+            if (! is_string($facts['surface'] ?? null) && array_filter((array) ($facts['finishes'] ?? []), 'is_string') === []) {
+                $warnings[] = "{$shot['id']}: {$state} không có mô tả bề mặt của giai đoạn (surface, surfaces) — prompt ảnh không nói được bề mặt hiện tại.";
+            }
+        }
+
+        $unknown = array_values(array_filter((array) $shot['parts'], static fn (array $item): bool => in_array(MotoReferenceSurface::UNKNOWN, array_column(MotoShotPrompt::surfaces($item, $state, (string) $shot['first_frame'], $context), 'status'), true)));
+
+        if ($unknown !== []) {
+            $warnings[] = "{$shot['id']}: chưa đủ căn cứ về bề mặt ở khung đầu của ".implode(', ', array_column($unknown, 'part')).' — kiểm trước khi làm keyframe.';
         }
 
         return $warnings;

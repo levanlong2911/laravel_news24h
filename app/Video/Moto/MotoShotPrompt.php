@@ -6,11 +6,11 @@ namespace App\Video\Moto;
 
 final class MotoShotPrompt
 {
-    public const VERSION = 'moto-shot-prompt-v4';
+    public const VERSION = 'moto-shot-prompt-v5';
 
     /**
      * @param  array<string, mixed>  $context  the check context pinned with the run
-     * @return bool whether the design's finishes and colours are how the parts look at the build state: a finished motorcycle, or drawings and models before a physical one exists
+     * @return bool whether the build state is a finished motorcycle, or a stage before a physical one exists
      */
     public static function finishShown(?string $state, array $context): bool
     {
@@ -20,9 +20,37 @@ final class MotoShotPrompt
     }
 
     /**
+     * @param  array{part: string, presentation: string}  $item  a part in frame
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return list<array{element: string, status: string, text: string}> every surface of the part at the shot's first frame, from its build state, how it is shown and what is true at that frame, never what the shot goes on to do: none for a drawing, the design's model stage for a model, and needs_check where the sources give no finish
+     */
+    public static function surfaces(array $item, ?string $state, string $firstFrame, array $context): array
+    {
+        $record = (array) ($context['part_records'][$item['part']] ?? []);
+        $records = (array) ($context['state_records'] ?? []);
+        $at = match ($item['presentation']) {
+            'drawing' => null,
+            'model' => collect($records)->firstWhere('kind', 'model') ?? ['id' => (string) $state, 'kind' => 'model'],
+            default => $state === null ? null : ($records[$state] ?? null),
+        };
+
+        if ($record === [] || ! is_array($at)) {
+            return [];
+        }
+
+        $being = $item['presentation'] === 'being_made' || collect((array) ($at['in_progress'] ?? []))->contains('part', $item['part']);
+        $reference = (array) config('video.moto.reference');
+
+        return MotoReferenceSurface::components($record, $at, (array) ($context['palette'] ?? []), $being, array_values(array_filter([
+            is_string($at['surface'] ?? null) ? ['path' => "design.build_states.{$at['id']}.surface", 'text' => $at['surface']] : null,
+            ['path' => 'shot.first_frame', 'text' => $firstFrame],
+        ])), (array) $reference['surface_groups'], (array) $reference['finish_labels']);
+    }
+
+    /**
      * @param  array<string, mixed>  $row  a shot of the plan with its derived build state, environment, continuity and absent parts
      * @param  array<string, mixed>  $context  the check context pinned with the run
-     * @return string the keyframe prompt: each label followed by the shot's own field or the source record it names, verbatim — the build state's surface and finishes, under the motorcycle when the shot frames it, the parts in frame with their description, faces, size, the finished surfaces of a finished motorcycle or else only the materials, and the position the shot starts in, where the work the shot shows has each part at its start, the scene's set, the plate's light with the changes handed to the shot's beats, the people with the protection the scene plan establishes; nothing is added that the shot or its sources do not say
+     * @return string the keyframe prompt: each label followed by the shot's own field or the source record it names, verbatim — the build state's surface and finishes, under the motorcycle when the shot frames it, the parts in frame with their description, faces, size, surfaces at the first frame and the position the shot starts in, the parts out of frame with their effect, where the work the shot shows has each part at its start, the scene's set, the plate's light with the changes handed to the shot's beats, the people with the protection the scene plan establishes; nothing is added that the shot or its sources do not say
      */
     public static function image(array $row, array $context): string
     {
@@ -30,7 +58,6 @@ final class MotoShotPrompt
         $labels = (array) $config['labels'];
         $facts = $row['state'] === null ? null : ($context['states'][$row['state']] ?? null);
         $physical = is_array($facts) && $facts['physical'];
-        $finished = self::finishShown($row['state'], $context);
         $stage = $physical ? self::stage((string) $row['state'], $facts) : '';
         $start = self::positions((array) $row['configurations']['start'], $context);
         [$light, $changes] = self::changes($row, $context);
@@ -44,7 +71,8 @@ final class MotoShotPrompt
                 MotoShotPlanner::framesMotorcycle($row, (array) ($row['held_parts'] ?? [])) => self::line($labels['motorcycle'], $context['motorcycle'].' at '.$stage),
                 default => self::line($labels['stage'], $stage),
             },
-            ...array_map(static fn (array $item): string => self::line($labels['part'], self::part($item, $facts, $start, $context, $finished)), (array) $row['parts']),
+            ...array_map(static fn (array $item): string => self::line($labels['part'], self::part($item, $facts, $start, $context, $row)), (array) $row['parts']),
+            self::line($labels['off_frame'], implode('; ', array_map(static fn (array $item): string => ($context['parts'][$item['part']] ?? $item['part']).': '.rtrim((string) $item['effect'], '.'), (array) ($row['off_frame'] ?? [])))),
             self::line($labels['work'], self::firstPlaces((array) ($row['work_items'] ?? []))),
             self::line($labels['absent'], implode(', ', array_column((array) $row['absent_parts'], 'name'))),
             self::line($labels['people'], self::people($row, $context)),
@@ -171,26 +199,23 @@ final class MotoShotPrompt
      * @param  ?array<string, mixed>  $facts
      * @param  list<array<string, mixed>>  $start  the positions the shot starts in
      * @param  array<string, mixed>  $context
-     * @param  bool  $finished  finishShown() at the shot's build state
+     * @param  array<string, mixed>  $row  the shot the part stands in
      */
-    private static function part(array $item, ?array $facts, array $start, array $context, bool $finished): string
+    private static function part(array $item, ?array $facts, array $start, array $context, array $row): string
     {
         $record = (array) ($context['part_records'][$item['part']] ?? []);
         $words = (array) config('video.moto.shots.prompt.presentations');
-        $palette = (array) ($context['palette'] ?? []);
         $work = is_array($facts) ? ($facts['work'][$item['part']] ?? null) : null;
         $extent = is_array($record['extent'] ?? null) ? $record['extent'] : null;
         $position = collect($start)->firstWhere('part', $item['part']);
+        $surfaces = self::surfaces($item, is_string($row['state'] ?? null) ? $row['state'] : null, (string) $row['first_frame'], $context);
+        $digital = $surfaces !== [] && array_diff(array_column($surfaces, 'status'), [MotoReferenceSurface::DIGITAL]) === [];
         $sentences = [
-            ($record['name'] ?? $item['part']).' ('.($words[$item['presentation']] ?? $item['presentation']).')'.($item['presentation'] === 'being_made' && is_string($work) ? ': '.rtrim($work, '.') : ''),
+            ($record['name'] ?? $item['part']).' ('.($digital ? (string) ($words['digital_model'] ?? 'as a digital model') : ($words[$item['presentation']] ?? $item['presentation'])).')'.($item['presentation'] === 'being_made' && is_string($work) ? ': '.rtrim($work, '.') : ''),
             is_string($record['description'] ?? null) ? rtrim($record['description'], '.') : null,
             ...array_map(static fn (array $face): string => str_replace('_', ' ', $face['facing']).': '.rtrim($face['description'], '.'), (array) ($record['faces'] ?? [])),
             $extent === null ? null : 'about '.self::number(($extent['x_to'] - $extent['x_from']) / 1000).' × '.self::number(($extent['y_max'] - $extent['y_min']) / 1000).' × '.self::number(($extent['z_max'] - $extent['z_min']) / 1000).' m (length × width × height)',
-            match (true) {
-                ($record['surfaces'] ?? []) === [] => null,
-                $finished => 'finished surfaces: '.implode('; ', array_map(static fn (array $surface): string => trim($surface['element'].' '.$surface['material'].', '.$surface['finish'].(is_string($surface['color_id'] ?? null) && isset($palette[$surface['color_id']]) ? ', '.$palette[$surface['color_id']]['name'].' '.$palette[$surface['color_id']]['hex'] : '')), (array) $record['surfaces'])),
-                default => 'materials: '.implode('; ', array_map(static fn (array $surface): string => trim($surface['element'].' '.$surface['material']), (array) $record['surfaces'])),
-            },
+            $surfaces === [] ? null : 'surfaces: '.implode('; ', array_column($surfaces, 'text')),
             $position === null ? null : 'position '.$position['name'].': '.rtrim($position['description'], '.'),
         ];
 
@@ -225,12 +250,13 @@ final class MotoShotPrompt
     {
         $moment = is_array($row['continuity_start']) ? $row['continuity_start'] : (is_array($row['continuity_end']) ? $row['continuity_end'] : null);
         $protection = $moment === null ? [] : array_column((array) $moment['protection'], 'items', 'character');
+        $views = (array) config('video.moto.shots.prompt.people_views');
 
-        return implode(' ', array_map(static function (array $person) use ($context, $protection): string {
+        return implode(' ', array_map(static function (array $person) use ($context, $protection, $views): string {
             $items = $protection[$person['character']] ?? null;
             $worn = is_array($items) ? ($items === [] ? ' Wears no protective equipment.' : ' Wears: '.implode(', ', $items).'.') : '';
 
-            return ucfirst($person['character']).': '.rtrim((string) ($context['characters'][$person['character']] ?? ''), '.').'.'.$worn.' Seen only as '.$person['view'].'.';
+            return ucfirst($person['character']).': '.rtrim((string) ($context['characters'][$person['character']] ?? ''), '.').'.'.$worn.' '.($views[$person['view']] ?? 'Seen only as '.$person['view'].'.');
         }, (array) $row['people']));
     }
 

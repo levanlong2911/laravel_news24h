@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoScenesCheck
 {
-    public const VERSION = 'moto-scenes-check-v4';
+    public const VERSION = 'moto-scenes-check-v5';
 
     public const PASS = 'PASS';
 
@@ -69,6 +69,7 @@ final class MotoScenesCheck
         $issues = [
             ...$issues,
             ...self::orderIssues($scenes, $beats),
+            ...self::continuationIssues($scenes, $beats, (array) ($context['states'] ?? [])),
             ...self::conflictIssues($conflicts, $scenes, $beats, $input),
         ];
         $held = [];
@@ -157,6 +158,32 @@ final class MotoScenesCheck
             if ($cursor !== $total) {
                 $issues[] = "Các scene phủ tới {$cursor} ms; phim dài {$total} ms.";
             }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $scenes
+     * @param  array<string, array<string, mixed>>  $beats
+     * @param  array<string, mixed>  $states  the physical build states the beats use
+     * @return list<string> a scene none of whose beats establishes a build state, opening on the place and story time of a beat with the physical motorcycle: alone it would have no build state, and the shot step reads that as no motorcycle yet
+     */
+    private static function continuationIssues(array $scenes, array $beats, array $states): array
+    {
+        $issues = [];
+        $before = null;
+
+        foreach ($scenes as $scene) {
+            $ids = array_values((array) $scene['beats']);
+            $first = $beats[$ids[0] ?? ''] ?? null;
+            $established = array_filter(array_map(static fn (string $id): mixed => $beats[$id]['state'] ?? null, $ids), 'is_string') !== [];
+
+            if (is_array($first) && is_array($before) && ! $established && isset($states[(string) $before['state']]) && $first['time_jump'] === $before['time_jump'] && array_intersect((array) $first['places'], (array) $before['places']) !== []) {
+                $issues[] = "{$scene['id']}: {$first['id']} không có build state và tiếp nối {$before['id']} cùng nơi, cùng thời gian truyện — phải cùng scene với {$before['id']}.";
+            }
+
+            $before = $beats[$ids[count($ids) - 1] ?? ''] ?? null;
         }
 
         return $issues;

@@ -30,7 +30,13 @@ final class MotoShots implements ShotWorkflow
     private const PLAN_ELEVATION = 60;
 
     /** @var array<string, ?string> for each MotoShots major.minor version, the timing a run of it pins: none before 1.2, where the model writes every screen time; MotoShotsCheck::TIMING from 1.2, where code sets whole and closing parts and the shot */
-    private const TIMINGS = ['1.0' => null, '1.1' => null, '1.2' => MotoShotsCheck::TIMING];
+    private const TIMINGS = ['1.0' => null, '1.1' => null, '1.2' => MotoShotsCheck::TIMING, '1.3' => MotoShotsCheck::TIMING];
+
+    /** @var list<string> the fields of a build state the keyframe prompt resolves a part's surface from */
+    private const SURFACE_STATE_KEYS = ['id', 'kind', 'model_medium', 'surface', 'surfaces', 'in_progress', 'exceptions'];
+
+    /** @var list<string> the fields of a stage before the physical motorcycle the shot step reads directly from the pinned design */
+    private const DESIGN_STAGE_KEYS = ['setting_brief', 'model_medium', 'scale_denominator'];
 
     public function __construct(
         private readonly SceneSourceService $scenes,
@@ -244,6 +250,7 @@ final class MotoShots implements ShotWorkflow
                 'time_jump' => (string) $row['time_jump'],
                 'reveal' => (string) $row['reveal'],
                 'on_screen' => array_values((array) $row['on_screen']),
+                'design_refs' => array_values((array) $row['design_refs']),
                 'configurations' => array_values((array) $row['configurations']),
                 'situation' => is_array($row['situation']) ? $row['situation'] : null,
                 'backgrounds' => array_values(array_unique(array_column($uses, 'background'))),
@@ -265,17 +272,26 @@ final class MotoShots implements ShotWorkflow
 
         $finished = array_values(array_map(static fn (array $state): string => (string) $state['id'], array_filter((array) ($design['build_states'] ?? []), static fn (array $state): bool => ($state['kind'] ?? null) === 'finished')));
         $cameras = (array) config('video.moto.model_sheet.cameras');
-        $views = array_map(static fn (array $view): array => [
-            'id' => $view['id'],
-            'view' => $view['view'],
-            'azimuth_deg' => $cameras[$view['id']]['azimuth_deg'] ?? null,
-            'elevation_deg' => $cameras[$view['id']]['elevation_deg'] ?? null,
-            'projection' => $cameras[$view['id']]['projection'] ?? null,
-            'available' => in_array($view['id'], $available, true),
-            'states' => $finished,
-        ], (array) config('video.moto.model_sheet.views'));
-        $states = (array) ($sceneInput['design_states']['states'] ?? []);
+        $designViews = array_column((array) ($design['model_sheet']['views'] ?? []), null, 'id');
+        $views = array_map(static function (array $view) use ($cameras, $designViews, $available, $finished): array {
+            $chosen = $designViews[$view['id']] ?? [];
+            $camera = is_array($chosen['camera'] ?? null) ? $chosen['camera'] : (array) ($cameras[$view['id']] ?? []);
+            $target = ($cameras[$view['id']]['azimuth_deg'] ?? null) === null && is_string($chosen['target'] ?? null) ? trim($chosen['target']) : '';
+
+            return [
+                'id' => $view['id'],
+                'view' => $target !== '' ? $target : $view['view'],
+                'azimuth_deg' => $camera['azimuth_deg'] ?? null,
+                'elevation_deg' => $camera['elevation_deg'] ?? null,
+                'projection' => $camera['projection'] ?? null,
+                'available' => in_array($view['id'], $available, true),
+                'states' => $finished,
+            ];
+        }, (array) config('video.moto.model_sheet.views'));
         $records = array_column((array) ($design['build_states'] ?? []), null, 'id');
+        $states = array_map(static fn (array $state): array => isset($state['present'])
+            ? $state
+            : $state + array_intersect_key((array) ($records[$state['id']] ?? []), array_flip(self::DESIGN_STAGE_KEYS)), (array) ($sceneInput['design_states']['states'] ?? []));
         $facts = [];
 
         foreach ($states as $state) {
@@ -365,6 +381,13 @@ final class MotoShots implements ShotWorkflow
                 'views' => array_map(static fn (array $view): array => array_intersect_key($view, array_flip(['id', 'azimuth_deg', 'elevation_deg', 'projection'])), $views),
                 'total_ms' => (int) $scenePlan['total_ms'],
                 'timing' => MotoShotsCheck::TIMING,
+                'state_records' => array_map(static fn (array $state): array => array_intersect_key($state, array_flip(self::SURFACE_STATE_KEYS)), $records),
+                'ref_parts' => [
+                    ...array_column((array) ($design['features'] ?? []), 'parts', 'id'),
+                    ...array_column((array) ($design['systems'] ?? []), 'parts', 'id'),
+                    ...array_column((array) ($design['motorcycle']['signature_moments'] ?? []), 'parts', 'id'),
+                ],
+                'cover_design_refs' => (bool) config('video.moto.shots.check.cover_design_refs'),
             ],
         ];
     }

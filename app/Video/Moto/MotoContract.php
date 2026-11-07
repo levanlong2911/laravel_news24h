@@ -32,7 +32,7 @@ final class MotoContract
 
     public const SCENES_FORMAT = 'moto-scenes-v1';
 
-    public const SHOTS_INPUT = 'moto-shots-input-v3';
+    public const SHOTS_INPUT = 'moto-shots-input-v4';
 
     public const SHOTS_FORMAT = 'moto-shots-v1';
 
