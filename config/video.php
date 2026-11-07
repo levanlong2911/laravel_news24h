@@ -1171,6 +1171,23 @@ return [
                     ],
                     'suffix' => 'No face of any person, no readable text, no morphing of the motorcycle',
                 ],
+                'clip' => [
+                    'lead' => 'The supplied image is the first frame.',
+                    'labels' => [
+                        'camera' => 'Camera:',
+                        'work' => 'Work:',
+                        'action' => 'Action:',
+                        'result' => 'Result:',
+                        'timing' => 'Timing:',
+                        'end_frame' => 'Ends on:',
+                        'end_configuration' => 'Positions at the end:',
+                        'work_end' => 'Parts at the end:',
+                        'continuity' => 'Keep:',
+                        'audio' => 'Audio:',
+                    ],
+                    'audio' => 'natural ambient sound only, no music, no speech',
+                    'suffix' => 'No face of any person, no readable text, no logo or brand, no morphing of the motorcycle, no object, tool or person the shot does not name, no change to a part the shot does not change, no change of build stage',
+                ],
                 'presentations' => [
                     'installed' => 'installed',
                     'being_made' => 'being made',

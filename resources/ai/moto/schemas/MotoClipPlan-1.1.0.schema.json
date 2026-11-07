@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoClipPlan",
+  "title": "Moto clip plan (moto-clip-plan-v1)",
+  "description": "The clip plan code compiles from the approved shots, the approved keyframes and the render registry. No model writes it. The schema checks the structure; PHP checks the sources, the capabilities and the files.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "project_id", "source", "total_ms", "clips"],
+  "properties": {
+    "format": { "const": "moto-clip-plan-v1" },
+    "schema": { "const": "MotoClipPlan@1.1.0" },
+    "project_id": { "$ref": "#/$defs/id" },
+    "source": { "$ref": "#/$defs/source" },
+    "total_ms": { "$ref": "#/$defs/positive_ms" },
+    "clips": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/clip" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "\\S" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "positive_ms": { "type": "integer", "minimum": 1 },
+    "source": {
+      "description": "The approved shot plan the clips come from, as ShotSourceService::approvedSource pins it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planning_stage_id", "revision", "token"],
+      "properties": {
+        "planning_stage_id": { "$ref": "#/$defs/id" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "token": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "stage_id", "content_hash", "selection_version", "source_fingerprint"],
+          "properties": {
+            "version": { "const": "shots-source-token-v1" },
+            "stage_id": { "$ref": "#/$defs/id" },
+            "content_hash": { "$ref": "#/$defs/id" },
+            "selection_version": { "type": "integer", "minimum": 1 },
+            "source_fingerprint": { "$ref": "#/$defs/id" }
+          }
+        }
+      }
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shot_id", "render_scene_id", "order", "render", "used", "prompt", "keyframe", "blocked"],
+      "properties": {
+        "shot_id": { "type": "string", "pattern": "^SC[0-9]{2}_SH[0-9]{2}$" },
+        "render_scene_id": { "$ref": "#/$defs/id" },
+        "order": { "type": "integer", "minimum": 1 },
+        "render": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "model", "aspect_ratio", "resolution", "duration_ms"],
+          "properties": {
+            "mode": { "enum": ["image_to_video", "first_last"] },
+            "model": { "$ref": "#/$defs/id" },
+            "aspect_ratio": { "type": "string", "pattern": "^[1-9][0-9]*:[1-9][0-9]*$" },
+            "resolution": { "$ref": "#/$defs/id" },
+            "duration_ms": { "$ref": "#/$defs/positive_ms" }
+          }
+        },
+        "used": {
+          "description": "The part of the rendered clip the film keeps, in clip time. Phase 11 does the cutting; the prompt never mentions it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start_ms", "duration_ms"],
+          "properties": {
+            "start_ms": { "type": "integer", "minimum": 0 },
+            "duration_ms": { "$ref": "#/$defs/positive_ms" }
+          }
+        },
+        "prompt": {
+          "description": "The prompt actually sent, compiled by MotoShotPrompt::clip.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text", "version", "sha256"],
+          "properties": {
+            "text": { "type": "string", "pattern": "\\S" },
+            "version": { "const": "moto-clip-prompt-v2" },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "keyframe": {
+          "description": "The approved first frame and what it was made from; null until Phase 9 approves one, and the clip is then blocked.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["image_id", "artifact_id", "sha256", "source_hash"],
+              "properties": {
+                "image_id": { "$ref": "#/$defs/id" },
+                "artifact_id": { "$ref": "#/$defs/id" },
+                "sha256": { "$ref": "#/$defs/sha256" },
+                "source_hash": { "$ref": "#/$defs/id" }
+              }
+            }
+          ]
+        },
+        "blocked": {
+          "description": "Why this clip cannot be sent, or null when it can.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+                "message": { "type": "string", "pattern": "\\S" }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "keyframe": { "type": "null" } } },
+          "then": { "properties": { "blocked": { "type": "object" } } }
+        },
+        {
+          "if": { "properties": { "render": { "properties": { "mode": { "const": "first_last" } } } } },
+          "then": { "properties": { "blocked": { "type": "object" } } }
+        }
+      ]
+    }
+  }
+}

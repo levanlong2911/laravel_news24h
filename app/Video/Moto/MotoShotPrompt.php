@@ -8,6 +8,8 @@ final class MotoShotPrompt
 {
     public const VERSION = 'moto-shot-prompt-v5';
 
+    public const CLIP_VERSION = 'moto-clip-prompt-v2';
+
     /**
      * @param  array<string, mixed>  $context  the check context pinned with the run
      * @return bool whether the build state is a finished motorcycle, or a stage before a physical one exists
@@ -128,6 +130,124 @@ final class MotoShotPrompt
         ];
 
         return implode("\n", array_values(array_filter($lines, static fn (string $line): bool => $line !== '')));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row  a shot of the plan
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return string the prompt sent with the shot's approved first frame, compiled from the shot alone: it names no internal id and no edit instruction, since Phase 11 does the cutting. Every work item keeps its work: an item that moves a part says where it goes, and one that moves none says once where its parts stay. video() stays the planning prompt stored in the approved plan
+     */
+    public static function clip(array $row, array $context): string
+    {
+        $config = (array) config('video.moto.shots.prompt.clip');
+        $labels = (array) $config['labels'];
+        $camera = (array) $row['camera'];
+        $moved = array_values(array_diff((array) $row['configurations']['end'], (array) $row['configurations']['start']));
+        $work = [];
+        $ends = [];
+
+        foreach ((array) ($row['work_items'] ?? []) as $item) {
+            $places = array_values(array_filter((array) $item['parts'], static fn (array $place): bool => $place['start'] !== $place['end']));
+            $work[] = self::work($item).': '.implode(', ', $places === []
+                ? array_map(static fn (array $place): string => $place['name'].' '.self::where($place['start']), (array) $item['parts'])
+                : array_map(static fn (array $place): string => $place['name'].' from '.self::where($place['start']).' to '.self::where($place['end']), $places));
+
+            foreach ($places as $place) {
+                $ends[$place['part']] = $place['name'].' '.self::where($place['end']);
+            }
+        }
+
+        $lines = [
+            (string) $config['lead'],
+            self::line($labels['camera'], $camera['move'] === 'static'
+                ? 'static, '.$camera['start_pose']
+                : $camera['move'].' '.self::number($camera['move_value']).' '.$camera['move_unit'].', from '.$camera['start_pose'].' to '.$camera['end_pose']),
+            self::line($labels['work'], implode('; ', $work)),
+            self::line($labels['action'], (string) $row['action']),
+            self::line($labels['result'], (string) $row['result']),
+            self::line($labels['timing'], self::resultMoments((array) $row['coverage'])),
+            self::line($labels['end_frame'], (string) ($row['end_frame'] ?? '')),
+            self::line($labels['end_configuration'], implode('; ', array_map(static fn (array $position): string => $position['part_name'].' '.$position['name'].': '.$position['description'], self::positions($moved, $context)))),
+            self::line($labels['work_end'], implode('; ', $ends)),
+            self::line($labels['continuity'], implode('; ', (array) $row['continuity']['carries'])),
+            self::line($labels['audio'], (string) $config['audio']),
+            $config['suffix'].'.',
+        ];
+
+        return implode("\n", array_values(array_filter($lines, static fn (string $line): bool => $line !== '')));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row  a shot of the plan
+     * @return ?string why a result of the shot cannot be placed on the clip it renders: result_at_ms is clip time, so one outside the rendered length means the source does not say when it shows
+     */
+    public static function clipProblem(array $row): ?string
+    {
+        $length = $row['render_duration_ms'] ?? null;
+
+        if (! is_int($length) || $length <= 0) {
+            return 'Shot '.($row['id'] ?? '?').' không có thời lượng render hợp lệ.';
+        }
+
+        foreach ((array) ($row['coverage'] ?? []) as $item) {
+            if (! is_array($item) || ! array_key_exists('result_at_ms', $item)) {
+                return 'Shot '.($row['id'] ?? '?').' thiếu mốc kết quả trong nguồn.';
+            }
+
+            $at = $item['result_at_ms'];
+
+            if ($at !== null && (! is_int($at) || $at < 0 || $at > $length)) {
+                return 'Shot '.($row['id'] ?? '?').' có mốc kết quả ngoài clip render '.$length.' ms.';
+            }
+        }
+
+        return null;
+    }
+
+    /** @return string clip() with a placeholder for each line the shot fills: the text stored as the phase-10 revision */
+    public static function clipTemplate(): string
+    {
+        $config = (array) config('video.moto.shots.prompt.clip');
+        $labels = (array) $config['labels'];
+
+        return implode("\n", [
+            (string) $config['lead'],
+            $labels['camera'].' {the camera move and its poses}.',
+            $labels['work'].' {each work item, with where its parts go, or where they stay when none changes place}.',
+            $labels['action'].' {the action of the shot}.',
+            $labels['result'].' {the result of the shot}.',
+            $labels['timing'].' {when each result is visible, in seconds of the rendered clip}.',
+            $labels['end_frame'].' {the end frame of the shot, when it has one}.',
+            $labels['end_configuration'].' {the positions the shot ends in}.',
+            $labels['work_end'].' {where the work leaves each part that changes place}.',
+            $labels['continuity'].' {what the next shot starts from}.',
+            $labels['audio'].' '.$config['audio'].'.',
+            $config['suffix'].'.',
+        ]);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $coverage  the coverage of a shot, with result_at_ms in clip time
+     * @return string when each result is visible on the rendered clip, in seconds
+     */
+    private static function resultMoments(array $coverage): string
+    {
+        $moments = [];
+
+        foreach ($coverage as $item) {
+            if ($item['result_at_ms'] !== null) {
+                $moments[$item['result_at_ms']] = self::number($item['result_at_ms'] / 1000).' s';
+            }
+        }
+
+        ksort($moments);
+        $moments = array_values($moments);
+
+        return match (count($moments)) {
+            0 => '',
+            1 => 'the result is visible at '.$moments[0],
+            default => 'the results are visible at '.implode(', ', array_slice($moments, 0, -1)).' and '.$moments[count($moments) - 1],
+        };
     }
 
     /**
