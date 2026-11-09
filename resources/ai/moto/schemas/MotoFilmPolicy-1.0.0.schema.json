@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoFilmPolicy",
+  "title": "Moto film policy (moto-film-policy-v1)",
+  "description": "The cutting policy the phase-11 revision stores as its prompt_content. PHP reads it from the DB and compiles the film plan from it; no model reads it. Every value is one the first version implements: a value it cannot cut is not accepted here, so it can never be skipped quietly. The profile and the card style are named by id and resolved by PHP to one fixed version, whose copy and hash the film plan keeps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "output_profile", "timeline", "picture", "transitions", "audio", "cards"],
+  "properties": {
+    "format": { "const": "moto-film-policy-v1" },
+    "schema": { "const": "MotoFilmPolicy@1.0.0" },
+    "output_profile": {
+      "description": "The id of the output profile: size, frame rate, codecs and how a source is fitted.",
+      "enum": ["moto-portrait-1080p30-v1"]
+    },
+    "timeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interval", "quantization"],
+      "properties": {
+        "interval": {
+          "description": "Every span on the film is [start, end): the end frame is the first frame after it.",
+          "const": "half_open"
+        },
+        "quantization": {
+          "description": "Every millisecond the film cuts on must fall on a frame of the output; one that does not is refused, never rounded.",
+          "const": "exact"
+        }
+      }
+    },
+    "picture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order", "trim", "retime", "crop"],
+      "properties": {
+        "order": { "description": "The clips run in the order of the approved shot plan.", "const": "approved_plan" },
+        "trim": { "description": "Each clip gives the film only the interval its shot keeps.", "const": "approved_used_interval" },
+        "retime": { "description": "No speed change, reverse, loop or freeze.", "const": false },
+        "crop": { "description": "A source is never cropped.", "const": false }
+      }
+    },
+    "transitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "dip"],
+      "properties": {
+        "allowed": {
+          "description": "The transitions the film may cut; a shot whose transition is not listed blocks the film.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["cut", "match_cut", "time_jump", "dip"] }
+        },
+        "dip": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["colour", "each_side_ms", "overlap"],
+          "properties": {
+            "colour": { "const": "black" },
+            "each_side_ms": {
+              "description": "How long the picture fades to the colour at the end of the clip before and from it at the start of the clip after, inside the time each clip keeps.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2000
+            },
+            "overlap": { "description": "The two clips never overlap, so the film keeps its length.", "const": false }
+          }
+        }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "silent_clip", "boundary_treatment", "separate_tracks"],
+      "properties": {
+        "policy": { "description": "Only the sound each clip carries, trimmed with its picture: no music, speech, narration or effects track.", "const": "clip_only" },
+        "silent_clip": { "description": "A clip with no sound gives silence for its span.", "const": "silence" },
+        "boundary_treatment": { "description": "Sound cuts where the picture cuts: no J or L cut.", "const": "cut" },
+        "separate_tracks": { "const": false }
+      }
+    },
+    "cards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "style_profile", "reading_speed"],
+      "properties": {
+        "text": { "description": "A card shows the text of the script word for word; it is never shortened or changed.", "const": "verbatim" },
+        "style_profile": { "description": "The id of the card style: font file and its hash, size, safe area, colours, lines.", "enum": ["moto-card-style-v1"] },
+        "reading_speed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["unit", "warning_above"],
+          "properties": {
+            "unit": { "const": "words_per_second" },
+            "warning_above": {
+              "description": "A card read faster than this warns; it never blocks and never changes the card.",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 20
+            }
+          }
+        }
+      }
+    }
+  }
+}

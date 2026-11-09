@@ -11,6 +11,8 @@
     $finals = $composition['finals'];
     $latestFinal = $composition['latest_final'];
     $totalMs = (int) $composition['total_duration_ms'];
+    // Du an moto: cung man nay, phim dung theo chinh sach Phase 11; null voi yacht.
+    $motoFilm = $motoFilm ?? null;
 
     $clock = static function (int $ms): string {
         $seconds = (int) round($ms / 1000);
@@ -100,12 +102,13 @@
     $previewMaxHeight = 520;
     $previewMaxWidth = (int) round($previewMaxHeight * $previewRatio[0] / $previewRatio[1]);
 
+    // Phim moto: moi clip chi phat phan phim dung, tu `from_ms` trong file va dai `ms`; yacht giu nguyen nhu cu.
     $playlist = array_map(static fn (array $clip) => [
         'src' => $clip['file_url'],
         'ms' => $clip['duration_ms'],
         'poster' => $clip['thumbnail_url'],
         'label' => $sequence($clip['ordinal']).' · '.$clip['title'],
-    ], $clips);
+    ] + ($motoFilm ? ['from_ms' => (int) $clip['used_start_ms']] : []), $clips);
 
     $advancedOptions = [
         ['Tự động cân chỉnh âm lượng', true],
@@ -128,7 +131,11 @@
                 <b>Final Composition</b>
             </nav>
             <h2><i class="fas fa-film"></i> Final Composition</h2>
+@if($motoFilm)
+            <p>Dựng phim từ các clip đã duyệt theo chính sách Phase 11 trong DB: PHP lập kế hoạch theo khung, FFmpeg dựng đúng kế hoạch đó bằng job chạy nền. Không có lượt AI nào.</p>
+@else
             <p>Dựng các clip đã dựng xong, thêm chuyển cảnh, nhạc và xuất video bằng FFmpeg.</p>
+@endif
         </div>
         <div class="fcomp-head-actions">
             <a class="fcomp-button" href="{{ route('video-projects.render-video', $id) }}"><i class="fas fa-arrow-left"></i> Quay lại Clips</a>
@@ -165,7 +172,11 @@
             @empty
                 <div class="fcomp-empty">Chưa có clip nào dựng xong. Dựng clip ở màn <a href="{{ route('video-projects.render-video', $id) }}">Clips</a> trước.</div>
             @endforelse
+@if($motoFilm)
+            <div class="fcomp-note"><i class="fas fa-info-circle"></i> Chỉ hiển thị clip đã duyệt ở màn Clips. Thứ tự theo kế hoạch shot đã duyệt.</div>
+@else
             <div class="fcomp-note"><i class="fas fa-info-circle"></i> Chỉ hiển thị clip đã dựng xong. Thứ tự lấy theo thứ tự scene của bản kế hoạch mới nhất.</div>
+@endif
         </aside>
 
         <section class="fcomp-center">
@@ -208,6 +219,9 @@
                         </div>
                     @endif
                 </div>
+@if($motoFilm)
+                <div class="fcomp-note"><i class="fas fa-info-circle"></i> Khi chưa có bản final, khung này chỉ phát nối các clip đã duyệt: không có dip, card và tiếng như file FFmpeg dựng ra. Chỉ duyệt file final đã dựng và đã kiểm.</div>
+@endif
             </div>
 
             <div class="fcomp-card fcomp-timeline-panel">
@@ -271,6 +285,20 @@
             <form class="fcomp-card fcomp-settings" method="POST" action="{{ route('video-projects.final-render', $id) }}">
                 @csrf
                 <div class="fcomp-card-title">Thiết lập xuất video</div>
+@if($motoFilm)
+                @php $output = $motoFilm['output']; @endphp
+                {{-- Phim moto lay thiet lap tu chinh sach Phase 11 trong DB; cac o chi de xem. --}}
+                <label><span>Độ phân giải</span><select disabled><option>{{ $output ? $output['width'].' × '.$output['height'] : '—' }}</option></select></label>
+                <label><span>Frame rate (FPS)</span><select disabled><option>{{ $output ? $output['fps'].' fps' : '—' }}</option></select></label>
+                <label><span>Video codec</span><select disabled><option>H.264 (libx264)</option></select></label>
+                <label><span>Audio codec</span><select disabled><option>AAC 48 kHz stereo — chỉ tiếng của clip</option></select></label>
+                <label><span>Chất lượng (CRF)</span><select disabled><option>{{ $output['crf'] ?? '—' }}</option></select></label>
+                <small>Thiết lập theo chính sách Phase 11{{ $output ? ' ('.$output['id'].')' : '' }}; chuyển cảnh, dip và card theo kế hoạch phim, không chỉnh ở đây.</small>
+                <input type="hidden" name="expected_hash" value="{{ $motoFilm['hash'] ?? '' }}">
+                <input type="hidden" name="operation_id" value="{{ $motoFilm['operation_id'] }}">
+                <button class="fcomp-render" type="submit" @disabled(($composition['blocked'] ?? null) !== null)><i class="fas fa-cog"></i> Render Final Video</button>
+                <p>{{ $composition['blocked'] ?? 'Lượt dựng vào hàng đợi FFmpeg và chạy nền; đóng tab không làm dừng nó.' }}</p>
+@else
 
                 <label>
                     <span>Độ phân giải</span>
@@ -328,9 +356,83 @@
                         {{ $clock($totalMs) }}. Đừng đóng tab khi đang chạy.
                     @endif
                 </p>
+@endif
             </form>
         </aside>
 
+@if($motoFilm)
+        @php
+            $filmPreview = $motoFilm['preview'];
+            $filmPlan = $filmPreview['plan'] ?? null;
+            $filmFps = (int) ($filmPlan['timeline']['fps'] ?? 30);
+            $filmSeconds = static fn (int $ms): string => rtrim(rtrim(number_format($ms / 1000, 3, ',', ''), '0'), ',').' s';
+            $filmFrame = static fn (int $ms): string => (($ms * $filmFps) % 1000 === 0) ? (string) intdiv($ms * $filmFps, 1000) : '—';
+            $filmClips = collect($filmPlan['clips'] ?? [])->keyBy('shot_id');
+        @endphp
+        <section class="fcomp-card fcomp-history">
+            <div class="fcomp-card-title">Kế hoạch phim <span>{{ $motoFilm['problem'] !== null ? 'chưa sẵn sàng' : ($filmPlan !== null ? 'sẵn sàng dựng · '.$filmPlan['timeline']['total_frames'].' khung' : count($filmPreview['blockers'] ?? []).' điểm chặn') }}</span></div>
+            @if($motoFilm['problem'] !== null)
+                <div class="fcomp-note"><i class="fas fa-exclamation-triangle"></i> {{ $motoFilm['problem'] }}</div>
+            @else
+                <div class="fcomp-history-scroll">
+                    <table>
+                        <thead><tr><th>#</th><th>Shot</th><th>Vào phim</th><th>Phần dùng</th><th>Khung [vào, +số khung)</th><th>Chuyển cảnh vào</th><th>Dip (khung)</th><th>Mốc kết quả (khung)</th><th>Clip đã duyệt</th></tr></thead>
+                        <tbody>
+                            @foreach($filmPreview['rows'] as $row)
+                                @php $filmClip = $filmClips->get($row['shot_id']); @endphp
+                                <tr>
+                                    <td>{{ $row['order'] }}</td>
+                                    <td>{{ $row['shot_id'] }}</td>
+                                    <td>{{ $filmSeconds($row['tl_in_ms']) }}</td>
+                                    <td>{{ $filmSeconds($row['used_duration_ms']) }}</td>
+                                    <td>{{ $filmFrame($row['tl_in_ms']) }} + {{ $filmFrame($row['used_duration_ms']) }}</td>
+                                    <td>{{ $row['transition'] ?? '—' }}</td>
+                                    <td>{{ $filmClip !== null && ($filmClip['fade_in_frames'] + $filmClip['fade_out_frames']) > 0 ? $filmClip['fade_in_frames'].' vào · '.$filmClip['fade_out_frames'].' ra' : '—' }}</td>
+                                    <td>{{ $filmClip !== null ? (collect($filmClip['protected_results'])->map(static fn (array $r): string => $r['beat'].'@'.$r['film_frame'])->implode(', ') ?: '—') : '—' }}</td>
+                                    <td>{{ $row['render_id'] !== null ? substr($row['render_id'], 0, 8) : 'thiếu' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                @if(($filmPreview['blockers'] ?? []) !== [] || ($filmPreview['warnings'] ?? []) !== [])
+                    <div class="fcomp-history-scroll">
+                        <table>
+                            <thead><tr><th>Chặn / cảnh báo</th><th>Ở đâu</th><th>Vì sao</th></tr></thead>
+                            <tbody>
+                                @foreach($filmPreview['blockers'] as $item)
+                                    <tr><td><span class="fcomp-status">chặn</span> <code>{{ $item['code'] }}</code></td><td>{{ $item['subject'] }}</td><td style="white-space:normal">{{ $item['message'] }}</td></tr>
+                                @endforeach
+                                @foreach($filmPreview['warnings'] as $item)
+                                    <tr><td>cảnh báo <code>{{ $item['code'] }}</code></td><td>{{ $item['subject'] }}</td><td style="white-space:normal">{{ $item['message'] }}</td></tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+                @if(($filmPlan['cards'] ?? []) !== [])
+                    <div class="fcomp-history-scroll">
+                        <table>
+                            <thead><tr><th>Card</th><th>Chữ (nguyên văn kịch bản)</th><th>Thời gian</th><th>Khung [đầu, cuối)</th><th>Dòng</th><th>Từ/giây</th><th>Nguồn</th></tr></thead>
+                            <tbody>
+                                @foreach($filmPlan['cards'] as $card)
+                                    <tr>
+                                        <td>{{ $card['type'] }}</td>
+                                        <td style="white-space:normal">{{ $card['text'] }}</td>
+                                        <td>{{ $filmSeconds($card['start_ms']) }} – {{ $filmSeconds($card['end_ms']) }}</td>
+                                        <td>{{ $card['start_frame'] }} – {{ $card['end_frame'] }}</td>
+                                        <td style="white-space:normal">{{ collect($card['lines'])->pluck('text')->implode(' / ') }}</td>
+                                        <td>{{ $card['words_per_second'] }}</td>
+                                        <td>{{ $card['source_path'] }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            @endif
+        </section>
+@endif
         <section class="fcomp-card fcomp-history">
             <div class="fcomp-card-title">Lịch sử render</div>
             <div class="fcomp-history-scroll">
@@ -358,6 +460,15 @@
                                 <td class="fcomp-actions">
                                     @if($final['video_url'])
                                         <a class="fcomp-download" href="{{ $final['video_url'] }}" download><i class="fas fa-download"></i> Tải xuống</a>
+@if($motoFilm['finals'][$final['id']]['can_approve'] ?? false)
+                                        <form method="POST" action="{{ route('video-projects.final-approve', [$id, $final['id']]) }}">
+                                            @csrf
+                                            <input type="hidden" name="expected_plan_hash" value="{{ $motoFilm['finals'][$final['id']]['film_plan_hash'] }}">
+                                            <input type="hidden" name="expected_sha256" value="{{ $motoFilm['finals'][$final['id']]['sha256'] }}">
+                                            <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
+                                            <button class="fcomp-download" type="submit"><i class="fas fa-check"></i> Duyệt final</button>
+                                        </form>
+@endif
                                     @else
                                         <span class="fcomp-empty-cell">không có file</span>
                                     @endif
@@ -376,4 +487,18 @@
 
 @section('script')
 <script src="{{ asset('assets/js/final-composition.js') }}?v={{ filemtime(public_path('assets/js/final-composition.js')) }}"></script>
+@if($motoFilm['active'] ?? null)
+<script>
+    // Phim moto dang dung bang job chay nen: hoi trang thai, doi thi tai lai trang. Chi doc, khong gui gi.
+    (function () {
+        const url = @json(route('video-projects.final-status', [$id, $motoFilm['active']['id']]));
+        const was = @json($motoFilm['active']['status']);
+        const tick = () => fetch(url, { headers: { Accept: 'application/json' } })
+            .then((response) => response.ok ? response.json() : null)
+            .then((row) => { if (row && (row.status !== was || row.stopped)) { window.location.reload(); } else { setTimeout(tick, 5000); } })
+            .catch(() => setTimeout(tick, 15000));
+        setTimeout(tick, 5000);
+    })();
+</script>
+@endif
 @endsection

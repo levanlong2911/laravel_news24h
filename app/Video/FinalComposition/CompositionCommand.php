@@ -17,10 +17,12 @@ use App\Video\Media\FfmpegCapabilities;
 final class CompositionCommand
 {
     /**
+     * @param  CompositionDecor|null  $decor  the dips and cards of a film, materialised; null builds the plain cut, the same graph as before
      * @param  string  $graphOption  how this ffmpeg reads the graph file (FfmpegCapabilities::graphFileOption); the old option by default
      */
     public function __construct(
         private readonly CompositionPlan $plan,
+        private readonly ?CompositionDecor $decor = null,
         private readonly string $graphOption = FfmpegCapabilities::GRAPH_SCRIPT,
     ) {}
 
@@ -56,6 +58,10 @@ final class CompositionCommand
             $parts[] = $this->audioChain($i, $clip);
         }
 
+        if ($this->decor?->hasCards()) {
+            return implode(";\n", [...$parts, ...$this->join('[vcut]'), $this->decor->overlay('[vcut]', '[vout]')])."\n";
+        }
+
         return implode(";\n", [...$parts, ...$this->join()])."\n";
     }
 
@@ -86,13 +92,13 @@ final class CompositionCommand
             '[%d:v]setpts=PTS-STARTPTS,trim=start=%s:duration=%s,setpts=PTS-STARTPTS,'
             .'scale=%d:%d,setsar=1,pad=%d:%d:(ow-iw)/2:(oh-ih)/2,'
             .'fps=%d,format=yuv420p,settb=AVTB,'
-            .'trim=end_frame=%d,setpts=PTS-STARTPTS[v%d]',
+            .'trim=end_frame=%d,setpts=PTS-STARTPTS%s[v%d]',
             $i,
             $p->milliseconds($clip->trimStartMs),
             $p->milliseconds($clip->durationMs),
             $clip->contentWidth, $clip->contentHeight,
             $p->width, $p->height,
-            $p->fps, $clip->frames, $i,
+            $p->fps, $clip->frames, $this->decor?->fades($i, $clip->frames) ?? '', $i,
         );
     }
 
@@ -146,14 +152,15 @@ final class CompositionCommand
      * `concat` gop duoc N nhanh mot luot nhung `xfade` thi khong — nen mot ban ke
      * hoach LAN ca hai loai chuyen canh chi dung duoc neu moi noi la mot phep rieng.
      *
+     * @param  string  $videoOut  the label of the cut picture: [vout], or the input of the cards when a film has them
      * @return list<string>
      */
-    private function join(): array
+    private function join(string $videoOut = '[vout]'): array
     {
         $last = count($this->plan->clips) - 1;
 
         if ($last === 0) {
-            return ['[v0]null[vout]', '[a0]anull[aout]'];
+            return ['[v0]null'.$videoOut, '[a0]anull[aout]'];
         }
 
         $p = $this->plan->profile;
@@ -163,7 +170,7 @@ final class CompositionCommand
 
         foreach ($this->plan->transitions as $j => $transition) {
             $next = $j + 1;
-            $vOut = $next === $last ? '[vout]' : '[vx'.$next.']';
+            $vOut = $next === $last ? $videoOut : '[vx'.$next.']';
             $aOut = $next === $last ? '[aout]' : '[ax'.$next.']';
 
             if ($transition->isCut()) {

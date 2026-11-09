@@ -1044,6 +1044,66 @@ return [
         ],
     ],
 
+    /*
+     * Phase 11: the film PHP cuts from the approved clips, as the phase-11 policy in the DB says.
+     * The policy names an output profile and a card style by id; each id below is one fixed version.
+     * Change a profile or a style only under a new id: a saved film plan keeps the copy it was built with,
+     * and a missing key makes the film not ready instead of being filled in.
+     */
+    'films' => [
+        'workflows' => [
+            'harley_custom_v1' => [
+                'action' => 'spec.film',
+            ],
+        ],
+        // How long a requested film may wait for a worker; a request left longer is closed as failed and never cut later on its own.
+        'queue_wait_seconds' => (int) env('VIDEO_FILM_QUEUE_WAIT_SECONDS', 1800),
+        'profiles' => [
+            'moto-portrait-1080p30-v1' => [
+                'width' => 1080,
+                'height' => 1920,
+                'fps' => 30,
+                'video_codec' => 'h264',
+                'encoder' => 'libx264',
+                'pixel_format' => 'yuv420p',
+                'crf' => 20,
+                'audio_codec' => 'aac',
+                'sample_rate' => 48000,
+                'channels' => 2,
+                // A source is scaled whole to fit the frame and the rest padded black; nothing is cropped.
+                'fit' => 'scale_pad',
+                'pad_colour' => 'black',
+                // How far a source may stand from 9:16, as a share of the ratio; a source further off is refused.
+                'aspect_tolerance' => 0.03,
+            ],
+        ],
+        'card_styles' => [
+            'moto-card-style-v1' => [
+                'font' => [
+                    'path' => 'public/assets/admin/font/Roboto-Bold.ttf',
+                    'sha256' => 'ec685a46105296fe46c8744da4a11cf8118ba6c11271941766f7a546df6aa7c7',
+                    'family' => 'Roboto Bold',
+                    'licence' => 'Apache-2.0',
+                ],
+                'size_px' => 64,
+                'line_height_px' => 80,
+                'colour' => 'white',
+                'border' => ['colour' => 'black', 'width_px' => 4],
+                // The frame a card stays inside: the bottom keeps clear of the controls a phone draws over a portrait video.
+                'safe_area' => ['top_px' => 240, 'right_px' => 90, 'bottom_px' => 420, 'left_px' => 90],
+                // Lines are centred; the baseline of the last line sits on the bottom of the safe area.
+                'align' => 'centre',
+                'anchor' => 'last_baseline_on_safe_bottom',
+                'max_lines' => 3,
+                'wrap' => 'words',
+                // How the width of a line is measured before the film is cut: GD with FreeType at the same pixel size.
+                'measure' => 'gd-freetype',
+                'language' => 'en',
+                'word_counter' => 'whitespace_tokens',
+            ],
+        ],
+    ],
+
     'moto' => [
         'brief' => [
             'platform' => null,
@@ -1797,6 +1857,19 @@ return [
                             ],
                             'outputs' => [
                                 'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '1.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v1): for every approved shot the prompt PHP compiles from the phase-10 template, its render settings, the part the film keeps, its approved keyframe and why it cannot be sent. No model writes it.'],
+                            ],
+                        ],
+                        'spec.film' => [
+                            'phase' => 'phase-11',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['film_plan'],
+                            ],
+                            'outputs' => [
+                                'film_plan' => ['namespace' => 'moto', 'schema' => 'MotoFilmPlan', 'version' => '1.1.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 11 plan (format moto-film-plan-v1): the film PHP compiles from the phase-11 policy (input slot film_policy, MotoFilmPolicy 1.0.0), the approved Phase 10 clips and the cards of the script the shot plan pins, on one frame timeline FFmpeg cuts exactly. No model writes it.'],
                             ],
                         ],
                         'spec.reference' => [

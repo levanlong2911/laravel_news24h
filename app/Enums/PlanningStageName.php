@@ -31,6 +31,7 @@ enum PlanningStageName: string
     case SHOTS = 'shots';
     case REFERENCE_REVIEW = 'reference_review';
     case CLIP_PLAN = 'clip_plan';
+    case FILM_PLAN = 'film_plan';
 
     /** @return list<string> */
     public static function values(): array
@@ -64,6 +65,7 @@ enum PlanningStageName: string
             self::SHOTS => null,
             self::REFERENCE_REVIEW => null,
             self::CLIP_PLAN => null,
+            self::FILM_PLAN => null,
         };
     }
 }
