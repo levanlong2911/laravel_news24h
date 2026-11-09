@@ -181,7 +181,9 @@ final class CompositionOutputVerifier
         $frame = 1024;
         $timeline = $expected->audioSamples;
         $rounded = (int) ceil($timeline / $frame) * $frame;
-        $drift = abs($samples - $rounded);
+        // Mot bo giai ma cu tra ca khoi AAC cuoi (don len); FFmpeg moi (do tren 9.0.2) cat dung phan dem cuoi nen tra
+        // dung so mau cua timeline. Ca hai la cung mot luong tieng day du; thieu hay thua that thi lech khoi ca hai.
+        $drift = min(abs($samples - $rounded), abs($samples - $timeline));
 
         if ($drift > $this->audioToleranceSamples) {
             return [$samples, [sprintf(

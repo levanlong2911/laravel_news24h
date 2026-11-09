@@ -17,6 +17,35 @@ final class FfmpegCapabilities
     /** @var array<string, list<string>> */
     private array $lists = [];
 
+    /** @var string the option that reads a filter graph from a file, before FFmpeg 7 */
+    public const GRAPH_SCRIPT = '-filter_complex_script';
+
+    /** @var string the same from FFmpeg 7, which deprecated the old one; FFmpeg 9 no longer has the old one */
+    public const GRAPH_FILE = '-/filter_complex';
+
+    private ?string $graphOption = null;
+
+    /**
+     * The option this ffmpeg reads a graph file with: -/filter_complex from 7.0 on, and for a build from git master, which carries
+     * no release number; -filter_complex_script before 7.0, and whenever the version cannot be read, as it always was.
+     *
+     * @param  (callable(): ?int)|null  $budget  seconds left
+     */
+    public function graphFileOption(?callable $budget = null): string
+    {
+        return $this->graphOption ??= self::graphOptionFor($this->ffmpeg->run(['-hide_banner', '-version'], $budget === null ? 30 : $budget())->stdout);
+    }
+
+    /** @param string $version the output of ffmpeg -version */
+    public static function graphOptionFor(string $version): string
+    {
+        if (preg_match('/^ffmpeg version (?:n)?(\d+)\./m', $version, $match) === 1) {
+            return (int) $match[1] >= 7 ? self::GRAPH_FILE : self::GRAPH_SCRIPT;
+        }
+
+        return preg_match('/^ffmpeg version N-\d+/m', $version) === 1 ? self::GRAPH_FILE : self::GRAPH_SCRIPT;
+    }
+
     public function __construct(private readonly FfmpegRunner $ffmpeg) {}
 
     /**

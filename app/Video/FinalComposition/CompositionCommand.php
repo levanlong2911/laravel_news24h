@@ -2,6 +2,8 @@
 
 namespace App\Video\FinalComposition;
 
+use App\Video\Media\FfmpegCapabilities;
+
 /**
  * Sinh filter graph va mang doi so cho mot ban ke hoach.
  *
@@ -14,7 +16,13 @@ namespace App\Video\FinalComposition;
  */
 final class CompositionCommand
 {
-    public function __construct(private readonly CompositionPlan $plan) {}
+    /**
+     * @param  string  $graphOption  how this ffmpeg reads the graph file (FfmpegCapabilities::graphFileOption); the old option by default
+     */
+    public function __construct(
+        private readonly CompositionPlan $plan,
+        private readonly string $graphOption = FfmpegCapabilities::GRAPH_SCRIPT,
+    ) {}
 
     /** @return list<string> */
     public function arguments(string $graphPath, string $outputPath): array
@@ -30,7 +38,7 @@ final class CompositionCommand
 
         return [
             ...$args,
-            '-filter_complex_script', $graphPath,
+            $this->graphOption, $graphPath,
             '-map', '[vout]', '-map', '[aout]',
             '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', (string) $profile->crf,
             '-c:a', 'aac', '-ar', (string) $profile->sampleRate, '-ac', (string) $profile->channels,

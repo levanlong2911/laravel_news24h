@@ -177,7 +177,7 @@ final class CompositionExecutor
         $copies = $this->inputs->materialise($sources, $workspace, $deadline);
         $plan = $this->builder->build($manifest, $copies, $deadline);
 
-        return [$plan, new CompositionCommand($plan)];
+        return [$plan, new CompositionCommand($plan, $this->capabilities->graphFileOption(static fn (): int => $deadline->remaining()))];
     }
 
     /**
