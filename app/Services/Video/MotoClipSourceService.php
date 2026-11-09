@@ -8,26 +8,22 @@ use App\Enums\DesignImageStatus;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
-use App\Video\Moto\MotoShotPrompt;
+use App\Video\Moto\MotoReferenceSurface;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use RuntimeException;
 
 /**
- * What a clip of the shot flow comes from: the approved shot plan and the keyframe Phase 9 approved for each shot.
- * A keyframe is found through the link Phase 9 stores on it, never through a scene row, and one that fails a check is reported and never replaced by a similar one.
+ * What a clip of the shot flow comes from: the approved shot plan and the keyframe approved for each shot on the Keyframes screen.
+ * A keyframe is read the way that screen reads it, through the render row of its shot, and one that fails a check is reported and never replaced by a similar one.
  *
- * The contract Phase 9 writes to: a video_design_images row of the project with image_type scene_keyframe, render_scene_id null, state slot(), status approved with approved_at and selected_artifact_id set through DesignImageStore::approve, and metadata_json moto_shot {version: LINK_VERSION, shot_plan_stage_id, shot_id, source_token {stage_id, content_hash}, prompt {version, surface_rule, sha256} as MotoShotPrompt::keyframe gives them}. Its selected video_artifacts row carries design_image_id, a render_id, a disk of video.veo.source_disks and the sha256 of a PNG or JPEG in the frame of the film.
+ * The contract the Keyframes screen writes to: a video_design_images row of the project with image_type scene_keyframe, render_scene_id the row ShotRenderPlanService keeps for the shot in the approved plan, status approved with approved_at and selected_artifact_id set through DesignImageStore::approve, and prompt_spec_json {shot_id, shot_stage_id, source_token, prompt, image_sha256, composer, sources} as MotoKeyframeService::render stores them. Its selected video_artifacts row carries design_image_id, a render_id, a disk of video.veo.source_disks and the sha256 of a PNG or JPEG in the frame of the film. Every check MotoKeyframeSourceService::keyframeProblem makes holds too.
  */
 final class MotoClipSourceService
 {
-    /** @var string the key of metadata_json on a keyframe that ties it to a shot */
-    public const LINK_KEY = 'moto_shot';
-
-    public const LINK_VERSION = 'moto-keyframe-link-v1';
-
     public function __construct(
         private readonly ShotSourceService $shots,
         private readonly FilesystemFactory $storage,
+        private readonly MotoKeyframeSourceService $frames,
     ) {}
 
     /**
@@ -78,12 +74,6 @@ final class MotoClipSourceService
         ];
     }
 
-    /** @return string the slot of the keyframe of a shot in a revision of the plan: approving a keyframe replaces only the one in its own slot */
-    public static function slot(string $shotId, int $revision): string
-    {
-        return "{$shotId}@r{$revision}";
-    }
-
     /**
      * @param  array<string, mixed>  $source  source()
      * @param  array<string, mixed>  $settings  the settings of the clip flow
@@ -91,26 +81,16 @@ final class MotoClipSourceService
      */
     public function keyframes(string $projectId, array $source, array $settings): array
     {
-        $images = VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->whereNull('render_scene_id')
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->get()
-            ->filter(static fn (VideoDesignImage $image): bool => is_array($image->metadata_json[self::LINK_KEY] ?? null))
-            ->groupBy(static fn (VideoDesignImage $image): string => (string) ($image->metadata_json[self::LINK_KEY]['shot_id'] ?? ''));
+        $context = $this->frames->context($projectId);
         $result = [];
 
         foreach ((array) $source['plan']['shots'] as $row) {
             $shotId = (string) $row['id'];
-            $all = $images->get($shotId, collect());
-            $slot = self::slot($shotId, $source['revision']);
-            $own = $all->filter(static fn (VideoDesignImage $image): bool => $image->state === $slot)->values();
+            $approved = array_values(array_filter((array) ($context['images'][$shotId] ?? []), static fn (VideoDesignImage $image): bool => $image->status === DesignImageStatus::APPROVED->value));
             $result[$shotId] = match (true) {
-                $own->count() > 1 => self::blocked('keyframe_ambiguous', "Shot {$shotId} có {$own->count()} keyframe đã duyệt — không tự chọn."),
-                $own->count() === 1 => $this->checked($projectId, $own->first(), $row, $source, $settings),
-                $all->isNotEmpty() => self::blocked('keyframe_source_changed', "Keyframe của shot {$shotId} được duyệt cho bản kế hoạch khác — duyệt lại keyframe cho bản hiện hành."),
-                default => self::blocked('keyframe_missing', "Shot {$shotId} chưa có keyframe đã duyệt."),
+                count($approved) > 1 => self::blocked('keyframe_ambiguous', 'Shot '.$shotId.' có '.count($approved).' keyframe đã duyệt — không tự chọn.'),
+                count($approved) === 1 => $this->checked($projectId, $context, $approved[0], $row, $source, $settings),
+                default => self::blocked('keyframe_missing', "Shot {$shotId} chưa có keyframe đã duyệt ở màn Keyframes."),
             };
         }
 
@@ -118,33 +98,27 @@ final class MotoClipSourceService
     }
 
     /**
+     * @param  array<string, mixed>  $context  MotoKeyframeSourceService::context()
      * @param  array<string, mixed>  $row  the shot
      * @param  array<string, mixed>  $source  source()
      * @param  array<string, mixed>  $settings
      * @return array{keyframe: ?array<string, mixed>, url: ?string, blocked: ?array{code: string, message: string}}
      */
-    private function checked(string $projectId, VideoDesignImage $image, array $row, array $source, array $settings): array
+    private function checked(string $projectId, array $context, VideoDesignImage $image, array $row, array $source, array $settings): array
     {
         $shotId = (string) $row['id'];
-        $link = (array) $image->metadata_json[self::LINK_KEY];
-        $token = (array) ($link['source_token'] ?? []);
-        $pinned = (array) ($link['prompt'] ?? []);
+        $spec = (array) $image->prompt_spec_json;
+        $token = (array) ($spec['source_token'] ?? []);
 
-        if (($link['version'] ?? null) !== self::LINK_VERSION) {
-            return self::blocked('keyframe_link_invalid', "Keyframe của shot {$shotId} không theo hợp đồng Phase 9 hiện hành.");
+        if (($spec['shot_id'] ?? null) !== $shotId || ! is_string($spec['composer'] ?? null) || ! is_string($spec['image_sha256'] ?? null)) {
+            return self::blocked('keyframe_link_invalid', "Keyframe của shot {$shotId} không theo hợp đồng của màn Keyframes.");
         }
 
-        if (($link['shot_plan_stage_id'] ?? null) !== $source['stage_id'] || ($token['stage_id'] ?? null) !== $source['token']['stage_id'] || ($token['content_hash'] ?? null) !== $source['token']['content_hash']) {
+        if (($spec['shot_stage_id'] ?? null) !== $source['stage_id'] || ($token['stage_id'] ?? null) !== $source['token']['stage_id'] || ($token['content_hash'] ?? null) !== $source['token']['content_hash']) {
             return self::blocked('keyframe_source_changed', "Keyframe của shot {$shotId} được làm từ nguồn khác bản kế hoạch đã duyệt.");
         }
 
-        $prompt = MotoShotPrompt::keyframe($row, $source['context']);
-
-        if (($pinned['surface_rule'] ?? null) !== $prompt['surface_rule']) {
-            return self::blocked('keyframe_old_surface_rule', "Keyframe của shot {$shotId} làm theo luật bề mặt cũ.");
-        }
-
-        if (($pinned['version'] ?? null) !== $prompt['version'] || ($pinned['sha256'] ?? null) !== $prompt['sha256']) {
+        if ($spec['image_sha256'] !== ($row['prompts']['image_sha256'] ?? null)) {
             return self::blocked('keyframe_prompt_changed', "Prompt của keyframe shot {$shotId} khác prompt shot hiện hành — render và duyệt lại keyframe.");
         }
 
@@ -164,13 +138,19 @@ final class MotoClipSourceService
             return self::blocked($problem[0], "Keyframe của shot {$shotId}: {$problem[1]}");
         }
 
+        $stale = $this->frames->keyframeProblem($context, $image);
+
+        if ($stale !== null) {
+            return self::blocked('keyframe_source_changed', "Keyframe của shot {$shotId}: {$stale}.");
+        }
+
         return [
             'keyframe' => [
                 'image_id' => (string) $image->id,
                 'artifact_id' => (string) $artifact->id,
                 'sha256' => (string) $artifact->sha256,
                 'source_token' => ['stage_id' => (string) $token['stage_id'], 'content_hash' => (string) $token['content_hash']],
-                'prompt' => ['version' => (string) $pinned['version'], 'surface_rule' => (string) $pinned['surface_rule'], 'sha256' => (string) $pinned['sha256']],
+                'prompt' => ['version' => $spec['composer'], 'surface_rule' => (string) ($source['context']['surface_rule'] ?? MotoReferenceSurface::RULE_ANY_MATERIAL), 'sha256' => $spec['image_sha256']],
             ],
             'url' => route('video-artifacts.show', (string) $artifact->id),
             'blocked' => null,
