@@ -10,11 +10,11 @@ class VideoShotsRevise extends Command
     protected $signature = 'video:shots-revise
         {project : Video project id}
         {stage : Shot list stage id the revision is written against}
-        {patch : Path to the revision JSON file (reason, shots by id with used_start_ms, used_duration_ms, render_duration_ms or coverage timing)}
+        {patch : Path to the revision JSON file (reason, shots by id with used_start_ms, used_duration_ms, render_duration_ms or coverage timing, or the wording of first_frame, camera.start_pose, camera.end_pose or continuity.carries)}
         {--apply : Store the revised shot list as a new run when every check passes}
         {--expected= : With --apply, the patch hash of the approved preview}';
 
-    protected $description = 'Preview (or with --apply store) a hand revision of the timing of a moto shot list written from the sources the project uses now, checked against the current contract; no model is called and nothing is approved';
+    protected $description = 'Preview (or with --apply store) a hand revision of the timing or the wording of a moto shot list written from the sources the project uses now, checked against the current contract; no model is called and nothing is approved';
 
     public function __construct(private readonly ShotWriterService $writer)
     {
