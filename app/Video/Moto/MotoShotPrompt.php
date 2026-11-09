@@ -10,9 +10,15 @@ final class MotoShotPrompt
 {
     public const VERSION = 'moto-shot-prompt-v5';
 
-    public const CLIP_VERSION = 'moto-clip-prompt-v2';
+    public const CLIP_COMPILER = 'moto-clip-compiler-v3';
 
     public const KEYFRAME_VERSION = 'moto-keyframe-prompt-v1';
+
+    /** @var list<string> the fields of the phase-10 template a clip prompt cannot go without */
+    private const CLIP_REQUIRED = ['duration_seconds', 'camera', 'action', 'result'];
+
+    /** @var list<string> the fields of the phase-10 template whose line drops out when the shot has nothing to say */
+    private const CLIP_OPTIONAL = ['start_state', 'work', 'timing', 'end_frame', 'end_configuration', 'work_end', 'end_state'];
 
     /**
      * @param  array<string, mixed>  $context  the check context pinned with the run
@@ -151,14 +157,103 @@ final class MotoShotPrompt
     /**
      * @param  array<string, mixed>  $row  a shot of the plan
      * @param  array<string, mixed>  $context  the check context pinned with the run
-     * @return string the prompt sent with the shot's approved first frame, compiled from the shot alone: it names no internal id and no edit instruction, since Phase 11 does the cutting. Every work item keeps its work: an item that moves a part says where it goes, and one that moves none says once where its parts stay. video() stays the planning prompt stored in the approved plan
+     * @param  string  $template  the text of the current phase-10 revision, as the resolver gave it
+     * @return string the prompt sent with the shot's approved first frame: the template with each field filled from the shot, and a line dropped when its optional field is empty. It names no internal id and no edit instruction, since Phase 11 does the cutting. Every work item keeps its work: an item that moves a part says where it goes, and one that moves none says once where its parts stay. video() stays the planning prompt stored in the approved plan
+     *
+     * @throws \InvalidArgumentException when the template breaks the field contract or the shot lacks a field it cannot go without
      */
-    public static function clip(array $row, array $context): string
+    public static function clip(array $row, array $context, string $template): string
     {
-        $config = (array) config('video.moto.shots.prompt.clip');
-        $labels = (array) $config['labels'];
-        $camera = (array) $row['camera'];
-        $moved = array_values(array_diff((array) $row['configurations']['end'], (array) $row['configurations']['start']));
+        $problem = self::clipTemplateProblem($template);
+
+        if ($problem !== null) {
+            throw new \InvalidArgumentException($problem);
+        }
+
+        $missing = self::clipMissing($row, $context);
+
+        if ($missing !== []) {
+            throw new \InvalidArgumentException('Shot '.($row['id'] ?? '?').' thiếu trường bắt buộc của prompt clip: '.implode(', ', $missing).'.');
+        }
+
+        $map = [];
+
+        foreach (self::clipFields($row, $context) as $field => $value) {
+            $map['{'.$field.'}'] = rtrim(trim($value), '.');
+        }
+
+        $lines = [];
+
+        foreach (preg_split('/\R/', $template) ?: [] as $line) {
+            preg_match_all('/\{([a-z_]+)\}/', $line, $slots);
+
+            if (array_filter($slots[0], static fn (string $slot): bool => $map[$slot] === '') === []) {
+                $lines[] = strtr($line, $map);
+            }
+        }
+
+        $prompt = implode("\n", array_values(array_filter($lines, static fn (string $line): bool => trim($line) !== '')));
+
+        foreach (self::CLIP_REQUIRED as $field) {
+            if (! str_contains($prompt, $map['{'.$field.'}'])) {
+                throw new \InvalidArgumentException('Prompt clip của shot '.($row['id'] ?? '?').' mất trường bắt buộc '.$field.' khi biên dịch.');
+            }
+        }
+
+        return $prompt;
+    }
+
+    /** @return ?string why the template cannot be compiled: a field outside the contract, a required field it does not use, a required field sharing a line with an optional one, which would drop with it, or a stray brace. The text is only ever filled in, never run */
+    public static function clipTemplateProblem(string $template): ?string
+    {
+        preg_match_all('/\{([^{}]*)\}/', $template, $found);
+        $unknown = array_values(array_diff($found[1], self::CLIP_REQUIRED, self::CLIP_OPTIONAL));
+
+        if ($unknown !== []) {
+            return 'Mẫu prompt clip có trường không được hỗ trợ: '.implode(', ', $unknown).'.';
+        }
+
+        $absent = array_values(array_diff(self::CLIP_REQUIRED, $found[1]));
+
+        if ($absent !== []) {
+            return 'Mẫu prompt clip thiếu trường bắt buộc: '.implode(', ', $absent).'.';
+        }
+
+        foreach (preg_split('/\R/', $template) ?: [] as $line) {
+            preg_match_all('/\{([a-z_]+)\}/', $line, $slots);
+
+            if (array_intersect($slots[1], self::CLIP_REQUIRED) !== [] && array_intersect($slots[1], self::CLIP_OPTIONAL) !== []) {
+                return 'Mẫu prompt clip đặt trường bắt buộc cùng dòng với trường tùy chọn ('.trim($line).') — dòng đó sẽ mất khi trường tùy chọn rỗng.';
+            }
+        }
+
+        return preg_match('/[{}]/', (string) preg_replace('/\{[^{}]*\}/', '', $template)) === 1
+            ? 'Mẫu prompt clip có dấu ngoặc nhọn lẻ.'
+            : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row  a shot of the plan
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return list<string> the required fields the shot leaves empty
+     */
+    public static function clipMissing(array $row, array $context): array
+    {
+        $fields = self::clipFields($row, $context);
+
+        return array_values(array_filter(self::CLIP_REQUIRED, static fn (string $field): bool => trim($fields[$field]) === ''));
+    }
+
+    /**
+     * @param  array<string, mixed>  $row  a shot of the plan
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return array<string, string> what each field of the template says for the shot
+     */
+    private static function clipFields(array $row, array $context): array
+    {
+        $camera = (array) ($row['camera'] ?? []);
+        $configurations = (array) ($row['configurations'] ?? []);
+        $moved = array_values(array_diff((array) ($configurations['end'] ?? []), (array) ($configurations['start'] ?? [])));
         $work = [];
         $ends = [];
 
@@ -173,97 +268,90 @@ final class MotoShotPrompt
             }
         }
 
-        $lines = [
-            (string) $config['lead'],
-            self::line($labels['camera'], $camera['move'] === 'static'
-                ? 'static, '.$camera['start_pose']
-                : $camera['move'].' '.self::number($camera['move_value']).' '.$camera['move_unit'].', from '.$camera['start_pose'].' to '.$camera['end_pose']),
-            self::line($labels['work'], implode('; ', $work)),
-            self::line($labels['action'], (string) $row['action']),
-            self::line($labels['result'], (string) $row['result']),
-            self::line($labels['timing'], self::resultMoments((array) $row['coverage'])),
-            self::line($labels['end_frame'], (string) ($row['end_frame'] ?? '')),
-            self::line($labels['end_configuration'], implode('; ', array_map(static fn (array $position): string => $position['part_name'].' '.$position['name'].': '.$position['description'], self::positions($moved, $context)))),
-            self::line($labels['work_end'], implode('; ', $ends)),
-            self::line($labels['continuity'], implode('; ', (array) $row['continuity']['carries'])),
-            self::line($labels['audio'], (string) $config['audio']),
-            $config['suffix'].'.',
-        ];
+        $length = $row['render_duration_ms'] ?? null;
+        $move = (string) ($camera['move'] ?? '');
 
-        return implode("\n", array_values(array_filter($lines, static fn (string $line): bool => $line !== '')));
+        // A pose is a phrase with commas of its own, so the parts of the move are kept apart with labels rather than "from … to …".
+        return [
+            'duration_seconds' => is_int($length) && $length > 0 ? self::number($length / 1000) : '',
+            'start_state' => (string) ($row['continuity_start']['placement'] ?? ''),
+            'camera' => match ($move) {
+                '' => '',
+                'static' => 'static; position: '.rtrim((string) ($camera['start_pose'] ?? ''), '.'),
+                default => $move.' '.self::number($camera['move_value'] ?? 0).' '.($camera['move_unit'] ?? '').'; start: '.rtrim((string) ($camera['start_pose'] ?? ''), '.').'; end: '.rtrim((string) ($camera['end_pose'] ?? ''), '.'),
+            },
+            'work' => implode('; ', $work),
+            'action' => (string) ($row['action'] ?? ''),
+            'result' => (string) ($row['result'] ?? ''),
+            'timing' => self::resultMoments((array) ($row['coverage'] ?? [])),
+            'end_frame' => (string) ($row['end_frame'] ?? ''),
+            'end_configuration' => implode('; ', array_map(static fn (array $position): string => $position['part_name'].' '.$position['name'].': '.$position['description'], self::positions($moved, $context))),
+            'work_end' => implode('; ', $ends),
+            // The end state is the shot's own, from continuity_end. continuity.carries is the note for the cut to the next shot, so it never reaches a video model.
+            'end_state' => (string) ($row['continuity_end']['placement'] ?? ''),
+        ];
     }
 
     /**
      * @param  array<string, mixed>  $row  a shot of the plan
-     * @return ?string why a result of the shot cannot be placed on the clip it renders: result_at_ms is clip time, so one outside the rendered length means the source does not say when it shows
+     * @return ?string why the timing of the shot cannot be told to a model: result_at_ms is clip time, so a moment outside the rendered clip or the part the film keeps means the source does not say when it shows, and one result text cannot be tied to several moments without guessing
      */
     public static function clipProblem(array $row): ?string
     {
         $length = $row['render_duration_ms'] ?? null;
+        $shot = 'Shot '.($row['id'] ?? '?');
 
         if (! is_int($length) || $length <= 0) {
-            return 'Shot '.($row['id'] ?? '?').' không có thời lượng render hợp lệ.';
+            return $shot.' không có thời lượng render hợp lệ.';
         }
+
+        $start = is_int($row['used_start_ms'] ?? null) ? $row['used_start_ms'] : 0;
+        $used = is_int($row['used_duration_ms'] ?? null) ? $row['used_duration_ms'] : $length;
+
+        if ($start < 0 || $used <= 0 || $start + $used > $length) {
+            return $shot.' giữ đoạn '.$start.'+'.$used.' ms ngoài clip render '.$length.' ms.';
+        }
+
+        $moments = [];
 
         foreach ((array) ($row['coverage'] ?? []) as $item) {
             if (! is_array($item) || ! array_key_exists('result_at_ms', $item)) {
-                return 'Shot '.($row['id'] ?? '?').' thiếu mốc kết quả trong nguồn.';
+                return $shot.' thiếu mốc kết quả trong nguồn.';
             }
 
             $at = $item['result_at_ms'];
 
             if ($at !== null && (! is_int($at) || $at < 0 || $at > $length)) {
-                return 'Shot '.($row['id'] ?? '?').' có mốc kết quả ngoài clip render '.$length.' ms.';
+                return $shot.' có mốc kết quả ngoài clip render '.$length.' ms.';
+            }
+
+            if ($at !== null && ($at < $start || $at > $start + $used)) {
+                return $shot.' có mốc kết quả '.$at.' ms ngoài đoạn phim giữ lại.';
+            }
+
+            if ($at !== null) {
+                $moments[$at] = true;
             }
         }
 
-        return null;
-    }
-
-    /** @return string clip() with a placeholder for each line the shot fills: the text stored as the phase-10 revision */
-    public static function clipTemplate(): string
-    {
-        $config = (array) config('video.moto.shots.prompt.clip');
-        $labels = (array) $config['labels'];
-
-        return implode("\n", [
-            (string) $config['lead'],
-            $labels['camera'].' {the camera move and its poses}.',
-            $labels['work'].' {each work item, with where its parts go, or where they stay when none changes place}.',
-            $labels['action'].' {the action of the shot}.',
-            $labels['result'].' {the result of the shot}.',
-            $labels['timing'].' {when each result is visible, in seconds of the rendered clip}.',
-            $labels['end_frame'].' {the end frame of the shot, when it has one}.',
-            $labels['end_configuration'].' {the positions the shot ends in}.',
-            $labels['work_end'].' {where the work leaves each part that changes place}.',
-            $labels['continuity'].' {what the next shot starts from}.',
-            $labels['audio'].' '.$config['audio'].'.',
-            $config['suffix'].'.',
-        ]);
+        return count($moments) > 1
+            ? $shot.' có '.count($moments).' mốc kết quả nhưng chỉ một câu kết quả — nguồn chưa nối được kết quả với thời điểm.'
+            : null;
     }
 
     /**
      * @param  list<array<string, mixed>>  $coverage  the coverage of a shot, with result_at_ms in clip time
-     * @return string when each result is visible on the rendered clip, in seconds
+     * @return string when the result is visible, in seconds from the start of the rendered clip
      */
     private static function resultMoments(array $coverage): string
     {
-        $moments = [];
-
         foreach ($coverage as $item) {
-            if ($item['result_at_ms'] !== null) {
-                $moments[$item['result_at_ms']] = self::number($item['result_at_ms'] / 1000).' s';
+            if (is_array($item) && ($item['result_at_ms'] ?? null) !== null) {
+                return 'the result is visible '.self::number($item['result_at_ms'] / 1000).' s into the clip';
             }
         }
 
-        ksort($moments);
-        $moments = array_values($moments);
-
-        return match (count($moments)) {
-            0 => '',
-            1 => 'the result is visible at '.$moments[0],
-            default => 'the results are visible at '.implode(', ', array_slice($moments, 0, -1)).' and '.$moments[count($moments) - 1],
-        };
+        return '';
     }
 
     /**

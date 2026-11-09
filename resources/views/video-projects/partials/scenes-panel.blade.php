@@ -38,6 +38,10 @@
         <b>Scenes</b>
         <span class="sep">·</span>
         <a href="{{ route('video-projects.reference', $id) }}">Reference →</a>
+        @if(app(\App\Services\Video\ShotSourceService::class)->selection($id) !== null)
+            <span class="sep">·</span>
+            <a href="{{ route('video-projects.render-video', $id) }}">Render video →</a>
+        @endif
         <span class="grow"></span>
         @if($plan !== null)
             <span class="m">{{ count($plan['scenes']) }} scene · {{ $seconds($plan['total_ms']) }} s</span>

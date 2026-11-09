@@ -18,11 +18,12 @@ class VideoShot extends Model
         'transition_id', 'scene_status', 'scene_image_render_id', 'video_render_id',
         'current_render_id', 'intent_version', 'auto_select_version', 'shot_index',
         'scene_projection_hash', 'motion_spec_hash', 'state_committed_at',
-        'approved_qa_report_id', 'approved_artifact_hash', 'approved_by_admin_id'];
+        'approved_qa_report_id', 'approved_artifact_hash', 'approved_by_admin_id', 'metadata_json'];
 
     protected $casts = [
         'spec_json' => 'array',
         'render_plan' => 'array',
+        'metadata_json' => 'array',
         'scene_sequence_index' => 'integer',
         'shot_index' => 'integer',
         'plan_revision' => 'integer',

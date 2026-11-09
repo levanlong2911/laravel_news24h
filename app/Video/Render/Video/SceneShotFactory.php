@@ -87,7 +87,7 @@ final class SceneShotFactory
      * Du an chua tung co session nao van phai render duoc clip. Session o day chi la
      * cai mang shot, khong phai mot luot chay pipeline.
      */
-    private function sessionFor(string $projectId): VideoSession
+    public function sessionFor(string $projectId): VideoSession
     {
         $session = VideoSession::query()
             ->where('project_id', $projectId)

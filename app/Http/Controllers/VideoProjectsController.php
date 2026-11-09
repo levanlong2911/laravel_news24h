@@ -1507,6 +1507,10 @@ class VideoProjectsController extends Controller
     {
         $project = $this->ownedProject($id);
 
+        if ($this->usesShotClipFlow($id)) {
+            return view('video-projects.show', $this->chrome() + ['id' => $id, 'project' => $project] + app(\App\Services\Video\MotoClipSelectionService::class)->screen($id));
+        }
+
         $plan = $this->videoProjectService->selectedScenePlan($id);
         $revision = (int) $plan['revision'];
         $scenes = $plan['scenes'] ?? [];
@@ -1634,6 +1638,77 @@ class VideoProjectsController extends Controller
     }
 
     /**
+     * Du an cat clip theo shot: prompt, schema va quyet dinh duyet doc tu DB, theo workflow cua chu de trong
+     * `video.clips.workflows`. Chu de nao co workflow o do thi chay luong nay tren chinh cac route clip; chua co thi chay luong cu.
+     */
+    private function usesShotClipFlow(string $id): bool
+    {
+        return app(\App\Services\Video\MotoClipSourceService::class)->supports($id);
+    }
+
+    /** Gui render mot clip theo shot: kiem hash trang dang mo, ma thao tac va thiet lap model; tra trang thai cho man. */
+    private function renderShotClip(Request $request, string $id, string $shotId)
+    {
+        // Trinh duyet dong lai khong duoc lam dung mot yeu cau da toi provider.
+        ignore_user_abort(true);
+        @set_time_limit((int) config('video.omni.timeout') + 60);
+
+        try {
+            $data = $request->validate([
+                'model_id' => ['required', 'string'],
+                'resolution' => ['required', 'string'],
+                'aspect_ratio' => ['required', 'string'],
+                'duration_seconds' => ['required', 'integer', 'min:1'],
+                'expected_intent_version' => ['required', 'integer', 'min:0'],
+                'operation_id' => ['required', 'uuid'],
+                'expected_clip_hash' => ['required', 'string'],
+            ]);
+            [$render, , $reason] = app(\App\Services\Video\MotoClipRenderService::class)->render($id, $shotId, [
+                'model_id' => (string) $data['model_id'],
+                'resolution' => (string) $data['resolution'],
+                'aspect_ratio' => (string) $data['aspect_ratio'],
+                'duration_seconds' => (int) $data['duration_seconds'],
+            ], (int) $data['expected_intent_version'], (string) $data['operation_id'], (string) $data['expected_clip_hash']);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->refusedShotClip(implode(' ', $e->validator->errors()->all()), $id, $shotId);
+        } catch (\Throwable $e) {
+            return $this->refusedShotClip(match ($e->getMessage()) {
+                'shot_dispatch_conflict' => 'Clip đã thay đổi ở thao tác khác. Tải lại trang trước khi render.',
+                'shot_dispatch_operation_conflict' => 'Mã thao tác render đã được dùng cho một yêu cầu khác.',
+                'shot_dispatch_replay_missing' => 'Không còn tìm thấy lượt render của thao tác trước.',
+                default => $e->getMessage(),
+            }, $id, $shotId);
+        }
+
+        return response()->json(app(\App\Services\Video\MotoClipSelectionService::class)->state($id, $render, $reason));
+    }
+
+    /** Duyet ket qua cua mot shot cho buoc final; quyet dinh gan voi dung file do va phien ban y dinh cua shot. */
+    private function approveShotClip(Request $request, string $id, string $shotId)
+    {
+        $data = $request->validate([
+            'render_id' => ['required', 'uuid'],
+            'expected_intent_version' => ['required', 'integer', 'min:0'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+
+        try {
+            [, $reason] = app(\App\Services\Video\MotoClipSelectionService::class)->approve($id, $shotId, (string) $data['render_id'], (int) $data['expected_intent_version'], (string) $data['operation_id'], (string) auth()->id());
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', $reason === 'replayed' ? 'Thao tác duyệt này đã được ghi trước đó.' : 'Đã duyệt clip của '.$shotId.'.');
+    }
+
+    private function refusedShotClip(string $reason, string $id, string $shotId)
+    {
+        \Illuminate\Support\Facades\Log::warning('Clip shot bị từ chối trước khi gọi provider', ['project_id' => $id, 'shot_id' => $shotId, 'reason' => $reason]);
+
+        return response()->json(['state' => 'idle', 'reason' => $reason, 'note' => $reason, 'poll_url' => null, 'file_url' => null, 'meta' => '', 'idle_stage' => 'chờ — chưa gửi render'], 422);
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $scenes
      * @param  array<string, array<string, mixed>>  $clips
      * @param  array<string, array<string, mixed>>  $keyframes
@@ -1716,6 +1791,11 @@ class VideoProjectsController extends Controller
     public function renderSceneClip(Request $request, string $id, string $sceneId)
     {
         $this->ownedProject($id);
+
+        // Luong clip theo shot: `sceneId` la ma shot cua ke hoach shot da duyet.
+        if ($this->usesShotClipFlow($id)) {
+            return $this->renderShotClip($request, $id, $sceneId);
+        }
 
         $row = \App\Models\VideoRenderScene::query()->whereKey($sceneId)->where('project_id', $id)->first();
 
@@ -1802,6 +1882,12 @@ class VideoProjectsController extends Controller
     public function selectSceneClip(Request $request, string $id, string $shotId)
     {
         $this->ownedProject($id);
+
+        // Luong clip theo shot: `shotId` la ma shot; chon clip la duyet ket qua do cho buoc final.
+        if ($this->usesShotClipFlow($id)) {
+            return $this->approveShotClip($request, $id, $shotId);
+        }
+
         $data = $request->validate([
             'render_id' => ['required', 'uuid'],
             'expected_intent_version' => ['required', 'integer', 'min:0'],
@@ -1927,6 +2013,15 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
+        if ($this->usesShotClipFlow($id)) {
+            $owned = app(\App\Services\Video\MotoClipSelectionService::class)->ownedRender($id, $render);
+            $disk = app(\Illuminate\Contracts\Filesystem\Factory::class)->disk((string) config('video.veo.disk'));
+            $path = (string) $owned->artifact_path;
+            abort_if($path === '' || ! $disk->exists($path), 404);
+
+            return $disk->response($path, basename($path), ['Content-Type' => 'video/mp4', 'Accept-Ranges' => 'bytes']);
+        }
+
         $owned = VideoRender::query()
             ->whereKey($render)
             ->where('render_kind', 'video')
@@ -1951,6 +2046,14 @@ class VideoProjectsController extends Controller
     public function pollSceneClip(string $id, string $render)
     {
         $this->ownedProject($id);
+
+        if ($this->usesShotClipFlow($id)) {
+            $selection = app(\App\Services\Video\MotoClipSelectionService::class);
+            $owned = $selection->ownedRender($id, $render);
+            [, $reason] = app(\App\Services\Video\MotoClipRenderService::class)->track((string) $owned->id);
+
+            return response()->json($selection->state($id, $owned->refresh(), $reason));
+        }
 
         // Clip thuoc ve shot (CHECK video_renders_one_owner cho dung mot chu), nen
         // duong so huu di qua shot. Nhanh `session` giu cho hang cu.

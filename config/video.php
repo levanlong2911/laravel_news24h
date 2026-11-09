@@ -1030,6 +1030,20 @@ return [
         ],
     ],
 
+    'clips' => [
+        'workflows' => [
+            'harley_custom_v1' => [
+                'action' => 'spec.clips',
+                // The models the first version may send. A shot whose length none of them makes is refused before any cost, with its plan left as it is.
+                'models' => ['gemini:gemini-omni-1.1-flash'],
+                // How far a keyframe may stand from the frame of the film, as a share of its ratio.
+                'aspect_tolerance' => 0.03,
+                // The sound every clip asks for. The phase-10 template must carry this line word for word, so the request and the prompt cannot say two things.
+                'audio' => ['policy' => 'ambient_only_no_music_no_speech', 'line' => 'Audio: natural ambient sound only, no music, no speech.'],
+            ],
+        ],
+    ],
+
     'moto' => [
         'brief' => [
             'platform' => null,
@@ -1170,23 +1184,6 @@ return [
                         'continuity' => 'Keep:',
                     ],
                     'suffix' => 'No face of any person, no readable text, no morphing of the motorcycle',
-                ],
-                'clip' => [
-                    'lead' => 'The supplied image is the first frame.',
-                    'labels' => [
-                        'camera' => 'Camera:',
-                        'work' => 'Work:',
-                        'action' => 'Action:',
-                        'result' => 'Result:',
-                        'timing' => 'Timing:',
-                        'end_frame' => 'Ends on:',
-                        'end_configuration' => 'Positions at the end:',
-                        'work_end' => 'Parts at the end:',
-                        'continuity' => 'Keep:',
-                        'audio' => 'Audio:',
-                    ],
-                    'audio' => 'natural ambient sound only, no music, no speech',
-                    'suffix' => 'No face of any person, no readable text, no logo or brand, no morphing of the motorcycle, no object, tool or person the shot does not name, no change to a part the shot does not change, no change of build stage',
                 ],
                 'presentations' => [
                     'installed' => 'installed',
@@ -1787,6 +1784,19 @@ return [
                             ],
                             'outputs' => [
                                 'shots' => ['namespace' => 'moto', 'schema' => 'MotoShots', 'version' => '1.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 7 Output (format moto-shots-v1): the shots SCxx_SHyy of every approved scene as data — beat coverage with screen time and result time, purpose, parts and their presentation from the scene plan\'s work or the build state, parts a beat keeps out of frame with their effect, the work items it shows by id, people as hands, back, silhouette or with the face hidden, a numeric camera, first frame, action, result, end frame for first_last, continuity, environment (background, unplated or a requested background), reference needs, render length, mode and kept interval, links and conflicts; code derives timing, sources, reference candidates, readiness, absent parts, limits, cards and the image and video prompts; release database/releases/moto-phase-7-shots-v5'],
+                            ],
+                        ],
+                        'spec.clips' => [
+                            'phase' => 'phase-10',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['clip_plan'],
+                            ],
+                            'outputs' => [
+                                'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '1.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v1): for every approved shot the prompt PHP compiles from the phase-10 template, its render settings, the part the film keeps, its approved keyframe and why it cannot be sent. No model writes it.'],
                             ],
                         ],
                         'spec.reference' => [

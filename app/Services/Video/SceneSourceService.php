@@ -60,14 +60,21 @@ final class SceneSourceService
         }
     }
 
-    /** @return ?string why no shot, reference, keyframe or clip action may run for a project whose workflow plans scenes, null for any other project */
-    public function shotPlanProblem(string $projectId): ?string
+    /**
+     * @param  ?string  $scope  'clips' asks for the clip step, which the approved shot plan opens
+     * @return ?string why no shot, reference, keyframe or clip action may run for a project whose workflow plans scenes, null for any other project
+     */
+    public function shotPlanProblem(string $projectId, ?string $scope = null): ?string
     {
         if (! $this->supports($projectId)) {
             return null;
         }
 
-        return is_array(VideoProject::query()->find($projectId)?->metadata_json[ShotSourceService::SELECTION_KEY] ?? null) ? self::RENDER_NOT_READY : self::SHOT_PLAN_MISSING;
+        if (! is_array(VideoProject::query()->find($projectId)?->metadata_json[ShotSourceService::SELECTION_KEY] ?? null)) {
+            return self::SHOT_PLAN_MISSING;
+        }
+
+        return $scope === 'clips' ? null : self::RENDER_NOT_READY;
     }
 
     public function sceneStage(string $projectId, string $stageId): ?VideoPlanningStage

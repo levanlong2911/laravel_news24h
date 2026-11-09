@@ -7,6 +7,7 @@
 
 @section('content')
 
+@php($motoClips = $motoClips ?? false)
 <div class="container-fluid vp">
 
     <div class="vp-crumb">
@@ -16,7 +17,7 @@
         <span class="sep">·</span>
         <b>Render video</b>
         <span class="grow"></span>
-        <span class="m">{{ count($scenes) }} scene</span><span class="sep">·</span>
+        <span class="m">{{ count($scenes) }} {{ $motoClips ? 'shot' : 'scene' }}</span><span class="sep">·</span>
         <span class="m">Ảnh duyệt <b>{{ $summary['with_keyframe'] }}</b></span><span class="sep">·</span>
         <span class="m">Đang dựng <b id="clipRunning">{{ $summary['running'] }}</b></span><span class="sep">·</span>
         <span class="m">Xong <b id="clipDone">{{ $summary['done'] }}</b></span>
@@ -30,7 +31,11 @@
         </a>
     </div>
 
-    @if($clipModels === [])
+    @if($problem ?? null)
+        <div class="vs-c" style="margin-bottom:10px;color:var(--vp-amber-fg)">{{ $problem }}</div>
+    @endif
+
+    @if($clipModels === [] && ! ($problem ?? null))
         <div class="vs-c" style="margin-bottom:10px;color:var(--vp-amber-fg)">
             <b>Chưa có model clip nào được xác minh.</b>
             Chạy <code>php artisan video:list-gemini-models --json</code> rồi điền
@@ -41,7 +46,7 @@
     <div class="vs-grid vs-clip">
 
         <div class="vs-h"><b>1</b> Prompt clip</div>
-        <div class="vs-h"><b>2</b> Ảnh</div>
+        <div class="vs-h"><b>2</b> {{ $motoClips ? 'Keyframe' : 'Ảnh' }}</div>
         <div class="vs-h"><b>3</b> Thiết lập</div>
         <div class="vs-h"><b>4</b> Video</div>
 
@@ -50,7 +55,7 @@
             @php($clip = $clips[$sceneId] ?? null)
             @php($approved = $keyframes[$sceneId]['approved'] ?? null)
             @php($status = $clip['status'] ?? null)
-            @php($running = in_array($status, ['submitting', 'submitted', 'provider_running', 'polling'], true))
+            @php($running = in_array($status, ['submitting', 'submitted', 'provider_running', 'polling'], true) || ($clip['running'] ?? false))
             @php($selectedUsable = ($clip['selected_status'] ?? null) === 'succeeded'
                 && ($clip['selected_validity'] ?? null) === 'valid'
                 && ($clip['selected_render_id'] ?? null))
@@ -58,10 +63,12 @@
                 $clip['successful_options'] ?? [],
                 static fn (array $option): bool => ($option['validity'] ?? null) === 'valid',
             )))
-            @php($model = $clipModels[0] ?? null)
+            @php($rowModels = $s['clip_models'] ?? $clipModels)
+            @php($model = $rowModels[0] ?? null)
             @php($film = array_key_exists('film_keyframes', $s))
             {{-- Shot duoc sinh luc bam Render, nen thieu shot KHONG con la ly do chan. --}}
             @php($blocked = match (true) {
+                $motoClips => $s['clip_blocked'] ?? null,
                 ! $film && ($s['film_cut'] ?? false) => 'bản phim 30 giây định dạng cũ — lập lại storyboard phim 30 giây',
                 $film && $s['film_blocked'] !== null => $s['film_blocked'],
                 $film => null,
@@ -72,7 +79,7 @@
             })
 
             <div class="vs-row" data-scene="{{ $sceneId }}"
-                 data-poll-url="{{ $clip && $clip['render_id'] ? route('video-projects.scene-clip-poll', [$id, $clip['render_id']]) : '' }}"
+                 data-poll-url="{{ $clip && $clip['render_id'] ? ($clip['poll_url'] ?? route('video-projects.scene-clip-poll', [$id, $clip['render_id']])) : '' }}"
                  @if($running) data-watch="1" @endif>
 
                 <div class="vs-c vs-prompt">
@@ -82,6 +89,13 @@
                         <div class="body">{{ $s['video_prompt'] }}</div>
                     @else
                         <div class="m">chưa có prompt clip — sinh ở màn Storyboard</div>
+                    @endif
+                    @foreach($s['meta_lines'] ?? [] as $line)
+                        <div class="m">{{ $line }}</div>
+                    @endforeach
+                    @if($motoClips && ($clip['sent_prompt'] ?? '') !== '' && ($clip['sent_prompt'] ?? '') !== $s['video_prompt'])
+                        <div class="m"><b>Prompt đã gửi ở lượt gần nhất:</b></div>
+                        <div class="body">{{ $clip['sent_prompt'] }}</div>
                     @endif
                 </div>
 
@@ -143,14 +157,17 @@
 
                 <div class="vs-c vs-ctrl js-ctrl">
                     <form class="vs-ctrl js-clip-form"
-                          data-action="{{ route('video-projects.scene-clip-render', [$id, $sceneId]) }}">
+                          data-action="{{ $s['render_url'] ?? route('video-projects.scene-clip-render', [$id, $sceneId]) }}">
                         @csrf
+                        @if($motoClips)
+                            <input type="hidden" name="expected_clip_hash" value="{{ $s['clip_hash'] }}">
+                        @endif
                         <input type="hidden" name="expected_intent_version" value="{{ $clip['intent_version'] ?? 0 }}">
                         <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
 
                         <label>Model</label>
                         <select name="model_id" class="js-model">
-                            @forelse($clipModels as $choice)
+                            @forelse($rowModels as $choice)
                                 <option value="{{ $choice['id'] }}"
                                         data-resolutions="{{ json_encode($choice['controls']['resolutions']) }}"
                                         data-aspects="{{ json_encode($choice['controls']['aspect_ratios']) }}"
@@ -187,7 +204,7 @@
                             @endforeach
                         </select>
                         @if($planned !== null)
-                            <div class="m js-duration-note">Storyboard đã duyệt {{ $planned }}s
+                            <div class="m js-duration-note">{{ $motoClips ? 'Kế hoạch shot' : 'Storyboard' }} đã duyệt {{ $planned }}s
                                 @unless(in_array($planned, $model['controls']['durations'] ?? [], true))
                                     — model này không làm được, chọn model khác
                                 @endunless
@@ -211,11 +228,11 @@
                     </form>
 
                     @if($selectableOptions !== [])
-                        <form method="POST" action="{{ route('video-projects.scene-clip-select', [$id, $clip['shot_id']]) }}">
+                        <form method="POST" action="{{ $clip['approve_url'] ?? route('video-projects.scene-clip-select', [$id, $clip['shot_id']]) }}">
                             @csrf
                             <input type="hidden" name="expected_intent_version" value="{{ $clip['intent_version'] }}">
                             <input type="hidden" name="operation_id" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
-                            <label>Clip dùng cho timeline</label>
+                            <label>{{ $motoClips ? 'Kết quả' : 'Clip dùng cho timeline' }}</label>
                             <select name="render_id">
                                 @foreach($selectableOptions as $option)
                                     <option value="{{ $option['render_id'] }}"
@@ -224,15 +241,15 @@
                                     </option>
                                 @endforeach
                             </select>
-                            <button type="submit" class="vp-btn sm" title="Chọn kết quả này cho timeline">
-                                <i class="fas fa-check"></i> Chọn clip
+                            <button type="submit" class="vp-btn sm" title="{{ $motoClips ? 'Duyệt kết quả này cho Phase 11' : 'Chọn kết quả này cho timeline' }}">
+                                <i class="fas fa-check"></i> {{ $motoClips ? 'Duyệt clip' : 'Chọn clip' }}
                             </button>
                         </form>
                     @endif
 
                     <div class="m js-note">
                         @if($running)
-                            đang dựng · đã hỏi {{ $clip['poll_count'] }} lần
+                            {{ $clip['note'] ?? 'đang dựng · đã hỏi '.$clip['poll_count'].' lần' }}
                         @elseif($blocked !== null)
                             {{ $blocked }}
                         @elseif($status === 'failed')
@@ -251,11 +268,14 @@
                             {{-- `#t=0.1`: khong co no thi trinh duyet chi tai metadata roi de o den.
                                  Doan fragment nay bat no seek toi 0.1s va ve mot khung hinh that. --}}
                             <video preload="metadata" muted playsinline
-                                   src="{{ route('video-projects.scene-clip-file', [$id, $clip['selected_render_id']]) }}#t=0.1"></video>
+                                   src="{{ $clip['selected_file_url'] ?? route('video-projects.scene-clip-file', [$id, $clip['selected_render_id']]) }}#t=0.1"></video>
                         </div>
                         <div class="m js-meta">{{ $clip['selected_width'] }}×{{ $clip['selected_height'] }}
                             @if($clip['selected_duration_ms']) · {{ round($clip['selected_duration_ms'] / 1000, 1) }}s @endif
                             · bấm để phóng to</div>
+                        @if($motoClips)
+                            <div class="m"><b>{{ $clip['approved'] ? 'Đã duyệt' : 'Chưa duyệt — chỉ xem trước' }}</b></div>
+                        @endif
                         @if($running)
                             <div class="m"><span class="dot"></span>Một lượt mới đang chạy; clip đã chọn vẫn được giữ.</div>
                         @elseif($status === 'failed')
@@ -274,6 +294,12 @@
                         <div class="vs-stage idle js-stage">chờ — chưa gửi render</div>
                         <div class="m js-meta"></div>
                     @endif
+                    @foreach($clip['history'] ?? [] as $attempt)
+                        <div class="m">Lượt {{ $attempt['attempt_no'] }} · bản kế hoạch {{ $attempt['revision'] }}{{ $attempt['current_plan'] ? '' : ' (cũ, không dùng cho nguồn mới)' }} · {{ $attempt['status'] }} · {{ $attempt['model'] }} · chi phí {{ $attempt['cost'] }}{{ $attempt['error'] ? ' · '.$attempt['error'] : '' }}</div>
+                        @if($attempt['prompt'] !== '')
+                            <details class="m"><summary>Prompt đã gửi</summary>{{ $attempt['prompt'] }}</details>
+                        @endif
+                    @endforeach
                 </div>
 
             </div>
@@ -405,6 +431,18 @@
 
         if (data.poll_url) { row.dataset.pollUrl = data.poll_url; }
 
+        if (data.reload_row) {
+            stopWatch(row);
+            refreshRow(row, data.note);
+
+            return;
+        }
+
+        if (data.idle_stage && data.state === 'idle') {
+            stage(row).className = 'vs-stage idle js-stage';
+            stage(row).textContent = data.idle_stage;
+        }
+
         if (data.state === 'running') {
             submit.disabled = true;
             again.hidden = true;
@@ -436,6 +474,22 @@
         }
     }
 
+    function refreshRow(row, text) {
+        fetch(window.location.href, { credentials: 'same-origin', headers: { 'Accept': 'text/html' } })
+            .then(function (response) { return response.text(); })
+            .then(function (html) {
+                var fresh = new DOMParser().parseFromString(html, 'text/html').querySelector('.vs-row[data-scene="' + row.dataset.scene + '"]');
+
+                if (fresh) {
+                    row.replaceWith(fresh);
+                    fresh.querySelectorAll('.js-clip-form').forEach(applyCrossRule);
+
+                    if (text) { note(fresh).textContent = text; }
+                }
+            })
+            .catch(function () { note(row).textContent = 'Không tải lại được dòng này — tải lại trang để xem trạng thái.'; });
+    }
+
     function send(url, row, busyText) {
         if (busyText) { waiting(row, busyText); }
 
@@ -444,7 +498,7 @@
 
         if (form) {
             ['model_id', 'resolution', 'aspect_ratio', 'duration_seconds',
-                'expected_intent_version', 'operation_id'].forEach(function (name) {
+                'expected_intent_version', 'operation_id', 'expected_clip_hash'].forEach(function (name) {
                 var field = form.querySelector('[name="' + name + '"]');
                 if (field) { body.append(name, field.value); }
             });
