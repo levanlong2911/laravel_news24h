@@ -198,6 +198,21 @@ Route::group(
             Route::match(['get', 'post'], '/{id}/environment', [VideoProjectsController::class, 'environment'])->name('video-projects.environment');
             });
 
+            Route::middleware(['video.shot-plan:clips', 'video.v4:clips'])->group(function () {
+            Route::get('/{id}/render-video', [VideoProjectsController::class, 'clips'])->name('video-projects.render-video');
+            // Clip va Final Composition: moi chu de dung chung route va man. Chu de co workflow trong video.clips / video.films
+            // chay luong moi (prompt, schema, duyet doc tu DB); chu de chua co chay luong cu. Nhom :clips de luong cu qua y nhu truoc.
+            Route::post('/{id}/scenes/{sceneId}/clip', [VideoProjectsController::class, 'renderSceneClip'])->name('video-projects.scene-clip-render');
+            Route::post('/{id}/scene-clips/{shotId}/select', [VideoProjectsController::class, 'selectSceneClip'])->name('video-projects.scene-clip-select');
+            Route::post('/{id}/scene-clips/{render}/poll', [VideoProjectsController::class, 'pollSceneClip'])->name('video-projects.scene-clip-poll');
+            Route::get('/{id}/scene-clips/{render}/file', [VideoProjectsController::class, 'sceneClipFile'])->name('video-projects.scene-clip-file');
+            Route::get('/{id}/final-composition-preview', [VideoProjectsController::class, 'finalCompositionPreview'])->name('video-projects.final-composition-preview');
+            Route::post('/{id}/final-composition/render', [VideoProjectsController::class, 'renderFinalComposition'])->name('video-projects.final-render');
+            Route::get('/{id}/final-composition/{final}/file', [VideoProjectsController::class, 'finalCompositionFile'])->name('video-projects.final-file');
+            Route::get('/{id}/final-composition/{final}/status', [VideoProjectsController::class, 'finalCompositionStatus'])->name('video-projects.final-status');
+            Route::post('/{id}/final-composition/{final}/approve', [VideoProjectsController::class, 'approveFinalComposition'])->name('video-projects.final-approve');
+            });
+
             Route::middleware(['video.shot-plan', 'video.v4'])->group(function () {
             Route::post('/{id}/storyboard/generate', [VideoProjectsController::class, 'generateStoryboard'])->name('video-projects.storyboard-generate');
             Route::post('/{id}/storyboard/approve', [VideoProjectsController::class, 'approveStoryboard'])->name('video-projects.storyboard-approve');
@@ -208,13 +223,6 @@ Route::group(
             Route::post('/{id}/scenes/{sceneId}/references', [VideoProjectsController::class, 'saveSceneReferences'])->name('video-projects.scene-references');
             Route::post('/{id}/scenes/{sceneId}/keyframe/use', [VideoProjectsController::class, 'chooseSceneKeyframe'])->name('video-projects.scene-keyframe-use');
             Route::post('/{id}/scenes/{sceneId}/film-views', [VideoProjectsController::class, 'chooseFilmViews'])->name('video-projects.film-reference-views');
-            Route::get('/{id}/render-video', [VideoProjectsController::class, 'clips'])->name('video-projects.render-video');
-            Route::get('/{id}/final-composition-preview', [VideoProjectsController::class, 'finalCompositionPreview'])->name('video-projects.final-composition-preview');
-            Route::post('/{id}/final-composition/render', [VideoProjectsController::class, 'renderFinalComposition'])->name('video-projects.final-render');
-            Route::get('/{id}/final-composition/{final}/file', [VideoProjectsController::class, 'finalCompositionFile'])->name('video-projects.final-file');
-            Route::post('/{id}/scenes/{sceneId}/clip', [VideoProjectsController::class, 'renderSceneClip'])->name('video-projects.scene-clip-render');            Route::post('/{id}/scene-clips/{shotId}/select', [VideoProjectsController::class, 'selectSceneClip'])->name('video-projects.scene-clip-select');
-            Route::post('/{id}/scene-clips/{render}/poll', [VideoProjectsController::class, 'pollSceneClip'])->name('video-projects.scene-clip-poll');
-            Route::get('/{id}/scene-clips/{render}/file', [VideoProjectsController::class, 'sceneClipFile'])->name('video-projects.scene-clip-file');
             Route::post('/{id}/scene-keyframes/{image}/retry', [VideoProjectsController::class, 'retrySceneKeyframe'])->name('video-projects.scene-keyframe-retry');
             Route::post('/{id}/scene-keyframes/{image}/approve', [VideoProjectsController::class, 'approveSceneKeyframe'])->name('video-projects.scene-keyframe-approve');
             });

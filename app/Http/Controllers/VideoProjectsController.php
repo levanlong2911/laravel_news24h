@@ -1637,6 +1637,10 @@ class VideoProjectsController extends Controller
     {
         $project = $this->ownedProject($id);
 
+        if ($this->usesShotClipFlow($id)) {
+            return view('video-projects.show', $this->chrome() + ['id' => $id, 'project' => $project] + app(\App\Services\Video\MotoClipSelectionService::class)->screen($id));
+        }
+
         $plan = $this->videoProjectService->selectedScenePlan($id);
         $revision = (int) $plan['revision'];
         $scenes = $plan['scenes'] ?? [];
@@ -1679,6 +1683,11 @@ class VideoProjectsController extends Controller
     {
         $project = $this->ownedProject($id);
 
+        // Du an dung phim theo chinh sach trong DB dung chinh man nay: cung cac o cua man, them phan rieng cua ke hoach phim.
+        if ($this->usesFilmPolicyFlow($id)) {
+            return view('video-projects.final-composition-preview', $this->chrome() + ['id' => $id, 'project' => $project] + app(\App\Services\Video\MotoFilmRenderService::class)->screen($id));
+        }
+
         return view('video-projects.final-composition-preview', $this->chrome() + [
             'id' => $id,
             'project' => $project,
@@ -1696,6 +1705,10 @@ class VideoProjectsController extends Controller
     public function renderFinalComposition(Request $request, string $id)
     {
         $this->ownedProject($id);
+
+        if ($this->usesFilmPolicyFlow($id)) {
+            return $this->requestPolicyFilm($request, $id);
+        }
 
         $data = $request->validate([
             'size' => ['required', 'string', Rule::in(\App\Video\FinalComposition\CompositionPlanBuilder::SIZES)],
@@ -1736,6 +1749,17 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
+        // Phim dung theo chinh sach: gui mot ban sao vua bam lai, chi khi dung hash receipt da ghi.
+        if ($this->usesFilmPolicyFlow($id)) {
+            $final = app(\App\Services\Video\MotoFilmRenderService::class)->ownedFinal($id, $finalId);
+            $approvals = app(\App\Services\Video\MotoFilmApprovalService::class);
+            abort_if($approvals->receipt($final) === null, 404);
+            $copy = $approvals->servable($final);
+            abort_if($copy === null, 409, 'File final khác hash đã kiểm — không gửi.');
+
+            return response()->file($copy['path'], ['Content-Type' => 'video/mp4', 'Accept-Ranges' => 'bytes'])->deleteFileAfterSend(true);
+        }
+
         $final = \App\Models\VideoFinal::query()
             ->whereKey($finalId)
             ->whereHas('session', fn($scope) => $scope->where('project_id', $id))
@@ -1761,6 +1785,132 @@ class VideoProjectsController extends Controller
             // Trinh duyet doi seek duoc moi ve duoc khung hinh dau.
             'Accept-Ranges' => 'bytes',
         ]);
+    }
+
+    /** Trang thai mot ban final cua phim dung theo chinh sach, cho man dang cho job chay nen. Chi doc. */
+    public function finalCompositionStatus(string $id, string $finalId)
+    {
+        $this->ownedProject($id);
+        abort_unless($this->usesFilmPolicyFlow($id), 404);
+        $films = app(\App\Services\Video\MotoFilmRenderService::class);
+
+        return response()->json($films->describe($films->ownedFinal($id, $finalId), null));
+    }
+
+    /** Nguoi dung duyet mot ban final da dung va da kiem; quyet dinh gan voi hash ke hoach phim, ban final va hash file. */
+    public function approveFinalComposition(Request $request, string $id, string $finalId)
+    {
+        $this->ownedProject($id);
+        abort_unless($this->usesFilmPolicyFlow($id), 404);
+        $data = $request->validate([
+            'expected_plan_hash' => ['required', 'string', 'max:80'],
+            'expected_sha256' => ['required', 'string', 'size:64'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+
+        try {
+            [, $reason] = app(\App\Services\Video\MotoFilmApprovalService::class)->approve($id, $finalId, (string) $data['expected_plan_hash'], (string) $data['expected_sha256'], (string) $data['operation_id'], (string) auth()->id());
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', $reason === 'replayed' ? 'Thao tác duyệt này đã được ghi trước đó.' : 'Đã duyệt bản final.');
+    }
+
+    /**
+     * Du an cat clip theo shot: prompt, schema va quyet dinh duyet doc tu DB, theo workflow cua chu de trong
+     * `video.clips.workflows`. Chu de nao co workflow o do thi chay luong nay tren chinh cac route clip; chua co thi chay luong cu.
+     */
+    private function usesShotClipFlow(string $id): bool
+    {
+        return app(\App\Services\Video\MotoClipSourceService::class)->supports($id);
+    }
+
+    /** Du an dung phim theo chinh sach trong DB (`video.films.workflows`), tren chinh cac route Final Composition. */
+    private function usesFilmPolicyFlow(string $id): bool
+    {
+        return app(\App\Services\Video\MotoFilmSourceService::class)->supports($id);
+    }
+
+    /** Gui render mot clip theo shot: kiem hash trang dang mo, ma thao tac va thiet lap model; tra trang thai cho man. */
+    private function renderShotClip(Request $request, string $id, string $shotId)
+    {
+        // Trinh duyet dong lai khong duoc lam dung mot yeu cau da toi provider.
+        ignore_user_abort(true);
+        @set_time_limit((int) config('video.omni.timeout') + 60);
+
+        try {
+            $data = $request->validate([
+                'model_id' => ['required', 'string'],
+                'resolution' => ['required', 'string'],
+                'aspect_ratio' => ['required', 'string'],
+                'duration_seconds' => ['required', 'integer', 'min:1'],
+                'expected_intent_version' => ['required', 'integer', 'min:0'],
+                'operation_id' => ['required', 'uuid'],
+                'expected_clip_hash' => ['required', 'string'],
+            ]);
+            [$render, , $reason] = app(\App\Services\Video\MotoClipRenderService::class)->render($id, $shotId, [
+                'model_id' => (string) $data['model_id'],
+                'resolution' => (string) $data['resolution'],
+                'aspect_ratio' => (string) $data['aspect_ratio'],
+                'duration_seconds' => (int) $data['duration_seconds'],
+            ], (int) $data['expected_intent_version'], (string) $data['operation_id'], (string) $data['expected_clip_hash']);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->refusedShotClip(implode(' ', $e->validator->errors()->all()), $id, $shotId);
+        } catch (\Throwable $e) {
+            return $this->refusedShotClip(match ($e->getMessage()) {
+                'shot_dispatch_conflict' => 'Clip đã thay đổi ở thao tác khác. Tải lại trang trước khi render.',
+                'shot_dispatch_operation_conflict' => 'Mã thao tác render đã được dùng cho một yêu cầu khác.',
+                'shot_dispatch_replay_missing' => 'Không còn tìm thấy lượt render của thao tác trước.',
+                default => $e->getMessage(),
+            }, $id, $shotId);
+        }
+
+        return response()->json(app(\App\Services\Video\MotoClipSelectionService::class)->state($id, $render, $reason));
+    }
+
+    /** Duyet ket qua cua mot shot cho buoc final; quyet dinh gan voi dung file do va phien ban y dinh cua shot. */
+    private function approveShotClip(Request $request, string $id, string $shotId)
+    {
+        $data = $request->validate([
+            'render_id' => ['required', 'uuid'],
+            'expected_intent_version' => ['required', 'integer', 'min:0'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+
+        try {
+            [, $reason] = app(\App\Services\Video\MotoClipSelectionService::class)->approve($id, $shotId, (string) $data['render_id'], (int) $data['expected_intent_version'], (string) $data['operation_id'], (string) auth()->id());
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', $reason === 'replayed' ? 'Thao tác duyệt này đã được ghi trước đó.' : 'Đã duyệt clip của '.$shotId.'.');
+    }
+
+    private function refusedShotClip(string $reason, string $id, string $shotId)
+    {
+        \Illuminate\Support\Facades\Log::warning('Clip shot bị từ chối trước khi gọi provider', ['project_id' => $id, 'shot_id' => $shotId, 'reason' => $reason]);
+
+        return response()->json(['state' => 'idle', 'reason' => $reason, 'note' => $reason, 'poll_url' => null, 'file_url' => null, 'meta' => '', 'idle_stage' => 'chờ — chưa gửi render'], 422);
+    }
+
+    /** Nhan mot luot dung phim vao hang doi: kiem lai hash trang dang mo va ma thao tac, khong dung trong request. */
+    private function requestPolicyFilm(Request $request, string $id)
+    {
+        $data = $request->validate([
+            'expected_hash' => ['required', 'string', 'max:80'],
+            'operation_id' => ['required', 'uuid'],
+        ]);
+
+        try {
+            [$final, $reason] = app(\App\Services\Video\MotoFilmRenderService::class)->request($id, (string) $data['expected_hash'], (string) $data['operation_id'], (string) auth()->id());
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', $reason === 'replayed'
+            ? 'Thao tác dựng này đã được ghi trước đó (bản final #'.$final->revision.', '.$final->status.').'
+            : 'Đã xếp hàng dựng bản final #'.$final->revision.' — job chạy nền, đóng tab không làm dừng nó; trang tự cập nhật khi có kết quả.');
     }
 
     /**
@@ -1847,6 +1997,11 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
+        // Luong clip theo shot: `sceneId` la ma shot cua ke hoach shot da duyet.
+        if ($this->usesShotClipFlow($id)) {
+            return $this->renderShotClip($request, $id, $sceneId);
+        }
+
         $row = \App\Models\VideoRenderScene::query()->whereKey($sceneId)->where('project_id', $id)->first();
 
         if (\App\Video\Scene\FilmCutAuthor::isFilmShape($row?->state_json['film_cut_shape'] ?? null)) {
@@ -1932,6 +2087,12 @@ class VideoProjectsController extends Controller
     public function selectSceneClip(Request $request, string $id, string $shotId)
     {
         $this->ownedProject($id);
+
+        // Luong clip theo shot: `shotId` la ma shot; chon clip la duyet ket qua do cho buoc final.
+        if ($this->usesShotClipFlow($id)) {
+            return $this->approveShotClip($request, $id, $shotId);
+        }
+
         $data = $request->validate([
             'render_id' => ['required', 'uuid'],
             'expected_intent_version' => ['required', 'integer', 'min:0'],
@@ -2057,6 +2218,15 @@ class VideoProjectsController extends Controller
     {
         $this->ownedProject($id);
 
+        if ($this->usesShotClipFlow($id)) {
+            $owned = app(\App\Services\Video\MotoClipSelectionService::class)->ownedRender($id, $render);
+            $disk = app(\Illuminate\Contracts\Filesystem\Factory::class)->disk((string) config('video.veo.disk'));
+            $path = (string) $owned->artifact_path;
+            abort_if($path === '' || ! $disk->exists($path), 404);
+
+            return $disk->response($path, basename($path), ['Content-Type' => 'video/mp4', 'Accept-Ranges' => 'bytes']);
+        }
+
         $owned = VideoRender::query()
             ->whereKey($render)
             ->where('render_kind', 'video')
@@ -2081,6 +2251,14 @@ class VideoProjectsController extends Controller
     public function pollSceneClip(string $id, string $render)
     {
         $this->ownedProject($id);
+
+        if ($this->usesShotClipFlow($id)) {
+            $selection = app(\App\Services\Video\MotoClipSelectionService::class);
+            $owned = $selection->ownedRender($id, $render);
+            [, $reason] = app(\App\Services\Video\MotoClipRenderService::class)->track((string) $owned->id);
+
+            return response()->json($selection->state($id, $owned->refresh(), $reason));
+        }
 
         // Clip thuoc ve shot (CHECK video_renders_one_owner cho dung mot chu), nen
         // duong so huu di qua shot. Nhanh `session` giu cho hang cu.

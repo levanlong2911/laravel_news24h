@@ -1030,6 +1030,80 @@ return [
         ],
     ],
 
+    'clips' => [
+        'workflows' => [
+            'harley_custom_v1' => [
+                'action' => 'spec.clips',
+                // The models the first version may send. A shot whose length none of them makes is refused before any cost, with its plan left as it is.
+                'models' => ['gemini:gemini-omni-1.1-flash'],
+                // How far a keyframe may stand from the frame of the film, as a share of its ratio.
+                'aspect_tolerance' => 0.03,
+                // The sound every clip asks for. The phase-10 template must carry this line word for word, so the request and the prompt cannot say two things.
+                'audio' => ['policy' => 'ambient_only_no_music_no_speech', 'line' => 'Audio: natural ambient sound only, no music, no speech.'],
+            ],
+        ],
+    ],
+
+    /*
+     * Phase 11: the film PHP cuts from the approved clips, as the phase-11 policy in the DB says.
+     * The policy names an output profile and a card style by id; each id below is one fixed version.
+     * Change a profile or a style only under a new id: a saved film plan keeps the copy it was built with,
+     * and a missing key makes the film not ready instead of being filled in.
+     */
+    'films' => [
+        'workflows' => [
+            'harley_custom_v1' => [
+                'action' => 'spec.film',
+            ],
+        ],
+        // How long a requested film may wait for a worker; a request left longer is closed as failed and never cut later on its own.
+        'queue_wait_seconds' => (int) env('VIDEO_FILM_QUEUE_WAIT_SECONDS', 1800),
+        'profiles' => [
+            'moto-portrait-1080p30-v1' => [
+                'width' => 1080,
+                'height' => 1920,
+                'fps' => 30,
+                'video_codec' => 'h264',
+                'encoder' => 'libx264',
+                'pixel_format' => 'yuv420p',
+                'crf' => 20,
+                'audio_codec' => 'aac',
+                'sample_rate' => 48000,
+                'channels' => 2,
+                // A source is scaled whole to fit the frame and the rest padded black; nothing is cropped.
+                'fit' => 'scale_pad',
+                'pad_colour' => 'black',
+                // How far a source may stand from 9:16, as a share of the ratio; a source further off is refused.
+                'aspect_tolerance' => 0.03,
+            ],
+        ],
+        'card_styles' => [
+            'moto-card-style-v1' => [
+                'font' => [
+                    'path' => 'public/assets/admin/font/Roboto-Bold.ttf',
+                    'sha256' => 'ec685a46105296fe46c8744da4a11cf8118ba6c11271941766f7a546df6aa7c7',
+                    'family' => 'Roboto Bold',
+                    'licence' => 'Apache-2.0',
+                ],
+                'size_px' => 64,
+                'line_height_px' => 80,
+                'colour' => 'white',
+                'border' => ['colour' => 'black', 'width_px' => 4],
+                // The frame a card stays inside: the bottom keeps clear of the controls a phone draws over a portrait video.
+                'safe_area' => ['top_px' => 240, 'right_px' => 90, 'bottom_px' => 420, 'left_px' => 90],
+                // Lines are centred; the baseline of the last line sits on the bottom of the safe area.
+                'align' => 'centre',
+                'anchor' => 'last_baseline_on_safe_bottom',
+                'max_lines' => 3,
+                'wrap' => 'words',
+                // How the width of a line is measured before the film is cut: GD with FreeType at the same pixel size.
+                'measure' => 'gd-freetype',
+                'language' => 'en',
+                'word_counter' => 'whitespace_tokens',
+            ],
+        ],
+    ],
+
     'moto' => [
         'brief' => [
             'platform' => null,
@@ -1193,6 +1267,7 @@ return [
                         'remove' => 'removing',
                         'install' => 'installing',
                         'reinstall' => 'refitting',
+                        'align_check' => 'holding up for alignment without fitting',
                     ],
                     'locations' => [
                         'on_motorcycle' => 'on the motorcycle',
@@ -1802,7 +1877,7 @@ return [
                                 'draft' => ['scenes'],
                             ],
                             'outputs' => [
-                                'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '1.1.1','pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v1): the approved beats grouped into scenes SCxx of consecutive beats in one place, continuous story time and one established build state, each with its purpose, set brief, starting and ending continuity (placement, detached parts, lights on, surface condition, protection per character, weather), continuity link, incoming transition with its evidence and the work its beats show on parts (operation, parts worked with it, place on or off the motorcycle at the start and end, evidence from the beat); conflicts with their evidence and blocking; timing, environment assignments, characters, configurations and states stay with the beats and are derived by code; release database/releases/moto-phase-6-scenes-v3'],
+                                'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '1.1.2','pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v1): the approved beats grouped into scenes SCxx of consecutive beats in one place, continuous story time and one established build state, each with its purpose, set brief, starting and ending continuity (placement, detached parts, lights on, surface condition, protection per character, weather), continuity link, incoming transition with its evidence and the work its beats show on parts (operation, parts worked with it, place on or off the motorcycle at the start and end, evidence from the beat); conflicts with their evidence and blocking; timing, environment assignments, characters, configurations and states stay with the beats and are derived by code; release database/releases/moto-phase-6-scenes-v3'],
                             ],
                         ],
                         'spec.shots' => [
@@ -1816,6 +1891,32 @@ return [
                             ],
                             'outputs' => [
                                 'shots' => ['namespace' => 'moto', 'schema' => 'MotoShots', 'version' => '1.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 7 Output (format moto-shots-v1): the shots SCxx_SHyy of every approved scene as data — beat coverage with screen time and result time, purpose, parts and their presentation from the scene plan\'s work or the build state, parts a beat keeps out of frame with their effect, the work items it shows by id, people as hands, back, silhouette or with the face hidden, a numeric camera, first frame, action, result, end frame for first_last, continuity, environment (background, unplated or a requested background), reference needs, render length, mode and kept interval, links and conflicts; code derives timing, sources, reference candidates, readiness, absent parts, limits, cards and the image and video prompts; release database/releases/moto-phase-7-shots-v5'],
+                            ],
+                        ],
+                        'spec.clips' => [
+                            'phase' => 'phase-10',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['clip_plan'],
+                            ],
+                            'outputs' => [
+                                'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '1.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v1): for every approved shot the prompt PHP compiles from the phase-10 template, its render settings, the part the film keeps, its approved keyframe and why it cannot be sent. No model writes it.'],
+                            ],
+                        ],
+                        'spec.film' => [
+                            'phase' => 'phase-11',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['film_plan'],
+                            ],
+                            'outputs' => [
+                                'film_plan' => ['namespace' => 'moto', 'schema' => 'MotoFilmPlan', 'version' => '1.1.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 11 plan (format moto-film-plan-v1): the film PHP compiles from the phase-11 policy (input slot film_policy, MotoFilmPolicy 1.0.0), the approved Phase 10 clips and the cards of the script the shot plan pins, on one frame timeline FFmpeg cuts exactly. No model writes it.'],
                             ],
                         ],
                         'spec.reference' => [

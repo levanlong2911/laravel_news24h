@@ -19,7 +19,7 @@ class RefuseV63Project
         private readonly SceneSourceService $scenes,
     ) {}
 
-    /** @param  ?string  $except  'scenes' lets a project whose workflow plans scenes through */
+    /** @param  ?string  $except  'scenes' lets a project whose workflow plans scenes through, 'clips' one whose workflow renders clips by shot */
     public function handle(Request $request, Closure $next, ?string $except = null): Response
     {
         $projectId = $request->route('id');
@@ -29,6 +29,10 @@ class RefuseV63Project
         }
 
         if ($except === 'scenes' && $this->scenes->supports($projectId)) {
+            return $next($request);
+        }
+
+        if ($except === 'clips' && app(\App\Services\Video\MotoClipSourceService::class)->supports($projectId)) {
             return $next($request);
         }
 

@@ -27,6 +27,9 @@ final class ShotWriterService implements QueuedStageService
     /** @var list<string> the timing fields of a coverage part a hand revision may replace */
     private const REVISABLE_COVERAGE = ['used_duration_ms', 'result_at_ms'];
 
+    /** @var array<string, list<string>> the wording of a shot a hand revision may replace, with the keys of each object it may touch: a sentence naming another shot by its code means nothing to the model that renders this one, so it is written out; every number of the camera stays */
+    private const WORDING = ['first_frame' => [], 'camera' => ['start_pose', 'end_pose'], 'continuity' => ['carries']];
+
     public function __construct(
         private readonly PlanningStageStore $stageStore,
         private readonly ShotSourceService $sources,
@@ -78,7 +81,7 @@ final class ShotWriterService implements QueuedStageService
     }
 
     /**
-     * @param  array{reason?: mixed, shots?: mixed}  $patch  why the shot list is revised and, per shot id, the used_start_ms, used_duration_ms, render_duration_ms or coverage timing (one entry per coverage part, with used_duration_ms or result_at_ms) that replace its own
+     * @param  array{reason?: mixed, shots?: mixed}  $patch  why the shot list is revised and, per shot id, the used_start_ms, used_duration_ms, render_duration_ms or coverage timing (one entry per coverage part, with used_duration_ms or result_at_ms), or the wording of first_frame, camera.start_pose, camera.end_pose or continuity.carries, that replace its own
      * @param  ?string  $expected  the patch hash of the preview the reviewer approved; required to write
      * @return array{passed: bool, reason: string, source: ?array<string, mixed>, prompt: ?string, changes: list<array{path: string, purpose: string, first_frame: string, action: string, result: string, before: string, after: string}>, check: ?array<string, mixed>, content_hash: ?string, patch_hash: ?string, revision_stage_id: ?string, revision: ?int} the revised moto shot list checked against the current contract like a run of the model, only for a run written from the sources the project uses now and only in its timing; previewed or, with $write and the approved patch hash, stored as a new run that names the run it revises, under the project lock and only while the sources are still those it was checked against; the revised run is not approved and the run it revises stays as it was
      */
@@ -111,9 +114,13 @@ final class ShotWriterService implements QueuedStageService
         }
 
         foreach ($shots as $id => $fields) {
-            $refused = "Bản sửa {$id}: chỉ sửa ".implode(', ', self::REVISABLE).' của một shot có trong kế hoạch; coverage giữ đúng số phần, mỗi phần chỉ sửa '.implode(', ', self::REVISABLE_COVERAGE).'.';
+            $refused = "Bản sửa {$id}: chỉ sửa ".implode(', ', self::REVISABLE).', first_frame, camera.start_pose, camera.end_pose hoặc continuity.carries của một shot có trong kế hoạch; coverage giữ đúng số phần, mỗi phần chỉ sửa '.implode(', ', self::REVISABLE_COVERAGE).'; carries giữ đúng số câu; mỗi câu không rỗng.';
 
-            if (! isset($known[$id]) || ! is_array($fields) || $fields === [] || array_is_list($fields) || array_diff(array_keys($fields), self::REVISABLE) !== []) {
+            if (! isset($known[$id]) || ! is_array($fields) || $fields === [] || array_is_list($fields) || array_diff(array_keys($fields), self::REVISABLE, array_keys(self::WORDING)) !== []) {
+                return ['reason' => $refused] + $report;
+            }
+
+            if (self::wordingProblem($fields, $known[$id])) {
                 return ['reason' => $refused] + $report;
             }
 
@@ -168,6 +175,28 @@ final class ShotWriterService implements QueuedStageService
             ];
 
             foreach ((array) ($shots[$shot['id']] ?? []) as $key => $value) {
+                if ($key === 'camera') {
+                    foreach ($value as $field => $text) {
+                        if ($shot['camera'][$field] !== $text) {
+                            $report['changes'][] = $describe("{$shot['id']}.camera.{$field}", $shot['camera'][$field], $text);
+                            $shot['camera'][$field] = $text;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if ($key === 'continuity') {
+                    foreach ($value['carries'] as $index => $line) {
+                        if ($shot['continuity']['carries'][$index] !== $line) {
+                            $report['changes'][] = $describe("{$shot['id']}.continuity.carries[{$index}]", $shot['continuity']['carries'][$index], $line);
+                            $shot['continuity']['carries'][$index] = $line;
+                        }
+                    }
+
+                    continue;
+                }
+
                 if ($key !== 'coverage') {
                     if ($shot[$key] !== $value) {
                         $report['changes'][] = $describe("{$shot['id']}.{$key}", $shot[$key], $value);
@@ -253,6 +282,44 @@ final class ShotWriterService implements QueuedStageService
         }
 
         return ['reason' => $recorded ? 'applied' : 'Lượt lưu bị giành mất — tải lại rồi thử lại.', 'revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision] + $report;
+    }
+
+    /**
+     * @param  array<string, mixed>  $fields  what a hand revision gives for one shot
+     * @param  array<string, mixed>  $known  that shot as the run wrote it
+     * @return bool whether its wording breaks the shape the run has: a first frame is a sentence, a camera only changes its poses, and the carries keep their count, each a sentence
+     */
+    private static function wordingProblem(array $fields, array $known): bool
+    {
+        $sentence = static fn (mixed $text): bool => is_string($text) && trim($text) !== '';
+
+        if (array_key_exists('first_frame', $fields) && ! $sentence($fields['first_frame'])) {
+            return true;
+        }
+
+        foreach (['camera', 'continuity'] as $key) {
+            if (! array_key_exists($key, $fields)) {
+                continue;
+            }
+
+            $value = $fields[$key];
+
+            if (! is_array($value) || $value === [] || array_is_list($value) || array_diff(array_keys($value), self::WORDING[$key]) !== [] || ! is_array($known[$key] ?? null)) {
+                return true;
+            }
+
+            foreach ($value as $field => $text) {
+                $problem = $key === 'continuity'
+                    ? ! is_array($text) || ! array_is_list($text) || count($text) !== count((array) ($known[$key][$field] ?? [])) || array_filter($text, static fn (mixed $line): bool => ! $sentence($line)) !== []
+                    : ! $sentence($text);
+
+                if ($problem) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /** @return ?array{revision: int, reason: string, changes: list<array<string, string>>} the run a hand revision revises, why and what it changed; null for a run of the model */

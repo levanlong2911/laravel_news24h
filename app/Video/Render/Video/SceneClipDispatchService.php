@@ -264,6 +264,7 @@ final class SceneClipDispatchService
      *
      * @param  VideoArtifact  $source  anh DA DUYET cua chinh scene nay
      * @param  array<string, mixed>  $controls
+     * @param  array<string, mixed>  $frozen  what a caller freezes into the request beside what this service freezes, so the request hash covers it; empty adds nothing
      */
     public function create(
         VideoShot $shot,
@@ -272,6 +273,7 @@ final class SceneClipDispatchService
         array $controls = [],
         ?int $expectedIntentVersion = null,
         ?string $operationId = null,
+        array $frozen = [],
     ): VideoRender {
         // HTTP callers must carry the ETag and operation identity they rendered
         // into the page. Direct unit tests exercise the same transaction with a
@@ -304,6 +306,8 @@ final class SceneClipDispatchService
                 self::PURPOSE_PRODUCTION,
                 $modelId,
                 $controls,
+                null,
+                $frozen,
             ),
         );
 
@@ -354,6 +358,7 @@ final class SceneClipDispatchService
 
     /**
      * @param  array<string, mixed>  $controls
+     * @param  array<string, mixed>  $frozen
      */
     private function build(
         VideoShot $shot,
@@ -362,8 +367,10 @@ final class SceneClipDispatchService
         string $modelId,
         array $controls,
         ?string $expectedRequestHash = null,
+        array $frozen = [],
     ): VideoRender {
         [$entry, $keyframe, $request] = $this->freezeRequest($shot, $source, $purpose, $modelId, $controls);
+        $request += $frozen;
 
         $requestJson = json_encode($request, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $requestHash = hash('sha256', $requestJson);

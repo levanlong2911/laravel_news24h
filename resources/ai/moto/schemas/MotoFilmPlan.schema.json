@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoFilmPlan",
+  "title": "Moto film plan (moto-film-plan-v1)",
+  "description": "The manifest code compiles from the approved shots and the approved clips before a final is cut. No model writes it. The schema checks the structure; PHP checks the sources, the files and the timeline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "engine", "composer_version", "project_id", "source", "audio_policy", "output", "timeline", "dip", "clips", "cards"],
+  "properties": {
+    "format": { "const": "moto-film-plan-v1" },
+    "schema": { "const": "MotoFilmPlan@1.0.0" },
+    "engine": { "const": "laravel-ffmpeg" },
+    "composer_version": { "$ref": "#/$defs/id" },
+    "project_id": { "$ref": "#/$defs/id" },
+    "source": { "$ref": "#/$defs/source" },
+    "audio_policy": {
+      "description": "Only the sound each clip carries: no music, no speech and no separate effects track.",
+      "const": "clip_only"
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "fps", "crf"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "fps": { "enum": [24, 25, 30] },
+        "crf": { "type": "integer", "minimum": 16, "maximum": 28 }
+      }
+    },
+    "timeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_ms", "total_frames"],
+      "properties": {
+        "total_ms": { "$ref": "#/$defs/positive_ms" },
+        "total_frames": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "dip": {
+      "description": "The fade of a dip on each side of the cut, taken from the clips' own length.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["each_side_ms"],
+      "properties": {
+        "each_side_ms": { "$ref": "#/$defs/positive_ms" }
+      }
+    },
+    "clips": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/clip" } },
+    "cards": { "type": "array", "items": { "$ref": "#/$defs/card" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "\\S" },
+    "positive_ms": { "type": "integer", "minimum": 1 },
+    "source": {
+      "description": "The approved shot plan the film comes from, as ShotSourceService::approvedSource pins it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planning_stage_id", "revision", "token"],
+      "properties": {
+        "planning_stage_id": { "$ref": "#/$defs/id" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "token": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "stage_id", "content_hash", "selection_version", "source_fingerprint"],
+          "properties": {
+            "version": { "const": "shots-source-token-v1" },
+            "stage_id": { "$ref": "#/$defs/id" },
+            "content_hash": { "$ref": "#/$defs/id" },
+            "selection_version": { "type": "integer", "minimum": 1 },
+            "source_fingerprint": { "$ref": "#/$defs/id" }
+          }
+        }
+      }
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shot_id", "render_id", "decision_id", "sequence_no", "path", "sha256", "trim_start_ms", "duration_ms", "frames", "timeline_from_ms", "transition_in"],
+      "properties": {
+        "shot_id": { "type": "string", "pattern": "^SC[0-9]{2}_SH[0-9]{2}$" },
+        "render_id": { "$ref": "#/$defs/id" },
+        "decision_id": { "description": "The review decision that approved this render.", "$ref": "#/$defs/id" },
+        "sequence_no": { "type": "integer", "minimum": 1 },
+        "path": { "$ref": "#/$defs/id" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "trim_start_ms": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "$ref": "#/$defs/positive_ms" },
+        "frames": { "type": "integer", "minimum": 1 },
+        "timeline_from_ms": { "type": "integer", "minimum": 0 },
+        "transition_in": {
+          "description": "null for the first shot of the film. A kind outside this list is refused before anything is cut.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind"],
+              "properties": {
+                "kind": { "enum": ["cut", "match_cut", "time_jump", "dip"] }
+              }
+            }
+          ]
+        },
+        "fade_in_frames": { "type": "integer", "minimum": 1 },
+        "fade_out_frames": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "card": {
+      "description": "A text card on the film's timeline, word for word from the script: tl_in_ms + the card's from_ms in the shot plan.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text", "from_ms", "to_ms"],
+      "properties": {
+        "type": { "type": "string", "pattern": "\\S" },
+        "text": { "type": "string", "pattern": "\\S" },
+        "from_ms": { "type": "integer", "minimum": 0 },
+        "to_ms": { "$ref": "#/$defs/positive_ms" }
+      }
+    }
+  }
+}

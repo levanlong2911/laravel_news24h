@@ -227,6 +227,38 @@ final class VideoProviderCheckpointService
     }
 
     /**
+     * @return ?VideoRender the render put back in the poll round when the worker that was polling it or writing its file died and its lease ran out: nothing was sent, so asking the provider again costs nothing; null when there is nothing to take back
+     */
+    public function releaseStalledPoll(VideoRender $render): ?VideoRender
+    {
+        return DB::transaction(function () use ($render): ?VideoRender {
+            $render = VideoRender::query()->whereKey($render->id)->lockForUpdate()->firstOrFail();
+
+            if ($render->lease_expires_at === null || $render->lease_expires_at > $this->clock->now()) {
+                return null;
+            }
+
+            if (! in_array($render->execution_status, [RenderStatus::POLLING, RenderStatus::ARTIFACT_WRITING], true)
+                || ! is_string($render->provider_job_id) || $render->provider_job_id === '') {
+                return null;
+            }
+
+            $render->forceFill([
+                'execution_status' => RenderStatus::PROVIDER_RUNNING,
+                'claim_token' => null,
+                'claimed_by' => null,
+                'claimed_at' => null,
+                'heartbeat_at' => null,
+                'lease_expires_at' => null,
+                'provider_next_poll_at' => $this->clock->now(),
+                'execution_version' => $render->execution_version + 1,
+            ])->save();
+
+            return $render;
+        }, attempts: 3);
+    }
+
+    /**
      * Job id ma ta BIET la provider dang giu, doc theo dung thu tu ma `adoptKnownJob()`
      * dung — va vi the la cau tra loi duy nhat cho "co gi de poll khong".
      *

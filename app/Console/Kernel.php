@@ -36,6 +36,11 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->onFailure(fn () => \Log::error('Scheduler: video:recover-expired-render-leases failed'));
 
+        $schedule->command('video:moto-clips-poll')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->onFailure(fn () => \Log::error('Scheduler: video:moto-clips-poll failed'));
+
         $schedule->command('video:recover-expired-planning-stages')
             ->everyMinute()
             ->withoutOverlapping()

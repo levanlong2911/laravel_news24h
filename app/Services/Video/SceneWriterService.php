@@ -9,17 +9,22 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Models\VideoReviewDecision;
 use App\Services\Admin\ClaudeWriterService;
 use App\Video\Llm\LlmClient;
 use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Support\CanonicalJson;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
 final class SceneWriterService implements QueuedStageService
 {
+    /** @var list<string> the fields of a scene a hand revision may replace */
+    private const REVISABLE = ['work', 'continuity_start', 'continuity_end', 'assumptions'];
+
     public function __construct(
         private readonly PlanningStageStore $stageStore,
         private readonly SceneSourceService $sources,
@@ -182,13 +187,30 @@ final class SceneWriterService implements QueuedStageService
     }
 
     /**
-     * @param  array{reason?: mixed, scenes?: mixed}  $patch  why the scene plan is revised and, per scene id, the work, continuity_start or continuity_end that replace its own
+     * @param  array{reason?: mixed, scenes?: mixed}  $patch  why the scene plan is revised and, per scene id, the work, continuity_start, continuity_end or assumptions that replace its own
      * @param  ?string  $expected  the patch hash of the preview the reviewer approved; required to write
-     * @return array{passed: bool, reason: string, source: ?array<string, mixed>, prompt: ?string, changes: list<array{path: string, before: string, after: string}>, check: ?array<string, mixed>, content_hash: ?string, patch_hash: ?string, revision_stage_id: ?string, revision: ?int} the revised scene plan checked against the current contract and sources like a run of the model, previewed or, with $write and the approved patch hash, stored as a new run that names the run it revises; the revised run is not approved and the run it revises stays as it was
+     * @return array{passed: bool, reason: string, source: ?array<string, mixed>, prompt: ?string, changes: list<array{path: string, before: string, after: string}>, check: ?array<string, mixed>, content_hash: ?string, patch_hash: ?string, revision_stage_id: ?string, revision: ?int, approved: bool, approval: ?string, selection_stage_id: ?string} the revised scene plan checked against the current contract and sources like a run of the model, previewed or, with $write and the approved patch hash, stored under the project lock as a new run that names the run it revises. A stored run that passes takes the selection by rule pass, like any run; approved says whether the selection points at it and approval why not. The run it revises stays as it was. A sources or selection change since the preview changes the hash and stops the write; applying the same revision again stores nothing and only finishes an approval that never happened
      */
     public function revise(string $projectId, string $stageId, array $patch, bool $write, ?string $expected, ?string $actor): array
     {
-        $report = ['passed' => false, 'reason' => '', 'source' => null, 'prompt' => null, 'changes' => [], 'check' => null, 'content_hash' => null, 'patch_hash' => null, 'revision_stage_id' => null, 'revision' => null];
+        if (! $write) {
+            return $this->revision($projectId, $stageId, $patch, false, null, null);
+        }
+
+        return DB::transaction(function () use ($projectId, $stageId, $patch, $expected, $actor): array {
+            VideoProject::query()->whereKey($projectId)->lockForUpdate()->first();
+
+            return $this->revision($projectId, $stageId, $patch, true, $expected, $actor);
+        });
+    }
+
+    /**
+     * @param  array{reason?: mixed, scenes?: mixed}  $patch
+     * @return array<string, mixed> what revise() reports
+     */
+    private function revision(string $projectId, string $stageId, array $patch, bool $write, ?string $expected, ?string $actor): array
+    {
+        $report = ['passed' => false, 'reason' => '', 'source' => null, 'prompt' => null, 'changes' => [], 'check' => null, 'content_hash' => null, 'patch_hash' => null, 'revision_stage_id' => null, 'revision' => null, 'approved' => false, 'approval' => null, 'selection_stage_id' => null];
         $stage = $this->sources->sceneStage($projectId, $stageId);
 
         if ($stage === null) {
@@ -210,8 +232,8 @@ final class SceneWriterService implements QueuedStageService
         }
 
         foreach ($scenes as $id => $fields) {
-            if (! in_array($id, $ids, true) || ! is_array($fields) || $fields === [] || array_diff(array_keys($fields), ['work', 'continuity_start', 'continuity_end']) !== []) {
-                return ['reason' => "Bản sửa {$id}: chỉ sửa work, continuity_start, continuity_end của một scene có trong bản chia scene."] + $report;
+            if (! in_array($id, $ids, true) || ! is_array($fields) || $fields === [] || array_diff(array_keys($fields), self::REVISABLE) !== []) {
+                return ['reason' => "Bản sửa {$id}: chỉ sửa ".implode(', ', self::REVISABLE).' của một scene có trong bản chia scene.'] + $report;
             }
         }
 
@@ -239,7 +261,7 @@ final class SceneWriterService implements QueuedStageService
             unset($scene['assumptions']);
             $scene = array_replace($scene, (array) ($scenes[$scene['id']] ?? [])) + ['work' => [], 'assumptions' => $assumptions];
 
-            foreach (['work', 'continuity_start', 'continuity_end'] as $key) {
+            foreach (self::REVISABLE as $key) {
                 if (! array_key_exists($key, $before) || $before[$key] !== $scene[$key]) {
                     $report['changes'][] = [
                         'path' => "{$scene['id']}.{$key}",
@@ -255,19 +277,30 @@ final class SceneWriterService implements QueuedStageService
         $result = ScriptEvaluation::of($raw, $run['metadata']['manifest'], $run['metadata']['context'], $run['metadata']['source'], $run['adapter']);
         $report['check'] = $result['check'];
         $report['content_hash'] = $result['content_hash'];
-        $report['patch_hash'] = CanonicalJson::hash(['of' => $report['source'], 'patch' => $patch, 'contract' => $result['contract'], 'content_hash' => $result['content_hash']]);
+        $revisionHash = CanonicalJson::hash(['of' => array_diff_key($report['source'], ['approved' => true]), 'patch' => $patch, 'contract' => $result['contract'], 'content_hash' => $result['content_hash']]);
+        $report['patch_hash'] = CanonicalJson::hash(['revision' => $revisionHash, 'selection' => ['stage_id' => $selection['stage_id'] ?? null, 'version' => $selection['version'] ?? 0]]);
         $report['passed'] = $result['content_hash'] !== null && ($result['check']['verdict'] ?? null) === 'PASS' && ($result['check']['status'] ?? null) === 'ok';
 
         if (! $report['passed']) {
             return ['reason' => 'Bản sửa chưa qua kiểm của hợp đồng hiện hành.'] + $report;
         }
 
+        $input = $run['input'] + ['revision_of' => (string) $stage->id, 'revision_hash' => $revisionHash];
+        $stored = $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::SCENES, $input);
+        $report = ['revision_stage_id' => $stored === null ? null : (string) $stored->id, 'revision' => $stored === null ? null : (int) $stored->planning_revision] + $report;
+
         if (! $write) {
             return ['reason' => 'preview'] + $report;
         }
 
-        if ($expected === null || ! hash_equals($report['patch_hash'], $expected)) {
-            return ['reason' => 'Mã xem trước không khớp bản sửa này — xem trước lại rồi duyệt đúng mã.'] + $report;
+        $matches = $expected !== null && hash_equals($report['patch_hash'], $expected);
+
+        if ($stored !== null) {
+            return ['reason' => 'already_applied'] + $this->repeatedApproval($projectId, (string) $stored->id, $matches) + $report;
+        }
+
+        if (! $matches) {
+            return ['reason' => 'Mã xem trước không khớp bản sửa này — nguồn hoặc lựa chọn scene có thể đã đổi; xem trước lại rồi duyệt đúng mã.'] + $report;
         }
 
         $metadata = $run['metadata'] + ['revision' => [
@@ -275,16 +308,15 @@ final class SceneWriterService implements QueuedStageService
             'reason' => trim($patch['reason']),
             'patch' => $patch,
             'patch_hash' => $report['patch_hash'],
+            'revision_hash' => $revisionHash,
             'changes' => $report['changes'],
             'actor' => $actor,
             'revised_at' => now()->toIso8601String(),
         ]];
-        [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::SCENES, $run['input'] + ['revision_of' => (string) $stage->id, 'patch_hash' => $report['patch_hash']], false, $metadata);
+        [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::SCENES, $input, false, $metadata);
 
         if ($token === null) {
-            return $claimReason === 'already_succeeded'
-                ? ['reason' => 'already_applied', 'revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision] + $report
-                : ['reason' => $claimReason === 'claimed_by_other' ? 'Đang có một lượt chia scene chạy cho dự án này — đợi xong rồi thử lại.' : $claimReason] + $report;
+            return ['reason' => $claimReason === 'claimed_by_other' ? 'Đang có một lượt chia scene chạy cho dự án này — đợi xong rồi thử lại.' : $claimReason] + $report;
         }
 
         try {
@@ -295,11 +327,51 @@ final class SceneWriterService implements QueuedStageService
             throw $e;
         }
 
-        if ($recorded) {
-            $this->approvedWhenPassed($projectId, [$claimed, 'applied']);
+        $named = ['revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision];
+
+        return $recorded
+            ? ['reason' => 'applied'] + $named + $this->revisionApproval($projectId, (string) $claimed->id) + $report
+            : ['reason' => 'Lượt lưu bị giành mất — tải lại rồi thử lại.'] + $named + $report;
+    }
+
+    /**
+     * @param  bool  $matches  whether the caller holds the hash of a preview of the selection as it is now
+     * @return array{approved: bool, approval: ?string, selection_stage_id: ?string} a revision stored earlier: one approved once keeps the selection as it stands, and one never approved is approved now only for a preview of the current selection
+     */
+    private function repeatedApproval(string $projectId, string $stageId, bool $matches): array
+    {
+        $decided = VideoReviewDecision::query()->where('project_id', $projectId)->where('entity_type', SceneSourceService::ENTITY_TYPE)->where('entity_id', $stageId)->where('decision', 'approved')->exists();
+
+        if (! $decided && $matches) {
+            return $this->revisionApproval($projectId, $stageId);
         }
 
-        return ['reason' => $recorded ? 'applied' : 'Lượt lưu bị giành mất — tải lại rồi thử lại.', 'revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision] + $report;
+        $selected = $this->sources->selection($projectId)['stage_id'] ?? null;
+
+        return [
+            'approved' => $selected === $stageId,
+            'approval' => match (true) {
+                $selected === $stageId => null,
+                $decided => 'Bản này đã duyệt trước đó nhưng lựa chọn scene đã chuyển sang bản khác — giữ nguyên lựa chọn đó.',
+                default => 'Bản này đã lưu nhưng chưa duyệt, và lựa chọn scene đã đổi — xem trước lại rồi áp dụng đúng mã để hoàn tất duyệt.',
+            },
+            'selection_stage_id' => $selected,
+        ];
+    }
+
+    /** @return array{approved: bool, approval: ?string, selection_stage_id: ?string} the rule-pass approval of a stored revision, apart from storing it: a revision that cannot be approved stays stored, with why */
+    private function revisionApproval(string $projectId, string $stageId): array
+    {
+        try {
+            $reason = $this->sources->approvePassed($projectId, $stageId)[1];
+        } catch (\Throwable $e) {
+            Log::error('scenes: could not approve the revision', ['stage_id' => $stageId, 'exception' => $e]);
+            $reason = 'Không ghi được quyết định duyệt: '.$e->getMessage();
+        }
+
+        $selected = $this->sources->selection($projectId)['stage_id'] ?? null;
+
+        return ['approved' => $selected === $stageId, 'approval' => $selected === $stageId ? null : $reason, 'selection_stage_id' => $selected];
     }
 
     /** @return ?array{revision: int, reason: string, changes: list<array{path: string, before: string, after: string}>} the run a hand revision revises, why and what it changed; null for a run of the model */

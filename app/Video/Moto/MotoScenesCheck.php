@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoScenesCheck
 {
-    public const VERSION = 'moto-scenes-check-v5';
+    public const VERSION = 'moto-scenes-check-v6';
 
     public const PASS = 'PASS';
 

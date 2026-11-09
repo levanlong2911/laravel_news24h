@@ -255,13 +255,16 @@ final class VideoRenderExecutionService
      */
     private function filmOutputMismatch(array $probed, array $spec, int $expectedMs, int $tolerance): ?string
     {
-        $size = config('video.omni.output_sizes.'.($spec['aspect_ratio'] ?? '').'.'.($spec['resolution'] ?? ''));
+        $policy = $this->mediaPolicy($spec);
+        $size = $policy !== null
+            ? ($policy['output_size'] ?? null)
+            : config('video.omni.output_sizes.'.($spec['aspect_ratio'] ?? '').'.'.($spec['resolution'] ?? ''));
 
-        if (! is_array($size) || count($size) !== 2) {
+        if ($policy === null && (! is_array($size) || count($size) !== 2)) {
             return 'khong co kich thuoc dau ra cho '.($spec['aspect_ratio'] ?? '?').' '.($spec['resolution'] ?? '?');
         }
 
-        if ((int) $probed['width'] !== (int) $size[0] || (int) $probed['height'] !== (int) $size[1]) {
+        if ($size !== null && ((int) $probed['width'] !== (int) $size[0] || (int) $probed['height'] !== (int) $size[1])) {
             return sprintf('kich thuoc %dx%d, yeu cau %dx%d', (int) $probed['width'], (int) $probed['height'], (int) $size[0], (int) $size[1]);
         }
 
@@ -275,9 +278,13 @@ final class VideoRenderExecutionService
             return sprintf('luong hinh dai %dms, yeu cau %dms', $videoMs, $expectedMs);
         }
 
+        if ($policy !== null && min($videoMs, (int) $probed['duration_ms']) < (int) $policy['used_end_ms']) {
+            return sprintf('file dai %dms, doan phim giu lai ket thuc o %dms', min($videoMs, (int) $probed['duration_ms']), (int) $policy['used_end_ms']);
+        }
+
         if (in_array($spec['audio'] ?? null, ['ambient_only', 'music_and_effects'], true)) {
             $audioMs = is_numeric($probed['audio']['duration'] ?? null) ? (int) round((float) $probed['audio']['duration'] * 1000) : null;
-            $drift = (int) config('video.omni.target.av_drift_tolerance_ms', 100);
+            $drift = (int) ($policy['av_drift_ms'] ?? config('video.omni.target.av_drift_tolerance_ms', 100));
 
             if ((int) ($probed['audio_count'] ?? 0) !== 1 || $audioMs === null) {
                 return 'can dung mot luong tieng co thoi luong doc duoc, file co '.(int) ($probed['audio_count'] ?? 0);
@@ -289,6 +296,15 @@ final class VideoRenderExecutionService
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec
+     * @return ?array<string, mixed> the file checks the request froze when it was made, which a later change of config or registry cannot loosen; null for a request that froze none and reads them from config
+     */
+    private function mediaPolicy(array $spec): ?array
+    {
+        return is_array($spec['media_policy'] ?? null) ? $spec['media_policy'] : null;
     }
 
     /** @param array<string, mixed> $spec */
@@ -334,7 +350,7 @@ final class VideoRenderExecutionService
 
         $entry = $this->entryFor($spec);
 
-        if ($entry === null) {
+        if ($entry === null && $this->mediaPolicy($spec) === null) {
             return [false, 'model_gone_from_registry'];
         }
 
@@ -562,9 +578,12 @@ final class VideoRenderExecutionService
         @unlink((string) $file['local_path']);
 
         $expectedMs = (int) round(((float) ($spec['duration_seconds'] ?? 0)) * 1000);
-        $tolerance = $this->isOmni($spec)
-            ? (int) config('video.omni.target.duration_tolerance_ms', 500)
-            : (int) config('video.veo.duration_tolerance_ms', 1500);
+        $policy = $this->mediaPolicy($spec);
+        $tolerance = match (true) {
+            $policy !== null => (int) $policy['duration_tolerance_ms'],
+            $this->isOmni($spec) => (int) config('video.omni.target.duration_tolerance_ms', 500),
+            default => (int) config('video.veo.duration_tolerance_ms', 1500),
+        };
 
         if (! $probed['ok']) {
             $this->storage->disk((string) config('video.veo.disk'))->delete($path);
@@ -573,7 +592,7 @@ final class VideoRenderExecutionService
                 'probe_failed', (string) $probed['error']);
         }
 
-        $mismatch = $this->isOmni($spec) ? $this->filmOutputMismatch($probed, $spec, $expectedMs, $tolerance) : null;
+        $mismatch = $this->isOmni($spec) || $policy !== null ? $this->filmOutputMismatch($probed, $spec, $expectedMs, $tolerance) : null;
 
         if ($mismatch !== null) {
             return $this->failOrLose($render->id, $token, RenderFailureClass::ARTIFACT_INTEGRITY,
@@ -581,6 +600,12 @@ final class VideoRenderExecutionService
         }
 
         if ($expectedMs > 0 && abs((int) $probed['duration_ms'] - $expectedMs) > $tolerance) {
+            if ($policy !== null) {
+                return $this->failOrLose($render->id, $token, RenderFailureClass::ARTIFACT_INTEGRITY,
+                    'output_contract_mismatch',
+                    sprintf('duration lech: file %dms, yeu cau %dms — file da tra phi giu lai o %s de doi soat, khong duoc chon.', (int) $probed['duration_ms'], $expectedMs, $path));
+            }
+
             $this->storage->disk((string) config('video.veo.disk'))->delete($path);
 
             return $this->failOrLose($render->id, $token, RenderFailureClass::ARTIFACT_INTEGRITY,
@@ -630,7 +655,10 @@ final class VideoRenderExecutionService
                     'duration_ms' => $probed['duration_ms'],
                     'width' => $probed['width'],
                     'height' => $probed['height'],
-                ]],
+                ] + ($policy === null ? [] : [
+                    'audio_count' => (int) ($probed['audio_count'] ?? 0),
+                    'has_audio' => (int) ($probed['audio_count'] ?? 0) > 0,
+                ])],
             ],
             usage: new RenderAttemptUsage(null, null, null, null, null),
         );

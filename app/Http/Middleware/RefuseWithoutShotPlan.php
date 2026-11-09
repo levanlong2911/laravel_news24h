@@ -11,10 +11,11 @@ class RefuseWithoutShotPlan
 {
     public function __construct(private readonly SceneSourceService $scenes) {}
 
-    public function handle(Request $request, Closure $next): Response
+    /** @param  ?string  $scope  'clips' for a step the approved shot plan opens */
+    public function handle(Request $request, Closure $next, ?string $scope = null): Response
     {
         $projectId = $request->route('id');
-        $problem = is_string($projectId) ? $this->scenes->shotPlanProblem($projectId) : null;
+        $problem = is_string($projectId) ? $this->scenes->shotPlanProblem($projectId, $scope) : null;
 
         if ($problem === null) {
             return $next($request);

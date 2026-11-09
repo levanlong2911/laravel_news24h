@@ -261,6 +261,18 @@
     var index = 0;
     var active = 0;
 
+    /**
+     * Phan cua file ma phim dung, khi playlist co noi: `from_ms` la diem bat dau trong
+     * file, `ms` la do dai phan dung. Khong co `from_ms` thi clip phat ca file nhu cu.
+     */
+    function windowOf(at) {
+        var clip = clips[at];
+
+        return typeof clip.from_ms === 'number'
+            ? { from: clip.from_ms / 1000, length: clip.ms / 1000 }
+            : null;
+    }
+
     function deck(which) {
         return decks[which];
     }
@@ -360,7 +372,7 @@
         }
 
         idle().pause();
-        seekWithin(deck(active), seconds);
+        seekWithin(deck(active), (windowOf(at) === null ? 0 : windowOf(at).from) + seconds);
         start(playing);
         queueNext();
         paint();
@@ -371,13 +383,50 @@
     var clocks = decks.map(interpolator);
 
     function elapsedMs() {
-        return offsets[index] + (clocks[active]() * 1000);
+        var local = clocks[active]();
+        var win = windowOf(index);
+
+        if (win !== null) {
+            local = Math.min(Math.max(local - win.from, 0), win.length);
+        }
+
+        return offsets[index] + (local * 1000);
+    }
+
+    var advancing = false;
+
+    /**
+     * Het phan dung cua clip thi sang clip ke, khong doi het file. Chi xet khi the dang
+     * hien giu dung clip va khong con dang tua, de vi tri cu cua mot lan tua chua xong
+     * khong bi doc nham thanh "da het".
+     */
+    function reachEnd() {
+        var win = windowOf(index);
+        var node = deck(active);
+
+        if (win === null || advancing || node.paused || node.seeking || node.readyState < 1
+            || node.dataset.clip !== String(index) || node.currentTime < win.from + win.length) {
+            return;
+        }
+
+        advancing = true;
+
+        if (index + 1 < clips.length) {
+            go(index + 1, 0, true);
+        } else {
+            node.pause();
+            mark(index, false);
+        }
+
+        advancing = false;
     }
 
     var move = playhead !== null && lanes !== null ? mover(playhead, lanes) : null;
     var shownTime = null;
 
     function paint() {
+        reachEnd();
+
         var elapsed = Math.min(elapsedMs(), total);
         var ratio = total === 0 ? 0 : Math.min(Math.max(elapsed / total, 0), 1);
 
@@ -487,6 +536,11 @@
     });
 
     mark(0, true);
+
+    if (windowOf(0) !== null) {
+        seekWithin(deck(active), windowOf(0).from);
+    }
+
     queueNext();
     paint();
 })();

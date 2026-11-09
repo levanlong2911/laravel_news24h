@@ -60,6 +60,7 @@ final class CompositionExecutor
         array $sources,
         ?Deadline $deadline = null,
         ?CompositionRun $run = null,
+        ?CompositionDecor $decor = null,
     ): CompositionResult {
         $deadline = $deadline ?? Deadline::in($this->budgetSeconds);
 
@@ -82,7 +83,7 @@ final class CompositionExecutor
             // thi hai loi do thoat thang ra CLI duoi dang exception, trong khi moi
             // loi khac cua lop nay tra ve mot `CompositionResult::refused()`.
             $missing = $this->capabilities->missing(
-                self::FILTERS, self::ENCODERS, static fn (): int => $deadline->remaining(),
+                [...self::FILTERS, ...($decor?->filters() ?? [])], self::ENCODERS, static fn (): int => $deadline->remaining(),
             );
 
             if ($missing !== null) {
@@ -91,7 +92,7 @@ final class CompositionExecutor
 
             $workspace = CompositionWorkspace::create($this->composeRoot, $run?->finalId);
 
-            return $this->run($manifest, $sources, $workspace, $deadline, $run, $keep, $verified);
+            return $this->run($manifest, $sources, $workspace, $deadline, $run, $keep, $verified, $decor);
         } catch (CompositionRefused $e) {
             return $this->stopped([$e->getMessage()], $verified);
         } catch (Throwable $e) {
@@ -163,6 +164,7 @@ final class CompositionExecutor
     /**
      * @param  array<string, mixed>  $manifest
      * @param  list<string>  $sources
+     * @param  CompositionDecor|null  $decor  the dips and cards of a film: checked against the plan the copies give before anything is encoded
      * @return array{0: CompositionPlan, 1: CompositionCommand}
      */
     private function prepare(
@@ -170,6 +172,7 @@ final class CompositionExecutor
         array $sources,
         CompositionWorkspace $workspace,
         Deadline $deadline,
+        ?CompositionDecor $decor = null,
     ): array {
         // Sao truoc, roi PROBE TREN BAN SAO: probe mot ban ma encode mot ban khac la
         // mot khe co that, va `E` tinh tu metadata nen mot file khac noi dung cung
@@ -177,7 +180,15 @@ final class CompositionExecutor
         $copies = $this->inputs->materialise($sources, $workspace, $deadline);
         $plan = $this->builder->build($manifest, $copies, $deadline);
 
-        return [$plan, new CompositionCommand($plan)];
+        $option = $this->capabilities->graphFileOption(static fn (): int => $deadline->remaining());
+
+        if ($decor === null) {
+            return [$plan, new CompositionCommand($plan, null, $option)];
+        }
+
+        $decor->check($plan);
+
+        return [$plan, new CompositionCommand($plan, $decor->materialise($workspace, $deadline), $option)];
     }
 
     /**
@@ -194,11 +205,12 @@ final class CompositionExecutor
         ?CompositionRun $compositionRun,
         array &$keep,
         ?string &$verified,
+        ?CompositionDecor $decor = null,
     ): CompositionResult {
         // Sao truoc, roi PROBE TREN BAN SAO: probe mot ban ma encode mot ban khac la
         // mot khe co that, va `E` tinh tu metadata nen mot file khac noi dung cung
         // thoi luong se di qua em.
-        [$plan, $command] = $this->prepare($manifest, $sources, $workspace, $deadline);
+        [$plan, $command] = $this->prepare($manifest, $sources, $workspace, $deadline, $decor);
         $graphPath = $workspace->path('graph.txt');
 
         if (@file_put_contents($graphPath, $command->graph()) === false) {
