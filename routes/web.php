@@ -176,6 +176,11 @@ Route::group(
             Route::post('/{id}/shots', [VideoProjectsController::class, 'writeShots'])->name('video-projects.shots-write');
             Route::post('/{id}/shots/reset', [VideoProjectsController::class, 'resetShots'])->name('video-projects.shots-reset');
             Route::post('/{id}/shots/approve', [VideoProjectsController::class, 'approveShots'])->name('video-projects.shots-approve');
+            // phase 8: ảnh nhân vật
+            Route::post('/{id}/reference/characters/{character}/{action}', [VideoProjectsController::class, 'characterReference'])->where('character', '[a-z0-9_-]+')->whereIn('action', ['settings', 'render', 'process', 'approve', 'reject', 'revoke'])->name('video-projects.character-reference');
+            // phase 9: keyframe
+            Route::get('/{id}/keyframes', [VideoProjectsController::class, 'keyframes'])->name('video-projects.keyframes');
+            Route::post('/{id}/keyframes/{shot}/{action}', [VideoProjectsController::class, 'keyframeAction'])->where('shot', 'SC\d+_SH\d+')->whereIn('action', ['source', 'settings', 'render', 'approve', 'revoke'])->name('video-projects.keyframe-action');
 
             Route::middleware('video.v4')->group(function () {
             Route::post('/{id}/design-images/{imageId}/enqueue', [VideoProjectsController::class, 'renderDesignImage'])->name('video-projects.design-image-enqueue');

@@ -18,7 +18,7 @@ final class ModelSheetMaster
     private const MIMES = ['image/png', 'image/jpeg', 'image/webp'];
 
     /** @var string the version of the way cells are found from the lines an image draws and cut inside them */
-    public const LINE_DETECTOR = 'white-line-v1';
+    public const LINE_DETECTOR = 'white-line-v2';
 
     /** @var string what a person reads when the lines of an image do not give its cells for certain */
     public const LINES_UNCERTAIN = 'Không xác định chắc chắn đường viền — cần kiểm.';
@@ -35,11 +35,23 @@ final class ModelSheetMaster
     /** @var int the pixels between two samples along a line */
     private const LINE_STEP = 8;
 
-    /** @var int the widest run of pixels still taken for one thin line */
+    /** @var int the widest band the bright pixels of one line may take over its whole length, how thick it is and how far it leans together; its soft edge is not counted in it */
     private const LINE_MAX_WIDTH = 12;
 
-    /** @var int the pixels left out beyond the bright pixels of a line, where its soft edge fades */
+    /** @var int the pixels left between the soft edge of a line and a cell */
     private const LINE_INSET = 2;
+
+    /** @var int how much brighter than the background beyond it a pixel next to a line must be to belong to its soft edge */
+    private const LINE_FADE = 3;
+
+    /** @var int the most pixels the soft edge of a line adds to each side of its bright band, short of the background it is measured against; at most LINE_MAX_WIDTH + 2 × LINE_FADE_REACH pixels of a line are cut away, and a cell keeps LINE_INSET more off them */
+    private const LINE_FADE_REACH = self::LINE_SIDE - 1;
+
+    /** @var int the most a line may move from one sample to the next one found before it no longer reads as one line */
+    private const LINE_SHIFT = 2;
+
+    /** @var int the widest dip inside the bright pixels of one sample still read as one line */
+    private const LINE_GAP = 2;
 
     /** @var float the smallest share of its even size a found cell may have */
     private const MIN_CELL_SHARE = 0.4;
@@ -175,9 +187,9 @@ final class ModelSheetMaster
     }
 
     /**
-     * @return list<array{x: int, y: int, width: int, height: int}> the cells the image itself draws, in cell order and inside its lines: the bright lines across it give the rows, the bright lines down each row give the columns of that row
+     * @return list<array{x: int, y: int, width: int, height: int}> the cells the image itself draws, in cell order and inside its lines: the bright lines across it give the rows, the bright lines down each row give the columns of that row; a cell stops LINE_INSET short of the soft edge of each line, so no white of a line is left in it
      *
-     * @throws RuntimeException when the number of lines is not the number the grid needs, or a cell is too small
+     * @throws RuntimeException when the number of lines is not the number the grid needs, a line is too wide, splits or does not run on as one line, or a cell is too small
      */
     public function boxesFromLines(GdImage $master): array
     {
@@ -185,7 +197,7 @@ final class ModelSheetMaster
         $rows = (int) $this->config['rows'];
         $columns = (int) $this->config['columns'];
         imagepalettetotruecolor($master);
-        $across = $this->lineRuns($master, false, $height, self::LINE_STEP, $width - self::LINE_STEP);
+        $across = $this->lines($master, false, $height, self::LINE_STEP, $width - self::LINE_STEP, 'ngang');
 
         if (count($across) !== $rows - 1) {
             throw new RuntimeException(self::LINES_UNCERTAIN.' Thấy '.count($across).' đường ngang, lưới cần '.($rows - 1).'.');
@@ -194,7 +206,7 @@ final class ModelSheetMaster
         $boxes = [];
 
         foreach ($this->insideLines($across, $height) as $row => [$top, $bottom]) {
-            $down = $this->lineRuns($master, true, $width, $top + self::LINE_STEP, $bottom - self::LINE_STEP);
+            $down = $this->lines($master, true, $width, $top + self::LINE_STEP, $bottom - self::LINE_STEP, 'dọc ở hàng '.($row + 1));
 
             if (count($down) !== $columns - 1) {
                 throw new RuntimeException(self::LINES_UNCERTAIN.' Hàng '.($row + 1).' thấy '.count($down).' đường dọc, lưới cần '.($columns - 1).'.');
@@ -213,48 +225,224 @@ final class ModelSheetMaster
     }
 
     /**
-     * @return list<array{0: int, 1: int}> the first and last position of every thin run of lines that stand out over nearly all of their length between two positions
+     * @param  bool  $vertical  lines down the image, read along rows of pixels; otherwise lines across it, read along columns
+     * @param  int  $limit  the length of the side the lines cross
+     * @param  int  $from  where the samples along the lines start
+     * @param  int  $to  where they stop, not included
+     * @param  string  $name  how a person reads these lines in a message
+     * @return list<array{0: int, 1: int}> the first and last position of every line, its soft edge included: its bright pixels lie in a band no wider than LINE_MAX_WIDTH that holds one thin bright run in at least LINE_SHARE of all the samples, so a line drawn a little askew is still one line, and its soft edge adds at most LINE_FADE_REACH to each side of that band; a sample where nothing stands out, such as where another line crosses, counts against the share
+     *
+     * @throws RuntimeException when such a band is wider than one line, splits in two on a sample, or moves too far between two samples
      */
-    private function lineRuns(GdImage $image, bool $vertical, int $limit, int $from, int $to): array
+    private function lines(GdImage $image, bool $vertical, int $limit, int $from, int $to, string $name): array
     {
-        $samples = (int) ceil(max(0, $to - $from) / self::LINE_STEP);
-        $allowed = (int) floor($samples * (1 - self::LINE_SHARE));
-        $runs = [];
+        $samples = [];
+
+        for ($along = $from; $along < $to; $along += self::LINE_STEP) {
+            $samples[] = $this->brightRuns($image, $vertical, $along, $limit);
+        }
+
+        if ($samples === []) {
+            return [];
+        }
+
+        $needed = count($samples) - (int) floor(count($samples) * (1 - self::LINE_SHARE));
+        $support = array_fill(0, $limit + 1, 0);
+
+        foreach ($samples as $runs) {
+            $counted = -1;
+
+            foreach ($runs as [$first, $last]) {
+                for ($start = max(0, $counted + 1, $last - self::LINE_MAX_WIDTH + 1); $start <= $first; $start++) {
+                    $support[$start]++;
+                }
+
+                $counted = max($counted, $first);
+            }
+        }
+
+        $lines = [];
         $start = null;
 
-        for ($at = self::LINE_SIDE; $at <= $limit; $at++) {
-            if ($at < $limit - self::LINE_SIDE && $samples > 0 && $this->standsOut($image, $vertical, $at, $from, $to, $allowed)) {
+        foreach ($support as $at => $count) {
+            if ($count >= $needed) {
                 $start ??= $at;
 
                 continue;
             }
 
-            if ($start !== null && $at - $start <= self::LINE_MAX_WIDTH) {
-                $runs[] = [$start, $at - 1];
+            if ($start !== null) {
+                $lines[] = $this->line($samples, $start, $at - 1, $needed, $vertical, $name);
             }
 
             $start = null;
         }
 
-        return $runs;
+        return $lines;
     }
 
-    /** @return bool whether the line at a position is brighter than the pixels to each side, with no more misses than allowed */
-    private function standsOut(GdImage $image, bool $vertical, int $at, int $from, int $to, int $allowed): bool
+    /**
+     * @param  list<list<array{0: int, 1: int, 2: int, 3: int}>>  $samples  the bright runs of every sample
+     * @param  int  $low  the first start of the bands of LINE_MAX_WIDTH that hold the line on enough samples
+     * @param  int  $high  the last start of those bands
+     * @param  int  $needed  how many samples must hold the line
+     * @return array{0: int, 1: int} the first and last position the line covers on any sample, its soft edge included
+     *
+     * @throws RuntimeException when no sample holds the line alone inside every band, the line splits in two or moves more than LINE_SHIFT from one sample to the next, it is followed on fewer samples than needed, or its bright pixels take more than LINE_MAX_WIDTH
+     */
+    private function line(array $samples, int $low, int $high, int $needed, bool $vertical, string $name): array
     {
-        $misses = 0;
+        $core = [$high, $low + self::LINE_MAX_WIDTH - 1];
+        $where = 'Đường '.$name.' quanh '.($vertical ? 'x' : 'y').' '.$core[0].'–'.$core[1];
+        $alone = [];
 
-        for ($along = $from; $along < $to; $along += self::LINE_STEP) {
-            $here = $vertical ? $this->luma($image, $at, $along) : $this->luma($image, $along, $at);
-            $before = $vertical ? $this->luma($image, $at - self::LINE_SIDE, $along) : $this->luma($image, $along, $at - self::LINE_SIDE);
-            $after = $vertical ? $this->luma($image, $at + self::LINE_SIDE, $along) : $this->luma($image, $along, $at + self::LINE_SIDE);
+        foreach ($samples as $index => $runs) {
+            $inside = array_values(array_filter($runs, static fn (array $run): bool => $run[1] >= $core[0] && $run[0] <= $core[1]));
 
-            if (($here - $before < self::LINE_CONTRAST || $here - $after < self::LINE_CONTRAST) && ++$misses > $allowed) {
-                return false;
+            if (count($inside) === 1) {
+                $alone[$index] = $inside[0];
             }
         }
 
-        return true;
+        if ($core[0] > $core[1] || $alone === []) {
+            throw new RuntimeException(self::LINES_UNCERTAIN.' '.$where.' có nhiều cách hiểu.');
+        }
+
+        $middles = array_map(static fn (array $run): int => $run[0] + $run[1], $alone);
+        $sorted = array_values($middles);
+        sort($sorted);
+        $median = $sorted[intdiv(count($sorted), 2)];
+        $anchor = array_key_first($alone);
+
+        foreach ($middles as $index => $middle) {
+            if (abs($middle - $median) < abs($middles[$anchor] - $median)) {
+                $anchor = $index;
+            }
+        }
+
+        [$ahead, $splitAhead, $movedAhead] = $this->follow($samples, $anchor, 1, $alone[$anchor]);
+        [$behind, $splitBehind, $movedBehind] = $this->follow($samples, $anchor, -1, $alone[$anchor]);
+        $line = [$anchor => $alone[$anchor]] + $ahead + $behind;
+        $first = min(array_column($line, 0));
+        $last = max(array_column($line, 1));
+        $where = 'Đường '.$name.' quanh '.($vertical ? 'x' : 'y').' '.$first.'–'.$last;
+
+        if ($splitAhead + $splitBehind > 0) {
+            throw new RuntimeException(self::LINES_UNCERTAIN.' '.$where.' tách làm hai ở '.($splitAhead + $splitBehind).' mẫu.');
+        }
+
+        if ($movedAhead + $movedBehind > 0) {
+            throw new RuntimeException(self::LINES_UNCERTAIN.' '.$where.' không liền mạch: '.($movedAhead + $movedBehind).' chỗ lệch quá '.self::LINE_SHIFT.' px giữa hai mẫu.');
+        }
+
+        if (count($line) < $needed) {
+            throw new RuntimeException(self::LINES_UNCERTAIN.' '.$where.' không liền mạch: chỉ theo được '.count($line).'/'.count($samples).' mẫu, cần '.$needed.'.');
+        }
+
+        if ($last - $first + 1 > self::LINE_MAX_WIDTH) {
+            throw new RuntimeException(self::LINES_UNCERTAIN.' '.$where.' có phần sáng rộng '.($last - $first + 1).' px, quá '.self::LINE_MAX_WIDTH.' px của một đường (chưa tính mép mờ).');
+        }
+
+        return [min(array_column($line, 2)), max(array_column($line, 3))];
+    }
+
+    /**
+     * @param  list<list<array{0: int, 1: int, 2: int, 3: int}>>  $samples  the bright runs of every sample
+     * @param  int  $anchor  the sample the line is followed from
+     * @param  int  $step  1 to follow it onwards, -1 back
+     * @param  array{0: int, 1: int, 2: int, 3: int}  $run  the run of the line on that sample
+     * @return array{0: array<int, array{0: int, 1: int, 2: int, 3: int}>, 1: int, 2: int} the run of the line on every sample it is found on, the samples where two runs lie within LINE_SHIFT of where it was last found, and the steps where it moves more than LINE_SHIFT
+     */
+    private function follow(array $samples, int $anchor, int $step, array $run): array
+    {
+        $found = [];
+        $split = 0;
+        $moved = 0;
+
+        for ($index = $anchor + $step; $index >= 0 && $index < count($samples); $index += $step) {
+            $near = array_values(array_filter($samples[$index], static fn (array $candidate): bool => $candidate[1] >= $run[0] - self::LINE_SHIFT && $candidate[0] <= $run[1] + self::LINE_SHIFT));
+
+            if (count($near) > 1) {
+                $split++;
+
+                continue;
+            }
+
+            if ($near === []) {
+                continue;
+            }
+
+            if (abs($near[0][0] + $near[0][1] - $run[0] - $run[1]) > 2 * self::LINE_SHIFT) {
+                $moved++;
+            }
+
+            $found[$index] = $near[0];
+            $run = $near[0];
+        }
+
+        return [$found, $split, $moved];
+    }
+
+    /**
+     * @param  int  $along  where the sample crosses the lines
+     * @return list<array{0: int, 1: int, 2: int, 3: int}> every run of pixels across the sample brighter by LINE_CONTRAST than the pixels LINE_SIDE away to each side, with dips of up to LINE_GAP closed: its first and last pixel, then the first and last pixel of its soft edge
+     */
+    private function brightRuns(GdImage $image, bool $vertical, int $along, int $limit): array
+    {
+        $luma = [];
+
+        for ($at = 0; $at < $limit; $at++) {
+            $luma[] = $vertical ? $this->luma($image, $at, $along) : $this->luma($image, $along, $at);
+        }
+
+        $runs = [];
+        $start = null;
+        $end = null;
+
+        for ($at = self::LINE_SIDE; $at < $limit - self::LINE_SIDE; $at++) {
+            if ($luma[$at] - $luma[$at - self::LINE_SIDE] < self::LINE_CONTRAST || $luma[$at] - $luma[$at + self::LINE_SIDE] < self::LINE_CONTRAST) {
+                continue;
+            }
+
+            if ($end !== null && $at - $end - 1 <= self::LINE_GAP) {
+                $end = $at;
+
+                continue;
+            }
+
+            if ($start !== null) {
+                $runs[] = $this->softEdge($luma, $start, $end);
+            }
+
+            $start = $at;
+            $end = $at;
+        }
+
+        if ($start !== null) {
+            $runs[] = $this->softEdge($luma, $start, $end);
+        }
+
+        return $runs;
+    }
+
+    /**
+     * @param  list<int>  $luma  the brightness of every pixel across the sample
+     * @return array{0: int, 1: int, 2: int, 3: int} the run, then how far its soft edge reaches: the pixels next to it still LINE_FADE brighter than the background LINE_SIDE away, no more than LINE_FADE_REACH to each side
+     */
+    private function softEdge(array $luma, int $first, int $last): array
+    {
+        $edgeFirst = $first;
+        $edgeLast = $last;
+
+        while ($edgeFirst > $first - self::LINE_FADE_REACH && $luma[$edgeFirst - 1] - $luma[$first - self::LINE_SIDE] >= self::LINE_FADE) {
+            $edgeFirst--;
+        }
+
+        while ($edgeLast < $last + self::LINE_FADE_REACH && $luma[$edgeLast + 1] - $luma[$last + self::LINE_SIDE] >= self::LINE_FADE) {
+            $edgeLast++;
+        }
+
+        return [$first, $last, $edgeFirst, $edgeLast];
     }
 
     private function luma(GdImage $image, int $x, int $y): int

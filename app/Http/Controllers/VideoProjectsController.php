@@ -543,9 +543,11 @@ class VideoProjectsController extends Controller
             'retry_at' => $task['retry_at'] ?? null,
             'progress' => null,
             'error' => $failed ? Str::limit((string) $image->render_error, 500) : null,
-            'result_url' => $task !== null ? null : ($image->image_type === DesignImageStore::LOCATION_REFERENCE_TYPE
-                ? route('video-projects.locations', $id).'#ref_'.(((array) $image->prompt_spec_json)['request_id'] ?? '')
-                : route('video-projects.anchor', $id).'#modelSheetPanel'),
+            'result_url' => $task !== null ? null : match (true) {
+                $image->image_type === DesignImageStore::LOCATION_REFERENCE_TYPE => route('video-projects.locations', $id).'#ref_'.(((array) $image->prompt_spec_json)['request_id'] ?? ''),
+                is_string(((array) $image->prompt_spec_json)['shot_id'] ?? null) => route('video-projects.keyframes', $id).'#shot-'.((array) $image->prompt_spec_json)['shot_id'],
+                default => route('video-projects.anchor', $id).'#modelSheetPanel',
+            },
         ];
     }
 
@@ -967,6 +969,7 @@ class VideoProjectsController extends Controller
                 'id' => $id,
                 'project' => VideoProject::query()->findOrFail($id),
                 'motoReference' => $parts->panel($id),
+                'motoCharacters' => app(\App\Services\Video\MotoCharacterReferenceService::class)->panel($id),
             ]);
         }
 
@@ -1073,6 +1076,133 @@ class VideoProjectsController extends Controller
             return redirect()->route('video-projects.reference', $id)->with('success', $message);
         } catch (\RuntimeException $e) {
             return redirect()->route('video-projects.reference', $id)->with('error', $e->getMessage());
+        }
+    }
+
+    public function characterReference(Request $request, string $id, string $character, string $action)
+    {
+        $this->ownedProject($id);
+        abort_unless(app(\App\Services\Video\PartsDetailService::class)->supports($id), 404);
+        $service = app(\App\Services\Video\MotoCharacterReferenceService::class);
+        $data = $request->validate(match ($action) {
+            'settings' => ['model' => 'required|string|max:100', 'quality' => 'required|string|max:30', 'size' => 'required|string|max:20'],
+            'render' => ['sheet_hash' => 'required|string|max:80', 'operation_id' => 'required|uuid', 'confirm_cost' => 'accepted'],
+            'process', 'approve', 'reject', 'revoke' => ['artifact_id' => 'required|uuid'],
+            default => abort(404),
+        });
+        $requester = auth()->id() === null ? null : ['id' => (string) auth()->id(), 'name' => (string) auth()->user()?->name];
+        $reviewer = auth()->id() === null ? null : (string) auth()->id();
+        $page = route('video-projects.reference', $id).'#motoCharacters';
+
+        try {
+            $message = match ($action) {
+                'settings' => (function () use ($service, $id, $character, $data): string {
+                    $service->saveChoice($id, $character, $data['model'], $data['quality'], $data['size']);
+
+                    return 'Đã lưu cấu hình render của '.$character.' — chưa render.';
+                })(),
+                'render' => (function () use ($service, $id, $character, $data, $requester): string {
+                    [$image, $reason] = $service->render($id, $character, $data['sheet_hash'], $data['operation_id'], (string) auth()->user()?->name, $requester);
+
+                    return match (true) {
+                        $image === null => throw new \RuntimeException($reason),
+                        $reason === 'queued' => 'Đã xếp hàng render ảnh nhân vật — máy chạy nền gửi request.',
+                        $reason === 'already_exists' => 'Lượt render này đã có ('.$image->status.') — không gọi thêm API.',
+                        $reason === 'rendered' => 'Đã render ảnh nhân vật. Xem rồi duyệt hoặc từ chối.',
+                        str_starts_with($reason, 'processing_failed|') => throw new \RuntimeException('Đã render nhưng cắt ảnh lỗi: '.substr($reason, 18)),
+                        default => throw new \RuntimeException('Render: '.$reason.' — '.($image->render_error ?? 'xem lịch sử lượt render.')),
+                    };
+                })(),
+                'process' => 'Xử lý ảnh: '.$service->process($id, $data['artifact_id']),
+                'approve' => (function () use ($service, $id, $data, $reviewer): string {
+                    $service->approve($id, $data['artifact_id'], $reviewer);
+
+                    return 'Đã duyệt ảnh nhân vật — keyframe dùng được ảnh này.';
+                })(),
+                'reject' => (function () use ($service, $id, $data, $reviewer): string {
+                    $service->reject($id, $data['artifact_id'], $reviewer);
+
+                    return 'Đã từ chối — các ô của ảnh này trở lại danh sách cần tạo.';
+                })(),
+                'revoke' => (function () use ($service, $id, $data, $reviewer): string {
+                    $service->revoke($id, $data['artifact_id'], $reviewer);
+
+                    return 'Đã thu hồi duyệt — ảnh và lịch sử vẫn giữ; duyệt lại để dùng, hoặc từ chối để render lại.';
+                })(),
+            };
+
+            return redirect()->to($page)->with('success', $message);
+        } catch (\RuntimeException $e) {
+            return redirect()->to($page)->with('error', $e->getMessage());
+        }
+    }
+
+    public function keyframes(string $id)
+    {
+        $project = $this->ownedProject($id);
+        abort_unless(app(\App\Services\Video\PartsDetailService::class)->supports($id), 404);
+
+        return view('video-projects.keyframes', $this->chrome() + [
+            'id' => $id,
+            'project' => $project,
+            'motoKeyframes' => app(\App\Services\Video\MotoKeyframeService::class)->panel($id),
+        ]);
+    }
+
+    public function keyframeAction(Request $request, string $id, string $shot, string $action)
+    {
+        $this->ownedProject($id);
+        abort_unless(app(\App\Services\Video\PartsDetailService::class)->supports($id), 404);
+        $service = app(\App\Services\Video\MotoKeyframeService::class);
+        $data = $request->validate(match ($action) {
+            'source' => ['kind' => 'required|in:design,environment', 'from' => 'nullable|uuid', 'to' => 'required|uuid'],
+            'settings' => ['model' => 'required|string|max:100', 'quality' => 'required|string|max:30', 'size' => 'required|string|max:20'],
+            'render' => ['preview_hash' => 'required|string|max:80', 'operation_id' => 'required|uuid', 'confirm_cost' => 'accepted'],
+            'approve', 'revoke' => ['artifact_id' => 'required|uuid'],
+            default => abort(404),
+        });
+        $requester = auth()->id() === null ? null : ['id' => (string) auth()->id(), 'name' => (string) auth()->user()?->name];
+        $reviewer = auth()->id() === null ? null : (string) auth()->id();
+        $page = route('video-projects.keyframes', $id).'#shot-'.$shot;
+
+        try {
+            $message = match ($action) {
+                'source' => (function () use ($service, $id, $shot, $data): string {
+                    $service->saveSource($id, $shot, $data['kind'], $data['from'] ?? null, $data['to']);
+
+                    return 'Đã đổi ảnh cho lượt keyframe này — nguồn gốc không đổi, chưa render.';
+                })(),
+                'settings' => (function () use ($service, $id, $shot, $data): string {
+                    $service->saveSettings($id, $shot, $data['model'], $data['quality'], $data['size']);
+
+                    return 'Đã lưu cấu hình render của shot — chưa render.';
+                })(),
+                'render' => (function () use ($service, $id, $shot, $data, $requester): string {
+                    [$image, $reason] = $service->render($id, $shot, $data['preview_hash'], $data['operation_id'], $requester);
+
+                    return match (true) {
+                        $image === null => throw new \RuntimeException($reason),
+                        $reason === 'queued' => 'Đã xếp hàng render keyframe — máy chạy nền gửi request.',
+                        $reason === 'already_exists' => 'Lượt render này đã có ('.$image->status.') — không gọi thêm API.',
+                        $reason === 'rendered' => 'Đã render keyframe. Xem ảnh rồi duyệt.',
+                        default => throw new \RuntimeException('Render: '.$reason.' — '.($image->render_error ?? 'xem lịch sử lượt render.')),
+                    };
+                })(),
+                'approve' => (function () use ($service, $id, $shot, $data, $reviewer): string {
+                    $service->approve($id, $shot, $data['artifact_id'], $reviewer);
+
+                    return 'Đã duyệt và dùng ảnh này cho '.$shot.'.';
+                })(),
+                'revoke' => (function () use ($service, $id, $shot, $data, $reviewer): string {
+                    $service->revoke($id, $shot, $data['artifact_id'], $reviewer);
+
+                    return 'Đã thu hồi duyệt — ảnh và lịch sử vẫn giữ, '.$shot.' chưa có keyframe đang dùng.';
+                })(),
+            };
+
+            return redirect()->to($page)->with('success', $message);
+        } catch (\RuntimeException $e) {
+            return redirect()->to($page)->with('error', $e->getMessage());
         }
     }
 

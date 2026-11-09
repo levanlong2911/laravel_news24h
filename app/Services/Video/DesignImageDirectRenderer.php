@@ -105,6 +105,7 @@ class DesignImageDirectRenderer
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
                 'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
                 'parts_detail_master' => $this->partsDetailMaster($image, $spec, $budget),
+                MotoCharacterReferenceService::MASTER => $this->client->generate($spec, $budget),
                 'environment_plate', LocationReferencePrompt::OPERATION => $this->byProvider($spec, $budget),
                 ModelSheetService::MASTER_OPERATION => $this->modelSheetMaster($spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),

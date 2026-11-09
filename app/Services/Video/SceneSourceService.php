@@ -26,7 +26,7 @@ final class SceneSourceService
 
     public const SHOT_PLAN_MISSING = 'Chưa có kế hoạch shot hợp lệ — shot, reference, keyframe và clip bị khoá cho tới khi có kế hoạch shot đã duyệt.';
 
-    public const RENDER_NOT_READY = 'Kế hoạch shot đã duyệt — adapter render Moto chưa sẵn sàng, reference, keyframe và clip còn khoá.';
+    public const RENDER_NOT_READY = 'Kế hoạch shot đã duyệt — keyframe làm ở màn Keyframes; render clip và phim cuối còn khoá.';
 
     /** @return array{workflow: string, action: string, adapter: SceneWorkflow, category_id: string, category_slug: string} */
     public function workflowFor(string $projectId): array

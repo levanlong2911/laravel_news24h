@@ -2271,6 +2271,12 @@ a.vp-btn[disabled] {
     grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.vr-block + .vr-block {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--vp-line);
+}
+
 .vr-overlay {
     position: relative;
 }
@@ -2303,6 +2309,91 @@ a.vp-btn[disabled] {
     display: block;
     width: 100%;
     height: auto;
+}
+
+#keyframesPage .vs-shot-detail {
+    margin-bottom: 12px;
+    padding: 0;
+    scroll-margin-top: 12px;
+}
+
+#keyframesPage .vs-c .d {
+    margin-top: 5px;
+    color: var(--vp-dim);
+    font-size: .72rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.vk-group {
+    margin-top: 8px;
+}
+
+.vk-group summary {
+    color: var(--vp-ink);
+    cursor: pointer;
+    font-size: .72rem;
+    font-weight: 700;
+}
+
+.vk-card {
+    min-width: 0;
+}
+
+.vk-swap {
+    margin-top: 5px;
+}
+
+.vk-swap summary {
+    display: inline-block;
+    cursor: pointer;
+}
+
+.vk-swap-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.vk-swap-list button {
+    width: 100%;
+    padding: 0 0 4px;
+    color: var(--vp-dim);
+    cursor: pointer;
+    font-size: .6rem;
+    overflow-wrap: anywhere;
+    background: #fff;
+    border: 1px solid var(--vp-line);
+    border-radius: 6px;
+}
+
+.vk-swap-list img {
+    display: block;
+    width: 100%;
+    margin-bottom: 3px;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 5px 5px 0 0;
+}
+
+.vk-controls {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.vk-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.vk-candidate {
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed var(--vp-line);
 }
 
 @media (max-width: 1280px) {

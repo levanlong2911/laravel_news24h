@@ -13,7 +13,6 @@
     $regimeLabel = ['grey' => 'NGUỒN XÁM — chỉ hình học', 'colour' => 'NGUỒN MÀU — có lớp hoàn thiện'];
     $review = $ref['review'];
     $model = collect($ref['models'])->firstWhere('model', $choice['model']);
-    $rows = $ref['sheets'] === [] ? [null] : $ref['sheets'];
 @endphp
 
 <div class="container-fluid vp" id="motoReferencePage">
@@ -26,6 +25,8 @@
         <a href="{{ route('video-projects.scene', $id) }}">Scenes</a>
         <span class="sep">·</span>
         <b>Reference</b>
+        <span class="sep">·</span>
+        <a href="{{ route('video-projects.keyframes', $id) }}">Keyframes →</a>
         <span class="grow"></span>
         @if($plan !== null)
             <span class="m">{{ count($plan['references']) }} ảnh cần tạo · {{ count($plan['needs']) }} nhu cầu</span>
@@ -83,18 +84,32 @@
     @if($plan !== null)
         <div class="vp-panel va-anchor">
             <div class="va-head"><b>MASTER REFERENCE</b><em>người dùng chọn lưới và size — một master, mỗi part một ô, ô dư để trống</em></div>
+            @if($ref['sheets'] === [])
+                <div class="va-body">
+                    <div class="va-brief">
+                        <div class="line">
+                            @if($grid['approved'] === $grid['total'])
+                                <span class="v">Đã đủ ảnh Reference: {{ $grid['approved'] }}/{{ $grid['total'] }} part.</span>
+                            @elseif($grid['waiting'] > 0)
+                                <span class="v">Còn {{ $grid['waiting'] }} part đang giữ ở sheet chờ quyết định bên dưới — từ chối sheet đó để render lại.</span>
+                            @else
+                                <span class="v">Đã duyệt {{ $grid['approved'] }}/{{ $grid['total'] }} part — các part còn lại đang render.</span>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            @endif
             <div class="va-rows vr-rows">
-                <div class="va-row va-row-head"><div>Lưới</div><div>Master</div><div>Prompt</div><div>Render</div><div>Candidate images</div></div>
-                <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'layout']) }}" id="refLayout" onsubmit="return vpLockForm(this)" hidden>
-                    @csrf
-                    @if($ref['sheets'] === [])
-                        <input type="hidden" name="size" value="{{ $choice['size'] }}">
-                        <input type="hidden" name="model" value="{{ $choice['model'] }}">
-                        <input type="hidden" name="quality" value="{{ $choice['quality'] }}">
-                    @endif
-                </form>
+                @if($ref['sheets'] !== [] || $ref['masters'] !== [])
+                    <div class="va-row va-row-head"><div>Lưới</div><div>Master</div><div>Prompt</div><div>Render</div><div>Candidate images</div></div>
+                @endif
+                @if($ref['sheets'] !== [])
+                    <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'layout']) }}" id="refLayout" onsubmit="return vpLockForm(this)" hidden>
+                        @csrf
+                    </form>
+                @endif
 
-                @foreach($rows as $sheet)
+                @foreach($ref['sheets'] as $sheet)
                     <div class="va-row">
                         <div class="va-row-who">
                             <div class="vr-grid-fields">
@@ -122,51 +137,41 @@
                             <div class="va-lbl" style="font-weight:400">Sức chứa: {{ $grid['capacity'] }} ô</div>
                             <div class="va-lbl" style="font-weight:400">Sử dụng: {{ $grid['used'] }} ô</div>
                             <div class="va-lbl" style="font-weight:400">Để trống: {{ $grid['empty'] }} ô</div>
-                            @if($grid['short'] > 0 && ($sheet === null || ! $oneImage($sheet['layout'])))
+                            @if($grid['short'] > 0 && ! $oneImage($sheet['layout']))
                                 <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Thiếu {{ $grid['short'] }} ô — tăng Hàng hoặc Cột để render.</div>
                             @endif
                         </div>
 
-                        @if($sheet === null)
-                            <div class="va-row-who">
-                                @if($grid['waiting'] > 0)
-                                    <div class="va-lbl" style="font-weight:400">Còn {{ $grid['waiting'] }} part đang giữ ở sheet chờ quyết định bên dưới — từ chối sheet đó để render lại.</div>
-                                @else
-                                    <div class="va-lbl" style="font-weight:400">Không còn ô nào cần tạo master.</div>
-                                @endif
-                            </div>
-                            <div></div>
-                            <div></div>
-                            <div></div>
-                        @else
                             @php
                                 $renderId = 'refRender'.$sheet['id'];
                                 $parts = array_column($sheet['cells'], 'reference');
                                 $single = $oneImage($sheet['layout']);
                             @endphp
                             <div class="va-row-who">
-                                <b>{{ $parts[0]['part'] }}{{ count($parts) > 1 ? '–'.$parts[count($parts) - 1]['part'] : '' }}</b>
-                                @if($single)
-                                    <div class="va-lbl" style="font-weight:400">Một ảnh nguyên tấm {{ $pixels($sheet['layout']['size']) }}, không lưới, không cắt</div>
-                                @else
-                                    <div class="va-lbl" style="font-weight:400">Lưới {{ $sheet['layout']['rows'] }} × {{ $sheet['layout']['columns'] }} · {{ $pixels($sheet['layout']['size']) }} · ô {{ $sheet['cell_size']['width'] }} × {{ $sheet['cell_size']['height'] }} · {{ count($sheet['cell_ids']) }} part</div>
-                                @endif
-                                @foreach($sheet['cells'] as $cell)
-                                    @php
-                                        $part = $cell['reference'];
-                                    @endphp
-                                    <div class="vr-cell">
-                                        <div class="va-lbl" style="font-weight:400">
-                                            @if($single)
-                                                {{ $part['part'] }}: {{ $part['name'] }}
-                                            @elseif($cell['position'] !== null)
-                                                Hàng {{ $cell['position']['row'] }} · cột {{ $cell['position']['column'] }} — {{ $part['part'] }}: {{ $part['name'] }}
-                                            @else
-                                                Chưa xếp được — {{ $part['part'] }}: {{ $part['name'] }}
-                                            @endif
+                                <details>
+                                    <summary class="va-lbl">{{ $parts[0]['part'] }}{{ count($parts) > 1 ? '–'.$parts[count($parts) - 1]['part'] : '' }} · {{ count($sheet['cell_ids']) }} part — xem</summary>
+                                    @if($single)
+                                        <div class="va-lbl" style="font-weight:400">Một ảnh nguyên tấm {{ $pixels($sheet['layout']['size']) }}, không lưới, không cắt</div>
+                                    @else
+                                        <div class="va-lbl" style="font-weight:400">Lưới {{ $sheet['layout']['rows'] }} × {{ $sheet['layout']['columns'] }} · {{ $pixels($sheet['layout']['size']) }} · ô {{ $sheet['cell_size']['width'] }} × {{ $sheet['cell_size']['height'] }} · {{ count($sheet['cell_ids']) }} part</div>
+                                    @endif
+                                    @foreach($sheet['cells'] as $cell)
+                                        @php
+                                            $part = $cell['reference'];
+                                        @endphp
+                                        <div class="vr-cell">
+                                            <div class="va-lbl" style="font-weight:400">
+                                                @if($single)
+                                                    {{ $part['part'] }}: {{ $part['name'] }}
+                                                @elseif($cell['position'] !== null)
+                                                    Hàng {{ $cell['position']['row'] }} · cột {{ $cell['position']['column'] }} — {{ $part['part'] }}: {{ $part['name'] }}
+                                                @else
+                                                    Chưa xếp được — {{ $part['part'] }}: {{ $part['name'] }}
+                                                @endif
+                                            </div>
                                         </div>
-                                    </div>
-                                @endforeach
+                                    @endforeach
+                                </details>
                             </div>
 
                             <div class="va-row-prompt">
@@ -242,7 +247,6 @@
                             <div class="va-row-cands">
                                 <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Chưa có master cho các ô này — master đã render nằm ở các hàng bên dưới.</div>
                             </div>
-                        @endif
                     </div>
                 @endforeach
 
@@ -260,26 +264,29 @@
                             <div class="va-lbl" style="font-weight:400">{{ $spec['size'] ?? '' }}</div>
                         </div>
                         <div class="va-row-who">
-                            <b>{{ $image->image_code }}</b>
-                            <span class="va-tag">{{ $image->status }}</span>
-                            <span class="va-tag {{ ($spec['regime'] ?? '') === 'grey' ? 'mute' : 'blue' }}">{{ $regimeLabel[$spec['regime'] ?? 'colour'] ?? '' }}</span>
-                            @foreach((array) ($spec['cells'] ?? []) as $index => $cell)
-                                @php
-                                    $current = $references[$cell['id']] ?? null;
-                                @endphp
-                                <div class="vr-cell">
-                                    @if(isset($cell['part']))
-                                        <div class="va-lbl">Hàng {{ intdiv($index, $columns) + 1 }} · cột {{ $index % $columns + 1 }} — {{ $cell['part'] }}{{ $current === null ? '' : ': '.$current['name'] }}</div>
-                                    @else
-                                        <div class="va-lbl">Ô {{ $index + 1 }} · {{ $current['key'] ?? $cell['id'] }}</div>
-                                    @endif
-                                    @if($current === null || $current['fingerprint'] !== $cell['fingerprint'])
-                                        <span class="va-tag dg">KHÔNG CÒN KHỚP KẾ HOẠCH</span>
-                                    @else
-                                        {!! $tag($ref['state'][$cell['id']]['status']) !!}
-                                    @endif
-                                </div>
-                            @endforeach
+                            <details>
+                                <summary class="va-lbl">{{ count((array) ($spec['cells'] ?? [])) }} ô — xem</summary>
+                                {{-- <b>{{ $image->image_code }}</b> --}}
+                                <span class="va-tag">{{ $image->status }}</span>
+                                <span class="va-tag {{ ($spec['regime'] ?? '') === 'grey' ? 'mute' : 'blue' }}">{{ $regimeLabel[$spec['regime'] ?? 'colour'] ?? '' }}</span>
+                                @foreach((array) ($spec['cells'] ?? []) as $index => $cell)
+                                    @php
+                                        $current = $references[$cell['id']] ?? null;
+                                    @endphp
+                                    <div class="vr-cell">
+                                        @if(isset($cell['part']))
+                                            <div class="va-lbl">Hàng {{ intdiv($index, $columns) + 1 }} · cột {{ $index % $columns + 1 }} — {{ $cell['part'] }}{{ $current === null ? '' : ': '.$current['name'] }}</div>
+                                        @else
+                                            <div class="va-lbl">Ô {{ $index + 1 }} · {{ $current['key'] ?? $cell['id'] }}</div>
+                                        @endif
+                                        @if($current === null || $current['fingerprint'] !== $cell['fingerprint'])
+                                            <span class="va-tag dg">KHÔNG CÒN KHỚP KẾ HOẠCH</span>
+                                        @else
+                                            {!! $tag($ref['state'][$cell['id']]['status']) !!}
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </details>
                         </div>
                         <div class="va-row-prompt">
                             <div class="va-lbl">PROMPT ĐÃ GỬI</div>
@@ -381,4 +388,6 @@
             </div>
         </div>
     @endif
+
+    @include('video-projects.partials.moto-character-panel')
 </div>

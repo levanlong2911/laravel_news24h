@@ -38,6 +38,10 @@
         <b>Scenes</b>
         <span class="sep">·</span>
         <a href="{{ route('video-projects.reference', $id) }}">Reference →</a>
+        @if($shots !== null)
+            <span class="sep">·</span>
+            <a href="{{ route('video-projects.keyframes', $id) }}">Keyframes →</a>
+        @endif
         <span class="grow"></span>
         @if($plan !== null)
             <span class="m">{{ count($plan['scenes']) }} scene · {{ $seconds($plan['total_ms']) }} s</span>

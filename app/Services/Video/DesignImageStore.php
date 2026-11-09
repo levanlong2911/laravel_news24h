@@ -751,6 +751,19 @@ class DesignImageStore
     }
 
     /**
+     * @param  array<string, mixed>  $spec  the snapshot of the render of a character master
+     * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]; reason: created|already_exists|project_not_found
+     */
+    public function createCharacterMaster(string $projectId, string $creator, array $spec): array
+    {
+        $spec['environment_key'] = null;
+
+        return $this->createKeyed($projectId, $creator, $spec, MotoCharacterReferenceService::MASTER, '_character_v', [
+            'operation', 'character', 'sheet_hash', 'attempt',
+        ]);
+    }
+
+    /**
      * @param  array<string, mixed>  $spec
      * @param  list<string>  $extra
      * @return array{0: ?VideoDesignImage, 1: string}

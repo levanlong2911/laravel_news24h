@@ -26,6 +26,8 @@ final class ImageRenderQueue
         'model_sheet' => ModelSheetService::class,
         'location' => LocationReferenceService::class,
         'parts_detail' => PartsDetailService::class,
+        MotoKeyframeService::STEP => MotoKeyframeService::class,
+        MotoCharacterReferenceService::STEP => MotoCharacterReferenceService::class,
     ];
 
     public function __construct(private readonly DesignImageQueue $images) {}
