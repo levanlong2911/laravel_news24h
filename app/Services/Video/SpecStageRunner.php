@@ -65,6 +65,7 @@ final class SpecStageRunner
                     $settings['timeout_seconds'],
                     1,
                     fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
+                    (array) ($run['images'] ?? []),
                 ));
                 $raw = $response->text;
                 $usage = ClaudeInspirationAnalyst::usageOf($response, $version);

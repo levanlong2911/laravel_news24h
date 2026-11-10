@@ -24,5 +24,29 @@ document.addEventListener('click', function (event) {
     document.execCommand('copy');
     button.textContent = 'Đã sao chép';
 });
+document.addEventListener('change', function (event) {
+    var select = event.target.closest('[data-keyframe-models]');
+
+    if (!select) { return; }
+
+    var entry = JSON.parse(select.dataset.keyframeModels).find(function (model) { return model.model === select.value; });
+
+    if (!entry) { return; }
+
+    [['quality', entry.qualities, entry.default_quality], ['size', entry.sizes, entry.default_size]].forEach(function (control) {
+        var target = document.querySelector('select[form="' + select.getAttribute('form') + '"][name="' + control[0] + '"]');
+        var values = control[1];
+        var keep = values.indexOf(target.value) !== -1 ? target.value : (values.indexOf(control[2]) !== -1 ? control[2] : values[0]);
+
+        target.innerHTML = '';
+        values.forEach(function (value) {
+            target.add(new Option(control[0] === 'size' ? value.replace('x', ' × ') : value, value, false, value === keep));
+        });
+
+        if (values.length === 0) {
+            target.add(new Option('—', '', false, true));
+        }
+    });
+});
 </script>
 @endsection

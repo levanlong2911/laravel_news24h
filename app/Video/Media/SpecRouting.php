@@ -72,8 +72,9 @@ final class SpecRouting
      *                          nay dinh go. Hai task dung chung ca bon model, nen
      *                          mot task lech van tra trung mot entry CO THAT o dung
      *                          cho SAI, va phep kiem model khong thay gi bat thuong.
-     *   - operation khac     : `null` — `edit`/`mirror`/`scene_keyframe` cua OpenAI
-     *                          khong co ly do gi phai khai task.
+     *   - operation khac     : `null` — `edit`/`mirror` cua OpenAI khong co ly do
+     *                          gi phai khai task. `scene_keyframe` doc model tu
+     *                          task cua anh nen, nen task cua no la task do.
      *
      * `null` KHONG co nghia la OpenAI. Nguoi goi tu quyet: OpenAI bo qua, Gemini tu
      * choi truoc HTTP. Khong bao gio dua `null` vao `MediaModelRegistry::find()` —
@@ -87,7 +88,7 @@ final class SpecRouting
     public static function task(array $spec): ?string
     {
         $derived = match (self::operation($spec)) {
-            'environment_plate' => EnvironmentPlatePrompt::TASK,
+            'environment_plate', 'scene_keyframe' => EnvironmentPlatePrompt::TASK,
             LocationReferencePrompt::OPERATION => LocationReferencePrompt::TASK,
             'generate' => DesignImageStore::ANCHOR_TYPE,
             // 'model_sheet': o tung goc cua luong cu, con trong lich su.

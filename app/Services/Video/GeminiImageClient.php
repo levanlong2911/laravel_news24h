@@ -16,7 +16,10 @@ use InvalidArgumentException;
 
 final class GeminiImageClient
 {
-    private const ASPECT_TOLERANCE = 0.01;
+    public const ASPECT_TOLERANCE = 0.01;
+
+    /** @var int the reference images one request may carry, as Google documents it */
+    public const MAX_SOURCE_IMAGES = 14;
 
     /** @var list<string> */
     private const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -41,9 +44,10 @@ final class GeminiImageClient
 
     /**
      * @param  array<string, mixed>  $spec
+     * @param  list<array{bytes: string, filename: string}>  $images  the reference images, sent unchanged after the prompt in their order
      * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>}
      */
-    public function generate(array $spec, int $budgetSeconds): array
+    public function generate(array $spec, int $budgetSeconds, array $images = []): array
     {
         if (trim($this->apiKey) === '') {
             return $this->fail('GEMINI_API_KEY chua cau hinh — khong gui request.');
@@ -76,6 +80,7 @@ final class GeminiImageClient
             ! in_array($spec['aspect_ratio'] ?? null, $entry['controls']['aspect_ratios'], true) => 'aspect_ratio ngoai registry',
             ! in_array($spec['image_size'] ?? null, $entry['controls']['image_sizes'], true) => 'image_size ngoai registry',
             (int) ($spec['variations'] ?? 1) !== 1 => 'Gemini chi sinh 1 anh moi luot',
+            count($images) > self::MAX_SOURCE_IMAGES => 'qua '.self::MAX_SOURCE_IMAGES.' anh tham chieu',
             default => null,
         };
 
@@ -83,8 +88,21 @@ final class GeminiImageClient
             return $this->fail($reason.' — khong gui request.');
         }
 
+        $parts = [['text' => (string) $spec['prompt']]];
+
+        foreach ($images as $position => $source) {
+            $info = @getimagesizefromstring((string) $source['bytes']);
+            $mime = is_array($info) ? (string) ($info['mime'] ?? '') : '';
+
+            if (! in_array($mime, self::ALLOWED_MIMES, true)) {
+                return $this->fail('anh tham chieu '.($position + 1).' khong phai PNG, JPEG hoac WEBP — khong gui request.');
+            }
+
+            $parts[] = ['inlineData' => ['mimeType' => $mime, 'data' => base64_encode((string) $source['bytes'])]];
+        }
+
         $payload = [
-            'contents' => [['parts' => [['text' => (string) $spec['prompt']]]]],
+            'contents' => [['parts' => $parts]],
             'generationConfig' => [
                 'responseModalities' => ['IMAGE'],
                 'imageConfig' => [
@@ -231,7 +249,7 @@ final class GeminiImageClient
                 'model' => (string) $spec['model'],
                 'render_kind' => (string) $spec['operation'],
                 'sent_prompt' => (string) $spec['prompt'],
-                'source_kind' => 'text',
+                'source_kind' => count($payload['contents'][0]['parts']) > 1 ? 'images' : 'text',
                 'artifact_dir' => $dir,
                 'provider_ms' => (int) round((microtime(true) - $startedAt) * 1000),
                 'request_sha256' => hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR)),

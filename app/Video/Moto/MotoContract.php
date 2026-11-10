@@ -44,6 +44,12 @@ final class MotoContract
 
     public const REFERENCE_EXECUTION = 'db-moto-phase-8-v3';
 
+    public const KEYFRAME_PROMPT_INPUT = 'moto-keyframe-prompt-input-v4';
+
+    public const KEYFRAME_PROMPT_FORMAT = 'moto-keyframe-prompt-v1';
+
+    public const KEYFRAME_PROMPT_EXECUTION = 'db-moto-phase-9-v1';
+
     public const EVIDENCE_EXECUTION = 'db-moto-phase-1-v1';
 
     public const DNA_EXECUTION = 'db-moto-phase-2-v1';

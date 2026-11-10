@@ -80,7 +80,7 @@ final class CharacterAnchorPromptService
 
     public static function anchorModel(): ImageModel
     {
-        return ImageModel::tryFrom((string) config('image_prompt.anchor_model')) ?? ImageModel::GPT_IMAGE_2_5_FLARE;
+        return ImageModel::tryFrom((string) config('image_prompt.anchor_model')) ?? ImageModel::GPT_IMAGE_2_6_FLARE;
     }
 
     public function screenplayStage(string $projectId): ?VideoPlanningStage

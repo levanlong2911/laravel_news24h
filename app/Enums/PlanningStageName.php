@@ -32,6 +32,7 @@ enum PlanningStageName: string
     case REFERENCE_REVIEW = 'reference_review';
     case CLIP_PLAN = 'clip_plan';
     case FILM_PLAN = 'film_plan';
+    case KEYFRAME_PROMPT = 'keyframe_prompt';
 
     /** @return list<string> */
     public static function values(): array
@@ -66,6 +67,7 @@ enum PlanningStageName: string
             self::REFERENCE_REVIEW => null,
             self::CLIP_PLAN => null,
             self::FILM_PLAN => null,
+            self::KEYFRAME_PROMPT => null,
         };
     }
 }

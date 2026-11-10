@@ -3,6 +3,7 @@
 namespace App\Jobs\Video;
 
 use App\Services\Video\DesignDnaService;
+use App\Services\Video\KeyframePromptWriterService;
 use App\Services\Video\LocationWriterService;
 use App\Services\Video\ModelSheetService;
 use App\Services\Video\PlanningStageStore;
@@ -37,6 +38,7 @@ class RunPlanningStageJob implements ShouldQueue
         'scenes' => SceneWriterService::class,
         'shots' => ShotWriterService::class,
         'references' => ReferenceWriterService::class,
+        'keyframe_prompts' => KeyframePromptWriterService::class,
     ];
 
     public int $tries = 1;

@@ -1,0 +1,34 @@
+{
+    "pricing_version": "gemini-image-2026-11-10",
+    "source": "https://ai.google.dev/gemini-api/docs/pricing",
+    "reviewed_by": "claude-opus-5.5",
+    "reviewed_at": "2026-11-10",
+    "currency": "USD",
+    "tier": "paid-standard",
+    "proves": "gia niem yet Google cho Gemini Nano Banana 2.1, doc nguyen van tu trang gia",
+    "does_not_prove": "hoa don that — chi doi soat voi billing moi biet",
+    "notes": [
+        "Trang gia ghi: Equivalent to $0.0336 per 1K image, $0.0504 per 2K image, and $0.113 per 4K image.",
+        "Output images at 1K consume 1120 tokens, 2K consume 1680 tokens, 4K consume 3780 tokens.",
+        "Anh dau vao tinh theo token ($1.50 / 1M token) va token thinking ($7.50 / 1M) khong nam trong don gia moi anh.",
+        "2.1 khong co 0.5K."
+    ],
+    "models": {
+        "gemini-nano-banana-2.1": {
+            "image_sizes": {
+                "1K": {
+                    "usd_per_image": 0.0336,
+                    "output_tokens": 1120
+                },
+                "2K": {
+                    "usd_per_image": 0.0504,
+                    "output_tokens": 1680
+                },
+                "4K": {
+                    "usd_per_image": 0.113,
+                    "output_tokens": 3780
+                }
+            }
+        }
+    }
+}

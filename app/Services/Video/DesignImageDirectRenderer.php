@@ -79,8 +79,8 @@ class DesignImageDirectRenderer
                 throw new RuntimeException('Provider chua co client: '.$spec['provider']);
             }
 
-            if ($spec['provider'] === 'gemini' && ! in_array($spec['operation'], ['environment_plate', LocationReferencePrompt::OPERATION], true)) {
-                throw new RuntimeException('Gemini chi duoc dung cho environment_plate va '.LocationReferencePrompt::OPERATION.', khong cho '.$spec['operation']);
+            if ($spec['provider'] === 'gemini' && ! in_array($spec['operation'], ['environment_plate', LocationReferencePrompt::OPERATION, 'scene_keyframe'], true)) {
+                throw new RuntimeException('Gemini chi duoc dung cho environment_plate, '.LocationReferencePrompt::OPERATION.' va scene_keyframe, khong cho '.$spec['operation']);
             }
 
             if ($spec['quality_error'] !== null) {
@@ -103,7 +103,9 @@ class DesignImageDirectRenderer
             $result = match ($spec['operation']) {
                 'mirror' => $this->mirror($image, $spec, $claimToken),
                 'edit' => $this->client->edit($spec, $this->sourceBytes($image, $spec), 'approved-anchor.png', $budget),
-                'scene_keyframe' => $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
+                'scene_keyframe' => $spec['provider'] === 'gemini'
+                    ? $this->gemini->generate($spec, $budget, $this->manifestBytes($image, $spec))
+                    : $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
                 'parts_detail_master' => $this->partsDetailMaster($image, $spec, $budget),
                 MotoCharacterReferenceService::MASTER => $this->client->generate($spec, $budget),
                 'environment_plate', LocationReferencePrompt::OPERATION => $this->byProvider($spec, $budget),
@@ -197,7 +199,7 @@ class DesignImageDirectRenderer
             'claim_token' => $claimToken,
             'prompt' => (string) ($spec['prompt'] ?? ''),
             'operation' => SpecRouting::operation($spec),
-            // `null` voi `edit`/`mirror`/`scene_keyframe`: chung khong tra registry.
+            // `null` voi `edit`/`mirror`: chung khong tra registry.
             // `GeminiImageClient` doc thang truong nay, khong suy lai.
             'task' => SpecRouting::task($spec),
             'provider' => $provider,
@@ -289,12 +291,9 @@ class DesignImageDirectRenderer
     }
 
     /**
-     * Keyframe LUON dung mot anh nguon, va no di truong `image` — dang day da
-     * duoc chung minh bang tien that o chuoi dung hinh.
-     *
      * @param  array<string, mixed>  $spec
-     * @param  list<array{bytes: string, filename: string}>  $images
-     * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>}
+     * @param  list<array{bytes: string, filename: string}>  $images  the files of the manifest, unchanged and in its order
+     * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>} one source goes in the field `image`, two to four go together in `image[]`
      */
     private function sendManifest(array $spec, array $images, int $budget): array
     {

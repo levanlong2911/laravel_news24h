@@ -1156,9 +1156,12 @@ class VideoProjectsController extends Controller
         $service = app(\App\Services\Video\MotoKeyframeService::class);
         $data = $request->validate(match ($action) {
             'source' => ['kind' => 'required|in:design,environment', 'from' => 'nullable|uuid', 'to' => 'required|uuid'],
-            'settings' => ['model' => 'required|string|max:100', 'quality' => 'required|string|max:30', 'size' => 'required|string|max:20'],
-            'render' => ['preview_hash' => 'required|string|max:80', 'operation_id' => 'required|uuid', 'confirm_cost' => 'accepted'],
+            'source-reset' => ['kind' => 'required|in:design,environment'],
+            'settings' => ['model' => 'required|string|max:100', 'quality' => 'nullable|string|max:30', 'size' => 'required|string|max:20'],
+            'render' => ['preview_hash' => 'required|string|max:80', 'operation_id' => 'required|uuid', 'confirm_cost' => 'accepted', 'model' => 'required|string|max:100', 'quality' => 'nullable|string|max:30', 'size' => 'required|string|max:20'],
             'approve', 'revoke' => ['artifact_id' => 'required|uuid'],
+            'prompt' => ['operation_id' => 'required|uuid', 'confirm_cost' => 'accepted', 'regenerate' => 'nullable|boolean'],
+            'prompt-approve' => ['stage_id' => 'required|uuid'],
             default => abort(404),
         });
         $requester = auth()->id() === null ? null : ['id' => (string) auth()->id(), 'name' => (string) auth()->user()?->name];
@@ -1172,13 +1175,18 @@ class VideoProjectsController extends Controller
 
                     return 'Đã đổi ảnh cho lượt keyframe này — nguồn gốc không đổi, chưa render.';
                 })(),
+                'source-reset' => (function () use ($service, $id, $shot, $data): string {
+                    $service->resetSource($id, $shot, $data['kind']);
+
+                    return 'Đã bỏ lựa chọn của người — thẻ dùng lại ảnh của kế hoạch shot, chưa render.';
+                })(),
                 'settings' => (function () use ($service, $id, $shot, $data): string {
-                    $service->saveSettings($id, $shot, $data['model'], $data['quality'], $data['size']);
+                    $service->saveSettings($id, $shot, $data['model'], (string) ($data['quality'] ?? ''), $data['size']);
 
                     return 'Đã lưu cấu hình render của shot — chưa render.';
                 })(),
                 'render' => (function () use ($service, $id, $shot, $data, $requester): string {
-                    [$image, $reason] = $service->render($id, $shot, $data['preview_hash'], $data['operation_id'], $requester);
+                    [$image, $reason] = $service->render($id, $shot, $data['preview_hash'], $data['operation_id'], $requester, ['model' => $data['model'], 'quality' => (string) ($data['quality'] ?? ''), 'size' => $data['size']]);
 
                     return match (true) {
                         $image === null => throw new \RuntimeException($reason),
@@ -1197,6 +1205,21 @@ class VideoProjectsController extends Controller
                     $service->revoke($id, $shot, $data['artifact_id'], $reviewer);
 
                     return 'Đã thu hồi duyệt — ảnh và lịch sử vẫn giữ, '.$shot.' chưa có keyframe đang dùng.';
+                })(),
+                'prompt' => (function () use ($id, $shot, $data, $requester): string {
+                    [$stage, $reason] = app(\App\Services\Video\KeyframePromptWriterService::class)->run($id, $shot, (bool) ($data['regenerate'] ?? false), $data['operation_id'], $requester);
+
+                    return match (true) {
+                        $stage === null => throw new \RuntimeException($reason),
+                        $reason === 'queued', $reason === 'requeued' => 'Đã xếp hàng viết prompt ảnh cho '.$shot.' — máy chạy nền gọi AI.',
+                        $reason === 'cached' => 'Đã có lượt viết prompt cho đúng nguồn này — không gọi AI thêm. Bấm Viết lại nếu cần bản khác.',
+                        default => 'Đã viết prompt ảnh cho '.$shot.'. Đọc rồi duyệt trước khi render.',
+                    };
+                })(),
+                'prompt-approve' => (function () use ($id, $shot, $data, $reviewer): string {
+                    app(\App\Services\Video\KeyframePromptWriterService::class)->approve($id, $data['stage_id'], $reviewer);
+
+                    return 'Đã duyệt prompt ảnh cho '.$shot.' — chưa render.';
                 })(),
             };
 

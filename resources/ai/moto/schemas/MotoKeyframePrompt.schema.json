@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoKeyframePrompt",
+  "title": "Moto Phase 9 — keyframe image prompt (moto-keyframe-prompt-v1)",
+  "description": "One answer of Phase 9 for one shot of a custom motorcycle film: the English prompt an image model renders the first frame of the shot from, with the part ids, work ids and image positions it relies on, what the sources do not give and where they disagree. Code checks the ids, the positions and the shape; a person reads the prompt and approves it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "phase", "project_id", "prompt_version", "shot_id", "source_fingerprint", "status", "image_prompt", "source_refs", "gaps", "conflicts", "flags"],
+  "properties": {
+    "format": { "const": "moto-keyframe-prompt-v1" },
+    "phase": { "const": "9" },
+    "project_id": { "$ref": "#/$defs/text" },
+    "prompt_version": { "$ref": "#/$defs/text" },
+    "shot_id": { "type": "string", "pattern": "^SC[0-9]+_SH[0-9]+$" },
+    "source_fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "status": { "enum": ["ok", "needs_review", "fail"] },
+    "image_prompt": { "description": "The English prompt of one still frame, the moment the shot opens; it refers to an attached image as Image N by its position.", "type": "string" },
+    "source_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parts", "work", "image_positions"],
+      "properties": {
+        "parts": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/text" } },
+        "work": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/text" } },
+        "image_positions": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } }
+      }
+    },
+    "gaps": { "description": "What the frame needs that the sources do not give, and why it matters.", "type": "array", "items": { "$ref": "#/$defs/gap" } },
+    "conflicts": { "description": "Where two sources disagree so that the right frame cannot be chosen.", "type": "array", "items": { "$ref": "#/$defs/conflict" } },
+    "flags": { "description": "Short notes for the reviewer. With status fail, name the fault in the input.", "type": "array", "items": { "$ref": "#/$defs/text" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "ok" } } },
+      "then": { "properties": { "image_prompt": { "$ref": "#/$defs/text" }, "gaps": { "maxItems": 0 }, "conflicts": { "maxItems": 0 } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "needs_review" } } },
+      "then": { "properties": { "image_prompt": { "$ref": "#/$defs/text" } }, "anyOf": [{ "properties": { "gaps": { "minItems": 1 } } }, { "properties": { "conflicts": { "minItems": 1 } } }] }
+    },
+    {
+      "if": { "properties": { "status": { "const": "fail" } } },
+      "then": { "properties": { "image_prompt": { "maxLength": 0 }, "flags": { "minItems": 1 } } }
+    }
+  ],
+  "$defs": {
+    "text": { "type": "string", "pattern": "\\S" },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missing", "why"],
+      "properties": {
+        "missing": { "$ref": "#/$defs/text" },
+        "why": { "$ref": "#/$defs/text" }
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sources", "what"],
+      "properties": {
+        "sources": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/text" } },
+        "what": { "$ref": "#/$defs/text" }
+      }
+    }
+  }
+}

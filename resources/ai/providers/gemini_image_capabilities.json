@@ -298,6 +298,114 @@
                     "canary_render_id": null
                 }
             }
+        },
+        "gemini-nano-banana-2.1": {
+            "aspect_ratios": {
+                "1:1": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "2:3": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "3:2": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "3:4": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "4:3": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "4:5": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "5:4": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "9:16": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "16:9": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "21:9": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "1:4": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "4:1": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "1:8": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "8:1": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                }
+            },
+            "image_sizes": {
+                "1K": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "2K": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                },
+                "4K": {
+                    "source": "https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1",
+                    "reviewed_by": "claude-opus-5.5",
+                    "reviewed_at": "2026-11-10",
+                    "canary_render_id": null
+                }
+            }
         }
     }
 }

@@ -206,10 +206,17 @@ final class ClaudeStreamClient implements LlmClient
     /** @return array<string, mixed> */
     private function body(LlmRequest $request): array
     {
+        $content = $request->images === [] ? $request->input : [
+            ...array_merge(...array_map(static fn (array $image): array => [
+                ['type' => 'text', 'text' => $image['label']],
+                ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $image['media_type'], 'data' => $image['data']]],
+            ], $request->images)),
+            ['type' => 'text', 'text' => $request->input],
+        ];
         $body = [
             'model' => ClaudeWriterService::modelId($request->model),
             'max_tokens' => $request->maxTokens,
-            'messages' => [['role' => 'user', 'content' => $request->input]],
+            'messages' => [['role' => 'user', 'content' => $content]],
             'thinking' => $this->thinking,
             'stream' => true,
         ];

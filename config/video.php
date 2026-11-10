@@ -85,10 +85,10 @@ return [
         'image' => [
             'environment_plate' => [
                 [
-                    'id' => 'openai:gpt-image-2.5-flare',
+                    'id' => 'openai:gpt-image-2.6-flare',
                     'provider' => 'openai',
-                    'model' => 'gpt-image-2.5-flare',
-                    'label' => 'GPT Image 2.5 Flare — tạo ảnh nhanh',
+                    'model' => 'gpt-image-2.6-flare',
+                    'label' => 'GPT Image 2.6 Flare — tạo và sửa ảnh nhanh',
                     'default' => true,
                     'pricing' => 'estimated',
                     'max_variations' => 2,
@@ -102,10 +102,10 @@ return [
                     ],
                 ],
                 [
-                    'id' => 'openai:gpt-image-2.5-sunburst',
+                    'id' => 'openai:gpt-image-2.6-sunburst',
                     'provider' => 'openai',
-                    'model' => 'gpt-image-2.5-sunburst',
-                    'label' => 'GPT Image 2.5 Sunburst — sửa ảnh chính xác',
+                    'model' => 'gpt-image-2.6-sunburst',
+                    'label' => 'GPT Image 2.6 Sunburst — ảnh chi tiết, sửa chính xác',
                     'default' => false,
                     'pricing' => 'estimated',
                     'max_variations' => 2,
@@ -162,10 +162,10 @@ return [
                     ],
                 ],
                 [
-                    'id' => 'gemini:gemini-3.1-flash-image',
+                    'id' => 'gemini:gemini-nano-banana-2.1',
                     'provider' => 'gemini',
-                    'model' => 'gemini-3.1-flash-image',
-                    'label' => 'Nano Banana 2',
+                    'model' => 'gemini-nano-banana-2.1',
+                    'label' => 'Nano Banana 2.1',
                     'default' => false,
                     'pricing' => 'estimated',
                     'max_variations' => 1,
@@ -177,14 +177,14 @@ return [
                             '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1',
                         ],
                         'default_aspect_ratio' => '9:16',
-                        'image_sizes' => ['0.5K', '1K', '2K', '4K'],
+                        'image_sizes' => ['1K', '2K', '4K'],
                         'default_image_size' => '1K',
                     ],
                     'evidence' => [
-                        'models' => 'gemini_models_2026_09_12.json',
+                        'models' => 'gemini_models_2026_11_10.json',
                         'image_config' => 'gemini_image_config_2026_09_13.json',
                         'capabilities' => 'gemini_image_capabilities.json',
-                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
+                        'pricing' => 'gemini_image_pricing_2026_11_10.json',
                     ],
                 ],
                 [
@@ -216,10 +216,10 @@ return [
 
             'location_reference' => [
                 [
-                    'id' => 'openai:gpt-image-2.5-flare',
+                    'id' => 'openai:gpt-image-2.6-flare',
                     'provider' => 'openai',
-                    'model' => 'gpt-image-2.5-flare',
-                    'label' => 'GPT Image 2.5 Flare — tạo và sửa ảnh',
+                    'model' => 'gpt-image-2.6-flare',
+                    'label' => 'GPT Image 2.6 Flare — tạo và sửa ảnh nhanh',
                     'default' => true,
                     'pricing' => 'estimated',
                     'max_variations' => 2,
@@ -235,10 +235,10 @@ return [
                     ],
                 ],
                 [
-                    'id' => 'openai:gpt-image-2.5-sunburst',
+                    'id' => 'openai:gpt-image-2.6-sunburst',
                     'provider' => 'openai',
-                    'model' => 'gpt-image-2.5-sunburst',
-                    'label' => 'GPT Image 2.5 Sunburst — sửa ảnh chính xác',
+                    'model' => 'gpt-image-2.6-sunburst',
+                    'label' => 'GPT Image 2.6 Sunburst — ảnh chi tiết, sửa chính xác',
                     'default' => false,
                     'pricing' => 'estimated',
                     'max_variations' => 2,
@@ -299,10 +299,10 @@ return [
                     ],
                 ],
                 [
-                    'id' => 'gemini:gemini-3.1-flash-image',
+                    'id' => 'gemini:gemini-nano-banana-2.1',
                     'provider' => 'gemini',
-                    'model' => 'gemini-3.1-flash-image',
-                    'label' => 'Nano Banana 2',
+                    'model' => 'gemini-nano-banana-2.1',
+                    'label' => 'Nano Banana 2.1',
                     'default' => false,
                     'pricing' => 'estimated',
                     'max_variations' => 1,
@@ -315,14 +315,14 @@ return [
                             '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1',
                         ],
                         'default_aspect_ratio' => '9:16',
-                        'image_sizes' => ['0.5K', '1K', '2K', '4K'],
+                        'image_sizes' => ['1K', '2K', '4K'],
                         'default_image_size' => '1K',
                     ],
                     'evidence' => [
-                        'models' => 'gemini_models_2026_09_12.json',
+                        'models' => 'gemini_models_2026_11_10.json',
                         'image_config' => 'gemini_image_config_2026_09_13.json',
                         'capabilities' => 'gemini_image_capabilities.json',
-                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
+                        'pricing' => 'gemini_image_pricing_2026_11_10.json',
                     ],
                 ],
                 [
@@ -411,10 +411,10 @@ return [
                     ],
                 ],
                 [
-                    'id' => 'gemini:gemini-3.1-flash-image',
+                    'id' => 'gemini:gemini-nano-banana-2.1',
                     'provider' => 'gemini',
-                    'model' => 'gemini-3.1-flash-image',
-                    'label' => 'Nano Banana 2',
+                    'model' => 'gemini-nano-banana-2.1',
+                    'label' => 'Nano Banana 2.1',
                     'default' => false,
                     'pricing' => 'estimated',
                     'max_variations' => 1,
@@ -426,14 +426,14 @@ return [
                             '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1',
                         ],
                         'default_aspect_ratio' => '9:16',
-                        'image_sizes' => ['0.5K', '1K', '2K', '4K'],
+                        'image_sizes' => ['1K', '2K', '4K'],
                         'default_image_size' => '1K',
                     ],
                     'evidence' => [
-                        'models' => 'gemini_models_2026_09_12.json',
+                        'models' => 'gemini_models_2026_11_10.json',
                         'image_config' => 'gemini_image_config_2026_09_13.json',
                         'capabilities' => 'gemini_image_capabilities.json',
-                        'pricing' => 'gemini_image_pricing_2026_09_14.json',
+                        'pricing' => 'gemini_image_pricing_2026_11_10.json',
                     ],
                 ],
                 [
@@ -465,10 +465,10 @@ return [
 
             'model_sheet' => [
                 [
-                    'id' => 'openai:gpt-image-2.5-flare',
+                    'id' => 'openai:gpt-image-2.6-flare',
                     'provider' => 'openai',
-                    'model' => 'gpt-image-2.5-flare',
-                    'label' => 'GPT Image 2.5 Flare',
+                    'model' => 'gpt-image-2.6-flare',
+                    'label' => 'GPT Image 2.6 Flare',
                     'default' => true,
                     'pricing' => 'estimated',
                     'max_variations' => 2,
@@ -482,10 +482,10 @@ return [
                     ],
                 ],
                 [
-                    'id' => 'openai:gpt-image-2.5-sunburst',
+                    'id' => 'openai:gpt-image-2.6-sunburst',
                     'provider' => 'openai',
-                    'model' => 'gpt-image-2.5-sunburst',
-                    'label' => 'GPT Image 2.5 Sunburst',
+                    'model' => 'gpt-image-2.6-sunburst',
+                    'label' => 'GPT Image 2.6 Sunburst',
                     'default' => false,
                     'pricing' => 'estimated',
                     'max_variations' => 2,
@@ -1030,6 +1030,15 @@ return [
         ],
     ],
 
+    'keyframe_prompts' => [
+        'workflows' => [
+            'harley_custom_v1' => [
+                'action' => 'spec.keyframe_prompt',
+                'adapter' => \App\Video\Moto\MotoKeyframePrompt::class,
+            ],
+        ],
+    ],
+
     'clips' => [
         'workflows' => [
             'harley_custom_v1' => [
@@ -1274,6 +1283,26 @@ return [
                         'off_motorcycle' => 'off the motorcycle',
                     ],
                 ],
+            ],
+        ],
+
+        'keyframe_prompt' => [
+            'execution' => \App\Video\Moto\MotoContract::KEYFRAME_PROMPT_EXECUTION,
+            'model' => env('MOTO_KEYFRAME_PROMPT_MODEL', 'sonnet55'),
+            'effort' => env('MOTO_KEYFRAME_PROMPT_EFFORT', 'high'),
+            'max_tokens' => (int) env('MOTO_KEYFRAME_PROMPT_MAX_TOKENS', 16000),
+            'timeout_seconds' => (int) env('MOTO_KEYFRAME_PROMPT_TIMEOUT_SECONDS', 900),
+            'schema_heading' => 'Output JSON Schema',
+            'image_max_edge' => 1568,
+            'image_max_bytes' => 3_750_000,
+            'image_jpeg_quality' => 90,
+            'estimate_output_tokens' => 3000,
+            'max_prompt_chars' => 32000,
+            'composition_policy' => [
+                'mode' => 'reference_guided',
+                'crop_sources' => false,
+                'stretch_sources' => false,
+                'recompose_for_shot' => true,
             ],
         ],
 
@@ -1930,6 +1959,19 @@ return [
                             ],
                             'outputs' => [
                                 'reference' => ['namespace' => 'moto', 'schema' => 'MotoReferencePrompt', 'version' => '1.2.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 8 Output (format moto-reference-prompt-v3): for each reference cell code planned, whether its draft lines stay as code wrote them or are revised, the revised lines with the section of the cell they belong to, the draft lines they replace and the facts that support them, what was left out of the facts that do not hold at this moment and why, and the facts the cell needs but the sources do not give; code keeps the cell ids, layout, parts, state, checkpoint and angles, checks every line against the facts and assembles the master prompt section by section; seeder data database/seeders/data/ai_phases_moto_phase_8_v4.php'],
+                            ],
+                        ],
+                        'spec.keyframe_prompt' => [
+                            'phase' => 'phase-9',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['keyframe_prompt'],
+                            ],
+                            'outputs' => [
+                                'keyframe_prompt' => ['namespace' => 'moto', 'schema' => 'MotoKeyframePrompt', 'version' => '1.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 9 Output (format moto-keyframe-prompt-v1): for one shot, the English prompt of its first frame the model wrote from the approved shot, script, design and the reference images sent with the render, the part ids, work ids and image positions it relies on, and what the sources do not give or where they disagree; code checks the ids, positions and length, a person approves the prompt and the render sends it word for word; seeder data database/seeders/data/ai_phases_moto_phase_9_v6.php'],
                             ],
                         ],
                     ],

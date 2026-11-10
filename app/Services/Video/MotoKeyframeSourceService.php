@@ -34,6 +34,15 @@ final class MotoKeyframeSourceService
         'character' => ['Nhân vật', 'Đã duyệt'],
     ];
 
+    /** @var array<string, array{0: string, 1: string, 2: string}> for each kind of image: its role, whether it is seen in the first frame or only supports it, and how the screen names the role */
+    public const ROLES = [
+        'identity' => ['identity', 'reference_only', 'Nhận diện và hình dáng tổng thể của xe'],
+        'design' => ['part_geometry', 'reference_only', 'Hình học của các part được chỉ định'],
+        'environment' => ['environment_lighting', 'first_frame', 'Môi trường và ánh sáng của khung'],
+        'continuity' => ['continuity', 'first_frame', 'Giữ liên tục từ khung đầu của shot trước'],
+        'character' => ['character_appearance', 'reference_only', 'Nhận diện và trang phục nhân vật theo ô của shot trên master — không buộc có mặt ở khung đầu'],
+    ];
+
     /** @var array<string, bool> whether each file read in this round of checks still matched its hash, by artifact id */
     private array $files = [];
 
@@ -94,7 +103,7 @@ final class MotoKeyframeSourceService
             return [
                 'people' => $people,
                 'people_cells' => array_column($people['cells'], null, 'id'),
-                'people_images' => $this->characters->approvedCells($projectId, $people),
+                'people_images' => $this->characters->approvedMasterCells($projectId, $people),
                 'project_id' => $projectId,
                 'approved' => $approved,
                 'stage' => $stage,
@@ -109,6 +118,7 @@ final class MotoKeyframeSourceService
                 'rows' => $rows,
                 'images' => $images,
                 'current' => $current,
+                'prompts' => KeyframePromptWriterService::selected($projectId, (string) $stage->id),
                 'choices' => (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::CHOICES][(string) $stage->id] ?? []),
                 'artifacts' => VideoArtifact::query()->where('project_id', $projectId)->whereIn('id', $ids)->get()->keyBy('id')->all(),
             ];
@@ -125,10 +135,12 @@ final class MotoKeyframeSourceService
     {
         $needs = collect((array) $shot['reference_needs'])->groupBy('kind');
         $choice = (array) ($context['choices'][$shot['id']]['sources'] ?? []);
+        $planned = $needs->has('environment');
+        $places = array_values(array_map('strval', (array) ($shot['places'] ?? [])));
         $cards = [
             ...($needs->has('identity') || $context['sheet']['source'] !== null ? [$this->identityCard($context, $needs->get('identity', collect())->all())] : []),
             ...($needs->has('design') ? $this->designCards($context, $needs->get('design')->all(), $choice) : []),
-            ...($needs->has('environment') ? [$this->environmentCard($context, $needs->get('environment')->all(), $choice)] : []),
+            ...($planned || is_string($choice['environment'] ?? null) ? [$this->environmentCard($context, $needs->get('environment', collect())->all(), $choice, $planned, $places)] : []),
             ...array_map(fn (array $need): array => $this->continuityCard($context, $need, $deep), $needs->get('continuity', collect())->all()),
             ...$this->characterCards($context, (string) $shot['id']),
         ];
@@ -148,10 +160,12 @@ final class MotoKeyframeSourceService
                 continue;
             }
 
-            $sources[] = ['position' => count($sources), 'artifact_id' => (string) $card['source']['artifact_id'], 'candidate_id' => array_key_exists('candidate_id', $card['source']) ? $card['source']['candidate_id'] : (string) $card['source']['image_id'], 'sha256' => (string) $card['source']['sha256'], 'kind' => $card['kind'], 'target' => $card['target'], 'image_code' => (string) $card['source']['code']]
+            $sources[] = ['position' => count($sources), 'artifact_id' => (string) $card['source']['artifact_id'], 'candidate_id' => array_key_exists('candidate_id', $card['source']) ? $card['source']['candidate_id'] : (string) $card['source']['image_id'], 'sha256' => (string) $card['source']['sha256'], 'kind' => $card['kind'], 'target' => $card['target'], 'image_code' => (string) $card['source']['code'],
+                'role' => self::ROLES[$card['kind']][0], 'usage' => self::ROLES[$card['kind']][1], 'chosen' => $card['chosen']]
                 + ($card['kind'] === 'design' ? ['parts' => $card['parts']] : [])
+                + ($card['kind'] === 'environment' ? ['title' => (string) ($card['source']['name'] ?? '')] : [])
                 + ($card['kind'] === 'continuity' ? ['shot' => $card['target'], 'image_id' => (string) $card['source']['image_id'], 'decision_id' => $card['source']['decision_id']] : [])
-                + ($card['kind'] === 'character' ? array_intersect_key($card['source'], array_flip(['cell_id', 'cell_code', 'character', 'view', 'items', 'fingerprint', 'master_artifact_id', 'master_sha256', 'decision_id'])) : []);
+                + ($card['kind'] === 'character' ? array_intersect_key($card['source'], array_flip(['cell_id', 'cell_code', 'cell_row', 'cell_column', 'character', 'view', 'items', 'fingerprint', 'master_artifact_id', 'master_sha256', 'decision_id'])) : []);
         }
 
         if ($cards === []) {
@@ -169,7 +183,8 @@ final class MotoKeyframeSourceService
         foreach (self::CELLS as $kind) {
             $ofKind = array_values(array_filter($cards, static fn (array $card): bool => $card['kind'] === $kind || ($kind === 'continuity' && $card['kind'] === 'character')));
             $name = $kind === 'continuity' ? ['name' => self::KINDS['continuity'][0].' / '.self::KINDS['character'][0]] : [];
-            $slots = [...$slots, ...($ofKind === [] ? [['empty' => true] + $name + $this->card($kind, null, [], [], null, null, [])] : $ofKind)];
+            $open = $kind === 'environment' && ! $planned ? ['detail' => 'Kế hoạch shot không khai ảnh nền — chọn một ảnh nền đã chọn ở Phase 5 để gửi'] : [];
+            $slots = [...$slots, ...($ofKind === [] ? [['empty' => true] + $name + $open + $this->card($kind, null, [], [], null, null, $open === [] ? [] : $this->plateOptions($context, null, $places))] : $ofKind)];
         }
 
         return ['cards' => $cards, 'slots' => $slots, 'sources' => $sources, 'problems' => $problems];
@@ -195,8 +210,9 @@ final class MotoKeyframeSourceService
 
         if (($spec['source_token'] ?? null) != $context['approved']['token']) {
             $problem = 'kế hoạch shot đã đổi so với lúc render';
-        } elseif ($shot === null || ($shot['prompts']['image'] ?? null) !== ($spec['prompt'] ?? null)) {
-            $problem = 'prompt của shot không còn là prompt đã gửi';
+        } elseif ($shot === null || ($context['prompts'][$spec['shot_id']]['text'] ?? null) !== ($spec['prompt'] ?? null)
+            || ($context['prompts'][$spec['shot_id']]['stage_id'] ?? null) !== ($spec['prompt_source']['stage_id'] ?? null)) {
+            $problem = 'prompt ảnh đã duyệt của shot không còn là prompt đã gửi';
         } else {
             foreach ((array) ($spec['sources'] ?? []) as $entry) {
                 $problem = $this->entryProblem($context, (array) $entry, $deep, $seen);
@@ -275,6 +291,13 @@ final class MotoKeyframeSourceService
             [$width, $height] = [(int) $read[0], (int) $read[1]];
         }
 
+        if (($spec['provider'] ?? null) === 'gemini') {
+            [$across, $down] = array_map('intval', explode(':', (string) ($spec['aspect_ratio'] ?? '')) + [1 => 0]);
+            $wanted = $across > 0 && $down > 0 ? $across / $down : 0.0;
+
+            return $wanted > 0 && $height > 0 && abs($width / $height - $wanted) / $wanted <= GeminiImageClient::ASPECT_TOLERANCE ? null : 'Ảnh lệch khung: '.$width.'x'.$height.', yêu cầu '.($spec['aspect_ratio'] ?? '—');
+        }
+
         return $width.'x'.$height === (string) ($spec['size'] ?? '') ? null : 'Ảnh sai kích thước: '.$width.'x'.$height.', yêu cầu '.($spec['size'] ?? '—');
     }
 
@@ -309,7 +332,7 @@ final class MotoKeyframeSourceService
         if ($kind === 'character') {
             $image = $context['people_images'][$entry['cell_id'] ?? ''] ?? null;
 
-            if ($image === null || $image['artifact_id'] !== $artifactId || $image['sha256'] !== $sha || $image['fingerprint'] !== ($entry['fingerprint'] ?? null)
+            if ($image === null || $image['master_artifact_id'] !== $artifactId || $image['master_sha256'] !== $sha || $image['fingerprint'] !== ($entry['fingerprint'] ?? null)
                 || $image['master_artifact_id'] !== ($entry['master_artifact_id'] ?? null) || $image['master_sha256'] !== ($entry['master_sha256'] ?? null)) {
                 return 'ảnh nhân vật '.($entry['cell_code'] ?? '').' đã bị thay hoặc thu hồi';
             }
@@ -396,7 +419,8 @@ final class MotoKeyframeSourceService
         $cards = [];
 
         foreach ($byMaster as $artifactId => $parts) {
-            $cards[] = $this->card('design', null, $parts, $partsOf($parts), array_intersect_key($context['masters'][$artifactId], array_flip(['image_id', 'artifact_id', 'sha256', 'code'])), null, $this->masterOptions($context, $parts, (string) $artifactId));
+            $card = $this->card('design', null, $parts, $partsOf($parts), array_intersect_key($context['masters'][$artifactId], array_flip(['image_id', 'artifact_id', 'sha256', 'code'])), null, $this->masterOptions($context, $parts, (string) $artifactId));
+            $cards[] = $chosen === null ? $card : array_replace($card, ['chosen' => 'person', 'reset' => 'Về master mặc định']);
         }
 
         if ($missing !== []) {
@@ -429,9 +453,11 @@ final class MotoKeyframeSourceService
      * @param  array<string, mixed>  $context
      * @param  list<array<string, mixed>>  $needs
      * @param  array<string, mixed>  $choice
-     * @return array<string, mixed>
+     * @param  bool  $planned  whether the shot plan asks for a background; one a person chose for a shot that asks for none is sent the same way
+     * @param  list<string>  $places  the places of the shot
+     * @return array<string, mixed> the background the shot sends, with its id, name, place and light, and whether a person chose it
      */
-    private function environmentCard(array $context, array $needs, array $choice): array
+    private function environmentCard(array $context, array $needs, array $choice, bool $planned, array $places): array
     {
         $target = $needs[0]['target'] ?? null;
         $chosen = is_string($choice['environment'] ?? null) ? $choice['environment'] : null;
@@ -450,15 +476,43 @@ final class MotoKeyframeSourceService
             $problem = $source === null ? "{$target} chưa có ảnh nền đã chọn ở Phase 5" : null;
         }
 
+        $card = $this->card('environment', is_string($target) ? $target : null, [], $needs, $source, $problem, $this->plateOptions($context, $source['artifact_id'] ?? null, $places));
+        $about = $source === null ? [] : [self::plateLabel((string) $target, $source)];
+
+        if (! $planned) {
+            $about[] = 'Kế hoạch shot không khai ảnh nền — ảnh này do người chọn trên màn Keyframe';
+        }
+
+        return ['detail' => $about === [] ? null : implode(' · ', $about)] + array_replace($card, $chosen === null ? [] : [
+            'chosen' => 'person',
+            'reset' => $planned ? 'Về ảnh nền của kế hoạch shot' : 'Bỏ ảnh nền bổ sung',
+        ]);
+    }
+
+    /** @param  array<string, mixed>  $plate */
+    private static function plateLabel(string $background, array $plate): string
+    {
+        return implode(' · ', array_filter([$background, (string) ($plate['name'] ?? ''), (string) ($plate['location'] ?? ''), (string) ($plate['light'] ?? '')], static fn (string $part): bool => $part !== ''));
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  list<string>  $places  the places of the shot, whose backgrounds come first
+     * @return list<array{artifact_id: string, code: string}> every background chosen at Phase 5 but the one shown, those of the places of the shot first, each with its id, name, place and light
+     */
+    private function plateOptions(array $context, ?string $current, array $places = []): array
+    {
         $options = [];
 
         foreach ($context['plates'] as $background => $plate) {
-            if ($plate['artifact_id'] !== ($source['artifact_id'] ?? null)) {
-                $options[] = ['artifact_id' => $plate['artifact_id'], 'code' => $background.' · '.$plate['code']];
+            if ($plate['artifact_id'] !== $current) {
+                $options[] = ['artifact_id' => $plate['artifact_id'], 'code' => self::plateLabel((string) $background, $plate), 'here' => in_array($plate['location'] ?? null, $places, true)];
             }
         }
 
-        return $this->card('environment', is_string($target) ? $target : null, [], $needs, $source, $problem, $options);
+        usort($options, static fn (array $a, array $b): int => (int) $b['here'] <=> (int) $a['here']);
+
+        return $options;
     }
 
     /**
@@ -511,22 +565,24 @@ final class MotoKeyframeSourceService
             $worn = $cell['items'] === [] ? 'không' : implode(', ', $cell['items']);
             $source = $image === null ? null : [
                 'image_id' => $image['image_id'],
-                'candidate_id' => $image['candidate_id'],
-                'artifact_id' => $image['artifact_id'],
-                'sha256' => $image['sha256'],
+                'candidate_id' => $image['image_id'],
+                'artifact_id' => $image['master_artifact_id'],
+                'sha256' => $image['master_sha256'],
                 'code' => $image['master_code'].' · '.$cell['code'],
                 'cell_id' => $cell['id'],
                 'cell_code' => $cell['code'],
+                'cell_row' => $image['cell_row'],
+                'cell_column' => $image['cell_column'],
                 'character' => $cell['character'],
                 'view' => $cell['view'],
                 'items' => $cell['items'],
                 'fingerprint' => $cell['fingerprint'],
                 'master_artifact_id' => $image['master_artifact_id'],
                 'master_sha256' => $image['master_sha256'],
-                'master_code' => $image['master_code'],
                 'decision_id' => $image['decision_id'],
             ];
-            $cards[] = ['detail' => $cell['character'].' · '.$cell['view'].' · bảo hộ: '.$worn] + $this->card('character', (string) $cell['code'], [], [], $source, $image === null ? 'Chưa có ảnh nhân vật đã duyệt cho '.$cell['code'] : null, []);
+            $where = $image === null ? '' : ' · master nguyên tấm, ô '.$cell['code'].' (hàng '.$image['cell_row'].', cột '.$image['cell_column'].')';
+            $cards[] = ['detail' => $cell['character'].' · '.$cell['view'].' · bảo hộ: '.$worn.$where] + $this->card('character', (string) $cell['code'], [], [], $source, $image === null ? 'Chưa có ảnh nhân vật đã duyệt cho '.$cell['code'] : null, []);
         }
 
         return $cards;
@@ -546,6 +602,9 @@ final class MotoKeyframeSourceService
             'kind' => $kind,
             'name' => self::KINDS[$kind][0].($target === null ? '' : ' '.$target),
             'status' => self::KINDS[$kind][1],
+            'role' => self::ROLES[$kind][2],
+            'chosen' => 'plan',
+            'reset' => null,
             'target' => $target,
             'parts' => $parts,
             'purposes' => array_values(array_map(static fn (array $need): string => (string) $need['purpose'], $needs)),
@@ -620,10 +679,13 @@ final class MotoKeyframeSourceService
         return ['masters' => $masters, 'part_masters' => $partMasters, 'problem' => null];
     }
 
-    /** @return array<string, array{image_id: string, artifact_id: string, sha256: string, code: string}> the background images chosen at Phase 5, by background; a choice needs no approved status on its image */
+    /** @return array<string, array{image_id: string, artifact_id: string, sha256: string, code: string, name: string, location: string, light: string}> the background images chosen at Phase 5, by background, with the name, place and light of the set in use; a choice needs no approved status on its image */
     private function plates(string $projectId): array
     {
-        $chosen = (array) ($this->locations->selection($projectId)['images'] ?? []);
+        $selection = $this->locations->selection($projectId);
+        $chosen = (array) ($selection['images'] ?? []);
+        $set = is_string($selection['text']['stage_id'] ?? null) ? VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->find($selection['text']['stage_id']) : null;
+        $records = array_column((array) ($set?->output_json['derived']['images'] ?? []), null, 'id');
         $codes = VideoDesignImage::query()->where('project_id', $projectId)->whereIn('id', array_filter(array_column($chosen, 'image_id')))->pluck('image_code', 'id');
         $artifacts = VideoArtifact::query()->where('project_id', $projectId)->whereIn('id', array_filter(array_column($chosen, 'artifact_id')))->get()->keyBy('id');
         $plates = [];
@@ -632,7 +694,9 @@ final class MotoKeyframeSourceService
             $artifact = $artifacts->get($image['artifact_id'] ?? null);
 
             if ($artifact !== null && (string) $artifact->design_image_id === (string) ($image['image_id'] ?? '') && (string) $artifact->sha256 === (string) ($image['sha256'] ?? '')) {
-                $plates[(string) $background] = ['image_id' => (string) $image['image_id'], 'artifact_id' => (string) $artifact->id, 'sha256' => (string) $artifact->sha256, 'code' => (string) ($codes[$image['image_id']] ?? '')];
+                $record = (array) ($records[$background] ?? []);
+                $plates[(string) $background] = ['image_id' => (string) $image['image_id'], 'artifact_id' => (string) $artifact->id, 'sha256' => (string) $artifact->sha256, 'code' => (string) ($codes[$image['image_id']] ?? ''),
+                    'name' => (string) ($record['name'] ?? ''), 'location' => (string) ($record['location']['id'] ?? ''), 'light' => (string) ($record['light']['description'] ?? '')];
             }
         }
 

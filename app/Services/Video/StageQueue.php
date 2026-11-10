@@ -170,6 +170,7 @@ final class StageQueue
                     (int) $settings['timeout_seconds'],
                     1,
                     fn (array $state): bool => $this->stageStore->recordStream($stageId, $token, $state),
+                    (array) ($run['images'] ?? []),
                 ));
                 $usage = ClaudeInspirationAnalyst::usageOf($response, $version);
 

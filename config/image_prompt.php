@@ -56,7 +56,7 @@ return [
         'timeout_seconds' => (int) env('IMAGE_ANCHOR_GEOMETRY_TIMEOUT', 900),
     ],
 
-    'anchor_model' => env('IMAGE_ANCHOR_MODEL', 'gpt-image-2.5-flare'),
+    'anchor_model' => env('IMAGE_ANCHOR_MODEL', 'gpt-image-2.6-flare'),
 
     'text_pricing' => [
         'model' => 'gpt-6.1-sol',

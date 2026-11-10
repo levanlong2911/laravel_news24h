@@ -8,7 +8,7 @@ use App\Enums\DesignImageStatus;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
-use App\Video\Moto\MotoReferenceSurface;
+use App\Video\Moto\MotoKeyframePrompt;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use RuntimeException;
 
@@ -16,7 +16,7 @@ use RuntimeException;
  * What a clip of the shot flow comes from: the approved shot plan and the keyframe approved for each shot on the Keyframes screen.
  * A keyframe is read the way that screen reads it, through the render row of its shot, and one that fails a check is reported and never replaced by a similar one.
  *
- * The contract the Keyframes screen writes to: a video_design_images row of the project with image_type scene_keyframe, render_scene_id the row ShotRenderPlanService keeps for the shot in the approved plan, status approved with approved_at and selected_artifact_id set through DesignImageStore::approve, and prompt_spec_json {shot_id, shot_stage_id, source_token, prompt, image_sha256, composer, sources} as MotoKeyframeService::render stores them. Its selected video_artifacts row carries design_image_id, a render_id, a disk of video.veo.source_disks and the sha256 of a PNG or JPEG in the frame of the film. Every check MotoKeyframeSourceService::keyframeProblem makes holds too.
+ * The contract the Keyframes screen writes to: a video_design_images row of the project with image_type scene_keyframe, render_scene_id the row ShotRenderPlanService keeps for the shot in the approved plan, status approved with approved_at and selected_artifact_id set through DesignImageStore::approve, and prompt_spec_json {shot_id, shot_stage_id, source_token, prompt, image_sha256, composer, prompt_source, sources} as MotoKeyframeService::render stores them, its prompt the one approved for the shot in Phase 9. Its selected video_artifacts row carries design_image_id, a render_id, a disk of video.veo.source_disks and the sha256 of a PNG or JPEG in the frame of the film. Every check MotoKeyframeSourceService::keyframeProblem makes holds too.
  */
 final class MotoClipSourceService
 {
@@ -118,7 +118,7 @@ final class MotoClipSourceService
             return self::blocked('keyframe_source_changed', "Keyframe của shot {$shotId} được làm từ nguồn khác bản kế hoạch đã duyệt.");
         }
 
-        if ($spec['image_sha256'] !== ($row['prompts']['image_sha256'] ?? null)) {
+        if ($spec['image_sha256'] !== ($context['prompts'][$shotId]['sha256'] ?? null) || ($spec['prompt_source']['stage_id'] ?? null) !== ($context['prompts'][$shotId]['stage_id'] ?? null)) {
             return self::blocked('keyframe_prompt_changed', "Prompt của keyframe shot {$shotId} khác prompt shot hiện hành — render và duyệt lại keyframe.");
         }
 
@@ -150,7 +150,7 @@ final class MotoClipSourceService
                 'artifact_id' => (string) $artifact->id,
                 'sha256' => (string) $artifact->sha256,
                 'source_token' => ['stage_id' => (string) $token['stage_id'], 'content_hash' => (string) $token['content_hash']],
-                'prompt' => ['version' => $spec['composer'], 'surface_rule' => (string) ($source['context']['surface_rule'] ?? MotoReferenceSurface::RULE_ANY_MATERIAL), 'sha256' => $spec['image_sha256']],
+                'prompt' => ['version' => $spec['composer'], 'surface_rule' => MotoKeyframePrompt::SURFACE_RULE, 'sha256' => $spec['image_sha256']],
             ],
             'url' => route('video-artifacts.show', (string) $artifact->id),
             'blocked' => null,

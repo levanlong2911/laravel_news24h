@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Services\Admin\ClaudeWriterService;
 use App\Services\Video\DesignDnaService;
+use App\Services\Video\KeyframePromptWriterService;
 use App\Services\Video\LocationWriterService;
 use App\Services\Video\ReferenceWriterService;
 use App\Services\Video\SceneWriterService;
@@ -74,6 +75,10 @@ final class CanonicalConceptServiceProvider extends ServiceProvider
         $this->app->when(ReferenceWriterService::class)
             ->needs(LlmClient::class)
             ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.moto.reference.stream'));
+
+        $this->app->when(KeyframePromptWriterService::class)
+            ->needs(LlmClient::class)
+            ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.moto.keyframe_prompt.stream'));
 
         $this->app->when(DesignDnaService::class)
             ->needs(LlmClient::class)

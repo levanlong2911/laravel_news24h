@@ -96,6 +96,78 @@ final class MotoCharacterReferenceService implements QueuedImageService
         return $valid;
     }
 
+    /**
+     * @param  array<string, mixed>  $plan  MotoCharacterPlanner::plan()
+     * @return array<string, array{image_id: string, fingerprint: string, master_artifact_id: string, master_sha256: string, master_code: string, decision_id: string, cell_row: int, cell_column: int}> by cell, the approved master a keyframe sends whole for it, while the master is still approved under the decision of the cell, its hash is the one approved and the cell stands on its grid; the crops of the Reference screen are neither read nor needed, and the file of the master is checked where it is sent
+     */
+    public function approvedMasterCells(string $projectId, array $plan): array
+    {
+        $selection = (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::SELECTION]['cells'] ?? []);
+        $cells = array_column((array) $plan['cells'], null, 'id');
+        $masters = [];
+        $valid = [];
+
+        foreach ($selection as $id => $chosen) {
+            if (! isset($cells[$id]) || ! is_array($chosen) || ($chosen['fingerprint'] ?? null) !== $cells[$id]['fingerprint']) {
+                continue;
+            }
+
+            $key = (string) ($chosen['master_artifact_id'] ?? '').'|'.(string) ($chosen['review_id'] ?? '');
+            $master = $masters[$key] ??= $this->approvedMaster($projectId, (string) ($chosen['master_artifact_id'] ?? ''), (string) ($chosen['review_id'] ?? ''));
+
+            if ($master === null || ($chosen['master_sha256'] ?? null) !== $master['master_sha256'] || ! isset($master['positions'][$id])) {
+                continue;
+            }
+
+            $valid[(string) $id] = [
+                'image_id' => $master['image_id'],
+                'fingerprint' => (string) $chosen['fingerprint'],
+                'master_artifact_id' => $master['master_artifact_id'],
+                'master_sha256' => $master['master_sha256'],
+                'master_code' => $master['master_code'],
+                'decision_id' => $master['decision_id'],
+                'cell_row' => $master['positions'][$id]['row'],
+                'cell_column' => $master['positions'][$id]['column'],
+            ];
+        }
+
+        return $valid;
+    }
+
+    /** @return ?array{image_id: string, master_artifact_id: string, master_sha256: string, master_code: string, decision_id: string, positions: array<string, array{row: int, column: int}>} the master while it is the approved image of its row under this decision, with the row and column of every cell of its grid; null otherwise */
+    private function approvedMaster(string $projectId, string $artifactId, string $reviewId): ?array
+    {
+        try {
+            [$master, $image] = $this->master($projectId, $artifactId);
+        } catch (RuntimeException) {
+            return null;
+        }
+
+        $decision = $reviewId === '' ? null : VideoReviewDecision::query()->whereKey($reviewId)->where('project_id', $projectId)->where('entity_type', self::MASTER)
+            ->where('entity_id', (string) $master->id)->where('decision', 'approved')->first();
+        $layout = (array) ($image->prompt_spec_json['layout'] ?? []);
+
+        if ($image->status !== DesignImageStatus::APPROVED->value || (string) $image->selected_artifact_id !== (string) $master->id || $decision === null
+            || ($decision->metadata_json['sha256'] ?? null) !== (string) $master->sha256 || $layout === []) {
+            return null;
+        }
+
+        $positions = [];
+
+        foreach ((new ModelSheetMaster($layout))->cells() as $position) {
+            $positions[(string) $position['id']] = ['row' => (int) $position['row'], 'column' => (int) $position['column']];
+        }
+
+        return [
+            'image_id' => (string) $image->id,
+            'master_artifact_id' => (string) $master->id,
+            'master_sha256' => (string) $master->sha256,
+            'master_code' => (string) $image->image_code,
+            'decision_id' => (string) $decision->id,
+            'positions' => $positions,
+        ];
+    }
+
     /** @return array<string, mixed> everything the characters block of the Reference screen shows; reading it writes nothing */
     public function panel(string $projectId): array
     {

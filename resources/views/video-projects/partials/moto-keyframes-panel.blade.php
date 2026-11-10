@@ -28,7 +28,7 @@
     <div class="vp-panel va-anchor">
         <div class="va-head">
             <b>KEYFRAME</b>
-            <em>khung đầu của từng shot — prompt nguyên văn từ kế hoạch shot đã duyệt, ảnh tham chiếu nguyên tấm</em>
+            <em>khung đầu của từng shot — prompt ảnh do AI viết và người duyệt, gửi nguyên văn kèm ảnh tham chiếu nguyên tấm</em>
             <span class="grow"></span>
             @foreach($panel['counts'] as $state => $count)
                 <span class="va-tag {{ $states[$state][0] ?? 'mute' }}">{{ $count }} {{ $states[$state][1] ?? $state }}</span>
@@ -48,19 +48,21 @@
     @foreach($panel['rows'] as $row)
         @php
             $shot = $row['shot'];
-            $camera = $shot['camera'];
             $settings = $row['settings'];
             $renderForm = 'kfRender'.$shot['id'];
-            $settingsForm = 'kfSettings'.$shot['id'];
             $promptBox = 'kfPrompt'.$shot['id'];
+            $promptForm = 'kfPromptWrite'.$shot['id'];
             $used = collect($row['candidates'])->firstWhere('revocable', true);
+            $writer = $row['writer'];
+            $shown = $writer['shown'];
+            $promptText = $shown['prompt'] ?? ($row['prompt']['text'] ?? '');
         @endphp
         <div class="vs-shot-detail" id="shot-{{ $shot['id'] }}">
             <div class="vs-shot-grid">
                 <div class="vs-h"><b>1</b> Planning</div>
                 <div class="vs-h"><b>2</b> Prompt</div>
                 <div class="vs-h"><b>3</b> References</div>
-                <div class="vs-h"><b>4</b> Image</div>
+                <div class="vs-h"><b>4</b> Keyframes</div>
 
                 <div class="vs-c vs-plan">
                     <span class="o">{{ $shot['id'] }}</span>
@@ -77,17 +79,68 @@
                 </div>
 
                 <div class="vs-c vs-prompt">
-                    <div class="d">{{ $camera['scale'] }} · {{ $camera['lens_mm'] }} mm · cao {{ $camera['height_m'] ?? '—' }} m · cách {{ $camera['distance_m'] ?? '—' }} m · azimuth {{ $camera['azimuth_deg'] ?? '—' }}° · elevation {{ $camera['elevation_deg'] ?? '—' }}° · {{ $camera['move'] }}{{ $camera['move_value'] !== null ? ' '.$camera['move_value'].' '.$camera['move_unit'] : '' }}</div>
-                    <div class="d">Đầu: {{ $camera['start_pose'] ?? '—' }}</div>
-                    <div class="d">Cuối: {{ $camera['end_pose'] ?? '—' }}</div>
-                    <div class="va-lbl">Prompt ảnh (keyframe) — gửi nguyên văn</div>
-                    <textarea class="va-ta" id="{{ $promptBox }}" readonly>{{ $shot['prompts']['image'] }}</textarea>
-                    <div class="va-count"><span>{{ mb_strlen($shot['prompts']['image']) }}</span> ký tự</div>
+                    <div class="va-lbl">Prompt ảnh (keyframe) — AI viết, gửi nguyên văn bản đã duyệt</div>
+                    @if($row['prompt'] !== null)
+                        <div class="d">Đang dùng: lượt {{ substr($row['prompt']['stage_id'], 0, 8) }} · {{ $row['prompt']['version'] }}</div>
+                    @endif
+                    @if($shown !== null && ! $shown['selected'])
+                        <div class="d">Chưa duyệt — bản dưới là lượt viết mới nhất ({{ substr($shown['id'], 0, 8) }})</div>
+                    @endif
+                    @if($writer['stale'])
+                        <div class="d" style="color:var(--vp-amber-fg)">Nguồn đã đổi — cần viết hoặc duyệt lại</div>
+                    @endif
+                    <textarea class="va-ta" id="{{ $promptBox }}" readonly>{{ $promptText }}</textarea>
+                    <div class="va-count"><span>{{ mb_strlen($promptText) }}</span> ký tự</div>
                     <button type="button" class="vp-btn sm" data-copy-prompt="{{ $promptBox }}">Sao chép prompt</button>
-                    <details class="vk-group">
-                        <summary>Prompt video (clip) — chỉ để tra cứu</summary>
-                        <div class="body">{{ $shot['prompts']['video'] }}</div>
-                    </details>
+                    @if($shown !== null)
+                        <div class="d">Lượt {{ $shown['revision'] }} · {{ $shown['verdict'] ?? '—' }} · {{ $shown['status'] ?? '—' }} · {{ $shown['model'] }} · {{ number_format($shown['tokens']['in']) }}/{{ number_format($shown['tokens']['out']) }} token @if($shown['cost_usd'] !== null) · ${{ number_format($shown['cost_usd'], 4) }}@endif</div>
+                        @if($shown['error'] !== null)
+                            <div class="d" style="color:var(--vp-red)">{{ $shown['error'] }}</div>
+                        @endif
+                        @foreach([...$shown['schema'], ...$shown['issues']] as $issue)
+                            <div class="d" style="color:var(--vp-red)">{{ $issue }}</div>
+                        @endforeach
+                        @foreach($shown['gaps'] as $gap)
+                            <div class="d" style="color:var(--vp-amber-fg)">Thiếu dữ kiện: {{ $gap['missing'] }} — {{ $gap['why'] }}</div>
+                        @endforeach
+                        @foreach($shown['conflicts'] as $conflict)
+                            <div class="d" style="color:var(--vp-amber-fg)">Mâu thuẫn ({{ implode(' / ', $conflict['sources']) }}): {{ $conflict['what'] }}</div>
+                        @endforeach
+                        @if(! $shown['current'])
+                            <div class="d" style="color:var(--vp-amber-fg)">Lượt này viết từ nguồn cũ</div>
+                        @endif
+                        @if($shown['approvable'])
+                            <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'prompt-approve']) }}" onsubmit="return vpLockForm(this)">
+                                @csrf
+                                <input type="hidden" name="stage_id" value="{{ $shown['id'] }}">
+                                <button class="vp-btn sm ok" data-busy="Đang duyệt…">✓ Duyệt và dùng prompt này</button>
+                            </form>
+                        @endif
+                    @endif
+                    @if($writer['running'])
+                        <div class="d"><span class="dot"></span>Đang viết prompt ảnh…</div>
+                        <div class="va-brief">@include('video-projects.partials.stream-state', ['stream' => $writer['stream']])</div>
+                    @elseif($writer['pending'])
+                        <div class="d">Đang chờ máy chạy nền nhận lượt viết.</div>
+                    @elseif($writer['error'] !== null)
+                        <div class="d" style="color:var(--vp-red)">{{ $writer['error'] }}</div>
+                    @endif
+                    @if($writer['unavailable'] !== null)
+                        <div class="d" style="color:var(--vp-amber-fg)">Chưa viết được: {{ $writer['unavailable'] }}</div>
+                    @endif
+                    <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'prompt']) }}" id="{{ $promptForm }}" onsubmit="return vpLockForm(this)" hidden>
+                        @csrf
+                        <input type="hidden" name="operation_id" value="{{ $writer['operation_id'] }}">
+                        <input type="hidden" name="confirm_cost" value="1">
+                        <input type="hidden" name="regenerate" value="{{ $shown !== null ? 1 : 0 }}">
+                    </form>
+                    <div class="vk-actions">
+                        <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirm{{ $promptForm }}" data-busy="Đang gửi…"
+                                @if(! $writer['can_write']) disabled title="{{ $writer['unavailable'] ?? 'Đang có lượt viết chờ hoặc đang chạy' }}" @endif>{{ $shown !== null ? 'Viết lại prompt ảnh' : 'Viết prompt ảnh bằng AI' }}</button>
+                    </div>
+                    @if($writer['estimate'] !== null)
+                        @include('modal.confirm_action', ['id' => 'confirm'.$promptForm, 'form' => $promptForm, 'content' => 'Gọi '.$writer['estimate']['model'].' (effort '.$writer['estimate']['effort'].') một lần để viết prompt khung đầu của '.$shot['id'].' từ dữ liệu shot và '.$writer['estimate']['images'].' ảnh tham chiếu — TÁC VỤ NÀY TÍNH TIỀN. Viết xong không tự duyệt và không render.', 'detail' => 'Dự toán '.$writer['estimate']['text'].'.'])
+                    @endif
                 </div>
 
                 <div class="vs-c vs-refs">
@@ -112,25 +165,20 @@
                                 @else
                                     <div class="vs-slot">{{ $card['name'] }}</div>
                                 @endif
-                                @if($card['parts'] !== [])
-                                    <div class="d">Part: {{ implode(', ', $card['parts']) }}</div>
-                                @endif
-                                @if(isset($card['detail']))
+                                <div class="d">Vai trò: {{ $card['role'] }}</div>
+                                @if($card['empty'] && isset($card['detail']))
                                     <div class="d">{{ $card['detail'] }}</div>
-                                @endif
-                                @if(isset($card['source']['master_code']))
-                                    <div class="d">Từ master: {{ $card['source']['master_code'] }}</div>
                                 @endif
                                 @if($card['problem'] !== null)
                                     <div class="d" style="color:var(--vp-amber-fg)">{{ $card['problem'] }}</div>
-                                @elseif(! $card['empty'])
+                                @elseif(! $card['empty'] && $card['kind'] !== 'environment')
                                     <div class="d">{{ $card['status'] }}</div>
                                 @endif
                                 @if(! $card['empty'] && $card['options'] === [])
                                     <button type="button" class="vp-btn sm" disabled title="Không có ảnh khác dùng được">Đổi ảnh</button>
-                                @elseif(! $card['empty'])
+                                @elseif($card['options'] !== [])
                                     <details class="vk-swap">
-                                        <summary class="vp-btn sm">Đổi ảnh</summary>
+                                        <summary class="vp-btn sm">{{ $card['empty'] ? 'Chọn ảnh nền' : 'Đổi ảnh' }}</summary>
                                         <div class="vk-swap-list">
                                             @foreach($card['options'] as $option)
                                                 <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'source']) }}" onsubmit="return vpLockForm(this)">
@@ -147,43 +195,49 @@
                                         </div>
                                     </details>
                                 @endif
+                                @if($card['reset'] !== null)
+                                    <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'source-reset']) }}" onsubmit="return vpLockForm(this)">
+                                        @csrf
+                                        <input type="hidden" name="kind" value="{{ $card['kind'] }}">
+                                        <button class="vp-btn sm" data-busy="Đang bỏ…">{{ $card['reset'] }}</button>
+                                    </form>
+                                @endif
                             </div>
                         @endforeach
                     </div>
 
-                    <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'settings']) }}" id="{{ $settingsForm }}" onsubmit="return vpLockForm(this)">
-                        @csrf
-                        <div class="vk-controls">
-                            <div class="va-field">
-                                <label>Model</label>
-                                <select class="ctl" name="model" required onchange="this.form.requestSubmit()">
-                                    @foreach($settings['models'] as $entry)
-                                        <option value="{{ $entry['model'] }}" @selected($entry['model'] === $settings['model'])>{{ $entry['label'] }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="va-field">
-                                <label>Quality</label>
-                                <select class="ctl" name="quality" required onchange="this.form.requestSubmit()">
-                                    @foreach($settings['qualities'] as $quality)
-                                        <option value="{{ $quality }}" @selected($quality === $settings['quality'])>{{ $quality }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="va-field">
-                                <label>Size <em>({{ $panel['aspect_ratio'] }})</em></label>
-                                <select class="ctl" name="size" required onchange="this.form.requestSubmit()">
-                                    @foreach($settings['sizes'] as $size)
-                                        <option value="{{ $size }}" @selected($size === $settings['size'])>{{ $pixels($size) }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="va-field"><label>Số ảnh <em>(cố định)</em></label><select class="ctl" disabled><option>1</option></select></div>
+                    <div class="vk-controls">
+                        <div class="va-field">
+                            <label>Model</label>
+                            <select class="ctl" name="model" form="{{ $renderForm }}" required data-keyframe-models="{{ json_encode(array_map(static fn (array $entry): array => ['model' => $entry['model'], 'qualities' => $entry['qualities'], 'sizes' => $entry['sizes'], 'default_quality' => $entry['default_quality'], 'default_size' => $entry['default_size']], $settings['models'])) }}">
+                                @foreach($settings['models'] as $entry)
+                                    <option value="{{ $entry['model'] }}" @selected($entry['model'] === $settings['model'])>{{ $entry['label'] }}</option>
+                                @endforeach
+                            </select>
                         </div>
-                    </form>
+                        <div class="va-field">
+                            <label>Quality</label>
+                            <select class="ctl" name="quality" form="{{ $renderForm }}">
+                                @forelse($settings['qualities'] as $quality)
+                                    <option value="{{ $quality }}" @selected($quality === $settings['quality'])>{{ $quality }}</option>
+                                @empty
+                                    <option value="">—</option>
+                                @endforelse
+                            </select>
+                        </div>
+                        <div class="va-field">
+                            <label>Size <em>({{ $panel['aspect_ratio'] }})</em></label>
+                            <select class="ctl" name="size" form="{{ $renderForm }}" required>
+                                @foreach($settings['sizes'] as $size)
+                                    <option value="{{ $size }}" @selected($size === $settings['size'])>{{ $pixels($size) }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="va-field"><label>Số ảnh <em>(cố định)</em></label><select class="ctl" disabled><option>1</option></select></div>
+                    </div>
                     <div class="d">
                         @if($row['price'] !== null)
-                            Dự toán: ${{ number_format((float) $row['price']['usd'], 3) }} / ảnh (bảng giá {{ $row['price']['version'] }}, ước tính, chưa phản ánh size)
+                            Dự toán: ${{ number_format((float) $row['price']['usd'], 3) }} / ảnh (bảng giá {{ $row['price']['version'] }}, ước tính, {{ $settings['qualities'] === [] ? 'theo size' : 'chưa phản ánh size' }})
                         @else
                             Dự toán: chưa có giá cho model/chất lượng này
                         @endif
@@ -203,7 +257,7 @@
                         <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#confirm{{ $renderForm }}" data-busy="Đang gửi…"
                                 @if(! $row['renderable']) disabled title="{{ $row['busy'] ? 'Shot đang có một lượt chờ hoặc đang render' : implode(' · ', $row['problems']) }}" @endif>{{ $row['has_candidates'] ? 'Tạo bản khác' : 'Render Image' }}</button>
                     </div>
-                    @include('modal.confirm_action', ['id' => 'confirm'.$renderForm, 'form' => $renderForm, 'content' => 'Gửi prompt keyframe của '.$shot['id'].' kèm '.count($row['sources']).' ảnh nguyên tấm cho '.$settings['model'].', '.$settings['size'].', '.$settings['quality'].': một request, một ảnh — TÁC VỤ NÀY TÍNH TIỀN.', 'detail' => 'Xem dự toán ở cột References.'])
+                    @include('modal.confirm_action', ['id' => 'confirm'.$renderForm, 'form' => $renderForm, 'content' => 'Gửi prompt keyframe của '.$shot['id'].' kèm '.count($row['sources']).' ảnh nguyên tấm theo model, quality và size đang chọn: một request, một ảnh — TÁC VỤ NÀY TÍNH TIỀN.', 'detail' => 'Xem dự toán ở cột References.'])
                 </div>
 
                 <div class="vs-c vs-img">
