@@ -196,13 +196,7 @@ final class VideoRenderExecutionService
             return [false, 'lease_lost_before_submit'];
         }
 
-        $target = $this->target($spec) + ['controls' => ['task' => (string) ($spec['task'] ?? '')]];
-        $payload = GeminiOmniVideoClient::payload($target, $images, (string) $spec['compiled_prompt']['prompt'], [
-            'aspect_ratio' => (string) $spec['aspect_ratio'],
-            'resolution' => (string) $spec['resolution'],
-        ]);
-
-        return $this->accepted($render, $claimToken, $this->omni->submit($target, $payload));
+        return $this->accepted($render, $claimToken, $this->omni->submit($this->target($spec), GeminiOmniVideoClient::specPayload($spec, $images)));
     }
 
     /**

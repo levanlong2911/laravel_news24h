@@ -1,0 +1,368 @@
+{
+    "captured_at": "2026-11-10T10:01:34+00:00",
+    "status": "measured",
+    "video_path": "omni-canary/omni_video_canary_2026_11_10_100134_v5l9vt.mp4",
+    "request": {
+        "group": "scene_clip",
+        "model": "gemini-omni-1.2-flash",
+        "model_id": "gemini:gemini-omni-1.2-flash",
+        "api_version": "v1beta",
+        "endpoint": "POST https://generativelanguage.googleapis.com/v1beta/interactions",
+        "mode": "generate",
+        "task": null,
+        "task_sent": false,
+        "store": true,
+        "extend_from": null,
+        "frame_from": null,
+        "output": {
+            "type": "video",
+            "aspect_ratio": "9:16",
+            "resolution": "720p",
+            "duration": "3s",
+            "delivery": "uri"
+        },
+        "expected": {
+            "duration_ms": 3000,
+            "width": 720,
+            "height": 1280,
+            "duration_tolerance_ms": 500,
+            "video_streams": 1,
+            "audio_streams": 1,
+            "av_drift_tolerance_ms": 100,
+            "extension_min_ms": 3000,
+            "extension_max_ms": 10000
+        },
+        "images": [
+            {
+                "order": 0,
+                "kind": "artifact",
+                "artifact_id": "a329744c-545f-45fc-a664-5014e8055f94",
+                "image_code": "master_vessel_admin_06112026_165941_location_v12",
+                "image_type": "location_reference",
+                "chosen_background": "BG12",
+                "original": {
+                    "sha256": "28cc82757fe52760225e29c5fefa0b3e516e668189ea88497cd80767ee3b8e89",
+                    "mime": "image/png",
+                    "bytes": 2490359,
+                    "width": 1536,
+                    "height": 1024
+                },
+                "sent": {
+                    "sha256": "86d36cbb3c97267d608f62da62fe6be5d9154bac3adfcbabe0816e848c177742",
+                    "mime": "image/jpeg",
+                    "bytes": 346866,
+                    "width": 1536,
+                    "height": 1024
+                },
+                "transform": {
+                    "type": "resize_jpeg",
+                    "processor": "gd-resize-jpeg-v1",
+                    "from": [
+                        1536,
+                        1024
+                    ],
+                    "to": [
+                        1536,
+                        1024
+                    ],
+                    "jpeg_quality": 92,
+                    "crop": false
+                }
+            },
+            {
+                "order": 1,
+                "kind": "artifact",
+                "artifact_id": "a3288672-17fc-4f26-9993-59a6731ac25f",
+                "image_code": "master_vessel_admin_06112026_055332_model_sheet_master_v1",
+                "image_type": "model_sheet_master",
+                "chosen_background": null,
+                "original": {
+                    "sha256": "96780875cd1baa4aa6f65b6b106b1a5634566da58ebdf04b4a4d7b62d23f166d",
+                    "mime": "image/png",
+                    "bytes": 11252704,
+                    "width": 3840,
+                    "height": 2160
+                },
+                "sent": {
+                    "sha256": "2888cccce0fa6c7b0a940bf51fb584c859a967fd31def5699014cb3fddbeb15f",
+                    "mime": "image/jpeg",
+                    "bytes": 481345,
+                    "width": 2048,
+                    "height": 1152
+                },
+                "transform": {
+                    "type": "resize_jpeg",
+                    "processor": "gd-resize-jpeg-v1",
+                    "from": [
+                        3840,
+                        2160
+                    ],
+                    "to": [
+                        2048,
+                        1152
+                    ],
+                    "jpeg_quality": 92,
+                    "crop": false
+                }
+            },
+            {
+                "order": 2,
+                "kind": "artifact",
+                "artifact_id": "a32abe0a-902a-4dae-9085-4e3bf4841525",
+                "image_code": "master_vessel_admin_07112026_082110_parts_detail_v2",
+                "image_type": "parts_detail_master",
+                "chosen_background": null,
+                "original": {
+                    "sha256": "10653fcda3f4b3cff73ecf7d36f116517c6726a3cca18b013663fe01a2caeaf4",
+                    "mime": "image/png",
+                    "bytes": 10427431,
+                    "width": 3840,
+                    "height": 2160
+                },
+                "sent": {
+                    "sha256": "e4d0219da18ca07a572c52fdbf37e3150b76248d6a16a56b0e0b348d676b8580",
+                    "mime": "image/jpeg",
+                    "bytes": 469013,
+                    "width": 2048,
+                    "height": 1152
+                },
+                "transform": {
+                    "type": "resize_jpeg",
+                    "processor": "gd-resize-jpeg-v1",
+                    "from": [
+                        3840,
+                        2160
+                    ],
+                    "to": [
+                        2048,
+                        1152
+                    ],
+                    "jpeg_quality": 92,
+                    "crop": false
+                }
+            },
+            {
+                "order": 3,
+                "kind": "artifact",
+                "artifact_id": "a32c4631-0ea9-4fbf-a9bd-634be6857e1d",
+                "image_code": "master_vessel_admin_08112026_023806_character_v1",
+                "image_type": "character_master",
+                "chosen_background": null,
+                "original": {
+                    "sha256": "876cd0e2a62b0301263628cc63fcb047a824ce5bbf377076c497f331a772e0db",
+                    "mime": "image/png",
+                    "bytes": 8681911,
+                    "width": 3840,
+                    "height": 2160
+                },
+                "sent": {
+                    "sha256": "d5bd66a2c438c7935785ed2010780fea850884191cb829305dfc8fb833acf038",
+                    "mime": "image/jpeg",
+                    "bytes": 287796,
+                    "width": 2048,
+                    "height": 1152
+                },
+                "transform": {
+                    "type": "resize_jpeg",
+                    "processor": "gd-resize-jpeg-v1",
+                    "from": [
+                        3840,
+                        2160
+                    ],
+                    "to": [
+                        2048,
+                        1152
+                    ],
+                    "jpeg_quality": 92,
+                    "crop": false
+                }
+            }
+        ],
+        "reference_policy": {
+            "max_long_edge": 2048,
+            "max_bytes": 2097152,
+            "jpeg_quality": 92,
+            "processor": "gd-resize-jpeg-v1"
+        },
+        "sent_image_bytes": 1585020,
+        "prompt": "In a single continuous shot with no scene cuts, film a 3-second live-action clip, shot in the real world with a real camera. The four images are references, not frames of the clip and not a sequence: build one new real scene from them.\n- The first image is the place: an empty concrete forecourt at dusk with a low wall, two dark bollards and an orange sunset over a far horizon. Use its ground, wall, light and sky.\n- The second image is a studio model sheet of the motorcycle from several views, with a close-up of the tank. Use it only for the exact design of the motorcycle: two deep green gloss tank pods with a single dark backbone tube running between them, brushed silver fork legs, a round white headlight, a cognac brown solo seat, a thin green rear hugger, a fat front tyre on dark five-spoke wheels, a black V-twin engine and a belt drive on the left side. Do not show the grey studio, the grid or more than one motorcycle.\n- The third image is a sheet of single parts, each in its own cell on a grey studio ground. Use it only for the detail of these parts: the black V-twin engine, the five-spoke wheels with their tyres, the cognac brown solo seat, the brushed two-into-one exhaust and the small red tail light. Ignore every other cell. The frame, the tank pods and the rear hugger follow the second image only, never this one. Do not show the grid, the cells or any loose part; every part is fitted on the one motorcycle.\n- The fourth image is a sheet of the rider and the rider's kit. Use it only for the look of the rider: a matte grey full-face helmet with the dark visor down, a black leather jacket, dark blue jeans, black boots and black gloves. Show one rider only; the face is never visible.\n\nScene: the finished motorcycle stands upright on the forecourt at dusk, side stand up, engine idling, the white headlight lit. The rider sits on it and holds it with both boots down on the concrete, the helmet tipped toward the tank. Open evening air sits behind the seat. Warm, low sunset light rakes across the green pods.\n\nCamera: a wide shot from low at the front left of the motorcycle, close to the ground, with the natural look of a 35 mm lens; the whole machine and the rider are in frame. The camera makes one slow, steady push-in toward the motorcycle on a smooth, straight path, about 1.2 metres over the clip, as a dolly would move it, and keeps the whole motorcycle in frame. Focus stays on the motorcycle; the far horizon stays slightly soft.\n\nAction: by 1.4 seconds the whole motorcycle fills the frame: the top line falls from the steering head along the backbone between the two pods to the low seat, the fat front tyre on its five-spoke wheel is open to view, and the V-twin and the left belt are in full view. The motorcycle and the rider stay where they are; only the camera moves.\n\nLiving detail: the idling engine sends a light, steady vibration through the motorcycle; the gloved hands keep a relaxed grip on the bars; sunset reflections slide across the gloss green pods as the camera moves in, and the long shadows of the motorcycle and the rider stay anchored on the concrete.\n\nKeep the motorcycle exactly to its design, finished, with every part fitted, and keep the same motorcycle and the same rider through the whole clip.\n\nSound design: A steady, low V-twin idle and a soft evening breeze over the open forecourt. No music. No dialogue.",
+        "payload_bytes": 2117183,
+        "estimate": {
+            "usd": 0.209,
+            "basis": "0.069504 USD/giay 720p x 3 giay theo omni_video_contract_2026_11_10.json"
+        },
+        "request_sha256": "073f76e03664542213dcaee0976a903a3656b5a4941e7e6edab58176d0c67be0"
+    },
+    "submit_seconds": 43,
+    "submit": {
+        "ok": true,
+        "ambiguous": false,
+        "job_id": "files/yu38547u0a8c",
+        "request_id": null,
+        "response": {
+            "id": "v1_ChdvLXZ5YXJxa0RxZk1yZmNQaW9pcm1RdxIXby12eWFycWtEcWZNcmZjUGlvaXJtUXc",
+            "status": "completed",
+            "usage": {
+                "total_tokens": 23606,
+                "total_input_tokens": 5154,
+                "input_tokens_by_modality": [
+                    {
+                        "modality": "image",
+                        "tokens": 4380
+                    },
+                    {
+                        "modality": "text",
+                        "tokens": 774
+                    }
+                ],
+                "total_cached_tokens": 0,
+                "total_output_tokens": 17376,
+                "output_tokens_by_modality": [
+                    {
+                        "modality": "video",
+                        "tokens": 17376
+                    }
+                ],
+                "total_tool_use_tokens": 0,
+                "total_thought_tokens": 1076,
+                "initial_input_tokens": 5154
+            },
+            "created": "2026-11-10T10:02:11Z",
+            "updated": "2026-11-10T10:02:11Z",
+            "service_tier": "standard",
+            "steps": [
+                {
+                    "signature": "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",
+                    "type": "thought"
+                },
+                {
+                    "content": [
+                        {
+                            "uri": "https://generativelanguage.googleapis.com/v1beta/files/yu38547u0a8c:download?alt=media",
+                            "mime_type": "video/mp4",
+                            "type": "video"
+                        }
+                    ],
+                    "type": "model_output"
+                }
+            ],
+            "object": "interaction",
+            "model": "gemini-omni-1.2-flash"
+        },
+        "failure": null,
+        "error": null
+    },
+    "interaction_id": "v1_ChdvLXZ5YXJxa0RxZk1yZmNQaW9pcm1RdxIXby12eWFycWtEcWZNcmZjUGlvaXJtUXc",
+    "polls": 2,
+    "poll": {
+        "ok": true,
+        "done": true,
+        "video_uri": "https://generativelanguage.googleapis.com/v1beta/files/yu38547u0a8c:download?alt=media",
+        "response": {
+            "name": "files/yu38547u0a8c",
+            "displayName": "Generated Video",
+            "mimeType": "video/mp4",
+            "sizeBytes": "2294553",
+            "createTime": "2026-11-10T10:02:16.444217Z",
+            "updateTime": "2026-11-10T10:02:18.997055Z",
+            "expirationTime": "2026-11-12T10:02:14.969295987Z",
+            "sha256Hash": "OGM2NjdhZTFiY2FiZWVmNTNmYzg0NmEzOWFkMTY5N2Q4ODZkZDUwZGQ1NWQyZjU5ZjIxMWNkYWQ4ZTI5YmZkOA==",
+            "uri": "https://generativelanguage.googleapis.com/v1beta/files/yu38547u0a8c",
+            "state": "ACTIVE",
+            "videoMetadata": {
+                "videoDuration": "3s"
+            },
+            "source": "GENERATED",
+            "downloadUri": "https://generativelanguage.googleapis.com/v1beta/files/yu38547u0a8c:download?alt=media"
+        },
+        "failure": null,
+        "error": null
+    },
+    "download": {
+        "ok": true,
+        "sha256": "8c667ae1bcabeef53fc846a39ad1697d886dd50dd55d2f59f211cdad8e29bfd8",
+        "bytes": 2294553,
+        "mime": "video/mp4",
+        "failure": null,
+        "error": null,
+        "path": "omni-canary/omni_video_canary_2026_11_10_100134_v5l9vt.mp4"
+    },
+    "probe": {
+        "ok": true,
+        "duration_ms": 3029,
+        "width": 720,
+        "height": 1280,
+        "error": null,
+        "video": {
+            "codec_name": "h264",
+            "profile": "High",
+            "level": 31,
+            "duration": 3,
+            "start_time": 0,
+            "nb_frames": 72,
+            "pix_fmt": "yuv420p",
+            "r_frame_rate": "24/1",
+            "avg_frame_rate": "24/1",
+            "time_base": "1/90000",
+            "width": 720,
+            "height": 1280,
+            "codec_tag_string": "avc1",
+            "extradata_hash": "SHA256:a24d5ba30201e550f8dd765e122ed6f0fb36e508c9ab42c9e30736d02ca1f496",
+            "sample_aspect_ratio": null,
+            "color_range": "tv",
+            "color_space": "smpte170m",
+            "color_transfer": "iec61966-2-1",
+            "color_primaries": "bt709",
+            "field_order": "progressive",
+            "rotation": null
+        },
+        "audio": {
+            "codec_name": "aac",
+            "profile": "LC",
+            "duration": 3.029333,
+            "start_time": 0,
+            "sample_rate": 48000,
+            "channels": 2,
+            "channel_layout": "stereo",
+            "sample_fmt": "fltp",
+            "time_base": "1/48000",
+            "codec_tag_string": "mp4a",
+            "extradata_hash": "SHA256:b65f22439176f7827a0d82a66b34477888f0287450985d8e3dc836d7e32ce79b"
+        },
+        "video_count": 1,
+        "audio_count": 1,
+        "other_count": 0,
+        "streams": [
+            {
+                "index": 0,
+                "codec_type": "video"
+            },
+            {
+                "index": 1,
+                "codec_type": "audio"
+            }
+        ]
+    },
+    "target": {
+        "met": true,
+        "failures": [],
+        "video_ms": 3000,
+        "audio_ms": 3029,
+        "duration_basis": "single_clip",
+        "video_start_ms": 0,
+        "audio_start_ms": 0,
+        "expected": {
+            "duration_ms": 3000,
+            "width": 720,
+            "height": 1280,
+            "duration_tolerance_ms": 500,
+            "video_streams": 1,
+            "audio_streams": 1,
+            "av_drift_tolerance_ms": 100,
+            "extension_min_ms": 3000,
+            "extension_max_ms": 10000
+        },
+        "audio_content": "unverified: one audio stream proves sound exists, not that it holds no music or speech — listen before approval",
+        "expected_basis": "frozen_with_request"
+    }
+}

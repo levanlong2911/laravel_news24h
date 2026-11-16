@@ -13,7 +13,9 @@
     <div class="vp-crumb">
         <a href="{{ route('video-projects.index') }}">Video Projects</a>
         <span class="sep">/</span>
-        <a href="{{ route('video-projects.scene', $id) }}">Storyboard</a>
+        @if($motoClips ?? false)
+            <a href="{{ route('video-projects.reference', $id) }}">Reference</a>
+        @endif
         <span class="sep">·</span>
         <b>Render video</b>
         <span class="grow"></span>
@@ -45,8 +47,8 @@
 
     <div class="vs-grid vs-clip">
 
-        <div class="vs-h"><b>1</b> Prompt clip</div>
-        <div class="vs-h"><b>2</b> {{ $motoClips ? 'Keyframe' : 'Ảnh' }}</div>
+        <div class="vs-h vs-input"><b>1</b> {{ $motoClips ? 'Ảnh đầu vào' : 'Ảnh' }}</div>
+        <div class="vs-h vs-h-prompt"><b>2</b> Prompt clip</div>
         <div class="vs-h"><b>3</b> Thiết lập</div>
         <div class="vs-h"><b>4</b> Video</div>
 
@@ -87,19 +89,82 @@
                     <span class="t">{{ $s['title'] ?? $sceneId }}</span>
                     @if($s['video_prompt'])
                         <div class="body">{{ $s['video_prompt'] }}</div>
+                    @elseif($motoClips)
+                        <div class="m">chưa có prompt video đã duyệt</div>
                     @else
                         <div class="m">chưa có prompt clip — sinh ở màn Storyboard</div>
                     @endif
                     @foreach($s['meta_lines'] ?? [] as $line)
                         <div class="m">{{ $line }}</div>
                     @endforeach
+                    @if($motoClips && isset($s['clip_prompt']))
+                        @php($writer = $s['clip_prompt'])
+                        @php($shownRun = $writer['shown'])
+                        @php($promptForm = 'cpPrompt'.$sceneId)
+                        @if($writer['selected'] !== null)
+                            <div class="m">Prompt đang dùng: lượt {{ substr($writer['selected']['stage_id'], 0, 8) }} · {{ $writer['selected']['version'] }}</div>
+                        @endif
+                        @if($writer['stale'])
+                            <div class="m" style="color:var(--vp-amber-fg)">Nguồn đã đổi — cần viết hoặc duyệt lại prompt video</div>
+                        @endif
+                        @if($shownRun !== null)
+                            @if(! $shownRun['selected'])
+                                <div class="m"><b>Lượt viết mới nhất ({{ substr($shownRun['id'], 0, 8) }}) — chưa duyệt:</b></div>
+                                <div class="body">{{ $shownRun['prompt'] }}</div>
+                            @endif
+                            <div class="m">Lượt {{ $shownRun['revision'] }} · {{ $shownRun['verdict'] ?? '—' }} · {{ $shownRun['status'] ?? '—' }} · {{ $shownRun['model'] }}@if($shownRun['cost_usd'] !== null) · ${{ number_format($shownRun['cost_usd'], 4) }}@endif</div>
+                            @foreach([...$shownRun['schema'], ...$shownRun['issues']] as $issue)
+                                <div class="m" style="color:var(--vp-red)">{{ $issue }}</div>
+                            @endforeach
+                            @foreach($shownRun['gaps'] as $gap)
+                                <div class="m" style="color:var(--vp-amber-fg)">Thiếu dữ kiện: {{ $gap['missing'] }} — {{ $gap['reason'] }}</div>
+                            @endforeach
+                            @foreach($shownRun['conflicts'] as $conflict)
+                                <div class="m" style="color:var(--vp-amber-fg)">Mâu thuẫn ({{ implode(' / ', $conflict['source_refs']) }}): {{ $conflict['reason'] }}</div>
+                            @endforeach
+                            @foreach($shownRun['flags'] as $flag)
+                                <div class="m" style="color:var(--vp-amber-fg)">Ghi chú của AI: {{ $flag }}</div>
+                            @endforeach
+                            @if(! $shownRun['current'])
+                                <div class="m" style="color:var(--vp-amber-fg)">Lượt này viết từ nguồn cũ</div>
+                            @endif
+                            @if($shownRun['approvable'])
+                                <form method="POST" class="js-row-form" data-busy-text="đang duyệt…" action="{{ route('video-projects.clip-prompt-action', [$id, $sceneId, 'prompt-approve']) }}">
+                                    @csrf
+                                    <input type="hidden" name="stage_id" value="{{ $shownRun['id'] }}">
+                                    <button class="vp-btn sm ok">✓ Duyệt và dùng prompt này</button>
+                                </form>
+                            @endif
+                        @endif
+                        @if($writer['running'])
+                            <div class="m" data-prompt-busy><span class="dot"></span>Đang viết prompt video…</div>
+                        @elseif($writer['pending'])
+                            <div class="m" data-prompt-busy>Đang chờ máy chạy nền nhận lượt viết.</div>
+                        @elseif($writer['error'] !== null)
+                            <div class="m" style="color:var(--vp-red)">{{ $writer['error'] }}</div>
+                        @endif
+                        @if($writer['unavailable'] !== null)
+                            <div class="m" style="color:var(--vp-amber-fg)">Chưa viết được: {{ $writer['unavailable'] }}</div>
+                        @endif
+                        <form method="POST" class="js-row-form" data-busy-text="đang viết prompt video… (có thể mất một hai phút)" data-modal="confirm{{ $promptForm }}" action="{{ route('video-projects.clip-prompt-action', [$id, $sceneId, 'prompt']) }}" id="{{ $promptForm }}" hidden>
+                            @csrf
+                            <input type="hidden" name="operation_id" value="{{ $writer['operation_id'] }}">
+                            <input type="hidden" name="confirm_cost" value="1">
+                            <input type="hidden" name="regenerate" value="{{ $shownRun !== null ? 1 : 0 }}">
+                        </form>
+                        <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirm{{ $promptForm }}"
+                                @if(! $writer['can_write']) disabled title="{{ $writer['unavailable'] ?? 'Đang có lượt viết chờ hoặc đang chạy' }}" @endif>{{ $shownRun !== null ? 'Viết lại prompt video' : 'Viết prompt video bằng AI' }}</button>
+                        @if($writer['estimate'] !== null)
+                            @include('modal.confirm_action', ['id' => 'confirm'.$promptForm, 'form' => $promptForm, 'content' => 'Gọi '.$writer['estimate']['model'].' (effort '.$writer['estimate']['effort'].') một lần để viết prompt video của '.$sceneId.' từ dữ liệu shot và '.(($s['clip_input']['mode'] ?? 'keyframe') === 'references' ? 'các ảnh tham chiếu sẽ gửi' : 'ảnh keyframe đã duyệt').' — TÁC VỤ NÀY TÍNH TIỀN. Viết xong không tự duyệt và không render.', 'detail' => 'Dự toán '.$writer['estimate']['text'].'.'])
+                        @endif
+                    @endif
                     @if($motoClips && ($clip['sent_prompt'] ?? '') !== '' && ($clip['sent_prompt'] ?? '') !== $s['video_prompt'])
                         <div class="m"><b>Prompt đã gửi ở lượt gần nhất:</b></div>
                         <div class="body">{{ $clip['sent_prompt'] }}</div>
                     @endif
                 </div>
 
-                <div class="vs-c">
+                <div class="vs-c vs-input">
                     @php($chosen = $approved
                         ? collect($approved['artifacts'])->firstWhere('id', $approved['selected_artifact_id'])
                         : null)
@@ -146,6 +211,40 @@
                                 @endunless
                             </form>
                         @endif
+                    @elseif($motoClips && isset($s['clip_input']))
+                        @php($input = $s['clip_input'])
+                        @php($byReferences = $input['mode'] === 'references')
+                        <form method="POST" class="vs-input-form js-row-form" data-busy-text="đang lưu…" action="{{ $input['url'] }}">
+                            @csrf
+                            <label>Cách render</label>
+                            <select name="mode">
+                                <option value="keyframe" @selected(! $byReferences)>Từ keyframe đã duyệt</option>
+                                <option value="references" @selected($byReferences)>Từ ảnh tham chiếu (không cần keyframe)</option>
+                            </select>
+                            @if(! $byReferences && $chosen)
+                                <a class="vs-shot" href="{{ $chosen['url'] }}" target="_blank">
+                                    <img src="{{ $chosen['url'] }}" alt="">
+                                </a>
+                            @endif
+                            <div class="m"><b>{{ $byReferences ? 'Ảnh gửi đi ('.count($input['sent']).(($input['limit'] ?? null) === null ? '' : '/'.$input['limit']).' ảnh), đúng thứ tự trong prompt' : 'Ảnh tham chiếu của shot — dùng khi chọn "Từ ảnh tham chiếu"' }}:</b></div>
+                            <div class="vs-refs">
+                                @forelse($input['cards'] as $card)
+                                    <label class="vs-ref">
+                                        @if($card['url'] !== null)
+                                            <img src="{{ $card['url'] }}" alt="{{ $card['name'] }}">
+                                        @endif
+                                        <span>
+                                            <input type="checkbox" name="include[]" value="{{ $card['artifact_id'] }}" @checked($card['included']) @disabled($card['artifact_id'] === null || $card['problem'] !== null)>
+                                            @if(isset($input['sent'][$card['artifact_id']])){{ $input['sent'][$card['artifact_id']] + 1 }}. @endif{{ $card['name'] }}@if(($card['parts'] ?? []) !== []) · {{ implode(', ', array_map(static fn (string $part, string $shown): string => $part.' ('.$shown.')', array_keys($card['parts']), $card['parts'])) }}@endif @if($card['problem'] !== null) — {{ $card['problem'] }}@elseif(! $card['included'] && ($card['parts'] ?? []) !== []) — đang bỏ: {{ implode(', ', array_keys($card['parts'])) }} không có nguồn chi tiết trong clip này @endif
+                                        </span>
+                                    </label>
+                                @empty
+                                    <div class="m">Shot này không có ảnh tham chiếu nào.</div>
+                                @endforelse
+                            </div>
+                            <button class="vp-btn sm">Lưu cách render</button>
+                            <div class="m">Đổi cách render hoặc bộ ảnh thì prompt video phải viết và duyệt lại.</div>
+                        </form>
                     @elseif($chosen)
                         <a class="vs-shot" href="{{ $chosen['url'] }}" target="_blank">
                             <img src="{{ $chosen['url'] }}" alt="">
@@ -654,6 +753,95 @@
             });
     });
 
+    // Dong dang cho luot viet prompt chay nen: tai lai rieng dong do cho toi khi het cho.
+    function watchPrompt(row) {
+        if (!row || !row.isConnected || row.querySelector('[data-prompt-busy]') === null || row.dataset.promptWatch === '1') { return; }
+
+        row.dataset.promptWatch = '1';
+
+        setTimeout(function () {
+            fetch(window.location.href, { credentials: 'same-origin', headers: { 'Accept': 'text/html' } })
+                .then(function (response) { return response.text(); })
+                .then(function (html) {
+                    var fresh = new DOMParser().parseFromString(html, 'text/html').querySelector('.vs-row[data-scene="' + row.dataset.scene + '"]');
+
+                    if (!fresh || !row.isConnected) { return; }
+
+                    row.replaceWith(fresh);
+                    fresh.querySelectorAll('.js-clip-form').forEach(applyCrossRule);
+                    watchPrompt(fresh);
+                })
+                .catch(function () { delete row.dataset.promptWatch; watchPrompt(row); });
+        }, 5000);
+    }
+
+    // Viet prompt, duyet prompt, luu cach render: gui khong tai lai trang, xong thi chi dong do duoc ve lai.
+    document.addEventListener('submit', function (e) {
+        var form = e.target.closest('.js-row-form');
+
+        if (!form) { return; }
+
+        e.preventDefault();
+
+        var row = form.closest('.vs-row');
+        var buttons = Array.prototype.slice.call(row.querySelectorAll('button'));
+        var states = buttons.map(function (button) { return button.disabled; });
+        var busy = document.createElement('div');
+
+        if (form.dataset.modal && window.jQuery) { window.jQuery('#' + form.dataset.modal).modal('hide'); }
+
+        buttons.forEach(function (button) { button.disabled = true; });
+        busy.className = 'm';
+        busy.innerHTML = '<span class="dot"></span>';
+        busy.appendChild(document.createTextNode(form.dataset.busyText || 'đang xử lý…'));
+        (form.hidden ? row.querySelector('.vs-prompt') : form).appendChild(busy);
+
+        fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (response) {
+                return response.text().then(function (text) {
+                    var payload = null;
+
+                    try { payload = JSON.parse(text); } catch (error) { payload = null; }
+
+                    if (payload === null || typeof payload.ok !== 'boolean') {
+                        var first = payload && payload.errors ? Object.keys(payload.errors).map(function (key) { return payload.errors[key][0]; })[0] : null;
+
+                        throw new Error(first || (payload && payload.message) || ('Máy chủ trả lỗi ' + response.status + ' — tải lại trang để xem trạng thái.'));
+                    }
+
+                    return payload;
+                });
+            })
+            .then(function (payload) {
+                if (window.toastr) { window.toastr[payload.ok ? 'success' : 'error'](payload.message); }
+
+                return fetch(window.location.href, { credentials: 'same-origin', headers: { 'Accept': 'text/html' } });
+            })
+            .then(function (response) { return response.text(); })
+            .then(function (html) {
+                var fresh = new DOMParser().parseFromString(html, 'text/html').querySelector('.vs-row[data-scene="' + row.dataset.scene + '"]');
+
+                if (!fresh) { throw new Error('Không tải lại được dòng này — tải lại trang để xem trạng thái.'); }
+
+                document.querySelectorAll('.modal-backdrop').forEach(function (node) { node.remove(); });
+                document.body.classList.remove('modal-open');
+                row.replaceWith(fresh);
+                fresh.querySelectorAll('.js-clip-form').forEach(applyCrossRule);
+                watchPrompt(fresh);
+            })
+            .catch(function (error) {
+                if (window.toastr) { window.toastr.error(error.message || 'Mất kết nối — tải lại trang để xem trạng thái, đừng bấm lại ngay.'); }
+
+                busy.remove();
+                buttons.forEach(function (button, index) { button.disabled = states[index]; });
+            });
+    });
+
     document.addEventListener('submit', function (e) {
         var form = e.target.closest('.js-clip-form');
 
@@ -699,6 +887,7 @@
     });
 
     document.querySelectorAll('.js-clip-form').forEach(applyCrossRule);
+    document.querySelectorAll('.vs-row').forEach(watchPrompt);
 
     // Hang dang dung san luc mo trang cung duoc trong — nhung lech nhau vai giay
     // de mo mot trang 20 scene khong ban 20 request cung luc.

@@ -27,6 +27,9 @@ final class VideoModelRegistry
     /** @var list<string> */
     public const DURATION_CONTROLS = ['unverified', 'prompt_only', 'request_field'];
 
+    /** @var list<string> the values generation_config.video_config.task takes in the Omni documentation; an entry whose task is null sends none and lets the prompt choose the mode */
+    public const TASKS = ['text_to_video', 'image_to_video', 'reference_to_video', 'edit', 'extend'];
+
     /** @var array<string, list<array<string, mixed>>> */
     private array $verified = [];
 
@@ -165,8 +168,8 @@ final class VideoModelRegistry
     /** @param array<string, mixed> $controls */
     private function assertInteractionControls(string $at, array $controls): void
     {
-        if (! is_string($controls['task'] ?? null) || $controls['task'] === '') {
-            throw new InvalidArgumentException("{$at}: thieu controls.task.");
+        if (! array_key_exists('task', $controls) || ($controls['task'] !== null && ! in_array($controls['task'], self::TASKS, true))) {
+            throw new InvalidArgumentException("{$at}: controls.task phai la null (khong gui task, de prompt chon che do) hoac mot trong ".implode(', ', self::TASKS).'.');
         }
 
         if (! in_array($controls['duration_control'] ?? null, self::DURATION_CONTROLS, true)) {

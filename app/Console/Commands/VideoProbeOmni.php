@@ -5,13 +5,16 @@ namespace App\Console\Commands;
 use App\Enums\DesignImageStatus;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
+use App\Services\Video\LocationSourceService;
 use App\Video\Media\FfmpegRunner;
 use App\Video\Media\GeminiOmniVideoClient;
 use App\Video\Media\MediaProbe;
 use App\Video\Media\VideoModelRegistry;
+use App\Video\Render\Video\SceneClipDispatchService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class VideoProbeOmni extends Command
 {
@@ -41,7 +44,19 @@ class VideoProbeOmni extends Command
 
     private const JSON_FLAGS = JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 
+    /** @var int the shortest clip Omni makes, in seconds, as its model card and guide give it */
+    private const MIN_SECONDS = 3;
+
+    /** @var array<string, array{0: int, 1: int}> the fewest and the most images each task this command can send takes; edit and extend need a video this option cannot give */
+    private const TASK_IMAGES = ['text_to_video' => [0, 0], 'image_to_video' => [1, 2], 'reference_to_video' => [1, 6]];
+
     protected $signature = 'video:probe-omni
+        {--group=film_segment : Nhom model trong registry: film_segment hoac scene_clip}
+        {--model= : Id model trong nhom (vd gemini:gemini-omni-1.2-flash); mac dinh la model mac dinh cua nhom}
+        {--duration= : So giay gui qua response_format.duration; mac dinh theo model, phai nam trong capability}
+        {--resolution= : Do phan giai; mac dinh theo model, phai nam trong capability}
+        {--aspect= : Ty le khung; mac dinh theo model, phai nam trong capability}
+        {--task= : Task gui di (text_to_video, image_to_video, reference_to_video, edit, extend) hoac none de khong gui task; mac dinh theo model}
         {--project= : Du an so huu moi anh tham chieu}
         {--artifact=* : Artifact anh DA DUYET gui lam tham chieu, dung thu tu gui}
         {--prompt-file= : File prompt UTF-8, gui nguyen van}
@@ -59,10 +74,22 @@ class VideoProbeOmni extends Command
 
     public function handle(GeminiOmniVideoClient $client, VideoModelRegistry $registry, MediaProbe $probe, FfmpegRunner $ffmpeg): int
     {
-        $entry = $registry->defaultFor(self::TASK);
-
         if ((string) $this->option('resume') !== '') {
-            return $this->resume($client, $probe, $entry, (string) $this->option('resume'));
+            return $this->resume($client, $probe, (string) $this->option('resume'));
+        }
+
+        [$entry, $settings, $problem] = $this->settings($registry);
+
+        if ($problem !== null) {
+            $this->error($problem);
+
+            return self::FAILURE;
+        }
+
+        if ((string) $this->option('extend-from') !== '' && (string) $this->option('task') !== '') {
+            $this->error('--extend-from luon gui task extend — bo --task, khong doi task ngam.');
+
+            return self::FAILURE;
         }
 
         $extendFrom = null;
@@ -111,34 +138,74 @@ class VideoProbeOmni extends Command
             return self::FAILURE;
         }
 
-        $output = [
-            'aspect_ratio' => (string) $entry['controls']['default_aspect_ratio'],
-            'resolution' => (string) $entry['controls']['default_resolution'],
-        ];
+        if ($extendFrom === null && $settings['task'] !== null) {
+            [$fewest, $most] = self::TASK_IMAGES[$settings['task']];
+
+            if (count($images) < $fewest || count($images) > $most) {
+                $this->error(sprintf('Task %s can %s anh, dang co %d — chua gui gi. Doi --artifact hoac dung --task=none de prompt tu chon che do.',
+                    $settings['task'], $fewest === $most ? 'dung '.$fewest : 'tu '.$fewest.' den '.$most, count($images)));
+
+                return self::FAILURE;
+            }
+        }
+
+        $sentBytes = array_sum(array_map(static fn (array $image): int => (int) $image['sent']['bytes'], $images));
+
+        if ($sentBytes > (int) config('video.omni.max_reference_bytes')) {
+            $this->error(sprintf('Tong anh thuc gui %.1f MB vuot gioi han cua ung dung %.1f MB (video.omni.max_reference_bytes) — chua gui gi.',
+                $sentBytes / 1048576, (int) config('video.omni.max_reference_bytes') / 1048576));
+
+            return self::FAILURE;
+        }
+
+        $output = ['aspect_ratio' => $settings['aspect_ratio'], 'resolution' => $settings['resolution']]
+            + ($settings['duration'] === null ? [] : ['duration' => $settings['duration']]);
         $sent = array_map(static fn (array $image): array => ['mime' => $image['mime'], 'base64' => $image['base64']], $images);
         $payload = $extendFrom === null
-            ? GeminiOmniVideoClient::payload($entry, $sent, $prompt, $output)
+            ? GeminiOmniVideoClient::payload(['model' => $entry['model'], 'controls' => ['task' => $settings['task']]], $sent, $prompt, $output)
             : GeminiOmniVideoClient::extendPayload($entry, (string) $extendFrom['interaction_id'], $sent, $prompt, $output);
         $payloadJson = (string) json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $requestHash = hash('sha256', $payloadJson);
+        $task = $payload['generation_config']['video_config']['task'] ?? null;
+        $seconds = intdiv($settings['expected']['duration_ms'], 1000);
         $summary = [
+            'group' => $settings['group'],
             'model' => $entry['model'],
+            'model_id' => $entry['id'],
+            'api_version' => $entry['api_version'],
             'endpoint' => 'POST '.config('video.gemini.base_url').'/'.$entry['api_version'].'/'.VideoModelRegistry::INTERACTIONS,
             'mode' => $extendFrom === null ? 'generate' : 'extend',
-            'task' => $payload['generation_config']['video_config']['task'],
+            'task' => $task,
+            'task_sent' => $task !== null,
             'store' => $payload['store'],
             'extend_from' => $extendFrom,
             'frame_from' => $frameFrom,
-            'output' => $output + ['delivery' => 'uri'],
+            'output' => $payload['response_format'],
+            'expected' => $settings['expected'],
             'images' => array_map(static fn (array $image): array => array_diff_key($image, ['base64' => true, 'mime' => true]), $images),
             'reference_policy' => (array) config('video.omni.reference'),
+            'sent_image_bytes' => $sentBytes,
             'prompt' => $prompt,
             'payload_bytes' => strlen($payloadJson),
+            'estimate' => $this->estimate($entry, $settings['resolution'], $seconds, $extendFrom !== null),
             'request_sha256' => $requestHash,
         ];
 
         $this->line((string) json_encode($summary, self::JSON_FLAGS));
-        $this->warn('Gia 1080p va gia Extend chua xac minh; 720p theo tai lieu ~ $0.10/giay, tuc ~ $1.00 cho 10 giay.');
+        $this->line(sprintf('Model %s · %s · %s · %d giay · task: %s', $entry['id'], $settings['aspect_ratio'], $settings['resolution'], $seconds, $task ?? 'khong gui (prompt tu chon che do)'));
+
+        foreach ($summary['images'] as $image) {
+            $this->line(sprintf('  Anh %d: %s (%s) goc %dx%d %s %.2f MB -> gui %dx%d %s %.2f MB, %s',
+                $image['order'] + 1, $image['image_code'] ?? $image['kind'], $image['artifact_id'] ?? ($image['source_record'] ?? '-'),
+                (int) ($image['original']['width'] ?? 0), (int) ($image['original']['height'] ?? 0), $image['original']['mime'] ?? '?', ((int) ($image['original']['bytes'] ?? 0)) / 1048576,
+                (int) $image['sent']['width'], (int) $image['sent']['height'], $image['sent']['mime'], ((int) $image['sent']['bytes']) / 1048576,
+                ($image['transform']['type'] ?? 'none') === 'none' ? 'giu nguyen' : 'thu nho/nen JPEG, khong crop'));
+        }
+
+        $this->line(sprintf('JSON gui di %.2f MB (sau base64). Muc tieu do: %d ms, %dx%d.', strlen($payloadJson) / 1048576, $settings['expected']['duration_ms'], $settings['expected']['width'], $settings['expected']['height']));
+        $summary['estimate']['usd'] === null
+            ? $this->warn('Chi phi: '.$summary['estimate']['basis'].'.')
+            : $this->warn(sprintf('Chi phi uoc tinh ~ $%.3f (%s).', $summary['estimate']['usd'], $summary['estimate']['basis']));
 
         if ($this->option('save-sent') && ! $this->saveSent($images)) {
             return self::FAILURE;
@@ -220,8 +287,7 @@ class VideoProbeOmni extends Command
         }
     }
 
-    /** @param array<string, mixed> $entry */
-    private function resume(GeminiOmniVideoClient $client, MediaProbe $probe, array $entry, string $name): int
+    private function resume(GeminiOmniVideoClient $client, MediaProbe $probe, string $name): int
     {
         $file = $this->evidenceDir().DIRECTORY_SEPARATOR.basename($name);
 
@@ -258,6 +324,14 @@ class VideoProbeOmni extends Command
                 return self::FAILURE;
             }
 
+            $entry = self::pollEntry($record);
+
+            if ($entry === null) {
+                $this->error('Ho so '.$file.' khong ghi phien ban API cua request — khong poll duoc.');
+
+                return self::FAILURE;
+            }
+
             $record['resumed_at'][] = now()->toIso8601String();
 
             return $this->collect($client, $probe, $entry, $file, $record);
@@ -265,6 +339,108 @@ class VideoProbeOmni extends Command
             flock($lock, LOCK_UN);
             fclose($lock);
         }
+    }
+
+    /**
+     * @return array{0: ?array<string, mixed>, 1: array{group: string, aspect_ratio: string, resolution: string, duration: ?string, task: ?string, expected: array<string, int>}, 2: ?string} the registry entry of the run, the settings it sends checked against that entry's capability, and why it cannot be sent
+     */
+    private function settings(VideoModelRegistry $registry): array
+    {
+        $none = ['group' => '', 'aspect_ratio' => '', 'resolution' => '', 'duration' => null, 'task' => null, 'expected' => []];
+        $group = (string) ($this->option('group') ?: self::TASK);
+        $model = (string) $this->option('model');
+
+        if (! in_array($group, [SceneClipDispatchService::FILM_TASK, SceneClipDispatchService::TASK], true)) {
+            return [null, $none, '--group phai la '.SceneClipDispatchService::FILM_TASK.' hoac '.SceneClipDispatchService::TASK.'.'];
+        }
+
+        try {
+            $entry = $model === '' ? $registry->defaultFor($group) : $registry->find($group, $model);
+        } catch (InvalidArgumentException $e) {
+            return [null, $none, 'Registry '.$group.' loi: '.$e->getMessage()];
+        }
+
+        if ($entry === null) {
+            return [null, $none, 'Model '.$model.' khong co trong nhom '.$group.' cua registry — bo sung capability truoc, khong bo qua registry.'];
+        }
+
+        if (($entry['method'] ?? null) !== VideoModelRegistry::INTERACTIONS) {
+            return [null, $none, 'Model '.$entry['id'].' khong goi qua interactions — lenh nay chi thu Omni.'];
+        }
+
+        $controls = (array) $entry['controls'];
+        $aspect = (string) ($this->option('aspect') ?: $controls['default_aspect_ratio']);
+        $resolution = (string) ($this->option('resolution') ?: $controls['default_resolution']);
+
+        foreach (['aspect_ratios' => $aspect, 'resolutions' => $resolution] as $key => $value) {
+            if (! in_array($value, (array) $controls[$key], true)) {
+                return [null, $none, $value.' ngoai '.$key.' cua '.$entry['id'].' trong registry ('.implode(', ', (array) $controls[$key]).').'];
+            }
+        }
+
+        $given = (string) $this->option('duration');
+        $seconds = $given === '' ? ($controls['default_duration'] ?? null) : (ctype_digit($given) ? (int) $given : -1);
+        $field = ($controls['duration_control'] ?? null) === 'request_field';
+
+        if ($seconds !== null) {
+            $allowed = array_key_exists('durations', $controls) ? in_array($seconds, (array) $controls['durations'], true) : $seconds >= self::MIN_SECONDS && $seconds <= (int) $controls['max_seconds'];
+
+            if (! $field || ! $allowed) {
+                return [null, $none, ! $field
+                    ? $entry['id'].' khong nhan do dai qua request (duration_control '.($controls['duration_control'] ?? '—').').'
+                    : 'Do dai '.$given.' giay ngoai capability cua '.$entry['id'].' ('.(array_key_exists('durations', $controls) ? implode(', ', (array) $controls['durations']) : self::MIN_SECONDS.'–'.$controls['max_seconds']).' giay).'];
+            }
+        } elseif ($field) {
+            return [null, $none, $entry['id'].' nhan do dai qua request — can --duration (khong gui thi API mac dinh 10 giay).'];
+        }
+
+        $task = match ((string) $this->option('task')) {
+            '' => $controls['task'] ?? null,
+            'none' => null,
+            default => (string) $this->option('task'),
+        };
+
+        if ($task !== null && ! array_key_exists($task, self::TASK_IMAGES)) {
+            return [null, $none, in_array($task, VideoModelRegistry::TASKS, true)
+                ? 'Task '.$task.' can video nguon ma --task khong cap duoc — noi dai dung --extend-from; sua video chua co trong lenh nay.'
+                : '--task phai la none hoac mot trong '.implode(', ', array_keys(self::TASK_IMAGES)).'.'];
+        }
+
+        $expected = self::expected($aspect, $resolution, $seconds === null ? null : $seconds * 1000);
+
+        if ($expected === null) {
+            return [null, $none, 'Chua co kich thuoc do cho '.$aspect.' '.$resolution.' trong video.omni.output_sizes — them truoc khi gui.'];
+        }
+
+        return [$entry, [
+            'group' => $group,
+            'aspect_ratio' => $aspect,
+            'resolution' => $resolution,
+            'duration' => $seconds === null ? null : $seconds.'s',
+            'task' => $task,
+            'expected' => $expected,
+        ], null];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @return array{usd: ?float, basis: string} the cost of the clip from the price per second of its resolution in the evidence file of the model; null when that file gives no price for it
+     */
+    private function estimate(array $entry, string $resolution, int $seconds, bool $extend): array
+    {
+        $name = (string) ($entry['evidence']['contract'] ?? '');
+        $file = $this->evidenceDir().DIRECTORY_SEPARATOR.$name;
+        $pricing = is_file($file) ? (array) ((json_decode((string) file_get_contents($file), true) ?? [])['documented']['pricing'] ?? []) : [];
+        $rate = $pricing[$resolution.'_usd_per_second'] ?? null;
+
+        if (! is_int($rate) && ! is_float($rate)) {
+            return ['usd' => null, 'basis' => 'chua xac dinh — bang chung '.$name.' khong co gia '.$resolution];
+        }
+
+        return [
+            'usd' => round($rate * $seconds, 3),
+            'basis' => $rate.' USD/giay '.$resolution.' x '.$seconds.' giay theo '.$name.($extend ? '; bang gia khong ghi gia rieng cho noi dai, tinh nhu video moi' : ''),
+        ];
     }
 
     /** @return array<string, mixed>|null */
@@ -335,7 +511,9 @@ class VideoProbeOmni extends Command
         }
 
         $sourceMs = $record['request']['extend_from']['video_ms'] ?? null;
-        $record['target'] = $this->verdict($measured, is_int($sourceMs) ? $sourceMs : null);
+        $frozen = is_array($record['request']['expected'] ?? null);
+        $record['target'] = self::verdict($measured, $frozen ? array_map('intval', $record['request']['expected']) : self::legacyExpected(), is_int($sourceMs) ? $sourceMs : null)
+            + ['expected_basis' => $frozen ? 'frozen_with_request' : 'config_for_a_record_that_froze_none'];
         $record['status'] = self::MEASURED;
 
         if (! $this->write($file, $record)) {
@@ -355,13 +533,50 @@ class VideoProbeOmni extends Command
     }
 
     /**
+     * @param  array<string, mixed>  $record  a probe record
+     * @return ?array{api_version: string} what polling the file of the record needs, read from the record itself so a later registry never decides it; null when the record names no API version
+     */
+    public static function pollEntry(array $record): ?array
+    {
+        $version = $record['request']['api_version'] ?? null;
+
+        if (! is_string($version) && preg_match('#/(v1beta|v1)/#', (string) ($record['request']['endpoint'] ?? ''), $match) === 1) {
+            $version = $match[1];
+        }
+
+        return is_string($version) && in_array($version, ['v1', 'v1beta'], true) ? ['api_version' => $version] : null;
+    }
+
+    /**
+     * @return ?array{duration_ms: int, duration_tolerance_ms: int, width: int, height: int, video_streams: int, audio_streams: int, av_drift_tolerance_ms: int, extension_min_ms: int, extension_max_ms: int} what the file of a request with this frame, resolution and length must measure, frozen with the request so a later config never judges it; the length of the config target when the request names none; null when config gives no frame size for the setting
+     */
+    public static function expected(string $aspect, string $resolution, ?int $durationMs): ?array
+    {
+        $size = ((array) config('video.omni.output_sizes'))[$aspect][$resolution] ?? null;
+
+        if (! is_array($size) || count($size) !== 2) {
+            return null;
+        }
+
+        [$width, $height] = array_map('intval', array_values($size));
+
+        return ['duration_ms' => $durationMs ?? (int) config('video.omni.target.duration_ms'), 'width' => $width, 'height' => $height] + self::legacyExpected();
+    }
+
+    /** @return array<string, int> the config target, which judged every record made before a request froze its own */
+    private static function legacyExpected(): array
+    {
+        return array_map('intval', (array) config('video.omni.target'));
+    }
+
+    /**
      * @param  array<string, mixed>  $measured
+     * @param  array<string, int>  $target  the expected values the request froze
      * @return array{met: bool, failures: list<string>, video_ms: ?int, audio_ms: ?int, video_start_ms: ?int, audio_start_ms: ?int,
      *               duration_basis: string, expected: array<string, int>, audio_content: string}
      */
-    private function verdict(array $measured, ?int $sourceMs = null): array
+    public static function verdict(array $measured, array $target, ?int $sourceMs = null): array
     {
-        $target = (array) config('video.omni.target');
         $failures = [];
         $videoMs = self::streamMs($measured['video'] ?? null);
         $audioMs = self::streamMs($measured['audio'] ?? null);
@@ -572,9 +787,10 @@ class VideoProbeOmni extends Command
             }
 
             $status = $image->status instanceof DesignImageStatus ? $image->status->value : (string) $image->status;
+            $background = $this->chosenBackground($projectId, $artifact, $image);
 
-            if ($status !== DesignImageStatus::APPROVED->value || (string) $image->selected_artifact_id !== (string) $artifact->id) {
-                return [[], "Artifact {$id} khong phai anh DA DUYET dang duoc chon cua {$image->image_code}."];
+            if (($status !== DesignImageStatus::APPROVED->value || (string) $image->selected_artifact_id !== (string) $artifact->id) && $background === null) {
+                return [[], "Artifact {$id} khong phai anh DA DUYET dang duoc chon cua {$image->image_code}, cung khong phai anh nen dang chon o Phase 5."];
             }
 
             $mime = (string) $artifact->mime_type;
@@ -601,6 +817,7 @@ class VideoProbeOmni extends Command
                 'artifact_id' => (string) $artifact->id,
                 'image_code' => (string) $image->image_code,
                 'image_type' => (string) $image->image_type,
+                'chosen_background' => $background,
                 'original' => [
                     'sha256' => (string) $artifact->sha256,
                     'mime' => $mime,
@@ -622,6 +839,19 @@ class VideoProbeOmni extends Command
         }
 
         return [$images, null];
+    }
+
+    /** @return ?string the background whose image a person chose in Phase 5 is this very artifact, as the keyframes read it; null when it is none */
+    private function chosenBackground(string $projectId, VideoArtifact $artifact, VideoDesignImage $image): ?string
+    {
+        foreach ((array) app(LocationSourceService::class)->selection($projectId)['images'] as $background => $chosen) {
+            if ((string) ($chosen['artifact_id'] ?? '') === (string) $artifact->id && (string) ($chosen['image_id'] ?? '') === (string) $image->id
+                && (string) ($chosen['sha256'] ?? '') === (string) $artifact->sha256) {
+                return (string) $background;
+            }
+        }
+
+        return null;
     }
 
     /** @return array{0: ?array<string, mixed>, 1: ?string} */

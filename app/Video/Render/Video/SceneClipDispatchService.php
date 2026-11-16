@@ -214,10 +214,11 @@ final class SceneClipDispatchService
             'provider' => $entry['provider'],
             'model' => $entry['model'],
             'api_version' => $entry['api_version'],
-            'task' => (string) $entry['controls']['task'],
+            'task' => $entry['controls']['task'] ?? null,
             'compiled_prompt' => ['prompt' => $prompt],
             'compile_version' => FilmSegmentPrompt::VERSION,
             'duration_seconds' => $seconds,
+            'response_duration' => ($entry['controls']['duration_control'] ?? null) === 'request_field' ? $seconds.'s' : null,
             'aspect_ratio' => (string) $controls['aspect_ratio'],
             'resolution' => (string) $controls['resolution'],
             'audio' => (string) config('video.film_cut.preset.audio', ''),
@@ -265,6 +266,7 @@ final class SceneClipDispatchService
      * @param  VideoArtifact  $source  anh DA DUYET cua chinh scene nay
      * @param  array<string, mixed>  $controls
      * @param  array<string, mixed>  $frozen  what a caller freezes into the request beside what this service freezes, so the request hash covers it; empty adds nothing
+     * @param  ?array{task: ?string, references: list<array{artifact: VideoArtifact, role: string, label: string}>}  $input  for a clip made from reference images: the images to send in their order, with $source the first of them, and the task to send or null for none; null sends $source alone as the first frame
      */
     public function create(
         VideoShot $shot,
@@ -274,6 +276,7 @@ final class SceneClipDispatchService
         ?int $expectedIntentVersion = null,
         ?string $operationId = null,
         array $frozen = [],
+        ?array $input = null,
     ): VideoRender {
         // HTTP callers must carry the ETag and operation identity they rendered
         // into the page. Direct unit tests exercise the same transaction with a
@@ -293,7 +296,8 @@ final class SceneClipDispatchService
             'model_id' => $modelId,
             'controls' => $this->canonical($controls),
             'expected_intent_version' => $expectedIntentVersion,
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        ] + ($input === null ? [] : ['input' => ['task' => $input['task'], 'references' => array_map(static fn (array $reference): string => (string) $reference['artifact']->id, array_values($input['references']))]]),
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
         [$updated, $render, $reason] = $this->intents->dispatch(
             $shot,
@@ -308,6 +312,7 @@ final class SceneClipDispatchService
                 $controls,
                 null,
                 $frozen,
+                $input,
             ),
         );
 
@@ -368,8 +373,9 @@ final class SceneClipDispatchService
         array $controls,
         ?string $expectedRequestHash = null,
         array $frozen = [],
+        ?array $input = null,
     ): VideoRender {
-        [$entry, $keyframe, $request] = $this->freezeRequest($shot, $source, $purpose, $modelId, $controls);
+        [$entry, $keyframe, $request] = $this->freezeRequest($shot, $source, $purpose, $modelId, $controls, $input);
         $request += $frozen;
 
         $requestJson = json_encode($request, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
@@ -424,6 +430,7 @@ final class SceneClipDispatchService
         string $purpose,
         string $modelId,
         array $controls,
+        ?array $input = null,
     ): array {
         // Thieu ffprobe la loi cau hinh may, khong phai loi cua render: chan o day
         // thi khong o nao bi tao ra roi danh that bai vinh vien.
@@ -447,7 +454,11 @@ final class SceneClipDispatchService
                 throw new RuntimeException('Canary khung cuoi chi danh cho model predictLongRunning; '.$entry['model'].' khong nhan khung cuoi.');
             }
 
-            return $this->freezeOmniRequest($shot, $source, $entry, $controls);
+            return $this->freezeOmniRequest($shot, $source, $entry, $controls, $input);
+        }
+
+        if ($input !== null) {
+            throw new RuntimeException('Model '.$entry['model'].' khong nhan anh tham chieu — clip tu anh tham chieu chi gui qua interactions.');
         }
 
         // Canary khong doc co: no ton tai de CHUNG MINH co nay co duoc bat khong.
@@ -538,7 +549,7 @@ final class SceneClipDispatchService
      * @param  array<string, mixed>  $controls
      * @return array{0: array<string, mixed>, 1: VideoRender, 2: array<string, mixed>}
      */
-    private function freezeOmniRequest(VideoShot $shot, VideoArtifact $source, array $entry, array $controls): array
+    private function freezeOmniRequest(VideoShot $shot, VideoArtifact $source, array $entry, array $controls, ?array $input = null): array
     {
         $keyframe = $source->render_id === null ? null : VideoRender::query()->whereKey($source->render_id)->first();
 
@@ -546,7 +557,7 @@ final class SceneClipDispatchService
             throw new RuntimeException('Anh da duyet khong gan voi lan render nao — khong truy duoc canonical.');
         }
 
-        if ($shot->scene_id !== null && ! VideoDesignImage::query()
+        if ($input === null && $shot->scene_id !== null && ! VideoDesignImage::query()
             ->where('render_scene_id', $shot->scene_id)
             ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
             ->where('status', DesignImageStatus::APPROVED->value)
@@ -562,15 +573,29 @@ final class SceneClipDispatchService
         }
 
         $policy = (array) config('video.omni.reference');
+        $seconds = $this->choice($entry, $controls, 'durations', 'default_duration', 'duration_seconds');
+        $references = $input === null
+            ? [$this->sentReference($this->freezeFrame($source, $shot->scene_id), $policy) + ['role' => 'first_frame', 'label' => (string) ($shot->shot_code ?? ''), 'candidate_id' => '']]
+            : array_map(fn (array $reference): array => $this->sentReference($this->freezeFrame($reference['artifact'], null), $policy) + ['role' => (string) $reference['role'], 'label' => (string) $reference['label'], 'candidate_id' => ''], array_values($input['references']));
+
+        if ($references === [] || count($references) > (int) ($entry['controls']['max_reference_images'] ?? 0)) {
+            throw new RuntimeException(count($references).' anh tham chieu ngoai gioi han 1–'.(int) ($entry['controls']['max_reference_images'] ?? 0).' anh cua model.');
+        }
+
+        if (array_sum(array_column($references, 'sent_bytes')) > (int) config('video.omni.max_reference_bytes')) {
+            throw new RuntimeException('Tong anh gui di vuot gioi han cua mot request Omni.');
+        }
+
         $request = [
             'kind' => self::TASK,
             'provider_payload_version' => GeminiOmniVideoClient::PAYLOAD_VERSION,
             'provider' => $entry['provider'],
             'model' => $entry['model'],
             'api_version' => $entry['api_version'],
-            'task' => (string) $entry['controls']['task'],
+            'task' => $input === null ? ($entry['controls']['task'] ?? null) : $input['task'],
             'compiled_prompt' => ['prompt' => $prompt],
-            'duration_seconds' => $this->choice($entry, $controls, 'durations', 'default_duration', 'duration_seconds'),
+            'duration_seconds' => $seconds,
+            'response_duration' => ($entry['controls']['duration_control'] ?? null) === 'request_field' ? $seconds.'s' : null,
             'aspect_ratio' => $this->choice($entry, $controls, 'aspect_ratios', 'default_aspect_ratio', 'aspect_ratio'),
             'resolution' => $this->choice($entry, $controls, 'resolutions', 'default_resolution', 'resolution'),
             'audio' => '',
@@ -578,11 +603,7 @@ final class SceneClipDispatchService
             'source_render_id' => $keyframe->id,
             'source_artifact_id' => (string) $source->id,
             'derivative_policy' => $policy,
-            'references' => [$this->sentReference($this->freezeFrame($source, $shot->scene_id), $policy) + [
-                'role' => 'first_frame',
-                'label' => (string) ($shot->shot_code ?? ''),
-                'candidate_id' => '',
-            ]],
+            'references' => $references,
             'motion_spec_hash' => ShotSelectionReconciler::motionSpecHash($shot),
         ];
 

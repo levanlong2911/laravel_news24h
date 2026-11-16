@@ -37,6 +37,7 @@ final class MotoClipSelectionService
     public function __construct(
         private readonly MotoClipPlanService $plans,
         private readonly FilesystemFactory $storage,
+        private readonly ClipPromptWriterService $writer,
     ) {}
 
     /**
@@ -70,6 +71,9 @@ final class MotoClipSelectionService
                 $reasons[] = 'shot_not_in_plan';
             } elseif (($moto['keyframe']['artifact_id'] ?? null) !== ($clip['keyframe']['artifact_id'] ?? null) || ($moto['keyframe']['sha256'] ?? null) !== ($clip['keyframe']['sha256'] ?? null)) {
                 $reasons[] = 'keyframe_changed';
+            } elseif (($moto['input']['mode'] ?? 'keyframe') !== $clip['input_mode']
+                || array_map(static fn (array $image): array => [$image['artifact_id'], $image['sha256']], (array) ($moto['input']['images'] ?? [])) !== array_map(static fn (array $image): array => [$image['artifact_id'], $image['sha256']], $clip['images'])) {
+                $reasons[] = 'input_changed';
             }
 
             if ((int) $render->duration_ms < (int) ($moto['used']['start_ms'] ?? 0) + (int) ($moto['used']['duration_ms'] ?? 0)) {
@@ -310,6 +314,7 @@ final class MotoClipSelectionService
         $keyframes = [];
         $summary = $base['summary'];
         $stageId = (string) $preview['plan']['source']['planning_stage_id'];
+        $selected = ClipPromptWriterService::selected($projectId, $stageId);
 
         foreach ($preview['plan']['clips'] as $clip) {
             $shotId = (string) $clip['shot_id'];
@@ -328,6 +333,14 @@ final class MotoClipSelectionService
                 'scene_id' => $shotId,
                 'title' => $shotId.' · '.$clip['scene_id'].' · thứ tự '.$clip['order'],
                 'video_prompt' => $clip['prompt']['text'] ?? null,
+                'clip_prompt' => $this->writer->screen($projectId, $preview['source'], $preview['keyframes'], $selected, $shotId, $preview['inputs']),
+                'clip_input' => [
+                    'mode' => $clip['input_mode'],
+                    'cards' => $preview['inputs'][$shotId]['cards'],
+                    'sent' => array_column($clip['images'], 'position', 'artifact_id'),
+                    'limit' => $preview['inputs'][$shotId]['limit'] ?? null,
+                    'url' => route('video-projects.clip-prompt-action', [$projectId, $shotId, 'input']),
+                ],
                 'duration_seconds' => $seconds,
                 'clip_blocked' => $clip['blocked']['message'] ?? null,
                 'clip_hash' => $clip['hash'],
@@ -338,7 +351,9 @@ final class MotoClipSelectionService
                     ...array_map(static fn (string $word): string => 'Cần xem trước khi gửi: prompt có chữ "'.$word.'", thường là chỉ dẫn dựng phim — kiểm lại câu nguồn; không bị chặn.', MotoClipPlanBuilder::editWarnings((string) ($clip['prompt']['text'] ?? ''))),
                     'Model: '.($clip['render']['model'] ?? 'chưa có model làm được').' · '.$clip['render']['mode'],
                     'Render '.$seconds.' s · '.($clip['render']['resolution'] ?? '—').' · phim giữ '.$clip['used']['start_ms'].'–'.($clip['used']['start_ms'] + $clip['used']['duration_ms']).' ms',
-                    'Keyframe: '.($clip['keyframe'] === null ? ($clip['blocked']['code'] ?? 'chưa có') : 'đã duyệt · '.substr((string) $clip['keyframe']['sha256'], 0, 12)),
+                    $clip['input_mode'] === MotoClipPlanBuilder::REFERENCES
+                        ? 'Ảnh tham chiếu: '.count($clip['images']).' ảnh gửi đi, không dùng keyframe'
+                        : 'Keyframe: '.($clip['keyframe'] === null ? ($clip['blocked']['code'] ?? 'chưa có') : 'đã duyệt · '.substr((string) $clip['keyframe']['sha256'], 0, 12)),
                 ],
             ];
 

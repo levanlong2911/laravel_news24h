@@ -38,12 +38,28 @@ final class GeminiOmniVideoClient
     /**
      * @param  array<string, mixed>  $entry
      * @param  list<array{mime: string, base64: string}>  $images
-     * @param  array{aspect_ratio: string, resolution: string}  $output
+     * @param  array{aspect_ratio: string, resolution: string, duration?: string}  $output  duration, such as "3s", only for a model whose length is a request field
      * @return array<string, mixed>
      */
     public static function payload(array $entry, array $images, string $prompt, array $output): array
     {
-        return self::request($entry, $images, $prompt, $output, (string) $entry['controls']['task']);
+        $task = $entry['controls']['task'] ?? null;
+
+        return self::request($entry, $images, $prompt, $output, is_string($task) ? $task : null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec  the frozen request of an Omni render
+     * @param  list<array{mime: string, base64: string}>  $images  the images it froze, in their order
+     * @return array<string, mixed> the body the render sends: the prompt word for word, the images in the frozen order, the frame, resolution and length it froze, and its task only when it froze one
+     */
+    public static function specPayload(array $spec, array $images): array
+    {
+        return self::payload(['model' => (string) $spec['model'], 'controls' => ['task' => $spec['task'] ?? null]], $images, (string) $spec['compiled_prompt']['prompt'], [
+            'aspect_ratio' => (string) $spec['aspect_ratio'],
+            'resolution' => (string) $spec['resolution'],
+            ...(is_string($spec['response_duration'] ?? null) ? ['duration' => $spec['response_duration']] : []),
+        ]);
     }
 
     /**
@@ -60,10 +76,11 @@ final class GeminiOmniVideoClient
     /**
      * @param  array<string, mixed>  $entry
      * @param  list<array{mime: string, base64: string}>  $images
-     * @param  array{aspect_ratio: string, resolution: string}  $output
+     * @param  array{aspect_ratio: string, resolution: string, duration?: string}  $output
+     * @param  ?string  $task  the task to send; null sends no generation_config, so the prompt alone tells the model how to use the images
      * @return array<string, mixed>
      */
-    private static function request(array $entry, array $images, string $prompt, array $output, string $task): array
+    private static function request(array $entry, array $images, string $prompt, array $output, ?string $task): array
     {
         return [
             'model' => (string) $entry['model'],
@@ -79,18 +96,17 @@ final class GeminiOmniVideoClient
                 'type' => 'video',
                 'aspect_ratio' => $output['aspect_ratio'],
                 'resolution' => $output['resolution'],
+                ...(isset($output['duration']) ? ['duration' => $output['duration']] : []),
                 'delivery' => 'uri',
             ],
-            'generation_config' => [
-                'video_config' => ['task' => $task],
-            ],
+            ...($task === null ? [] : ['generation_config' => ['video_config' => ['task' => $task]]]),
             'background' => false,
             'store' => true,
         ];
     }
 
     /**
-     * @param  array{max_long_edge: int, max_bytes: int, jpeg_quality: int, processor: string}  $policy
+     * @param  array{max_long_edge: int, max_bytes: int, jpeg_quality: int, processor: string}  $policy  max_long_edge below 1 sets no limit on the size of the image; an image within max_bytes is then sent as it is
      * @return array{ok: bool, error: ?string, mime: ?string, base64: ?string, sent_sha256: ?string, sent_bytes: int,
      *               sent_width: ?int, sent_height: ?int, transform: array<string, mixed>}
      */
@@ -118,12 +134,13 @@ final class GeminiOmniVideoClient
 
         [$width, $height] = $size;
         $longEdge = max($width, $height);
+        $edgeLimit = $policy['max_long_edge'] < 1 ? $longEdge : $policy['max_long_edge'];
 
-        if ($longEdge <= $policy['max_long_edge'] && strlen($bytes) <= $policy['max_bytes']) {
+        if ($longEdge <= $edgeLimit && strlen($bytes) <= $policy['max_bytes']) {
             return self::referenceOk($bytes, $mime, $width, $height, ['type' => 'none', 'processor' => $policy['processor']]);
         }
 
-        $scale = min(1, $policy['max_long_edge'] / $longEdge);
+        $scale = min(1, $edgeLimit / $longEdge);
         $toWidth = max(1, (int) round($width * $scale));
         $toHeight = max(1, (int) round($height * $scale));
         $canvas = imagecreatetruecolor($toWidth, $toHeight);

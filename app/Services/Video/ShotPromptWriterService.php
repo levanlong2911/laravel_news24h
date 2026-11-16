@@ -125,17 +125,23 @@ abstract class ShotPromptWriterService implements QueuedStageService
 
     /**
      * @param  ?string  $reviewer  who decides
-     * @return void the run becomes the prompt its shot renders from; the run approved before it stays in the history
+     * @param  ?string  $expectedShot  the shot the person approves the run for; the run must be one of that shot
+     * @return void the run becomes the prompt its shot renders from; the run approved before it stays in the history. A prompt that passed its checks while the model held it back with notes is approved like any other, and the decision keeps the status and the notes
      *
-     * @throws RuntimeException when the run is not a checked, usable prompt of the approved shot plan or its sources changed since it was written
+     * @throws RuntimeException when the run is not a checked, usable prompt of the approved shot plan, belongs to another shot than the one approved, or its sources changed since it was written
      */
-    public function approve(string $projectId, string $stageId, ?string $reviewer): void
+    public function approve(string $projectId, string $stageId, ?string $reviewer, ?string $expectedShot = null): void
     {
-        DB::transaction(function () use ($projectId, $stageId, $reviewer): void {
+        DB::transaction(function () use ($projectId, $stageId, $reviewer, $expectedShot): void {
             $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
             $stage = VideoPlanningStage::query()->withoutSnapshot()->whereKey($stageId)->where('project_id', $projectId)
                 ->where('stage', static::STAGE->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->first()
                 ?? throw new RuntimeException('Lượt viết prompt này không thuộc dự án hoặc chưa chạy xong.');
+
+            if ($expectedShot !== null && (string) ($stage->input_json['shot_id'] ?? '') !== $expectedShot) {
+                throw new RuntimeException('Lượt '.substr((string) $stage->id, 0, 8).' viết cho shot '.($stage->input_json['shot_id'] ?? '—').', không phải '.$expectedShot.' — không duyệt.');
+            }
+
             $meta = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null);
             $adapter = $this->workflowFor($projectId)['adapter'];
             $evaluation = ScriptEvaluation::of((string) $stage->raw_response, (array) $meta['manifest'], (array) $meta['context'], (array) $meta['source'], $adapter);
@@ -147,6 +153,8 @@ abstract class ShotPromptWriterService implements QueuedStageService
             if (! $adapter::usable($evaluation['check'])) {
                 throw new RuntimeException('Prompt chưa qua kiểm hoặc AI còn báo thiếu dữ kiện, mâu thuẫn — không duyệt được.');
             }
+
+            $modelStatus = $evaluation['check']['status'] ?? null;
 
             $shotId = (string) $stage->input_json['shot_id'];
             $shotStageId = $this->shotStageOf($projectId, $shotId);
@@ -169,7 +177,8 @@ abstract class ShotPromptWriterService implements QueuedStageService
                 'decision' => 'approved',
                 'revision' => 1 + (int) VideoReviewDecision::query()->where('entity_type', static::ENTITY_TYPE)->where('entity_id', (string) $stage->id)->max('revision'),
                 'reviewer_id' => $reviewer,
-                'metadata_json' => ['shot_id' => $shotId, 'shot_stage_id' => $shotStageId, 'source_fingerprint' => $fingerprint, 'prompt_sha256' => CanonicalJson::hashString($prompt)],
+                'metadata_json' => ['shot_id' => $shotId, 'shot_stage_id' => $shotStageId, 'source_fingerprint' => $fingerprint, 'prompt_sha256' => CanonicalJson::hashString($prompt)]
+                    + ($modelStatus === 'ok' ? [] : ['approved_with_notes' => ['model_status' => $modelStatus, 'warnings' => array_values((array) ($evaluation['check']['warnings'] ?? []))]]),
             ]);
             $metadata = $project->metadata_json ?? [];
             $metadata[static::SELECTION][$shotStageId][$shotId] = [
@@ -227,6 +236,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
      */
     protected function promptScreen(string $projectId, string $shotStageId, string $shotId, ?array $selected, \Closure $package): array
     {
+        $prepared = null;
         $fingerprint = null;
         $unavailable = null;
         $estimate = null;
@@ -250,7 +260,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
 
         return [
             'selected' => $selected,
-            'stale' => $selected !== null && ($fingerprint === null || ! hash_equals($fingerprint, (string) $selected['fingerprint'])),
+            'stale' => $selected !== null && ($prepared === null || ! $this->stillHolds($selected, $prepared)),
             'unavailable' => $unavailable,
             'can_write' => $unavailable === null && ! ($latest !== null && in_array($latest->status, [VideoPlanningStageStatus::RUNNING->value, VideoPlanningStageStatus::PENDING->value], true)),
             'estimate' => $estimate,
@@ -291,6 +301,16 @@ abstract class ShotPromptWriterService implements QueuedStageService
                 'cost_usd' => $stage->cost_usd === null ? null : (float) $stage->cost_usd,
             ], $stages),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $selected  the approved prompt of the shot, selected()
+     * @param  array<string, mixed>  $prepared  package() of the shot now
+     * @return bool whether the approved prompt still holds: by default the fingerprint it was approved with is the fingerprint now, the phase revision it was written to included
+     */
+    protected function stillHolds(array $selected, array $prepared): bool
+    {
+        return hash_equals((string) $prepared['fingerprint'], (string) $selected['fingerprint']);
     }
 
     /**
@@ -509,6 +529,10 @@ abstract class ShotPromptWriterService implements QueuedStageService
 
         if (! $adapter instanceof $class) {
             throw new RuntimeException('Adapter '.static::PHASE." của workflow {$workflow} không hợp lệ.");
+        }
+
+        if ($adapter instanceof \App\Video\Moto\ReleaseBound) {
+            $adapter->bind($project);
         }
 
         return ['workflow' => $workflow, 'category_id' => (string) $category->id, 'action' => (string) $entry['action'], 'adapter' => $adapter];

@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoClipPlan",
+  "title": "Moto clip plan (moto-clip-plan-v2), schema 2.0.0: every clip is one take of 3000 ms made from reference images, all of it kept, with no keyframe",
+  "description": "The clip plan code compiles from the approved shots, the approved keyframes, the video prompt a person approved for each shot in Phase 10, the render registry and the file checks of config. No model writes it; PHP checks it before it is stored or read. What JSON Schema cannot say is checked by PHP: the kept part lies inside the rendered clip, shot ids and orders are unique, total_ms is the film the shots make, and every hash is the hash of its content.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "project_id", "contract", "source", "total_ms", "clips"],
+  "properties": {
+    "format": { "const": "moto-clip-plan-v2" },
+    "schema": { "const": "MotoClipPlan@2.0.0" },
+    "project_id": { "$ref": "#/$defs/id" },
+    "contract": { "$ref": "#/$defs/contract" },
+    "source": { "$ref": "#/$defs/source" },
+    "total_ms": { "$ref": "#/$defs/positive_ms" },
+    "clips": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/clip" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "\\S" },
+    "sha256": { "description": "The SHA-256 of bytes or of a text, as 64 hex digits.", "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "content_hash": { "description": "The hash of a canonical JSON value or of a text, as CanonicalJson gives it: sha256: and 64 hex digits.", "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "positive_ms": { "type": "integer", "minimum": 1 },
+    "contract": {
+      "description": "The phase-10 revision the video prompts are written to, as the resolver gave it: the prompt of the writer, its bundle, the check that read every answer and the sound policy every prompt follows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase_id", "phase_revision", "prompt_version", "prompt_sha256", "bundle_hash", "writer", "builder", "audio"],
+      "properties": {
+        "phase_id": { "$ref": "#/$defs/id" },
+        "phase_revision": { "type": "integer", "minimum": 1 },
+        "prompt_version": { "type": "string", "pattern": "^[a-z0-9_]+/phase-10@rev[1-9][0-9]*$" },
+        "prompt_sha256": { "$ref": "#/$defs/sha256" },
+        "bundle_hash": { "$ref": "#/$defs/content_hash" },
+        "writer": { "$ref": "#/$defs/id" },
+        "builder": { "$ref": "#/$defs/id" },
+        "audio": {
+          "description": "The sound policy of the flow. Every approved video prompt holds one line of its own that starts with the prefix, describes the sounds of its shot and ends with the closing sentences, joined by one space; the line itself stays in each prompt.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy", "prefix", "closing"],
+          "properties": {
+            "policy": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+            "prefix": { "type": "string", "pattern": "^\\S.*:$" },
+            "closing": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^\\S(.*\\S)?$" } }
+          }
+        }
+      }
+    },
+    "source": {
+      "description": "The approved shot plan the clips come from, as ShotSourceService::approvedSource pins it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planning_stage_id", "revision", "token"],
+      "properties": {
+        "planning_stage_id": { "$ref": "#/$defs/id" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "token": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "stage_id", "content_hash", "selection_version", "source_fingerprint"],
+          "properties": {
+            "version": { "const": "shots-source-token-v1" },
+            "stage_id": { "$ref": "#/$defs/id" },
+            "content_hash": { "$ref": "#/$defs/content_hash" },
+            "selection_version": { "type": "integer", "minimum": 1 },
+            "source_fingerprint": { "$ref": "#/$defs/content_hash" }
+          }
+        }
+      }
+    },
+    "media_policy": {
+      "description": "The checks the file of the clip must pass, read from config when the plan was made: the page hash covers them and the request freezes these very values, so a later change of config can neither pass nor fail a running attempt.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "duration_tolerance_ms", "output_size", "av_drift_ms", "used_end_ms"],
+      "properties": {
+        "version": { "const": "moto-clip-media-policy-v1" },
+        "duration_tolerance_ms": { "type": "integer", "minimum": 0 },
+        "output_size": {
+          "description": "Width and height the file must have, or null for a model whose size is not fixed.",
+          "oneOf": [
+            { "type": "null" },
+            { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer", "minimum": 1 } }
+          ]
+        },
+        "av_drift_ms": { "type": "integer", "minimum": 0 },
+        "used_end_ms": { "$ref": "#/$defs/positive_ms" }
+      }
+    },
+    "blocked_code": {
+      "description": "Why a clip cannot be sent. A new reason needs a new schema version, so Phase 9 and Phase 11 can rely on the list.",
+      "enum": [
+        "prompt_missing", "prompt_source_changed", "prompt_internal_reference", "prompt_edit_reference", "mode_unsupported", "timing_unresolved",
+        "duration_unsupported", "media_policy_missing",
+        "references_missing", "references_limit", "reference_problem",
+        "keyframe_missing", "keyframe_ambiguous", "keyframe_source_changed", "keyframe_link_invalid", "keyframe_old_surface_rule",
+        "keyframe_prompt_changed", "keyframe_unapproved", "keyframe_artifact_missing", "keyframe_disk_refused", "keyframe_file_missing",
+        "keyframe_file_size", "keyframe_hash_mismatch", "keyframe_format", "keyframe_ratio"
+      ]
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shot_id", "scene_id", "order", "input_mode", "images", "render", "used", "media_policy", "prompt", "keyframe", "blocked", "hash"],
+      "properties": {
+        "input_mode": {
+          "description": "How a person asked the clip to be made: from the approved keyframe of the shot as its first frame, or from reference images with no keyframe, where the model builds the opening from the prompt.",
+          "enum": ["keyframe", "references"]
+        },
+        "images": {
+          "description": "The reference images a clip made from references sends, in the order they are sent; empty for a clip made from its keyframe. The prompt a person approved is written from these very images.",
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["position", "artifact_id", "sha256", "kind", "role", "usage", "target"],
+            "properties": {
+              "position": { "type": "integer", "minimum": 0 },
+              "artifact_id": { "$ref": "#/$defs/id" },
+              "sha256": { "$ref": "#/$defs/sha256" },
+              "kind": { "enum": ["environment", "identity", "design", "character"] },
+              "role": { "type": "string", "pattern": "\\S" },
+              "usage": { "type": "string", "pattern": "\\S" },
+              "target": { "description": "What of the shot the image answers, as the Keyframes screen names it; null when it answers the whole motorcycle." }
+            }
+          }
+        },
+        "shot_id": { "type": "string", "pattern": "^SC[0-9]{2}_SH[0-9]{2}$" },
+        "scene_id": { "description": "The code of the scene of the shot plan the shot belongs to, such as SC10. It is not the id of a video_render_scenes row: the shot flow has no scene row.", "type": "string", "pattern": "^SC[0-9]{2}$" },
+        "order": { "type": "integer", "minimum": 1 },
+        "render": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "model", "aspect_ratio", "resolution", "duration_ms"],
+          "properties": {
+            "mode": { "description": "The way the shot plan asks for the clip: from reference images, sent through the references path of the adapter with no first-frame or last-frame task.", "const": "reference_to_video" },
+            "model": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z0-9_-]+:[A-Za-z0-9._-]+$" }] },
+            "aspect_ratio": { "type": "string", "pattern": "^[1-9][0-9]*:[1-9][0-9]*$" },
+            "resolution": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[0-9a-z]+$" }] },
+            "duration_ms": { "const": 3000 }
+          }
+        },
+        "used": {
+          "description": "The whole rendered clip: the film keeps all 3000 ms of it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start_ms", "duration_ms"],
+          "properties": {
+            "start_ms": { "const": 0 },
+            "duration_ms": { "const": 3000 }
+          }
+        },
+        "media_policy": {
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/media_policy" }]
+        },
+        "prompt": {
+          "description": "The video prompt a person approved for the shot, word for word, with the run that wrote it, the decision that approved it and the fingerprint of the sources it was written from; null while the shot has none whose sources still hold. A render freezes its own copy.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text", "version", "sha256", "stage_id", "decision_id", "source_fingerprint"],
+              "properties": {
+                "text": { "type": "string", "pattern": "\\S" },
+                "version": { "type": "string", "pattern": "^[a-z0-9_]+/phase-10@rev[1-9][0-9]*$" },
+                "sha256": { "$ref": "#/$defs/sha256" },
+                "stage_id": { "$ref": "#/$defs/id" },
+                "decision_id": { "$ref": "#/$defs/id" },
+                "source_fingerprint": { "$ref": "#/$defs/content_hash" }
+              }
+            }
+          ]
+        },
+        "keyframe": {
+          "description": "The approved first frame of the shot and what it was made from; null until Phase 9 approves one that passes every check.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["image_id", "artifact_id", "sha256", "source_token", "prompt"],
+              "properties": {
+                "image_id": { "$ref": "#/$defs/id" },
+                "artifact_id": { "$ref": "#/$defs/id" },
+                "sha256": { "$ref": "#/$defs/sha256" },
+                "source_token": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["stage_id", "content_hash"],
+                  "properties": {
+                    "stage_id": { "$ref": "#/$defs/id" },
+                    "content_hash": { "$ref": "#/$defs/content_hash" }
+                  }
+                },
+                "prompt": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["version", "surface_rule", "sha256"],
+                  "properties": {
+                    "version": { "$ref": "#/$defs/id" },
+                    "surface_rule": { "$ref": "#/$defs/id" },
+                    "sha256": { "$ref": "#/$defs/content_hash" }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "blocked": {
+          "description": "Why this clip cannot be sent, or null when it can.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "$ref": "#/$defs/blocked_code" },
+                "message": { "type": "string", "pattern": "\\S" }
+              }
+            }
+          ]
+        },
+        "hash": { "$ref": "#/$defs/content_hash" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "input_mode": { "const": "keyframe" } } },
+          "then": { "properties": { "images": { "maxItems": 0 }, "blocked": { "type": "object" } } }
+        },
+        {
+          "if": { "properties": { "input_mode": { "const": "references" } } },
+          "then": { "properties": { "keyframe": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "input_mode": { "const": "references" }, "images": { "maxItems": 0 } } },
+          "then": { "properties": { "blocked": { "type": "object" } } }
+        },
+        {
+          "if": { "properties": { "prompt": { "type": "null" } } },
+          "then": { "properties": { "blocked": { "type": "object" } } }
+        },
+        {
+          "if": { "properties": { "media_policy": { "type": "null" } } },
+          "then": { "properties": { "blocked": { "type": "object" } } }
+        },
+        {
+          "if": { "properties": { "render": { "properties": { "model": { "type": "null" } } } } },
+          "then": { "properties": { "blocked": { "type": "object" } } }
+        },
+        {
+          "if": { "properties": { "render": { "properties": { "resolution": { "type": "null" } } } } },
+          "then": { "properties": { "blocked": { "type": "object" } } }
+        }
+      ]
+    }
+  }
+}

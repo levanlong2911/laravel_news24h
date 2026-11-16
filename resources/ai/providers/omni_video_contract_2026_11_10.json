@@ -1,0 +1,70 @@
+{
+    "captured_at": "2026-11-10",
+    "model": "gemini-omni-1.2-flash",
+    "method": "interactions",
+    "api_version": "v1beta",
+    "endpoint": "POST {base_url}/v1beta/interactions",
+    "documented": {
+        "sources": [
+            "https://aistudio.google.com/docs/omni?codelanguage=rest"
+        ],
+        "title": "Generate and edit videos with Gemini Omni Flash",
+        "transition": "gemini-omni-1.1-flash remains available during a 4-week transition window; from 2026-12-03 every request to gemini-omni-1.1-flash routes to gemini-omni-1.2-flash with no code change and is billed at the lower Gemini Omni 1.2 Flash rates",
+        "request": {
+            "input": "list of {type: image, data: base64, mime_type} followed by {type: text, text}; image to video sends one image, first and last frame send two images before the text",
+            "response_format": {
+                "type": "video",
+                "aspect_ratios": ["16:9", "9:16"],
+                "default_aspect_ratio": "16:9",
+                "resolutions": ["360p", "720p", "1080p", "4k"],
+                "default_resolution": "720p",
+                "upscaled_resolutions": ["1080p", "4k"],
+                "duration": "any whole second from 3 to 15 as a string such as \"3s\"; the model defaults to 10 seconds; a duration set in response_format is used instead of any length in the text prompt; over 15 seconds is an invalid argument",
+                "delivery": "uri for outputs larger than 4 MB"
+            },
+            "first_and_last_frame": "3 to 10 seconds; both frames with a duration over 10 seconds is an invalid argument",
+            "reference_images": "up to 6 per request; up to 3 images per character for up to 2 characters",
+            "generation_config.video_config.task": ["text_to_video", "image_to_video", "reference_to_video", "edit", "extend"],
+            "task_note": "the guide prefers natural language and names the task as a fallback that adds strict constraints",
+            "background": "the guide recommends false for synchronous generation",
+            "store": "false means the result cannot be edited or extended in a later turn"
+        },
+        "output": {
+            "location": "steps[] model_output with type video, mime_type video/mp4, data (base64) or uri; interaction.output_video is SDK-only",
+            "frame_rate": "24 fps (https://aistudio.google.com/docs/models/gemini-omni-flash)",
+            "durations": "3 to 15 s; 3 to 10 s for first and last frame and for each extension turn, extensions up to 30 s in total (model card)"
+        },
+        "limits": {
+            "negative_prompt": false,
+            "negative_prompt_note": "put negatives in the prompt",
+            "system_instructions": false,
+            "max_prompt_length": "not stated on the page read",
+            "image_limits": "not stated on the page read; the guide asks for high-resolution images"
+        },
+        "prompting": {
+            "image_to_video": "use high-resolution images and provide specific motion descriptions; vague prompts like \"make it move\" produce less compelling results than detailed descriptions of the camera movement, subject motion, and environmental effects",
+            "single_shot": "say a single continuous shot or no scene cuts",
+            "timing": "natural language or timecodes such as [0-5s]",
+            "audio": "generated with the video and steered through the prompt; no switch to turn it off is stated"
+        },
+        "pricing": {
+            "source": "https://aistudio.google.com/docs/pricing#gemini-omni-1.2-flash",
+            "captured_at": "2026-11-10",
+            "unit": "USD per second of output video",
+            "formula": "video output tokens per second of the resolution x 12.00 USD per 1M video output tokens; input tokens (1.50 USD per 1M) are not in the estimate",
+            "output_usd_per_million_tokens": 12.0,
+            "input_usd_per_million_tokens": 1.5,
+            "tokens_per_second": {"360p": 1931, "720p": 5792, "1080p": 8688, "4k": 17376},
+            "360p_usd_per_second": 0.023172,
+            "720p_usd_per_second": 0.069504,
+            "1080p_usd_per_second": 0.104256,
+            "4k_usd_per_second": 0.208512,
+            "not_stated": "separate prices for edit and extension turns; batch, flex and priority rows; a free tier"
+        }
+    },
+    "registry": {
+        "max_seconds": "10: the registry ceiling and the first and last frame limit; one image allows up to 15 seconds",
+        "durations": "[3]: the clip length the moto shot plans are written for; longer lengths change the capabilities Phase 7 plans with"
+    },
+    "measured": null
+}

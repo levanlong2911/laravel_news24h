@@ -13,6 +13,7 @@ use App\Models\VideoSessionEvent;
 use App\Models\VideoShot;
 use App\Video\Media\GeminiOmniVideoClient;
 use App\Video\Media\VideoModelRegistry;
+use App\Video\Moto\MotoClipPlanBuilder;
 use App\Video\Render\Enums\RenderStatus;
 use App\Video\Render\Video\SceneClipDispatchService;
 use App\Video\Render\Video\SceneShotFactory;
@@ -31,7 +32,7 @@ final class MotoClipRenderService
 {
     public const SHOT_TYPE = 'moto_clip';
 
-    public const REQUEST_VERSION = 'moto-clip-request-v1';
+    public const REQUEST_VERSION = 'moto-clip-request-v4';
 
     /** @var string what a refusal says when what the page shows is no longer what would be sent */
     public const RELOAD = 'Prompt, model, keyframe hoặc nguồn đã đổi so với bản đang xem — tải lại trang để xem bản mới, chưa có gì được gửi.';
@@ -150,14 +151,41 @@ final class MotoClipRenderService
         $row = collect($source['plan']['shots'])->firstWhere('id', $shotId);
         $session = $this->factory->sessionFor($projectId);
         $shot = $this->shot($session, $source, $row, $clip, $controls['duration_seconds'], $expectedIntent);
-        $artifact = VideoArtifact::query()->whereKey($clip['keyframe']['artifact_id'])->firstOrFail();
+        $input = $clip['input_mode'] === MotoClipPlanBuilder::REFERENCES ? $this->references($projectId, $clip) : null;
+        $artifact = $input === null
+            ? VideoArtifact::query()->whereKey($clip['keyframe']['artifact_id'])->firstOrFail()
+            : (collect($input['references'])->first(static fn (array $reference): bool => $reference['artifact']->render_id !== null)['artifact'] ?? $input['references'][0]['artifact']);
         $stage = $this->plans->save($projectId, $preview);
 
         return $this->clips->create($shot, $artifact, (string) $entry['id'], [
             'resolution' => $controls['resolution'],
             'aspect_ratio' => $controls['aspect_ratio'],
             'duration_seconds' => $controls['duration_seconds'],
-        ], (int) $shot->intent_version, $operationId, $this->frozen($projectId, $operationId, $preview['plan'], $clip, $entry, (string) $stage->id, $preview['audio']));
+        ], (int) $shot->intent_version, $operationId, $this->frozen($projectId, $operationId, $preview['plan'], $clip, $entry, (string) $stage->id, $preview['audio']), $input);
+    }
+
+    /**
+     * @param  array<string, mixed>  $clip  a clip made from reference images
+     * @return array{task: null, references: list<array{artifact: VideoArtifact, role: string, label: string}>} the reference images of the clip in the order the plan gives them, each the very file the plan pins, sent with no task so the approved prompt alone says how each image is used
+     *
+     * @throws RuntimeException when an image is no longer the file the plan pinned
+     */
+    private function references(string $projectId, array $clip): array
+    {
+        $artifacts = VideoArtifact::query()->where('project_id', $projectId)->whereIn('id', array_column($clip['images'], 'artifact_id'))->get()->keyBy('id');
+        $references = [];
+
+        foreach ($clip['images'] as $image) {
+            $artifact = $artifacts->get($image['artifact_id']);
+
+            if ($artifact === null || ! hash_equals((string) $image['sha256'], (string) $artifact->sha256)) {
+                throw new RuntimeException('Ảnh tham chiếu '.((int) $image['position'] + 1).' của shot '.$clip['shot_id'].' không còn là file đã ghim — tải lại trang, chưa có gì được gửi.');
+            }
+
+            $references[] = ['artifact' => $artifact, 'role' => (string) $image['role'], 'label' => 'Image '.((int) $image['position'] + 1).' · '.$image['kind']];
+        }
+
+        return ['task' => null, 'references' => $references];
     }
 
     /**
@@ -280,7 +308,7 @@ final class MotoClipRenderService
      * @param  array<string, mixed>  $plan
      * @param  array<string, mixed>  $clip
      * @param  array<string, mixed>  $entry  the model as the registry describes it now
-     * @param  array{policy: string, line: string}  $audio  the sound policy and the line of the template that asks for it, checked to agree
+     * @param  array{policy: string, prefix: string, closing: list<string>}  $audio  the sound policy every approved video prompt follows in its own sound line
      * @return array<string, mixed> what the request freezes beside the prompt and the sent image: where the clip comes from and the parameters its execution and file checks read, so a later registry or config change cannot touch a running attempt. The file checks are the very ones the plan pinned and the page hash covered, never read again from config
      */
     private function frozen(string $projectId, string $operationId, array $plan, array $clip, array $entry, string $planStageId, array $audio): array
@@ -298,8 +326,9 @@ final class MotoClipRenderService
                 'source' => $plan['source'],
                 'plan_stage_id' => $planStageId,
                 'clip_hash' => $clip['hash'],
-                'prompt' => ['version' => $clip['prompt']['version'], 'sha256' => $clip['prompt']['sha256'], 'compiler' => $plan['contract']['compiler']],
+                'prompt' => ['version' => $clip['prompt']['version'], 'sha256' => $clip['prompt']['sha256'], 'writer' => $plan['contract']['writer'], 'stage_id' => $clip['prompt']['stage_id'], 'decision_id' => $clip['prompt']['decision_id'], 'source_fingerprint' => $clip['prompt']['source_fingerprint']],
                 'contract' => $plan['contract'],
+                'input' => ['mode' => $clip['input_mode'], 'images' => $clip['images']],
                 'keyframe' => $clip['keyframe'],
                 'capability' => [
                     'model_id' => $entry['id'],

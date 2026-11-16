@@ -13,11 +13,30 @@ use App\Video\Superyacht\Support\CanonicalJson;
  */
 final class MotoClipPlanBuilder
 {
-    public const VERSION = 'moto-clip-plan-builder-v2';
+    public const VERSION = 'moto-clip-plan-builder-v5';
 
     public const FORMAT = 'moto-clip-plan-v1';
 
-    public const SCHEMA = 'MotoClipPlan@1.3.0';
+    public const SCHEMA = 'MotoClipPlan@1.6.0';
+
+    public const FORMAT_FIXED = 'moto-clip-plan-v2';
+
+    public const SCHEMA_FIXED = 'MotoClipPlan@2.0.0';
+
+    /**
+     * @param  array<string, mixed>  $source  the approved shot plan
+     * @return bool whether every shot of the plan is one take of a fixed length made from reference images
+     */
+    public static function fixed(array $source): bool
+    {
+        return ($source['plan']['timing'] ?? null) === MotoShotsCheck::TIMING_FIXED;
+    }
+
+    /** @var string the way of making a clip that sends reference images and no keyframe */
+    public const REFERENCES = 'references';
+
+    /** @var list<string> what the plan keeps of a reference image: where it stands in the request, which file it is and what it is for */
+    private const IMAGE_FIELDS = ['position', 'artifact_id', 'sha256', 'kind', 'role', 'usage', 'target'];
 
     public const POLICY_VERSION = 'moto-clip-media-policy-v1';
 
@@ -28,26 +47,29 @@ final class MotoClipPlanBuilder
     private const EDIT_WORDS = '/\b(match cut|jump cut|smash cut|hard cut|for the cut|cut to the|end cards?|title cards?|cards)\b/i';
 
     /**
-     * @param  array<string, mixed>  $contract  what the prompts are compiled from
-     * @param  string  $template  the text of the phase-10 revision the contract names
+     * @param  array<string, mixed>  $contract  the phase-10 revision the video prompts are written to
+     * @param  array<string, array<string, mixed>>  $prompts  the approved video prompt of every shot or why it has none, ClipPromptWriterService::current()
      * @param  array<string, mixed>  $source  the approved shot plan, with its context
      * @param  array<string, array<string, mixed>>  $keyframes  the keyframe of every shot or why it has none
      * @param  list<array<string, mixed>>  $models  the models the flow may send, as the registry describes them
      * @param  array<string, array<string, mixed>>  $media  the file checks by way of calling a model, interactions or long_running, as config gives them now
+     * @param  array<string, array<string, mixed>>  $inputs  how the clip of every shot is made, MotoClipSourceService::inputs(); a shot it does not name is made from its keyframe
      * @return array<string, mixed> the plan, in the order of the shots
      */
-    public static function plan(string $projectId, array $contract, string $template, array $source, array $keyframes, array $models, array $media): array
+    public static function plan(string $projectId, array $contract, array $prompts, array $source, array $keyframes, array $models, array $media, array $inputs = []): array
     {
         $ids = self::internalIds($source);
         $clips = [];
 
         foreach (array_values((array) $source['plan']['shots']) as $index => $row) {
-            $clips[] = self::clip($row, $index + 1, $contract, $template, $source, (array) ($keyframes[$row['id']] ?? []), $models, $media, $ids);
+            $clips[] = self::clip($row, $index + 1, $contract, (array) ($prompts[$row['id']] ?? []), $source, (array) ($keyframes[$row['id']] ?? []), $models, $media, $ids, (array) ($inputs[$row['id']] ?? []));
         }
 
+        $fixed = self::fixed($source);
+
         return [
-            'format' => self::FORMAT,
-            'schema' => self::SCHEMA,
+            'format' => $fixed ? self::FORMAT_FIXED : self::FORMAT,
+            'schema' => $fixed ? self::SCHEMA_FIXED : self::SCHEMA,
             'project_id' => $projectId,
             'contract' => $contract,
             'source' => ['planning_stage_id' => $source['stage_id'], 'revision' => $source['revision'], 'token' => $source['token']],
@@ -59,18 +81,20 @@ final class MotoClipPlanBuilder
     /**
      * @param  array<string, mixed>  $row
      * @param  array<string, mixed>  $contract
+     * @param  array<string, mixed>  $approved  the approved video prompt of the shot or why it has none
      * @param  array<string, mixed>  $source
      * @param  array<string, mixed>  $keyframe
      * @param  list<array<string, mixed>>  $models
      * @param  array<string, array<string, mixed>>  $media
      * @param  list<string>  $ids
+     * @param  array<string, mixed>  $input  how the clip is made: its mode, its reference images and why they cannot be sent
      * @return array<string, mixed>
      */
-    private static function clip(array $row, int $order, array $contract, string $template, array $source, array $keyframe, array $models, array $media, array $ids): array
+    private static function clip(array $row, int $order, array $contract, array $approved, array $source, array $keyframe, array $models, array $media, array $ids, array $input): array
     {
         $context = (array) $source['context'];
-        $missing = MotoShotPrompt::clipMissing($row, $context);
-        $text = $missing === [] ? MotoShotPrompt::clip($row, $context, $template) : null;
+        $references = ($input['mode'] ?? null) === self::REFERENCES;
+        $prompt = is_array($approved['prompt'] ?? null) ? $approved['prompt'] : null;
         $entry = self::model($row, $context, $models);
         $render = [
             'mode' => (string) $row['mode'],
@@ -85,12 +109,16 @@ final class MotoClipPlanBuilder
             'shot_id' => (string) $row['id'],
             'scene_id' => (string) $row['scene'],
             'order' => $order,
+            'input_mode' => $references ? self::REFERENCES : 'keyframe',
+            'images' => $references && ($input['blocked']['code'] ?? null) !== 'references_limit' ? array_map(static fn (array $image): array => array_intersect_key($image, array_flip(self::IMAGE_FIELDS)), array_values((array) ($input['images'] ?? []))) : [],
             'render' => $render,
             'used' => $used,
             'media_policy' => $policy,
-            'prompt' => $text === null ? null : ['text' => $text, 'version' => (string) $contract['prompt_version'], 'sha256' => hash('sha256', $text)],
-            'keyframe' => $keyframe['keyframe'] ?? null,
-            'blocked' => self::blocked($row, $missing, $text, $ids, $entry, $policy, (array) ($keyframe['blocked'] ?? [])),
+            'prompt' => $prompt,
+            'keyframe' => $references ? null : ($keyframe['keyframe'] ?? null),
+            'blocked' => self::fixed($source) && ! $references
+                ? ['code' => 'mode_unsupported', 'message' => 'Shot '.$row['id'].' thuộc kế hoạch chỉ làm clip từ ảnh tham chiếu — chọn "Ảnh tham chiếu" ở cột Ảnh đầu vào.']
+                : self::blocked($row, $prompt, (array) ($approved['blocked'] ?? []), $ids, $entry, $policy, (array) ($references ? ($input['blocked'] ?? []) : ($keyframe['blocked'] ?? []))),
         ];
 
         return $clip + ['hash' => CanonicalJson::hash([
@@ -103,26 +131,29 @@ final class MotoClipPlanBuilder
 
     /**
      * @param  array<string, mixed>  $row
-     * @param  list<string>  $missing
+     * @param  ?array<string, mixed>  $prompt  the approved video prompt of the shot
+     * @param  array<string, mixed>  $unapproved  why the shot has no approved video prompt it can send
      * @param  list<string>  $ids
      * @param  ?array<string, mixed>  $entry
      * @param  ?array<string, mixed>  $policy
-     * @param  array<string, mixed>  $keyframe
-     * @return ?array{code: string, message: string} the first thing that stops the shot from being sent, in the order the dispatch checks them
+     * @param  array<string, mixed>  $keyframe  why the opening the clip is made from cannot be used: its keyframe, or its reference images when it is made from those
+     * @return ?array{code: string, message: string} the first thing that stops the shot from being sent: its keyframe or its reference images, which its prompt is written from, then its prompt, then what the dispatch checks
      */
-    private static function blocked(array $row, array $missing, ?string $text, array $ids, ?array $entry, ?array $policy, array $keyframe): ?array
+    private static function blocked(array $row, ?array $prompt, array $unapproved, array $ids, ?array $entry, ?array $policy, array $keyframe): ?array
     {
         $shot = 'Shot '.$row['id'];
         $timing = MotoShotPrompt::clipProblem($row);
+        $text = $prompt === null ? null : (string) $prompt['text'];
         $named = $text === null ? [] : array_values(array_filter($ids, static fn (string $id): bool => preg_match('/(?<![A-Za-z0-9_])'.preg_quote($id, '/').'(?![A-Za-z0-9_])/', $text) === 1));
 
         return match (true) {
-            $missing !== [] => ['code' => 'prompt_field_missing', 'message' => $shot.' thiếu trường bắt buộc của prompt clip: '.implode(', ', $missing).'.'],            $named !== [] => ['code' => 'prompt_internal_reference', 'message' => $shot.' có mã nội bộ '.implode(', ', $named).' trong câu của kế hoạch shot — model không biết mã này. Viết lại câu đó thành mô tả thực trong kế hoạch shot; không gửi.'],
-            $row['mode'] !== self::MODE => ['code' => 'mode_unsupported', 'message' => $shot.' cần chế độ '.$row['mode'].'; bản đầu chỉ gửi '.self::MODE.'.'],
+            $keyframe !== [] => ['code' => (string) $keyframe['code'], 'message' => (string) $keyframe['message']],
+            $prompt === null => ['code' => (string) ($unapproved['code'] ?? 'prompt_missing'), 'message' => (string) ($unapproved['message'] ?? $shot.' chưa có prompt video đã duyệt.')],
+            $named !== [] => ['code' => 'prompt_internal_reference', 'message' => $shot.' có mã nội bộ '.implode(', ', $named).' trong prompt video đã duyệt — model video không biết mã này. Viết lại prompt; không gửi.'],
+            ! in_array($row['mode'], [self::MODE, MotoContract::REFERENCE_TO_VIDEO], true) => ['code' => 'mode_unsupported', 'message' => $shot.' cần chế độ '.$row['mode'].'; code chỉ gửi '.self::MODE.' và '.MotoContract::REFERENCE_TO_VIDEO.'.'],
             $timing !== null => ['code' => 'timing_unresolved', 'message' => $timing],
             $entry === null => ['code' => 'duration_unsupported', 'message' => $shot.' cần render '.self::seconds((int) $row['render_duration_ms']).' giây; model được phép không làm được. Kế hoạch shot vẫn giữ nguyên.'],
             $policy === null => ['code' => 'media_policy_missing', 'message' => $shot.': chưa có chính sách kiểm file cho model '.$entry['id'].' ở thiết lập này — không gửi.'],
-            $keyframe !== [] => ['code' => (string) $keyframe['code'], 'message' => (string) $keyframe['message']],
             default => null,
         };
     }

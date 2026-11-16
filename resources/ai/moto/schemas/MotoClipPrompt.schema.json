@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoClipPrompt",
+  "title": "Moto Phase 10 — video prompt (moto-clip-prompt-v1)",
+  "description": "One answer of Phase 10 for one shot of a custom motorcycle film: the one English video prompt sent unchanged with the approved opening keyframe, the source ids it relies on, what the sources do not give and where they disagree. Code checks the ids and the shape; a person reads the prompt and approves it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "phase",
+    "project_id",
+    "shot_id",
+    "prompt_version",
+    "source_fingerprint",
+    "status",
+    "video_prompt",
+    "source_refs",
+    "gaps",
+    "conflicts",
+    "flags"
+  ],
+  "properties": {
+    "format": {
+      "const": "moto-clip-prompt-v1"
+    },
+    "phase": {
+      "const": "10"
+    },
+    "project_id": {
+      "$ref": "#/$defs/text"
+    },
+    "shot_id": {
+      "type": "string",
+      "pattern": "^SC[0-9]+_SH[0-9]+$"
+    },
+    "prompt_version": {
+      "$ref": "#/$defs/text"
+    },
+    "source_fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": ["ok", "needs_review", "fail"]
+    },
+    "video_prompt": {
+      "type": "string",
+      "maxLength": 12000
+    },
+    "source_refs": {
+      "$ref": "#/$defs/refs"
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["missing", "reason", "source_refs"],
+        "properties": {
+          "missing": {
+            "$ref": "#/$defs/text"
+          },
+          "reason": {
+            "$ref": "#/$defs/text"
+          },
+          "source_refs": {
+            "$ref": "#/$defs/refs"
+          }
+        }
+      }
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason", "source_refs"],
+        "properties": {
+          "reason": {
+            "$ref": "#/$defs/text"
+          },
+          "source_refs": {
+            "type": "array",
+            "minItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/source_id"
+            }
+          }
+        }
+      }
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {"const": "ok"}
+        }
+      },
+      "then": {
+        "properties": {
+          "video_prompt": {"pattern": "\\S"},
+          "source_refs": {"minItems": 1},
+          "gaps": {"maxItems": 0},
+          "conflicts": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {"const": "needs_review"}
+        }
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "gaps": {"minItems": 1}
+            }
+          },
+          {
+            "properties": {
+              "conflicts": {"minItems": 1}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {"const": "fail"}
+        }
+      },
+      "then": {
+        "properties": {
+          "video_prompt": {"const": ""},
+          "source_refs": {"maxItems": 0},
+          "gaps": {"maxItems": 0},
+          "conflicts": {"maxItems": 0},
+          "flags": {"minItems": 1}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^S[0-9]{2,}$"
+    },
+    "refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/source_id"
+      }
+    }
+  }
+}
