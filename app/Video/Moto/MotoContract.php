@@ -16,25 +16,58 @@ final class MotoContract
 
     public const DNA_FORMAT = 'moto-dna-v1';
 
+    public const DNA_INPUT_V2 = 'moto-dna-input-v2';
+
+    public const DNA_FORMAT_V2 = 'moto-dna-v2';
+
     public const DESIGN_INPUT = 'moto-design-input-v1';
 
     public const DESIGN_FORMAT = 'moto-design-v1';
+
+    public const DESIGN_INPUT_V2 = 'moto-design-input-v2';
+
+    public const DESIGN_FORMAT_V2 = 'moto-design-v2';
 
     public const SCRIPT_INPUT = 'moto-script-input-v3';
 
     public const SCRIPT_FORMAT = 'moto-script-v1';
 
+    public const SCRIPT_INPUT_V4 = 'moto-script-input-v4';
+
+    public const SCRIPT_FORMAT_V2 = 'moto-script-v2';
+
     public const LOCATIONS_INPUT = 'moto-locations-input-v1';
 
     public const LOCATIONS_FORMAT = 'moto-locations-v1';
+
+    public const LOCATIONS_INPUT_V2 = 'moto-locations-input-v2';
+
+    public const LOCATIONS_FORMAT_V2 = 'moto-locations-v2';
 
     public const SCENES_INPUT = 'moto-scenes-input-v2';
 
     public const SCENES_FORMAT = 'moto-scenes-v1';
 
+    public const SCENES_INPUT_V3 = 'moto-scenes-input-v3';
+
+    public const SCENES_FORMAT_V2 = 'moto-scenes-v2';
+
     public const SHOTS_INPUT = 'moto-shots-input-v4';
 
     public const SHOTS_FORMAT = 'moto-shots-v1';
+
+    public const SHOTS_INPUT_V5 = 'moto-shots-input-v5';
+
+    public const SHOTS_FORMAT_V2 = 'moto-shots-v2';
+
+    /** @var string the input of a shot plan made within a shot budget: the fifth input with film.shot_budget */
+    public const SHOTS_INPUT_V6 = 'moto-shots-input-v6';
+
+    /** @var string the way of making the clip of a shot from reference images, with no keyframe */
+    public const REFERENCE_TO_VIDEO = 'reference_to_video';
+
+    /** @var int the milliseconds every shot of an eventful plan renders and keeps */
+    public const SHOT_MS = 3000;
 
     public const REFERENCE_INPUT = 'moto-reference-input-v2';
 
@@ -49,6 +82,17 @@ final class MotoContract
     public const KEYFRAME_PROMPT_FORMAT = 'moto-keyframe-prompt-v1';
 
     public const KEYFRAME_PROMPT_EXECUTION = 'db-moto-phase-9-v1';
+
+    public const CLIP_PROMPT_INPUT = 'moto-clip-prompt-input-v3';
+
+    public const CLIP_PROMPT_INPUT_V4 = 'moto-clip-prompt-input-v4';
+
+    /** @var string the input of a clip prompt of the cinematic releases from phase-10 revision 16: as v4, with what the shot plan assumed for the shot, the ids the prompt must not hold, and for a person either the cell of a look or the whole identity master with the cells it holds */
+    public const CLIP_PROMPT_INPUT_V5 = 'moto-clip-prompt-input-v5';
+
+    public const CLIP_PROMPT_FORMAT = 'moto-clip-prompt-v1';
+
+    public const CLIP_PROMPT_EXECUTION = 'db-moto-phase-10-v1';
 
     public const EVIDENCE_EXECUTION = 'db-moto-phase-1-v1';
 
@@ -69,6 +113,22 @@ final class MotoContract
     public static function is(?string $workflow): bool
     {
         return $workflow === self::WORKFLOW;
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest  the manifest a run pinned
+     * @param  string  $schema  the key of one of its schemas
+     * @return int the major version of that schema in the manifest, 1 when the manifest does not carry it
+     */
+    public static function generation(array $manifest, string $schema): int
+    {
+        foreach ((array) ($manifest['schemas'] ?? []) as $row) {
+            if (is_array($row) && ($row['key'] ?? null) === $schema) {
+                return max(1, (int) strtok((string) ($row['version'] ?? '1'), '.'));
+            }
+        }
+
+        return 1;
     }
 
     /**

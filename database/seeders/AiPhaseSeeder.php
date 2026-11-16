@@ -32,7 +32,7 @@ class AiPhaseSeeder extends Seeder
             // Before the inserts: a new current revision hits ai_phases_current_key_unique while the old one is current.
             $this->demoteSuperseded($data['phases']);
 
-            foreach ($data['phases'] as $row) {
+            foreach ($this->basesFirst($data['phases']) as $row) {
                 $slug = $row['category'];
                 unset($row['category']);
                 $this->placePhase($categories[$slug], $row, "phase {$slug}/{$row['phase_code']} rev {$row['revision']}");
@@ -68,7 +68,7 @@ class AiPhaseSeeder extends Seeder
     }
 
     /**
-     * @param array<string, mixed> $row a phase revision of the data files: a stored one stays as it is; a new one takes over as current only from a lower revision, which stays published as history, and below the current revision it is stored as history itself
+     * @param array<string, mixed> $row a phase revision of the data files: a stored one stays as it is; a new one takes over as current only from a lower revision, which stays published as history, and below the current revision it is stored as history itself; a new one based on a revision this database does not hold is stored without that link
      *
      * @throws RuntimeException when the table holds this revision under another id or text, or this id under another revision
      */
@@ -93,7 +93,36 @@ class AiPhaseSeeder extends Seeder
             }
         }
 
+        if ($sameRevision === null && $row['based_on_id'] !== null && ! DB::table('ai_phases')->where('id', $row['based_on_id'])->exists()) {
+            $row['based_on_id'] = null;
+            $label .= ' (the revision it is based on is not on this database: stored without that link)';
+        }
+
         $this->createIfMissing('ai_phases', ['category_id' => $category] + $row, $label);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $phases the phase revisions of every data file, in the order the files load
+     * @return list<array<string, mixed>> the same revisions, each after the revision of the data files it is based on, so a file that loads before the file of its base still finds that base stored; the order is otherwise kept
+     */
+    private function basesFirst(array $phases): array
+    {
+        $ordered = [];
+        $waiting = $phases;
+
+        while ($waiting !== []) {
+            $ids = array_column($waiting, 'id');
+            $ready = array_filter($waiting, static fn (array $row): bool => $row['based_on_id'] === $row['id'] || ! in_array($row['based_on_id'], $ids, true));
+
+            if ($ready === []) {
+                return [...$ordered, ...$waiting];
+            }
+
+            $ordered = [...$ordered, ...array_values($ready)];
+            $waiting = array_values(array_diff_key($waiting, $ready));
+        }
+
+        return $ordered;
     }
 
     /** @param array<string, mixed> $row */

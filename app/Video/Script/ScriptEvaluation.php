@@ -58,11 +58,16 @@ final class ScriptEvaluation
         );
     }
 
-    /** @param array<string, mixed> $manifest */
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @return string the contract of the first output slot the draft stage of the action checks, or of the first output slot when the action declares no stages
+     */
     public static function contract(array $manifest): string
     {
+        $draft = $manifest['action']['stages']['draft'] ?? null;
+
         foreach ((array) ($manifest['links'] ?? []) as $link) {
-            if (($link['role'] ?? null) !== 'output') {
+            if (($link['role'] ?? null) !== 'output' || (is_array($draft) && ! in_array($link['slot'] ?? null, $draft, true))) {
                 continue;
             }
 

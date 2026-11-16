@@ -145,8 +145,7 @@ Route::group(
             Route::post('/{id}/inspiration', [VideoProjectsController::class, 'inspiration'])->name('video-projects.inspiration');
             Route::post('/{id}/inspiration/reset', [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
             Route::post('/{id}/design-dna', [VideoProjectsController::class, 'designDna'])->name('video-projects.design-dna');
-            Route::post('/{id}/design-dna/reset', [VideoProjectsController::class, 'resetDesignDna'])->name('video-projects.design-dna-reset');
-            //tạo phân cảnh
+            Route::post('/{id}/design-dna/reset', [VideoProjectsController::class, 'resetDesignDna'])->name('video-projects.design-dna-reset');            //tạo phân cảnh
             Route::post('/{id}/design', [VideoProjectsController::class, 'vesselDesign'])->name('video-projects.vessel-design');
             Route::post('/{id}/design/reset', [VideoProjectsController::class, 'resetVesselDesign'])->name('video-projects.vessel-design-reset');
             Route::post('/{id}/model-sheet/qa', [VideoProjectsController::class, 'qaModelSheet'])->name('video-projects.model-sheet-qa');
@@ -177,10 +176,10 @@ Route::group(
             Route::post('/{id}/shots/reset', [VideoProjectsController::class, 'resetShots'])->name('video-projects.shots-reset');
             Route::post('/{id}/shots/approve', [VideoProjectsController::class, 'approveShots'])->name('video-projects.shots-approve');
             // phase 8: ảnh nhân vật
-            Route::post('/{id}/reference/characters/{character}/{action}', [VideoProjectsController::class, 'characterReference'])->where('character', '[a-z0-9_-]+')->whereIn('action', ['settings', 'render', 'process', 'approve', 'reject', 'revoke'])->name('video-projects.character-reference');
+            Route::post('/{id}/reference/characters/{character}/{action}', [VideoProjectsController::class, 'characterReference'])->where('character', '[A-Za-z0-9_-]+')->whereIn('action', ['settings', 'render', 'process', 'approve', 'reject', 'revoke'])->name('video-projects.character-reference');
             // phase 9: keyframe
             Route::get('/{id}/keyframes', [VideoProjectsController::class, 'keyframes'])->name('video-projects.keyframes');
-            Route::post('/{id}/keyframes/{shot}/{action}', [VideoProjectsController::class, 'keyframeAction'])->where('shot', 'SC\d+_SH\d+')->whereIn('action', ['source', 'source-reset', 'settings', 'render', 'approve', 'revoke', 'prompt', 'prompt-approve'])->name('video-projects.keyframe-action');
+            Route::post('/{id}/keyframes/{shot}/{action}', [VideoProjectsController::class, 'keyframeAction'])->where('shot', 'SC\d+_SH\d+')->whereIn('action', ['source', 'source-reset', 'source-off', 'source-on', 'settings', 'render', 'approve', 'revoke', 'prompt', 'prompt-approve'])->name('video-projects.keyframe-action');
 
             Route::middleware('video.v4')->group(function () {
             Route::post('/{id}/design-images/{imageId}/enqueue', [VideoProjectsController::class, 'renderDesignImage'])->name('video-projects.design-image-enqueue');
@@ -200,6 +199,7 @@ Route::group(
 
             Route::middleware(['video.shot-plan:clips', 'video.v4:clips'])->group(function () {
             Route::get('/{id}/render-video', [VideoProjectsController::class, 'clips'])->name('video-projects.render-video');
+            Route::post('/{id}/render-video/{shot}/{action}', [VideoProjectsController::class, 'clipPromptAction'])->where('shot', 'SC\d+_SH\d+')->whereIn('action', ['prompt', 'prompt-approve', 'input'])->name('video-projects.clip-prompt-action');
             // Clip va Final Composition: moi chu de dung chung route va man. Chu de co workflow trong video.clips / video.films
             // chay luong moi (prompt, schema, duyet doc tu DB); chu de chua co chay luong cu. Nhom :clips de luong cu qua y nhu truoc.
             Route::post('/{id}/scenes/{sceneId}/clip', [VideoProjectsController::class, 'renderSceneClip'])->name('video-projects.scene-clip-render');

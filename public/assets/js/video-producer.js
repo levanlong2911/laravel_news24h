@@ -292,6 +292,32 @@ function vpAjaxPage(rootId, onRefresh, onParts) {
         window.scrollTo(0, place.scrollY);
     }
 
+    function viewOf() {
+        var marks = root.querySelectorAll('[id]');
+
+        for (var index = 0; index < marks.length; index++) {
+            var box = marks[index].getBoundingClientRect();
+
+            if (marks[index].offsetParent !== null && box.top >= 0 && box.top < window.innerHeight) {
+                return { id: marks[index].id, top: box.top, scrollY: window.scrollY };
+            }
+        }
+
+        return { id: null, top: 0, scrollY: window.scrollY };
+    }
+
+    function keep(view) {
+        var mark = view.id ? document.getElementById(view.id) : null;
+
+        if (mark !== null && mark.offsetParent !== null) {
+            window.scrollBy(0, mark.getBoundingClientRect().top - view.top);
+
+            return;
+        }
+
+        window.scrollTo(0, view.scrollY);
+    }
+
     function controlsOf(form) {
         return form.id ? Array.prototype.slice.call(document.querySelectorAll('[form="' + form.id + '"]')) : [];
     }
@@ -423,6 +449,7 @@ function vpAjaxPage(rootId, onRefresh, onParts) {
                 var fresh = new DOMParser().parseFromString(html, 'text/html');
                 var swapped = exclusive || parts(fresh) !== parts(document);
                 var replaced = [];
+                var elsewhere = Math.abs(window.scrollY - place.scrollY) > 4 ? viewOf() : null;
 
                 if (swapped) {
                     replaceWhole(fresh);
@@ -440,7 +467,7 @@ function vpAjaxPage(rootId, onRefresh, onParts) {
 
                 remember();
                 window.history.replaceState(null, '', target);
-                restore(place);
+                if (elsewhere === null) { restore(place); } else { keep(elsewhere); }
                 flash();
 
                 if (swapped && onRefresh) { onRefresh(root); }

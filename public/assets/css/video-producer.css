@@ -1573,7 +1573,61 @@ a.vp-btn[disabled] {
    --------------------------------------------------------------------------- */
 
 .vs-grid.vs-clip {
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, .9fr) 240px minmax(0, 1.2fr);
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr) 240px minmax(0, 1.2fr);
+    grid-auto-flow: row dense;
+}
+
+/* Anh dau vao dung cot 1, prompt cot 2: thu tu tren man hinh khac thu tu trong HTML. */
+.vs-clip .vs-input {
+    grid-column: 1;
+}
+
+.vs-clip .vs-prompt,
+.vs-clip .vs-h-prompt {
+    grid-column: 2;
+}
+
+/* O anh dau vao cua shot: cach render o tren, cac anh tham chieu nam ngay trong khung anh. */
+.vs-input-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.vs-input-form select {
+    width: 100%;
+}
+
+.vs-refs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 8px;
+    background: var(--vp-soft, #f1f3f7);
+    border: 1px solid var(--vp-line);
+    border-radius: 8px;
+}
+
+.vs-ref {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.vs-ref img {
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--vp-line);
+    border-radius: 4px;
+}
+
+.vs-ref span {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
 }
 
 /* Anh phai lap day o va tu co lai theo be ngang cot, khong tran ra ngoai. */
@@ -2134,27 +2188,21 @@ a.vp-btn[disabled] {
     border-radius: 4px;
 }
 
-.vs-scenes .vs-c .d {
+.vs-grid.vs-scenes {
+    grid-template-columns: 216px minmax(0, 1.05fr) minmax(0, 1.75fr);
+}
+
+.vs-grid.vs-shots {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 12px;
+}
+
+.vs-scenes .vs-c .d,
+.vs-shots .vs-c .d {
     margin-top: 4px;
     color: var(--vp-dim);
     font-size: .72rem;
     line-height: 1.45;
-}
-
-.vs-shot-item {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 8px 0;
-    font-size: .74rem;
-}
-
-.vs-shot-item + .vs-shot-item {
-    border-top: 1px dashed var(--vp-line);
-}
-
-.vs-shot-item .vp-btn {
-    align-self: flex-start;
 }
 
 .vs-shot-thumb {

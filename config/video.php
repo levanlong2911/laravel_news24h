@@ -510,10 +510,10 @@ return [
         'video' => [
             'scene_clip' => [
                 [
-                    'id' => 'gemini:gemini-omni-1.1-flash',
+                    'id' => 'gemini:gemini-omni-1.2-flash',
                     'provider' => 'gemini',
-                    'model' => 'gemini-omni-1.1-flash',
-                    'label' => 'Omni 1.1 Flash · 3 s',
+                    'model' => 'gemini-omni-1.2-flash',
+                    'label' => 'Omni 1.2 Flash · 3 s',
                     'default' => true,
                     'api_version' => 'v1beta',
                     'mode' => 'sync',
@@ -527,13 +527,13 @@ return [
                         'default_resolution' => '720p',
                         'task' => 'image_to_video',
                         'max_seconds' => 10,
-                        'duration_control' => 'prompt_only',
-                        'max_reference_images' => 10,
+                        'duration_control' => 'request_field',
+                        'max_reference_images' => 6,
                         'last_frame' => false,
                     ],
                     'evidence' => [
-                        'models' => 'gemini_models_2026_09_15.json',
-                        'contract' => 'omni_video_contract_2026_10_14.json',
+                        'models' => 'gemini_models_2026_11_10.json',
+                        'contract' => 'omni_video_contract_2026_11_10.json',
                     ],
                 ],
                 [
@@ -625,10 +625,10 @@ return [
             ],
             'film_segment' => [
                 [
-                    'id' => 'gemini:gemini-omni-1.1-flash',
+                    'id' => 'gemini:gemini-omni-1.2-flash',
                     'provider' => 'gemini',
-                    'model' => 'gemini-omni-1.1-flash',
-                    'label' => 'Omni 1.1 Flash',
+                    'model' => 'gemini-omni-1.2-flash',
+                    'label' => 'Omni 1.2 Flash',
                     'default' => true,
                     'api_version' => 'v1beta',
                     'mode' => 'sync',
@@ -640,12 +640,12 @@ return [
                         'default_resolution' => '1080p',
                         'task' => 'reference_to_video',
                         'max_seconds' => 10,
-                        'duration_control' => 'unverified',
-                        'max_reference_images' => 10,
+                        'duration_control' => 'request_field',
+                        'max_reference_images' => 6,
                     ],
                     'evidence' => [
-                        'models' => 'gemini_models_2026_09_15.json',
-                        'contract' => 'omni_video_contract_2026_10_14.json',
+                        'models' => 'gemini_models_2026_11_10.json',
+                        'contract' => 'omni_video_contract_2026_11_10.json',
                     ],
                 ],
             ],
@@ -655,10 +655,10 @@ return [
     'omni' => [
         'timeout' => (int) env('VIDEO_OMNI_HTTP_TIMEOUT', 900),
         'poll_timeout' => (int) env('VIDEO_OMNI_POLL_TIMEOUT', 30),
-        'max_reference_bytes' => (int) env('VIDEO_OMNI_MAX_REFERENCE_BYTES', 20971520),
+        'max_reference_bytes' => (int) env('VIDEO_OMNI_MAX_REFERENCE_BYTES', 125829120),
         'reference' => [
-            'max_long_edge' => (int) env('VIDEO_OMNI_REFERENCE_LONG_EDGE', 2048),
-            'max_bytes' => (int) env('VIDEO_OMNI_REFERENCE_MAX_BYTES', 2097152),
+            'max_long_edge' => (int) env('VIDEO_OMNI_REFERENCE_LONG_EDGE', 0),
+            'max_bytes' => (int) env('VIDEO_OMNI_REFERENCE_MAX_BYTES', 20971520),
             'jpeg_quality' => (int) env('VIDEO_OMNI_REFERENCE_JPEG_QUALITY', 92),
             'processor' => 'gd-resize-jpeg-v1',
         ],
@@ -792,7 +792,7 @@ return [
         'effort' => env('SCENE_PLAN_EFFORT', 'high'),
 
         'shot_clip' => [
-            'model_id' => 'gemini:gemini-omni-1.1-flash',
+            'model_id' => 'gemini:gemini-omni-1.2-flash',
             'duration_ms' => 3000,
         ],
 
@@ -1039,16 +1039,29 @@ return [
         ],
     ],
 
+    'clip_prompts' => [
+        'workflows' => [
+            'harley_custom_v1' => [
+                'action' => 'spec.clip_prompt',
+                'adapter' => \App\Video\Moto\MotoClipPrompt::class,
+            ],
+        ],
+    ],
+
     'clips' => [
         'workflows' => [
             'harley_custom_v1' => [
                 'action' => 'spec.clips',
                 // The models the first version may send. A shot whose length none of them makes is refused before any cost, with its plan left as it is.
-                'models' => ['gemini:gemini-omni-1.1-flash'],
+                'models' => ['gemini:gemini-omni-1.2-flash'],
+                // How the clip of a shot is made until a person chooses for that shot: from its reference images (references) or from its approved keyframe (keyframe).
+                'default_input' => 'references',
+                // The most reference images a clip made from references sends: what the Omni guide gives for one request.
+                'reference_limit' => 6,
                 // How far a keyframe may stand from the frame of the film, as a share of its ratio.
                 'aspect_tolerance' => 0.03,
-                // The sound every clip asks for. The phase-10 template must carry this line word for word, so the request and the prompt cannot say two things.
-                'audio' => ['policy' => 'ambient_only_no_music_no_speech', 'line' => 'Audio: natural ambient sound only, no music, no speech.'],
+                // The sound policy of every video prompt: one line of its own that starts with the prefix, describes the sounds of the shot from its sources and ends with the closing sentences.
+                'audio' => ['policy' => 'sound_design_no_music_no_dialogue', 'prefix' => 'Sound design:', 'closing' => ['No music.', 'No dialogue.']],
             ],
         ],
     ],
@@ -1132,8 +1145,8 @@ return [
         'script' => [
             'execution' => \App\Video\Moto\MotoContract::SCRIPT_EXECUTION,
             'model' => env('MOTO_SCRIPT_MODEL', 'sonnet55'),
-            'effort' => env('MOTO_SCRIPT_EFFORT', 'high'),
-            'max_tokens' => (int) env('MOTO_SCRIPT_MAX_TOKENS', 64000),
+            'effort' => env('MOTO_SCRIPT_EFFORT', 'medium'),
+            'max_tokens' => (int) env('MOTO_SCRIPT_MAX_TOKENS', 128000),
             'timeout_seconds' => (int) env('MOTO_SCRIPT_TIMEOUT_SECONDS', 900),
             'schema_heading' => 'Output JSON Schema',
             'base_card' => true,
@@ -1148,6 +1161,9 @@ return [
                 'aspect_ratios' => ['9:16', '16:9', '1:1', '4:5'],
                 'platform_max' => 120,
                 'tone_notes_max' => 500,
+            ],
+            'eventful_brief_options' => [
+                'tone_notes_max' => 3000,
             ],
             'history' => ['enabled' => false],
             'check' => [
@@ -1199,7 +1215,7 @@ return [
         'scenes' => [
             'execution' => \App\Video\Moto\MotoContract::SCENES_EXECUTION,
             'model' => env('MOTO_SCENES_MODEL', 'sonnet55'),
-            'effort' => env('MOTO_SCENES_EFFORT', 'high'),
+            'effort' => env('MOTO_SCENES_EFFORT', 'medium'),
             'max_tokens' => (int) env('MOTO_SCENES_MAX_TOKENS', 64000),
             'timeout_seconds' => (int) env('MOTO_SCENES_TIMEOUT_SECONDS', 900),
             'schema_heading' => 'Output JSON Schema',
@@ -1208,8 +1224,8 @@ return [
         'shots' => [
             'execution' => \App\Video\Moto\MotoContract::SHOTS_EXECUTION,
             'model' => env('MOTO_SHOTS_MODEL', 'sonnet55'),
-            'effort' => env('MOTO_SHOTS_EFFORT', 'high'),
-            'max_tokens' => (int) env('MOTO_SHOTS_MAX_TOKENS', 64000),
+            'effort' => env('MOTO_SHOTS_EFFORT', 'medium'),
+            'max_tokens' => (int) env('MOTO_SHOTS_MAX_TOKENS', 128000),
             'timeout_seconds' => (int) env('MOTO_SHOTS_TIMEOUT_SECONDS', 1200),
             'schema_heading' => 'Output JSON Schema',
             'clip_task' => 'scene_clip',
@@ -1217,43 +1233,8 @@ return [
             'check' => [
                 'cover_design_refs' => true,
             ],
+            // The words the reference planner and its check use for how a part is shown and for the work on it. Code composes no keyframe or clip prompt from a shot.
             'prompt' => [
-                'image' => [
-                    'style' => 'Photorealistic film still of one moment, true perspective and real materials at full scale',
-                    'labels' => [
-                        'frame' => 'Frame:',
-                        'camera' => 'Camera:',
-                        'first_frame' => 'First frame:',
-                        'motorcycle' => 'Motorcycle:',
-                        'stage' => 'Build stage:',
-                        'part' => 'Part in frame:',
-                        'off_frame' => 'Out of frame, only its effect shows:',
-                        'work' => 'Work at the first frame:',
-                        'absent' => 'Not on the motorcycle at this stage:',
-                        'people' => 'People:',
-                        'place' => 'Place:',
-                        'set' => 'Set:',
-                        'light' => 'Light:',
-                        'changes' => 'Changes on the set for this shot:',
-                        'continuity' => 'Continuity:',
-                    ],
-                    'suffix' => 'No face of any person, no readable text, no signage, no logos',
-                ],
-                'video' => [
-                    'lead' => 'The supplied image is the first frame.',
-                    'labels' => [
-                        'work' => 'Work:',
-                        'action' => 'Action:',
-                        'result' => 'Result:',
-                        'timing' => 'Timing:',
-                        'camera' => 'Camera:',
-                        'end_frame' => 'Ends on:',
-                        'end_configuration' => 'Positions at the end:',
-                        'work_end' => 'Parts at the end:',
-                        'continuity' => 'Keep:',
-                    ],
-                    'suffix' => 'No face of any person, no readable text, no morphing of the motorcycle',
-                ],
                 'presentations' => [
                     'installed' => 'installed',
                     'being_made' => 'being made',
@@ -1262,9 +1243,6 @@ return [
                     'drawing' => 'as a drawing',
                     'model' => 'as a model',
                     'digital_model' => 'as a digital model',
-                ],
-                'people_views' => [
-                    'face_hidden' => 'Visible as the beat shows them, with the face hidden; not a dark silhouette.',
                 ],
                 'work' => [
                     'operations' => [
@@ -1304,6 +1282,20 @@ return [
                 'stretch_sources' => false,
                 'recompose_for_shot' => true,
             ],
+        ],
+
+        'clip_prompt' => [
+            'execution' => \App\Video\Moto\MotoContract::CLIP_PROMPT_EXECUTION,
+            'model' => env('MOTO_CLIP_PROMPT_MODEL', 'sonnet55'),
+            'effort' => env('MOTO_CLIP_PROMPT_EFFORT', 'high'),
+            'max_tokens' => (int) env('MOTO_CLIP_PROMPT_MAX_TOKENS', 16000),
+            'timeout_seconds' => (int) env('MOTO_CLIP_PROMPT_TIMEOUT_SECONDS', 900),
+            'schema_heading' => 'Output JSON Schema',
+            'image_max_edge' => 1568,
+            'image_max_bytes' => 3_750_000,
+            'image_jpeg_quality' => 90,
+            'estimate_output_tokens' => 2000,
+            'max_prompt_chars' => 12000,
         ],
 
         'reference' => [
@@ -1401,6 +1393,28 @@ return [
                     'face_hidden' => 'everything the person wears, framed so the face stays out of view without adding anything the picture does not list, not a dark silhouette',
                 ],
                 'view_other' => 'the person seen only as :view',
+            ],
+            'character_with_face' => [
+                'same_person' => 'Every cell that shows the person shows the same person: the same face, the same hair, the same build, the same hands and the same clothes underneath. Only the protective equipment listed for a cell changes from cell to cell.',
+                'rules' => [
+                    'The protective equipment listed for a picture overrides the description of the person: equipment the description mentions appears only where the list names it, and a picture whose list is empty shows none of it.',
+                    'The subject sits wholly inside its picture with plain background on every side.',
+                    'Neutral light-grey studio background and the same soft even studio light everywhere.',
+                    'No motorcycle, no place, no tools or props the picture does not name, no text, labels, numbers, logos or brand names, on the clothing either.',
+                    'The face is the face the description gives: an original adult, no real or famous person, no facial feature the description does not give, and no mask or headwear a picture does not list.',
+                ],
+                'angle_show' => 'the whole person from head to feet, standing in the same neutral pose, seen at eye level from this angle and at the same scale in every angle cell, wearing what the description states and no other protective equipment; where the angle sees the face, it is plainly visible',
+                'portrait' => [
+                    'code' => 'FACE01',
+                    'label' => 'portrait',
+                    'label_vi' => 'Chân dung',
+                    'show' => 'the head and shoulders of the person, facing the camera, eyes open, neutral expression, evenly lit, the face sharp and filling most of the picture, wearing what the description states and no protective equipment',
+                ],
+                'views' => [
+                    'hands' => 'only the hands and the shirt cuffs, close, filling the picture',
+                    'face_hidden' => 'everything the person wears, with the face covered by the protective equipment listed or turned away from the camera, not a dark silhouette',
+                    'face_visible' => 'the person from the waist up, turned three quarters to the camera, the face plainly visible, wearing the protective equipment listed',
+                ],
             ],
             'surface_groups' => [
                 'frame' => 'frame',
@@ -1539,9 +1553,22 @@ return [
                         'A scale described on a part is kept as plain graduation marks, with no lettering or numbers.',
                     ],
                     'presentation' => 'Studio presentation: the complete finished motorcycle stands upright on a level studio floor, both tyres on the ground. When the side stand is up, a plain low studio stand under the frame holds it upright; the stand is not part of the motorcycle. Nothing is cut open or made transparent.',
+                    // max_chars below: the limit of the route this sheet renders on — POST /v1/images/generations, prompt "maximum length is 32000 characters", stated for every model of the endpoint (gpt-image-2, gpt-image-2.6-flare, gpt-image-2.6-sunburst); developers.openai.com/api/reference/resources/images/methods/generate, read 2026-11-14. It is the limit OpenAiImageClient::MAX_PROMPT_CHARS applies when it sends, counted the same way (characters).
                     'guide_caption' => 'The attached image is only a layout guide showing the position of the eight panels; it contains no motorcycle. Place each view inside its panel and do not draw the guide lines.',
-                    'max_chars' => 27000,
+                    'max_chars' => 32000,
                 ],
+            ],
+        ],
+
+        'model_sheet_themed' => [
+            'suffix' => 'neutral light-grey studio background, soft even light, no captions',
+            'rules' => [
+                'All eight panels show the same motorcycle with the same design, proportions, colours, materials, finish and ornament, in the same displayed configuration, under the same studio background and the same lighting.',
+                'Keep the rider\'s left and right exactly as each camera states; do not mirror a panel.',
+                'Do not add, remove, move or reshape any part between panels.',
+                'The ornament described on a part — engraving, inlay, pattern, painted imagery, original lettering or figures — is part of the motorcycle: draw it on that part exactly as described, the same in every panel that sees it, and add no other ornament.',
+                'No rider, no people, no captions, labels, titles, watermarks, panel borders or dividing lines anywhere in the image, and no logo, brand name, model name or company badge on the motorcycle or anywhere else.',
+                'A scale described on a part is kept as plain graduation marks, with no lettering or numbers.',
             ],
         ],
     ],
@@ -1836,6 +1863,172 @@ return [
             ],
             'workflows' => [
                 'harley_custom_v1' => [
+                    'release_key' => \App\Video\Moto\MotoPipelineRelease::KEY,
+                    'legacy_release' => \App\Video\Moto\MotoPipelineRelease::LEGACY,
+                    'default_release' => env('MOTO_PIPELINE_RELEASE', \App\Video\Moto\MotoPipelineRelease::LEGACY),
+                    'releases' => [
+                        \App\Video\Moto\MotoPipelineRelease::LEGACY => [
+                            'phases' => [
+                                'phase-2' => ['from' => 1, 'to' => 2],
+                                'phase-3' => ['from' => 1, 'to' => 8],
+                                'phase-4' => ['from' => 1, 'to' => 11],
+                                'phase-5' => ['from' => 1, 'to' => 3],
+                                'phase-6' => ['from' => 1, 'to' => 6],
+                                'phase-7' => ['from' => 1, 'to' => 5],
+                                'phase-10' => ['from' => 1, 'to' => 11],
+                            ],
+                            'actions' => [],
+                        ],
+                        \App\Video\Moto\MotoPipelineRelease::CINEMATIC => [
+                            'phases' => [
+                                // The catalogue of the release: each phase names the revisions written against it by id and content hash, and the input format their text must declare. The output schema of each is the one its action below declares. A later revision joins only by being listed here.
+                                'phase-2' => ['input_format' => 'moto-dna-input-v2', 'revisions' => [['id' => 'fd392948-7dcd-4483-822e-b44652c0ac34', 'sha256' => '1c25401cac57ecb285e33a94f1e47d35c616c76771a1a2fa2e243b04082a6d2f']]],
+                                'phase-3' => ['input_format' => 'moto-design-input-v2', 'revisions' => [['id' => 'df5f083e-c708-4098-9266-16e50bf2a06d', 'sha256' => 'c35d978b542b6f824856de8def8626c6c506649ef50a0b2c607517962434e9f8']]],
+                                'phase-4' => ['input_format' => 'moto-script-input-v4', 'revisions' => [['id' => '2a5f8398-29ce-4894-b150-7e22d59e163f', 'sha256' => 'dbe273a2dc3b6a3eefd373578ecf3c418c9ca5eb2628cce3bec8b9730dc32d6b']]],
+                                'phase-5' => ['input_format' => 'moto-locations-input-v2', 'revisions' => [['id' => '490f0ef2-97ab-471d-ab17-7fb1d17155aa', 'sha256' => '0b06042b666e81ca67f93eb3fe42751b2b805179928ff53a8b7e94a06207699e']]],
+                                'phase-6' => ['input_format' => 'moto-scenes-input-v3', 'revisions' => [['id' => '0a6b2edc-2fdc-4bb9-9e69-4f2091a67bc2', 'sha256' => '5aabd7b7e9c89dc58f65af29dbee63ce131c15ed227f3180cffbb0ffc30e46b1'], ['id' => 'c498a1fb-bfdf-499e-b77a-d1ac69e07ec9', 'sha256' => '596f024d22b16e36a16b9fcf8d36d0558e31c20b1276f8b4fc0060b841c80737']]],
+                                'phase-7' => ['input_format' => 'moto-shots-input-v6', 'revisions' => [['id' => 'add1ce3c-5d2a-4cbd-a10d-f65942994590', 'sha256' => '160de8281473b664909df94d83f952f5fa211c77a024463bfacfb40740e8a547'], ['id' => 'd668341b-6d0a-4fe8-b98a-bb24caddafdc', 'sha256' => '8c099e1ee09aad8cd6a8b9d84e96d5de87fbd11cd43186b0bd9463cf16e03a45'], ['id' => '7d229e23-fb8b-414f-a8cf-02cef591fe74', 'sha256' => 'cd6ab7abf22deef603e2db6849a979ec75d2b06b00d1e0374884e8a906f0cc31'], ['id' => '33d2d1df-532a-44c9-8c51-8543396ab4ca', 'sha256' => '51f08babee7871a4f91cbaa68f9f78ccee6dad67718c4ba4ed9fbd34dc405051']]],
+                                'phase-10' => ['input_format' => 'moto-clip-prompt-input-v5', 'revisions' => [['id' => 'e533d2e1-23e9-4759-9f5c-a946edd25b2c', 'sha256' => 'c9ef0859bf85ccbeb0cd989f7f060d9f88931434cb1f9ba9db81aad834458816'], ['id' => 'c09a9dbe-7acf-4182-893e-4eef2dec58ab', 'sha256' => 'a5e1f1e8e91e73888ddc1b67368d3c789d132d73a2420d1e37f7267f0f8d5b67'], ['id' => '8ed4651f-afaf-4bd2-9e68-820b28f0e31d', 'sha256' => 'ef3a9e39c13d4c5bfc31164f9e216a6b806df351e8166150552a69231492cd5b'], ['id' => '44595a74-580b-4a64-83bb-31c5f214c562', 'sha256' => 'aa3ca62b15bde778ea6597ba58ab82f3946e0773fb70a9b61d8eede305ab69f0']]],
+                            ],
+                            'actions' => [
+                                'spec.dna' => [
+                                    'phase' => 'phase-2',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'outputs' => [
+                                        'dna' => ['namespace' => 'moto', 'schema' => 'MotoDna', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 2 Output (format moto-dna-v2): the resolved brief, theme, emotion, visual identity, departures, kept base features, 1-3 signature features, silhouette, must-avoid list and hero moment of a themed custom; release moto-cinematic-3s-v1'],
+                                    ],
+                                ],
+                                'spec.design' => [
+                                    'phase' => 'phase-3',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['design'],
+                                    ],
+                                    'outputs' => [
+                                        'design' => ['namespace' => 'moto', 'schema' => 'MotoDesign', 'version' => '2.1.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 3 Output (format moto-design-v2): one object-based themed Harley-Davidson custom design record — motorcycle with its ornament, parts, systems, rider interface, connections, features, operational limits, participant roles, twelve told build states, identity rules, source issues and the model sheet with its displayed configuration and eight views; the model-sheet image prompt is composed from it by code; release moto-cinematic-3s-v1'],
+                                    ],
+                                ],
+                                'spec.script' => [
+                                    'phase' => 'phase-4',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['script'],
+                                    ],
+                                    'outputs' => [
+                                        'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v2): the story, the characters by role, the beats as ordered events with the operating state before and after each, the shot directives the brief fixed, the text cards and the music brief; no screen time; release moto-cinematic-3s-v1'],
+                                    ],
+                                ],
+                                'spec.locations' => [
+                                    'phase' => 'phase-5',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['locations'],
+                                    ],
+                                    'outputs' => [
+                                        'locations' => ['namespace' => 'moto', 'schema' => 'MotoLocations', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 5 Output (format moto-locations-v2): the places of the approved script, each with its spatial layers, subject zone, entry routes, camera access and fixed landmarks, and the background plates with the beats they serve; release moto-cinematic-3s-v1'],
+                                    ],
+                                ],
+                                'spec.scenes' => [
+                                    'phase' => 'phase-6',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['scenes'],
+                                    ],
+                                    'outputs' => [
+                                        'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v2): the approved beats grouped into scenes with their blocking, continuity, incoming transition and work on parts; people by character id; no screen time; release moto-cinematic-3s-v1'],
+                                    ],
+                                ],
+                                'spec.shots' => [
+                                    'phase' => 'phase-7',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['shots'],
+                                    ],
+                                    'outputs' => [
+                                        'shots' => ['namespace' => 'moto', 'schema' => 'MotoShots', 'version' => '2.1.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 7 Output (format moto-shots-v2): the shots chosen from every approved scene within the shot budget and the events and work left between them, each shot one continuous take of 3000 ms made from reference images, with its first frame, operating states, action timeline, camera path, people by character id, end frame and cards; release moto-cinematic-3s-v1'],
+                                    ],
+                                ],
+                                'spec.clips' => [
+                                    'phase' => 'phase-10',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['clip_plan'],
+                                    ],
+                                    'outputs' => [
+                                        'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v2): for every approved shot the clip made from its reference images as one take of 3000 ms, all of it kept, compiled by PHP; release moto-cinematic-3s-v1'],
+                                        'clip_prompt' => ['namespace' => 'moto', 'schema' => 'MotoClipPrompt', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 Output (format moto-clip-prompt-v1): for one shot, the one English video prompt the model wrote from the approved shot with its action timeline and camera path; release moto-cinematic-3s-v1'],
+                                    ],
+                                ],
+                                'spec.clip_prompt' => [
+                                    'phase' => 'phase-10',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['clip_prompt'],
+                                    ],
+                                    'outputs' => [
+                                        'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '2.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v2): for every approved shot the clip made from its reference images as one take of 3000 ms, all of it kept, compiled by PHP; release moto-cinematic-3s-v1'],
+                                        'clip_prompt' => ['namespace' => 'moto', 'schema' => 'MotoClipPrompt', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 Output (format moto-clip-prompt-v1): for one shot, the one English video prompt the model wrote from the approved shot with its action timeline and camera path; release moto-cinematic-3s-v1'],
+                                    ],
+                                ],
+                            ],
+                            'policy' => [
+                                // What a shot run of the release pins and is checked under: how a take may run through beats, that the plan is a selection whose omissions are listed, and the shot budget of the film sent as film.shot_budget.
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::EDITING, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                            ],
+                        ],
+                        // The release new projects take. It is the release above with the script revision that keeps a standing motorcycle held and the scene revision that states the continuity rule; every phase and action it does not name here is the one of the release it extends, by the same id and hash. `policy` is what its runs pin in their check context: a run of another release never carries it, so it is checked as it was made.
+                        \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V2 => [
+                            'extends' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC,
+                            'phases' => [
+                                'phase-4' => ['input_format' => 'moto-script-input-v4', 'revisions' => [['id' => 'c2b7266f-76ed-468b-b119-dd92b4407916', 'sha256' => '6fd06ba48f95398c9257f8a163d0aec718f12da0f9f542318b8778c309e9b409']]],
+                                'phase-6' => ['input_format' => 'moto-scenes-input-v3', 'revisions' => [['id' => 'c498a1fb-bfdf-499e-b77a-d1ac69e07ec9', 'sha256' => '596f024d22b16e36a16b9fcf8d36d0558e31c20b1276f8b4fc0060b841c80737']]],
+                            ],
+                            'actions' => [
+                                // The script of this release answers MotoScript 2.0.2: the structure of 2.0.0 with the description of support_refs that agrees with its prompt and no hook act — the film opens on the idea, and the opening seconds are cut from the finished film.
+                                'spec.script' => [
+                                    'phase' => 'phase-4',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['script'],
+                                    ],
+                                    'outputs' => [
+                                        'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '2.0.2', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v2): the story, the characters by role, the beats as ordered events with the operating state before and after each, the shot directives the brief fixed, the text cards and the music brief; no screen time; a motorcycle standing still names what holds it; release moto-cinematic-3s-v2'],
+                                    ],
+                                ],
+                            ],
+                            'policy' => [
+                                'script' => ['stationary_requires_support' => true],
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::EDITING, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                            ],
+                        ],
+                    ],
                     'actions' => [
                         'spec.inspiration' => [
                             'phase' => 'phase-1',
@@ -1932,7 +2125,22 @@ return [
                                 'draft' => ['clip_plan'],
                             ],
                             'outputs' => [
-                                'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '1.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v1): for every approved shot the prompt PHP compiles from the phase-10 template, its render settings, the part the film keeps, its approved keyframe and why it cannot be sent. No model writes it.'],
+                                'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '1.6.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v1): for every approved shot how its clip is made (from its approved keyframe or from reference images), the video prompt a person approved in Phase 10, its render settings, the part the film keeps, its approved keyframe or its reference images and why it cannot be sent, under the sound policy every prompt follows. No model writes it.'],
+                                'clip_prompt' => ['namespace' => 'moto', 'schema' => 'MotoClipPrompt', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 Output (format moto-clip-prompt-v1): for one shot, the one English video prompt the model wrote from the approved shot, its approved keyframe (Image 1) or the reference images its clip sends, the design facts, timing and continuity the shot names, with the source ids it relies on and what the sources do not give or where they disagree; code checks the ids, the shape of the Sound design line and the shape of the answer, a person approves the prompt and the render sends it word for word; seeder data database/seeders/data/ai_phases_moto_phase_10_v5.php'],
+                            ],
+                        ],
+                        'spec.clip_prompt' => [
+                            'phase' => 'phase-10',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['clip_prompt'],
+                            ],
+                            'outputs' => [
+                                'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '1.6.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v1): for every approved shot how its clip is made (from its approved keyframe or from reference images), the video prompt a person approved in Phase 10, its render settings, the part the film keeps, its approved keyframe or its reference images and why it cannot be sent, under the sound policy every prompt follows. No model writes it.'],
+                                'clip_prompt' => ['namespace' => 'moto', 'schema' => 'MotoClipPrompt', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 Output (format moto-clip-prompt-v1): for one shot, the one English video prompt the model wrote from the approved shot, its approved keyframe (Image 1) or the reference images its clip sends, the design facts, timing and continuity the shot names, with the source ids it relies on and what the sources do not give or where they disagree; code checks the ids, the shape of the Sound design line and the shape of the answer, a person approves the prompt and the render sends it word for word; seeder data database/seeders/data/ai_phases_moto_phase_10_v5.php'],
                             ],
                         ],
                         'spec.film' => [

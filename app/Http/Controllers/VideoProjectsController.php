@@ -392,7 +392,7 @@ class VideoProjectsController extends Controller
             'video_length' => ['nullable', 'integer'],
             'aspect_ratio' => ['nullable', 'string', 'max:10'],
             'platform' => ['nullable', 'string', 'max:200'],
-            'tone_notes' => ['nullable', 'string', 'max:1000'],
+            'tone_notes' => ['nullable', 'string', 'max:3000'],
         ], [
             'video_length.*' => 'Thời lượng phải là số nguyên giây.',
             'aspect_ratio.*' => 'Tỷ lệ khung không hợp lệ.',
@@ -742,9 +742,8 @@ class VideoProjectsController extends Controller
         $data = $request->validate([
             'request_id' => ['required', 'regex:/^(P|BG)[0-9]{2}$/'],
             'artifact_id' => ['required', 'uuid'],
-            'selection_version' => ['required', 'integer', 'min:0'],
         ], ['*' => 'Thiếu dữ liệu chọn ảnh — tải lại trang.']);
-        [$done, $reason] = app(LocationSourceService::class)->choose($id, (string) $data['request_id'], (string) $data['artifact_id'], (int) $data['selection_version']);
+        [$done, $reason] = app(LocationSourceService::class)->choose($id, (string) $data['request_id'], (string) $data['artifact_id']);
 
         return $done
             ? redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', 'Đã duyệt ảnh cho '.$data['request_id'].'.')
@@ -965,10 +964,22 @@ class VideoProjectsController extends Controller
                 return redirect()->route('video-projects.reference', $id)->with('error', 'Dùng các thao tác của bảng Reference.');
             }
 
+            $panel = $parts->panel($id);
+            $impact = null;
+
+            if ($panel['preview'] !== null && $panel['stage'] === null) {
+                try {
+                    $impact = app(\App\Services\Video\MotoClipSourceService::class)->impact($id);
+                } catch (\RuntimeException) {
+                    $impact = null;
+                }
+            }
+
             return view('video-projects.reference', $this->chrome() + [
                 'id' => $id,
                 'project' => VideoProject::query()->findOrFail($id),
-                'motoReference' => $parts->panel($id),
+                'motoReference' => $panel,
+                'motoImpact' => $impact,
                 'motoCharacters' => app(\App\Services\Video\MotoCharacterReferenceService::class)->panel($id),
             ]);
         }
@@ -1157,6 +1168,7 @@ class VideoProjectsController extends Controller
         $data = $request->validate(match ($action) {
             'source' => ['kind' => 'required|in:design,environment', 'from' => 'nullable|uuid', 'to' => 'required|uuid'],
             'source-reset' => ['kind' => 'required|in:design,environment'],
+            'source-off', 'source-on' => ['from' => 'required|uuid'],
             'settings' => ['model' => 'required|string|max:100', 'quality' => 'nullable|string|max:30', 'size' => 'required|string|max:20'],
             'render' => ['preview_hash' => 'required|string|max:80', 'operation_id' => 'required|uuid', 'confirm_cost' => 'accepted', 'model' => 'required|string|max:100', 'quality' => 'nullable|string|max:30', 'size' => 'required|string|max:20'],
             'approve', 'revoke' => ['artifact_id' => 'required|uuid'],
@@ -1179,6 +1191,11 @@ class VideoProjectsController extends Controller
                     $service->resetSource($id, $shot, $data['kind']);
 
                     return 'Đã bỏ lựa chọn của người — thẻ dùng lại ảnh của kế hoạch shot, chưa render.';
+                })(),
+                'source-off', 'source-on' => (function () use ($service, $id, $shot, $data, $action): string {
+                    $service->leaveOutMaster($id, $shot, $data['from'], $action === 'source-off');
+
+                    return $action === 'source-off' ? 'Đã bỏ Reference master này khỏi shot — các part của nó không có nguồn chi tiết, chưa render.' : 'Shot gửi lại Reference master này — chưa render.';
                 })(),
                 'settings' => (function () use ($service, $id, $shot, $data): string {
                     $service->saveSettings($id, $shot, $data['model'], (string) ($data['quality'] ?? ''), $data['size']);
@@ -1217,7 +1234,7 @@ class VideoProjectsController extends Controller
                     };
                 })(),
                 'prompt-approve' => (function () use ($id, $shot, $data, $reviewer): string {
-                    app(\App\Services\Video\KeyframePromptWriterService::class)->approve($id, $data['stage_id'], $reviewer);
+                    app(\App\Services\Video\KeyframePromptWriterService::class)->approve($id, $data['stage_id'], $reviewer, $shot);
 
                     return 'Đã duyệt prompt ảnh cho '.$shot.' — chưa render.';
                 })(),
@@ -1226,6 +1243,49 @@ class VideoProjectsController extends Controller
             return redirect()->to($page)->with('success', $message);
         } catch (\RuntimeException $e) {
             return redirect()->to($page)->with('error', $e->getMessage());
+        }
+    }
+
+    public function clipPromptAction(Request $request, string $id, string $shot, string $action)
+    {
+        $this->ownedProject($id);
+        abort_unless(app(\App\Services\Video\MotoClipSourceService::class)->supports($id), 404);
+        $data = $request->validate(match ($action) {
+            'prompt' => ['operation_id' => 'required|uuid', 'confirm_cost' => 'accepted', 'regenerate' => 'nullable|boolean'],
+            'prompt-approve' => ['stage_id' => 'required|uuid'],
+            'input' => ['mode' => 'required|in:keyframe,references', 'include' => 'nullable|array', 'include.*' => 'uuid'],
+            default => abort(404),
+        });
+        $requester = auth()->id() === null ? null : ['id' => (string) auth()->id(), 'name' => (string) auth()->user()?->name];
+        $writer = app(\App\Services\Video\ClipPromptWriterService::class);
+        $page = route('video-projects.render-video', $id);
+        $answer = static fn (bool $ok, string $message) => $request->expectsJson()
+            ? response()->json(['ok' => $ok, 'message' => $message])
+            : redirect()->to($page)->with($ok ? 'success' : 'error', $message);
+
+        try {
+            if ($action === 'input') {
+                \Illuminate\Support\Facades\DB::transaction(fn () => app(\App\Services\Video\MotoClipSourceService::class)->saveInput($id, $shot, $data['mode'], (array) ($data['include'] ?? [])));
+
+                return $answer(true,'Đã lưu cách render của '.$shot.': '.($data['mode'] === 'references' ? 'từ ảnh tham chiếu' : 'từ keyframe').' — chưa viết prompt, chưa render.');
+            }
+
+            if ($action === 'prompt-approve') {
+                $writer->approve($id, $data['stage_id'], auth()->id() === null ? null : (string) auth()->id(), $shot);
+
+                return $answer(true, 'Đã duyệt prompt video cho '.$shot.' — chưa render.');
+            }
+
+            [$stage, $reason] = $writer->run($id, $shot, (bool) ($data['regenerate'] ?? false), $data['operation_id'], $requester);
+
+            return $answer(true, match (true) {
+                $stage === null => throw new \RuntimeException($reason),
+                $reason === 'queued', $reason === 'requeued' => 'Đã xếp hàng viết prompt video cho '.$shot.' — máy chạy nền gọi AI.',
+                $reason === 'cached' => 'Đã có lượt viết prompt video cho đúng nguồn này — không gọi AI thêm. Bấm Viết lại nếu cần bản khác.',
+                default => 'Đã viết prompt video cho '.$shot.'. Đọc rồi duyệt trước khi render.',
+            });
+        } catch (\RuntimeException $e) {
+            return $answer(false, $e->getMessage());
         }
     }
 
@@ -1929,6 +1989,12 @@ class VideoProjectsController extends Controller
             [$final, $reason] = app(\App\Services\Video\MotoFilmRenderService::class)->request($id, (string) $data['expected_hash'], (string) $data['operation_id'], (string) auth()->id());
         } catch (\RuntimeException $e) {
             return back()->with('error', $e->getMessage());
+        }
+
+        if ($reason === 'composed') {
+            return $final->status === \App\Services\Video\MotoFilmRenderService::FAILED
+                ? back()->with('error', 'Dựng bản final #'.$final->revision.' không thành công: '.\Illuminate\Support\Str::limit((string) $final->error_message, 300))
+                : back()->with('success', 'Đã dựng bản final #'.$final->revision.' ngay trên máy này ('.$final->status.').');
         }
 
         return back()->with('success', $reason === 'replayed'

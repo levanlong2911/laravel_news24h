@@ -34,12 +34,24 @@ final class PhaseResolver
             throw new RuntimeException("The task context belongs to project {$context->projectId}, not {$project->id}.");
         }
 
-        return $this->resolve($categoryId, $action, (string) $project->id, $context);
+        return $this->resolve($categoryId, $action, (string) $project->id, $context, $this->releaseOf($project, $categoryId));
     }
 
-    public function forCategory(string $categoryId, string $action, ?TaskContext $context = null): ResolvedPhase
+    /** @param ?string $release the release of a workflow that declares releases; without one such a workflow resolves its legacy release */
+    public function forCategory(string $categoryId, string $action, ?TaskContext $context = null, ?string $release = null): ResolvedPhase
     {
-        return $this->resolve($categoryId, $action, $context?->projectId, $context);
+        return $this->resolve($categoryId, $action, $context?->projectId, $context, $release);
+    }
+
+    /** @return ?string the release the project pinned for a workflow that declares releases, null when it pinned none or the workflow declares none */
+    private function releaseOf(VideoProject $project, string $categoryId): ?string
+    {
+        $slug = Category::query()->find($categoryId)?->slug;
+        $workflow = $slug === null ? null : ($this->contracts['categories'][$slug] ?? null);
+        $key = $workflow === null ? null : ($this->contracts['workflows'][$workflow]['release_key'] ?? null);
+        $pinned = is_string($key) ? ($project->metadata_json[$key] ?? null) : null;
+
+        return is_string($pinned) && $pinned !== '' ? $pinned : null;
     }
 
     /** @param array<string, mixed> $manifest */
@@ -82,18 +94,127 @@ final class PhaseResolver
         return $bundle;
     }
 
-    private function resolve(string $categoryId, string $actionKey, ?string $projectId, ?TaskContext $context): ResolvedPhase
+    private function resolve(string $categoryId, string $actionKey, ?string $projectId, ?TaskContext $context, ?string $release = null): ResolvedPhase
     {
         $category = Category::query()->find($categoryId) ?? throw new RuntimeException("Category {$categoryId} does not exist.");
         $workflow = $this->contracts['categories'][$category->slug]
             ?? throw new RuntimeException("Category {$category->slug} has no configured workflow.");
-        $action = $this->contracts['workflows'][$workflow]['actions'][$actionKey]
+        $contract = $this->release($workflow, $release);
+        $action = $contract['actions'][$actionKey]
+            ?? $this->contracts['workflows'][$workflow]['actions'][$actionKey]
             ?? throw new RuntimeException("Action {$actionKey} is not configured for workflow {$workflow}.");
         $action = ActionContract::normalise($actionKey, (array) $action);
-        $phase = $this->current($category->id, $workflow, $action['phase']);
-        $instructions = array_map(fn (string $code): AiPhase => $this->current($category->id, $workflow, $code), $action['instructions']);
+        $pick = fn (string $code): AiPhase => isset($contract['phases'][$code])
+            ? $this->within($category->id, $workflow, $code, (array) $contract['phases'][$code])
+            : $this->current($category->id, $workflow, $code);
+        $phase = $pick($action['phase']);
+        $instructions = array_map($pick, $action['instructions']);
 
         return $this->build($category, $workflow, $actionKey, $action, $phase, $instructions, $projectId, $context);
+    }
+
+    /**
+     * @return array{phases: array<string, array<string, mixed>>, actions: array<string, array<string, mixed>>} the revision ranges and the actions the release replaces; both empty for a workflow that declares no releases. A release that `extends` another takes that one's phases and actions and replaces, phase by phase and action by action, the ones it names itself
+     *
+     * @throws RuntimeException when the workflow declares releases and the named one is not among them, or a release extends itself
+     */
+    private function release(string $workflow, ?string $release): array
+    {
+        $declared = (array) ($this->contracts['workflows'][$workflow]['releases'] ?? []);
+
+        if ($declared === []) {
+            return ['phases' => [], 'actions' => []];
+        }
+
+        $code = $release ?? (string) ($this->contracts['workflows'][$workflow]['legacy_release'] ?? '');
+        $contract = $declared[$code] ?? throw new RuntimeException("Release {$code} is not configured for workflow {$workflow}.");
+        $base = ['phases' => [], 'actions' => []];
+
+        if (is_string($contract['extends'] ?? null)) {
+            if ($contract['extends'] === $code) {
+                throw new RuntimeException("Release {$code} of workflow {$workflow} extends itself.");
+            }
+
+            $base = $this->release($workflow, $contract['extends']);
+        }
+
+        return [
+            'phases' => array_replace($base['phases'], (array) ($contract['phases'] ?? [])),
+            'actions' => array_replace($base['actions'], (array) ($contract['actions'] ?? [])),
+        ];
+    }
+
+    /**
+     * @param  array{from?: int, to?: ?int}  $range  the revisions of the phase the release was written against
+     * @return AiPhase the current revision when it is inside the range, otherwise the newest published revision inside it
+     *
+     * @throws RuntimeException when no published revision is inside the range
+     */
+    private function within(string $categoryId, string $workflow, string $code, array $range): AiPhase
+    {
+        $rows = AiPhase::query()
+            ->where('category_id', $categoryId)
+            ->where('workflow_code', $workflow)
+            ->where('phase_code', $code)
+            ->get()
+            ->all();
+
+        return self::choose($rows, $range) ?? throw new RuntimeException(isset($range['revisions'])
+            ? "{$code} of {$workflow} has no published revision of its release catalogue (id, hash and input format ".json_encode($range['input_format'] ?? null).') for this category.'
+            : "{$code} of {$workflow} has no published revision from ".(int) ($range['from'] ?? 1).(isset($range['to']) ? ' to '.(int) $range['to'] : '').' for this category.');
+    }
+
+    /**
+     * @param  string  $workflow  the workflow of the project
+     * @param  ?string  $release  the release the project pinned, null for none
+     * @return ?array<string, mixed> the rule the release gives for the revisions of the phase: a catalogue of revisions or a range; null when the workflow declares no release or the release leaves the phase to the current revision
+     *
+     * @throws RuntimeException when the release is not configured
+     */
+    public function rule(string $workflow, ?string $release, string $code): ?array
+    {
+        $rule = $this->release($workflow, $release)['phases'][$code] ?? null;
+
+        return is_array($rule) ? $rule : null;
+    }
+
+    /**
+     * @param  list<AiPhase>  $rows  every revision of one phase of one category and workflow
+     * @param  ?array<string, mixed>  $rule  rule(): `revisions` lists the revisions a release was written against, each by id and content hash, with the `input_format` their text must declare; otherwise `from` and `to` bound the revision numbers; null takes the current revision
+     * @return ?AiPhase the revision the rule chooses, reading no row itself so a caller that locked the rows chooses among what it holds: under a catalogue the newest published revision the catalogue lists whose text still has its hash and declares the input format; under a range the current revision when it is inside, otherwise the newest published one inside; with no rule the one current revision; null when none fits
+     */
+    public static function choose(array $rows, ?array $rule): ?AiPhase
+    {
+        $current = array_values(array_filter($rows, static fn (AiPhase $row): bool => (bool) $row->is_current));
+        $newest = static function (array $fitting): ?AiPhase {
+            usort($fitting, static fn (AiPhase $a, AiPhase $b): int => $b->revision <=> $a->revision);
+
+            return $fitting[0] ?? null;
+        };
+
+        if ($rule === null) {
+            return count($current) === 1 ? $current[0] : null;
+        }
+
+        if (isset($rule['revisions'])) {
+            $listed = array_column((array) $rule['revisions'], 'sha256', 'id');
+            $marker = is_string($rule['input_format'] ?? null) ? 'Input format: `'.$rule['input_format'].'`' : null;
+
+            return $newest(array_filter($rows, static fn (AiPhase $row): bool => $row->status === AiPhase::PUBLISHED
+                && isset($listed[(string) $row->id])
+                && hash_equals((string) $listed[(string) $row->id], (string) $row->content_sha256)
+                && ($marker === null || str_contains((string) $row->prompt_content, $marker))));
+        }
+
+        $from = (int) ($rule['from'] ?? 1);
+        $to = isset($rule['to']) ? (int) $rule['to'] : null;
+        $inside = static fn (AiPhase $row): bool => $row->revision >= $from && ($to === null || $row->revision <= $to);
+
+        if (count($current) === 1 && $inside($current[0])) {
+            return $current[0];
+        }
+
+        return $newest(array_filter($rows, static fn (AiPhase $row): bool => $row->status === AiPhase::PUBLISHED && $inside($row)));
     }
 
     /** @param array{outputs: array<string, ?array<string, mixed>>} $action */

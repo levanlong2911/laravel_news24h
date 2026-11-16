@@ -33,6 +33,7 @@ enum PlanningStageName: string
     case CLIP_PLAN = 'clip_plan';
     case FILM_PLAN = 'film_plan';
     case KEYFRAME_PROMPT = 'keyframe_prompt';
+    case CLIP_PROMPT = 'clip_prompt';
 
     /** @return list<string> */
     public static function values(): array
@@ -68,6 +69,7 @@ enum PlanningStageName: string
             self::CLIP_PLAN => null,
             self::FILM_PLAN => null,
             self::KEYFRAME_PROMPT => null,
+            self::CLIP_PROMPT => null,
         };
     }
 }
