@@ -94,15 +94,71 @@ class PartsDetailService implements QueuedImageService
 
         return $this->memo('preview', $projectId, $shots, function () use ($projectId, $shots): array {
             $sources = ModelSheetService::readOnce(fn (): array => $this->sources($projectId, $shots));
-            $plan = MotoReferencePlanner::partPlan($sources['shots'], $sources['design'], $sources['finished'], $sources['views'], (array) config('video.moto.reference'), $sources['manifest']);
+            $pinned = $this->pinnedCameras($projectId);
+            $plan = MotoReferencePlanner::partPlan($sources['shots'], $sources['design'], $sources['finished'], $sources['views'], (array) config('video.moto.reference'), $sources['manifest'], $pinned['cameras']);
             $schema = json_decode((string) file_get_contents(base_path(self::SCHEMA_FILE)));
 
             if (! (new Validator)->validate(json_decode((string) json_encode($plan, JSON_THROW_ON_ERROR)), $schema)->isValid()) {
                 throw new RuntimeException('Kế hoạch Reference không đạt schema '.MotoReferencePlanner::PART_SCHEMA.'.');
             }
 
-            return ['source' => $sources['manifest'], 'plan' => $plan, 'hash' => CanonicalJson::hash(['plan' => $plan, 'schema' => $schema]), 'views' => $sources['views'], 'shot_prompts' => array_map(static fn (array $shot): string => (string) ($shot['prompts']['image'] ?? ''), array_column($sources['shots'], null, 'id'))];
+            return ['source' => $sources['manifest'], 'plan' => $plan, 'hash' => CanonicalJson::hash(['plan' => $plan, 'schema' => $schema]), 'views' => $sources['views'], 'pin_problems' => $pinned['problems']];
         });
+    }
+
+    /**
+     * @return array{cameras: array<string, array<string, mixed>>, problems: array<string, string>} by part, the camera of the cell its image was made from, read from the saved plan the master was rendered for: the approved image of the part first, else the newest master still on its way or waiting for a decision; and, by part, why the camera of an approved image cannot be read
+     */
+    private function pinnedCameras(string $projectId): array
+    {
+        $images = VideoDesignImage::query()->where('project_id', $projectId)->where('image_type', self::MASTER)
+            ->whereIn('status', [...self::IN_FLIGHT, DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value])->orderBy('created_at')->get(['id', 'status', 'prompt_spec_json']);
+        $planIds = $images->map(static fn (VideoDesignImage $image): string => (string) ($image->prompt_spec_json['plan_id'] ?? ''))->filter()->unique()->values();
+        $plans = $planIds->isEmpty() ? collect() : VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::REFERENCE_PROMPT->value)->whereIn('id', $planIds)->get()->keyBy('id');
+        $printed = [];
+        $held = [];
+
+        foreach ($images as $image) {
+            $spec = (array) $image->prompt_spec_json;
+            $saved = array_column((array) ($plans->get($spec['plan_id'] ?? '')?->output_json['plan']['references'] ?? []), null, 'id');
+
+            foreach ((array) ($spec['cells'] ?? []) as $cell) {
+                $reference = $saved[$cell['id'] ?? ''] ?? null;
+
+                if (! is_array($reference) || ($reference['fingerprint'] ?? null) !== ($cell['fingerprint'] ?? false) || ($reference['part'] ?? null) !== ($cell['part'] ?? false) || ! is_array($reference['camera'] ?? null)) {
+                    continue;
+                }
+
+                $printed[(string) $cell['fingerprint']] = ['part' => (string) $cell['part'], 'camera' => $reference['camera']];
+
+                if ($image->status !== DesignImageStatus::APPROVED->value) {
+                    $held[(string) $cell['part']] = $reference['camera'];
+                }
+            }
+        }
+
+        $cameras = $held;
+        $problems = [];
+
+        foreach ((array) ((VideoProject::query()->whereKey($projectId)->value('metadata_json') ?? [])[self::SELECTION]['references'] ?? []) as $chosen) {
+            $part = is_array($chosen) && is_string($chosen['part_id'] ?? null) ? $chosen['part_id'] : null;
+
+            if ($part === null) {
+                continue;
+            }
+
+            $made = $printed[(string) ($chosen['fingerprint'] ?? '')] ?? null;
+
+            if ($made === null || $made['part'] !== $part) {
+                $problems[$part] = 'không đọc được góc nhìn của ô mà ảnh đã duyệt được tạo từ đó (kế hoạch Reference của master không còn hoặc không khớp)';
+
+                continue;
+            }
+
+            $cameras[$part] = $made['camera'];
+        }
+
+        return ['cameras' => $cameras, 'problems' => $problems];
     }
 
     /**
@@ -112,7 +168,8 @@ class PartsDetailService implements QueuedImageService
      */
     private function memo(string $kind, string $projectId, ?array $shots, \Closure $make): array
     {
-        $key = implode('|', [$kind, $projectId, md5((string) json_encode(VideoProject::query()->whereKey($projectId)->value('metadata_json'))), md5((string) json_encode(config('video.moto'))), $shots === null ? '-' : md5((string) json_encode($shots))]);
+        $masters = VideoDesignImage::query()->where('project_id', $projectId)->where('image_type', self::MASTER)->selectRaw('count(*) as total, max(updated_at) as changed')->toBase()->first();
+        $key = implode('|', [$kind, $projectId, md5((string) json_encode(VideoProject::query()->whereKey($projectId)->value('metadata_json'))), md5((string) json_encode(config('video.moto'))), $shots === null ? '-' : md5((string) json_encode($shots)), ($masters->total ?? 0).'@'.($masters->changed ?? '-')]);
 
         if (! array_key_exists($key, self::$memo)) {
             $value = $make();
@@ -152,6 +209,22 @@ class PartsDetailService implements QueuedImageService
         return [$stage, $preview];
     }
 
+    /** @return array<string, list<string>> by shot, the parts the Reference plan saved last gave a detail image to; empty when the project has saved none */
+    public function savedPartsByShot(string $projectId): array
+    {
+        $stage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::REFERENCE_PROMPT->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->where('input_json->execution', MotoReferencePlanner::PART_VERSION)->orderByDesc('planning_revision')->first();
+        $parts = [];
+
+        foreach ((array) ($stage?->output_json['plan']['needs'] ?? []) as $need) {
+            if (($need['kind'] ?? null) === 'design' && is_string($need['target'] ?? null)) {
+                $parts[(string) $need['shot_id']][] = $need['target'];
+            }
+        }
+
+        return array_map(static fn (array $list): array => array_values(array_unique($list)), $parts);
+    }
+
     /**
      * @return array<string, mixed> the saved plan, refused when the sources now build another one
      *
@@ -175,7 +248,7 @@ class PartsDetailService implements QueuedImageService
     /**
      * @param  array<string, mixed>  $preview
      * @param  ?string  $ignore  a master image whose own render does not hold its cells
-     * @return array<string, array{status: string, review: ?array<string, mixed>, last: ?array<string, mixed>, crop: ?array<string, mixed>, master: ?string}> where every planned reference stands now: approved with its crop, held by a master on its way or waiting for a decision, its prompt review ready, waiting for a check or failed, or not reviewed
+     * @return array<string, array{status: string, review: ?array<string, mixed>, last: ?array<string, mixed>, crop: ?array<string, mixed>, master: ?string, lapsed: ?string}> where every planned reference stands now: approved with its crop, held by a master on its way or waiting for a decision, its prompt review ready, waiting for a check or failed, or not reviewed; lapsed says why an image approved before no longer answers the cell
      */
     public function state(string $projectId, array $preview, ?string $ignore = null): array
     {
@@ -187,7 +260,8 @@ class PartsDetailService implements QueuedImageService
         $reviews = $reviewed ? $this->reviews($projectId) : [];
         $held = $this->held($projectId, $references, $ignore);
         $running = $reviewed ? $this->runningReview($projectId) : [];
-        $crops = $this->validSelections($projectId, array_filter(array_intersect_key($selection, $references), static fn (mixed $chosen, string $id): bool => is_array($chosen) && ($chosen['fingerprint'] ?? null) === $references[$id]['fingerprint'], ARRAY_FILTER_USE_BOTH));
+        $unread = (array) ($preview['pin_problems'] ?? []);
+        $crops = $this->validSelections($projectId, array_filter(array_intersect_key($selection, $references), static fn (mixed $chosen, string $id): bool => is_array($chosen) && ($chosen['fingerprint'] ?? null) === $references[$id]['fingerprint'] && ! isset($unread[$references[$id]['part'] ?? '']), ARRAY_FILTER_USE_BOTH));
         $state = [];
 
         foreach ($references as $id => $reference) {
@@ -206,7 +280,9 @@ class PartsDetailService implements QueuedImageService
                 $review['review_status'] === MotoReferenceCheck::NEEDS_CHECK => 'prompt_check',
                 default => 'prompt_failed',
             };
-            $state[$id] = ['status' => $status, 'review' => $review, 'confirmed' => $confirmed ? $accepted[$reference['fingerprint']] : null, 'crop' => $crop, 'master' => $held[$id]['master'] ?? null];
+            $before = is_array($selection[$id] ?? null) && (($selection[$id]['fingerprint'] ?? null) !== $reference['fingerprint'] || isset($unread[$reference['part'] ?? '']));
+            $state[$id] = ['status' => $status, 'review' => $review, 'confirmed' => $confirmed ? $accepted[$reference['fingerprint']] : null, 'crop' => $crop, 'master' => $held[$id]['master'] ?? null,
+                'lapsed' => $before ? ($preview['pin_problems'][$reference['part'] ?? ''] ?? 'ảnh đã duyệt trước đây được tạo từ nội dung ô khác bản hiện hành (thiết kế, model sheet, góc nhìn hoặc prompt của part đã đổi)') : null];
         }
 
         return $state;
@@ -696,7 +772,9 @@ class PartsDetailService implements QueuedImageService
             $preview = $this->memo('bindings', $projectId, $shots, function () use ($projectId, $shots, $finished): array {
                 $sheet = $this->sheetSources($projectId);
 
-                return ['plan' => MotoReferencePlanner::partPlan($shots, $sheet['design'], $finished, $sheet['views'], (array) config('video.moto.reference'), $sheet['manifest']), 'views' => $sheet['views']];
+                $pinned = $this->pinnedCameras($projectId);
+
+                return ['plan' => MotoReferencePlanner::partPlan($shots, $sheet['design'], $finished, $sheet['views'], (array) config('video.moto.reference'), $sheet['manifest'], $pinned['cameras']), 'views' => $sheet['views'], 'pin_problems' => $pinned['problems']];
             });
         } catch (RuntimeException) {
             return null;
@@ -811,6 +889,15 @@ class PartsDetailService implements QueuedImageService
             $counts[$bucket]++;
         }
 
+        $codes = $images->pluck('image_code', 'id');
+        $parts = array_values(array_map(static fn (array $reference) => [
+            'part' => (string) $reference['part'],
+            'name' => (string) $reference['name'],
+            'shots' => (array) $reference['shots'],
+            'status' => (string) $state[$reference['id']]['status'],
+            'master' => $codes[$state[$reference['id']]['crop']['master_image_id'] ?? $state[$reference['id']]['master'] ?? ''] ?? null,
+            'lapsed' => $state[$reference['id']]['lapsed'] ?? null,
+        ], $references));
         $choice = $this->gridChoice($projectId);
         $total = count($references);
         $approved = count(array_filter($state, static fn (array $entry): bool => $entry['status'] === 'approved'));
@@ -825,6 +912,7 @@ class PartsDetailService implements QueuedImageService
             'stage' => $stage,
             'state' => $state,
             'references' => $references,
+            'parts' => $parts,
             'sheets' => $sheets,
             'choice' => $choice,
             'grid' => (array) config('video.moto.reference.part_sheet.grid') + ['total' => $total, 'approved' => $approved, 'unapproved' => $total - $approved, 'open' => $open, 'capacity' => $capacity, 'used' => min($open, $capacity), 'empty' => max(0, $capacity - $open), 'short' => max(0, $open - $capacity), 'waiting' => count(array_filter($state, static fn (array $entry): bool => in_array($entry['status'], ['awaiting_crop', 'awaiting_decision'], true)))],
@@ -834,7 +922,6 @@ class PartsDetailService implements QueuedImageService
             'models' => $models,
             'prices' => $prices,
             'counts' => $counts,
-            'shot_prompts' => $preview['shot_prompts'] ?? [],
             'labels' => self::STATUS_LABELS,
             'review' => app(ReferenceWriterService::class)->summary($projectId),
         ];
@@ -914,6 +1001,7 @@ class PartsDetailService implements QueuedImageService
                 'model_sheet_artifact_id' => (string) $sheet['master_artifact_id'],
                 'model_sheet_sha256' => (string) $sheet['master_artifact_sha256'],
                 'planner' => MotoReferencePlanner::PART_VERSION,
+                'usage' => MotoReferencePlanner::PART_USAGE_VERSION,
                 'prompt' => MotoReferencePlanner::PART_PROMPT_VERSION,
                 'schema' => MotoReferencePlanner::PART_SCHEMA,
                 'settings' => CanonicalJson::hash(array_intersect_key((array) config('video.moto.reference'), array_flip(['part_sheet', 'prompt']))),

@@ -18,7 +18,7 @@ final class ModelSheetMaster
     private const MIMES = ['image/png', 'image/jpeg', 'image/webp'];
 
     /** @var string the version of the way cells are found from the lines an image draws and cut inside them */
-    public const LINE_DETECTOR = 'white-line-v2';
+    public const LINE_DETECTOR = 'white-line-v3';
 
     /** @var string what a person reads when the lines of an image do not give its cells for certain */
     public const LINES_UNCERTAIN = 'Không xác định chắc chắn đường viền — cần kiểm.';
@@ -55,6 +55,9 @@ final class ModelSheetMaster
 
     /** @var float the smallest share of its even size a found cell may have */
     private const MIN_CELL_SHARE = 0.4;
+
+    /** @var int the deepest an outer frame may reach in from an edge of the image, its soft edge included: the widest line with its soft edge on the inner side. A bright band that starts at the edge and runs deeper is the picture, not a frame */
+    private const FRAME_MAX_DEPTH = self::LINE_MAX_WIDTH + self::LINE_FADE_REACH;
 
     /**
      * @param  array<string, mixed>  $config  video.superyacht.model_sheet.master
@@ -197,7 +200,8 @@ final class ModelSheetMaster
         $rows = (int) $this->config['rows'];
         $columns = (int) $this->config['columns'];
         imagepalettetotruecolor($master);
-        $across = $this->lines($master, false, $height, self::LINE_STEP, $width - self::LINE_STEP, 'ngang');
+        $ends = [$this->frame($master, false, false, $height, self::LINE_STEP, $width - self::LINE_STEP), $this->frame($master, false, true, $height, self::LINE_STEP, $width - self::LINE_STEP)];
+        $across = $this->lines($master, false, $height, self::LINE_STEP, $width - self::LINE_STEP, 'ngang', $ends);
 
         if (count($across) !== $rows - 1) {
             throw new RuntimeException(self::LINES_UNCERTAIN.' Thấy '.count($across).' đường ngang, lưới cần '.($rows - 1).'.');
@@ -205,14 +209,15 @@ final class ModelSheetMaster
 
         $boxes = [];
 
-        foreach ($this->insideLines($across, $height) as $row => [$top, $bottom]) {
-            $down = $this->lines($master, true, $width, $top + self::LINE_STEP, $bottom - self::LINE_STEP, 'dọc ở hàng '.($row + 1));
+        foreach ($this->insideLines($across, $height, $ends) as $row => [$top, $bottom]) {
+            $sides = [$this->frame($master, true, false, $width, $top + self::LINE_STEP, $bottom - self::LINE_STEP), $this->frame($master, true, true, $width, $top + self::LINE_STEP, $bottom - self::LINE_STEP)];
+            $down = $this->lines($master, true, $width, $top + self::LINE_STEP, $bottom - self::LINE_STEP, 'dọc ở hàng '.($row + 1), $sides);
 
             if (count($down) !== $columns - 1) {
                 throw new RuntimeException(self::LINES_UNCERTAIN.' Hàng '.($row + 1).' thấy '.count($down).' đường dọc, lưới cần '.($columns - 1).'.');
             }
 
-            foreach ($this->insideLines($down, $width) as [$left, $right]) {
+            foreach ($this->insideLines($down, $width, $sides) as [$left, $right]) {
                 if ($right - $left < $width / $columns * self::MIN_CELL_SHARE || $bottom - $top < $height / $rows * self::MIN_CELL_SHARE) {
                     throw new RuntimeException(self::LINES_UNCERTAIN.' Hàng '.($row + 1).' có ô chỉ '.($right - $left).'×'.($bottom - $top).' px.');
                 }
@@ -230,16 +235,18 @@ final class ModelSheetMaster
      * @param  int  $from  where the samples along the lines start
      * @param  int  $to  where they stop, not included
      * @param  string  $name  how a person reads these lines in a message
+     * @param  array{0: int, 1: int}  $frame  how deep the outer frame reaches in from the start and from the end of the side, 0 where the image has none: what is bright inside it is the frame, never a line between two cells
      * @return list<array{0: int, 1: int}> the first and last position of every line, its soft edge included: its bright pixels lie in a band no wider than LINE_MAX_WIDTH that holds one thin bright run in at least LINE_SHARE of all the samples, so a line drawn a little askew is still one line, and its soft edge adds at most LINE_FADE_REACH to each side of that band; a sample where nothing stands out, such as where another line crosses, counts against the share
      *
      * @throws RuntimeException when such a band is wider than one line, splits in two on a sample, or moves too far between two samples
      */
-    private function lines(GdImage $image, bool $vertical, int $limit, int $from, int $to, string $name): array
+    private function lines(GdImage $image, bool $vertical, int $limit, int $from, int $to, string $name, array $frame = [0, 0]): array
     {
         $samples = [];
+        $inner = [$frame[0] === 0 ? 0 : $frame[0] + self::LINE_FADE_REACH, $frame[1] === 0 ? $limit : $limit - $frame[1] - self::LINE_FADE_REACH];
 
         for ($along = $from; $along < $to; $along += self::LINE_STEP) {
-            $samples[] = $this->brightRuns($image, $vertical, $along, $limit);
+            $samples[] = array_values(array_filter($this->brightRuns($image, $vertical, $along, $limit), static fn (array $run): bool => $run[0] >= $inner[0] && $run[1] < $inner[1]));
         }
 
         if ($samples === []) {
@@ -454,21 +461,67 @@ final class ModelSheetMaster
 
     /**
      * @param  list<array{0: int, 1: int}>  $lines
-     * @return list<array{0: int, 1: int}> the start and the end, not included, of every stretch of a side between its lines, leaving out the lines and their soft edges
+     * @param  array{0: int, 1: int}  $frame  how deep the outer frame reaches in from the start and from the end of the side, 0 where the image has none
+     * @return list<array{0: int, 1: int}> the start and the end, not included, of every stretch of a side between its lines, leaving out the lines, the outer frame and their soft edges
      */
-    private function insideLines(array $lines, int $side): array
+    private function insideLines(array $lines, int $side, array $frame = [0, 0]): array
     {
         $stretches = [];
-        $start = 0;
+        $start = $frame[0] === 0 ? 0 : $frame[0] + self::LINE_INSET;
 
         foreach ($lines as [$first, $last]) {
             $stretches[] = [$start, $first - self::LINE_INSET];
             $start = $last + 1 + self::LINE_INSET;
         }
 
-        $stretches[] = [$start, $side];
+        $stretches[] = [$start, $frame[1] === 0 ? $side : $side - $frame[1] - self::LINE_INSET];
 
         return $stretches;
+    }
+
+    /**
+     * @param  bool  $vertical  a frame down the left or right edge, read along rows of pixels; otherwise one across the top or bottom edge, read along columns
+     * @param  bool  $atEnd  the edge at the end of the side (right or bottom), otherwise the one at its start
+     * @param  int  $limit  the length of the side the frame closes
+     * @param  int  $from  where the samples along the edge start
+     * @param  int  $to  where they stop, not included
+     * @return int how many pixels the outer frame takes in from that edge, its soft edge included; 0 when the image draws none there. It is a frame only when, on at least LINE_SHARE of the samples, the pixel on the very edge is LINE_CONTRAST brighter than the picture FRAME_MAX_DEPTH + LINE_SIDE in, and the bright band that starts there ends within FRAME_MAX_DEPTH; a band that runs deeper is bright picture, and a bright band that does not touch the edge is left to the lines
+     */
+    private function frame(GdImage $image, bool $vertical, bool $atEnd, int $limit, int $from, int $to): int
+    {
+        $beyond = self::FRAME_MAX_DEPTH + self::LINE_SIDE;
+
+        if ($limit <= 2 * $beyond) {
+            return 0;
+        }
+
+        $samples = 0;
+        $framed = 0;
+        $depth = 0;
+
+        for ($along = $from; $along < $to; $along += self::LINE_STEP) {
+            $samples++;
+            $at = static fn (int $in): int => $atEnd ? $limit - 1 - $in : $in;
+            $read = fn (int $in): int => $vertical ? $this->luma($image, $at($in), $along) : $this->luma($image, $along, $at($in));
+            $ground = $read($beyond);
+
+            if ($read(0) - $ground < self::LINE_CONTRAST) {
+                continue;
+            }
+
+            $run = 1;
+
+            while ($run <= self::FRAME_MAX_DEPTH && $read($run) - $ground >= self::LINE_FADE) {
+                $run++;
+            }
+
+            if ($run <= self::FRAME_MAX_DEPTH) {
+                $framed++;
+                $depth = max($depth, $run);
+            }
+        }
+
+        return $samples > 0 && $framed >= $samples - (int) floor($samples * (1 - self::LINE_SHARE)) ? $depth : 0;
     }
 
     /**

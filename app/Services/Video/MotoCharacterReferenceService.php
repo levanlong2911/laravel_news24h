@@ -52,7 +52,7 @@ final class MotoCharacterReferenceService implements QueuedImageService
     ) {}
 
     /**
-     * @return array{approved: array<string, mixed>, plan: array<string, mixed>, characters: array<string, string>} the approved shot plan, the character cells its stored shots need and the descriptions the plan pinned
+     * @return array{approved: array<string, mixed>, plan: array<string, mixed>, characters: array<string, string>, settings: array<string, mixed>, shots: list<array<string, mixed>>} the approved shot plan, the character cells its stored shots need under the decisions on the clothes of the script the project holds, the descriptions the plan pinned, the settings and the stored shots the cells were planned from
      *
      * @throws RuntimeException when no shot plan is approved or it no longer matches its approval
      */
@@ -62,11 +62,15 @@ final class MotoCharacterReferenceService implements QueuedImageService
         $stage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->findOrFail($approved['stage_id']);
         $metadata = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null);
         $characters = (array) ($metadata['context']['characters'] ?? []);
+        $stored = array_values((array) ($stage->output_json['derived']['shots'] ?? []));
+        $settings = MotoCharacterPlanner::settingsFor($stored);
 
         return [
             'approved' => $approved,
-            'plan' => MotoCharacterPlanner::plan(array_values((array) ($stage->output_json['derived']['shots'] ?? [])), $characters, (array) config('video.moto.reference.character')),
+            'plan' => MotoCharacterPlanner::planFor($stored, $characters, $settings, VideoProject::query()->whereKey($projectId)->value('metadata_json')),
+            'shots' => $stored,
             'characters' => $characters,
+            'settings' => $settings,
         ];
     }
 
@@ -104,14 +108,110 @@ final class MotoCharacterReferenceService implements QueuedImageService
     {
         $selection = (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::SELECTION]['cells'] ?? []);
         $cells = array_column((array) $plan['cells'], null, 'id');
+
+        return $this->heldCells($projectId, array_filter($selection, static fn (mixed $chosen, string|int $id): bool => isset($cells[$id]) && is_array($chosen) && ($chosen['fingerprint'] ?? null) === $cells[$id]['fingerprint'], ARRAY_FILTER_USE_BOTH));
+    }
+
+    /**
+     * @param  ?string  $description  how the approved script describes the character
+     * @param  array<string, mixed>  $settings  the character settings of the shot plan
+     * @param  bool  $face  whether the shot shows the face of the character
+     * @return array{source: ?array<string, mixed>, problem: ?string} the approved master that gives who the character is, read from the choice the project holds for its identity cells (the angles and the portrait), which follow the description alone and no look a shot asks for; with the cells that master really holds and where each sits. No master is chosen for the person: none approved, one made from another description, one whose file or approval no longer stands, several at once, or one that shows no face for a shot that shows it
+     */
+    public function identityMaster(string $projectId, string $character, ?string $description, array $settings, bool $face): array
+    {
+        if (! is_string($description) || trim($description) === '') {
+            return ['source' => null, 'problem' => "Kịch bản không có mô tả cho {$character} — cần kiểm."];
+        }
+
+        $cells = array_column(MotoCharacterPlanner::identityCells($character, $description, $settings), null, 'id');
+        $stored = (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::SELECTION] ?? []);
+        $selection = array_intersect_key((array) ($stored['cells'] ?? []), $cells);
+        $same = array_filter($selection, static fn (mixed $chosen, string $id): bool => is_array($chosen) && self::sameIdentity($chosen, $cells[$id]), ARRAY_FILTER_USE_BOTH);
+        $valid = $this->heldCells($projectId, $same);
+        $masters = array_values(array_unique(array_column($valid, 'master_artifact_id')));
+        $picked = $stored['identity'][$character]['master_artifact_id'] ?? null;
+
+        if (is_string($picked)) {
+            if (! in_array($picked, $masters, true)) {
+                return ['source' => null, 'problem' => "Master đã chọn làm ảnh nhận diện của {$character} không còn hợp lệ (bị thu hồi, đổi file, sai mã băm hoặc không còn giữ ô nhận diện nào) — chọn lại master cho nhân vật."];
+            }
+
+            $masters = [$picked];
+        }
+
+        if ($masters === []) {
+            return ['source' => null, 'problem' => match (true) {
+                $selection === [] => "Chưa có master nhân vật đã duyệt cho {$character} — tạo và duyệt ảnh nhân vật ở màn Reference.",
+                $same === [] => "Master đã duyệt của {$character} được tạo từ mô tả nhân vật hoặc cấu hình khác bản hiện hành — cần kiểm lại ở màn Reference.",
+                default => "Master đã chọn của {$character} không còn hợp lệ (bị thu hồi, đổi file hoặc sai mã băm) — cần kiểm lại ở màn Reference.",
+            }];
+        }
+
+        if (count($masters) > 1) {
+            $codes = VideoDesignImage::query()->where('project_id', $projectId)->whereIn('id', array_unique(array_column($valid, 'image_id')))->pluck('image_code')->all();
+
+            return ['source' => null, 'problem' => "{$character} có ".count($masters).' master đã duyệt cùng chứa ảnh nhận diện ('.implode(', ', $codes).") — cần chọn master dùng cho nhân vật: php artisan video:moto-character-master {$projectId} --choose={$character}=<mã ảnh master>."];
+        }
+
+        $kept = array_filter($valid, static fn (array $entry): bool => $entry['master_artifact_id'] === $masters[0]);
+        $shown = array_intersect_key($cells, $kept);
+
+        if ($face && array_filter($shown, static fn (array $cell): bool => $cell['kind'] === 'portrait' || (int) ($cell['angle']['azimuth_deg'] ?? 180) === 0) === []) {
+            return ['source' => null, 'problem' => "Master đã duyệt của {$character} chưa có ô chân dung hoặc ô chính diện còn hợp lệ cho shot lộ mặt — cần bổ sung ở màn Reference."];
+        }
+
+        $first = reset($kept);
+        $image = VideoDesignImage::query()->where('project_id', $projectId)->find($first['image_id']);
+        $positions = [];
+
+        foreach ((new ModelSheetMaster((array) ($image?->prompt_spec_json['layout'] ?? [])))->cells() as $position) {
+            $positions[(string) $position['id']] = ['row' => (int) $position['row'], 'column' => (int) $position['column']];
+        }
+
+        $held = [];
+
+        foreach ((array) ($image?->prompt_spec_json['cells'] ?? []) as $cell) {
+            if (isset($positions[$cell['id'] ?? ''])) {
+                $held[] = array_filter([
+                    'code' => (string) ($cell['code'] ?? ''),
+                    'kind' => (string) ($cell['kind'] ?? ''),
+                    'row' => $positions[$cell['id']]['row'],
+                    'column' => $positions[$cell['id']]['column'],
+                    'angle' => $cell['angle']['label'] ?? null,
+                    'view' => $cell['view'] ?? null,
+                    'item' => $cell['item'] ?? null,
+                    'items' => $cell['items'] ?? null,
+                ], static fn (mixed $value): bool => $value !== null);
+            }
+        }
+
+        return ['source' => array_intersect_key($first, array_flip(['image_id', 'master_artifact_id', 'master_sha256', 'master_code', 'decision_id'])) + [
+            'identity_fingerprint' => CanonicalJson::hash(array_column($shown, 'identity', 'id')),
+            'master_cells' => $held,
+        ], 'problem' => null];
+    }
+
+    /**
+     * @param  array<string, mixed>  $chosen  the stored choice of a cell
+     * @param  array<string, mixed>  $cell  the identity cell built now
+     * @return bool whether the image chosen for the cell still shows this person: it carries the identity the cell has now, or, for a choice stored before identities were kept, it was rendered under the very fingerprint the cell has now
+     */
+    private static function sameIdentity(array $chosen, array $cell): bool
+    {
+        return is_string($chosen['identity'] ?? null) ? $chosen['identity'] === $cell['identity'] : ($chosen['fingerprint'] ?? null) === $cell['fingerprint'];
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $selection  the stored choice of each cell, already matched to the cell it answers
+     * @return array<string, array{image_id: string, fingerprint: string, master_artifact_id: string, master_sha256: string, master_code: string, decision_id: string, cell_row: int, cell_column: int}> by cell, the master while it is still the approved image it was chosen as and still holds the cell
+     */
+    private function heldCells(string $projectId, array $selection): array
+    {
         $masters = [];
         $valid = [];
 
         foreach ($selection as $id => $chosen) {
-            if (! isset($cells[$id]) || ! is_array($chosen) || ($chosen['fingerprint'] ?? null) !== $cells[$id]['fingerprint']) {
-                continue;
-            }
-
             $key = (string) ($chosen['master_artifact_id'] ?? '').'|'.(string) ($chosen['review_id'] ?? '');
             $master = $masters[$key] ??= $this->approvedMaster($projectId, (string) ($chosen['master_artifact_id'] ?? ''), (string) ($chosen['review_id'] ?? ''));
 
@@ -121,7 +221,7 @@ final class MotoCharacterReferenceService implements QueuedImageService
 
             $valid[(string) $id] = [
                 'image_id' => $master['image_id'],
-                'fingerprint' => (string) $chosen['fingerprint'],
+                'fingerprint' => (string) ($chosen['fingerprint'] ?? ''),
                 'master_artifact_id' => $master['master_artifact_id'],
                 'master_sha256' => $master['master_sha256'],
                 'master_code' => $master['master_code'],
@@ -132,6 +232,88 @@ final class MotoCharacterReferenceService implements QueuedImageService
         }
 
         return $valid;
+    }
+
+    /**
+     * @return array<string, array{description: ?string, masters: list<array{artifact_id: string, code: string, cells: list<string>, unstamped: list<string>}>, chosen: ?string, problem: ?string}> for every character of the approved script, the approved masters that hold its identity cells, the cells each holds, the ones whose stored choice carries no identity yet, the master a person chose and what identityMaster() finds now; reading it writes nothing
+     *
+     * @throws RuntimeException when no shot plan is approved
+     */
+    public function identityReport(string $projectId): array
+    {
+        $source = $this->source($projectId);
+        $stored = (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::SELECTION] ?? []);
+        $report = [];
+
+        foreach ($source['characters'] as $character => $description) {
+            $character = (string) $character;
+            $cells = is_string($description) && trim($description) !== '' ? array_column(MotoCharacterPlanner::identityCells($character, $description, $source['settings']), null, 'id') : [];
+            $same = array_filter(array_intersect_key((array) ($stored['cells'] ?? []), $cells), static fn (mixed $chosen, string $id): bool => is_array($chosen) && self::sameIdentity($chosen, $cells[$id]), ARRAY_FILTER_USE_BOTH);
+            $masters = [];
+
+            foreach ($this->heldCells($projectId, $same) as $id => $entry) {
+                $masters[$entry['master_artifact_id']] ??= ['artifact_id' => $entry['master_artifact_id'], 'code' => $entry['master_code'], 'cells' => [], 'unstamped' => []];
+                $masters[$entry['master_artifact_id']]['cells'][] = (string) $cells[$id]['code'];
+
+                if (! is_string($same[$id]['identity'] ?? null)) {
+                    $masters[$entry['master_artifact_id']]['unstamped'][] = (string) $id;
+                }
+            }
+
+            $report[$character] = [
+                'description' => is_string($description) ? $description : null,
+                'masters' => array_values($masters),
+                'chosen' => $stored['identity'][$character]['master_artifact_id'] ?? null,
+                'problem' => $cells === [] ? null : $this->identityMaster($projectId, $character, $description, $source['settings'], false)['problem'],
+            ];
+        }
+
+        return $report;
+    }
+
+    /**
+     * @param  array<string, ?string>  $choose  by character, the master to use for who the character is, null to drop the choice
+     * @param  bool  $stamp  whether every valid choice of an identity cell that carries no identity yet takes the identity its cell has now
+     * @return void the choices are stored with the project in one write; nothing is rendered and no approval changes
+     *
+     * @throws RuntimeException when a master chosen is not an approved master of the project that holds an identity cell of the character
+     */
+    public function saveIdentity(string $projectId, array $choose, bool $stamp): void
+    {
+        DB::transaction(function () use ($projectId, $choose, $stamp): void {
+            $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+            $source = $this->source($projectId);
+            $report = $this->identityReport($projectId);
+            $meta = $project->metadata_json ?? [];
+
+            foreach ($choose as $character => $artifactId) {
+                if ($artifactId === null) {
+                    unset($meta[self::SELECTION]['identity'][$character]);
+
+                    continue;
+                }
+
+                if (! in_array($artifactId, array_column($report[$character]['masters'] ?? [], 'artifact_id'), true)) {
+                    throw new RuntimeException("Master {$artifactId} không phải master đã duyệt của dự án đang giữ ô nhận diện của {$character}.");
+                }
+
+                $meta[self::SELECTION]['identity'][$character] = ['master_artifact_id' => $artifactId, 'chosen_at' => now()->toIso8601String()];
+            }
+
+            if ($stamp) {
+                foreach ($report as $character => $entry) {
+                    $cells = $entry['description'] === null ? [] : array_column(MotoCharacterPlanner::identityCells((string) $character, $entry['description'], $source['settings']), 'identity', 'id');
+
+                    foreach ($entry['masters'] as $master) {
+                        foreach ($master['unstamped'] as $id) {
+                            $meta[self::SELECTION]['cells'][$id]['identity'] = $cells[$id];
+                        }
+                    }
+                }
+            }
+
+            $project->forceFill(['metadata_json' => $meta])->save();
+        });
     }
 
     /** @return ?array{image_id: string, master_artifact_id: string, master_sha256: string, master_code: string, decision_id: string, positions: array<string, array{row: int, column: int}>} the master while it is the approved image of its row under this decision, with the row and column of every cell of its grid; null otherwise */
@@ -349,7 +531,7 @@ final class MotoCharacterReferenceService implements QueuedImageService
 
         $sheet = ['cell_ids' => (array) ($spec['render_cells'] ?? []), 'single' => count((array) ($spec['render_cells'] ?? [])) === 1, 'layout' => (array) ($spec['layout'] ?? [])];
 
-        if (! hash_equals((string) ($spec['prompt'] ?? ''), MotoCharacterPlanner::prompt($sheet, $cells, (array) config('video.moto.reference.character')))) {
+        if (! hash_equals((string) ($spec['prompt'] ?? ''), MotoCharacterPlanner::prompt($sheet, $cells, (array) $source['settings']))) {
             return 'Prompt nhân vật không còn là prompt đã xác nhận — không gửi render.';
         }
 
@@ -457,10 +639,13 @@ final class MotoCharacterReferenceService implements QueuedImageService
             ]);
             $meta = $project->metadata_json ?? [];
             $pinned = array_column((array) $spec['cells'], null, 'id');
+            $source = $this->source($projectId);
+            $described = $source['characters'][(string) $spec['character']] ?? null;
+            $identities = is_string($described) && trim($described) !== '' ? array_column(MotoCharacterPlanner::identityCells((string) $spec['character'], $described, $source['settings']), 'identity', 'id') : [];
 
             foreach ((array) $spec['render_cells'] as $id) {
                 $artifact = $cuts ? $crops[$id] : $master;
-                $meta[self::SELECTION]['cells'][$id] = [
+                $meta[self::SELECTION]['cells'][$id] = (isset($identities[$id]) ? ['identity' => $identities[$id]] : []) + [
                     'fingerprint' => $pinned[$id]['fingerprint'],
                     'code' => $pinned[$id]['code'],
                     'artifact_id' => (string) $artifact->id,
@@ -656,7 +841,7 @@ final class MotoCharacterReferenceService implements QueuedImageService
      */
     private function describe(string $projectId, string $character, array $open, array $cells, array $source): array
     {
-        $settings = (array) config('video.moto.reference.character');
+        $settings = (array) ($source['settings'] ?? config('video.moto.reference.character'));
         $choice = $this->choice($projectId, $character, count($open) === 1);
         $sheet = MotoCharacterPlanner::sheet($character, $open, $choice['size'], $settings);
         $positions = (new ModelSheetMaster($sheet['layout']))->cells();

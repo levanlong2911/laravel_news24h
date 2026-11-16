@@ -15,13 +15,93 @@ final class MotoCharacterPlanner
 
     public const PROMPT_VERSION = 'moto-character-prompt-v2';
 
+    /** @var string the key of the project metadata that lists the characters shown in the clothes of the script where the source names no protective equipment */
+    public const SCRIPT_OUTFIT_KEY = 'moto_character_script_outfit';
+
+    /** @var string how a look cell is marked when the source names no protective equipment and the character is shown in the clothes of the script; the source keeps its null */
+    public const SCRIPT_OUTFIT = 'script_outfit';
+
+    /** @var list<string> the settings an angle cell or a portrait is drawn from: how a person is photographed, what keeps it one person, the rules of the picture and what an angle and the portrait show. How a hand, a hidden face or a piece of equipment is shown, and how a sheet is laid out, belong to the looks and the sheet, never to who the person is */
+    private const IDENTITY_SETTINGS = ['style', 'same_person', 'rules', 'angle_convention', 'angle_show', 'portrait'];
+
+    /** @var list<string> what of a shot a decision on the clothes of a character was made from: where it stands in the film, what happens in it and the work done in it */
+    private const OUTFIT_SHOT_FIELDS = ['scene', 'state', 'first_frame', 'action', 'action_timeline', 'result', 'work_items'];
+
+    /**
+     * @param  mixed  $metadata  the metadata of a project
+     * @param  list<array<string, mixed>>  $shots  the stored shots of the approved shot plan
+     * @param  array<string, string>  $characters  the description of every character in the approved script, by id
+     * @return array{valid: list<string>, lapsed: list<string>} the characters the project shows in the clothes of the script where the source names no protective equipment: valid while the description of the character and the shots that show it with nothing stated are the ones the decision was made from, lapsed once they changed
+     */
+    public static function scriptOutfit(mixed $metadata, array $shots, array $characters): array
+    {
+        $stored = (array) (((array) $metadata)[self::SCRIPT_OUTFIT_KEY]['records'] ?? []);
+        $state = ['valid' => [], 'lapsed' => []];
+
+        foreach ($stored as $character => $record) {
+            if (is_string($character) && is_string($record['fingerprint'] ?? null)) {
+                $state[hash_equals($record['fingerprint'], self::outfitFingerprint($character, $shots, $characters)) ? 'valid' : 'lapsed'][] = $character;
+            }
+        }
+
+        return $state;
+    }
+
     /**
      * @param  list<array<string, mixed>>  $shots  the stored shots of the approved shot plan
      * @param  array<string, string>  $characters  the description of every character in the approved script, by id
      * @param  array<string, mixed>  $settings  video.moto.reference.character
+     * @param  mixed  $metadata  the metadata of the project
+     * @return array<string, mixed> plan() with the decisions on the clothes of the script the project holds, each applied only while its sources stand
+     */
+    public static function planFor(array $shots, array $characters, array $settings, mixed $metadata): array
+    {
+        $outfit = self::scriptOutfit($metadata, $shots, $characters);
+
+        return self::plan($shots, $characters, $settings, $outfit['valid'], $outfit['lapsed']);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the stored shots of the approved shot plan
+     * @param  array<string, string>  $characters
+     * @return string the hash of what a decision to show the character in the clothes of the script rests on: its description and, for every shot that shows it with no protective equipment stated, how it is seen there and what the shot does; a change to anything else leaves it as it is
+     */
+    public static function outfitFingerprint(string $character, array $shots, array $characters): string
+    {
+        $byId = array_column($shots, null, 'id');
+        $seen = [];
+
+        foreach ($shots as $shot) {
+            foreach ((array) ($shot['people'] ?? []) as $person) {
+                if ($person['character'] === $character && self::effectiveItems($shot, $character, $byId) === null) {
+                    $seen[] = ['shot' => (string) $shot['id'], 'person' => $person, 'record' => array_intersect_key($shot, array_flip(self::OUTFIT_SHOT_FIELDS))];
+                }
+            }
+        }
+
+        return CanonicalJson::hash(['character' => $character, 'description' => $characters[$character] ?? null, 'shots' => $seen]);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the stored shots of a shot plan
+     * @return array<string, mixed> video.moto.reference.character, and for a plan whose shots may show a face the rules, the views and the portrait cell that keep one face
+     */
+    public static function settingsFor(array $shots): array
+    {
+        $settings = (array) config('video.moto.reference.character');
+
+        return isset($shots[0]['action_timeline']) ? array_replace($settings, (array) config('video.moto.reference.character_with_face')) : $settings;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the stored shots of the approved shot plan
+     * @param  array<string, string>  $characters  the description of every character in the approved script, by id
+     * @param  array<string, mixed>  $settings  video.moto.reference.character
+     * @param  list<string>  $scriptOutfit  the characters of the project shown in the clothes of the script where the source names no protective equipment: their look cell lists no equipment and is marked script_outfit, and the source keeps its null; every other character with no equipment stated stays unresolved
+     * @param  list<string>  $lapsedOutfit  the characters whose decision was made from sources that changed since: unresolved until it is confirmed again
      * @return array{version: string, prompt_version: string, cells: list<array<string, mixed>>, bindings: array<string, list<array<string, mixed>>>, problems: list<string>} for every character the shots show: the angles of the settings, each item of protective equipment the shots list, then one cell for every view and list of protective equipment the shots need, with the shots that use it kept apart from its fingerprint; for each shot and person, the cell that answers it, the keyframe it continues or why nothing can be decided from the data
      */
-    public static function plan(array $shots, array $characters, array $settings): array
+    public static function plan(array $shots, array $characters, array $settings, array $scriptOutfit = [], array $lapsedOutfit = []): array
     {
         $byId = array_column($shots, null, 'id');
         $found = [];
@@ -39,7 +119,9 @@ final class MotoCharacterPlanner
 
                 if (! is_string($description) || trim($description) === '') {
                     $problem = "{$shotId}: kịch bản không có mô tả cho {$character} — cần kiểm.";
-                } elseif ($items === null) {
+                } elseif ($items === null && in_array($character, $lapsedOutfit, true)) {
+                    $problem = "{$shotId}: quyết định dùng trang phục kịch bản cho {$character} được xác nhận trên nguồn khác bản hiện hành (mô tả nhân vật hoặc nội dung shot đã đổi) — cần xác nhận lại.";
+                } elseif ($items === null && ! in_array($character, $scriptOutfit, true)) {
                     $problem = "{$shotId}: chưa có dữ liệu bảo hộ của {$character} và không phân giải được từ shot trước — cần kiểm.";
                 } else {
                     $problem = null;
@@ -52,7 +134,9 @@ final class MotoCharacterPlanner
                     continue;
                 }
 
-                $target = self::continuityTarget($shot);
+                $unstated = $items === null;
+                $items ??= [];
+                $target = $unstated || isset($shot['action_timeline']) ? null : self::continuityTarget($shot);
 
                 if ($target !== null && self::continues($byId[$target] ?? null, $character, $view, $items, $byId)) {
                     $bindings[$shotId][] = ['type' => 'continuity', 'character' => $character, 'view' => $view, 'target' => $target];
@@ -60,10 +144,10 @@ final class MotoCharacterPlanner
                     continue;
                 }
 
-                $id = self::cellId(['look', $character, $view, $items]);
-                $found[$character][$view][$id] ??= ['id' => $id, 'kind' => 'look', 'character' => $character, 'view' => $view, 'items' => $items, 'description' => $description, 'shots' => []];
+                $id = self::cellId($unstated ? ['look', $character, $view, self::SCRIPT_OUTFIT] : ['look', $character, $view, $items]);
+                $found[$character][$view][$id] ??= ['id' => $id, 'kind' => 'look', 'character' => $character, 'view' => $view, 'items' => $items, 'description' => $description, 'shots' => []] + ($unstated ? ['outfit' => self::SCRIPT_OUTFIT] : []);
                 $found[$character][$view][$id]['shots'][] = $shotId;
-                $bindings[$shotId][] = ['type' => 'cell', 'character' => $character, 'view' => $view, 'cell' => $id];
+                $bindings[$shotId][] = ['type' => 'cell', 'character' => $character, 'view' => $view, 'cell' => $id] + ($unstated ? ['outfit' => self::SCRIPT_OUTFIT] : []);
             }
         }
 
@@ -76,16 +160,7 @@ final class MotoCharacterPlanner
             $looks = array_merge(...array_map('array_values', array_values($views)));
             $worn = array_values(array_unique(array_merge(...array_column($looks, 'items'))));
             $own = [
-                ...array_map(static fn (array $angle): array => [
-                    'id' => self::cellId(['angle', $character, (string) $angle['code']]),
-                    'kind' => 'angle',
-                    'code' => (string) $angle['code'],
-                    'character' => $character,
-                    'angle' => $angle,
-                    'description' => $description,
-                    'label' => (string) $angle['label_vi'],
-                    'shots' => [],
-                ], array_values((array) $settings['angles'])),
+                ...self::identityRows($character, $description, $settings),
                 ...array_map(static fn (string $item, int $index): array => [
                     'id' => self::cellId(['item', $character, $item]),
                     'kind' => 'item',
@@ -98,20 +173,83 @@ final class MotoCharacterPlanner
                 ], $worn, array_keys($worn)),
                 ...array_map(static fn (array $look, int $index): array => $look + [
                     'code' => $prefixes[$character].($index + 1),
-                    'label' => $look['view'].' · '.($look['items'] === [] ? 'bảo hộ trống' : 'bảo hộ: '.implode(', ', $look['items'])),
+                    'label' => $look['view'].' · '.(isset($look['outfit']) ? 'trang phục kịch bản — nguồn chưa nêu bảo hộ bổ sung' : ($look['items'] === [] ? 'bảo hộ trống' : 'bảo hộ: '.implode(', ', $look['items']))),
                 ], $looks, array_keys($looks)),
             ];
 
             foreach ($own as $cell) {
-                $cells[] = $cell + ['fingerprint' => CanonicalJson::hash([
-                    'cell' => array_diff_key($cell, array_flip(['shots', 'code', 'label'])),
-                    'settings' => $settingsHash,
-                    'version' => [self::VERSION, self::PROMPT_VERSION],
-                ])];
+                $cells[] = self::fingerprinted($cell, $settingsHash);
             }
         }
 
         return ['version' => self::VERSION, 'prompt_version' => self::PROMPT_VERSION, 'cells' => $cells, 'bindings' => $bindings, 'problems' => $problems];
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings  video.moto.reference.character
+     * @return list<array<string, mixed>> the cells that give who the character is: every angle of the settings and the portrait when the settings have one, each with the fingerprint its image was rendered under and with identity, the hash of what makes it this person alone — the character, its description, the angle or the portrait, and the settings a person is photographed by. A change to how a look, a hand or a piece of equipment is shown changes the fingerprint and leaves identity as it is, so a master that holds these cells still answers who the character is
+     */
+    public static function identityCells(string $character, string $description, array $settings): array
+    {
+        $settingsHash = CanonicalJson::hash($settings);
+        $identity = array_intersect_key($settings, array_flip(self::IDENTITY_SETTINGS));
+
+        return array_map(static fn (array $cell): array => self::fingerprinted($cell, $settingsHash) + ['identity' => CanonicalJson::hash([
+            'cell' => array_intersect_key($cell, array_flip(['kind', 'character', 'angle', 'description'])),
+            'settings' => $identity,
+        ])], self::identityRows($character, $description, $settings));
+    }
+
+    /**
+     * @param  array<string, mixed>  $shot  a stored shot
+     * @param  list<array<string, mixed>>  $shots  the stored shots of its plan
+     * @return ?list<string> what the source states the character wears at the first frame of the shot: null when nothing says, an empty list when it states there is none
+     */
+    public static function statedItems(array $shot, string $character, array $shots): ?array
+    {
+        return self::effectiveItems($shot, $character, array_column($shots, null, 'id'));
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     * @return list<array<string, mixed>>
+     */
+    private static function identityRows(string $character, string $description, array $settings): array
+    {
+        return [
+            ...array_map(static fn (array $angle): array => [
+                'id' => self::cellId(['angle', $character, (string) $angle['code']]),
+                'kind' => 'angle',
+                'code' => (string) $angle['code'],
+                'character' => $character,
+                'angle' => $angle,
+                'description' => $description,
+                'label' => (string) $angle['label_vi'],
+                'shots' => [],
+            ], array_values((array) $settings['angles'])),
+            ...(is_array($settings['portrait'] ?? null) ? [[
+                'id' => self::cellId(['portrait', $character]),
+                'kind' => 'portrait',
+                'code' => (string) $settings['portrait']['code'],
+                'character' => $character,
+                'description' => $description,
+                'label' => (string) $settings['portrait']['label_vi'],
+                'shots' => [],
+            ]] : []),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $cell
+     * @return array<string, mixed> the cell with the hash of what its image is made from
+     */
+    private static function fingerprinted(array $cell, string $settingsHash): array
+    {
+        return $cell + ['fingerprint' => CanonicalJson::hash([
+            'cell' => array_diff_key($cell, array_flip(['shots', 'code', 'label'])),
+            'settings' => $settingsHash,
+            'version' => [self::VERSION, self::PROMPT_VERSION],
+        ])];
     }
 
     /**
@@ -199,6 +337,10 @@ final class MotoCharacterPlanner
                 'item' => [
                     "{$labels['item']} ".(string) $cell['item'].'.',
                     "{$labels['show']} ".rtrim((string) $settings['item_show'], '.').'.',
+                ],
+                'portrait' => [
+                    "{$labels['person']} ".(string) $cell['description'],
+                    "{$labels['show']} ".rtrim((string) $settings['portrait']['show'], '.').'.',
                 ],
                 default => [
                     "{$labels['person']} ".(string) $cell['description'],

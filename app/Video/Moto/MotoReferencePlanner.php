@@ -17,11 +17,17 @@ final class MotoReferencePlanner
 
     public const PROMPT_VERSION = 'moto-reference-master-prompt-v3';
 
+    /** @var string the label of a line that gives the ornament a themed design records on a part */
+    private const ORNAMENT_LABEL = 'Ornament:';
+
     public const PART_VERSION = 'moto-reference-plan-v3';
 
     public const PART_SCHEMA = 'MotoReferencePlan@2.0.0';
 
     public const PART_PROMPT_VERSION = 'moto-reference-part-prompt-v2';
+
+    /** @var string how the plan finds the parts that need a cell and binds them to shots; it stays out of the fingerprint of a cell, which follows the content of its image only */
+    public const PART_USAGE_VERSION = 'moto-reference-usage-shot-parts-v1';
 
     /** @var list<string> the sections of a cell in the order the prompt gives them */
     public const SECTIONS = ['must_show', 'moment', 'framing', 'shape', 'surface', 'exclude'];
@@ -36,29 +42,45 @@ final class MotoReferencePlanner
      * @param  array<string, array{artifact_id: string, camera: array<string, mixed>, visible: list<string>, partial: list<string>, uncertain: list<string>}>  $views  every model sheet view with an approved crop
      * @param  array<string, mixed>  $settings  video.moto.reference
      * @param  array<string, mixed>  $manifest  the pinned sources the plan is built from
-     * @return array{version: string, schema: string, needs: list<array<string, mixed>>, references: list<array<string, mixed>>, bindings: list<array<string, mixed>>, dependencies: list<array<string, mixed>>, source_manifest: array<string, mixed>} every need of the shots, one cell for every part a design need names, in natural order of the part ids, and how each need is bound
+     * @param  array<string, array{view: ?string, azimuth_deg: int|float|null, elevation_deg: int|float|null}>  $pinned  by part, the camera of the cell an image of the project was made from; a part with one keeps it while the model sheet still has that view at that angle
+     * @return array{version: string, schema: string, needs: list<array<string, mixed>>, references: list<array<string, mixed>>, bindings: list<array<string, mixed>>, dependencies: list<array<string, mixed>>, source_manifest: array<string, mixed>} the identity, environment and continuity needs the shots name and one design need for every part in the frame of a shot, one cell for every such part, in natural order of the part ids, and how each need is bound; a design need a shot names adds its purpose and no cell
      *
-     * @throws RuntimeException when a shot names a part or build state the design does not have
+     * @throws RuntimeException when a shot names a part or build state the design does not have, or one part twice in two presentations
      */
-    public static function partPlan(array $shots, array $design, array $finished, array $views, array $settings, array $manifest): array
+    public static function partPlan(array $shots, array $design, array $finished, array $views, array $settings, array $manifest, array $pinned = []): array
     {
         $parts = array_column((array) ($design['parts'] ?? []), null, 'id');
         $states = array_column((array) ($design['build_states'] ?? []), null, 'id');
         $order = self::workOrder($shots);
         $work = self::workWords($shots);
+        $uses = [];
+
+        foreach (self::partUses($shots, array_keys($parts)) as $use) {
+            $uses[$use['shot_id']][] = $use;
+        }
+
         $needs = [];
         $bindings = [];
         $usage = [];
 
         foreach ($shots as $shot) {
             $shotId = (string) $shot['id'];
+            $asked = [];
 
             foreach (array_values((array) ($shot['reference_needs'] ?? [])) as $index => $need) {
                 $needId = $shotId.'#'.($index + 1);
                 $target = is_string($need['target'] ?? null) ? $need['target'] : null;
                 $kind = (string) $need['kind'];
 
-                if (in_array($kind, ['design', 'identity'], true) && ! isset($states[(string) ($shot['state'] ?? '')])) {
+                if ($kind === 'design') {
+                    if ($target !== null && trim((string) ($need['purpose'] ?? '')) !== '') {
+                        $asked[$target][] = (string) $need['purpose'];
+                    }
+
+                    continue;
+                }
+
+                if ($kind === 'identity' && ! isset($states[(string) ($shot['state'] ?? '')])) {
                     throw new RuntimeException("{$shotId}: build state ".($shot['state'] ?? 'null').' không có trong thiết kế.');
                 }
 
@@ -88,19 +110,33 @@ final class MotoReferencePlanner
                     continue;
                 }
 
-                if ($kind === 'identity') {
-                    $bindings[] = self::wholeIdentity($shot, $needId, $finished, $views);
+                $bindings[] = self::wholeIdentity($shot, $needId, $finished, $views);
+            }
 
-                    continue;
-                }
+            if (($uses[$shotId] ?? []) !== [] && is_string($shot['state'] ?? null) && ! isset($states[$shot['state']])) {
+                throw new RuntimeException("{$shotId}: build state ".($shot['state'] ?? 'null').' không có trong thiết kế.');
+            }
 
-                if ($target === null || ! isset($parts[$target])) {
-                    throw new RuntimeException("{$needId}: part ".($target ?? 'null').' không có trong thiết kế đã duyệt.');
-                }
-
+            foreach ($uses[$shotId] ?? [] as $index => $use) {
+                $target = $use['part_id'];
+                $needId = self::partNeedId($shotId, $target);
+                $purposes = array_values(array_unique($asked[$target] ?? []));
+                $record = [
+                    'id' => $needId,
+                    'shot_id' => $shotId,
+                    'index' => $index,
+                    'kind' => 'design',
+                    'target' => $target,
+                    'purpose' => implode(' ', $purposes),
+                    'state' => $use['state'],
+                    'placement' => self::placement($shot, $target),
+                    'checkpoint' => self::checkpoint($shot, $target, $order, $work),
+                    'camera' => array_intersect_key((array) $shot['camera'], array_flip(['target', 'target_part', 'scale', 'lens_mm', 'azimuth_deg', 'elevation_deg'])),
+                ];
+                $needs[] = $record;
                 $usage[$target]['needs'][] = $needId;
                 $usage[$target]['shots'][] = $shotId;
-                $usage[$target]['purposes'][] = $record['purpose'];
+                $usage[$target]['purposes'] = [...($usage[$target]['purposes'] ?? []), ...$purposes];
                 $usage[$target]['cameras'][] = (array) $shot['camera'];
                 $bindings[] = ['need_id' => $needId, 'type' => 'reference', 'source' => self::partCellId($target), 'rule' => self::finishedInShot($shot, $record, $finished) ? 'part_finished' : 'part_geometry'];
             }
@@ -110,7 +146,7 @@ final class MotoReferencePlanner
         $references = [];
 
         foreach ($usage as $id => $use) {
-            $references[] = self::partReference((string) $id, $use, $design, $parts, $views, $settings, $manifest);
+            $references[] = self::partReference((string) $id, $use, $design, $parts, $views, $settings, $manifest, $pinned[$id] ?? null);
         }
 
         return [
@@ -233,9 +269,54 @@ final class MotoReferencePlanner
     }
 
     /** @return string the id of the cell of a part: the same part keeps its cell id through every plan */
-    private static function partCellId(string $part): string
+    public static function partCellId(string $part): string
     {
         return 'R'.substr(hash('sha256', 'part|'.$part), 0, 10);
+    }
+
+    /** @return string the id of the design need of a part in the frame of a shot */
+    public static function partNeedId(string $shotId, string $part): string
+    {
+        return $shotId.'#part:'.$part;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the shots of a derived shot plan, in plan order
+     * @param  list<string>  $known  the part ids of the design
+     * @return list<array{shot_id: string, part_id: string, presentation: string, state: ?string}> every part in the frame of a shot, once per shot, in the order the shot lists them
+     *
+     * @throws RuntimeException when a shot lists a part the design does not have, or the same part in two presentations
+     */
+    public static function partUses(array $shots, array $known): array
+    {
+        $uses = [];
+
+        foreach ($shots as $shot) {
+            $shotId = (string) $shot['id'];
+            $seen = [];
+
+            foreach (array_values((array) ($shot['parts'] ?? [])) as $item) {
+                $part = is_string($item['part'] ?? null) ? $item['part'] : '';
+                $presentation = (string) ($item['presentation'] ?? '');
+
+                if (! in_array($part, $known, true)) {
+                    throw new RuntimeException("{$shotId}: part ".($part === '' ? 'null' : $part).' không có trong thiết kế đã duyệt.');
+                }
+
+                if (isset($seen[$part])) {
+                    if ($seen[$part] !== $presentation) {
+                        throw new RuntimeException("{$shotId}: part {$part} được khai hai lần với hai cách xuất hiện ({$seen[$part]}, {$presentation}).");
+                    }
+
+                    continue;
+                }
+
+                $seen[$part] = $presentation;
+                $uses[] = ['shot_id' => $shotId, 'part_id' => $part, 'presentation' => $presentation, 'state' => is_string($shot['state'] ?? null) ? $shot['state'] : null];
+            }
+        }
+
+        return $uses;
     }
 
     /**
@@ -264,14 +345,16 @@ final class MotoReferencePlanner
      * @param  array<string, array<string, mixed>>  $views
      * @param  array<string, mixed>  $settings
      * @param  array<string, mixed>  $manifest
+     * @param  ?array{view: ?string, azimuth_deg: int|float|null, elevation_deg: int|float|null}  $pinned  the camera an image of this part was made from, kept while the model sheet still has that view at that angle
      * @return array<string, mixed> the cell of the part with the camera it is shown from, the panels of the model sheet that show it and its text; the shots that use it stay out of the fingerprint
      */
-    private static function partReference(string $id, array $use, array $design, array $parts, array $views, array $settings, array $manifest): array
+    private static function partReference(string $id, array $use, array $design, array $parts, array $views, array $settings, array $manifest, ?array $pinned = null): array
     {
         $part = $parts[$id];
         $visible = array_keys(array_filter($views, static fn (array $view): bool => in_array($id, (array) $view['visible'], true)));
         $partial = array_keys(array_filter($views, static fn (array $view): bool => in_array($id, (array) $view['partial'], true)));
-        $camera = self::partCamera($part, $views, $use['cameras']);
+        $kept = is_string($pinned['view'] ?? null) && isset($views[$pinned['view']]) && self::viewCamera($pinned['view'], $views) == array_intersect_key($pinned, array_flip(['view', 'azimuth_deg', 'elevation_deg']));
+        $camera = $kept ? self::viewCamera($pinned['view'], $views) : self::partCamera($part, $views, $use['cameras']);
         $reference = [
             'id' => self::partCellId($id),
             'key' => 'part.'.$id,
@@ -323,7 +406,7 @@ final class MotoReferencePlanner
                 $faces = count(MotoSheetPrompt::facesSeen($part, (array) $views[$view]['camera'], false));
                 $near = count(array_filter($cameras, static fn (array $camera): bool => is_numeric($camera['azimuth_deg'] ?? null) && is_numeric($views[$view]['camera']['azimuth_deg'] ?? null) && self::turn((float) $camera['azimuth_deg'], (float) $views[$view]['camera']['azimuth_deg']) <= 45.0));
 
-                if ($faces > $bestFaces || ($faces > 0 && $faces === $bestFaces && $near > $bestNear)) {
+                if ($best === null || $faces > $bestFaces || ($faces === $bestFaces && $near > $bestNear)) {
                     [$best, $bestFaces, $bestNear] = [$view, $faces, $near];
                 }
             }
@@ -399,6 +482,13 @@ final class MotoReferencePlanner
 
             if ($concerns && ($scope === [$id] || ($rule['kind'] ?? null) === 'must_not')) {
                 $own[] = ($labels[$rule['kind']] ?? (string) $rule['kind']).' '.$clean((string) $rule['description']).'.';
+            }
+        }
+
+        foreach ((array) ($design['motorcycle']['markings'] ?? []) as $marking) {
+            if (($marking['part'] ?? null) === $id && isset($marking['technique'], $marking['placement'], $marking['coverage'])) {
+                $colours = array_values(array_filter(array_map(static fn (string $colour): ?string => $palette[$colour]['name'] ?? null, (array) ($marking['color_ids'] ?? []))));
+                $own[] = self::ORNAMENT_LABEL.' '.$clean((string) $marking['placement']).': '.$clean((string) $marking['description']).'. Made by: '.$clean((string) $marking['technique']).'. Covers: '.$clean((string) $marking['coverage']).'.'.($colours === [] ? '' : ' Colours: '.implode(', ', $colours).'.');
             }
         }
 

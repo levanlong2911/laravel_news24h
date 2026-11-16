@@ -26,7 +26,9 @@
         <span class="sep">·</span>
         <b>Reference</b>
         <span class="sep">·</span>
-        <a href="{{ route('video-projects.keyframes', $id) }}">Keyframes →</a>
+        <a href="{{ route('video-projects.keyframes', $id) }}">Keyframes</a>
+        <span class="sep">·</span>
+        <a href="{{ route('video-projects.render-video', $id) }}">Video shot</a>
         <span class="grow"></span>
         @if($plan !== null)
             <span class="m">{{ count($plan['references']) }} ảnh cần tạo · {{ count($plan['needs']) }} nhu cầu</span>
@@ -62,6 +64,30 @@
                             @endif
                         </span>
                     </div>
+                    <div class="line"><span class="k">Part</span><span class="v">{{ $grid['total'] }} part trong kế hoạch shot · {{ $grid['approved'] }} đã duyệt · {{ $grid['unapproved'] }} còn thiếu</span></div>
+                    @foreach($ref['parts'] as $row)
+                        <div class="line">
+                            <span class="k">{{ $row['part'] }}</span>
+                            <span class="v">{{ $row['name'] }} — {{ implode(', ', $row['shots']) }} · {!! $tag($row['status']) !!}@if($row['master'] !== null) · master {{ $row['master'] }}@endif @if($row['lapsed'] !== null)<span style="color:var(--vp-amber-fg)"> · cần kiểm lại: {{ $row['lapsed'] }}</span>@endif</span>
+                        </div>
+                    @endforeach
+                    @if(($motoImpact ?? null) !== null)
+                        <div class="line"><span class="k">Tác động</span><span class="v">kế hoạch Reference chưa lưu cho nguồn hiện hành — thay đổi theo từng shot so với bản lưu gần nhất; lưu kế hoạch không render ảnh, không viết lại prompt</span></div>
+                        @foreach($motoImpact as $row)
+                            <div class="line">
+                                <span class="k">{{ $row['shot_id'] }}</span>
+                                <span class="v">
+                                    @if($row['added'] !== [])thêm master {{ implode(', ', $row['added']) }} · @endif
+                                    @if($row['removed'] !== [])bớt master {{ implode(', ', $row['removed']) }} · @endif
+                                    @if($row['missing'] !== [])<span style="color:var(--vp-amber-fg)">part chưa có ảnh: {{ implode(', ', $row['missing']) }}</span> · @endif
+                                    gửi {{ $row['images'] }} ảnh, đủ nguồn ít nhất {{ $row['expected'] }}/{{ $row['limit'] }}
+                                    @if($row['over'])<span style="color:var(--vp-red)"> · vượt giới hạn</span>@endif
+                                    @if($row['image_prompt'] !== null) · prompt ảnh đã duyệt: {{ $row['image_prompt'] }}@endif
+                                    @if($row['video_prompt'] !== null) · prompt video đã duyệt: {{ $row['video_prompt'] }}@endif
+                                </span>
+                            </div>
+                        @endforeach
+                    @endif
                 @endif
                 @if($review['task'] !== null)
                     @include('video-projects.partials.task-state', ['task' => $review['task'], 'projectId' => $id])

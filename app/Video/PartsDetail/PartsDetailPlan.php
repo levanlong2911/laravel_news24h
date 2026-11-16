@@ -46,7 +46,6 @@ final class PartsDetailPlan
                     'work' => $shot['work_items'] ?? [],
                     'motorcycle' => $design['motorcycle'] ?? [],
                     'continuity' => $shot['continuity_start'] ?? null,
-                    'shot_prompt' => $shot['prompts']['image'] ?? '',
                     'connections' => array_values(array_filter($design['connections'] ?? [], fn ($c) => in_array($target, (array) ($c['between'] ?? []), true))),
                 ];
                 $key = CanonicalJson::hash($facts);
@@ -68,7 +67,7 @@ final class PartsDetailPlan
                 }
                 $needId = self::needKey($shot, $need);
                 $cells[$id]['needs'][] = $needId;
-                $needs[] = ['id' => $needId, 'shot_id' => $shot['id'], 'cell_id' => $id, 'request' => $need, 'prompt' => $shot['prompts']['image'] ?? ''];
+                $needs[] = ['id' => $needId, 'shot_id' => $shot['id'], 'cell_id' => $id, 'request' => $need];
             }
         }
         return ['version' => self::VERSION, 'needs' => $needs, 'cells' => array_values($cells), 'sheets' => self::sheets(array_values($cells))];
@@ -94,7 +93,7 @@ final class PartsDetailPlan
             foreach ($sheetCells as &$sheetCell) {
                 // Keep the exact film prompt in the inventory/UI, but do not repeat its
                 // scenery and all-part descriptions inside every reference render cell.
-                unset($sheetCell['facts']['motorcycle'], $sheetCell['facts']['shot_prompt']);
+                unset($sheetCell['facts']['motorcycle']);
             }
             unset($sheetCell);
             $template = file_get_contents(base_path('database/releases/moto-parts-detail-v1/parts-detail.md'));
