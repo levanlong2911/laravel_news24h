@@ -19,7 +19,6 @@ use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Media\VideoModelRegistry;
 use App\Video\Shots\ShotWorkflow;
 use App\Video\Superyacht\Spec\ResolvedPhase;
-use App\Video\Superyacht\Support\CanonicalJson;
 use RuntimeException;
 
 final class MotoShots implements ReleaseBound, ShotWorkflow
@@ -34,11 +33,12 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
     {
         $this->eventful = MotoPipelineRelease::cinematic($project);
         $this->releasePolicy = MotoPipelineRelease::policy($project, 'shots');
-        $this->evidence = (array) ($project->metadata_json[self::EVIDENCE_KEY] ?? []);
+        $law = MotoPipelineRelease::policy($project, 'scenes')['work_tracking_version'] ?? null;
+        $this->law = is_string($law) ? $law : null;
     }
 
-    /** @var array<string, mixed> the confirmation of procedures stored with the bound project; empty when it has none */
-    private array $evidence = [];
+    /** @var ?string the law the release of the bound project follows the work of its scene plans under; null for a release that names none */
+    private ?string $law = null;
 
     /** @var list<string> */
     private const BEAT_KEYS = ['id', 'act', 'state', 'time_jump', 'purpose', 'visual', 'location', 'time_light', 'reveal', 'on_screen', 'design_refs', 'in_use', 'configurations', 'situation', 'link', 'sfx'];
@@ -82,6 +82,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
     {
         return match (true) {
             ! $this->eventful => MotoContract::SHOTS_INPUT,
+            $this->law !== null => MotoContract::SHOTS_INPUT_V8,
             isset($this->releasePolicy['shot_editing_policy']) => MotoContract::SHOTS_INPUT_V6,
             default => MotoContract::SHOTS_INPUT_V5,
         };
@@ -120,6 +121,12 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
             throw new RuntimeException('Bộ bối cảnh đang dùng không phải bộ mà bản chia scene đã ghim.');
         }
 
+        $planLaw = is_string($scenes['plan']['work_tracking_version'] ?? null) ? $scenes['plan']['work_tracking_version'] : null;
+
+        if ($planLaw !== $this->law) {
+            throw new RuntimeException('Bản chia scene đã duyệt theo luật work '.($planLaw ?? 'cũ (không ghi tên)').', bản phát hành của dự án lập shot theo '.($this->law ?? 'luật cũ').' — cần bản chia scene của đúng bản phát hành này.');
+        }
+
         $design = MotoLocations::pinnedDesign($projectId, (array) ($source['design'] ?? []));
         $budget = isset($this->releasePolicy['shot_editing_policy']) ? (array) ($this->releasePolicy['shot_budget'] ?? []) : null;
         $built = self::build(
@@ -135,9 +142,9 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
             $this->eventful,
             $this->eventful ? $this->filmFps($projectId) : null,
             $budget,
+            $planLaw,
         );
-        $pinned = array_intersect_key($this->releasePolicy, array_flip(['shot_grouping_policy', 'shot_editing_policy', 'shot_budget']))
-            + array_intersect_key($this->evidenced($built['context']), ['procedure_evidence' => true, 'procedure_evidence_hash' => true]);
+        $pinned = array_intersect_key($this->releasePolicy, array_flip(['shot_grouping_policy', 'shot_editing_policy', 'shot_budget']));
         $problems = self::precheck($built['context'] + $pinned);
 
         if ($problems !== []) {
@@ -145,7 +152,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
         }
 
         return [
-            'payload' => $built['payload'] + array_intersect_key($pinned, ['procedure_evidence' => true]),
+            'payload' => $built['payload'],
             'source' => ['scenes' => $scenes['token']],
             'context' => $built['context'] + ['format' => $this->format()] + $pinned,
         ];
@@ -216,56 +223,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
 
     public function check(?array $response, array $context, array $schema): array
     {
-        return MotoShotsCheck::evaluate($response, $this->evidenced($context), $schema);
-    }
-
-    /** @var string the key of the project metadata that holds the confirmation of procedures a person made for the sources of the project */
-    public const EVIDENCE_KEY = 'moto_procedure_evidence';
-
-    /** @var string the format of that confirmation */
-    public const EVIDENCE_VERSION = 'moto-procedure-evidence-v2';
-
-    /** @var string the key of the project metadata that keeps every confirmation the project has had, oldest first, each with its hash, so the one a check or an approval names can be read after a later one replaced it */
-    public const EVIDENCE_HISTORY_KEY = 'moto_procedure_evidence_history';
-
-    /**
-     * @param  array<string, mixed>  $context  the check context of a shot run
-     * @return string what a confirmation of procedures is bound to: the operational limits of the design and, for every beat, the situation it states and the operating states of its events, as the context holds them. A confirmation made for other limits or other events does not apply
-     */
-    public static function evidenceSource(array $context): string
-    {
-        return CanonicalJson::hash([
-            'limits' => array_values((array) ($context['limits'] ?? [])),
-            'beats' => array_map(static fn (array $beat): array => [
-                'id' => $beat['id'] ?? null,
-                'situation' => $beat['situation'] ?? null,
-                'events' => array_map(static fn (array $event): array => array_intersect_key($event, array_flip(['id', 'operating_start', 'operating_end'])), array_values((array) ($beat['events'] ?? []))),
-            ], array_values((array) ($context['beats'] ?? []))),
-        ]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $context
-     * @return array<string, mixed> the context with the procedures the project's confirmation establishes, when the run pinned none of its own and the confirmation was made for exactly the limits and events this context holds; otherwise the context as it is
-     */
-    private function evidenced(array $context): array
-    {
-        if (array_key_exists('procedure_evidence', $context) || ($this->evidence['version'] ?? null) !== self::EVIDENCE_VERSION || ! is_array($this->evidence['records'] ?? null)) {
-            return $context;
-        }
-
-        return ($this->evidence['source'] ?? null) === self::evidenceSource($context)
-            ? $context + ['procedure_evidence' => array_values($this->evidence['records']), 'procedure_evidence_hash' => self::evidenceHash($this->evidence)]
-            : $context;
-    }
-
-    /**
-     * @param  array<string, mixed>  $record  a confirmation of procedures
-     * @return string what names that confirmation: the hash of its format, the sources it is bound to and its records, so a check or an approval can say exactly which one it was judged with
-     */
-    public static function evidenceHash(array $record): string
-    {
-        return CanonicalJson::hash(array_intersect_key($record, array_flip(['version', 'source', 'records'])));
+        return MotoShotsCheck::evaluate($response, $context, $schema);
     }
 
     public function derive(array $document, array $context): array
@@ -312,9 +270,10 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
      * @param  array<string, mixed>  $design  the data of the design the scene plan pinned
      * @param  list<string>  $available  the model sheet views with an approved image
      * @param  list<array{duration_ms: int, modes: list<string>, tools: array<string, list<string>>}>  $capabilities  the clip lengths and modes code can render
+     * @param  ?string  $law  the law the scene plan pinned for its work: the work is followed under it, and it is sent as work_tracking_version and pinned in the check context; null for a scene plan that names none, followed as before
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} what a shot list needs: the scenes with their timing, continuity, transitions and work, each work item with the presentation it gives every part it moves or keeps in place before and after it; the beats with their actions, reveal, situation, environment, the ids of the limits that apply to them and cards; the places and plates; the parts with their shapes, sizes and materials; every operational limit with the configurations it governs, the same list the check reads; the build states; the model sheet views; the render capabilities
      */
-    public static function build(array $scenePlan, array $sceneInput, array $script, array $locations, array $design, array $available, array $capabilities, bool $eventful = false, ?int $filmFps = null, ?array $budget = null): array
+    public static function build(array $scenePlan, array $sceneInput, array $script, array $locations, array $design, array $available, array $capabilities, bool $eventful = false, ?int $filmFps = null, ?array $budget = null, ?string $law = null): array
     {
         $times = array_column((array) ($sceneInput['beat_times'] ?? []), null, 'beat');
         $sceneKeys = ['id', 'beats', 'start_ms', 'end_ms', 'state', 'places', 'backgrounds', 'characters', 'purpose', 'set_brief', 'continuity_from', 'continuity_start', 'continuity_end', 'transition_in', 'work', ...($eventful ? ['blocking', 'event_ids'] : [])];
@@ -422,7 +381,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
             ] : ['physical' => false];
         }
 
-        $work = MotoWork::trace((array) $scenePlan['scenes'], array_column($beatFacts, 'state', 'id'), $facts, MotoScenes::workDesign($design));
+        $work = MotoWork::follow($law, (array) $scenePlan['scenes'], array_column($beatFacts, 'state', 'id'), $facts, MotoScenes::workDesign($design));
         $scenes = array_map(static fn (array $scene): array => array_replace($scene, ['work' => is_array($scene['work'] ?? null) ? array_map(static fn (array $item): array => $item + [
             'presentations' => array_map(static fn (array $place): array => ['start' => $place['start_status'], 'end' => $place['end_status']], $work['items'][$item['id']]['parts'] ?? []),
         ], $scene['work']) : null]), $scenes);
@@ -468,6 +427,11 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
             'render_capabilities' => array_map(static fn (array $capability): array => ['duration_ms' => $capability['duration_ms'], 'modes' => $capability['modes']], $capabilities),
         ];
 
+        if ($law !== null) {
+            $payload['work_tracking_version'] = $law;
+            $payload['motorcycle']['signature_moments'] = array_values((array) ($design['motorcycle']['signature_moments'] ?? []));
+        }
+
         $configurations = [];
 
         foreach ($parts as $part) {
@@ -480,7 +444,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
 
         return [
             'payload' => $payload,
-            'context' => ($eventful ? [
+            'context' => ($law === null ? [] : ['work_tracking_version' => $law]) + ($eventful ? [
                 'cards' => array_column(array_map(static fn (array $card): array => array_intersect_key($card, array_flip(['id', 'beat', 'event', 'type', 'text'])), (array) ($script['text_cards'] ?? [])), null, 'id'),
                 'directives' => array_values((array) ($script['shot_directives'] ?? [])),
                 'temporary' => array_map(static fn (array $state): array => array_values((array) ($state['temporary'] ?? [])), $records),
@@ -535,16 +499,6 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
         $work = (array) $context['work'];
         $problems = $work['issues'];
 
-        foreach ((array) $context['scenes'] as $scene) {
-            if (! is_string($scene['state'] ?? null) || ! ($context['states'][$scene['state']]['physical'] ?? false)) {
-                continue;
-            }
-
-            foreach (['start' => 'continuity_start', 'end' => 'continuity_end'] as $moment => $key) {
-                $problems = [...$problems, ...MotoWork::detachedIssues("{$scene['id']}.{$key}", $scene[$key]['detached_parts'] ?? null, $work['scenes'][$scene['id']][$moment] ?? [])];
-            }
-        }
-
         if (($context['shot_editing_policy'] ?? null) !== null) {
             $max = $context['shot_budget']['max'] ?? null;
 
@@ -555,12 +509,8 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
             }
         }
 
-        $before = null;
-        $stand = MotoScriptCheck::standPositions((array) ($context['part_records'] ?? []));
-
         foreach ((array) $context['beats'] as $beat) {
             $facts = is_string($beat['state']) ? ($context['states'][$beat['state']] ?? null) : null;
-            [$earlier, $before] = [$before, $beat];
 
             foreach ((array) $beat['configurations'] as $configurationId) {
                 $configuration = $context['configurations'][$configurationId] ?? null;
@@ -573,14 +523,6 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
 
                 if (is_array($facts) && $facts['physical'] && ! in_array($configuration['part'], (array) $facts['present'], true) && ! in_array($configuration['part'], (array) $facts['in_progress'], true)) {
                     $problems[] = "{$beat['id']}: cấu hình {$configurationId} thuộc {$configuration['part']}, không có ở {$beat['state']}.";
-                }
-
-                foreach ((array) $context['limits'] as $limit) {
-                    $unmet = in_array($configurationId, (array) $limit['governs'], true) ? MotoScriptCheck::unmet($limit, MotoScriptCheck::situationFor($beat, $earlier, (string) $configurationId, $stand, null, MotoScriptCheck::evidenceFor((array) ($context['procedure_evidence'] ?? []), (string) $limit['id']))) : [];
-
-                    if ($unmet !== []) {
-                        $problems[] = "{$beat['id']}: {$configurationId} chịu {$limit['id']} nhưng tình huống của beat chưa đạt: ".implode(', ', $unmet).'.';
-                    }
                 }
             }
         }

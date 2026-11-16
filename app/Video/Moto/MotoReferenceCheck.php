@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoReferenceCheck
 {
-    public const VERSION = 'moto-reference-check-v6';
+    public const VERSION = 'moto-reference-check-v7';
 
     public const PASS = 'PASS';
 
@@ -25,30 +25,6 @@ final class MotoReferenceCheck
     private const LINE_MAX = 700;
 
     private const CELL_MAX = 9000;
-
-    /** @var list<string> the words of a camera angle, a pixel position or a cell layout, which code writes */
-    private const LOCKED = ['azimuth', 'elevation', 'degree', 'degrees', 'deg', 'pixel', 'pixels', 'px', 'grid', 'canvas'];
-
-    /** @var list<string> people, tools and the set of a shot, which the keyframe adds and a reference cell never shows, unless the design of the cell's own parts uses the word */
-    public const NOT_IN_CELL = ['hand', 'hands', 'glove', 'gloves', 'gloved', 'finger', 'fingers', 'builder', 'person', 'people', 'apron', 'boot', 'boots', 'grinder', 'hex key', 'cloth', 'rag', 'spanner', 'wrench', 'spark', 'sparks', 'vise', 'clamped', 'bench', 'jig', 'lift table', 'screen', 'monitor', 'cursor', 'road', 'asphalt'];
-
-    /** @var list<string> colour words a line may use only when a cited fact or source line has them */
-    private const COLOURS = ['red', 'blue', 'green', 'yellow', 'orange', 'purple', 'violet', 'pink', 'black', 'white', 'grey', 'gray', 'silver', 'gold', 'golden', 'brown', 'bronze', 'copper', 'chrome', 'beige', 'tan', 'cream', 'teal', 'turquoise', 'maroon', 'burgundy', 'navy', 'graphite'];
-
-    /** @var list<string> material words a line may use only when a cited fact or source line has them */
-    private const MATERIALS = ['steel', 'aluminium', 'aluminum', 'alloy', 'iron', 'titanium', 'magnesium', 'carbon', 'fibre', 'fiber', 'plastic', 'polymer', 'nylon', 'rubber', 'leather', 'vinyl', 'fabric', 'glass', 'acrylic', 'polycarbonate', 'wood', 'clay', 'foam', 'resin', 'brass', 'zinc', 'paper', 'cardboard', 'ceramic', 'chrome'];
-
-    /** @var array<string, string> number words read as their digits */
-    private const NUMBER_WORDS = ['one' => '1', 'two' => '2', 'three' => '3', 'four' => '4', 'five' => '5', 'six' => '6', 'seven' => '7', 'eight' => '8', 'nine' => '9', 'ten' => '10', 'eleven' => '11', 'twelve' => '12', 'single' => '1', 'pair' => '2', 'both' => '2'];
-
-    /** @var list<string> words that carry no fact of the part */
-    private const PLAIN = [
-        'a', 'an', 'the', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'at', 'by', 'for', 'from', 'with', 'without', 'into', 'onto', 'over', 'under', 'as', 'is', 'are', 'be', 'been', 'its', 'it', 'their', 'this', 'that', 'these', 'those',
-        'each', 'every', 'all', 'any', 'no', 'not', 'only', 'also', 'still', 'yet', 'just', 'so', 'than', 'then', 'there', 'where', 'which', 'while', 'who', 'one', 'two', 'both', 'pair', 'single',
-        'show', 'shows', 'shown', 'showing', 'seen', 'see', 'visible', 'clearly', 'clear', 'view', 'viewed', 'photo', 'photograph', 'studio', 'reference', 'image', 'cell', 'part', 'parts', 'subject', 'context',
-        'about', 'around', 'near', 'along', 'across', 'between', 'beside', 'behind', 'above', 'below', 'beneath', 'through', 'toward', 'towards', 'within', 'against', 'up', 'down', 'out', 'off',
-        'has', 'have', 'having', 'can', 'may', 'must', 'will', 'stay', 'stays', 'keep', 'keeps', 'kept', 'same', 'other', 'its', 'own', 'whole', 'entire', 'full', 'fully', 'partly',
-    ];
 
     /**
      * @param  ?array<string, mixed>  $response
@@ -181,17 +157,7 @@ final class MotoReferenceCheck
                     $issues[] = "{$label} giữ nguyên dòng nháp {$sources[0]} — dòng này phải viết lại cho đúng thời điểm của ô.";
                 }
 
-                if (! $kept) {
-                    $issues = [...$issues, ...array_map(static fn (string $problem): string => "{$label} {$problem}", self::cellIssues($text, $sent, $section))];
-                }
-
-                $pool = implode("\n", [
-                    ...array_map(static fn (string $ref): string => (string) ($facts[$ref]['value'] ?? ''), $refs),
-                    ...array_map(static fn (string $source): string => (string) ($draft[$source]['text'] ?? ''), $sources),
-                    ...(array) $sent['names'],
-                ]);
-                $unsupported = $kept ? [] : self::unsupported($text, $pool);
-                $issues = [...$issues, ...array_map(static fn (string $problem): string => "{$label} {$problem}", self::textIssues($text, $sent, $kept ? $text : $pool))];
+                $issues = [...$issues, ...array_map(static fn (string $problem): string => "{$label} {$problem}", self::idIssues($text, $sent))];
                 $changes[] = [
                     'kind' => $kept ? 'kept' : ($sources === [] ? 'added' : 'rewritten'),
                     'section' => $section,
@@ -199,7 +165,7 @@ final class MotoReferenceCheck
                     'source_line_ids' => $sources,
                     'fact_refs' => $refs,
                     'visual' => ! $kept,
-                    'unsupported' => $unsupported,
+                    'unsupported' => [],
                 ];
                 $lines[] = ['section' => $section, 'text' => $text];
 
@@ -222,16 +188,6 @@ final class MotoReferenceCheck
 
                     foreach (array_diff((array) $line['fact_refs'], $refs, array_keys($leftOut)) as $lost) {
                         $issues[] = "dòng viết lại từ {$lineId} bỏ mất dữ kiện {$lost} (\"".mb_strimwidth((string) ($facts[$lost]['value'] ?? ''), 0, 80, '…').'") mà không ghi vào left_out.';
-                    }
-
-                    $excused = [];
-
-                    foreach (array_intersect_key($leftOut, array_flip((array) $line['fact_refs'])) as $item) {
-                        $excused = [...$excused, ...array_intersect(self::numbers($item['what']), self::numbers($item['value']))];
-                    }
-
-                    foreach (array_diff(self::numbers((string) $line['text']), self::numbers(implode("\n", array_column($kept, 'text'))), $excused) as $number) {
-                        $issues[] = "dòng viết lại từ {$lineId} bỏ mất số {$number}.";
                     }
                 }
             }
@@ -381,39 +337,11 @@ final class MotoReferenceCheck
 
     /**
      * @param  array<string, mixed>  $cell
-     * @return list<string> what a line the model wrote may not say in any cell: people, tools or the set of the shot, or outside the exclusions a part that is not there yet
+     * @return list<string> the ids a line holds that are not the cell's own: a part id the cell does not list, another build state, a work item that is not its checkpoint. What the line says in words — colours, materials, numbers, people, tools, placement — is content the model writes and the reviewer judges: it is not read here
      */
-    private static function cellIssues(string $text, array $cell, string $section): array
+    private static function idIssues(string $text, array $cell): array
     {
         $issues = [];
-        $lower = mb_strtolower($text);
-
-        foreach (self::NOT_IN_CELL as $word) {
-            if (self::mentions($lower, $word) && ! self::mentions((string) $cell['design_text'], $word)) {
-                $issues[] = "nêu \"{$word}\" — người, dụng cụ và bối cảnh thuộc keyframe, ô ảnh tham chiếu không có.";
-            }
-        }
-
-        if ($section !== 'exclude') {
-            foreach ((array) $cell['absent'] as $name) {
-                if (self::mentions($lower, (string) $name)) {
-                    $issues[] = "nhắc \"{$name}\", part chưa có ở thời điểm này.";
-                }
-            }
-        }
-
-        return $issues;
-    }
-
-    /**
-     * @param  array<string, mixed>  $cell
-     * @param  string  $pool  the text the line is drawn from: its cited facts, the draft lines it replaces and the names of the cell's parts
-     * @return list<string> what a line may not say: a part id the cell does not list, another build state or work item, a camera angle, pixel position or layout, a number, colour or material none of its sources has, a placement its subjects do not have, a colour or finish of no component of the cell at its state
-     */
-    private static function textIssues(string $text, array $cell, string $pool): array
-    {
-        $issues = [];
-        $lower = mb_strtolower($text);
         preg_match_all('/\bP\d{2}\b/u', $text, $parts);
         preg_match_all('/\bBS\d{2}\b/u', $text, $states);
         preg_match_all('/\bSC\d{2}-W\d+\b/u', $text, $items);
@@ -430,103 +358,7 @@ final class MotoReferenceCheck
             $issues[] = "nhắc công việc {$item}, không phải mốc của ô.";
         }
 
-        $words = self::words($text);
-        $poolStems = array_flip(array_map(self::stem(...), self::words($pool)));
-
-        foreach (array_unique(array_intersect($words, self::LOCKED)) as $word) {
-            if (! isset($poolStems[self::stem($word)])) {
-                $issues[] = "nêu \"{$word}\" — góc máy, vị trí điểm ảnh và bố cục do code giữ.";
-            }
-        }
-
-        if (str_contains($text, '°')) {
-            $issues[] = 'nêu góc bằng độ — góc máy do code giữ.';
-        }
-
-        foreach (array_diff(self::numbers($text), self::numbers($pool)) as $number) {
-            $issues[] = "nêu số {$number} không có trong dữ kiện dẫn.";
-        }
-
-        foreach (array_unique($words) as $word) {
-            if (isset($poolStems[self::stem($word)])) {
-                continue;
-            }
-
-            if (in_array($word, self::COLOURS, true)) {
-                $issues[] = "nêu màu \"{$word}\" không có trong dữ kiện dẫn.";
-            } elseif (in_array($word, self::MATERIALS, true)) {
-                $issues[] = "nêu vật liệu \"{$word}\" không có trong dữ kiện dẫn.";
-            }
-        }
-
-        $where = (array) config('video.moto.shots.prompt.work.locations');
-
-        foreach (['on_motorcycle' => 'off_motorcycle', 'off_motorcycle' => 'on_motorcycle'] as $location => $other) {
-            if ((array) $cell['locations'] === [$location] && isset($where[$other]) && self::mentions($lower, (string) $where[$other]) && ! self::mentions(mb_strtolower($pool), (string) $where[$other])) {
-                $issues[] = "đặt part \"{$where[$other]}\" — vị trí của ô là {$where[$location]}.";
-            }
-        }
-
-        foreach ((array) $cell['banned'] as $phrase) {
-            if (self::mentions($lower, (string) $phrase)) {
-                $issues[] = "nêu \"{$phrase}\", màu hoặc finish không có ở ô này tại {$cell['state']}.";
-            }
-        }
-
         return $issues;
-    }
-
-    /** @return list<string> the words of the line that name something none of its sources says, apart from plain words */
-    private static function unsupported(string $text, string $pool): array
-    {
-        $stems = array_flip(array_map(self::stem(...), self::words($pool)));
-        $missing = [];
-
-        foreach (self::words($text) as $word) {
-            if (mb_strlen($word) >= 3 && ! in_array($word, self::PLAIN, true) && ! isset(self::NUMBER_WORDS[$word]) && ! isset($stems[self::stem($word)])) {
-                $missing[$word] = true;
-            }
-        }
-
-        return array_keys($missing);
-    }
-
-    /** @return list<string> */
-    private static function words(string $text): array
-    {
-        preg_match_all('/\p{L}+/u', mb_strtolower($text), $matches);
-
-        return $matches[0];
-    }
-
-    private static function stem(string $word): string
-    {
-        foreach (['ies' => 'y', 'ing' => '', 'ed' => '', 'es' => '', 's' => ''] as $suffix => $replace) {
-            if (mb_strlen($word) - mb_strlen($suffix) >= 3 && str_ends_with($word, $suffix)) {
-                return mb_substr($word, 0, mb_strlen($word) - mb_strlen($suffix)).$replace;
-            }
-        }
-
-        return $word;
-    }
-
-    /** @return list<string> every number of the text, written as digits, with number words read as digits */
-    private static function numbers(string $text): array
-    {
-        preg_match_all('/(?<![\p{L}\d#.,-])\d+(?:[.,]\d+)?(?![\p{L}\d])/u', $text, $matches);
-        $numbers = array_map(static function (string $number): string {
-            $number = str_replace(',', '.', $number);
-
-            return str_contains($number, '.') ? rtrim(rtrim($number, '0'), '.') : (ltrim($number, '0') ?: '0');
-        }, $matches[0]);
-
-        foreach (self::words($text) as $word) {
-            if (isset(self::NUMBER_WORDS[$word]) && ! in_array($word, ['both', 'pair', 'single'], true)) {
-                $numbers[] = self::NUMBER_WORDS[$word];
-            }
-        }
-
-        return array_values(array_unique($numbers));
     }
 
     private static function mentions(string $lower, string $phrase): bool

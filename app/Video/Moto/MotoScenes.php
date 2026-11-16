@@ -23,9 +23,18 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow
     /** @var bool whether the project tells its story as events, with screen time set by the shot plan */
     private bool $eventful = false;
 
+    /** @var ?string the law the release of the bound project follows the work of a scene plan under, MotoWork::LAW_V2; null for a release that names none, whose plans keep the answer, the check and the planner they had */
+    private ?string $law = null;
+
+    /** @var string the release of the bound project */
+    private string $release = MotoPipelineRelease::LEGACY;
+
     public function bind(VideoProject $project): void
     {
         $this->eventful = MotoPipelineRelease::cinematic($project);
+        $this->release = MotoPipelineRelease::of($project);
+        $law = MotoPipelineRelease::policy($project, 'scenes')['work_tracking_version'] ?? null;
+        $this->law = is_string($law) ? $law : null;
     }
 
     public const LOCATIONS_TOKEN = 'moto-scenes-locations-token-v1';
@@ -40,22 +49,30 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow
 
     public function format(): string
     {
-        return $this->eventful ? MotoContract::SCENES_FORMAT_V2 : MotoContract::SCENES_FORMAT;
+        return match (true) {
+            $this->law !== null => MotoContract::SCENES_FORMAT_V3,
+            $this->eventful => MotoContract::SCENES_FORMAT_V2,
+            default => MotoContract::SCENES_FORMAT,
+        };
     }
 
     public function checkVersion(): string
     {
-        return MotoScenesCheck::VERSION;
+        return $this->law !== null ? MotoScenesCheck::VERSION_TRACKED : MotoScenesCheck::VERSION;
     }
 
     public function plannerVersion(): string
     {
-        return MotoScenePlanner::VERSION;
+        return $this->law !== null ? MotoScenePlanner::VERSION_TRACKED : MotoScenePlanner::VERSION;
     }
 
     public function inputsVersion(): string
     {
-        return $this->eventful ? MotoContract::SCENES_INPUT_V3 : MotoContract::SCENES_INPUT;
+        return match (true) {
+            $this->law !== null => MotoContract::SCENES_INPUT_V4,
+            $this->eventful => MotoContract::SCENES_INPUT_V3,
+            default => MotoContract::SCENES_INPUT,
+        };
     }
 
     public function settings(): array
@@ -100,7 +117,11 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow
             throw new RuntimeException('Kịch bản đã duyệt không còn payload đã ghim — không chia được scene.');
         }
 
-        $built = self::build((array) $script['document']['data'], (array) $document['data'], $design, (array) $pinned['variables'], $this->eventful);
+        if ($this->law !== null && ! $this->eventful) {
+            throw new RuntimeException("Bản phát hành {$this->release} khai luật work {$this->law} nhưng không kể chuyện bằng sự kiện — không chia scene.");
+        }
+
+        $built = self::build((array) $script['document']['data'], (array) $document['data'], $design, (array) $pinned['variables'], $this->eventful, $this->law);
 
         return [
             'payload' => $built['payload'],
@@ -109,7 +130,12 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow
                 'locations' => $this->locationsToken($text),
                 'design' => ['design_stage_id' => (string) ($designSource['design_stage_id'] ?? ''), 'design_raw_sha256' => (string) ($designSource['design_raw_sha256'] ?? '')],
             ],
-            'context' => $built['context'] + ['format' => $this->format()],
+            'context' => $built['context'] + ['format' => $this->format()] + ($this->law === null ? [] : [
+                'release' => $this->release,
+                'input_format' => $this->inputsVersion(),
+                'check_version' => $this->checkVersion(),
+                'planner_version' => $this->plannerVersion(),
+            ]),
         ];
     }
 
@@ -176,9 +202,10 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow
      * @param  array<string, mixed>  $design  the data of the design the background text pinned
      * @param  array<string, mixed>  $variables  the variables the script was written with
      * @param  bool  $eventful  whether the script tells its beats as events without screen time: the beats then carry their events, no times are sent, and each beat counts as one step of an ordinal timing
+     * @param  ?string  $law  the law the work of the plan is followed under, sent as work_tracking_version and pinned in the check context; null for a plan that names none
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} the beats with their times; the places, plates and uses of every beat with the background text's continuity and conflicts; the parts present and in progress, the exceptions, configurations and lights of the build states the beats use; every part with the part it is mounted on and its first build state on the motorcycle; no full design, image prompt or model-sheet prompt
      */
-    public static function build(array $script, array $locations, array $design, array $variables, bool $eventful = false): array
+    public static function build(array $script, array $locations, array $design, array $variables, bool $eventful = false, ?string $law = null): array
     {
         $beatKeys = $eventful ? [...array_values(array_diff(self::BEAT_KEYS, ['duration_s'])), 'events'] : self::BEAT_KEYS;
         $facts = MotoScriptCheck::facts($design);
@@ -312,9 +339,13 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow
             unset($payload['beat_times']);
         }
 
+        if ($law !== null) {
+            $payload['work_tracking_version'] = $law;
+        }
+
         return [
             'payload' => $payload,
-            'context' => ($eventful ? ['timing' => self::ORDINAL] : []) + [
+            'context' => ($eventful ? ['timing' => self::ORDINAL] : []) + ($law === null ? [] : ['work_tracking_version' => $law]) + [
                 'input' => $payload,
                 'beats' => $beatFacts,
                 'states' => $known,

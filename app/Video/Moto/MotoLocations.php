@@ -137,13 +137,13 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound
     {
         return array_map(
             static fn (string $error): array => ['code' => 'SCHEMA', 'path' => '', 'message' => $error],
-            PhaseOneEvidence::schemaErrors($decoded, $bundle->outputSchemas()),
+            PhaseOneEvidence::schemaErrors($decoded, MotoContract::technicalSchemas($bundle->outputSchemas())),
         );
     }
 
     public function check(?array $response, array $context, array $schema): array
     {
-        return MotoLocationsCheck::evaluate($response, $context, $schema);
+        return MotoLocationsCheck::evaluate($response, $context, $schema) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION];
     }
 
     public function derive(array $document, array $context): array

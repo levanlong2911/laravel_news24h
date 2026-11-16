@@ -170,13 +170,13 @@ final class MotoScript implements ReleaseBound, ScriptWorkflow
     {
         return array_map(
             static fn (string $error): array => ['code' => 'SCHEMA', 'path' => '', 'message' => $error],
-            PhaseOneEvidence::schemaErrors($decoded, $bundle->outputSchemas()),
+            PhaseOneEvidence::schemaErrors($decoded, MotoContract::technicalSchemas($bundle->outputSchemas())),
         );
     }
 
     public function check(?array $response, array $context, array $schema): array
     {
-        return MotoScriptCheck::evaluate($response, $context, $schema, (array) $context['policy']);
+        return MotoScriptCheck::evaluate($response, $context, $schema, (array) $context['policy']) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION];
     }
 
     public function derive(array $document, array $context): array

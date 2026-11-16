@@ -141,7 +141,8 @@ final class SceneWriterService implements QueuedStageService
             'run_error' => $runError,
             'can_run' => $run !== null && $served === null,
             'can_rewrite' => $run !== null && $served !== null,
-            'prompt' => $run === null ? null : 'Prompt '.$run['phase']->phase_code.' revision '.$run['phase']->revision,
+            'prompt' => $run === null ? null : 'Prompt '.$run['phase']->phase_code.' revision '.$run['phase']->revision
+                .(isset($run['metadata']['context']['work_tracking_version']) ? ' · '.$flow['adapter']->format().' · luật work '.$run['metadata']['context']['work_tracking_version'] : ''),
             'model' => $settings['model'],
             'effort' => $settings['effort'],
             'max_tokens' => $settings['max_tokens'],
@@ -173,6 +174,7 @@ final class SceneWriterService implements QueuedStageService
                 'revision' => (int) $shown->planning_revision,
                 'revised' => self::revisionOf($shown),
                 'integrity_error' => $integrity,
+                'derived_problem' => $integrity === null ? ($evaluation['derived_problem'] ?? null) : null,
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
                 'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version'])),
@@ -467,6 +469,6 @@ final class SceneWriterService implements QueuedStageService
             'derived' => $evaluation['derived'],
             'check' => $evaluation['check'],
             'content_hash' => $evaluation['content_hash'],
-        ];
+        ] + ($run['adapter'] instanceof \App\Video\Moto\MotoScenes && is_array($evaluation['derived'] ?? null) ? [SceneSourceService::DERIVED_HASH_KEY => SceneSourceService::derivedHash($evaluation['derived'])] : []);
     }
 }

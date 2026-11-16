@@ -25,7 +25,354 @@ final class MotoWork
     /** @var list<string> the work that keeps a part where it is */
     private const IN_PLACE = ['make', 'finish', 'assemble', 'paint'];
 
+    /** @var string the law of trace(): a part being made starts off the motorcycle, and the parts the design mounts on a named part go with it. A scene plan that names no law is followed under it */
+    public const LAW_V1 = 'moto-work-tracking-v1';
+
+    /** @var string the law of traceConnected(): making a part never decides where it is, a part goes with another only through a connection the work established, and the detached parts of a scene are derived from the work */
+    public const LAW_V2 = 'moto-work-tracking-v2';
+
+    /**
+     * @param  ?string  $law  the law the scene plan pinned, null for a plan made before laws were named
+     * @param  list<array<string, mixed>>  $scenes
+     * @param  array<string, ?string>  $beatStates
+     * @param  array<string, array<string, mixed>>  $states
+     * @param  array{first_states: array<string, ?string>, parents: array<string, ?string>, finished: list<string>}  $design
+     * @return array<string, mixed> trace() for a plan under LAW_V1 or under no named law, traceConnected() for one under LAW_V2
+     *
+     * @throws \RuntimeException when the plan names a law this code does not have
+     */
+    public static function follow(?string $law, array $scenes, array $beatStates, array $states, array $design): array
+    {
+        return match ($law) {
+            null, self::LAW_V1 => self::trace($scenes, $beatStates, $states, $design),
+            self::LAW_V2 => self::traceConnected($scenes, $beatStates, $states, $design),
+            default => throw new \RuntimeException("Bản chia scene ghim luật work {$law} mà code này không có."),
+        };
+    }
+
+    /**
+     * @param  array<string, array{location: string, status: string}>  $held  where the work holds each part at one moment
+     * @return list<array{part: string, status: string}> the parts the work holds off the motorcycle then, each being_made, removed or awaiting_install; a part on the motorcycle is not listed
+     */
+    public static function detached(array $held): array
+    {
+        $rows = [];
+
+        foreach ($held as $part => $place) {
+            if ($place['location'] === self::OFF) {
+                $rows[] = ['part' => (string) $part, 'status' => (string) $place['status']];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  array<string, mixed>  $facts  the facts of a physical build state: present, in_progress
+     * @param  array<string, array{location: string, status: string}>  $held  where the work holds each part at one moment
+     * @return list<string> the parts the build state only makes whose place no work has established by then: neither on the motorcycle nor off it is known
+     */
+    public static function unplaced(array $facts, array $held): array
+    {
+        return array_values(array_filter(
+            array_map('strval', (array) ($facts['in_progress'] ?? [])),
+            static fn (string $part): bool => ! in_array($part, (array) ($facts['present'] ?? []), true) && ! isset($held[$part]),
+        ));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $scenes  the scenes in screen order, each with its id, beats and work; a work item may carry connection_changes
+     * @param  array<string, ?string>  $beatStates  the build state of every beat
+     * @param  array<string, array<string, mixed>>  $states  the facts of every physical build state the beats use: present, in_progress
+     * @param  array{first_states: array<string, ?string>, parents: array<string, ?string>, finished: list<string>}  $design
+     * @return array{law: string, issues: list<string>, items: array<string, array<string, mixed>>, beats: array<string, array<string, list<array{location: string, status: string, item: string, moment: string}>>>, scenes: array<string, array{start: array<string, array{location: string, status: string, item: string, moment: string}>, end: array<string, array{location: string, status: string, item: string, moment: string}>}>} the work followed under LAW_V2, in the shape of trace(). What differs: making, finishing, painting or assembling a part keeps it where it is and the first such work establishes that place, on the motorcycle or off it; within a build state a place holds until a fitting or a removal; only the parts an item names and the parts a connection of the same build state attaches to them, directly or through other parts, go with it — the design's mounting tree and a shared place attach nothing; a connection is attached or detached by connection_changes of an item that names one of its two parts; attaching two parts in different places, attaching a part still attached elsewhere, detaching a part from another part than the one it is attached to, and moving an attached part away from the part it is attached to with no detach are contradictions, each naming the work, the part and the evidence; so are a connection change on a part its build state neither has nor makes, and an attachment to or of a part whose place is not established. Where a part is at an instant of a build state: where its last work of that state left it, otherwise where its first work of that state starts, otherwise on the motorcycle when the state has it present and does not make it, otherwise not established. The places a scene and a beat hold are read the same way: a part whose first work of the build state comes in a later beat or scene is held, from the start of that build state, where that work starts, named by that work. A connection change is recorded only once it stands; a part detached by the work is known to be attached to nothing until it is attached again, so detaching it once more is a contradiction, while a part no work has attached or detached may be detached on its event
+     */
+    public static function traceConnected(array $scenes, array $beatStates, array $states, array $design): array
+    {
+        $issues = [];
+        $items = [];
+        $beats = [];
+        $held = [];
+        $last = [];
+        $on = [];
+        $links = [];
+        $first = [];
+        $freed = [];
+        $ids = [];
+        $doubt = [];
+
+        foreach ($scenes as $scene) {
+            foreach (array_values((array) ($scene['work'] ?? [])) as $index => $item) {
+                $state = $beatStates[$item['beat']] ?? null;
+
+                foreach ([(string) $item['part'], ...array_map('strval', (array) ($item['with'] ?? []))] as $part) {
+                    $first[(string) $state][$part] ??= ['location' => (string) $item['location_start'], 'item' => self::key((string) $scene['id'], $index)];
+                }
+            }
+        }
+
+        $placed = static function (?string $state) use (&$last, &$on, $first, $states, $design): array {
+            $held = self::heldAt($last, $state);
+            $facts = is_string($state) ? ($states[$state] ?? null) : null;
+
+            if (! is_array($facts) || ! isset($facts['present'])) {
+                return $held;
+            }
+
+            foreach ($first[$state] ?? [] as $part => $opening) {
+                if (! isset($held[$part]) && array_key_exists($part, $design['first_states'])) {
+                    $held[$part] = [
+                        'location' => $opening['location'],
+                        'status' => self::status($opening['location'], in_array($part, (array) $facts['in_progress'], true), self::wasOn($on, (string) $part, $state, $design)),
+                        'item' => $opening['item'],
+                        'moment' => 'start',
+                    ];
+                }
+            }
+
+            return $held;
+        };
+
+        foreach ($scenes as $scene) {
+            $sceneId = (string) $scene['id'];
+            $order = array_values((array) $scene['beats']);
+            $sceneState = $beatStates[$order[0] ?? ''] ?? null;
+            $start = $placed($sceneState);
+            $work = array_values((array) ($scene['work'] ?? []));
+            $position = -1;
+
+            foreach ($work as $index => $item) {
+                $at = array_search($item['beat'], $order, true);
+                $label = self::key($sceneId, $index)." ({$item['beat']} {$item['part']} {$item['operation']})";
+
+                if ($at === false) {
+                    $ids[] = "{$label}: {$item['beat']} không thuộc {$sceneId}.";
+                } elseif ($at < $position) {
+                    $ids[] = "{$label}: work của {$sceneId} phải theo thứ tự beat.";
+                }
+
+                $position = $at === false ? $position : max($position, $at);
+            }
+
+            foreach ($order as $beat) {
+                $state = $beatStates[$beat] ?? null;
+
+                foreach ($placed($state) as $part => $place) {
+                    $beats[$beat][$part] = [$place];
+                }
+
+                foreach ($work as $index => $item) {
+                    if ($item['beat'] !== $beat) {
+                        continue;
+                    }
+
+                    $key = self::key($sceneId, $index);
+                    $label = "{$key} ({$item['beat']} {$item['part']} {$item['operation']})";
+                    $facts = is_string($state) ? ($states[$state] ?? null) : null;
+                    $named = array_values(array_unique([(string) $item['part'], ...array_map('strval', (array) ($item['with'] ?? []))]));
+                    $unknown = self::unknownParts($named, $design);
+
+                    if ($unknown !== []) {
+                        $ids[] = "{$label}: ".implode(', ', $unknown).' không có trong thiết kế.';
+                    }
+
+                    foreach (array_values((array) ($item['connection_changes'] ?? [])) as $change) {
+                        $strangers = self::unknownParts([(string) $change['part'], (string) $change['parent']], $design);
+
+                        if ($strangers !== []) {
+                            $ids[] = "{$label}: connection_changes nêu ".implode(', ', $strangers).', không có trong thiết kế.';
+                        }
+                    }
+
+                    if (! is_array($facts) || ! isset($facts['present']) || ($facts['physical'] ?? true) === false) {
+                        $issues[] = "{$label}: {$beat} ở ".($state ?? 'state null').' chưa có xe thật — không có công việc trên part.';
+
+                        continue;
+                    }
+
+                    if ($unknown !== []) {
+                        continue;
+                    }
+
+                    $present = static fn (string $part): bool => in_array($part, (array) $facts['present'], true);
+                    $making = static fn (string $part): bool => in_array($part, (array) $facts['in_progress'], true);
+                    $issues = [...$issues, ...self::basisIssues($label, $item, $state, $present, $making)];
+                    $issues = [...$issues, ...self::moveIssues($label, $item, self::wasOn($on, (string) $item['part'], $state, $design))];
+                    $doubted = self::basisIssues($label, $item, $state, $present, $making) !== [] || self::moveIssues($label, $item, self::wasOn($on, (string) $item['part'], $state, $design)) !== [];
+                    $mark = count($issues);
+                    $from = (string) $item['location_start'];
+                    $to = (string) $item['location_end'];
+                    $attaches = [];
+                    $recorded = [];
+
+                    foreach (array_values((array) ($item['connection_changes'] ?? [])) as $change) {
+                        $loose = ($freed[(string) $change['part']]['state'] ?? null) === $state ? $freed[(string) $change['part']] : null;
+                        $child = (string) $change['part'];
+                        $parent = (string) $change['parent'];
+                        $cited = implode(', ', array_column((array) ($change['evidence'] ?? []), 'path'));
+                        $strangers = array_values(array_filter([$child, $parent], static fn (string $part): bool => ! array_key_exists($part, $design['first_states'])));
+                        $absent = array_values(array_filter([$child, $parent], static fn (string $part): bool => ! $present($part) && ! $making($part)));
+                        $existing = ($links[$child]['state'] ?? null) === $state ? $links[$child] : null;
+
+                        if ($strangers !== []) {
+                            continue;
+                        }
+
+                        if ($child === $parent) {
+                            $issues[] = "{$label}: connection_changes nối {$child} với chính nó.";
+                        } elseif (! in_array($child, $named, true) && ! in_array($parent, $named, true)) {
+                            $issues[] = "{$label}: connection_changes {$change['change']} {$child} — {$parent} nhưng công việc này không nêu part nào trong hai part đó (part hoặc with).";
+                        } elseif ($absent !== []) {
+                            $issues[] = "{$label}: connection_changes {$change['change']} {$child} — {$parent} nhưng ".implode(', ', $absent)." chưa có ở {$state} (không có trên xe, không đang chế tạo) — không nối hay tách part chưa tồn tại; bằng chứng {$cited}.";
+                        } elseif ($change['change'] === 'detach') {
+                            if ($existing !== null && $existing['parent'] !== $parent) {
+                                $issues[] = "{$label}: connection_changes tách {$child} khỏi {$parent} nhưng {$child} đang gắn vào {$existing['parent']} (xác lập ở {$existing['item']}) — không ghi nhận; bằng chứng {$cited}.";
+
+                                continue;
+                            }
+
+                            if ($existing === null && $loose !== null) {
+                                $issues[] = "{$label}: connection_changes tách {$child} khỏi {$parent} nhưng {$child} đã được tách khỏi {$loose['parent']} ở {$loose['item']} và chưa gắn lại — hiện không gắn vào part nào; bằng chứng {$cited}.";
+
+                                continue;
+                            }
+
+                            unset($links[$child]);
+                            $freed[$child] = ['parent' => $parent, 'state' => $state, 'item' => $key];
+                            $recorded[] = ['part' => $child, 'parent' => $parent, 'change' => 'detach'];
+                        } else {
+                            $attaches[] = ['part' => $child, 'parent' => $parent, 'evidence' => $cited];
+                        }
+                    }
+
+                    $moved = [...$named, ...self::attached($named, $links, $state)];
+                    $parts = [];
+
+                    foreach ($moved as $part) {
+                        $before = $last[$part] ?? null;
+                        $link = ($links[$part]['state'] ?? null) === $state ? $links[$part] : null;
+
+                        if ($before !== null && $before['state'] === $state && $before['location'] !== $from) {
+                            $issues[] = in_array($part, $named, true)
+                                ? "{$label}: {$part} rời {$before['beat']} ở {$before['location']} nhưng bắt đầu ở {$from} trong cùng {$state} mà không có công việc nào ở giữa."
+                                : "{$label}: {$part} đang gắn vào {$link['parent']} (xác lập ở {$link['item']}) nên đi cùng công việc này, nhưng {$part} rời {$before['beat']} ở {$before['location']} còn công việc bắt đầu ở {$from}.";
+                        }
+
+                        $wasOn = self::wasOn($on, $part, $state, $design);
+
+                        if ($item['operation'] === self::ALIGN_CHECK && in_array($part, $named, true) && $wasOn && $present($part) && ($before === null || $before['state'] !== $state)) {
+                            $issues[] = "{$label}: {$part} đang ở trên xe tại {$state} — align_check chỉ đối chiếu khi chi tiết còn ngoài xe.";
+                        }
+
+                        $startStatus = self::status($from, $making($part), $wasOn);
+                        $on[$part] = $wasOn || $from === self::ON || $to === self::ON;
+                        $endStatus = self::status($to, $making($part), $on[$part]);
+                        $parts[$part] = ['start' => $from, 'end' => $to, 'start_status' => $startStatus, 'end_status' => $endStatus];
+                        $start[$part] ??= ['location' => $from, 'status' => $startStatus, 'item' => $key, 'moment' => 'start'];
+                        $beats[$beat][$part] ??= [['location' => $from, 'status' => $startStatus, 'item' => $key, 'moment' => 'start']];
+                        $beats[$beat][$part][] = ['location' => $to, 'status' => $endStatus, 'item' => $key, 'moment' => 'end'];
+                        $last[$part] = ['state' => $state, 'location' => $to, 'status' => $endStatus, 'beat' => $beat, 'item' => $key];
+                    }
+
+                    $place = static fn (string $part): ?array => match (true) {
+                        ($last[$part]['state'] ?? null) === $state => ['location' => $last[$part]['location'], 'basis' => "sau {$last[$part]['item']}"],
+                        isset($first[(string) $state][$part]) => ['location' => $first[(string) $state][$part]['location'], 'basis' => "nơi công việc đầu tiên của nó ở {$state}, {$first[(string) $state][$part]['item']}, bắt đầu"],
+                        $present($part) && ! $making($part) => ['location' => self::ON, 'basis' => "{$state} ghi có trên xe, không công việc nào dời nó"],
+                        default => null,
+                    };
+
+                    foreach ($moved as $part) {
+                        $link = ($links[$part]['state'] ?? null) === $state ? $links[$part] : null;
+                        $anchor = $link === null || in_array($link['parent'], $moved, true) ? null : $place($link['parent']);
+
+                        if ($anchor !== null && $anchor['location'] !== $to) {
+                            $issues[] = "{$label}: {$part} đang gắn vào {$link['parent']} (xác lập ở {$link['item']}) nhưng công việc này để {$part} ở {$to} trong khi {$link['parent']} ở {$anchor['location']} — tách thì phải khai connection_changes detach có bằng chứng.";
+                        }
+                    }
+
+                    foreach ($attaches as $attach) {
+                        $existing = ($links[$attach['part']]['state'] ?? null) === $state ? $links[$attach['part']] : null;
+                        $a = $place($attach['part']);
+                        $b = $place($attach['parent']);
+                        $unplaced = array_values(array_filter([$a === null ? $attach['part'] : null, $b === null ? $attach['parent'] : null]));
+
+                        if ($existing !== null && $existing['parent'] !== $attach['parent']) {
+                            $issues[] = "{$label}: connection_changes gắn {$attach['part']} vào {$attach['parent']} nhưng {$attach['part']} đang gắn vào {$existing['parent']} (xác lập ở {$existing['item']}) — phải detach trước; bằng chứng {$attach['evidence']}.";
+                        } elseif ($unplaced !== []) {
+                            $issues[] = "{$label}: connection_changes gắn {$attach['part']} vào {$attach['parent']} nhưng vị trí của ".implode(', ', $unplaced)." ở {$state} chưa được xác lập (đang chế tạo, chưa công việc nào cho biết trên xe hay ngoài xe) — không nối được với part chưa rõ ở đâu; bằng chứng {$attach['evidence']}.";
+                        } elseif ($a['location'] !== $b['location']) {
+                            $issues[] = "{$label}: connection_changes gắn {$attach['part']} vào {$attach['parent']} nhưng {$attach['part']} ở {$a['location']} ({$a['basis']}) còn {$attach['parent']} ở {$b['location']} ({$b['basis']}) — hai part khác chỗ thì không nối được; bằng chứng {$attach['evidence']}.";
+                        } else {
+                            $links[$attach['part']] = ['parent' => $attach['parent'], 'state' => $state, 'item' => $key];
+                            unset($freed[$attach['part']]);
+                            $recorded[] = ['part' => $attach['part'], 'parent' => $attach['parent'], 'change' => 'attach'];
+                        }
+                    }
+
+                    if (in_array($state, $design['finished'], true) && $to !== self::ON) {
+                        $issues[] = "{$label}: {$state} là xe hoàn thiện — part không được kết thúc ngoài xe.";
+                    }
+
+                    if ($doubted || count($issues) > $mark) {
+                        foreach ([...$moved, ...array_merge([], ...array_map(static fn (array $change): array => [(string) $change['part'], (string) $change['parent']], array_values((array) ($item['connection_changes'] ?? []))))] as $part) {
+                            $doubt[(string) $state][(string) $part] = true;
+                        }
+                    }
+
+                    $items[$key] = ['beat' => $beat, 'part' => (string) $item['part'], 'operation' => (string) $item['operation'], 'parts' => $parts, 'connections' => $recorded];
+                }
+            }
+
+            $held[$sceneId] = ['start' => $start, 'end' => $placed($sceneState)];
+        }
+
+        return ['law' => self::LAW_V2, 'issues' => $ids, 'contradictions' => $issues, 'doubt' => array_map(static fn (array $parts): array => array_map('strval', array_keys($parts)), $doubt), 'items' => $items, 'beats' => $beats, 'scenes' => $held];
+    }
+
+    /**
+     * @param  list<string>  $named  the parts an item names
+     * @param  array<string, array{parent: string, state: ?string, item: string}>  $links  the connections the work established so far, by the attached part
+     * @param  ?string  $state  the build state of the item
+     * @return list<string> the parts a connection of that build state attaches to a named part, directly or through other attached parts
+     */
+    private static function attached(array $named, array $links, ?string $state): array
+    {
+        $attached = [];
+
+        foreach (array_keys($links) as $part) {
+            $part = (string) $part;
+
+            if (in_array($part, $named, true)) {
+                continue;
+            }
+
+            $seen = [];
+
+            for ($at = $part; isset($links[$at]) && $links[$at]['state'] === $state && ! isset($seen[$at]); $at = $links[$at]['parent']) {
+                $seen[$at] = true;
+
+                if (in_array($links[$at]['parent'], $named, true)) {
+                    $attached[] = $part;
+
+                    break;
+                }
+            }
+        }
+
+        return $attached;
+    }
+
     /** @return string the id code gives a work item of the scene plan */
+    /**
+     * @param  list<string>  $parts  the part ids a work item or a connection change names
+     * @param  array<string, mixed>  $design  the design facts a trace reads, with first_states by part id
+     * @return list<string> those the design does not have; read before anything else of the work, so no state of a beat hides an id that does not exist
+     */
+    private static function unknownParts(array $parts, array $design): array
+    {
+        return array_values(array_unique(array_filter($parts, static fn (string $part): bool => ! array_key_exists($part, (array) $design['first_states']))));
+    }
+
     public static function key(string $scene, int $index): string
     {
         return $scene.'-W'.($index + 1);
@@ -46,6 +393,7 @@ final class MotoWork
         $held = [];
         $last = [];
         $on = [];
+        $ids = [];
 
         foreach ($scenes as $scene) {
             $sceneId = (string) $scene['id'];
@@ -60,9 +408,9 @@ final class MotoWork
                 $label = self::key($sceneId, $index)." ({$item['beat']} {$item['part']} {$item['operation']})";
 
                 if ($at === false) {
-                    $issues[] = "{$label}: {$item['beat']} không thuộc {$sceneId}.";
+                    $ids[] = "{$label}: {$item['beat']} không thuộc {$sceneId}.";
                 } elseif ($at < $position) {
-                    $issues[] = "{$label}: work của {$sceneId} phải theo thứ tự beat.";
+                    $ids[] = "{$label}: work của {$sceneId} phải theo thứ tự beat.";
                 }
 
                 $position = $at === false ? $position : max($position, $at);
@@ -83,6 +431,12 @@ final class MotoWork
                     $key = self::key($sceneId, $index);
                     $label = "{$key} ({$item['beat']} {$item['part']} {$item['operation']})";
                     $facts = is_string($state) ? ($states[$state] ?? null) : null;
+                    $named = array_values(array_unique([(string) $item['part'], ...array_map('strval', (array) ($item['with'] ?? []))]));
+                    $unknown = self::unknownParts($named, $design);
+
+                    if ($unknown !== []) {
+                        $ids[] = "{$label}: ".implode(', ', $unknown).' không có trong thiết kế.';
+                    }
 
                     if (! is_array($facts) || ! isset($facts['present']) || ($facts['physical'] ?? true) === false) {
                         $issues[] = "{$label}: {$beat} ở ".($state ?? 'state null').' chưa có xe thật — không có công việc trên part.';
@@ -90,12 +444,7 @@ final class MotoWork
                         continue;
                     }
 
-                    $named = array_values(array_unique([(string) $item['part'], ...array_map('strval', (array) ($item['with'] ?? []))]));
-                    $unknown = array_values(array_filter($named, static fn (string $part): bool => ! array_key_exists($part, $design['first_states'])));
-
                     if ($unknown !== []) {
-                        $issues[] = "{$label}: ".implode(', ', $unknown).' không có trong thiết kế.';
-
                         continue;
                     }
 
@@ -143,7 +492,7 @@ final class MotoWork
             $held[$sceneId] = ['start' => $start, 'end' => self::heldAt($last, $sceneState)];
         }
 
-        return ['issues' => $issues, 'items' => $items, 'beats' => $beats, 'scenes' => $held];
+        return ['issues' => $ids, 'contradictions' => $issues, 'items' => $items, 'beats' => $beats, 'scenes' => $held];
     }
 
     /**

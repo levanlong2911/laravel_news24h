@@ -110,7 +110,7 @@ final class YachtDesignService implements QueuedStageService
         $locked = $design !== null && $this->approval->approves($projectId, $design);
         $exact = $design !== null && $run !== null && hash_equals((string) $design->input_hash, $this->stageStore->inputHash($run['input']));
         $integrity = $design === null ? null : $this->approval->integrityProblem($projectId, $design, $workflow);
-        $check = $design !== null && is_array($design->output_json['check'] ?? null) ? $design->output_json['check'] : [];
+        $check = $design === null ? [] : $this->approval->checkOf($design);
         $usable = $integrity === null && ($check['verdict'] ?? null) === YachtDesignCheck::PASS;
         $clean = ($check['warnings'] ?? []) === [];
         $evaluated = null;
@@ -248,7 +248,7 @@ final class YachtDesignService implements QueuedStageService
         $current = $decision['exact'];
         [$filled, $check] = $current
             ? ($decision['evaluated'] ?? $this->evaluate((string) ($stored['raw_text'] ?? ''), $run, self::manifestOf($shown)))
-            : [null, is_array($stored['check'] ?? null) ? $stored['check'] : null];
+            : [null, $succeeded ? ($this->approval->checkOf($shown) ?: null) : null];
         $data = is_object($filled)
             ? json_decode((string) json_encode($filled->data ?? null), true)
             : (is_array($stored['design']['data'] ?? null) ? $stored['design']['data'] : null);
@@ -385,7 +385,7 @@ final class YachtDesignService implements QueuedStageService
      * @param  array<string, mixed>  $config  the model-sheet config of the category
      * @return array<string, mixed> the pinned model-sheet presentation the design writes its model sheet for
      */
-    private static function modelSheet(array $config): array
+    public static function modelSheet(array $config): array
     {
         return [
             'version' => (string) $config['master']['execution'],

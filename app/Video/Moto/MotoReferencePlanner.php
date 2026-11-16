@@ -1320,7 +1320,6 @@ final class MotoReferencePlanner
         $building = ($state['kind'] ?? null) === 'build';
         $designTime = $building ? MotoReferenceFacts::TARGET : MotoReferenceFacts::CONSTANT;
         $needs = array_values(array_column($group, null, 'id'));
-        $texts = self::firstFrameTexts($shot, $state, $needs);
         $facts = new MotoReferenceFacts(['state' => (string) $state['id'], 'checkpoint' => $checkpoint['label'] ?? null]);
         $cellParts = [];
         $fitted = [];
@@ -1332,7 +1331,7 @@ final class MotoReferencePlanner
             $placement = self::placement($shot, $id);
             $beingMade = $placement['presentation'] === 'being_made' || collect((array) ($state['in_progress'] ?? []))->contains('part', $id);
             $fitted[$id] = ! $beingMade && $placement['location'] !== 'off_motorcycle';
-            $components = MotoReferenceSurface::components($part, $state, (array) $sources['palette'], $beingMade, $texts, (array) $settings['surface_groups'], (array) $settings['finish_labels']);
+            $components = MotoReferenceSurface::components($part, $state, (array) $sources['palette'], $beingMade, (array) $settings['surface_groups'], (array) $settings['finish_labels']);
             $cellParts[] = [
                 'part' => $id,
                 'name' => (string) $part['name'],
@@ -1568,26 +1567,6 @@ final class MotoReferencePlanner
     private static function decisionId(string $question): string
     {
         return 'D'.substr(hash('sha256', trim((string) preg_replace('/\s+/u', ' ', mb_strtolower($question)), " \t\n\r.?!:;,")), 0, 10);
-    }
-
-    /**
-     * @param  array<string, mixed>  $shot
-     * @param  array<string, mixed>  $state
-     * @param  list<array<string, mixed>>  $needs  the needs the image answers
-     * @return list<array{path: string, text: string}> the texts that hold at the first frame and may stand as evidence of a surface; what the shot goes on to do is not among them
-     */
-    private static function firstFrameTexts(array $shot, array $state, array $needs): array
-    {
-        $shotId = (string) $shot['id'];
-        $carried = array_values((array) ($shot['carried_from']['carries'] ?? []));
-
-        return [
-            ...(is_string($state['surface'] ?? null) ? [['path' => "design.build_states.{$state['id']}.surface", 'text' => $state['surface']]] : []),
-            ['path' => "shots.{$shotId}.first_frame", 'text' => (string) ($shot['first_frame'] ?? '')],
-            ...(is_string($shot['continuity_start']['placement'] ?? null) ? [['path' => "shots.{$shotId}.continuity_start.placement", 'text' => $shot['continuity_start']['placement']]] : []),
-            ...array_map(static fn (int $index, mixed $text): array => ['path' => "shots.{$shotId}.carried_from.carries[{$index}]", 'text' => (string) $text], array_keys($carried), $carried),
-            ...array_map(static fn (array $need): array => ['path' => "shots.{$shotId}.reference_needs[{$need['index']}].purpose", 'text' => (string) $need['purpose']], $needs),
-        ];
     }
 
     /**

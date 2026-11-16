@@ -9,8 +9,12 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
+use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
 use App\Video\DesignDna\DnaCheck;
+use App\Video\Moto\MotoContract;
+use App\Video\Moto\MotoDesignCheck;
+use App\Video\Llm\JsonAnswer;
 use App\Video\YachtDesign\DesignRunPolicy;
 use App\Video\YachtDesign\YachtDesignCheck;
 
@@ -110,7 +114,7 @@ final class DesignApprovalLock
             return $problem;
         }
 
-        if (($design->output_json['check']['verdict'] ?? null) !== YachtDesignCheck::PASS) {
+        if (($this->checkOf($design)['verdict'] ?? null) !== YachtDesignCheck::PASS) {
             return 'Bản thiết kế nguồn chưa đạt kiểm tự động.';
         }
 
@@ -128,6 +132,81 @@ final class DesignApprovalLock
             ? 'Design DNA đã đổi so với bản thiết kế này.'
             : null;
     }
+
+    /** @var array<string, array<string, mixed>> the checks already made again in this request, by design, its raw answer and the sources it pinned */
+    private array $checks = [];
+
+    /**
+     * @return array<string, mixed> the check a design is read by now, the same for the design screen, the model sheet and the approval. A moto design is checked again by the current technical check from its raw answer and the sources its run pinned: its prompt revision, its DNA run and its contract; no model is called and the row is not written, so the check stored with the run stays as its history. A moto design that cannot be checked again — no manifest, no raw answer, a pinned prompt revision or DNA that can no longer be read, or a check that throws — is UNSCORED with the reason and carries what the run stored under STORED_CHECK_KEY: a verdict of an earlier check never stands in for the current one. A design of any other workflow is read by the check stored with it, as before
+     */
+    public function checkOf(VideoPlanningStage $design): array
+    {
+        $stored = is_array($design->output_json['check'] ?? null) ? $design->output_json['check'] : [];
+        $input = is_array($design->input_json) ? $design->input_json : [];
+        $manifest = PlanningStageStore::metadataOf($input)['manifest'] ?? null;
+        $workflow = is_string($input['workflow'] ?? null) ? $input['workflow'] : (is_array($manifest) ? (string) ($manifest['workflow'] ?? '') : '');
+
+        if (! MotoContract::is($workflow)) {
+            return $stored;
+        }
+
+        $unverified = static fn (string $why): array => [
+            'version' => MotoDesignCheck::VERSION,
+            'verdict' => MotoDesignCheck::UNSCORED,
+            'status' => null,
+            'issues' => [],
+            'warnings' => [],
+            'error' => 'Chưa xác minh được bản thiết kế này bằng bộ kiểm kỹ thuật hiện tại: '.$why.' — không dùng để render hay duyệt mới.',
+            self::STORED_CHECK_KEY => array_intersect_key($stored, array_flip(['verdict', 'version', 'issues', 'warnings', 'error'])),
+        ] + $stored;
+        $raw = $design->output_json['raw_text'] ?? null;
+
+        if (! is_array($manifest)) {
+            return $unverified('lượt chạy không lưu manifest hợp đồng');
+        }
+
+        if (! is_string($raw)) {
+            return $unverified('lượt chạy không lưu câu trả lời gốc');
+        }
+
+        $key = $design->id.'|'.hash('sha256', $raw.'|'.json_encode([$input['phase_id'] ?? null, $input['dna_stage_id'] ?? null]));
+
+        if (isset($this->checks[$key])) {
+            return $this->checks[$key];
+        }
+
+        $prompt = AiPhase::query()->find($input['phase_id'] ?? null);
+
+        if ($prompt === null) {
+            return $unverified('không còn revision prompt Phase 3 mà lượt chạy đã ghim');
+        }
+
+        $dnaRun = VideoPlanningStage::query()->find($input['dna_stage_id'] ?? null);
+        $dna = JsonAnswer::object((string) ($dnaRun?->output_json['raw_text'] ?? ''))['dna'] ?? null;
+
+        if (! is_array($dna)) {
+            return $unverified('không đọc được Design DNA mà lượt chạy đã ghim');
+        }
+
+        try {
+            $adapter = YachtDesignService::adapter($workflow);
+            $check = $adapter->evaluate($raw, [
+                'project_id' => (string) $design->project_id,
+                'prompt_version' => YachtDesignService::instructionVersion($prompt),
+                'dna' => $dna,
+                'source_identity' => [],
+                'model_sheet' => YachtDesignService::modelSheet($adapter->modelSheetConfig($manifest)),
+                'forbidden' => [],
+            ], $manifest)[1];
+        } catch (\Throwable $e) {
+            return $unverified('kiểm lại báo lỗi '.mb_substr($e->getMessage(), 0, 200));
+        }
+
+        return $this->checks[$key] = $check;
+    }
+
+    /** @var string the key under which a check that could not be made again carries what the run stored, as history only */
+    public const STORED_CHECK_KEY = 'stored_check';
 
     /** @return ?VideoPlanningStage a Design or DNA run still waiting or holding its claim, stuck ones too: each can still change the source until someone settles it */
     public function activeRun(string $projectId): ?VideoPlanningStage

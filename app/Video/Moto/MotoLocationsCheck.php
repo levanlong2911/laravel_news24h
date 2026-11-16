@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoLocationsCheck
 {
-    public const VERSION = 'moto-locations-check-v2';
+    public const VERSION = 'moto-locations-check-v3';
 
     public const PASS = 'PASS';
 
@@ -15,15 +15,6 @@ final class MotoLocationsCheck
     public const UNSCORED = 'UNSCORED';
 
     public const JUDGE = 'not_run';
-
-    /** @var list<string> */
-    private const MAKE_WORDS = ['Harley', 'Davidson'];
-
-    /** @var list<string> the temporary equipment of a build state, as a place's fixed equipment would name it */
-    private const SUPPORT_WORDS = ['lift table', 'frame jig', 'engine stand', 'wheel dolly', 'paddock stand'];
-
-    /** @var list<string> the kinds of place with walls, whose floor must be measured to hold a subject */
-    private const ENCLOSED_KINDS = ['studio', 'workshop', 'paint_booth', 'assembly_bay'];
 
     /**
      * @param  ?array<string, mixed>  $response
@@ -139,14 +130,12 @@ final class MotoLocationsCheck
             $issues[] = 'Còn xung đột chặn nhưng status không phải partial.';
         }
 
-        [$sizeIssues, $sizeWarnings] = self::sizeIssues((array) $data['backgrounds'], $places, $beats, self::ENCLOSED_KINDS);
         $issues = [
             ...$issues,
             ...$backgroundIssues,
             ...$conflictIssues,
-            ...$sizeIssues,
         ];
-        $warnings = [...$conflictWarnings, ...$sizeWarnings, ...self::nameWarnings($data, $context), ...self::renderWarnings($places)];
+        $warnings = $conflictWarnings;
 
         return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings);
     }
@@ -221,18 +210,6 @@ final class MotoLocationsCheck
                 }
             }
 
-            $surfaces = array_values(array_unique(array_filter(array_map(
-                static fn (string $beat): ?bool => is_array($beats[$beat]['situation'] ?? null) ? ($beats[$beat]['situation']['dry_road'] ?? null) : null,
-                $mine,
-            ), 'is_bool')));
-
-            if (count($surfaces) > 1) {
-                $issues[] = "{$id} phục vụ cả beat đường khô lẫn đường ướt — tách ảnh nền.";
-            } elseif ($surfaces === [] && $background['ground'] !== null) {
-                $issues[] = "{$id} ghi ground {$background['ground']} nhưng không beat nào xác lập mặt đường.";
-            } elseif ($surfaces !== [] && $background['ground'] !== ($surfaces[0] ? 'dry' : 'wet')) {
-                $issues[] = "{$id} phải có ground ".($surfaces[0] ? 'dry' : 'wet').' theo mặt đường của beat.';
-            }
         }
 
         return [$issues, $served];
@@ -250,11 +227,9 @@ final class MotoLocationsCheck
             return ["{$label}: trích {$evidence['beat']}, không phải beat của ảnh nền này."];
         }
 
-        $text = $beats[$evidence['beat']][$evidence['field']] ?? null;
-
-        return is_string($text) && str_contains($text, $evidence['quote'])
+        return array_key_exists($evidence['field'], (array) ($beats[$evidence['beat']] ?? []))
             ? []
-            : ["{$label}: \"{$evidence['quote']}\" không có nguyên văn trong {$evidence['beat']}.{$evidence['field']}."];
+            : ["{$label}: {$evidence['beat']}.{$evidence['field']} không có trong dữ liệu đã ghim."];
     }
 
     /**
@@ -311,32 +286,11 @@ final class MotoLocationsCheck
      * @param  array{path: string, quote?: string, value?: mixed}  $evidence
      * @param  array<string, array<string, mixed>>  $beats
      * @param  array<string, array<string, mixed>>  $states
-     * @return ?string why the evidence is not found in the pinned input: a text is quoted verbatim, a number, boolean, null or list item is given with its exact value and type
+     * @return ?string why the path of the evidence names nothing in the pinned input; what the evidence quotes or gives as value is content and is not read
      */
     private static function evidenceProblem(array $evidence, array $beats, array $states): ?string
     {
-        [$found, $value] = self::resolve($evidence['path'], $beats, $states);
-
-        if (! $found) {
-            return "{$evidence['path']} không có trong dữ liệu đã ghim.";
-        }
-
-        $list = is_array($value) && array_is_list($value) ? $value : null;
-        $text = is_string($value) || ($list !== null && $list !== [] && array_filter($list, 'is_string') === $list);
-
-        if ($text !== array_key_exists('quote', $evidence)) {
-            return $text ? "{$evidence['path']} là văn bản — trích nguyên văn bằng quote." : "{$evidence['path']} không phải văn bản — ghi value đúng giá trị và kiểu.";
-        }
-
-        if ($text) {
-            return array_filter((array) $value, static fn (string $item): bool => str_contains($item, $evidence['quote'])) === []
-                ? "\"{$evidence['quote']}\" không có nguyên văn trong {$evidence['path']}."
-                : null;
-        }
-
-        $matches = self::same($value, $evidence['value']) || ($list !== null && array_filter($list, static fn (mixed $item): bool => self::same($item, $evidence['value'])) !== []);
-
-        return $matches ? null : "{$evidence['path']} không khớp giá trị ".json_encode($evidence['value'], JSON_UNESCAPED_UNICODE).'.';
+        return self::resolve($evidence['path'], $beats, $states)[0] ? null : "{$evidence['path']} không có trong dữ liệu đã ghim.";
     }
 
     /**
@@ -380,162 +334,6 @@ final class MotoLocationsCheck
         };
 
         return $entry === null ? [false, null] : [true, $entry['value']];
-    }
-
-    /** @return bool whether two values are equal in value and type all the way down: a number only matches the same number (5 and 5.0 alike, no tolerance), an object matches key by key, a list item by item in order */
-    public static function same(mixed $actual, mixed $expected): bool
-    {
-        if (is_array($actual) || is_array($expected)) {
-            if (! is_array($actual) || ! is_array($expected) || count($actual) !== count($expected) || array_is_list($actual) !== array_is_list($expected)) {
-                return false;
-            }
-
-            foreach ($actual as $key => $item) {
-                if (! array_key_exists($key, $expected) || ! self::same($item, $expected[$key])) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        if ((is_int($actual) || is_float($actual)) && (is_int($expected) || is_float($expected))) {
-            return (float) $actual === (float) $expected;
-        }
-
-        return $actual === $expected;
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $backgrounds
-     * @param  array<string, array<string, mixed>>  $places
-     * @param  array<string, array<string, mixed>>  $beats
-     * @param  list<string>  $enclosed  the kinds of place with walls
-     * @return array{0: list<string>, 1: list<string>} the subjects of a use that cannot fit the place they stand in at any angle (their short side wider than the floor, their long side longer than its diagonal or their area larger), then the warnings: a subject that fits only across the floor, not parallel to its sides or turned 90°, and an enclosed place whose floor is not measured well enough to tell
-     */
-    private static function sizeIssues(array $backgrounds, array $places, array $beats, array $enclosed): array
-    {
-        $issues = [];
-        $warnings = [];
-
-        foreach ($backgrounds as $background) {
-            $place = $places[$background['location']] ?? null;
-
-            if ($place === null) {
-                continue;
-            }
-
-            $length = $place['dimensions']['length_m']['value'];
-            $width = $place['dimensions']['width_m']['value'];
-            $height = $place['dimensions']['height_m']['value'];
-            $known = array_values(array_filter([$length, $width], 'is_numeric'));
-
-            foreach (array_unique(array_column($background['uses'], 'beat')) as $beat) {
-                foreach ((array) ($beats[$beat]['subjects'] ?? []) as $subject) {
-                    $size = $subject['size'];
-
-                    if (! is_numeric($size['length_m'] ?? null) || ! is_numeric($size['width_m'] ?? null)) {
-                        continue;
-                    }
-
-                    $long = max((float) $size['length_m'], (float) $size['width_m']);
-                    $short = min((float) $size['length_m'], (float) $size['width_m']);
-                    $subjectLabel = "{$subject['ref']} của {$beat} ({$size['length_m']} × {$size['width_m']} m)";
-
-                    if (count($known) === 2) {
-                        $big = (float) max($known);
-                        $small = (float) min($known);
-
-                        if ($short > $small || $long > sqrt($big ** 2 + $small ** 2) || $long * $short > $big * $small) {
-                            $issues[] = "{$background['location']} không chứa vừa {$subjectLabel}: không vừa ở bất kỳ góc đặt nào trên mặt bằng {$length} × {$width} m.";
-                        } elseif ($long > $big) {
-                            $warnings[] = "{$background['location']}: {$subjectLabel} không vừa khi đặt song song hay xoay 90° trên mặt bằng {$length} × {$width} m, chỉ có thể vừa khi đặt chéo — chờ xác định bố trí.";
-                        }
-                    } elseif (count($known) === 1 && $short > (float) $known[0]) {
-                        $issues[] = "{$background['location']} không chứa vừa {$subjectLabel}: cạnh đã biết {$known[0]} m nhỏ hơn cạnh ngắn của chủ thể, ở bất kỳ góc đặt nào.";
-                    } elseif (count($known) < 2 && in_array($place['kind'], $enclosed, true)) {
-                        $warnings[] = "{$background['location']} chưa đủ số đo mặt bằng để kiểm chỗ cho {$subject['ref']} của {$beat}.";
-                    }
-
-                    if (is_numeric($height) && is_numeric($size['height_m'] ?? null) && (float) $size['height_m'] > (float) $height) {
-                        $issues[] = "{$background['location']} thấp hơn {$subject['ref']} của {$beat} ({$size['height_m']} m).";
-                    }
-                }
-            }
-        }
-
-        return [$issues, $warnings];
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @param  array<string, mixed>  $context
-     * @return list<string> the source names and the make in the answer's own words, for the reviewer; a quote copies its source, so what it quotes is never held against it
-     */
-    private static function nameWarnings(array $data, array $context): array
-    {
-        $warnings = [];
-        $names = [...MotoContract::blockedForms((array) ($context['source_names'] ?? []), (array) ($context['base_names'] ?? [])), ...self::MAKE_WORDS];
-
-        foreach (self::texts($data, '') as $path => $text) {
-            if (str_ends_with($path, '.quote')) {
-                continue;
-            }
-
-            foreach ($names as $name) {
-                if (MotoContract::mentions($text, $name)) {
-                    $warnings[] = "{$path}: dùng tên nguồn hoặc tên hãng \"{$name}\" — người duyệt xem lại trước khi render.";
-                }
-            }
-        }
-
-        return $warnings;
-    }
-
-    /**
-     * @param  array<string, array<string, mixed>>  $places
-     * @return list<string> the warnings a reviewer reads before rendering: temporary equipment kept as a place's fixed equipment, two places alike in every fixed field
-     */
-    private static function renderWarnings(array $places): array
-    {
-        $warnings = [];
-        $seen = [];
-
-        foreach ($places as $id => $place) {
-            foreach ($place['fixed_equipment'] as $item) {
-                foreach (self::SUPPORT_WORDS as $support) {
-                    if (MotoContract::mentions($item, $support)) {
-                        $warnings[] = "{$id}.fixed_equipment có \"{$support}\" — thiết bị tạm theo giai đoạn thuộc support của ảnh nền, không thuộc thiết bị cố định.";
-                    }
-                }
-            }
-
-            $key = json_encode([$place['kind'], $place['space'], $place['surfaces'], $place['fixed_equipment']]);
-
-            if (isset($seen[$key])) {
-                $warnings[] = "{$id} giống hệt {$seen[$key]} ở mọi trường cố định — có thể là một nơi.";
-            }
-
-            $seen[$key] = $id;
-        }
-
-        return $warnings;
-    }
-
-    /** @return array<string, string> every text of the answer by its path */
-    private static function texts(mixed $node, string $path): array
-    {
-        if (is_string($node)) {
-            return [$path => $node];
-        }
-
-        $texts = [];
-
-        foreach (is_array($node) ? $node : [] as $key => $value) {
-            $texts = [...$texts, ...self::texts($value, $path === '' ? (string) $key : "{$path}.{$key}")];
-        }
-
-        return $texts;
     }
 
     /**

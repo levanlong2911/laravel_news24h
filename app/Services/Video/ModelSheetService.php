@@ -979,7 +979,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             $canonicalHash = $stage === null ? null : self::designHash($stage, $workflow);
 
             if (! self::sheetWorkflow($workflow) || $stage === null
-                || ($stage->output_json['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($canonicalHash) || $canonicalHash === ''
+                || ($this->approval->checkOf($stage)['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($canonicalHash) || $canonicalHash === ''
                 || DesignRunPolicy::integrityProblem($stage, $workflow) !== null) {
                 throw $current;
             }

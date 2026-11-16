@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoShotsCheck
 {
-    public const VERSION = 'moto-shots-check-v6';
+    public const VERSION = 'moto-shots-check-v7';
 
     /** @var string the timing a run pinned from MotoShots@1.2.0 on: code sets the screen time of whole and closing parts and of the shot */
     public const TIMING = 'moto-shots-timing-v1';
@@ -33,21 +33,6 @@ final class MotoShotsCheck
     public const UNSCORED = 'UNSCORED';
 
     public const JUDGE = 'not_run';
-
-    /** @var list<string> the targets that are not the motorcycle or a part on it */
-    private const OFF_MOTORCYCLE = ['person', 'place', 'drawing', 'model', 'screen', 'tool'];
-
-    /** @var list<string> the scales at which a camera on the motorcycle may frame all of it */
-    private const WHOLE_SCALES = ['extreme_wide', 'wide'];
-
-    /** @var array<string, list<string>> for each reveal of a beat, the reveals a shot of it may declare */
-    private const REVEALS = [
-        'none' => ['none'],
-        'fragment' => ['none', 'fragment'],
-        'detail' => ['none', 'fragment', 'detail'],
-        'shape' => ['none', 'fragment', 'shape'],
-        'whole' => ['none', 'fragment', 'shape', 'detail', 'whole'],
-    ];
 
     /**
      * @param  ?array<string, mixed>  $response
@@ -119,12 +104,6 @@ final class MotoShotsCheck
             return self::result(self::UNSCORED, null, 'Lượt chạy ghim shot_editing_policy '.json_encode($context['shot_editing_policy']).'; code chỉ tính '.self::EDITING.' hoặc lượt không ghim chính sách biên tập.');
         }
 
-        $evidence = $context['procedure_evidence'] ?? [];
-
-        if (($problem = MotoScriptCheck::evidenceProblem($evidence)) !== null) {
-            return self::result(self::UNSCORED, null, "Lượt chạy dùng bản xác nhận thủ tục code không đọc được: {$problem}.");
-        }
-
         $status = is_string($response['status'] ?? null) ? $response['status'] : null;
         $schemaLines = array_map(static fn (array $v): string => trim($v['path'].' '.$v['message']), $schema);
 
@@ -183,8 +162,6 @@ final class MotoShotsCheck
             $state = is_array($scene) ? $scene['state'] : null;
             $covered = array_values(array_filter(array_map(static fn (array $item): ?array => $beats[$item['beat']] ?? null, (array) $shot['coverage'])));
             $issues = [...$issues, ...self::shotIssues($shot, array_slice($order, 0, $index), $state, $covered, $context, $placed === null ? null : ($placed['shots'][$shot['id']] ?? []))];
-            $warnings = [...$warnings, ...self::shotWarnings($shot, $state, $seen), ...self::surfaceWarnings($shot, $state, $context)];
-            $seen[] = ['id' => $shot['id'], 'scene' => $shot['scene'], 'fingerprint' => MotoShotPlanner::fingerprint($shot, $state)];
         }
 
         foreach ($fixed ? $written : [] as $shot) {
@@ -194,9 +171,6 @@ final class MotoShotsCheck
                 $warnings[] = "{$shot['id']}: ".count((array) $shot['reference_needs']).' nhu cầu tham chiếu cùng '.count((array) $shot['people'])." người có thể cần hơn {$context['reference_limit']} ảnh của một clip — kiểm ở màn Reference trước khi render.";
             }
 
-            if (count((array) $shot['people']) > 2) {
-                $warnings[] = "{$shot['id']}: ".count((array) $shot['people']).' người trong một shot — model video chỉ giữ nhận diện tốt cho hai người.';
-            }
         }
 
         if (is_array($context['work'] ?? null)) {
@@ -229,15 +203,7 @@ final class MotoShotsCheck
             $issues[] = 'Status partial nhưng không còn xung đột chặn nào.';
         }
 
-        if ($evidence !== []) {
-            $warnings[] = 'Thủ tục của giới hạn vận hành được chấm theo bản xác nhận '.($context['procedure_evidence_hash'] ?? 'không ghi mã băm').': '.implode('; ', array_map(
-                static fn (array $record): string => "{$record['limit']} {$record['procedure']} = {$record['kind']}".($record['kind'] === MotoScriptCheck::BY_ENTERING ? " ({$record['part']} {$record['from']} → {$record['to']} ở {$record['beat']} {$record['event']})" : ''),
-                $evidence,
-            )).'.';
-        }
-
-        return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings)
-            + ($evidence === [] ? [] : ['procedure_evidence' => ['hash' => $context['procedure_evidence_hash'] ?? null, 'records' => $evidence]]);
+        return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings);
     }
 
     /**
@@ -276,7 +242,6 @@ final class MotoShotsCheck
                     ! isset($context['parts'][$part]) => 'không có trong parts của thiết kế',
                     in_array($part, $parts, true) => 'vừa ở trong khung vừa ở ngoài khung',
                     ! in_array($part, $named, true) => 'không có trong design_refs của beat nào shot phủ',
-                    ! ($held === null ? in_array($part, $present, true) : $held === MotoWork::ON) => 'không ở trên xe lúc mở shot',
                     default => null,
                 };
 
@@ -719,17 +684,6 @@ final class MotoShotsCheck
                 }
             }
 
-            $opening = $covered[0] ?? null;
-            $closing = $covered === [] ? null : $covered[count($covered) - 1];
-
-            if ($opening !== null && isset($events[$opening]) && $first[$opening] === $id && MotoScriptCheck::canonical((array) $shot['operating_start']) !== MotoScriptCheck::canonical((array) $events[$opening]['operating_start'])) {
-                $issues[] = "{$id}.operating_start khác operating_start của {$opening}, sự kiện shot mở đầu.";
-            }
-
-            if ($closing !== null && isset($events[$closing]) && $last[$closing] === $id && MotoScriptCheck::canonical((array) $shot['operating_end']) !== MotoScriptCheck::canonical((array) $events[$closing]['operating_end'])) {
-                $issues[] = "{$id}.operating_end khác operating_end của {$closing}, sự kiện shot hoàn tất.";
-            }
-
             $shown = array_values((array) $shot['cards']);
             usort($shown, static fn (array $a, array $b): int => $a['start_ms'] <=> $b['start_ms']);
             $until = 0;
@@ -815,18 +769,6 @@ final class MotoShotsCheck
         $camera = (array) $shot['camera'];
         $parts = array_column((array) $shot['parts'], 'part');
 
-        if ($camera['target'] === 'motorcycle' && ! $facts['physical']) {
-            $issues[] = "{$id}: scene ở ".($state ?? 'state null').' không có xe thật — target phải là bản vẽ hoặc mô hình.';
-        }
-
-        if (in_array($camera['target'], self::OFF_MOTORCYCLE, true) && $camera['azimuth_deg'] !== null) {
-            $issues[] = "{$id}: target {$camera['target']} không ở trên xe — azimuth phải null.";
-        }
-
-        if ($camera['target'] === 'motorcycle' && $camera['azimuth_deg'] === null) {
-            $issues[] = "{$id}: target là xe — cần azimuth quanh xe.";
-        }
-
         if ($camera['target'] === 'part' && ! in_array($camera['target_part'], $parts, true)) {
             $issues[] = "{$id}: target_part {$camera['target_part']} không có trong parts của shot.";
         }
@@ -848,50 +790,7 @@ final class MotoShotsCheck
 
             if (! isset($context['parts'][$part])) {
                 $issues[] = "{$id} nêu {$part}, không có trong parts của thiết kế.";
-
-                continue;
             }
-
-            if (! $facts['physical']) {
-                $handedOver = $item['presentation'] === 'awaiting_install'
-                    && ($context['state_records'][(string) $state]['kind'] ?? null) === 'handover'
-                    && ($context['part_records'][$part]['origin'] ?? null) === 'base'
-                    && in_array($part, array_merge([], ...array_map(static fn (array $beat): array => (array) ($beat['design_refs'] ?? []), $covered)), true);
-
-                if (! $handedOver && ! in_array($item['presentation'], ['drawing', 'model'], true)) {
-                    $issues[] = "{$id}: ".($state ?? 'state null')." chưa có xe thật — {$part} chỉ thể hiện bằng bản vẽ hoặc mô hình".(($context['state_records'][(string) $state]['kind'] ?? null) === 'handover' ? '; riêng linh kiện nền (origin base) mà beat của shot nêu được ghi awaiting_install.' : '.');
-                }
-
-                continue;
-            }
-
-            if (isset($held[$part])) {
-                if ($item['presentation'] !== $held[$part]['status']) {
-                    $issues[] = "{$id}: {$part} lúc mở shot là {$held[$part]['status']} (".($held[$part]['moment'] === 'start' ? 'đầu' : 'cuối')." {$held[$part]['item']}) — không ghi {$item['presentation']}.";
-                }
-
-                continue;
-            }
-
-            $listed = static fn (string $key): bool => in_array($part, (array) $facts[$key], true);
-            $problem = match ($item['presentation']) {
-                'installed' => $listed('present') ? null : "{$part} không có trên xe ở {$state} — không ghi installed.",
-                'being_made' => $listed('in_progress') ? null : "{$part} không có trong in_progress của {$state} — không ghi being_made.",
-                'awaiting_install' => $listed('previously_in_progress') && $listed('installed_later') ? null : "{$part} không có trong cả previously_in_progress và installed_later của {$state} — không ghi awaiting_install.",
-                'removed' => $listed('previously_present') ? null : "{$part} không có trong previously_present của {$state} — không ghi removed.",
-                default => null,
-            };
-
-            if ($problem !== null) {
-                $issues[] = "{$id}: {$problem}";
-            }
-        }
-
-        $sets = array_map(static fn (array $beat): array => self::REVEALS[$beat['reveal']] ?? [], $covered);
-        $allowed = $sets === [] ? [] : array_values(array_intersect(...$sets));
-
-        if (! in_array($shot['reveal'], $allowed, true)) {
-            $issues[] = "{$id} khai reveal {$shot['reveal']}; ".implode(', ', array_map(static fn (array $beat): string => "{$beat['id']} ({$beat['reveal']})", $covered)).' chỉ cho '.(implode(', ', $allowed) ?: 'không gì').'.';
         }
 
         $issues = [...$issues, ...self::configurationIssues($shot, $parts, $covered, $facts, $context), ...self::groupingIssues($shot, $covered, $context)];
@@ -946,10 +845,6 @@ final class MotoShotsCheck
 
         if ($links['match_from'] !== null && ! in_array($links['match_from'], $earlier, true)) {
             $issues[] = "{$id}: match_from {$links['match_from']} không phải shot đứng trước.";
-        }
-
-        if ($links['motif'] !== null && ! in_array($links['motif'], (array) $context['loops'], true)) {
-            $issues[] = "{$id}: motif \"{$links['motif']}\" không phải motif nào của kịch bản.";
         }
 
         return $issues;
@@ -1091,7 +986,7 @@ final class MotoShotsCheck
             }
 
             foreach ((array) $omission['evidence'] as $evidence) {
-                if (($problem = MotoScenesCheck::evidenceProblem($evidence, (array) $context['input'])) !== null) {
+                if (($problem = MotoScenesCheck::evidencePathProblem($evidence, (array) $context['input'])) !== null) {
                     $issues[] = "{$label}: {$problem}";
                 }
             }
@@ -1235,109 +1130,7 @@ final class MotoShotsCheck
             $issues[] = "{$id} phủ {$names} nhưng {$environment['background']} không phải nền chung của các beat đó (".(implode(', ', $shared) ?: 'không có nền chung').') — chọn nền chung hoặc tách shot ở ranh giới beat.';
         }
 
-        foreach (array_slice($beats, 1) as $index => $beat) {
-            $earlier = $beats[$index];
-
-            if (($beat['time_jump'] ?? null) !== 'none') {
-                $issues[] = "{$id} chạy từ {$earlier['id']} sang {$beat['id']} nhưng {$beat['id']} khai time_jump ".json_encode($beat['time_jump'] ?? null).' — một cảnh quay liên tục không vượt bước nhảy thời gian.';
-            }
-
-            $before = array_values((array) ($earlier['events'] ?? []));
-            $after = array_values((array) ($beat['events'] ?? []));
-            $last = $before === [] ? null : $before[count($before) - 1];
-            $first = $after[0] ?? null;
-
-            if (! is_array($last['operating_end'] ?? null) || ! is_array($first['operating_start'] ?? null)) {
-                $issues[] = "{$id} chạy từ {$earlier['id']} sang {$beat['id']} nhưng nguồn không có trạng thái vận hành ở điểm nối để đối chiếu.";
-
-                continue;
-            }
-
-            $fields = array_values(array_filter(
-                array_values(array_unique([...array_keys($last['operating_end']), ...array_keys($first['operating_start'])])),
-                static fn (string $field): bool => MotoScriptCheck::canonical([$field => $last['operating_end'][$field] ?? null]) !== MotoScriptCheck::canonical([$field => $first['operating_start'][$field] ?? null]),
-            ));
-
-            if (MotoScriptCheck::canonical($last['operating_end']) !== MotoScriptCheck::canonical($first['operating_start'])) {
-                $issues[] = "{$id} chạy từ {$earlier['id']} sang {$beat['id']} nhưng operating_end của {$last['id']} khác operating_start của {$first['id']} ở ".implode(', ', $fields).' — trạng thái không nối liền, tách shot ở ranh giới beat.';
-            }
-        }
-
         return $issues;
-    }
-
-    /**
-     * @param  list<string>  $parts  the parts in frame
-     * @param  list<array<string, mixed>>  $covered  the beats the shot covers, in order
-     * @param  array<string, list<string>>  $shown  the events of each covered beat the shot plays
-     * @param  array<string, string>  $stand  the configurations of the side stand with the position each is
-     * @param  array<string, mixed>  $context
-     * @return list<string> the moments between the first and the last instant of the shot at which a part in frame is in a position whose operational limit is not met: every operating state the events the shot plays pass through, other than the one it opens on and the one it closes on, which the shot states itself. A take that opens and closes within the limits does not hide what it shows in between
-     */
-    private static function passageIssues(string $id, array $parts, array $covered, array $shown, array $stand, array $context): array
-    {
-        $issues = [];
-        $beats = [];
-
-        foreach ($covered as $beat) {
-            if ($beats === [] || $beats[count($beats) - 1]['id'] !== $beat['id']) {
-                $beats[] = $beat;
-            }
-        }
-
-        foreach ($beats as $position => $beat) {
-            $events = array_values((array) ($beat['events'] ?? []));
-            $own = array_column($events, 'id');
-            $played = array_values(array_filter(array_map(static fn (string $event): int|false => array_search($event, $own, true), array_map('strval', $shown[$beat['id']] ?? [])), static fn (int|false $index): bool => $index !== false));
-
-            if ($played === []) {
-                continue;
-            }
-
-            $opens = $position === 0 ? min($played) * 2 : null;
-            $closes = $position === count($beats) - 1 ? max($played) * 2 + 1 : null;
-
-            foreach ($played as $index) {
-                foreach (['operating_start' => $index * 2, 'operating_end' => $index * 2 + 1] as $key => $at) {
-                    if ($at === $opens || $at === $closes) {
-                        continue;
-                    }
-
-                    foreach ((array) ($events[$index][$key]['configurations'] ?? []) as $configurationId) {
-                        if (! in_array($context['configurations'][$configurationId]['part'] ?? null, $parts, true)) {
-                            continue;
-                        }
-
-                        foreach ((array) ($context['limits'] ?? []) as $limit) {
-                            if (! in_array($configurationId, (array) $limit['governs'], true)) {
-                                continue;
-                            }
-
-                            $unmet = MotoScriptCheck::unmet($limit, MotoScriptCheck::situationFor($beat, self::beatBefore($beat, $context), (string) $configurationId, $stand, $at, MotoScriptCheck::evidenceFor((array) ($context['procedure_evidence'] ?? []), (string) $limit['id'])));
-
-                            if ($unmet !== []) {
-                                $issues[] = "{$id}: giữa shot, {$configurationId} ở ".($key === 'operating_start' ? 'đầu' : 'cuối')." {$events[$index]['id']} chịu {$limit['id']} nhưng tình huống của {$beat['id']} lúc đó chưa đạt: ".implode(', ', $unmet).'.';
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return array_values(array_unique($issues));
-    }
-
-    /**
-     * @param  array<string, mixed>  $beat
-     * @param  array<string, mixed>  $context
-     * @return ?array<string, mixed> the beat that comes before it in the script; null for the first beat
-     */
-    private static function beatBefore(array $beat, array $context): ?array
-    {
-        $beats = array_values((array) ($context['beats'] ?? []));
-        $at = array_search($beat['id'] ?? null, array_column($beats, 'id'), true);
-
-        return $at === false || $at === 0 ? null : $beats[$at - 1];
     }
 
     /**
@@ -1346,7 +1139,7 @@ final class MotoShotsCheck
      * @param  list<array<string, mixed>>  $covered  the beats the shot covers
      * @param  array<string, mixed>  $facts  the facts of the scene's build state
      * @param  array<string, mixed>  $context
-     * @return list<string> a configuration the design does not have, of a part out of frame or given twice, a part on the motorcycle whose position the beats or the build state set but the shot leaves out, an end configuration the beats do not set, a configuration other than the one the build state's exception holds, and a configuration whose operational limit the situation of the beat it is shown in does not meet
+     * @return list<string> a configuration the design does not have, of a part out of frame or given twice, a part on the motorcycle whose position the beats or the build state set but the shot leaves out, an end configuration the beats do not set, and a configuration other than the one the build state's exception holds. Whether the situation of a beat meets an operational limit is content the reviewer judges: it is not checked here
      */
     private static function configurationIssues(array $shot, array $parts, array $covered, array $facts, array $context): array
     {
@@ -1380,120 +1173,7 @@ final class MotoShotsCheck
             }
         }
 
-        $installed = array_column(array_filter((array) $shot['parts'], static fn (array $item): bool => $item['presentation'] === 'installed'), 'part');
-
-        foreach ($installed as $part) {
-            $set = array_filter($listed, static fn (string $listedId): bool => $partOf($listedId) === $part);
-            $pin = $facts['pinned'][$part] ?? null;
-
-            if (($set !== [] || $pin !== null) && (! isset($byPart['start'][$part]) || ! isset($byPart['end'][$part]))) {
-                $issues[] = "{$id}: vị trí của {$part} do beat hoặc build state xác lập (".implode(', ', array_values(array_unique([...$set, ...array_filter([$pin], 'is_string')]))).') — khai cấu hình của nó ở cả start và end.';
-            }
-        }
-
-        foreach (isset($shot['action_timeline']) ? [] : ($byPart['end'] ?? []) as $part => $configurationId) {
-            $set = array_values(array_filter($listed, static fn (string $listedId): bool => $partOf($listedId) === $part));
-
-            if ($set !== [] && ! in_array($configurationId, $set, true)) {
-                $issues[] = "{$id}: cuối shot {$part} ở {$configurationId}; beat chỉ nêu ".implode(', ', $set).'.';
-            }
-        }
-
-        $moments = ['start' => $covered[0] ?? null, 'end' => $covered === [] ? null : $covered[count($covered) - 1]];
-        $stand = MotoScriptCheck::standPositions((array) ($context['part_records'] ?? []));
-        $shown = [];
-
-        foreach ((array) $shot['coverage'] as $item) {
-            $shown[(string) ($item['beat'] ?? '')] = array_values((array) ($item['event_ids'] ?? []));
-        }
-
-        foreach ($moments as $moment => $beat) {
-            $at = is_array($beat) ? MotoScriptCheck::momentOf($beat,$shown[$beat['id']] ?? [], $moment === 'end') : null;
-
-            foreach ($byPart[$moment] ?? [] as $configurationId) {
-                foreach ((array) ($context['limits'] ?? []) as $limit) {
-                    if (! in_array($configurationId, (array) $limit['governs'], true)) {
-                        continue;
-                    }
-
-                    $unmet = MotoScriptCheck::unmet($limit, is_array($beat) ? MotoScriptCheck::situationFor($beat, self::beatBefore($beat, $context), (string) $configurationId, $stand, $at, MotoScriptCheck::evidenceFor((array) ($context['procedure_evidence'] ?? []), (string) $limit['id'])) : null);
-
-                    if ($unmet !== []) {
-                        $issues[] = "{$id}: {$configurationId} ở {$moment} chịu {$limit['id']} nhưng tình huống của ".(is_array($beat) ? $beat['id'] : 'beat')." chưa đạt: ".implode(', ', $unmet).'.';
-                    }
-                }
-            }
-        }
-
-        if (isset($shot['action_timeline'])) {
-            $issues = [...$issues, ...self::passageIssues($id, $parts, $covered, $shown, $stand, $context)];
-        }
-
-        foreach ((array) ($facts['pinned'] ?? []) as $part => $configurationId) {
-            $set = array_filter($listed, static fn (string $listedId): bool => ($context['configurations'][$listedId]['part'] ?? null) === $part);
-
-            foreach (['start', 'end'] as $moment) {
-                $given = $byPart[$moment][$part] ?? null;
-
-                if ($set === [] && $given !== null && $given !== $configurationId) {
-                    $issues[] = "{$id}: ngoại lệ của build state giữ {$part} ở {$configurationId}; shot ghi {$given} ở {$moment}.";
-                }
-            }
-        }
-
         return $issues;
-    }
-
-    /**
-     * @param  array<string, mixed>  $shot
-     * @param  array<string, mixed>  $context
-     * @return list<string> at a build state of an unfinished motorcycle, a state with no surface of its own; at any build state, the parts in frame whose finish at the first frame the sources do not establish, for the reviewer to check before a keyframe. What a part's prose says about its finish is left to the reviewer
-     */
-    private static function surfaceWarnings(array $shot, ?string $state, array $context): array
-    {
-        $warnings = [];
-
-        if (! MotoShotPrompt::finishShown($state, $context)) {
-            $facts = (array) $context['states'][$state];
-
-            if (! is_string($facts['surface'] ?? null) && array_filter((array) ($facts['finishes'] ?? []), 'is_string') === []) {
-                $warnings[] = "{$shot['id']}: {$state} không có mô tả bề mặt của giai đoạn (surface, surfaces) — prompt ảnh không nói được bề mặt hiện tại.";
-            }
-        }
-
-        $unknown = array_values(array_filter((array) $shot['parts'], static fn (array $item): bool => in_array(MotoReferenceSurface::UNKNOWN, array_column(MotoShotPrompt::surfaces($item, $state, (string) $shot['first_frame'], $context), 'status'), true)));
-
-        if ($unknown !== []) {
-            $warnings[] = "{$shot['id']}: chưa đủ căn cứ về bề mặt ở khung đầu của ".implode(', ', array_column($unknown, 'part')).' — kiểm trước khi làm keyframe.';
-        }
-
-        return $warnings;
-    }
-
-    /**
-     * @param  array<string, mixed>  $shot
-     * @param  list<array{id: string, scene: string, fingerprint: string}>  $seen  the shots before it
-     * @return list<string> a wide camera on the motorcycle in a shot that declares less than the whole of it, and an angle repeated from the shot before or an earlier shot of the scene without a link that explains it
-     */
-    private static function shotWarnings(array $shot, ?string $state, array $seen): array
-    {
-        $warnings = [];
-        $camera = (array) $shot['camera'];
-
-        if ($camera['target'] === 'motorcycle' && in_array($camera['scale'], self::WHOLE_SCALES, true) && $shot['reveal'] !== 'whole') {
-            $warnings[] = "{$shot['id']}: camera nhắm vào xe ở cỡ {$camera['scale']} nhưng shot khai reveal {$shot['reveal']} — kiểm khung hình có lộ toàn xe không.";
-        }
-
-        $links = (array) $shot['links'];
-        $fingerprint = MotoShotPlanner::fingerprint($shot, $state);
-        $previous = $seen === [] ? null : $seen[count($seen) - 1];
-        $repeat = array_values(array_filter($seen, static fn (array $row): bool => $row['fingerprint'] === $fingerprint && ($row['scene'] === $shot['scene'] || $row === $previous)));
-
-        if ($repeat !== [] && $links['match_from'] === null && $links['motif'] === null && $links['repeat_reason'] === null) {
-            $warnings[] = "{$shot['id']} lặp góc của ".implode(', ', array_column($repeat, 'id')).' mà không nêu match_from, motif hay repeat_reason.';
-        }
-
-        return $warnings;
     }
 
     /**
@@ -1523,7 +1203,7 @@ final class MotoShotsCheck
             }
 
             foreach ((array) $conflict['evidence'] as $evidence) {
-                if (($problem = MotoScenesCheck::evidenceProblem($evidence, $input)) !== null) {
+                if (($problem = MotoScenesCheck::evidencePathProblem($evidence, $input)) !== null) {
                     $issues[] = "{$label}: {$problem}";
                 }
             }

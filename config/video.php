@@ -1435,7 +1435,6 @@ return [
                 'digital' => 'digital model surface, not a physical material',
                 'physical_model' => 'surface of the physical model not established',
                 'unknown' => 'finish at this point not established',
-                'named_finish' => ':finish, not yet finished',
             ],
             'prompt' => [
                 'styles' => [
@@ -1865,7 +1864,9 @@ return [
                 'harley_custom_v1' => [
                     'release_key' => \App\Video\Moto\MotoPipelineRelease::KEY,
                     'legacy_release' => \App\Video\Moto\MotoPipelineRelease::LEGACY,
-                    'default_release' => env('MOTO_PIPELINE_RELEASE', \App\Video\Moto\MotoPipelineRelease::LEGACY),
+                    'default_release' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V4,
+                    // The release new projects took before the default above: what `video:moto-release` pins a project to that was opened before and has no Phase 2 run and no pin yet, so the default never moves it.
+                    'previous_default_release' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V3,
                     'releases' => [
                         \App\Video\Moto\MotoPipelineRelease::LEGACY => [
                             'phases' => [
@@ -2025,6 +2026,74 @@ return [
                             ],
                             'policy' => [
                                 'script' => ['stationary_requires_support' => true],
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::EDITING, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                            ],
+                        ],
+                        // The release new projects take from now on. It is the release above with the scene revision whose work is followed under MotoWork::LAW_V2 — the answer lists no detached parts, work is evidenced by event id and a part goes with another only through a recorded connection — and the shot revision that reads such a scene plan. `policy` is not inherited: every rule its runs pin is listed here.
+                        \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V3 => [
+                            'extends' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V2,
+                            'phases' => [
+                                'phase-6' => ['input_format' => 'moto-scenes-input-v4', 'revisions' => [['id' => '85207e55-550d-4eef-8120-4bf34f583f90', 'sha256' => '002a0fb390137c646e74105f3e0efb7ecd97e4a0d9016309ea52b8ab6d2f4fde'], ['id' => '74a6013c-14b4-4670-bc84-950be47f2e21', 'sha256' => '171760f2ac2d60c239b5d2c4da55e3152ee3151f1e86307ba8f417b759fc1808']]],
+                                'phase-7' => ['input_format' => 'moto-shots-input-v8', 'revisions' => [['id' => 'f8bf95c6-e615-43b9-a354-6be876d86ea0', 'sha256' => 'd63526336894927e6ba8385e5471dc7836acd9c671ca3612ece34e26288fc6c0']]],
+                            ],
+                            'actions' => [
+                                'spec.scenes' => [
+                                    'phase' => 'phase-6',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['scenes'],
+                                    ],
+                                    'outputs' => [
+                                        'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '3.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v3): the approved beats grouped into scenes with their blocking, continuity, incoming transition and the work on parts with its connection changes, evidenced by event id; the detached parts are derived by code; release moto-cinematic-3s-v3'],
+                                    ],
+                                ],
+                            ],
+                            'policy' => [
+                                'script' => ['stationary_requires_support' => true],
+                                'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::EDITING, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                            ],
+                        ],
+                        \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V4 => [
+                            'extends' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V3,
+                            'phases' => [
+                                'phase-3' => ['input_format' => 'moto-design-input-v2', 'revisions' => [['id' => '1e9a279b-f42d-4c27-bd7b-11bbcb7cc0e5', 'sha256' => '687d6175745784c5b6e1f7aa04a7a230ea036dc25cb27dd3bfb8607042f93b72']]],
+                                'phase-4' => ['input_format' => 'moto-script-input-v4', 'revisions' => [['id' => 'f7dcb99f-2209-4878-adcc-ac9dcf7b9ca7', 'sha256' => '6dee60278a34e3e827128f72c6e2cd391bcb3287e7cefc51171052a9cbcd560d']]],
+                            ],
+                            'actions' => [
+                                'spec.design' => [
+                                    'phase' => 'phase-3',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['design'],
+                                    ],
+                                    'outputs' => [
+                                        'design' => ['namespace' => 'moto', 'schema' => 'MotoDesign', 'version' => '2.2.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 3 Output (format moto-design-v2): one object-based themed Harley-Davidson custom design record — motorcycle with its ornament, parts, systems, rider interface, connections, features, operational limits, the five fixed participant roles, twelve told build states, identity rules, source issues and the model sheet with its displayed configuration and eight views; the model-sheet image prompt is composed from it by code; release moto-cinematic-3s-v4'],
+                                    ],
+                                ],
+                                'spec.script' => [
+                                    'phase' => 'phase-4',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['script'],
+                                    ],
+                                    'outputs' => [
+                                        'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '2.0.3', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v2): the story, five characters each playing one fixed role of the design in its order, the beats as ordered events with the operating state before and after each, the shot directives the brief fixed, the text cards and the music brief; no screen time; a motorcycle standing still names what holds it; release moto-cinematic-3s-v4'],
+                                    ],
+                                ],
+                            ],
+                            'policy' => [
+                                'script' => ['stationary_requires_support' => true],
+                                'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
                                 'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::EDITING, 'shot_budget' => ['max' => 20, 'target' => 20]],
                             ],
                         ],

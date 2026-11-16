@@ -95,9 +95,9 @@ final class MotoDesign implements DesignWorkflow
         }
 
         try {
-            $schemaErrors = PhaseOneEvidence::schemaErrors($decoded, PhaseResolver::fromConfig((array) config('video.superyacht'))
+            $schemaErrors = PhaseOneEvidence::schemaErrors($decoded, MotoContract::technicalSchemas(PhaseResolver::fromConfig((array) config('video.superyacht'))
                 ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
-                ->outputSchemas());
+                ->outputSchemas()));
         } catch (\Throwable $e) {
             $schemaErrors = ['không kiểm được schema: '.$e->getMessage()];
         }
@@ -114,6 +114,6 @@ final class MotoDesign implements DesignWorkflow
             $run['forbidden'],
             $schemaErrors,
             $format,
-        )];
+        ) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION]];
     }
 }

@@ -10,6 +10,7 @@
     $continuity = static fn (array $c): array => [
         'Vị trí' => $c['placement'] ?? 'chưa xác lập',
         'Bộ phận rời' => $listed($c['detached_parts'], static fn (array $item): string => $item['part'].' ('.$detached[$item['status']].')'),
+    ] + (array_key_exists('unknown_location_parts', $c) ? ['Đang làm, chưa rõ vị trí' => $listed($c['unknown_location_parts'], static fn (string $part): string => $part)] : []) + [
         'Đèn bật' => $listed($c['lights_on'], static fn (string $id): string => $id),
         'Bề mặt' => $c['surface_condition'] ?? 'chưa xác lập',
         'Bảo hộ' => $c['protection'] === [] ? '—' : implode(' · ', array_map(static fn (array $entry): string => $entry['character'].': '.$listed($entry['items'], static fn (string $item): string => $item), $c['protection'])),
@@ -24,6 +25,8 @@
 @endphp
 
 <div class="container-fluid vp" id="scenesPage">
+
+    <div id="scenesFlash" hidden data-ajax-part data-ajax-flash data-success="{{ session('success') }}" data-error="{{ session('error') ?? (isset($errors) ? $errors->first() : '') }}"></div>
 
     <div class="vp-crumb">
         <a href="{{ route('video-projects.index') }}">Video Projects</a>
@@ -58,19 +61,19 @@
             @if($step['running'])
                 <button class="vp-btn sm" disabled>Đang chia…</button>
             @elseif($step['pending'])
-                @include('video-projects.partials.task-pending', ['reset' => route('video-projects.scenes-reset', $id)])
+                @include('video-projects.partials.task-pending', ['reset' => route('video-projects.scenes-reset', $id), 'ajax' => true])
             @elseif($step['stuck'])
-                <form method="POST" action="{{ route('video-projects.scenes-reset', $id) }}">
+                <form method="POST" action="{{ route('video-projects.scenes-reset', $id) }}" data-ajax-whole>
                     @csrf
-                    <button class="vp-btn sm dg">Reset lượt bị kẹt</button>
+                    <button class="vp-btn sm dg" data-busy="Đang reset…">Reset lượt bị kẹt</button>
                 </form>
             @elseif($step['can_run'] || $step['can_rewrite'])
-                <form method="POST" action="{{ route('video-projects.scenes-write', $id) }}" id="scenesWriteForm" onsubmit="return vpLockForm(this)">
+                <form method="POST" action="{{ route('video-projects.scenes-write', $id) }}" id="scenesWriteForm" data-modal="confirmScenesWrite" data-ajax-whole onsubmit="return vpLockForm(this)">
                     @csrf
                     <input type="hidden" name="operation_id" value="{{ $step['operation_id'] }}">
                     @if($step['can_rewrite'])<input type="hidden" name="rewrite" value="1">@endif
                 </form>
-                <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmScenesWrite">{{ $step['can_rewrite'] ? 'Chia lại scene' : 'Tạo scene' }}</button>
+                <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmScenesWrite" data-busy="Đang chia scene…">{{ $step['can_rewrite'] ? 'Chia lại scene' : 'Tạo scene' }}</button>
                 @include('modal.confirm_action', [
                     'id' => 'confirmScenesWrite',
                     'form' => 'scenesWriteForm',
@@ -110,16 +113,19 @@
             @if($shown !== null)
                 <div class="va-lbl">
                     BẢN REV {{ $shown['revision'] }}
-                    @if($shown['approved'])<span class="va-tag ok">ĐÃ DUYỆT THEO RULE</span>@endif
+                    @if($shown['approved'])<span class="va-tag ok">ĐÃ CHỌN THEO KIỂM KỸ THUẬT</span>@endif
                     @if($shown['source_problem'] !== null)<span class="va-tag amber">CẦN CẬP NHẬT</span>@endif
-                    @if($check !== null)<span class="va-tag {{ $check['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $check['verdict'] }}</span><span class="va-tag mute">STATUS: {{ $check['status'] ?? '—' }}</span>@endif
+                    @if($check !== null)<span class="va-tag {{ $check['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $check['verdict'] }}</span><span class="va-tag mute">STATUS: {{ $check['status'] ?? '—' }}</span><span class="va-tag mute">Nội dung: người duyệt đánh giá</span>@endif
                     @if($shown['cost_usd'] !== null)<em>{{ $shown['tokens']['in'] }}/{{ $shown['tokens']['out'] }} token · ${{ number_format($shown['cost_usd'], 3) }}</em>@endif
                 </div>
-                @if($check !== null && ($shown['stored_check']['version'] ?? $check['version']) !== $check['version'])
-                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Lúc chạy: {{ $shown['stored_check']['verdict'] ?? '—' }} · {{ $shown['stored_check']['version'] }}. Kiểm hiện tại: {{ $check['verdict'] }} · {{ $check['version'] }}.</div>
+                @if($check !== null && (($shown['stored_check']['version'] ?? $check['version']) !== $check['version'] || ($shown['stored_check']['verdict'] ?? $check['verdict']) !== $check['verdict']))
+                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Lúc chạy: {{ $shown['stored_check']['verdict'] ?? '—' }} — bộ kiểm phiên bản cũ ({{ $shown['stored_check']['version'] ?? '—' }}). Kiểm hiện tại: {{ $check['verdict'] === 'PASS' ? 'Đạt kỹ thuật' : $check['verdict'] }} ({{ $check['version'] }}).</div>
                 @endif
                 @if($shown['integrity_error'] !== null)
                     <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Không dùng được bản này: {{ $shown['integrity_error'] }}</div>
+                @endif
+                @if(($shown['derived_problem'] ?? null) !== null)
+                    <div class="va-lbl" style="font-weight:400;color:var(--vp-amber-fg)">{{ $shown['derived_problem'] }}</div>
                 @endif
                 @if($shown['revised'] !== null)
                     <div class="va-lbl" style="font-weight:400">Bản sửa tay từ rev {{ $shown['revised']['revision'] }} (không gọi AI): {{ $shown['revised']['reason'] }}</div>
@@ -233,6 +239,12 @@
                             @foreach($row['work'] as $item)
                                 <div class="d">{{ $item['id'] }} · {{ $item['beat'] }} {{ $item['part'] }}{{ $item['with'] === [] ? '' : ' cùng '.implode(', ', $item['with']) }} · {{ $item['operation'] }}: {{ $where[$item['location_start']] }} → {{ $where[$item['location_end']] }}
                                     <span style="color:var(--vp-faint)">({{ implode(' / ', array_map($evidence, $item['evidence'])) }})</span>
+                                    @foreach($item['events'] ?? [] as $event)
+                                        <div style="color:var(--vp-dim)">{{ $event['id'] }} — {{ $event['action'] }} → {{ $event['result'] }}</div>
+                                    @endforeach
+                                    @foreach($item['connection_changes'] ?? [] as $change)
+                                        <div style="color:var(--vp-dim)">{{ $change['change'] === 'attach' ? 'Gắn' : 'Tách' }} {{ $change['part'] }} {{ $change['change'] === 'attach' ? 'vào' : 'khỏi' }} {{ $change['parent'] }} <span style="color:var(--vp-faint)">({{ implode(' / ', array_map($evidence, $change['evidence'])) }})</span></div>
+                                    @endforeach
                                 </div>
                             @endforeach
                         @endif
@@ -316,19 +328,19 @@
                 @if($shots['running'])
                     <button class="vp-btn sm" disabled>Đang lập…</button>
                 @elseif($shots['pending'])
-                    @include('video-projects.partials.task-pending', ['reset' => route('video-projects.shots-reset', $id)])
+                    @include('video-projects.partials.task-pending', ['reset' => route('video-projects.shots-reset', $id), 'ajax' => true])
                 @elseif($shots['stuck'])
-                    <form method="POST" action="{{ route('video-projects.shots-reset', $id) }}">
+                    <form method="POST" action="{{ route('video-projects.shots-reset', $id) }}" data-ajax-whole>
                         @csrf
-                        <button class="vp-btn sm dg">Reset lượt bị kẹt</button>
+                        <button class="vp-btn sm dg" data-busy="Đang reset…">Reset lượt bị kẹt</button>
                     </form>
                 @elseif($shots['can_run'] || $shots['can_rewrite'])
-                    <form method="POST" action="{{ route('video-projects.shots-write', $id) }}" id="shotsWriteForm" onsubmit="return vpLockForm(this)">
+                    <form method="POST" action="{{ route('video-projects.shots-write', $id) }}" id="shotsWriteForm" data-modal="confirmShotsWrite" data-ajax-whole onsubmit="return vpLockForm(this)">
                         @csrf
                         <input type="hidden" name="operation_id" value="{{ $shots['operation_id'] }}">
                         @if($shots['can_rewrite'])<input type="hidden" name="rewrite" value="1">@endif
                     </form>
-                    <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmShotsWrite">{{ $shots['can_rewrite'] ? 'Tạo lại kế hoạch shot' : 'Tạo kế hoạch shot' }}</button>
+                    <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirmShotsWrite" data-busy="Đang lập shot…">{{ $shots['can_rewrite'] ? 'Tạo lại kế hoạch shot' : 'Tạo kế hoạch shot' }}</button>
                     @include('modal.confirm_action', [
                         'id' => 'confirmShotsWrite',
                         'form' => 'shotsWriteForm',
@@ -375,8 +387,8 @@
                         @foreach($shotShown['readiness'] as $state => $count)<span class="va-tag {{ $readinessLabels[$state][0] ?? 'mute' }}">{{ $count }} {{ $readinessLabels[$state][1] ?? $state }}</span>@endforeach
                         @if($shotShown['cost_usd'] !== null)<em>{{ $shotShown['tokens']['in'] }}/{{ $shotShown['tokens']['out'] }} token · ${{ number_format($shotShown['cost_usd'], 3) }}</em>@endif
                     </div>
-                    @if($shotCheck !== null && ($shotShown['stored_check']['version'] ?? $shotCheck['version']) !== $shotCheck['version'])
-                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Lúc chạy: {{ $shotShown['stored_check']['verdict'] ?? '—' }} · {{ $shotShown['stored_check']['version'] }}. Kiểm hiện tại: {{ $shotCheck['verdict'] }} · {{ $shotCheck['version'] }}.</div>
+                    @if($shotCheck !== null && (($shotShown['stored_check']['version'] ?? $shotCheck['version']) !== $shotCheck['version'] || ($shotShown['stored_check']['verdict'] ?? $shotCheck['verdict']) !== $shotCheck['verdict']))
+                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Lúc chạy: {{ $shotShown['stored_check']['verdict'] ?? '—' }} — bộ kiểm phiên bản cũ ({{ $shotShown['stored_check']['version'] ?? '—' }}). Kiểm hiện tại: {{ $shotCheck['verdict'] === 'PASS' ? 'Đạt kỹ thuật' : $shotCheck['verdict'] }} ({{ $shotCheck['version'] }}).</div>
                     @endif
                     @if($shotShown['integrity_error'] !== null)
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Không dùng được bản này: {{ $shotShown['integrity_error'] }}</div>
@@ -409,13 +421,13 @@
                         @endforeach
                     @endif
                     @if($shotShown['approvable'])
-                        <form method="POST" action="{{ route('video-projects.shots-approve', $id) }}" onsubmit="return vpLockForm(this)" style="margin-top:8px">
+                        <form method="POST" action="{{ route('video-projects.shots-approve', $id) }}" id="shotsApproveForm" data-ajax-whole onsubmit="return vpLockForm(this)" style="margin-top:8px">
                             @csrf
                             <input type="hidden" name="stage_id" value="{{ $shotShown['id'] }}">
                             <input type="hidden" name="content_hash" value="{{ $shotShown['content_hash'] }}">
                             <input type="hidden" name="selection_version" value="{{ $shots['selection_version'] }}">
                             <input type="hidden" name="operation_id" value="{{ $shots['operation_id'] }}">
-                            <button class="vp-btn sm pri">Duyệt kế hoạch shot</button>
+                            <button class="vp-btn sm pri" data-busy="Đang duyệt…">Duyệt kế hoạch shot</button>
                         </form>
                     @endif
                 @endif

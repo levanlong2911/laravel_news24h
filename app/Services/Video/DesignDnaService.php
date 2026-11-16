@@ -360,13 +360,13 @@ final class DesignDnaService implements QueuedStageService
             $schemas = PhaseResolver::fromConfig((array) config('video.superyacht'))
                 ->fromManifest(is_array($manifest) ? $manifest : throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
                 ->outputSchemas();
-            $errors = is_object($decoded) ? PhaseOneEvidence::schemaErrors($decoded, $schemas) : ['phản hồi không phải một object JSON'];
+            $errors = is_object($decoded) ? PhaseOneEvidence::schemaErrors($decoded, $execution === MotoContract::DNA_EXECUTION ? MotoContract::technicalSchemas($schemas) : $schemas) : ['phản hồi không phải một object JSON'];
         } catch (\Throwable $e) {
             $errors = ['không kiểm được JSON Schema đã ghim: '.$e->getMessage()];
         }
 
         return $execution === MotoContract::DNA_EXECUTION
-            ? MotoDnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $run['brief'], $run['history'], $errors, MotoContract::generation(is_array($manifest) ? $manifest : [], 'MotoDna') >= 2 ? MotoContract::DNA_FORMAT_V2 : MotoContract::DNA_FORMAT)
+            ? MotoDnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $run['brief'], $run['history'], $errors, MotoContract::generation(is_array($manifest) ? $manifest : [], 'MotoDna') >= 2 ? MotoContract::DNA_FORMAT_V2 : MotoContract::DNA_FORMAT) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION]
             : DnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $errors, DnaCheck::FORMAT_V2);
     }
 

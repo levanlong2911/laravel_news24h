@@ -8,6 +8,9 @@ final class MotoScenePlanner
 {
     public const VERSION = 'moto-scenes-plan-v2';
 
+    /** @var string the plan of a run whose context pins a work law: it names that law and the release, derives the detached parts of every scene from the work and gives every work item the events its evidence names. Work that contradicts itself fails nothing: the parts it concerns are derived as of unknown place in their build state, every other part keeps what the work established, and the contradictions are listed for the reviewer */
+    public const VERSION_TRACKED = 'moto-scenes-plan-v3';
+
     /**
      * @param  array<string, mixed>  $document  a moto Phase 6 document that passed its schema
      * @param  array<string, mixed>  $context  the check context pinned with the run
@@ -25,6 +28,22 @@ final class MotoScenePlanner
         $conflicts = array_values((array) $data['conflicts']);
         $sourceConflicts = array_values((array) ($context['source_blocking'] ?? []));
         $timed = ($context['timing'] ?? null) !== MotoScenes::ORDINAL;
+        $law = is_string($context['work_tracking_version'] ?? null) ? $context['work_tracking_version'] : null;
+        $trace = $law === null || ! is_array($context['work_design'] ?? null) ? null : MotoWork::follow(
+            $law,
+            array_values((array) $data['scenes']),
+            array_map(static fn (array $beat): ?string => is_string($beat['state'] ?? null) ? $beat['state'] : null, $facts),
+            (array) $context['states'],
+            $context['work_design'],
+        );
+        $events = [];
+
+        foreach ($law === null ? [] : $script as $beatId => $beat) {
+            foreach ((array) ($beat['events'] ?? []) as $event) {
+                $events[$beatId][(string) $event['id']] = ['id' => (string) $event['id'], 'action' => $event['action'] ?? null, 'result' => $event['result'] ?? null];
+            }
+        }
+
         $rows = [];
 
         foreach ((array) $data['scenes'] as $scene) {
@@ -64,6 +83,20 @@ final class MotoScenePlanner
             $first = $beatRows[0] ?? null;
             $last = $beatRows === [] ? null : $beatRows[count($beatRows) - 1];
             $states = array_values(array_unique(array_filter(array_column($beatRows, 'state'), 'is_string')));
+            $stateFacts = count($states) === 1 ? ($context['states'][$states[0]] ?? null) : null;
+            $derived = [];
+
+            foreach ($law === null ? [] : ['continuity_start' => 'start', 'continuity_end' => 'end'] as $key => $moment) {
+                $held = $trace['scenes'][$scene['id']][$moment] ?? null;
+                $sound = is_array($stateFacts) && is_array($held);
+                $doubted = $sound ? array_values(array_intersect(array_map('strval', array_keys($held)), (array) ($trace['doubt'][$states[0]] ?? []))) : [];
+                $established = $sound ? array_diff_key($held, array_flip($doubted)) : [];
+                $derived[$key] = (array) $scene[$key] + [
+                    'detached_parts' => $sound ? MotoWork::detached($established) : null,
+                    'unknown_location_parts' => $sound ? array_values(array_unique([...MotoWork::unplaced($stateFacts, $held), ...$doubted])) : null,
+                ];
+            }
+
             $rows[] = [
                 'id' => $scene['id'],
                 'beats' => array_values((array) $scene['beats']),
@@ -81,11 +114,16 @@ final class MotoScenePlanner
                 'event_ids' => array_values(array_merge([], ...array_map(static fn (string $id): array => (array) ($facts[$id]['events'] ?? []), $ids))),
             ]) + [
                 'continuity_from' => $scene['continuity_from'],
-                'continuity_start' => $scene['continuity_start'],
-                'continuity_end' => $scene['continuity_end'],
+                'continuity_start' => $derived['continuity_start'] ?? $scene['continuity_start'],
+                'continuity_end' => $derived['continuity_end'] ?? $scene['continuity_end'],
                 'transition_in' => $scene['transition_in'],
                 'work' => array_key_exists('work', $scene)
-                    ? array_map(static fn (int $index, array $item): array => ['id' => MotoWork::key((string) $scene['id'], $index)] + $item, array_keys(array_values((array) $scene['work'])), array_values((array) $scene['work']))
+                    ? array_map(static fn (int $index, array $item): array => ['id' => MotoWork::key((string) $scene['id'], $index)] + $item + ($law === null ? [] : [
+                        'events' => array_values(array_filter(array_map(
+                            static fn (array $evidence): ?array => preg_match('/\.events\.(EV\d+)\.id$/', (string) ($evidence['path'] ?? ''), $match) === 1 ? ($events[$item['beat']][$match[1]] ?? null) : null,
+                            (array) ($item['evidence'] ?? []),
+                        ))),
+                    ]), array_keys(array_values((array) $scene['work'])), array_values((array) $scene['work']))
                     : null,
                 'assumptions' => array_values((array) $scene['assumptions']),
                 'beat_rows' => $beatRows,
@@ -94,8 +132,14 @@ final class MotoScenePlanner
             ];
         }
 
-        return [
-            'version' => self::VERSION,
+        return ($law === null ? ['version' => self::VERSION] : [
+            'version' => self::VERSION_TRACKED,
+            'release' => $context['release'] ?? null,
+            'input_format' => $context['input_format'] ?? null,
+            'work_tracking_version' => $law,
+            'work_tracking_sound' => $trace !== null && $trace['contradictions'] === [],
+            'work_contradictions' => $trace === null ? [] : array_values($trace['contradictions']),
+        ]) + [
             'total_ms' => $timed ? (int) $context['total_ms'] : null,
             'scenes' => $rows,
             'conflicts' => $conflicts,

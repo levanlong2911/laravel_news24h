@@ -107,7 +107,8 @@
                             @elseif($brief['format'] === 'phase1')
                                 @php
                                     $check = $brief['source_check'];
-                                    $points = $check === null ? '' : ($check['score_min'] === $check['score_max'] ? $check['score_min'] : $check['score_min'].'–'.$check['score_max']).'/10 điểm';
+                                    $technical = $check !== null && ($check['score_min'] ?? null) === null;
+                                    $points = $check === null || $technical ? '' : ($check['score_min'] === $check['score_max'] ? $check['score_min'] : $check['score_min'].'–'.$check['score_max']).'/10 điểm';
                                 @endphp
                                 @if($check === null)
                                     <div class="line"><span class="k">Đánh giá nguồn</span><span class="v">Lượt phân tích này chưa có đánh giá nguồn — bấm Analysis để chạy lại.</span></div>
@@ -121,7 +122,7 @@
                                         @switch($check['verdict'])
                                             @case('STOP') Bài viết không nói về một siêu du thuyền hoặc thiết kế cụ thể. Vui lòng chọn bài viết khác. @break
                                             @case('REJECT') Bài viết chưa đủ thông tin thiết kế — {{ $points }}. Vui lòng chọn bài viết khác. @break
-                                            @case('RUN') Đạt — {{ $points }}.@if(in_array('THIN_SOURCE', $check['flags'], true)) Nguồn ít thông tin (THIN_SOURCE).@endif @if(in_array('SOURCE_CONFLICT', $check['flags'], true)) Nguồn có thông số mâu thuẫn — xem vấn đề nguồn.@endif @if($brief['source_passed'] && $designFirst) Bước tiếp theo: Design DNA (Phase 2).@endif @break
+                                            @case('RUN') {{ $technical ? 'Đạt kiểm kỹ thuật — nội dung nguồn do người duyệt đánh giá' : 'Đạt — '.$points }}.@if(in_array('THIN_SOURCE', $check['flags'], true)) Nguồn ít thông tin (THIN_SOURCE).@endif @if(in_array('SOURCE_CONFLICT', $check['flags'], true)) Nguồn có thông số mâu thuẫn — xem vấn đề nguồn.@endif @if($brief['source_passed'] && $designFirst) Bước tiếp theo: Design DNA (Phase 2).@endif @break
                                             @default Chưa thể chấm điểm — {{ $check['error'] ?? 'còn tiêu chí chưa xác minh ('.$points.'), chưa đủ cơ sở kết luận' }}.
                                         @endswitch
                                     </span></div>
@@ -139,6 +140,8 @@
                                                 Vấn đề nguồn trỏ sai trường: {{ implode('; ', array_slice($check['issue_paths'], 0, 5)) }}
                                             @elseif($missingQuotes !== [])
                                                 {{ count($missingQuotes) }}/{{ $check['evidence']['checked'] ?? 0 }} trích dẫn không có nguyên văn trên dòng nguồn đã khai: {{ implode('; ', array_slice($missingQuotes, 0, 5)) }}
+                                            @elseif($technical)
+                                                Đúng JSON Schema; ID và đường dẫn của vấn đề nguồn hợp lệ.
                                             @else
                                                 Đúng JSON Schema; {{ $check['evidence']['checked'] ?? 0 }} trích dẫn đều có nguyên văn trên dòng nguồn đã khai.
                                             @endif

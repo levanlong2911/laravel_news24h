@@ -187,7 +187,7 @@ final class ShotSourceService
                     'planner_version' => $evaluation['derived']['version'] ?? null,
                     'planning_revision' => $stage->planning_revision,
                     'selection_version' => $version + 1,
-                ] + (isset($check['procedure_evidence']) ? ['procedure_evidence' => $check['procedure_evidence']] : []),
+                ],
             ]);
 
             $metadata = $project->metadata_json ?? [];

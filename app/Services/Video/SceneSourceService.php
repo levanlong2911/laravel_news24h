@@ -9,6 +9,7 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Video\Moto\MotoScenes;
 use App\Video\Scenes\SceneWorkflow;
 use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Support\CanonicalJson;
@@ -309,8 +310,10 @@ final class SceneSourceService
             return [[], 'Bản chia scene này không lưu đủ manifest, ngữ cảnh kiểm và nguồn của lượt chạy.'];
         }
 
-        if (($output['format'] ?? null) !== $adapter->format()) {
-            return [[], 'Bản chia scene này theo định dạng '.json_encode($output['format'] ?? null).', bước này chỉ hỗ trợ '.$adapter->format().'.'];
+        $format = is_string($meta['context']['format'] ?? null) ? $meta['context']['format'] : $adapter->format();
+
+        if (($output['format'] ?? null) !== $format) {
+            return [[], 'Bản chia scene này theo định dạng '.json_encode($output['format'] ?? null).', lượt chạy của nó ghim '.$format.'.'];
         }
 
         try {
@@ -323,6 +326,55 @@ final class SceneSourceService
             return [[], 'Nội dung bản chia scene đã lưu không khớp hash của nó — không dùng được.'];
         }
 
-        return [$evaluation, null];
+        if (! $adapter instanceof MotoScenes) {
+            return [$evaluation, null];
+        }
+
+        $stored = $output['derived'] ?? null;
+        $problem = self::derivedProblem($stored, $evaluation['derived'] ?? null);
+
+        if ($problem === null) {
+            return [['derived_problem' => null] + $evaluation, null];
+        }
+
+        $hash = $output[self::DERIVED_HASH_KEY] ?? null;
+
+        if (! is_string($hash) || ! hash_equals($hash, self::derivedHash((array) $stored))) {
+            return [[], 'Bản dẫn xuất đã lưu của bản chia scene khác bản tính lại từ nội dung của nó và '.(is_string($hash) ? 'không khớp mã băm lưu cùng lượt chạy' : 'lượt chạy không lưu mã băm để xác minh').' — không dùng được; chia lại scene.'];
+        }
+
+        return [['derived' => $stored, 'derived_problem' => $problem] + $evaluation, null];
+    }
+
+    /** @var string the key of a scene run's output that holds the hash of the derived plan stored with it */
+    public const DERIVED_HASH_KEY = 'derived_hash';
+
+    /**
+     * @param  array<string, mixed>  $derived  the derived plan of a scene run
+     * @return string the hash stored beside it, by which a stored plan that differs from the one derived now is known to be the plan the run stored
+     */
+    public static function derivedHash(array $derived): string
+    {
+        return CanonicalJson::hash(['derived' => $derived]);
+    }
+
+    /**
+     * @param  mixed  $stored  the derived plan stored with the run
+     * @param  mixed  $derived  the plan derived again from the run now
+     * @return ?string why the plan derived now is not the plan stored with the run, null when the run stored none or both carry the same content. The planner version label and a key the stored plan does not have are no change of its content. A stored plan that differs is never replaced by the one derived now: it is kept only when the hash stored with the run proves it is the plan the run stored, and is an integrity error otherwise
+     */
+    private static function derivedProblem(mixed $stored, mixed $derived): ?string
+    {
+        if (! is_array($stored) || ! is_array($derived)) {
+            return null;
+        }
+
+        $kept = array_diff_key($stored, ['version' => true]);
+
+        if (CanonicalJson::hash($kept) === CanonicalJson::hash(array_intersect_key($derived, $kept))) {
+            return null;
+        }
+
+        return 'Bản dẫn xuất tính lại bằng '.($derived['version'] ?? '—').' khác bản đã lưu lúc chạy ('.($stored['version'] ?? '—').') — hệ thống giữ bản đã lưu, không tự thay; chia lại scene để có bản theo bộ dẫn xuất mới.';
     }
 }

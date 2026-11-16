@@ -6,7 +6,13 @@ namespace App\Video\Moto;
 
 final class MotoScenesCheck
 {
-    public const VERSION = 'moto-scenes-check-v6';
+    public const VERSION = 'moto-scenes-check-v8';
+
+    /** @var string the check of a scene plan whose context pins MotoWork::LAW_V2: the detached parts are derived and not checked against an answer, work and connection changes are evidenced by the id of an event of their beat, and the work is followed by MotoWork::traceConnected() */
+    public const VERSION_TRACKED = 'moto-scenes-check-v9';
+
+    /** @var string the only evidence a work item or a connection change of a tracked plan gives: the id of an event of the beat */
+    private const EVENT_EVIDENCE = '/^script\.beats\.(B[1-9][0-9]*)\.events\.(EV[0-9]+)\.id$/';
 
     public const PASS = 'PASS';
 
@@ -16,12 +22,6 @@ final class MotoScenesCheck
 
     public const JUDGE = 'not_run';
 
-    /** @var list<string> the input fields whose value is an id or an enumerated value, given as value and never quoted */
-    private const VALUE_KEYS = ['id', 'beat', 'background', 'backgrounds', 'beats', 'hero_beat', 'plant', 'payoff', 'act', 'state', 'time_jump', 'reveal', 'on_screen', 'design_refs', 'in_use', 'configurations', 'mode', 'engine', 'side_stand', 'kind', 'support', 'ground', 'presence', 'temporary', 'installed', 'operable', 'default', 'blocking', 'configuration'];
-
-    /** @var list<string> the fields of continuity compared across a continuity link */
-    private const LINKED = ['detached_parts', 'lights_on', 'surface_condition'];
-
     /**
      * @param  ?array<string, mixed>  $response
      * @param  array<string, mixed>  $context  the check context pinned with the run
@@ -30,9 +30,18 @@ final class MotoScenesCheck
      */
     public static function evaluate(?array $response, array $context, array $schema): array
     {
-        $format = ($context['format'] ?? null) === MotoContract::SCENES_FORMAT_V2 ? MotoContract::SCENES_FORMAT_V2 : MotoContract::SCENES_FORMAT;
+        $format = in_array($context['format'] ?? null, [MotoContract::SCENES_FORMAT_V2, MotoContract::SCENES_FORMAT_V3], true) ? $context['format'] : MotoContract::SCENES_FORMAT;
 
-        return ['format' => $format] + self::scored($response, $context, $schema, $format);
+        return ['format' => $format] + (self::law($context) === null ? [] : ['version' => self::VERSION_TRACKED]) + self::scored($response, $context, $schema, $format);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return ?string the law the run pinned for its work, null for a run made before laws were named: such a run is checked as it was made
+     */
+    private static function law(array $context): ?string
+    {
+        return is_string($context['work_tracking_version'] ?? null) ? $context['work_tracking_version'] : null;
     }
 
     /**
@@ -261,23 +270,11 @@ final class MotoScenesCheck
         $onScreen = array_values(array_unique(array_merge(...array_column($mine, 'on_screen'))));
 
         foreach (['continuity_start' => 'start', 'continuity_end' => 'end'] as $key => $moment) {
-            $issues = [...$issues, ...self::continuityIssues("{$id}.{$key}", (array) $scene[$key], $state, $onScreen, $context, $held[$moment])];
-
-            if ($state !== null && isset($context['states'][$state])) {
-                $issues = [...$issues, ...MotoWork::detachedIssues("{$id}.{$key}", $scene[$key]['detached_parts'], $held[$moment])];
-            }
+            $issues = [...$issues, ...self::continuityIssues("{$id}.{$key}", (array) $scene[$key], $onScreen, $context)];
         }
 
-        $first = $mine[0]['id'];
-        $before = $previous === null ? [] : array_values(array_filter(array_map(static fn (string $beat): ?array => $beats[$beat] ?? null, (array) $previous['beats'])));
-        $last = $before === [] ? null : $before[count($before) - 1]['id'];
-
-        if ($scene['continuity_from'] !== null) {
-            if ($previous === null || $scene['continuity_from'] !== $previous['id']) {
-                $issues[] = "{$id}.continuity_from là {$scene['continuity_from']}; chỉ được nêu scene ngay trước".($previous === null ? ' — scene đầu không có.' : " ({$previous['id']}).");
-            } else {
-                $issues = [...$issues, ...self::linkIssues($id, $scene, $previous, $state, $before, $mine)];
-            }
+        if ($scene['continuity_from'] !== null && ($previous === null || $scene['continuity_from'] !== $previous['id'])) {
+            $issues[] = "{$id}.continuity_from là {$scene['continuity_from']}; chỉ được nêu scene ngay trước".($previous === null ? ' — scene đầu không có.' : " ({$previous['id']}).");
         }
 
         $transition = $scene['transition_in'];
@@ -295,23 +292,8 @@ final class MotoScenesCheck
         }
 
         foreach ((array) $transition['evidence'] as $evidence) {
-            if (($problem = self::evidenceProblem($evidence, (array) $context['input'])) !== null) {
+            if (($problem = self::evidencePathProblem($evidence, (array) $context['input'])) !== null) {
                 $issues[] = "{$id}.transition_in: {$problem}";
-            }
-        }
-
-        $boundary = array_values(array_filter([$last, $first], 'is_string'));
-        $pattern = static fn (string $fields): string => '/^script\.beats\.('.implode('|', $boundary).')\.('.$fields.')(\.\d+)?$/';
-
-        if ($transition['kind'] === 'match_cut' && array_filter((array) $transition['evidence'], static fn (array $evidence): bool => preg_match($pattern('link|visual|sfx'), $evidence['path']) === 1) === []) {
-            $issues[] = "{$id}: match_cut phải dựa vào link, visual hoặc sfx của ".implode(' hoặc ', $boundary).'.';
-        }
-
-        if ($transition['kind'] === 'time_jump') {
-            $declared = array_filter((array) $transition['evidence'], static fn (array $evidence): bool => preg_match($pattern('time_jump'), $evidence['path']) === 1 && array_key_exists('value', $evidence) && $evidence['value'] !== 'none');
-
-            if ($declared === []) {
-                $issues[] = "{$id}: time_jump phải dựa vào time_jump khác none của ".implode(' hoặc ', $boundary).' — link hình ảnh chỉ làm căn cứ cho match_cut.';
             }
         }
 
@@ -320,26 +302,15 @@ final class MotoScenesCheck
 
     /**
      * @param  array<string, mixed>  $continuity
-     * @param  ?string  $state  the build state the scene establishes
      * @param  list<string>  $onScreen  the characters the scene's beats show
      * @param  array<string, mixed>  $context
-     * @param  array<string, array{location: string, status: string}>  $held  the parts the work holds at that moment, whose status the work decides
-     * @return list<string> detached parts and lights that do not exist or do not fit the build state, and protection for a character the scene does not show or named twice. What the protection items mean is prose, left to the reviewer
+     * @return list<string> a detached part or a light the design does not have or names twice, and protection for a character the scene does not show or named twice. Whether a part is detached, a light can be on or a scene continues the one before it is content the model writes and the reviewer judges
      */
-    private static function continuityIssues(string $label, array $continuity, ?string $state, array $onScreen, array $context, array $held): array
+    private static function continuityIssues(string $label, array $continuity, array $onScreen, array $context): array
     {
         $issues = [];
-        $states = (array) $context['states'];
-        $at = $state === null ? null : ($states[$state] ?? null);
-        $index = $state === null ? null : (int) substr($state, 2);
 
-        foreach (['detached_parts', 'lights_on'] as $key) {
-            if ($at === null && $continuity[$key] !== null) {
-                $issues[] = "{$label}.{$key} phải null: scene không có xe ở một build state vật lý.";
-            }
-        }
-
-        if ($at !== null && is_array($continuity['detached_parts'])) {
+        if (is_array($continuity['detached_parts'] ?? null)) {
             $seen = [];
 
             foreach ($continuity['detached_parts'] as $item) {
@@ -353,51 +324,13 @@ final class MotoScenesCheck
 
                 if (! isset($context['parts'][$part])) {
                     $issues[] = "{$label}.detached_parts nêu {$part}, không có trong design_states.parts.";
-
-                    continue;
-                }
-
-                if (isset($held[$part])) {
-                    continue;
-                }
-
-                $present = in_array($part, $at['present'], true);
-                $listed = static fn (string $key): bool => in_array($part, $at[$key], true);
-                $problem = match ($item['status']) {
-                    'removed' => match (true) {
-                        $present => "{$part} có mặt trên xe ở {$state} — không phải removed.",
-                        ! $listed('previously_present') => "{$part} không có trong previously_present của {$state} — không ghi removed; thiếu căn cứ thì nêu conflict.",
-                        default => null,
-                    },
-                    'being_made' => $listed('in_progress') ? null : "{$part} không có trong in_progress của {$state} — không ghi being_made.",
-                    'awaiting_install' => match (true) {
-                        $present => "{$part} đã lắp ở {$state} — không còn chờ lắp.",
-                        ! $listed('previously_in_progress') => "{$part} không có trong previously_in_progress của {$state} — nguồn không xác lập đã làm xong theo quy ước của workflow; không ghi awaiting_install, để null hoặc nêu conflict.",
-                        ! $listed('installed_later') => "{$part} không có trong installed_later của {$state} — không ghi awaiting_install.",
-                        default => null,
-                    },
-                    default => null,
-                };
-
-                if ($problem !== null) {
-                    $issues[] = "{$label}.detached_parts: {$problem}";
                 }
             }
         }
 
-        if ($at !== null && is_array($continuity['lights_on'])) {
-            foreach ($continuity['lights_on'] as $lightId) {
-                $light = $context['lights'][$lightId] ?? null;
-
-                if ($light === null) {
-                    $issues[] = "{$label}.lights_on nêu {$lightId}, không có trong design_states.lights.";
-                } elseif (! in_array($light['part'], $at['present'], true)) {
-                    $issues[] = "{$label}.lights_on: {$lightId} thuộc {$light['part']}, không có mặt ở {$state}.";
-                } elseif ((int) substr((string) $light['installed'], 2) > $index) {
-                    $issues[] = "{$label}.lights_on: {$lightId} lắp từ {$light['installed']}, chưa có ở {$state}.";
-                } elseif ((int) substr((string) $light['operable'], 2) > $index) {
-                    $issues[] = "{$label}.lights_on: {$lightId} hoạt động từ {$light['operable']}, chưa bật được ở {$state}.";
-                }
+        foreach (is_array($continuity['lights_on'] ?? null) ? $continuity['lights_on'] : [] as $lightId) {
+            if (! isset($context['lights'][$lightId])) {
+                $issues[] = "{$label}.lights_on nêu {$lightId}, không có trong design_states.lights.";
             }
         }
 
@@ -421,60 +354,6 @@ final class MotoScenesCheck
     }
 
     /**
-     * @param  array<string, mixed>  $scene
-     * @param  array<string, mixed>  $previous
-     * @param  ?string  $state  the build state the scene establishes
-     * @param  list<array<string, mixed>>  $before  the beats of the scene before it
-     * @param  list<array<string, mixed>>  $mine  the beats of the scene
-     * @return list<string> a continuity link across a change of build state or story time or into a time jump, and a known structured state at the start that differs from the known end of the scene before it
-     */
-    private static function linkIssues(string $id, array $scene, array $previous, ?string $state, array $before, array $mine): array
-    {
-        $issues = [];
-        $prior = array_values(array_unique(array_filter(array_column($before, 'state'), 'is_string')));
-
-        if ($state !== null && count($prior) === 1 && $prior[0] !== $state) {
-            $issues[] = "{$id}.continuity_from: {$previous['id']} ở {$prior[0]}, {$id} ở {$state} — đổi build state thì không liền mạch.";
-        }
-
-        if ($before !== [] && $before[count($before) - 1]['time_jump'] !== $mine[0]['time_jump']) {
-            $issues[] = "{$id}.continuity_from: thời gian truyện đổi giữa {$before[count($before) - 1]['id']} và {$mine[0]['id']}.";
-        }
-
-        if (($scene['transition_in']['kind'] ?? null) === 'time_jump') {
-            $issues[] = "{$id} vừa nêu continuity_from vừa vào bằng time_jump.";
-        }
-
-        foreach (self::LINKED as $key) {
-            $end = $previous['continuity_end'][$key];
-            $start = $scene['continuity_start'][$key];
-
-            if ($end === null || $start === null) {
-                continue;
-            }
-
-            if (self::known($end) !== self::known($start)) {
-                $issues[] = "{$id} bắt đầu khác cuối {$previous['id']} ở {$key}: ".json_encode(self::known($end), JSON_UNESCAPED_UNICODE).' → '.json_encode(self::known($start), JSON_UNESCAPED_UNICODE).'.';
-            }
-        }
-
-        return $issues;
-    }
-
-    /** @return mixed a known continuity value in a form compared regardless of order: a detached part as part:status, a list sorted */
-    private static function known(mixed $value): mixed
-    {
-        if (! is_array($value)) {
-            return $value;
-        }
-
-        $items = array_map(static fn (mixed $item): string => is_array($item) ? $item['part'].':'.$item['status'] : (string) $item, $value);
-        sort($items);
-
-        return $items;
-    }
-
-    /**
      * @param  list<array<string, mixed>>  $scenes
      * @param  array<string, array<string, mixed>>  $beats
      * @param  array<string, mixed>  $context
@@ -487,24 +366,62 @@ final class MotoScenesCheck
         }
 
         $issues = [];
+        $law = self::law($context);
 
         foreach ($scenes as $scene) {
             foreach (array_values((array) ($scene['work'] ?? [])) as $index => $item) {
                 $label = MotoWork::key((string) $scene['id'], $index);
 
+                if ($law !== null) {
+                    $issues = [...$issues, ...self::eventEvidenceIssues($label, (string) $item['beat'], (array) $item['evidence'], (array) $context['input'])];
+
+                    foreach (array_values((array) ($item['connection_changes'] ?? [])) as $change) {
+                        $issues = [...$issues, ...self::eventEvidenceIssues("{$label} connection_changes {$change['change']} {$change['part']} — {$change['parent']}", (string) $item['beat'], (array) $change['evidence'], (array) $context['input'])];
+                    }
+
+                    continue;
+                }
+
                 foreach ((array) $item['evidence'] as $evidence) {
                     if (! str_starts_with((string) $evidence['path'], "script.beats.{$item['beat']}.")) {
                         $issues[] = "{$label}: bằng chứng {$evidence['path']} không thuộc {$item['beat']} — work dựa vào chính beat của nó.";
-                    } elseif (($problem = self::evidenceProblem($evidence, (array) $context['input'])) !== null) {
+                    } elseif (($problem = self::evidencePathProblem($evidence, (array) $context['input'])) !== null) {
                         $issues[] = "{$label}: {$problem}";
                     }
                 }
             }
         }
 
-        $trace = MotoWork::trace($scenes, array_map(static fn (array $beat): ?string => is_string($beat['state'] ?? null) ? $beat['state'] : null, $beats), (array) $context['states'], $context['work_design']);
+        $trace = MotoWork::follow($law, $scenes, array_map(static fn (array $beat): ?string => is_string($beat['state'] ?? null) ? $beat['state'] : null, $beats), (array) $context['states'], $context['work_design']);
 
         return [[...$issues, ...$trace['issues']], $trace['scenes']];
+    }
+
+    /**
+     * @param  string  $beat  the beat of the work item
+     * @param  list<array{path: string, value?: mixed, quote?: string}>  $evidence
+     * @param  array<string, mixed>  $input  the pinned input of the run
+     * @return list<string> evidence that is not the id of an event, that names an event of another beat, whose value is not that id, or whose event the pinned script does not have in that beat
+     */
+    private static function eventEvidenceIssues(string $label, string $beat, array $evidence, array $input): array
+    {
+        $issues = [];
+
+        foreach ($evidence as $item) {
+            $path = (string) ($item['path'] ?? '');
+
+            if (preg_match(self::EVENT_EVIDENCE, $path, $match) !== 1) {
+                $issues[] = "{$label}: bằng chứng {$path} không phải ID sự kiện — ghi script.beats.{$beat}.events.<EVxx>.id với value là chính ID đó.";
+            } elseif ($match[1] !== $beat) {
+                $issues[] = "{$label}: bằng chứng {$path} thuộc {$match[1]}, không thuộc {$beat} — work dựa vào sự kiện của chính beat của nó.";
+            } elseif (! array_key_exists('value', $item) || $item['value'] !== $match[2]) {
+                $issues[] = "{$label}: bằng chứng {$path} phải có value là \"{$match[2]}\".";
+            } elseif (($problem = self::evidencePathProblem($item, $input)) !== null) {
+                $issues[] = "{$label}: {$problem}";
+            }
+        }
+
+        return $issues;
     }
 
     /**
@@ -541,7 +458,7 @@ final class MotoScenesCheck
             }
 
             foreach ((array) $conflict['evidence'] as $evidence) {
-                if (($problem = self::evidenceProblem($evidence, $input)) !== null) {
+                if (($problem = self::evidencePathProblem($evidence, $input)) !== null) {
                     $issues[] = "{$label}: {$problem}";
                 }
             }
@@ -553,37 +470,11 @@ final class MotoScenesCheck
     /**
      * @param  array{path: string, quote?: string, value?: mixed}  $evidence
      * @param  array<string, mixed>  $input  the pinned input of the run
-     * @return ?string why the evidence is not found in the pinned input: a text is quoted verbatim, an id or enumerated value is given as value, a value matches in value and type
+     * @return ?string why the path of the evidence names nothing in the pinned input; what the evidence quotes or gives as value is not read
      */
-    public static function evidenceProblem(array $evidence, array $input): ?string
+    public static function evidencePathProblem(array $evidence, array $input): ?string
     {
-        [$found, $value] = self::resolve($evidence['path'], $input);
-
-        if (! $found) {
-            return "{$evidence['path']} không có trong đầu vào đã ghim.";
-        }
-
-        if (array_key_exists('quote', $evidence)) {
-            $segments = array_values(array_filter(explode('.', $evidence['path']), static fn (string $segment): bool => ! ctype_digit($segment)));
-            $texts = is_string($value) ? [$value] : (is_array($value) && array_is_list($value) && $value !== [] && array_filter($value, 'is_string') === $value ? $value : null);
-
-            if (in_array(end($segments), self::VALUE_KEYS, true)) {
-                return "{$evidence['path']} là ID hoặc giá trị liệt kê — ghi value, không trích quote.";
-            }
-
-            if ($texts === null) {
-                return "{$evidence['path']} không phải văn bản — ghi value đúng giá trị và kiểu.";
-            }
-
-            return array_filter($texts, static fn (string $text): bool => str_contains($text, (string) $evidence['quote'])) === []
-                ? "\"{$evidence['quote']}\" không có nguyên văn trong {$evidence['path']}."
-                : null;
-        }
-
-        $list = is_array($value) && array_is_list($value) ? $value : null;
-        $matches = MotoLocationsCheck::same($value, $evidence['value']) || ($list !== null && array_filter($list, static fn (mixed $item): bool => MotoLocationsCheck::same($item, $evidence['value'])) !== []);
-
-        return $matches ? null : "{$evidence['path']} không khớp giá trị ".json_encode($evidence['value'], JSON_UNESCAPED_UNICODE).'.';
+        return self::resolve((string) $evidence['path'], $input)[0] ? null : "{$evidence['path']} không có trong đầu vào đã ghim.";
     }
 
     /**

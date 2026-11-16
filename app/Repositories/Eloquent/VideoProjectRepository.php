@@ -8,6 +8,8 @@ use App\Models\VideoCostEntry;
 use App\Models\VideoProject;
 use App\Models\VideoSession;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Video\Moto\MotoContract;
+use App\Video\Moto\MotoPipelineRelease;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Gate;
 
@@ -42,6 +44,10 @@ class VideoProjectRepository extends BaseRepository implements VideoProjectRepos
             ['article_id' => $article->id],
             ['title' => $article->title, 'admin_id' => $actor->id],
         );
+
+        if ($project->wasRecentlyCreated && MotoContract::is(config('video.superyacht.contracts.categories')[$article->category?->slug ?? ''] ?? null)) {
+            MotoPipelineRelease::pin($project, false);
+        }
 
         // Hai request cung vao mot bai: ke thua cuoc nhan ve hang cua nguoi kia.
         if (Gate::forUser($actor)->denies('update', $project)) {

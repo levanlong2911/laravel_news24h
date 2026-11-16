@@ -17,8 +17,16 @@ final class MotoPipelineRelease
 
     public const CINEMATIC_V2 = 'moto-cinematic-3s-v2';
 
+    public const CINEMATIC_V3 = 'moto-cinematic-3s-v3';
+
+    /** @var string the release whose design always has the five fixed roles and whose script one character for each, in their order */
+    public const CINEMATIC_V4 = 'moto-cinematic-3s-v4';
+
+    /** @var string the key of the project metadata that keeps every change of release made to the project after it was pinned, oldest first */
+    public const HISTORY_KEY = 'moto_pipeline_release_history';
+
     /** @var list<string> the releases of three-second takes made from references: every one runs the same eventful pipeline, each with its own catalogue of revisions and its own check policy */
-    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2];
+    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2, self::CINEMATIC_V3, self::CINEMATIC_V4];
 
     /** @return string the release the project pinned, the legacy release when it pinned none */
     public static function of(VideoProject $project): string
@@ -69,5 +77,89 @@ final class MotoPipelineRelease
         $project->forceFill(['metadata_json' => [...(array) $project->metadata_json, self::KEY => $release]])->save();
 
         return $release;
+    }
+
+    /**
+     * @param  bool  $hasRuns  whether the project already ran Phase 2
+     * @return ?string the release a project opened before the current default keeps when it pinned none: the legacy release when it already ran, otherwise the release new projects took before; null for a project that pinned one
+     */
+    public static function inherited(VideoProject $project, bool $hasRuns): ?string
+    {
+        $pinned = $project->metadata_json[self::KEY] ?? null;
+
+        if (is_string($pinned) && $pinned !== '') {
+            return null;
+        }
+
+        $workflow = (array) config('video.superyacht.contracts.workflows.'.MotoContract::WORKFLOW);
+
+        return $hasRuns ? self::LEGACY : (string) ($workflow['previous_default_release'] ?? self::LEGACY);
+    }
+
+    /** @var array<string, array{stage: string, selection: string}> the steps a change of release may move: the phase whose revision the new release replaces, the planning stage of its runs and the project metadata key of its selection */
+    private const MOVABLE = [
+        'phase-6' => ['stage' => 'scenes', 'selection' => 'scenes_selection'],
+        'phase-7' => ['stage' => 'shots', 'selection' => 'shots_selection'],
+    ];
+
+    /**
+     * @param  string  $to  the release the project moves to
+     * @param  array<string, ?array<string, mixed>>  $rulesNow  for every phase of the workflow, the catalogue rule of the release the project has
+     * @param  array<string, ?array<string, mixed>>  $rulesNext  the same for the release it moves to
+     * @param  list<string>  $busy  the planning stages of the project with a run waiting or running
+     * @return list<string> why the project cannot move: it pinned no release, the release is not declared or does not extend the one it has, it replaces a phase other than scenes and shots, or a step it replaces already has a selection or a run in progress
+     */
+    public static function moveProblems(VideoProject $project, string $to, array $rulesNow, array $rulesNext, array $busy): array
+    {
+        $workflow = (array) config('video.superyacht.contracts.workflows.'.MotoContract::WORKFLOW);
+        $pinned = $project->metadata_json[self::KEY] ?? null;
+
+        if (! is_string($pinned) || $pinned === '') {
+            return ['Dự án chưa ghim bản phát hành nào — ghim trước rồi mới chuyển.'];
+        }
+
+        if (! isset($workflow['releases'][$to])) {
+            return ["Bản phát hành {$to} chưa được khai trong cấu hình moto."];
+        }
+
+        if (($workflow['releases'][$to]['extends'] ?? null) !== $pinned) {
+            return ["{$to} không mở rộng trực tiếp {$pinned} — chỉ chuyển sang bản kế tiếp của bản dự án đang ghim."];
+        }
+
+        $problems = [];
+
+        foreach (array_keys($rulesNow + $rulesNext) as $code) {
+            if (($rulesNow[$code] ?? null) == ($rulesNext[$code] ?? null)) {
+                continue;
+            }
+
+            $step = self::MOVABLE[$code] ?? null;
+
+            if ($step === null) {
+                $problems[] = "{$to} đổi revision của {$code} — nguồn đã có của dự án ở bước này sẽ không còn khớp; lệnh này chỉ chuyển Scene và Shot.";
+            } elseif (is_array($project->metadata_json[$step['selection']] ?? null)) {
+                $problems[] = "Dự án đang chọn một bản {$step['stage']} — chuyển bản phát hành sẽ làm bản đó không dùng được.";
+            } elseif (in_array($step['stage'], $busy, true)) {
+                $problems[] = "Đang có lượt {$step['stage']} chờ hoặc đang chạy.";
+            }
+        }
+
+        return $problems;
+    }
+
+    /**
+     * @param  string  $to  the release the project keeps from now on
+     * @param  string  $reason  why
+     * @param  ?string  $actor  who decided
+     * @return array{from: ?string, to: string, reason: string, actor: ?string, at: string} the change, stored with the project after the changes it had before; the caller checked moveProblems() or inherited() first
+     */
+    public static function record(VideoProject $project, string $to, string $reason, ?string $actor): array
+    {
+        $metadata = (array) $project->metadata_json;
+        $pinned = $metadata[self::KEY] ?? null;
+        $change = ['from' => is_string($pinned) && $pinned !== '' ? $pinned : null, 'to' => $to, 'reason' => $reason, 'actor' => $actor, 'at' => now()->toIso8601String()];
+        $project->forceFill(['metadata_json' => [...$metadata, self::KEY => $to, self::HISTORY_KEY => [...array_values((array) ($metadata[self::HISTORY_KEY] ?? [])), $change]]])->save();
+
+        return $change;
     }
 }

@@ -20,9 +20,9 @@ final class MotoShotPrompt
     /**
      * @param  array{part: string, presentation: string}  $item  a part in frame
      * @param  array<string, mixed>  $context  the check context pinned with the run
-     * @return list<array{element: string, status: string, text: string}> every surface of the part at the shot's first frame, from its build state, how it is shown and what is true at that frame, never what the shot goes on to do: none for a drawing, the design's model stage for a model, and needs_check where the sources give no finish
+     * @return list<array{element: string, status: string, text: string}> every surface of the part at the shot's first frame, from its build state and how it is shown: none for a drawing, the design's model stage for a model, and needs_check where the values of the design give no finish
      */
-    public static function surfaces(array $item, ?string $state, string $firstFrame, array $context): array
+    public static function surfaces(array $item, ?string $state, array $context): array
     {
         $record = (array) ($context['part_records'][$item['part']] ?? []);
         $records = (array) ($context['state_records'] ?? []);
@@ -39,10 +39,7 @@ final class MotoShotPrompt
         $being = $item['presentation'] === 'being_made' || collect((array) ($at['in_progress'] ?? []))->contains('part', $item['part']);
         $reference = (array) config('video.moto.reference');
 
-        return MotoReferenceSurface::components($record, $at, (array) ($context['palette'] ?? []), $being, array_values(array_filter([
-            is_string($at['surface'] ?? null) ? ['path' => "design.build_states.{$at['id']}.surface", 'text' => $at['surface']] : null,
-            ['path' => 'shot.first_frame', 'text' => $firstFrame],
-        ])), (array) $reference['surface_groups'], (array) $reference['finish_labels'], (string) ($context['surface_rule'] ?? MotoReferenceSurface::RULE_ANY_MATERIAL));
+        return MotoReferenceSurface::components($record, $at, (array) ($context['palette'] ?? []), $being, (array) $reference['surface_groups'], (array) $reference['finish_labels']);
     }
 
     /**

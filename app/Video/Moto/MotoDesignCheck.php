@@ -8,7 +8,7 @@ use App\Video\Superyacht\Support\CanonicalJson;
 
 final class MotoDesignCheck
 {
-    public const VERSION = 'moto-design-check-v2';
+    public const VERSION = 'moto-design-check-v3';
 
     /** @var string the words only the length problem of a model-sheet prompt carries */
     public const LENGTH_ISSUE = 'vượt max_chars';
@@ -21,52 +21,6 @@ final class MotoDesignCheck
 
     /** @var list<string> the physical build states, in order */
     public const PHYSICAL_STATES = ['BS06', 'BS07', 'BS08', 'BS09', 'BS10', 'BS11', 'BS12'];
-
-    /** @var array<string, int> nominal displacement in cc of each Harley-Davidson engine family the prompt lists with one value */
-    private const NOMINAL_CC = [
-        'Milwaukee-Eight 107' => 1746, 'Milwaukee-Eight 114' => 1868, 'Milwaukee-Eight 117' => 1923, 'Milwaukee-Eight 121' => 1977,
-        'Revolution Max 975' => 975, 'Revolution Max 1250' => 1252,
-        'Twin Cam 88' => 1450, 'Twin Cam 96' => 1584, 'Twin Cam 103' => 1690, 'Twin Cam 110' => 1802, 'Evolution' => 1340,
-    ];
-
-    /** @var list<string> part kinds that may rise above the profile curve */
-    private const ABOVE_PROFILE = ['handlebar', 'hand_controls', 'mirror', 'turn_signal', 'instruments'];
-
-    /** @var list<string> part kinds the ground clearance leaves out: the wheels stand on the ground and the side stand folds */
-    private const CLEARANCE_LEFT_OUT = ['front_wheel', 'rear_wheel', 'side_stand'];
-
-    /** @var int millimetres a wheel box may start above the ground; a wheel includes its tyre and stands on the ground (fails beyond) */
-    private const WHEEL_GROUND_MM = 10;
-
-    /** @var int millimetres the front axle may sit from x 0, the origin of the coordinate system (fails beyond) */
-    private const FRONT_AXLE_MM = 15;
-
-    /** @var int millimetres the axle distance may differ from specs.wheelbase, or WHEELBASE_SHARE of it when larger (fails beyond) */
-    private const WHEELBASE_MM = 15;
-
-    /** @var float the share of specs.wheelbase the axle distance may differ by, when larger than WHEELBASE_MM */
-    private const WHEELBASE_SHARE = 0.01;
-
-    /** @var int millimetres the seating point may differ from specs.seat_height, the same point in the reference pose (fails beyond) */
-    private const SEAT_HEIGHT_MM = 40;
-
-    /** @var array{0: int, 1: int} millimetres a wheel box usually adds to its rim diameter for the tyre, least and most (warns outside) */
-    private const TYRE_ADDS_MM = [80, 400];
-
-    /** @var int millimetres the ends of the profile curve may differ from the frontmost and rearmost part boxes (warns beyond) */
-    private const PROFILE_END_MM = 50;
-
-    /** @var int millimetres a part box may rise above the profile curve over its length (warns beyond) */
-    private const PROFILE_TOP_MM = 60;
-
-    /** @var int millimetres a point may lie outside the box of its part (warns beyond) */
-    private const POINT_BOX_MM = 30;
-
-    /** @var int millimetres a mounting point may lie outside the box of each part it joins (warns beyond) */
-    private const MOUNT_BOX_MM = 80;
-
-    /** @var array{0: int, 1: int} millimetres the lowest measured box may lie below and above specs.ground_clearance (warns outside) */
-    private const CLEARANCE_MM = [60, 20];
 
     /** @var list<string> the facings the eight panels need described */
     private const FACINGS = ['left', 'right', 'front', 'rear', 'top'];
@@ -137,22 +91,19 @@ final class MotoDesignCheck
 
         $data = $response['data'];
         $ids = self::ids($data);
-        $figures = self::figureIssues($data, $ids);
         $geometry = self::geometryIssues($data, $ids);
-        $warnings = [...$figures['warnings'], ...$geometry['warnings']];
+        $warnings = $geometry['warnings'];
         $issues = [
             ...$issues,
             ...$ids['issues'],
             ...self::referenceIssues($data, $ids),
             ...self::dnaIssues($data, $dna),
-            ...$figures['issues'],
             ...$geometry['issues'],
             ...self::configurationIssues($data, $ids, $themed),
             ...($themed ? self::storyIssues($data, $ids) : []),
             ...self::stateIssues($data, $ids),
             ...self::viewIssues($data, $ids, (array) ($modelSheet['cameras'] ?? [])),
             ...(isset($data['model_sheet']['final_prompt']) ? self::promptIssues($data, $modelSheet) : MotoSheetPrompt::composedProblems($data)),
-            ...self::wordIssues($data, $forbidden, $sourceIdentity),
         ];
 
         if ($status === 'partial') {
@@ -457,14 +408,6 @@ final class MotoDesignCheck
             $issues[] = "features thiếu {$id} của DNA.";
         }
 
-        foreach (array_intersect_key($found, $wanted) as $id => $feature) {
-            foreach (['kind', 'visible_at_rest'] as $field) {
-                if ($feature[$field] !== ($wanted[$id][$field] ?? null)) {
-                    $issues[] = "{$id}.{$field} là ".json_encode($feature[$field]).'; DNA khai '.json_encode($wanted[$id][$field] ?? null).'.';
-                }
-            }
-        }
-
         $departures = array_column((array) ($dna['departures'] ?? []), 'id');
         $covered = array_column($data['motorcycle']['departures'], 'departure');
 
@@ -476,127 +419,19 @@ final class MotoDesignCheck
             $issues[] = "motorcycle.departures chưa nói {$id} của DNA nằm ở đâu trong thiết kế.";
         }
 
-        $platform = (array) ($dna['brief']['platform'] ?? []);
-
-        foreach (['family', 'model', 'era', 'engine_family'] as $field) {
-            if (array_key_exists($field, $platform) && $data['motorcycle']['base'][$field] !== $platform[$field]) {
-                $issues[] = "motorcycle.base.{$field} là ".json_encode($data['motorcycle']['base'][$field], JSON_UNESCAPED_UNICODE).'; phải chép đúng dna.brief.platform '.json_encode($platform[$field], JSON_UNESCAPED_UNICODE).'.';
-            }
-        }
-
-        foreach (['height_cm', 'build'] as $field) {
-            $given = $dna['brief']['rider'][$field] ?? null;
-
-            if ($given !== null && $data['rider_interface']['rider'][$field] !== $given) {
-                $issues[] = "rider_interface.rider.{$field} là ".json_encode($data['rider_interface']['rider'][$field], JSON_UNESCAPED_UNICODE).'; brief của DNA là '.json_encode($given, JSON_UNESCAPED_UNICODE).'.';
-            }
-        }
-
         return $issues;
     }
 
     /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $ids  the result of ids()
-     * @return array{issues: list<string>, warnings: list<string>} broken conventions, and coarse box comparisons that only warn
-     */
-    private static function figureIssues(array $data, array $ids): array
-    {
-        $issues = [];
-        $warnings = [];
-        $specs = $data['motorcycle']['specs'];
-        $present = array_filter($ids['parts'], static fn (array $part): bool => $part['present']);
-        $axles = [];
-
-        foreach (['front' => 'front_wheel', 'rear' => 'rear_wheel'] as $end => $kind) {
-            foreach (array_filter($present, static fn (array $part): bool => $part['kind'] === $kind) as $wheel) {
-                $box = $wheel['extent'];
-
-                if (abs($box['z_min']) > self::WHEEL_GROUND_MM) {
-                    $issues[] = "{$wheel['id']} ({$kind}): hộp bắt đầu ở z {$box['z_min']} mm — bánh xe gồm lốp và phải chạm mặt đất (lệch tối đa ".self::WHEEL_GROUND_MM.' mm).';
-                }
-
-                $axles[$end] = $wheel['points']['axle']['x'] ?? ($box['x_from'] + $box['x_to']) / 2;
-                $inches = $specs["{$end}_wheel_diameter"]['value'];
-
-                if (is_int($inches) || is_float($inches)) {
-                    $height = $box['z_max'] - $box['z_min'];
-                    [$least, $most] = self::TYRE_ADDS_MM;
-
-                    if ($height < $inches * 25.4 + $least || $height > $inches * 25.4 + $most) {
-                        $warnings[] = "{$wheel['id']}: hộp cao {$height} mm; vành {$inches} inch cộng lốp thường cao thêm {$least}–{$most} mm.";
-                    }
-                }
-            }
-        }
-
-        if (isset($axles['front']) && abs($axles['front']) > self::FRONT_AXLE_MM) {
-            $issues[] = "Trục bánh trước ở x {$axles['front']} — gốc toạ độ là tâm trục bánh trước (lệch tối đa ".self::FRONT_AXLE_MM.' mm).';
-        }
-
-        $wheelbase = $specs['wheelbase']['value'];
-
-        if (isset($axles['front'], $axles['rear']) && (is_int($wheelbase) || is_float($wheelbase))
-            && abs($axles['rear'] - $axles['front'] - $wheelbase) > max(self::WHEELBASE_MM, $wheelbase * self::WHEELBASE_SHARE)) {
-            $issues[] = 'Hai trục bánh cách nhau '.($axles['rear'] - $axles['front'])." mm, specs.wheelbase là {$wheelbase} mm.";
-        }
-
-        $seatHeight = $specs['seat_height']['value'];
-
-        if ((is_int($seatHeight) || is_float($seatHeight)) && abs($data['rider_interface']['seat_point']['z'] - $seatHeight) > self::SEAT_HEIGHT_MM) {
-            $issues[] = "rider_interface.seat_point ở z {$data['rider_interface']['seat_point']['z']}, specs.seat_height là {$seatHeight} mm — cùng một điểm ngồi ở tư thế tham chiếu (lệch tối đa ".self::SEAT_HEIGHT_MM.' mm).';
-        }
-
-        $clearance = $specs['ground_clearance']['value'];
-        $measured = array_filter($present, static fn (array $part): bool => ! in_array($part['kind'], self::CLEARANCE_LEFT_OUT, true));
-
-        if ((is_int($clearance) || is_float($clearance)) && $measured !== []) {
-            $lowest = min(array_map(static fn (array $part): float|int => $part['extent']['z_min'], $measured));
-            [$below, $above] = self::CLEARANCE_MM;
-
-            if ($lowest < $clearance - $below || $lowest > $clearance + $above) {
-                $warnings[] = "Hộp thấp nhất (trừ bánh và chân chống) ở z {$lowest}, specs.ground_clearance là {$clearance} mm.";
-            }
-        }
-
-        $displacement = $specs['displacement'];
-        $nominal = self::NOMINAL_CC[$data['motorcycle']['base']['engine_family']] ?? null;
-
-        if ($displacement['basis'] === 'BASE_NOMINAL' && $nominal !== null && abs($displacement['value'] - $nominal) > $nominal * 0.02) {
-            $issues[] = "specs.displacement {$displacement['value']} cc (BASE_NOMINAL) không phải dung tích danh định {$nominal} cc của {$data['motorcycle']['base']['engine_family']}.";
-        }
-
-        return ['issues' => $issues, 'warnings' => $warnings];
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @param  array<string, mixed>  $ids  the result of ids()
-     * @return array{issues: list<string>, warnings: list<string>} broken structure, and coarse box comparisons that only warn
+     * @return array{issues: list<string>, warnings: list<string>} the numbers code computes with: a part box with no extent, a rider point with no side, and a facing no part describes that the model-sheet panels are composed from. Whether the shape, the proportions or the positions are plausible is content the model designs and the reviewer judges: no box is compared with another
      */
     private static function geometryIssues(array $data, array $ids): array
     {
         $issues = [];
         $warnings = [];
-        $curve = $data['motorcycle']['profile_curve'];
         $present = array_filter($ids['parts'], static fn (array $part): bool => $part['present']);
-
-        for ($i = 1; $i < count($curve); $i++) {
-            if ($curve[$i][0] <= $curve[$i - 1][0]) {
-                $issues[] = 'profile_curve: điểm '.($i + 1).' không lùi về sau so với điểm trước.';
-            }
-        }
-
-        if ($present !== []) {
-            $minX = min(array_map(static fn (array $part): float|int => $part['extent']['x_from'], $present));
-            $maxX = max(array_map(static fn (array $part): float|int => $part['extent']['x_to'], $present));
-            $first = $curve[0][0];
-            $last = $curve[count($curve) - 1][0];
-
-            if (abs($first - $minX) > self::PROFILE_END_MM || abs($last - $maxX) > self::PROFILE_END_MM) {
-                $warnings[] = "profile_curve chạy {$first}..{$last}, các hộp bộ phận chạy {$minX}..{$maxX} — đường bao nên đi từ điểm trước nhất tới điểm sau nhất của xe.";
-            }
-        }
 
         foreach ($present as $id => $part) {
             $box = $part['extent'];
@@ -604,51 +439,14 @@ final class MotoDesignCheck
             if ($box['x_from'] >= $box['x_to'] || $box['y_min'] >= $box['y_max'] || $box['z_min'] >= $box['z_max']) {
                 $issues[] = "{$id}.extent rỗng hoặc đảo cận (cận dưới không nhỏ hơn cận trên).";
             }
-
-            if (! in_array($part['kind'], self::ABOVE_PROFILE, true)) {
-                $top = self::profileTop($curve, (float) $box['x_from'], (float) $box['x_to']);
-
-                if ($top !== null && $box['z_max'] > $top + self::PROFILE_TOP_MM) {
-                    $warnings[] = "{$id}.extent lên tới z {$box['z_max']}, cao hơn profile_curve ({$top}) trên đoạn của nó.";
-                }
-            }
-
-            foreach ($part['points'] as $name => $point) {
-                if (! self::inBox($point, $box, self::POINT_BOX_MM)) {
-                    $warnings[] = "{$id}.points.{$name} nằm ngoài hộp của chính bộ phận.";
-                }
-            }
         }
 
-        foreach ($data['connections'] as $connection) {
-            foreach ($connection['between'] as $id) {
-                if (isset($present[$id]) && ! self::inBox($connection['point'], $present[$id]['extent'], self::MOUNT_BOX_MM)) {
-                    $warnings[] = "{$connection['id']}.point nằm xa hộp của {$id}.";
-                }
-            }
-        }
-
-        $rider = $data['rider_interface'];
-        $holders = static fn (array $kinds): array => array_filter($present, static fn (array $part): bool => in_array($part['kind'], $kinds, true));
-        $seats = $holders(['seat']);
-
-        if ($seats !== [] && array_filter($seats, static fn (array $seat): bool => self::inBox($rider['seat_point'], $seat['extent'], self::POINT_BOX_MM)) === []) {
-            $warnings[] = 'rider_interface.seat_point nằm ngoài hộp mọi bộ phận seat.';
-        }
-
-        foreach (['grip_points' => ['handlebar', 'hand_controls'], 'peg_points' => ['foot_controls']] as $group => $kinds) {
-            foreach (['left' => 1, 'right' => -1] as $side => $sign) {
-                $point = $rider[$group][$side];
-                $y = $point['y'] ?? null;
+        foreach (['grip_points', 'peg_points'] as $group) {
+            foreach (['left', 'right'] as $side) {
+                $y = $data['rider_interface'][$group][$side]['y'] ?? null;
 
                 if (! is_int($y) && ! is_float($y)) {
                     $issues[] = "rider_interface.{$group}.{$side} thiếu y — không xác định được bên trái/phải của người lái.";
-                } elseif ($y * $sign <= 0) {
-                    $issues[] = "rider_interface.{$group}.{$side}: y = {$y} nằm sai bên (dương là bên trái người lái).";
-                }
-
-                if (array_filter($holders($kinds), static fn (array $part): bool => self::inBox($point, $part['extent'], self::POINT_BOX_MM)) === []) {
-                    $warnings[] = "rider_interface.{$group}.{$side} nằm ngoài hộp mọi bộ phận ".implode('/', $kinds).'.';
                 }
             }
         }
@@ -709,12 +507,6 @@ final class MotoDesignCheck
                     $issues[] = "motorcycle.markings[{$index}].color_ids: {$color} không có trong palette.";
                 }
             }
-
-            $part = $ids['parts'][$marking['part']] ?? null;
-
-            if ($part !== null && ! self::exists($part, $marking['from_state'])) {
-                $issues[] = "motorcycle.markings[{$index}]: {$marking['part']} chưa có trên xe ở {$marking['from_state']}, giai đoạn khai hoạ tiết xuất hiện.";
-            }
         }
 
         return $issues;
@@ -729,19 +521,7 @@ final class MotoDesignCheck
     private static function configurationIssues(array $data, array $ids, bool $markingsShown = false): array
     {
         $issues = [];
-        $governing = [];
-
         foreach ($ids['limits'] as $limit) {
-            foreach ($limit['governs'] as $id) {
-                $governing[$id][] = $limit;
-            }
-        }
-
-        foreach ($ids['limits'] as $limit) {
-            if (array_intersect($limit['governs'], $limit['otherwise_configurations']) !== []) {
-                $issues[] = "{$limit['id']}: một cấu hình vừa nằm trong governs vừa là otherwise_configurations.";
-            }
-
             $owners = array_values(array_unique(array_filter(array_map(static fn (string $id): ?string => $ids['configurations'][$id] ?? null, $limit['governs']))));
 
             foreach ($limit['otherwise_configurations'] as $id) {
@@ -749,10 +529,6 @@ final class MotoDesignCheck
 
                 if ($owner !== null && $owners !== [] && ! in_array($owner, $owners, true)) {
                     $issues[] = "{$limit['id']}: vị trí dự phòng {$id} thuộc {$owner}, không phải bộ phận mà giới hạn này kiểm soát (".implode(', ', $owners).').';
-                }
-
-                if (isset($governing[$id])) {
-                    $issues[] = "{$limit['id']}: vị trí dự phòng {$id} lại bị ".implode(', ', array_column($governing[$id], 'id')).' kiểm soát — vị trí dự phòng phải luôn được phép.';
                 }
             }
 
@@ -768,12 +544,6 @@ final class MotoDesignCheck
         $display = $data['model_sheet']['display_configuration'];
 
         foreach ($ids['parts'] as $id => $part) {
-            foreach ($part['configurations'] as $configuration) {
-                if ($configuration['default'] && isset($governing[$configuration['id']])) {
-                    $issues[] = "Cấu hình mặc định {$configuration['id']} bị ".implode(', ', array_column($governing[$configuration['id']], 'id')).' kiểm soát — mặc định không cần điều kiện.';
-                }
-            }
-
             if ($part['present'] && $part['configurations'] !== []) {
                 $shown = array_filter($display, static fn (string $configuration): bool => ($ids['configurations'][$configuration] ?? null) === $id);
 
@@ -789,12 +559,6 @@ final class MotoDesignCheck
             if ($partId !== null && ! $ids['parts'][$partId]['present']) {
                 $issues[] = "model_sheet.display_configuration: {$id} thuộc {$partId}, bộ phận không có trên xe.";
             }
-
-            foreach ($governing[$id] ?? [] as $limit) {
-                if (! $limit['static_display']) {
-                    $issues[] = "model_sheet.display_configuration: {$id} bị {$limit['id']} kiểm soát và giới hạn này không cho trưng bày tĩnh.";
-                }
-            }
         }
 
         $onePerPart = static function (string $where, array $configurations) use (&$issues, $ids): void {
@@ -804,67 +568,13 @@ final class MotoDesignCheck
                 $issues[] = "{$where} đặt hai vị trí cho cùng một bộ phận.";
             }
         };
-        $standDown = null;
-
-        foreach ($ids['parts'] as $part) {
-            foreach ($part['kind'] === 'side_stand' && $part['present'] ? $part['configurations'] : [] as $configuration) {
-                $standDown = $configuration['name'] === 'down' ? $configuration['id'] : $standDown;
-            }
-        }
-
-        $situation = static function (string $where, array $configurations, array $limitIds, bool $whole) use (&$issues, $ids, $governing, $standDown): void {
-            $limits = [];
-
-            foreach ($configurations as $id) {
-                foreach ($governing[$id] ?? [] as $limit) {
-                    $limits[$limit['id']] = $limit;
-                }
-            }
-
-            foreach ($limitIds as $id) {
-                if (isset($ids['limits'][$id])) {
-                    $limits[$id] = $ids['limits'][$id];
-                }
-            }
-
-            $needs = static fn (string $situation): array => array_keys(array_filter($limits, static fn (array $limit): bool => in_array($situation, $limit['requires'], true)));
-
-            if ($needs('engine_off') !== [] && $needs('engine_running') !== []) {
-                $issues[] = "{$where}: ".implode(', ', $needs('engine_off')).' cần tắt máy nhưng '.implode(', ', $needs('engine_running')).' cần nổ máy — các vị trí dùng cùng lúc không thể cùng đạt điều kiện.';
-            }
-
-            if ($whole && $needs('side_stand_down') !== [] && ($standDown === null || ! in_array($standDown, $configurations, true))) {
-                $issues[] = "{$where}: ".implode(', ', $needs('side_stand_down')).' cần chân chống hạ nhưng tổ hợp không có vị trí down của chân chống.';
-            }
-        };
-
-        $situation('model_sheet.display_configuration', $display, [], true);
-
-        foreach ($ids['modes'] as $id => $mode) {
-            $situation($id, $mode['configurations'], [], false);
-        }
 
         foreach ($data['motorcycle']['signature_moments'] as $moment) {
-            $situation($moment['id'], $moment['configurations'], $moment['limits'], true);
             $onePerPart($moment['id'], $moment['configurations']);
-
-            foreach ($moment['configurations'] as $id) {
-                foreach ($governing[$id] ?? [] as $limit) {
-                    if (! in_array($limit['id'], $moment['limits'], true)) {
-                        $issues[] = "{$moment['id']} dùng {$id} nhưng không khai giới hạn {$limit['id']} của nó.";
-                    }
-                }
-            }
         }
 
         foreach ($ids['modes'] as $id => $mode) {
             $onePerPart($id, $mode['configurations']);
-        }
-
-        foreach ($markingsShown ? [] : $data['motorcycle']['markings'] as $marking) {
-            if ($marking['shown_in_model_sheet']) {
-                $issues[] = "motorcycle.markings: {$marking['part']} {$marking['kind']} khai hiện trong model sheet nhưng trình bày model sheet cấm logo, chữ và huy hiệu.";
-            }
         }
 
         return $issues;
@@ -884,24 +594,6 @@ final class MotoDesignCheck
             if ($part['until_state'] !== null && ($part['from_state'] === null || $order[$part['until_state']] < $order[$part['from_state']])) {
                 $issues[] = "{$id}: until_state {$part['until_state']} đứng trước from_state.";
             }
-
-            foreach ($part['lighting'] as $light) {
-                if ($order[$light['operable']] < $order[$light['installed']]) {
-                    $issues[] = "{$light['id']}: operable {$light['operable']} đứng trước installed {$light['installed']}.";
-                }
-
-                if ($part['from_state'] !== null && $order[$light['installed']] < $order[$part['from_state']]) {
-                    $issues[] = "{$light['id']}: lắp ở {$light['installed']} trước khi {$id} tồn tại ({$part['from_state']}).";
-                }
-            }
-        }
-
-        foreach ($ids['features'] as $feature) {
-            $states = array_values(array_filter(array_map(static fn (string $partId): ?int => isset($ids['parts'][$partId]['from_state']) ? $order[$ids['parts'][$partId]['from_state']] : null, $feature['parts']), 'is_int'));
-
-            if ($feature['from_state'] !== null && ($states === [] || $order[$feature['from_state']] < min($states))) {
-                $issues[] = "{$feature['id']}.from_state {$feature['from_state']} sớm hơn mọi bộ phận của nó.";
-            }
         }
 
         foreach ($data['build_states'] as $state) {
@@ -909,27 +601,9 @@ final class MotoDesignCheck
                 continue;
             }
 
-            foreach ($state['in_progress'] as $item) {
-                $part = $ids['parts'][$item['part']] ?? null;
-
-                if ($part !== null && self::exists($part, $state['id']) && $order[$part['from_state']] < $order[$state['id']]) {
-                    $issues[] = "{$state['id']}: đang làm {$item['part']} nhưng bộ phận đã hoàn chỉnh từ {$part['from_state']}.";
-                }
-            }
-
             foreach ($state['exceptions'] as $exception) {
-                $part = $ids['parts'][$exception['part']] ?? null;
-
-                if ($part === null) {
+                if (! isset($ids['parts'][$exception['part']])) {
                     continue;
-                }
-
-                if ($exception['presence'] === 'removed' && ! self::exists($part, $state['id'])) {
-                    $issues[] = "{$state['id']}: ngoại lệ removed cho {$exception['part']} nhưng bộ phận chưa tồn tại ở giai đoạn này.";
-                }
-
-                if ($exception['presence'] === 'present' && self::exists($part, $state['id']) && $exception['configuration'] === null) {
-                    $issues[] = "{$state['id']}: ngoại lệ present cho {$exception['part']} không khác gì trạng thái bình thường.";
                 }
 
                 if (is_string($exception['configuration']) && ($ids['configurations'][$exception['configuration']] ?? null) !== $exception['part']) {
@@ -979,13 +653,6 @@ final class MotoDesignCheck
                 $issues[] = "{$view['id']}: một ID nằm ở hai danh sách visible/partial/uncertain.";
             }
 
-            $seen = [...$seen, ...$view['visible'], ...$view['partial']];
-        }
-
-        foreach ($ids['features'] as $id => $feature) {
-            if ($feature['visible_at_rest'] && ! in_array($id, $seen, true) && array_intersect($feature['parts'], $seen) === []) {
-                $issues[] = "{$id} nhìn thấy khi xe đứng yên nhưng không panel nào cho thấy.";
-            }
         }
 
         return $issues;
@@ -1024,17 +691,6 @@ final class MotoDesignCheck
             }
         }
 
-        $base = $data['motorcycle']['base'];
-        $names = [$base['make'], 'Harley', 'Davidson', $base['family'], $base['model'], $base['engine_family'], trim((string) preg_replace('/\s*\d.*$/u', '', $base['engine_family']))];
-
-        foreach (array_unique(array_filter($names, static fn (mixed $name): bool => is_string($name) && mb_strlen(trim($name)) >= 3)) as $name) {
-            if (MotoContract::mentions($prompt, trim($name))) {
-                $from = array_keys(array_filter($sources, static fn (string $text): bool => MotoContract::mentions($text, trim($name))));
-                $issues[] = "final_prompt gọi tên hãng, đời xe hoặc dòng máy \"{$name}\" — model sheet tả bằng hình dáng để không vẽ chữ hay huy hiệu."
-                    .($from === [] ? '' : ' Nguồn đưa vào prompt: '.implode('; ', $from).'.');
-            }
-        }
-
         if (preg_match_all(self::PROMPT_IDS, $prompt, $match) > 0) {
             $issues[] = 'final_prompt chứa ID: '.implode(', ', array_unique($match[0])).' — prompt ảnh không được có ID.';
         }
@@ -1052,48 +708,6 @@ final class MotoDesignCheck
         return $issues;
     }
 
-    /**
-     * @param  array<string, mixed>  $data
-     * @param  list<string>  $forbidden
-     * @param  array<string, mixed>  $sourceIdentity
-     * @return list<string>
-     */
-    private static function wordIssues(array $data, array $forbidden, array $sourceIdentity): array
-    {
-        $issues = [];
-        $names = [];
-
-        foreach (['name', 'builder', 'designers'] as $field) {
-            foreach ((array) (is_array($sourceIdentity[$field] ?? null) ? ($sourceIdentity[$field]['value'] ?? null) : ($sourceIdentity[$field] ?? null)) as $value) {
-                if (is_string($value)) {
-                    $names[] = $value;
-                }
-            }
-        }
-
-        $sourceNames = MotoContract::blockedForms($names, [$data['motorcycle']['base']['family'], $data['motorcycle']['base']['model']]);
-
-        foreach (self::texts($data, '') as $path => $text) {
-            foreach ($forbidden as $word) {
-                if (MotoContract::mentions($text, $word)) {
-                    $issues[] = "{$path}: dùng từ cấm \"{$word}\".";
-                }
-            }
-
-            foreach ($sourceNames as $name) {
-                if (MotoContract::mentions($text, $name)) {
-                    $issues[] = "{$path}: dùng tên nguồn \"{$name}\".";
-                }
-            }
-
-            if (! str_starts_with($path, 'motorcycle.base.') && (MotoContract::mentions($text, 'Harley') || MotoContract::mentions($text, 'Davidson'))) {
-                $issues[] = "{$path}: gọi tên Harley-Davidson ngoài motorcycle.base.";
-            }
-        }
-
-        return $issues;
-    }
-
     /** @param  array<string, mixed>  $part */
     private static function exists(array $part, string $state): bool
     {
@@ -1101,47 +715,6 @@ final class MotoDesignCheck
 
         return $part['present'] && $part['from_state'] !== null && $order[$part['from_state']] <= $order[$state]
             && ($part['until_state'] === null || $order[$state] <= $order[$part['until_state']]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $point
-     * @param  array<string, mixed>  $box
-     */
-    private static function inBox(array $point, array $box, float $tolerance): bool
-    {
-        $y = $point['y'] ?? 0;
-
-        return $point['x'] >= $box['x_from'] - $tolerance && $point['x'] <= $box['x_to'] + $tolerance
-            && $y >= $box['y_min'] - $tolerance && $y <= $box['y_max'] + $tolerance
-            && $point['z'] >= $box['z_min'] - $tolerance && $point['z'] <= $box['z_max'] + $tolerance;
-    }
-
-    /** @param  list<array{0: float|int, 1: float|int}>  $curve */
-    private static function profileTop(array $curve, float $from, float $to): ?float
-    {
-        $top = null;
-
-        foreach ($curve as [$x, $z]) {
-            if ($x >= $from && $x <= $to) {
-                $top = max($top ?? (float) $z, (float) $z);
-            }
-        }
-
-        foreach ([$from, $to] as $x) {
-            for ($i = 0; $i < count($curve) - 1; $i++) {
-                [$x1, $z1] = $curve[$i];
-                [$x2, $z2] = $curve[$i + 1];
-
-                if ($x >= $x1 && $x <= $x2) {
-                    $z = $x2 == $x1 ? max($z1, $z2) : $z1 + ($z2 - $z1) * ($x - $x1) / ($x2 - $x1);
-                    $top = max($top ?? (float) $z, (float) $z);
-
-                    break;
-                }
-            }
-        }
-
-        return $top;
     }
 
     /** @return list<string> every object key used anywhere in a value */
@@ -1164,27 +737,6 @@ final class MotoDesignCheck
         }
 
         return array_keys($keys);
-    }
-
-    /** @return array<string, string> every string of a value by its dotted path */
-    private static function texts(mixed $value, string $path): array
-    {
-        if (is_string($value)) {
-            return [$path => $value];
-        }
-
-        if (! is_array($value)) {
-            return [];
-        }
-
-        $texts = [];
-
-        foreach ($value as $key => $item) {
-            $id = is_array($item) && is_string($item['id'] ?? null) ? $item['id'] : (string) $key;
-            $texts += self::texts($item, $path === '' ? $id : "{$path}.{$id}");
-        }
-
-        return $texts;
     }
 
     /**

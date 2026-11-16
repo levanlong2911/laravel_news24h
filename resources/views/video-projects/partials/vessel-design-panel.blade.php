@@ -88,6 +88,9 @@
                                         @default Đã nhận kết quả, chưa kiểm được — {{ $yachtCheck['error'] }}
                                     @endswitch
                                 </span></div>
+                                @if(is_array($yachtCheck['stored_check'] ?? null))
+                                    <div class="line"><span class="k">Lúc chạy</span><span class="v" style="color:var(--vp-dim)">{{ $yachtCheck['stored_check']['verdict'] ?? '—' }} — bộ kiểm phiên bản cũ ({{ $yachtCheck['stored_check']['version'] ?? '—' }}); chỉ là lịch sử, không dùng để cho qua.</span></div>
+                                @endif
                                 @foreach($yachtCheck['issues'] as $issue)
                                     <div class="line"><span class="v" style="color:var(--vp-red)">{{ $issue }}</span></div>
                                 @endforeach

@@ -52,6 +52,12 @@ final class MotoContract
 
     public const SCENES_FORMAT_V2 = 'moto-scenes-v2';
 
+    /** @var string the input of a scene plan whose work is followed under MotoWork::LAW_V2: the third input with work_tracking_version */
+    public const SCENES_INPUT_V4 = 'moto-scenes-input-v4';
+
+    /** @var string the answer of such a scene plan: no detached parts written by the model, work evidenced by event id, connection changes */
+    public const SCENES_FORMAT_V3 = 'moto-scenes-v3';
+
     public const SHOTS_INPUT = 'moto-shots-input-v4';
 
     public const SHOTS_FORMAT = 'moto-shots-v1';
@@ -62,6 +68,12 @@ final class MotoContract
 
     /** @var string the input of a shot plan made within a shot budget: the fifth input with film.shot_budget */
     public const SHOTS_INPUT_V6 = 'moto-shots-input-v6';
+
+    /** @var string the input of a shot plan made from a scene plan followed under MotoWork::LAW_V2: the sixth input with work_tracking_version, the detached parts code derived and the connection changes of the work */
+    public const SHOTS_INPUT_V7 = 'moto-shots-input-v7';
+
+    /** @var string the input of a shot plan that also carries the signature moments of the design: the seventh input with motorcycle.signature_moments, each record as the design holds it, and no confirmation of procedures */
+    public const SHOTS_INPUT_V8 = 'moto-shots-input-v8';
 
     /** @var string the way of making the clip of a shot from reference images, with no keyframe */
     public const REFERENCE_TO_VIDEO = 'reference_to_video';
@@ -146,6 +158,69 @@ final class MotoContract
         }
 
         return (string) json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
+    }
+
+    public const TECHNICAL_SCHEMA_VERSION = 'moto-technical-schema-v1';
+
+    /** @var array<string, array<string, list<string>>> by schema name, the keywords of a released schema that count creative content, by the pointer of the node that carries them */
+    private const CREATIVE_COUNTS = [
+        'MotoDna' => [
+            '/properties/dna/properties/visual_identity/properties/identity_cues' => ['minItems', 'maxItems'],
+            '/properties/dna/properties/departures' => ['minItems', 'maxItems'],
+            '/properties/dna/properties/features' => ['maxItems'],
+            '/properties/dna/properties/must_avoid' => ['minItems'],
+        ],
+        'MotoDesign' => [
+            '/$defs/data/properties/systems' => ['minItems'],
+            '/$defs/data/properties/connections' => ['minItems'],
+            '/$defs/data/properties/features' => ['maxItems'],
+            '/$defs/motorcycle/properties/name' => ['minLength', 'maxLength'],
+            '/$defs/motorcycle/properties/signature_moments' => ['minItems', 'maxItems'],
+            '/$defs/motorcycle/properties/palette' => ['maxItems'],
+            '/$defs/motorcycle/properties/materials' => ['minItems'],
+            '/$defs/parts' => ['minItems'],
+            '/$defs/rider_interface/properties/contact_points' => ['minItems'],
+            '/$defs/identity_rule/properties/description' => ['maxLength'],
+        ],
+        'MotoScript' => [
+            '/$defs/data/properties/beats' => ['minItems'],
+            '/$defs/data/properties/text_cards' => ['minItems'],
+            '/$defs/story/properties/loops' => ['maxItems'],
+        ],
+        'MotoLocations' => [
+            '/$defs/location/properties/palette' => ['maxItems'],
+            '/$defs/background/properties/must_show' => ['maxItems'],
+        ],
+    ];
+
+    /**
+     * @param  list<array{json_schema_id: string, content: string}>  $schemas  the output schemas a run pinned, as released
+     * @return list<array{json_schema_id: string, content: string}> the same set for the check of an answer: every structural rule kept, the counts of creative content (CREATIVE_COUNTS) left out; the released schemas and their hashes are not touched
+     */
+    public static function technicalSchemas(array $schemas): array
+    {
+        return array_map(static function (array $schema): array {
+            $rules = self::CREATIVE_COUNTS[basename((string) ($schema['json_schema_id'] ?? ''))] ?? [];
+            $document = $rules === [] ? null : json_decode((string) $schema['content']);
+
+            if (! is_object($document)) {
+                return $schema;
+            }
+
+            foreach ($rules as $pointer => $keywords) {
+                $node = $document;
+
+                foreach (explode('/', ltrim($pointer, '/')) as $step) {
+                    $node = is_object($node) ? ($node->{$step} ?? null) : null;
+                }
+
+                foreach (is_object($node) ? $keywords : [] as $keyword) {
+                    unset($node->{$keyword});
+                }
+            }
+
+            return ['content' => (string) json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION)] + $schema;
+        }, $schemas);
     }
 
     /** @return list<string> the name with its spaces collapsed and, when it starts with the make, the same name without it */
