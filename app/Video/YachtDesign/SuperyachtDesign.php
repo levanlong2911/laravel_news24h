@@ -25,13 +25,13 @@ final class SuperyachtDesign implements DesignWorkflow
     }
 
     /** @return list<string> */
-    public function markers(): array
+    public function markers(?array $manifest = null): array
     {
         return [YachtDesignCheck::FORMAT_V3, 'Input format: `'.YachtDesignCheck::INPUT_FORMAT_V2.'`'];
     }
 
     /** @return array<string, mixed> */
-    public function modelSheetConfig(): array
+    public function modelSheetConfig(?array $manifest = null): array
     {
         return (array) config('video.superyacht.model_sheet');
     }

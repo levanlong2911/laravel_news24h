@@ -22,16 +22,30 @@ final class MotoDesign implements DesignWorkflow
         return MotoDesignCheck::VERSION;
     }
 
-    /** @return list<string> */
-    public function markers(): array
+    /**
+     * @param  ?array<string, mixed>  $manifest
+     * @return list<string>
+     */
+    public function markers(?array $manifest = null): array
     {
-        return [MotoContract::DESIGN_FORMAT, 'Input format: `'.MotoContract::DESIGN_INPUT.'`'];
+        return self::themed($manifest)
+            ? [MotoContract::DESIGN_FORMAT_V2, 'Input format: `'.MotoContract::DESIGN_INPUT_V2.'`']
+            : [MotoContract::DESIGN_FORMAT, 'Input format: `'.MotoContract::DESIGN_INPUT.'`'];
     }
 
-    /** @return array<string, mixed> */
-    public function modelSheetConfig(): array
+    /**
+     * @param  ?array<string, mixed>  $manifest
+     * @return array<string, mixed>
+     */
+    public function modelSheetConfig(?array $manifest = null): array
     {
-        return (array) config('video.moto.model_sheet');
+        return MotoSheetPrompt::config(self::themed($manifest));
+    }
+
+    /** @param  ?array<string, mixed>  $manifest  the bundle a run is sent with */
+    private static function themed(?array $manifest): bool
+    {
+        return MotoContract::generation($manifest ?? [], 'MotoDesign') >= 2;
     }
 
     /** @return string the schema re-encoded without whitespace between tokens */
@@ -74,8 +88,10 @@ final class MotoDesign implements DesignWorkflow
     {
         [$decoded, $error] = JsonAnswer::parse($raw);
 
+        $format = self::themed($manifest) ? MotoContract::DESIGN_FORMAT_V2 : MotoContract::DESIGN_FORMAT;
+
         if ($error !== null || ! is_object($decoded)) {
-            return [null, MotoDesignCheck::evaluate(null, $run['project_id'], $run['prompt_version'], $run['dna'], $run['source_identity'], $run['model_sheet'], [], [])];
+            return [null, MotoDesignCheck::evaluate(null, $run['project_id'], $run['prompt_version'], $run['dna'], $run['source_identity'], $run['model_sheet'], [], [], $format)];
         }
 
         try {
@@ -97,6 +113,7 @@ final class MotoDesign implements DesignWorkflow
             $run['model_sheet'],
             $run['forbidden'],
             $schemaErrors,
+            $format,
         )];
     }
 }

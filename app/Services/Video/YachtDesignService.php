@@ -318,13 +318,13 @@ final class YachtDesignService implements QueuedStageService
         $manifest = $bundle->manifest();
         $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
 
-        foreach ($adapter->markers() as $marker) {
+        foreach ($adapter->markers($manifest) as $marker) {
             if (! str_contains((string) $prompt->prompt_content, $marker)) {
                 throw new RuntimeException("Prompt phase-3 revision {$prompt->revision} không khai {$marker} mà code đang dùng — phát hành revision tương thích trước khi thiết kế, không gọi model.");
             }
         }
 
-        $modelSheet = self::modelSheet($adapter->modelSheetConfig());
+        $modelSheet = self::modelSheet($adapter->modelSheetConfig($manifest));
         $payload = (string) json_encode(
             $adapter->payload((string) $project->id, self::instructionVersion($prompt), $dna, $source, $dnaPanel, $modelSheet),
             JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
@@ -424,7 +424,7 @@ final class YachtDesignService implements QueuedStageService
         return $adapter->evaluate($raw, [
             'prompt_version' => self::instructionVersion($run['prompt']),
             'forbidden' => self::forbiddenWords((string) $run['prompt']->prompt_content),
-            'model_sheet' => $run['model_sheet'] ?? self::modelSheet($adapter->modelSheetConfig()),
+            'model_sheet' => $run['model_sheet'] ?? self::modelSheet($adapter->modelSheetConfig($manifest)),
         ] + $run, $manifest);
     }
 

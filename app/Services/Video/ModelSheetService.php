@@ -22,8 +22,10 @@ use App\Video\ModelSheet\ModelSheetFacts;
 use App\Video\ModelSheet\ModelSheetMaster;
 use App\Video\ModelSheet\ModelSheetQaSchema;
 use App\Video\Moto\MotoContract;
+use App\Video\Moto\MotoDesignCheck;
 use App\Video\Moto\MotoSheetPrompt;
 use App\Video\Queue\VideoQueues;
+use App\Video\Superyacht\Support\CanonicalJson;
 use App\Video\YachtDesign\DesignRunPolicy;
 use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +53,9 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
     public const REVIEW_EXECUTION = 'model-sheet-master-review-v1';
 
     public const CODE_SUFFIX = '_model_sheet_master_v';
+
+    /** @var int the prompt length limit every moto set was pinned with while the limit was part of its policy hash */
+    private const MOTO_PINNED_MAX_CHARS = 27000;
 
     public function __construct(
         private readonly PlanningStageStore $stageStore,
@@ -95,6 +100,10 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             return [null, $e->getMessage()];
         }
 
+        if (($kept = $this->setApartByLimit($projectId, $input, $snapshot)) !== null) {
+            return [$kept, null];
+        }
+
         [$stage, $token, $reason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::MODEL_SHEET, $input);
 
         if ($token === null) {
@@ -122,8 +131,8 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             $snapshot = (array) $set->output_json;
             $this->assertCompatible($snapshot);
 
-            if (($snapshot['blocking'] ?? []) !== []) {
-                throw new RuntimeException(implode(' ', (array) $snapshot['blocking']));
+            if (($blocking = $this->blockingNow($set)) !== []) {
+                throw new RuntimeException(implode(' ', $blocking));
             }
 
             $workflow = (string) ($set->input_json['workflow'] ?? '');
@@ -182,7 +191,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         return array_slice($this->send($set, (string) $image->id), 0, 2);
     }
 
-    /** @return ?string why a queued master may no longer be sent: its set is no longer the one the project renders */
+    /** @return ?string why a queued master may no longer be sent: its set is no longer the one the project renders, or the prompt it waits with no longer passes the checks of today */
     public function checkQueued(VideoDesignImage $image): ?string
     {
         [$set, $error] = $this->activeSet((string) $image->project_id);
@@ -190,6 +199,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         return match (true) {
             $set === null => (string) $error,
             (((array) $image->prompt_spec_json)['model_sheet_set_id'] ?? null) !== (string) $set->id => 'Bộ model sheet đã đổi sau khi xếp hàng — không gửi render; bấm Render lại nếu cần.',
+            ($blocking = $this->blockingNow($set)) !== [] => implode(' ', $blocking).' Không gửi render.',
             default => null,
         };
     }
@@ -604,7 +614,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
                 'prompt_source' => $moto ? 'design' : 'qa',
                 'current_design' => ($set->input_json['design_stage_id'] ?? null) === $design['stage_id'],
                 'compatible_error' => $this->compatibilityError($snapshot),
-                'blocking' => array_values((array) ($snapshot['blocking'] ?? [])),
+                'blocking' => $this->blockingNow($set),
             ],
             'master' => [
                 'draft' => $moto ? '' : ModelSheetFacts::preview((array) ($snapshot['facts'] ?? [])),
@@ -612,7 +622,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
                 'layout_guide' => ($snapshot['layout_guide'] ?? false) === true,
                 'views' => array_values((array) $snapshot['views']),
             ],
-            'qa' => $active === null ? null : ($moto ? self::designPromptState($active) : $this->qaState($projectId, $active)),
+            'qa' => $active === null ? null : ($moto ? self::designPromptState($active, $this->blockingNow($active)) : $this->qaState($projectId, $active)),
             'masters' => $masters,
             'approved' => $approved,
             'complete' => $approved !== null && $approved['problem'] === null,
@@ -621,16 +631,17 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
     }
 
     /**
+     * @param  list<string>  $blocking  what stops a render of the set now
      * @return array<string, mixed> the prompt state of an open moto set in the shape of qaState(): the prompt the set wrote from its design, sent verbatim; the render form carries the design stage id
      */
-    private static function designPromptState(VideoPlanningStage $set): array
+    private static function designPromptState(VideoPlanningStage $set, array $blocking): array
     {
         $snapshot = (array) $set->output_json;
 
         return [
             'stage_id' => (string) ($set->input_json['design_stage_id'] ?? ''),
             'status' => VideoPlanningStageStatus::SUCCEEDED->value,
-            'ready' => ($snapshot['blocking'] ?? []) === [],
+            'ready' => $blocking === [],
             'error' => null,
             'stream' => null,
             'task' => null,
@@ -1055,28 +1066,25 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
      */
     private static function motoSource(VideoPlanningStage $stage, array $design, string $designHash, AiPhase $designPhase): array
     {
-        $config = (array) config('video.moto.model_sheet');
+        $themed = self::at($design, 'format') === MotoContract::DESIGN_FORMAT_V2;
+        $config = MotoSheetPrompt::config($themed);
         $master = self::master(MotoContract::WORKFLOW);
-        $views = array_map(static function (array $view) use ($design): array {
-            $target = $view['id'] === 'MS8' ? (self::at($design, 'data.model_sheet.views.7.target') ?? null) : null;
-
-            return is_string($target) && trim($target) !== '' ? ['view' => trim($target)] + $view : $view;
-        }, self::views($config, $master));
         $data = (array) self::at($design, 'data');
+        $views = MotoSheetPrompt::panelViews($data, $config, $master);
         $pinned = ModelSheetQaService::fixedRules(['views' => $views, 'layout_guide' => false], $config);
-        $prompt = MotoSheetPrompt::compile($data, $config, $pinned);
-        $snapshot = [
+        ['prompt' => $prompt, 'sources' => $sources] = MotoSheetPrompt::composed($data, $config, $pinned, $themed);
+        $snapshot = ($themed ? ['themed' => true] : []) + [
             'execution' => self::execution(MotoContract::WORKFLOW),
-            'prompt_version' => MotoSheetPrompt::VERSION,
+            'prompt_version' => $themed ? MotoSheetPrompt::VERSION_THEMED : MotoSheetPrompt::VERSION,
             'design_phase' => ['id' => (string) $designPhase->id, 'revision' => (int) $designPhase->revision, 'sha256' => (string) $designPhase->content_sha256],
             'layout_sha256' => $master->layoutSha256(),
             'layout_guide' => false,
             'guide_sha256' => null,
-            'policy_sha256' => self::policySha256(MotoContract::WORKFLOW),
+            'policy_sha256' => self::policySha256(MotoContract::WORKFLOW, $themed),
             'views' => $views,
             'final_prompt' => $prompt,
             'prompt_sha256' => hash('sha256', $prompt),
-            'blocking' => MotoSheetPrompt::problems($data, $pinned, $prompt),
+            'blocking' => MotoSheetPrompt::problems($data, $pinned, $prompt, $sources),
         ];
         $input = [
             'execution' => $snapshot['execution'],
@@ -1122,16 +1130,17 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
      * Phien ban chinh sach dau vao Sonnet (camera, bo cuc, quy tac, trinh bay, phien ban chi muc,
      * thong diep va schema dau ra). Thay vi so nguyen van bang camera trong prompt Phase 3.
      */
-    private static function policySha256(?string $workflow = null): string
+    private static function policySha256(?string $workflow = null, bool $themed = false, ?int $pinnedMaxChars = null): string
     {
         if (MotoContract::is($workflow)) {
-            $config = (array) config('video.moto.model_sheet');
+            $config = MotoSheetPrompt::config($themed);
 
+            // The length limit says how long a prompt may be, not what the image shows: it stays out of the hash. A set opened while it was part of the hash is recognised by the limit it was pinned with.
             return hash('sha256', (string) json_encode([
                 'views' => $config['views'],
                 'cameras' => $config['cameras'],
                 'camera_convention' => $config['camera_convention'],
-                'prompt' => $config['master']['prompt'],
+                'prompt' => array_diff_key((array) $config['master']['prompt'], ['max_chars' => true]) + ($pinnedMaxChars === null ? [] : ['max_chars' => $pinnedMaxChars]),
                 'occlusion' => $config['occlusion'],
                 'suffix' => $config['suffix'],
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
@@ -1230,6 +1239,70 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         return ModelSheetQaService::contractProblem($phase);
     }
 
+    /**
+     * @param  array<string, mixed>  $snapshot  a moto set
+     * @return bool whether the cameras, the rules and the presentation the set was opened with are the ones of today: its hash is today's, or today's with the length limit every earlier set was pinned with
+     */
+    private static function motoPolicyKept(array $snapshot): bool
+    {
+        $themed = ($snapshot['themed'] ?? false) === true;
+
+        return in_array($snapshot['policy_sha256'] ?? null, [
+            self::policySha256(MotoContract::WORKFLOW, $themed),
+            self::policySha256(MotoContract::WORKFLOW, $themed, self::MOTO_PINNED_MAX_CHARS),
+        ], true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input  the input of the moto set composed now
+     * @param  array<string, mixed>  $snapshot  its snapshot
+     * @return ?VideoPlanningStage the open set of the project when it shows the same image as the one composed now: the same design, prompt, views, layout and image rules, apart only by the length limit and what that limit alone reports
+     */
+    private function setApartByLimit(string $projectId, array $input, array $snapshot): ?VideoPlanningStage
+    {
+        $set = $this->currentSet($projectId);
+
+        if ($set === null || ($snapshot['execution'] ?? null) !== self::execution(MotoContract::WORKFLOW)) {
+            return null;
+        }
+
+        $kept = (array) $set->output_json;
+        $image = static fn (array $side): string => CanonicalJson::hash(array_diff_key($side, ['policy_sha256' => true, 'blocking' => true, 'config_sha256' => true]));
+        $beyondLength = static fn (array $side): array => array_values(array_filter((array) ($side['blocking'] ?? []), static fn (mixed $problem): bool => ! str_contains((string) $problem, MotoDesignCheck::LENGTH_ISSUE)));
+
+        return $image(array_intersect_key((array) $set->input_json, $input)) === $image($input)
+            && $image($kept) === $image($snapshot)
+            && self::motoPolicyKept($kept)
+            && $beyondLength($kept) === $beyondLength($snapshot)
+                ? $set
+                : null;
+    }
+
+    /**
+     * @return list<string> what stops a render of this set now. A moto set is checked again against the design it pinned and the limits of today, so a limit that moved since the set was opened is the one applied; what the set recorded when it was opened stays as it is
+     */
+    private function blockingNow(VideoPlanningStage $set): array
+    {
+        $snapshot = (array) $set->output_json;
+
+        if (! MotoContract::is((string) ($set->input_json['workflow'] ?? ''))) {
+            return array_values((array) ($snapshot['blocking'] ?? []));
+        }
+
+        $design = VideoPlanningStage::query()->withoutSnapshot()->whereKey($set->input_json['design_stage_id'] ?? null)->where('project_id', $set->project_id)->first();
+        $data = JsonAnswer::object((string) ($design?->raw_response ?? ''))['data'] ?? null;
+
+        if (! is_array($data)) {
+            return ['Không đọc được bản thiết kế nguồn của bộ model sheet này.'];
+        }
+
+        $themed = ($snapshot['themed'] ?? false) === true;
+        $config = MotoSheetPrompt::config($themed);
+        $pinned = ModelSheetQaService::fixedRules(['views' => (array) ($snapshot['views'] ?? []), 'layout_guide' => false], $config);
+
+        return MotoSheetPrompt::problems($data, $pinned, (string) ($snapshot['final_prompt'] ?? ''), MotoSheetPrompt::composed($data, $config, $pinned, $themed)['sources']);
+    }
+
     /** @param  array<string, mixed>  $snapshot  a moto set */
     private static function motoCompatibilityError(array $snapshot): ?string
     {
@@ -1239,7 +1312,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             return 'Bố cục master trong config đã đổi so với lúc mở bộ model sheet.';
         }
 
-        if (($snapshot['policy_sha256'] ?? null) !== self::policySha256(MotoContract::WORKFLOW)) {
+        if (! self::motoPolicyKept($snapshot)) {
             return 'Camera, quy tắc hoặc trình bày model sheet đã đổi so với lúc mở bộ này — tải lại trang để ghép prompt mới.';
         }
 

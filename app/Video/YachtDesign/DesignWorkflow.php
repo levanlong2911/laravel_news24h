@@ -11,11 +11,17 @@ interface DesignWorkflow
     /** @return ?string the version of the technical check a new run is pinned to; null when the workflow pins none */
     public function checkVersion(): ?string;
 
-    /** @return list<string> the markers the pinned phase-3 prompt must declare before a run is sent */
-    public function markers(): array;
+    /**
+     * @param  ?array<string, mixed>  $manifest  the bundle the run is sent with
+     * @return list<string> the markers the pinned phase-3 prompt must declare before a run is sent
+     */
+    public function markers(?array $manifest = null): array;
 
-    /** @return array<string, mixed> the model-sheet config the design writes its model sheet for */
-    public function modelSheetConfig(): array;
+    /**
+     * @param  ?array<string, mixed>  $manifest  the bundle the run is sent with
+     * @return array<string, mixed> the model-sheet config the design writes its model sheet for
+     */
+    public function modelSheetConfig(?array $manifest = null): array;
 
     /**
      * @param  string  $content  an output schema as the pinned bundle stores it

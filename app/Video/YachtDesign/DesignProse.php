@@ -16,7 +16,7 @@ final class DesignProse
     private const RECORD_SECTIONS = ['parts' => 'Parts', 'decks' => 'Decks', 'spaces' => 'Spaces', 'connections' => 'Connections', 'routes' => 'Routes', 'innovations' => 'Innovations', 'operational_limits' => 'Operations', 'build_states' => 'Build states', 'identity_rules' => 'Identity rules', 'source_issues' => 'Source issues'];
 
     /** @var array<string, string> the list blocks of a moto-design-v1 record by data key, with their section titles, in record order */
-    private const MOTO_SECTIONS = ['parts' => 'Parts', 'systems' => 'Systems', 'connections' => 'Connections', 'features' => 'Features', 'operational_limits' => 'Operations', 'build_states' => 'Build states', 'identity_rules' => 'Identity rules', 'source_issues' => 'Source issues'];
+    private const MOTO_SECTIONS = ['parts' => 'Parts', 'systems' => 'Systems', 'connections' => 'Connections', 'features' => 'Features', 'operational_limits' => 'Operations', 'participant_roles' => 'Roles', 'build_states' => 'Build states', 'identity_rules' => 'Identity rules', 'source_issues' => 'Source issues'];
 
     /**
      * @param  array<mixed>  $data
@@ -98,7 +98,7 @@ final class DesignProse
             self::section('Model sheet', [
                 self::block(null, self::lines(['display_configuration' => $sheet['display_configuration'] ?? null], [], null, true)),
                 ...array_map($item, self::items($sheet['views'] ?? null)),
-                self::block(null, self::lines(['final_prompt' => $sheet['final_prompt'] ?? null], [], null, true)),
+                array_key_exists('final_prompt', $sheet) ? self::block(null, self::lines(['final_prompt' => $sheet['final_prompt']], [], null, true)) : null,
                 self::block(null, self::lines(array_diff_key($sheet, array_flip(['display_configuration', 'views', 'final_prompt'])), [], null, true)),
             ]),
             self::section('Additional information', [self::block(null, self::lines(array_diff_key($data, $sections + [$subject => true, 'rider_interface' => true, 'model_sheet' => true]), [], null, true))]),

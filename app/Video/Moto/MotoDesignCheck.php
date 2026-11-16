@@ -10,6 +10,9 @@ final class MotoDesignCheck
 {
     public const VERSION = 'moto-design-check-v2';
 
+    /** @var string the words only the length problem of a model-sheet prompt carries */
+    public const LENGTH_ISSUE = 'vượt max_chars';
+
     public const PASS = 'PASS';
 
     public const FAIL = 'FAIL';
@@ -71,7 +74,7 @@ final class MotoDesignCheck
     /** @var list<string> the views whose camera must equal the pinned camera field by field */
     private const FIXED_VIEWS = ['MS1', 'MS2', 'MS3', 'MS4', 'MS5', 'MS6', 'MS7'];
 
-    private const PROMPT_IDS = '/\b(?:P\d{2,3}(?:-[KL]\d{2})?|S\d{2}(?:-W\d{2})?|J\d{2,3}|F[1-3](?:-M\d{2})?|L\d{2,3}|M\d{1,2}|BS\d{2}|C[1-3]|SI\d{2,3}|MS[1-8]|D[1-5])\b/';
+    private const PROMPT_IDS = '/\b(?:P\d{2,3}(?:-[KL]\d{2})?|S\d{2}(?:-W\d{2})?|J\d{2,3}|F[1-3](?:-M\d{2})?|L\d{2,3}|M\d{1,2}|BS\d{2}|C[1-9]\d*|SI\d{2,3}|MS[1-8]|D[1-5])\b/';
 
     private const PLACEHOLDER = '/[{}<>]|\bTODO\b|\bTBD\b/';
 
@@ -82,16 +85,33 @@ final class MotoDesignCheck
      * @param  array<string, mixed>  $modelSheet  the pinned model-sheet presentation the run sent
      * @param  list<string>  $forbidden  the forbidden words of the pinned prompt
      * @param  list<string>  $schemaErrors  the answer's violations of the pinned schema
+     * @param  string  $format  the answer format the run pinned
      * @return array{version: string, format: string, verdict: string, status: ?string, issues: list<string>, warnings: list<string>, error: ?string, design_hash: ?string, parts_by_state: array<string, list<string>>}
      */
-    public static function evaluate(?array $response, string $projectId, string $promptVersion, array $dna, array $sourceIdentity, array $modelSheet, array $forbidden, array $schemaErrors): array
+    public static function evaluate(?array $response, string $projectId, string $promptVersion, array $dna, array $sourceIdentity, array $modelSheet, array $forbidden, array $schemaErrors, string $format = MotoContract::DESIGN_FORMAT): array
     {
+        return ['format' => $format] + self::scored($response, $projectId, $promptVersion, $dna, $sourceIdentity, $modelSheet, $forbidden, $schemaErrors, $format);
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $response
+     * @param  array<string, mixed>  $dna
+     * @param  array<string, mixed>  $sourceIdentity
+     * @param  array<string, mixed>  $modelSheet
+     * @param  list<string>  $forbidden
+     * @param  list<string>  $schemaErrors
+     * @return array{version: string, format: string, verdict: string, status: ?string, issues: list<string>, warnings: list<string>, error: ?string, design_hash: ?string, parts_by_state: array<string, list<string>>}
+     */
+    private static function scored(?array $response, string $projectId, string $promptVersion, array $dna, array $sourceIdentity, array $modelSheet, array $forbidden, array $schemaErrors, string $format): array
+    {
+        $themed = $format === MotoContract::DESIGN_FORMAT_V2;
+
         if ($response === null) {
             return self::result(self::UNSCORED, null, [], 'Phản hồi không đọc được JSON.');
         }
 
-        if (($response['format'] ?? null) !== MotoContract::DESIGN_FORMAT) {
-            return self::result(self::UNSCORED, null, [], 'Lượt này ghim hợp đồng '.MotoContract::DESIGN_FORMAT.' nhưng phản hồi khai format '.json_encode($response['format'] ?? null).' — sai hợp đồng, không dùng tiếp.');
+        if (($response['format'] ?? null) !== $format) {
+            return self::result(self::UNSCORED, null, [], 'Lượt này ghim hợp đồng '.$format.' nhưng phản hồi khai format '.json_encode($response['format'] ?? null).' — sai hợp đồng, không dùng tiếp.');
         }
 
         $status = is_string($response['status'] ?? null) ? $response['status'] : null;
@@ -127,10 +147,11 @@ final class MotoDesignCheck
             ...self::dnaIssues($data, $dna),
             ...$figures['issues'],
             ...$geometry['issues'],
-            ...self::configurationIssues($data, $ids),
+            ...self::configurationIssues($data, $ids, $themed),
+            ...($themed ? self::storyIssues($data, $ids) : []),
             ...self::stateIssues($data, $ids),
             ...self::viewIssues($data, $ids, (array) ($modelSheet['cameras'] ?? [])),
-            ...self::promptIssues($data, $modelSheet),
+            ...(isset($data['model_sheet']['final_prompt']) ? self::promptIssues($data, $modelSheet) : MotoSheetPrompt::composedProblems($data)),
             ...self::wordIssues($data, $forbidden, $sourceIdentity),
         ];
 
@@ -318,7 +339,7 @@ final class MotoDesignCheck
             preg_match('/^J\d{2,3}$/', $id) === 1 => 'connection',
             preg_match('/^F[1-3]$/', $id) === 1 => 'feature',
             preg_match('/^L\d{2,3}$/', $id) === 1 => 'limit',
-            preg_match('/^C[1-3]$/', $id) === 1 => 'color',
+            preg_match('/^C[1-9]\d*$/', $id) === 1 => 'color',
             preg_match('/^SI\d{2,3}$/', $id) === 1 => 'source issue',
             default => 'rule',
         };
@@ -654,9 +675,58 @@ final class MotoDesignCheck
     /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $ids  the result of ids()
+     * @return list<string> every role a stage names that the design does not list, every listed role no stage names, every role id out of sequence, and every marking whose colour is not in the palette or whose part is not on the motorcycle at the state it appears from
+     */
+    private static function storyIssues(array $data, array $ids): array
+    {
+        $issues = [];
+        $roles = array_column($data['participant_roles'], 'id');
+        $used = [];
+
+        foreach ($roles as $index => $id) {
+            if ($id !== sprintf('ROLE%02d', $index + 1)) {
+                $issues[] = "participant_roles[{$index}] có ID {$id}; ID phải đánh số liên tiếp từ ROLE01.";
+            }
+        }
+
+        foreach ($data['build_states'] as $state) {
+            foreach ($state['participant_roles'] as $role) {
+                $used[$role] = true;
+
+                if (! in_array($role, $roles, true)) {
+                    $issues[] = "{$state['id']}.participant_roles: {$role} không có trong danh mục participant_roles.";
+                }
+            }
+        }
+
+        foreach (array_diff($roles, array_keys($used)) as $role) {
+            $issues[] = "participant_roles: {$role} không được giai đoạn nào dùng.";
+        }
+
+        foreach ($data['motorcycle']['markings'] as $index => $marking) {
+            foreach ($marking['color_ids'] as $color) {
+                if (! isset($ids['colors'][$color])) {
+                    $issues[] = "motorcycle.markings[{$index}].color_ids: {$color} không có trong palette.";
+                }
+            }
+
+            $part = $ids['parts'][$marking['part']] ?? null;
+
+            if ($part !== null && ! self::exists($part, $marking['from_state'])) {
+                $issues[] = "motorcycle.markings[{$index}]: {$marking['part']} chưa có trên xe ở {$marking['from_state']}, giai đoạn khai hoạ tiết xuất hiện.";
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $ids  the result of ids()
+     * @param  bool  $markingsShown  whether the contract lets the model sheet show a marking
      * @return list<string>
      */
-    private static function configurationIssues(array $data, array $ids): array
+    private static function configurationIssues(array $data, array $ids, bool $markingsShown = false): array
     {
         $issues = [];
         $governing = [];
@@ -791,7 +861,7 @@ final class MotoDesignCheck
             $onePerPart($id, $mode['configurations']);
         }
 
-        foreach ($data['motorcycle']['markings'] as $marking) {
+        foreach ($markingsShown ? [] : $data['motorcycle']['markings'] as $marking) {
             if ($marking['shown_in_model_sheet']) {
                 $issues[] = "motorcycle.markings: {$marking['part']} {$marking['kind']} khai hiện trong model sheet nhưng trình bày model sheet cấm logo, chữ và huy hiệu.";
             }
@@ -924,16 +994,20 @@ final class MotoDesignCheck
     /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $modelSheet  the pinned presentation
+     * @param  ?string  $prompt  the model-sheet prompt to check; the one the design wrote when null
+     * @param  array<string, string>  $sources  the design texts the composer wrote into that prompt, by the path each was taken from
+     * @param  array<string, int>  $blocks  the longest blocks of that prompt, by title, with their characters
      * @return list<string>
      */
-    public static function promptIssues(array $data, array $modelSheet): array
+    public static function promptIssues(array $data, array $modelSheet, ?string $prompt = null, array $sources = [], array $blocks = []): array
     {
         $issues = [];
-        $prompt = $data['model_sheet']['final_prompt'];
+        $prompt ??= (string) $data['model_sheet']['final_prompt'];
         $max = (int) ($modelSheet['max_chars'] ?? 0);
 
         if ($max > 0 && mb_strlen($prompt) > $max) {
-            $issues[] = 'final_prompt dài '.mb_strlen($prompt)." ký tự, vượt max_chars {$max}.";
+            $issues[] = 'final_prompt dài '.mb_strlen($prompt).' ký tự, '.self::LENGTH_ISSUE." {$max}."
+                .($blocks === [] ? '' : ' Các khối dài nhất: '.implode(', ', array_map(static fn (string $title, int $chars): string => "{$title} ({$chars})", array_keys($blocks), $blocks)).'.');
         }
 
         $position = -1;
@@ -955,7 +1029,9 @@ final class MotoDesignCheck
 
         foreach (array_unique(array_filter($names, static fn (mixed $name): bool => is_string($name) && mb_strlen(trim($name)) >= 3)) as $name) {
             if (MotoContract::mentions($prompt, trim($name))) {
-                $issues[] = "final_prompt gọi tên hãng, đời xe hoặc dòng máy \"{$name}\" — model sheet tả bằng hình dáng để không vẽ chữ hay huy hiệu.";
+                $from = array_keys(array_filter($sources, static fn (string $text): bool => MotoContract::mentions($text, trim($name))));
+                $issues[] = "final_prompt gọi tên hãng, đời xe hoặc dòng máy \"{$name}\" — model sheet tả bằng hình dáng để không vẽ chữ hay huy hiệu."
+                    .($from === [] ? '' : ' Nguồn đưa vào prompt: '.implode('; ', $from).'.');
             }
         }
 
