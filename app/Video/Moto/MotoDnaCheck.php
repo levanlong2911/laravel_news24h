@@ -35,20 +35,21 @@ final class MotoDnaCheck
      * @param  array<string, mixed>  $brief  the brief the run sent; a null value was left to the model
      * @param  list<array<string, mixed>>  $history  the concept history the run sent
      * @param  list<string>  $schemaErrors  the answer's violations of the pinned schema
+     * @param  string  $format  the answer format the run pinned
      * @return array{version: string, format: string, verdict: string, issues: list<string>, schema_errors: list<string>, error: ?string}
      */
-    public static function evaluate(?array $answer, array $inspiration, array $flags, array $brief, array $history, array $schemaErrors): array
+    public static function evaluate(?array $answer, array $inspiration, array $flags, array $brief, array $history, array $schemaErrors, string $format = MotoContract::DNA_FORMAT): array
     {
         if ($answer === null) {
-            return self::unscored('Phản hồi không đọc được JSON.');
+            return self::unscored('Phản hồi không đọc được JSON.', $format);
         }
 
-        if (($answer['format'] ?? null) !== MotoContract::DNA_FORMAT) {
-            return self::unscored('Lượt này ghim hợp đồng '.MotoContract::DNA_FORMAT.' nhưng phản hồi khai format '.json_encode($answer['format'] ?? null).' — sai hợp đồng, không dùng tiếp.');
+        if (($answer['format'] ?? null) !== $format) {
+            return self::unscored('Lượt này ghim hợp đồng '.$format.' nhưng phản hồi khai format '.json_encode($answer['format'] ?? null).' — sai hợp đồng, không dùng tiếp.', $format);
         }
 
         if ($schemaErrors !== []) {
-            return ['schema_errors' => $schemaErrors] + self::unscored('Phản hồi sai JSON Schema đã ghim: '.implode('; ', array_slice($schemaErrors, 0, 5)).'.');
+            return ['schema_errors' => $schemaErrors] + self::unscored('Phản hồi sai JSON Schema đã ghim: '.implode('; ', array_slice($schemaErrors, 0, 5)).'.', $format);
         }
 
         $dna = $answer['dna'];
@@ -101,11 +102,17 @@ final class MotoDnaCheck
             }
         }
 
+        $cues = array_map(static fn (string $cue): string => mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', $cue))), (array) ($dna['visual_identity']['identity_cues'] ?? []));
+
+        if (count(array_unique($cues)) !== count($cues)) {
+            $issues[] = 'visual_identity.identity_cues: có mục trùng nhau — mỗi dấu hiệu nhận diện phải là một thứ riêng.';
+        }
+
         $issues = [...$issues, ...self::briefIssues($dna['brief'], $brief), ...self::historyIssues($dna, $texts, $history)];
 
         return [
             'version' => self::VERSION,
-            'format' => MotoContract::DNA_FORMAT,
+            'format' => $format,
             'verdict' => $issues === [] ? DnaCheck::PASS : DnaCheck::FAIL,
             'issues' => $issues,
             'schema_errors' => [],
@@ -241,6 +248,12 @@ final class MotoDnaCheck
             $texts["must_avoid[{$index}]"] = $item;
         }
 
+        foreach ((array) ($dna['visual_identity'] ?? []) as $field => $value) {
+            foreach (is_array($value) ? $value : [$value] as $index => $text) {
+                $texts['visual_identity.'.$field.(is_array($value) ? "[{$index}]" : '')] = (string) $text;
+            }
+        }
+
         return $texts;
     }
 
@@ -270,11 +283,11 @@ final class MotoDnaCheck
     }
 
     /** @return array{version: string, format: string, verdict: string, issues: list<string>, schema_errors: list<string>, error: ?string} */
-    private static function unscored(string $error): array
+    private static function unscored(string $error, string $format = MotoContract::DNA_FORMAT): array
     {
         return [
             'version' => self::VERSION,
-            'format' => MotoContract::DNA_FORMAT,
+            'format' => $format,
             'verdict' => DnaCheck::UNSCORED,
             'issues' => [],
             'schema_errors' => [],

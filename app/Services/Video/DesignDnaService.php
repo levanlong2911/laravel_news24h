@@ -17,6 +17,7 @@ use App\Video\Llm\JsonAnswer;
 use App\Video\Llm\LlmClient;
 use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoDnaCheck;
+use App\Video\Moto\MotoPipelineRelease;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -51,7 +52,7 @@ final class DesignDnaService implements QueuedStageService
             'dna',
             $projectId,
             PlanningStageName::DESIGN_DNA,
-            fn (): array => $this->prepare($this->project($projectId)),
+            fn (): array => $this->prepare($this->pinned($this->project($projectId))),
             fn (VideoPlanningStage $served, array $run): bool => $regenerate && $this->replaceable($served, $run),
             $operationId,
             $requester,
@@ -111,6 +112,18 @@ final class DesignDnaService implements QueuedStageService
         $project = $this->projects->getById($projectId);
 
         return $project !== null && $project->article !== null ? $project : throw new RuntimeException('Không tìm thấy dự án hoặc dự án không gắn bài viết.');
+    }
+
+    /** @return VideoProject the project, a moto one with the release it keeps from its first Phase 2 run on stored */
+    private function pinned(VideoProject $project): VideoProject
+    {
+        $workflow = config('video.superyacht.contracts.categories')[$project->article?->category?->slug ?? ''] ?? null;
+
+        if (MotoContract::is($workflow)) {
+            MotoPipelineRelease::pin($project, VideoPlanningStage::query()->where('project_id', $project->id)->where('stage', PlanningStageName::DESIGN_DNA->value)->exists());
+        }
+
+        return $project;
     }
 
     /** @return array{model: string, effort: string, max_tokens: int, timeout_seconds: int, stream: bool, retry_times: int} */
@@ -261,9 +274,12 @@ final class DesignDnaService implements QueuedStageService
 
         $manifest = $bundle->manifest();
         $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
-        $markers = $moto
-            ? [MotoContract::DNA_FORMAT, 'Input format: `'.MotoContract::DNA_INPUT.'`']
-            : [DnaCheck::FORMAT_V2, 'Input format: `'.DnaCheck::INPUT_FORMAT.'`'];
+        $themed = $moto && MotoContract::generation($manifest, 'MotoDna') >= 2;
+        $markers = match (true) {
+            $themed => [MotoContract::DNA_FORMAT_V2, 'Input format: `'.MotoContract::DNA_INPUT_V2.'`'],
+            $moto => [MotoContract::DNA_FORMAT, 'Input format: `'.MotoContract::DNA_INPUT.'`'],
+            default => [DnaCheck::FORMAT_V2, 'Input format: `'.DnaCheck::INPUT_FORMAT.'`'],
+        };
 
         foreach ($markers as $marker) {
             if (! str_contains((string) $prompt->prompt_content, $marker)) {
@@ -276,7 +292,7 @@ final class DesignDnaService implements QueuedStageService
             $bundle->outputSchemas(),
         );
         $flags = array_values(array_filter((array) ($phaseOne['source_check']['flags'] ?? []), 'is_string'));
-        $brief = $moto ? self::motoBrief() : [];
+        $brief = $moto ? self::motoBrief($themed ? $project : null) : [];
         [$history, $historyStages] = $moto
             ? self::conceptHistory($project, ['phase_id' => (string) $prompt->id, 'bundle_hash' => $bundle->bundleHash(), 'inspiration_stage_id' => (string) $stage->id], $queuedHistory)
             : [[], []];
@@ -350,12 +366,15 @@ final class DesignDnaService implements QueuedStageService
         }
 
         return $execution === MotoContract::DNA_EXECUTION
-            ? MotoDnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $run['brief'], $run['history'], $errors)
+            ? MotoDnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $run['brief'], $run['history'], $errors, MotoContract::generation(is_array($manifest) ? $manifest : [], 'MotoDna') >= 2 ? MotoContract::DNA_FORMAT_V2 : MotoContract::DNA_FORMAT)
             : DnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $errors, DnaCheck::FORMAT_V2);
     }
 
-    /** @return array<string, mixed> the brief the user fixed for a moto build; a null value is left to the model */
-    private static function motoBrief(): array
+    /**
+     * @param  ?VideoProject  $themed  the project of a run under the cinematic release, null for a run under the earlier contract
+     * @return array<string, mixed> the brief config fixes for a moto build; under the cinematic release also brief.direction with every field null, as its prompt reads it, so the model decides the whole direction itself
+     */
+    private static function motoBrief(?VideoProject $themed = null): array
     {
         $config = (array) config('video.moto.brief');
         $brief = [];
@@ -364,7 +383,7 @@ final class DesignDnaService implements QueuedStageService
             $brief[$key] = $config[$key] ?? null;
         }
 
-        return $brief;
+        return $themed === null ? $brief : $brief + ['direction' => array_fill_keys(MotoPipelineRelease::DIRECTION_FIELDS, null)];
     }
 
     /**
