@@ -52,12 +52,29 @@ final class MotoScriptCheck
      */
     public static function evaluate(?array $response, array $context, array $schema, array $policy): array
     {
+        $format = ($context['format'] ?? null) === MotoContract::SCRIPT_FORMAT_V2 ? MotoContract::SCRIPT_FORMAT_V2 : MotoContract::SCRIPT_FORMAT;
+
+        return ['format' => $format] + self::scored($response, $context, $schema, $policy, $format);
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $response
+     * @param  array<string, mixed>  $context
+     * @param  list<array{code: string, path: string, message: string}>  $schema
+     * @param  array<string, mixed>  $policy
+     * @param  string  $format  the answer format the run pinned
+     * @return array{version: string, format: string, verdict: string, status: ?string, error: ?string, schema: list<string>, issues: list<string>, warnings: list<string>, judge: string}
+     */
+    private static function scored(?array $response, array $context, array $schema, array $policy, string $format): array
+    {
+        $eventful = $format === MotoContract::SCRIPT_FORMAT_V2;
+
         if ($response === null) {
             return self::result(self::UNSCORED, null, 'Phản hồi không đọc được JSON.');
         }
 
-        if (($response['format'] ?? null) !== MotoContract::SCRIPT_FORMAT) {
-            return self::result(self::UNSCORED, null, 'Phản hồi không theo định dạng '.MotoContract::SCRIPT_FORMAT.'.');
+        if (($response['format'] ?? null) !== $format) {
+            return self::result(self::UNSCORED, null, 'Phản hồi không theo định dạng '.$format.'.');
         }
 
         $status = is_string($response['status'] ?? null) ? $response['status'] : null;
@@ -97,16 +114,16 @@ final class MotoScriptCheck
             $byId[$beat['id']] = $index;
         }
 
-        $total = array_sum(array_map(static fn (array $beat): float => (float) $beat['duration_s'], $beats));
+        $total = $eventful ? 0.0 : array_sum(array_map(static fn (array $beat): float => (float) $beat['duration_s'], $beats));
         $length = (float) ($context['video_length'] ?? 0);
         $advisory = [
-            ...(abs($total - $length) > (float) ($policy['length_tolerance_sec'] ?? 0.1) + self::EPSILON ? ['Các beat dài tổng '.self::s($total)." s; phim phải dài {$length} s."] : []),
+            ...(! $eventful && abs($total - $length) > (float) ($policy['length_tolerance_sec'] ?? 0.1) + self::EPSILON ? ['Các beat dài tổng '.self::s($total)." s; phim phải dài {$length} s."] : []),
             ...self::progressIssues($beats),
-            ...self::heroIssues($data, $beats, $byId),
+            ...self::heroIssues($data, $beats, $byId, $eventful),
             ...self::designIssues($beats, $design),
-            ...self::cardIssues((array) $data['text_cards'], $beats, $byId, $design, $context, $policy, $total),
+            ...($eventful ? self::eventCardIssues((array) $data['text_cards'], $beats, $byId, $design) : self::cardIssues((array) $data['text_cards'], $beats, $byId, $design, $context, $policy, $total)),
         ];
-        $issues = [...$issues, ...self::referenceIssues($data, $byId)];
+        $issues = [...$issues, ...self::referenceIssues($data, $byId), ...($eventful ? self::eventIssues($data, $beats, $byId, $design, (bool) ($policy['stationary_requires_support'] ?? false)) : [])];
 
         if ((bool) ($policy['cover_build_states'] ?? false)) {
             $issues = [...$issues, ...self::coverageIssues($beats, $design)];
@@ -116,7 +133,7 @@ final class MotoScriptCheck
         }
 
         foreach ($beats as $index => $beat) {
-            if ((float) $beat['duration_s'] < (float) ($policy['warn']['beat_min_sec'] ?? 0.8)) {
+            if (! $eventful && (float) $beat['duration_s'] < (float) ($policy['warn']['beat_min_sec'] ?? 0.8)) {
                 $warnings[] = "{$beat['id']} chỉ dài ".self::s((float) $beat['duration_s']).' s; khó đọc kịp một hành động.';
             }
 
@@ -127,7 +144,7 @@ final class MotoScriptCheck
 
         $hero = $byId[$data['story']['hero_beat']] ?? null;
 
-        if ($hero !== null && (float) $beats[$hero]['duration_s'] < (float) ($policy['warn']['hero_min_sec'] ?? 2)) {
+        if (! $eventful && $hero !== null && (float) $beats[$hero]['duration_s'] < (float) ($policy['warn']['hero_min_sec'] ?? 2)) {
             $warnings[] = 'Beat hero chỉ dài '.self::s((float) $beats[$hero]['duration_s']).' s.';
         }
 
@@ -189,7 +206,14 @@ final class MotoScriptCheck
             }
         }
 
-        return [
+        $story = isset($design['participant_roles']) ? [
+            'roles' => array_values(array_column((array) $design['participant_roles'], 'id')),
+            'lights' => array_values(array_merge([], ...array_map(static fn (array $part): array => array_column((array) ($part['lighting'] ?? []), 'id'), (array) ($design['parts'] ?? [])))),
+            'stage_roles' => array_map(static fn (array $state): array => array_values((array) ($state['participant_roles'] ?? [])), array_column((array) ($design['build_states'] ?? []), null, 'id')),
+            'temporary' => array_map(static fn (array $state): array => array_values((array) ($state['temporary'] ?? [])), array_column((array) ($design['build_states'] ?? []), null, 'id')),
+        ] : [];
+
+        return $story + [
             'name' => $design['motorcycle']['name'] ?? null,
             'base' => ['family' => $design['motorcycle']['base']['family'] ?? null, 'model' => $design['motorcycle']['base']['model'] ?? null],
             'specs' => $specs,
@@ -420,9 +444,10 @@ final class MotoScriptCheck
      * @param  array<string, mixed>  $data
      * @param  list<array<string, mixed>>  $beats
      * @param  array<string, int>  $byId
+     * @param  bool  $earlyWhole  whether a beat before the hero may show the whole motorcycle
      * @return list<string>
      */
-    private static function heroIssues(array $data, array $beats, array $byId): array
+    private static function heroIssues(array $data, array $beats, array $byId, bool $earlyWhole = false): array
     {
         $heroId = $data['story']['hero_beat'];
         $hero = $byId[$heroId] ?? null;
@@ -437,7 +462,7 @@ final class MotoScriptCheck
             $issues[] = "story.hero_beat {$heroId} phải thuộc hồi hero và có reveal whole.";
         }
 
-        foreach ($beats as $index => $beat) {
+        foreach ($earlyWhole ? [] : $beats as $index => $beat) {
             if ($index < $hero && $beat['reveal'] === 'whole') {
                 $issues[] = "{$beat['id']} đã lộ toàn xe trước beat hero {$heroId}.";
             }
@@ -629,6 +654,322 @@ final class MotoScriptCheck
     }
 
     /**
+     * @param  array<string, mixed>  $beat  a beat with its situation and configurations and, in an eventful script, its events
+     * @param  ?array<string, mixed>  $before  the beat before it in the script
+     * @param  array<string, string>  $stand  the configurations of the design's side stand, each with the position it is: down or up
+     * @param  ?int  $at  the operating state to judge at, counted through the beat's events as start, end, start, end; null takes the last state that holds the configuration, or the last state when none does
+     * @param  list<array<string, mixed>>  $evidence  the records of the confirmation of procedures made for the limit judged (evidenceFor()): each a procedure with the kind of evidence that establishes it (EVIDENCE_KINDS); a procedure no record names is established only as described below
+     * @return ?array<string, mixed> the situation a limit of that configuration is judged in. The situation a beat states describes the state its last event ends in: it is the answer when no moment is named and when the named moment is that very last state, by its place in the beat and never because an earlier state has the same values. At any earlier moment of the beat, and in a beat that states none — the schema keeps the ending without one — the answer is read only from what the source holds up to that moment, the operating state at that moment: whether the motorcycle stands still, what its engine does and where its stand is; and the procedures are only those the states of the beat up to that moment show being carried out — a stop, the stand lowered, the engine switched off — and still in force. A procedure no change of state can show, such as releasing a latch, is established only by a situation the source states, so a limit that needs it is unmet at such a moment unless the beat before established it. A beat that states a situation lends its road to its every moment and nothing else. The road, the lean and the procedures of the situation of the beat before are taken over only while nothing broke the link to it: no time jump, the same place and build state, and from the end of that beat to this moment the motorcycle stood still on the same supports with the stand in the same position and the configuration held throughout. Nothing is assumed beyond those sources: what they do not tell stays unknown, so a limit that needs it stays unmet. Null when the beat has no events to read
+     */
+    public static function situationFor(array $beat, ?array $before, string $configurationId, array $stand = [], ?int $at = null, array $evidence = []): ?array
+    {
+        $own = is_array($beat['situation'] ?? null) ? $beat['situation'] : null;
+        $states = self::operatingStates($beat);
+        $named = $at !== null && isset($states[$at]);
+
+        if ($own !== null && (! $named || $at === count($states) - 1)) {
+            return $own;
+        }
+
+        if ($states === []) {
+            return null;
+        }
+
+        if (! $named) {
+            $at = count($states) - 1;
+
+            foreach ($states as $index => $state) {
+                $at = in_array($configurationId, (array) ($state['configurations'] ?? []), true) ? $index : $at;
+            }
+
+            $at = in_array($configurationId, (array) ($states[$at]['configurations'] ?? []), true) ? $at : count($states) - 1;
+        }
+
+        $now = $states[$at];
+        $still = ($now['vehicle_motion'] ?? null) === 'stationary';
+        $shown = self::proceduresShown(array_slice($states, 0, $at + 1), $stand);
+        $earlier = is_array($before) ? self::operatingStates($before) : [];
+        $kept = is_array($before['situation'] ?? null) && $earlier !== []
+            && ($beat['time_jump'] ?? null) === 'none'
+            && ($beat['location'] ?? null) === ($before['location'] ?? null)
+            && ($beat['state'] ?? null) === ($before['state'] ?? null);
+        $chain = [$earlier === [] ? [] : $earlier[count($earlier) - 1], ...array_slice($states, 0, $at + 1)];
+
+        foreach ($kept ? $chain : [] as $state) {
+            $kept = $kept
+                && ($state['vehicle_motion'] ?? null) === 'stationary'
+                && in_array($configurationId, (array) ($state['configurations'] ?? []), true)
+                && self::sorted((array) ($state['support_refs'] ?? [])) === self::sorted((array) ($chain[0]['support_refs'] ?? []))
+                && self::standAt($state, $stand) === self::standAt($chain[0], $stand);
+        }
+
+        $carried = $kept ? $before['situation'] : [];
+
+        return [
+            'mode' => $still ? 'parked' : 'riding',
+            'engine' => self::engineAt($now),
+            'side_stand' => self::standAt($now, $stand),
+            'speed_kmh' => $still ? 0 : null,
+            'lean_angle_deg' => $carried['lean_angle_deg'] ?? null,
+            'dry_road' => $carried['dry_road'] ?? ($own['dry_road'] ?? null),
+            'procedures' => array_values(array_unique([...array_values((array) ($carried['procedures'] ?? [])), ...$shown, ...self::proceduresConfirmed($evidence, $beat, array_slice($states, 0, $at + 1), $configurationId, $stand)])),
+        ];
+    }
+
+    /** @var string the evidence of a procedure that is a state holding at the moment judged: the motorcycle stands still */
+    public const BY_STATIONARY = 'stationary';
+
+    /** @var string the engine is off at the moment judged */
+    public const BY_ENGINE_OFF = 'engine_off';
+
+    /** @var string the side stand is down at the moment judged */
+    public const BY_STAND_DOWN = 'side_stand_down';
+
+    /** @var string the evidence of a procedure that is the act of moving the part into the governed position: an event of the beat moved it there before the moment judged and it stayed there */
+    public const BY_ENTERING = 'enters_configuration';
+
+    /** @var list<string> every kind of evidence a confirmation of procedures may name */
+    public const EVIDENCE_KINDS = [self::BY_STATIONARY, self::BY_ENGINE_OFF, self::BY_STAND_DOWN, self::BY_ENTERING];
+
+    /**
+     * @param  list<array<string, mixed>>  $evidence  the records a person confirmed for the limit judged: each a procedure and the kind of evidence that establishes it
+     * @param  array<string, mixed>  $beat  the beat judged
+     * @param  list<array<string, mixed>>  $states  the operating states of the beat in order, up to the moment judged
+     * @param  array<string, string>  $stand
+     * @return list<string> the confirmed procedures whose evidence holds at the last of those states: a state the record names, read from that state alone; or, for a record of the act of entering the position, exactly the transition it names — in this beat, the event it names opens on the configuration it leaves and ends on the one it enters, which is the configuration judged and is held in every state from there to the moment judged. A procedure no record names, and a transition other than the one recorded, is never in this list
+     */
+    private static function proceduresConfirmed(array $evidence, array $beat, array $states, string $configurationId, array $stand): array
+    {
+        if ($evidence === [] || $states === []) {
+            return [];
+        }
+
+        $at = count($states) - 1;
+        $now = $states[$at];
+        $has = static fn (array $state, mixed $id): bool => is_string($id) && in_array($id, (array) ($state['configurations'] ?? []), true);
+        $events = array_column(array_values((array) ($beat['events'] ?? [])), 'id');
+        $confirmed = [];
+
+        foreach ($evidence as $record) {
+            if (! is_array($record)) {
+                continue;
+            }
+
+            $met = match ($record['kind'] ?? null) {
+                self::BY_STATIONARY => ($now['vehicle_motion'] ?? null) === 'stationary',
+                self::BY_ENGINE_OFF => self::engineAt($now) === 'off',
+                self::BY_STAND_DOWN => self::standAt($now, $stand) === 'down',
+                self::BY_ENTERING => (static function () use ($record, $beat, $states, $events, $configurationId, $has, $at): bool {
+                    $event = array_search($record['event'] ?? null, $events, true);
+
+                    if (($record['to'] ?? null) !== $configurationId || ($record['beat'] ?? null) !== ($beat['id'] ?? null) || $event === false || $at < $event * 2 + 1) {
+                        return false;
+                    }
+
+                    if (! $has($states[$event * 2], $record['from'] ?? null) || $has($states[$event * 2], $configurationId)) {
+                        return false;
+                    }
+
+                    foreach (array_slice($states, $event * 2 + 1) as $state) {
+                        if (! $has($state, $configurationId)) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                })(),
+                default => false,
+            };
+
+            if ($met && is_string($record['procedure'] ?? null)) {
+                $confirmed[] = $record['procedure'];
+            }
+        }
+
+        return array_values(array_unique($confirmed));
+    }
+
+    /**
+     * @param  mixed  $evidence  what a run or a project holds as its confirmation of procedures
+     * @return ?string why it is not a list of records code can read: each names the limit it is for, the procedure and a kind of evidence, and a record of the act of entering a position also names the part, the configuration it leaves, the one it enters, and the beat and the event that enters it; null when it is
+     */
+    public static function evidenceProblem(mixed $evidence): ?string
+    {
+        if (! is_array($evidence) || ! array_is_list($evidence)) {
+            return 'bản xác nhận thủ tục không phải danh sách bản ghi';
+        }
+
+        foreach ($evidence as $index => $record) {
+            $keys = ['limit', 'procedure', 'kind', ...(($record['kind'] ?? null) === self::BY_ENTERING ? ['part', 'from', 'to', 'beat', 'event'] : [])];
+
+            if (! is_array($record) || ! in_array($record['kind'] ?? null, self::EVIDENCE_KINDS, true)) {
+                return "bản ghi {$index} không nêu loại bằng chứng code biết (".implode(', ', self::EVIDENCE_KINDS).')';
+            }
+
+            foreach ($keys as $key) {
+                if (! is_string($record[$key] ?? null) || $record[$key] === '') {
+                    return "bản ghi {$index} ({$record['kind']}) thiếu {$key}";
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $evidence  the records of a confirmation of procedures
+     * @return list<array<string, mixed>> those made for that limit
+     */
+    public static function evidenceFor(array $evidence, string $limitId): array
+    {
+        return array_values(array_filter($evidence, static fn (mixed $record): bool => is_array($record) && ($record['limit'] ?? null) === $limitId));
+    }
+
+    /** @var array<string, string> the procedures a change of operating state shows being carried out, each with the change that shows it; any other procedure is established only by a situation the source states */
+    private const SHOWN_BY = ['stop' => 'stopped', 'lower_stand' => 'stand_lowered', 'switch_engine_off' => 'engine_stopped'];
+
+    /**
+     * @param  list<array<string, mixed>>  $states  the operating states of a beat in order, up to the moment judged
+     * @param  array<string, string>  $stand  the configurations of the side stand with the position each is
+     * @return list<string> the procedures those states show being carried out and still in force at the last of them: stop when the motorcycle went from moving to standing still and stood since, lower_stand when the stand went from up to down and stayed down, switch_engine_off when the engine went from running to off and stayed off. A procedure no change of state can show is never in this list
+     */
+    private static function proceduresShown(array $states, array $stand): array
+    {
+        $reads = [
+            'stopped' => static fn (array $state): ?bool => match ($state['vehicle_motion'] ?? null) {
+                'stationary' => true,
+                'moving' => false,
+                default => null,
+            },
+            'stand_lowered' => static fn (array $state): ?bool => match (self::standAt($state, $stand)) {
+                'down' => true,
+                'up' => false,
+                default => null,
+            },
+            'engine_stopped' => static fn (array $state): ?bool => match (self::engineAt($state)) {
+                'off' => true,
+                'running' => false,
+                default => null,
+            },
+        ];
+        $shown = [];
+
+        foreach (self::SHOWN_BY as $procedure => $change) {
+            $done = false;
+
+            foreach ($states as $index => $state) {
+                $holds = $reads[$change]($state);
+                $done = match (true) {
+                    $holds !== true => false,
+                    $index > 0 && $reads[$change]($states[$index - 1]) === false => true,
+                    default => $done,
+                };
+            }
+
+            if ($done) {
+                $shown[] = $procedure;
+            }
+        }
+
+        return $shown;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state  an operating state
+     * @return ?string what the engine does in that state as a situation says it: off or running; null when the state shows no engine that can run or one only starting
+     */
+    private static function engineAt(array $state): ?string
+    {
+        return match (is_array($state['engine'] ?? null) ? ($state['engine']['state'] ?? null) : null) {
+            'off' => 'off',
+            'running', 'idling' => 'running',
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $parts  the design's parts by id, each with its kind and configurations
+     * @return array<string, string> the configurations of the side stand, each with the position it is: down for the one the design names down, up for the others
+     */
+    public static function standPositions(array $parts): array
+    {
+        $positions = [];
+
+        foreach ($parts as $part) {
+            foreach (($part['kind'] ?? null) === 'side_stand' ? (array) ($part['configurations'] ?? []) : [] as $configuration) {
+                $positions[(string) $configuration['id']] = ($configuration['name'] ?? null) === 'down' ? 'down' : 'up';
+            }
+        }
+
+        return $positions;
+    }
+
+    /**
+     * @param  array<string, mixed>  $beat
+     * @param  list<string>  $eventIds  the events of the beat a shot covers
+     * @return ?int the operating state a shot opens on or closes on, as situationFor() counts them: the start of the first of those events, or the end of the last; null when none of them is an event of the beat
+     */
+    public static function momentOf(array $beat, array $eventIds, bool $closing): ?int
+    {
+        $own = array_column((array) ($beat['events'] ?? []), 'id');
+        $found = array_values(array_filter(array_map(static fn (string $id): int|false => array_search($id, $own, true), array_map('strval', $eventIds)), static fn (int|false $index): bool => $index !== false));
+
+        if ($found === []) {
+            return null;
+        }
+
+        return $closing ? max($found) * 2 + 1 : min($found) * 2;
+    }
+
+    /**
+     * @param  array<string, mixed>  $beat
+     * @return list<array<string, mixed>> the operating states of the beat in order: the start and the end of each event; empty when the beat carries no events
+     */
+    private static function operatingStates(array $beat): array
+    {
+        $states = [];
+
+        foreach (array_values((array) ($beat['events'] ?? [])) as $event) {
+            if (! is_array($event['operating_start'] ?? null) || ! is_array($event['operating_end'] ?? null)) {
+                return [];
+            }
+
+            $states[] = $event['operating_start'];
+            $states[] = $event['operating_end'];
+        }
+
+        return $states;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state  an operating state
+     * @param  array<string, string>  $stand
+     * @return ?string the position of the side stand in that state; null when the state names no configuration of it
+     */
+    private static function standAt(array $state, array $stand): ?string
+    {
+        foreach ((array) ($state['configurations'] ?? []) as $configurationId) {
+            if (isset($stand[$configurationId])) {
+                return $stand[$configurationId];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<mixed>  $values
+     * @return list<string>
+     */
+    private static function sorted(array $values): array
+    {
+        $values = array_map('strval', $values);
+        sort($values);
+
+        return $values;
+    }
+
+    /**
      * @param  array{requires: list<string>, conditions: list<array{quantity: string, comparator: string, value: int|float}>, procedures: list<string>}  $limit
      * @param  ?array<string, mixed>  $situation
      * @return list<string> the conditions the situation does not establish as met
@@ -736,6 +1077,255 @@ final class MotoScriptCheck
         }
 
         return $issues;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     * @param  list<array<string, mixed>>  $beats
+     * @param  array<string, int>  $byId
+     * @param  array<string, mixed>  $design
+     * @return list<string> every card whose id is out of sequence, whose beat or event the script does not hold, whose event belongs to another beat or whose source points at nothing, and a missing DISCLAIMER or END card
+     */
+    private static function eventCardIssues(array $cards, array $beats, array $byId, array $design): array
+    {
+        $issues = [];
+        $types = array_count_values(array_column($cards, 'type'));
+
+        foreach ($cards as $index => $card) {
+            if ($card['id'] !== sprintf('CARD%02d', $index + 1)) {
+                $issues[] = 'Card thứ '.($index + 1).' phải là '.sprintf('CARD%02d', $index + 1).", không phải {$card['id']}.";
+            }
+
+            $beat = $byId[$card['beat']] ?? null;
+
+            if ($beat === null) {
+                $issues[] = "{$card['id']} ở {$card['beat']}, không có trong beats.";
+
+                continue;
+            }
+
+            if ($card['event'] !== null && ! in_array($card['event'], array_column((array) $beats[$beat]['events'], 'id'), true)) {
+                $issues[] = "{$card['id']} gắn {$card['event']}, không phải sự kiện của {$card['beat']}.";
+            }
+
+            $issues = [...$issues, ...self::sourceIssues($card, $design)];
+        }
+
+        foreach (['DISCLAIMER', 'END'] as $type) {
+            if (($types[$type] ?? 0) === 0) {
+                $issues[] = "Thiếu card {$type}.";
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<array<string, mixed>>  $beats
+     * @param  array<string, int>  $byId
+     * @param  array<string, mixed>  $design  the design facts of facts()
+     * @param  bool  $heldWhenStill  the policy the run pinned: a motorcycle that stands still names what holds it. A run pinned without it is checked as before
+     * @return list<string> what breaks the links of characters, events, operating states and shot directives: an id out of sequence or unknown, a role nobody plays, a character or a design id an event names that its beat does not, an operating state that names what the design does not hold or two configurations of one part, a motorcycle standing still with nothing named to hold it when the policy asks, an event that does not start where the one before ended, a beat that does not end where its last event ends, and a directive whose anchors are unknown, out of order or outside its beats
+     */
+    private static function eventIssues(array $data, array $beats, array $byId, array $design, bool $heldWhenStill = false): array
+    {
+        $issues = [];
+        $roles = array_fill_keys((array) ($design['roles'] ?? []), false);
+        $characters = [];
+
+        foreach (array_values((array) $data['characters']) as $index => $character) {
+            if ($character['id'] !== sprintf('CH%02d', $index + 1)) {
+                $issues[] = 'Nhân vật thứ '.($index + 1).' phải là '.sprintf('CH%02d', $index + 1).", không phải {$character['id']}.";
+            }
+
+            $characters[$character['id']] = array_values((array) $character['role_ids']);
+
+            foreach ((array) $character['role_ids'] as $role) {
+                if (! array_key_exists($role, $roles)) {
+                    $issues[] = "{$character['id']}.role_ids: {$role} không có trong participant_roles của thiết kế.";
+                } else {
+                    $roles[$role] = true;
+                }
+            }
+        }
+
+        foreach (array_keys(array_filter($roles, static fn (bool $played): bool => ! $played)) as $role) {
+            $issues[] = "Vai {$role} của thiết kế chưa có nhân vật nào đảm nhiệm.";
+        }
+
+        $number = 0;
+        $eventBeat = [];
+
+        foreach ($beats as $beat) {
+            $events = array_values((array) $beat['events']);
+            $shown = [];
+            $previous = null;
+
+            foreach ($events as $event) {
+                $number++;
+
+                if ($event['id'] !== sprintf('EV%02d', $number)) {
+                    $issues[] = "Sự kiện thứ {$number} phải là ".sprintf('EV%02d', $number).", không phải {$event['id']}.";
+                }
+
+                $eventBeat[$event['id']] = $beat['id'];
+
+                foreach ((array) $event['character_ids'] as $id) {
+                    $shown[$id] = true;
+
+                    if (! isset($characters[$id])) {
+                        $issues[] = "{$event['id']}.character_ids: {$id} không có trong characters.";
+                    }
+                }
+
+                foreach (array_diff((array) $event['design_refs'], (array) $beat['design_refs']) as $ref) {
+                    $issues[] = "{$event['id']}.design_refs: {$ref} không nằm trong design_refs của {$beat['id']}.";
+                }
+
+                foreach (['operating_start', 'operating_end'] as $moment) {
+                    $issues = [...$issues, ...self::operatingIssues("{$event['id']}.{$moment}", (array) $event[$moment], $design, array_keys($characters), (array) ($design['temporary'][(string) ($beat['state'] ?? '')] ?? []))];
+
+                    if ($heldWhenStill && ($event[$moment]['vehicle_motion'] ?? null) === 'stationary' && (array) ($event[$moment]['support_refs'] ?? []) === []) {
+                        $issues[] = "{$event['id']}.{$moment}.support_refs: xe đứng yên nhưng chưa khai người hoặc thiết bị giữ xe.";
+                    }
+                }
+
+                if ($previous !== null && self::canonical((array) $event['operating_start']) !== self::canonical((array) $previous['operating_end'])) {
+                    $issues[] = "{$event['id']}.operating_start khác operating_end của {$previous['id']} — sự kiện sau phải bắt đầu ở trạng thái sự kiện trước kết thúc.";
+                }
+
+                $previous = $event;
+            }
+
+            $allowed = is_string($beat['state'] ?? null) ? ($design['stage_roles'][$beat['state']] ?? null) : null;
+
+            foreach (is_array($allowed) ? array_keys($shown) : [] as $id) {
+                if (isset($characters[$id]) && array_intersect($characters[$id], $allowed) === []) {
+                    $issues[] = "{$beat['id']}: {$id} (".implode(', ', $characters[$id]).") xuất hiện ở {$beat['state']}, giai đoạn chỉ có vai ".(implode(', ', $allowed) ?: 'không vai nào').'.';
+                }
+            }
+
+            $onScreen = (array) $beat['on_screen'];
+            sort($onScreen);
+            $named = array_keys($shown);
+            sort($named);
+
+            if ($onScreen !== $named) {
+                $issues[] = "{$beat['id']}.on_screen phải đúng bằng các nhân vật mà sự kiện của beat nêu: ".($named === [] ? 'không ai' : implode(', ', $named)).'.';
+            }
+
+            $ending = (array) ($previous['operating_end']['configurations'] ?? []);
+            $held = (array) $beat['configurations'];
+            sort($ending);
+            sort($held);
+
+            if ($ending !== $held) {
+                $issues[] = "{$beat['id']}.configurations phải đúng bằng configurations ở operating_end của sự kiện cuối ({$previous['id']}).";
+            }
+        }
+
+        foreach (array_values((array) $data['shot_directives']) as $index => $directive) {
+            if ($directive['id'] !== sprintf('DIR%02d', $index + 1)) {
+                $issues[] = 'Chỉ dẫn thứ '.($index + 1).' phải là '.sprintf('DIR%02d', $index + 1).", không phải {$directive['id']}.";
+            }
+
+            foreach (array_filter((array) $directive['beat_ids'], static fn (string $id): bool => ! isset($byId[$id])) as $id) {
+                $issues[] = "{$directive['id']}.beat_ids: {$id} không có trong beats.";
+            }
+
+            $cursor = 0;
+
+            foreach ((array) $directive['event_anchors'] as $anchor) {
+                $at = "{$directive['id']} {$anchor['event_id']}";
+
+                if (! in_array($eventBeat[$anchor['event_id']] ?? null, (array) $directive['beat_ids'], true)) {
+                    $issues[] = "{$at}: sự kiện không thuộc beat nào của chỉ dẫn.";
+                }
+
+                if ($anchor['start_ms'] >= $anchor['end_ms']) {
+                    $issues[] = "{$at}: start_ms phải nhỏ hơn end_ms.";
+                }
+
+                if ($anchor['start_ms'] < $cursor) {
+                    $issues[] = "{$at}: bắt đầu ở {$anchor['start_ms']} ms, trước khi mốc trước kết thúc ({$cursor} ms).";
+                }
+
+                $cursor = max($cursor, (int) $anchor['end_ms']);
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state  one operating state
+     * @param  array<string, mixed>  $design  the design facts of facts()
+     * @param  list<string>  $characters  the ids of the characters of the script
+     * @param  list<string>  $temporary  the temporary items the build state of the beat or scene lists
+     * @return list<string> the engine part, configurations and lights the design does not hold, two configurations of one part, and a support that is a part the design does not have, a character the script does not have or a temporary item the build state does not list
+     */
+    public static function operatingIssues(string $at, array $state, array $design, array $characters = [], array $temporary = []): array
+    {
+        $issues = [];
+
+        foreach ((array) ($state['support_refs'] ?? []) as $support) {
+            $problem = match (true) {
+                preg_match('/^P\d{2,3}$/', (string) $support) === 1 => isset($design['parts'][$support]) ? null : 'không có trong parts của thiết kế',
+                preg_match('/^CH\d{2}$/', (string) $support) === 1 => in_array($support, $characters, true) ? null : 'không có trong characters',
+                default => in_array($support, $temporary, true) ? null : 'không có trong temporary của build state này',
+            };
+
+            if ($problem !== null) {
+                $issues[] = "{$at}.support_refs: {$support} {$problem}.";
+            }
+        }
+
+        if (is_array($state['engine']) && ! isset($design['parts'][$state['engine']['part_id']])) {
+            $issues[] = "{$at}.engine: {$state['engine']['part_id']} không có trong thiết kế.";
+        }
+
+        $parts = [];
+
+        foreach ((array) $state['configurations'] as $configuration) {
+            $part = $design['configurations'][$configuration] ?? null;
+
+            if ($part === null) {
+                $issues[] = "{$at}.configurations: {$configuration} không có trong thiết kế.";
+            } elseif (isset($parts[$part])) {
+                $issues[] = "{$at}.configurations: {$part} có hai vị trí cùng lúc ({$parts[$part]}, {$configuration}).";
+            } else {
+                $parts[$part] = $configuration;
+            }
+        }
+
+        foreach ((array) $state['lights'] as $light) {
+            if (! in_array($light['light_id'], (array) ($design['lights'] ?? []), true)) {
+                $issues[] = "{$at}.lights: {$light['light_id']} không có trong thiết kế.";
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  array<string, mixed>  $state  one operating state
+     * @return string the state with its lists in a fixed order, so two states that say the same compare equal
+     */
+    public static function canonical(array $state): string
+    {
+        foreach (['configurations', 'support_refs'] as $list) {
+            $items = (array) ($state[$list] ?? []);
+            sort($items);
+            $state[$list] = $items;
+        }
+
+        $lights = (array) ($state['lights'] ?? []);
+        usort($lights, static fn (array $a, array $b): int => $a['light_id'] <=> $b['light_id']);
+        $state['lights'] = $lights;
+        ksort($state);
+
+        return (string) json_encode($state);
     }
 
     /**

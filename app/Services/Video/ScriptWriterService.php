@@ -95,8 +95,8 @@ final class ScriptWriterService implements QueuedStageService
 
         $document = (array) $evaluation['document'];
 
-        if (($document['format'] ?? null) !== MotoContract::SCRIPT_FORMAT) {
-            return ['reason' => 'Sửa tay chỉ áp dụng cho kịch bản '.MotoContract::SCRIPT_FORMAT.'.'] + $report;
+        if (! in_array($document['format'] ?? null, [MotoContract::SCRIPT_FORMAT, MotoContract::SCRIPT_FORMAT_V2], true)) {
+            return ['reason' => 'Sửa tay chỉ áp dụng cho kịch bản '.MotoContract::SCRIPT_FORMAT.' hoặc '.MotoContract::SCRIPT_FORMAT_V2.'.'] + $report;
         }
 
         $beats = $patch['beats'] ?? null;

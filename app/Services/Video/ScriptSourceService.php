@@ -51,6 +51,10 @@ final class ScriptSourceService
             throw new RuntimeException("Adapter kịch bản của workflow {$workflow} không hợp lệ.");
         }
 
+        if ($adapter instanceof \App\Video\Moto\ReleaseBound) {
+            $adapter->bind($project);
+        }
+
         return ['workflow' => $workflow, 'action' => (string) $entry['action'], 'adapter' => $adapter, 'category_id' => (string) $category->id, 'category_slug' => (string) $category->slug];
     }
 

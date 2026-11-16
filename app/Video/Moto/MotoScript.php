@@ -15,9 +15,19 @@ use App\Video\Script\ScriptWorkflow;
 use App\Video\Superyacht\Spec\ResolvedPhase;
 use RuntimeException;
 
-final class MotoScript implements ScriptWorkflow
+final class MotoScript implements ReleaseBound, ScriptWorkflow
 {
     public const PROJECTION_VERSION = 'moto-script-timeline-v1';
+
+    public const EVENT_PROJECTION_VERSION = 'moto-script-events-v1';
+
+    public const SHOT_DURATION_MS = 3000;
+
+    /** @var bool whether the project tells its story as events, with screen time set by the shot plan */
+    private bool $eventful = false;
+
+    /** @var array<string, mixed> what the release of the project adds to the check policy of a new run; a run keeps the policy it was made with in its context */
+    private array $releasePolicy = [];
 
     /** @var list<string> */
     private const MOTORCYCLE_COORDINATES = ['coordinate_system', 'profile_curve'];
@@ -33,9 +43,15 @@ final class MotoScript implements ScriptWorkflow
 
     public function __construct(private readonly ModelSheetService $sheets) {}
 
+    public function bind(VideoProject $project): void
+    {
+        $this->eventful = MotoPipelineRelease::cinematic($project);
+        $this->releasePolicy = MotoPipelineRelease::policy($project, 'script');
+    }
+
     public function format(): string
     {
-        return MotoContract::SCRIPT_FORMAT;
+        return $this->eventful ? MotoContract::SCRIPT_FORMAT_V2 : MotoContract::SCRIPT_FORMAT;
     }
 
     public function checkVersion(): string
@@ -45,12 +61,16 @@ final class MotoScript implements ScriptWorkflow
 
     public function projectionVersion(): string
     {
-        return self::PROJECTION_VERSION;
+        return $this->eventful ? self::EVENT_PROJECTION_VERSION : self::PROJECTION_VERSION;
     }
 
     public function settings(): array
     {
         $config = (array) config('video.moto.script');
+
+        if ($this->eventful) {
+            $config['brief_options'] = array_replace((array) $config['brief_options'], (array) $config['eventful_brief_options']);
+        }
 
         return [
             'execution' => (string) $config['execution'],
@@ -71,8 +91,10 @@ final class MotoScript implements ScriptWorkflow
         [$design, $data, $rawSha256] = $this->pinnedDesign($projectId, $sheet);
         [, $designHash] = $this->sheets->approvedSource($projectId);
 
-        if ((JsonAnswer::object((string) $design->raw_response)['format'] ?? null) !== MotoContract::DESIGN_FORMAT) {
-            throw new RuntimeException('Bản thiết kế đã duyệt không theo định dạng '.MotoContract::DESIGN_FORMAT.' — không viết kịch bản moto từ nó.');
+        $designFormat = $this->eventful ? MotoContract::DESIGN_FORMAT_V2 : MotoContract::DESIGN_FORMAT;
+
+        if ((JsonAnswer::object((string) $design->raw_response)['format'] ?? null) !== $designFormat) {
+            throw new RuntimeException('Bản thiết kế đã duyệt không theo định dạng '.$designFormat.' — không viết kịch bản moto từ nó.');
         }
 
         $dnaStage = $this->stage($projectId, $design->input_json['dna_stage_id'] ?? null, PlanningStageName::DESIGN_DNA, 'Design DNA của bản thiết kế');
@@ -86,16 +108,18 @@ final class MotoScript implements ScriptWorkflow
         $selected = self::select($data);
         $facts = MotoScriptCheck::facts($selected);
         $config = (array) config('video.moto.script');
+        $baseCard = ! $this->eventful && (bool) $config['base_card'];
 
         return [
             'payload' => [
-                'variables' => [
-                    'video_length' => $brief['video_length'],
-                    'aspect_ratio' => $brief['aspect_ratio'],
-                    'platform' => $brief['platform'],
-                    'tone_notes' => $brief['tone_notes'],
-                    'base_card' => (bool) $config['base_card'],
-                ],
+                'variables' => ($this->eventful
+                    ? ['timing_policy' => 'per_shot', 'shot_duration_ms' => self::SHOT_DURATION_MS, 'target_film_duration_ms' => null]
+                    : ['video_length' => $brief['video_length']]) + [
+                        'aspect_ratio' => $brief['aspect_ratio'],
+                        'platform' => $brief['platform'],
+                        'tone_notes' => $brief['tone_notes'],
+                        'base_card' => $baseCard,
+                    ],
                 'design' => $selected,
                 'film_facts' => MotoScriptCheck::filmFacts($facts),
                 'channel_history' => $history,
@@ -107,11 +131,11 @@ final class MotoScript implements ScriptWorkflow
             ],
             'context' => [
                 'format' => $this->format(),
-                'video_length' => $brief['video_length'],
-                'base_card' => (bool) $config['base_card'],
+                'video_length' => $this->eventful ? null : $brief['video_length'],
+                'base_card' => $baseCard,
                 'design' => $facts,
                 'source_names' => self::sourceNames($identity),
-                'policy' => (array) $config['check'],
+                'policy' => array_replace((array) $config['check'], $this->releasePolicy),
             ],
         ];
     }
@@ -157,6 +181,15 @@ final class MotoScript implements ScriptWorkflow
 
     public function derive(array $document, array $context): array
     {
+        if (($context['format'] ?? null) === MotoContract::SCRIPT_FORMAT_V2) {
+            return [
+                'version' => self::EVENT_PROJECTION_VERSION,
+                'duration_s' => null,
+                'hero_beat' => (string) ($document['data']['story']['hero_beat'] ?? ''),
+                'beats' => array_map(static fn (array $beat): array => ['id' => (string) $beat['id'], 'act' => (string) $beat['act'], 'events' => array_column((array) $beat['events'], 'id')], (array) ($document['data']['beats'] ?? [])),
+            ];
+        }
+
         $start = 0.0;
         $beats = [];
 

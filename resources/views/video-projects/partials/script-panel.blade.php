@@ -51,7 +51,7 @@
                     <div class="line"><span class="k">Chưa viết được</span><span class="v" style="color:var(--vp-red)">{{ $step['run_error'] }}</span></div>
                 @endif
                 @if($brief !== null)
-                    <div class="line"><span class="k">Brief</span><span class="v">{{ $brief['video_length'] }} s · {{ $brief['aspect_ratio'] }} · {{ $brief['platform'] }}@if(($brief['tone_notes'] ?? '') !== '') · {{ $brief['tone_notes'] }}@endif</span></div>
+                    <div class="line"><span class="k">Brief</span><span class="v">{{ \App\Video\Moto\MotoPipelineRelease::cinematic($project) ? 'mỗi shot 3 s, không đặt tổng thời lượng' : $brief['video_length'].' s' }} · {{ $brief['aspect_ratio'] }} · {{ $brief['platform'] }}@if(($brief['tone_notes'] ?? '') !== '') · {{ $brief['tone_notes'] }}@endif</span></div>
                 @endif
                 @if($step['prompt'] !== null)
                     <div class="line"><span class="k">Prompt</span><span class="v">{{ $step['prompt'] }} · {{ $step['model'] }}</span></div>
@@ -73,7 +73,9 @@
                         <summary class="va-lbl">Brief {{ $step['brief_form']['custom'] ? 'theo dự án' : 'mặc định' }} — sửa</summary>
                         <form method="POST" action="{{ route('video-projects.script-brief', $project->id) }}" onsubmit="return vpLockForm(this)">
                             @csrf
-                            @if($step['brief_form']['options']['video_length'][0] === $step['brief_form']['options']['video_length'][1])
+                            @if(\App\Video\Moto\MotoPipelineRelease::cinematic($project))
+                                <div class="line"><span class="k">Thời lượng</span><span class="v">Mỗi shot 3 s; tổng thời lượng cộng từ các shot. Mốc thời gian muốn cố định cho một shot ghi ở ô ghi chú bên dưới.</span></div>
+                            @elseif($step['brief_form']['options']['video_length'][0] === $step['brief_form']['options']['video_length'][1])
                                 <div class="line"><span class="k">Thời lượng</span><span class="v">{{ $step['brief_form']['options']['video_length'][0] }} s (phim final cố định)</span></div>
                             @else
                                 <div class="line"><span class="k">Thời lượng (s)</span><span class="v"><input type="number" name="video_length" min="{{ $step['brief_form']['options']['video_length'][0] }}" max="{{ $step['brief_form']['options']['video_length'][1] }}" value="{{ $briefValues['video_length'] }}"></span></div>
@@ -86,7 +88,11 @@
                                 </select>
                             </span></div>
                             <div class="line"><span class="k">Nền tảng</span><span class="v"><input type="text" name="platform" maxlength="{{ $step['brief_form']['options']['platform_max'] }}" value="{{ $briefValues['platform'] }}"></span></div>
-                            <div class="line"><span class="k">Giọng điệu</span><span class="v"><input type="text" name="tone_notes" maxlength="{{ $step['brief_form']['options']['tone_notes_max'] }}" value="{{ $briefValues['tone_notes'] }}"></span></div>
+                            @if(\App\Video\Moto\MotoPipelineRelease::cinematic($project))
+                                <div class="line"><span class="k">Ghi chú · mốc thời gian của shot</span><span class="v"><textarea name="tone_notes" rows="6" maxlength="{{ $step['brief_form']['options']['tone_notes_max'] }}">{{ $briefValues['tone_notes'] }}</textarea></span></div>
+                            @else
+                                <div class="line"><span class="k">Giọng điệu</span><span class="v"><input type="text" name="tone_notes" maxlength="{{ $step['brief_form']['options']['tone_notes_max'] }}" value="{{ $briefValues['tone_notes'] }}"></span></div>
+                            @endif
                             <div class="va-foot"><button type="submit" class="vp-btn sm" data-busy="Đang lưu…">Lưu brief</button></div>
                         </form>
                     </details>
@@ -141,9 +147,10 @@
                     @endforeach
                 @endif
 
-                @if(is_array($doc) && ($shown['document']['format'] ?? null) === \App\Video\Moto\MotoContract::SCRIPT_FORMAT)
+                @if(is_array($doc) && in_array($shown['document']['format'] ?? null, [\App\Video\Moto\MotoContract::SCRIPT_FORMAT, \App\Video\Moto\MotoContract::SCRIPT_FORMAT_V2], true))
                     @php
                         $story = $doc['story'];
+                        $eventful = ($shown['document']['format'] ?? null) === \App\Video\Moto\MotoContract::SCRIPT_FORMAT_V2;
                     @endphp
                     <div class="va-brief">
                         <div class="line"><span class="k">Logline</span><span class="v">{{ $story['logline'] }}</span></div>
@@ -156,7 +163,14 @@
                             <div class="line"><span class="k">Loop {{ $motif['plant'] }} → {{ $motif['payoff'] }}</span><span class="v">{{ $motif['motif'] }}</span></div>
                         @endforeach
                         @foreach($doc['characters'] as $name => $character)
-                            <div class="line"><span class="k">{{ $name }}</span><span class="v">{{ $character }}</span></div>
+                            @if(is_array($character))
+                                <div class="line"><span class="k">{{ $character['id'] }} · {{ implode(', ', $character['role_ids']) }}</span><span class="v">{{ $character['description'] }}</span></div>
+                            @else
+                                <div class="line"><span class="k">{{ $name }}</span><span class="v">{{ $character }}</span></div>
+                            @endif
+                        @endforeach
+                        @foreach($doc['shot_directives'] ?? [] as $directive)
+                            <div class="line"><span class="k">{{ $directive['id'] }} · {{ implode(', ', $directive['beat_ids']) }}</span><span class="v">{{ implode(' · ', array_map(static fn (array $anchor): string => $anchor['event_id'].' '.$anchor['start_ms'].'–'.$anchor['end_ms'].' ms', $directive['event_anchors'])) }} — mở: {{ $directive['required_first_frame'] }} — kết: {{ $directive['required_end_frame'] }}</span></div>
                         @endforeach
                     </div>
 
@@ -168,8 +182,13 @@
                             <tbody>
                                 @foreach($doc['beats'] as $beat)
                                     <tr>
-                                        <td><b>{{ $beat['id'] }}</b><br><span class="va-tag mute">{{ $beat['time_jump'] }}</span><br>hồi: {{ $beat['act'] }}<br>s: {{ $beat['duration_s'] }}<br>BS: {{ $beat['state'] ?? '—' }}<br>hé lộ: {{ $beat['reveal'] }}</td>
-                                        <td>{{ $beat['visual'] }}<br><em>{{ $beat['purpose'] }}</em><br><span class="va-tag mute">{{ implode(', ', $beat['on_screen']) ?: '—' }}</span></td>
+                                        <td><b>{{ $beat['id'] }}</b><br><span class="va-tag mute">{{ $beat['time_jump'] }}</span><br>hồi: {{ $beat['act'] }}@if(! $eventful)<br>s: {{ $beat['duration_s'] }}@endif<br>BS: {{ $beat['state'] ?? '—' }}<br>hé lộ: {{ $beat['reveal'] }}</td>
+                                        <td>{{ $beat['visual'] }}<br><em>{{ $beat['purpose'] }}</em><br><span class="va-tag mute">{{ implode(', ', $beat['on_screen']) ?: '—' }}</span>
+                                            @foreach($beat['events'] ?? [] as $event)
+                                                <br><b>{{ $event['id'] }}</b>{{ $event['character_ids'] === [] ? '' : ' ('.implode(', ', $event['character_ids']).')' }}: {{ $event['action'] }} → {{ $event['result'] }}
+                                                <br><span style="color:var(--vp-dim)">{{ $event['operating_start']['vehicle_motion'] }}, máy {{ $event['operating_start']['engine']['state'] ?? '—' }}{{ $event['operating_start']['configurations'] === [] ? '' : ', '.implode(', ', $event['operating_start']['configurations']) }} → {{ $event['operating_end']['vehicle_motion'] }}, máy {{ $event['operating_end']['engine']['state'] ?? '—' }}{{ $event['operating_end']['configurations'] === [] ? '' : ', '.implode(', ', $event['operating_end']['configurations']) }}</span>
+                                            @endforeach
+                                        </td>
                                         <td>{{ $beat['location'] }} · {{ $beat['time_light'] }}</td>
                                         <td>{{ collect($beat['design_refs'])->map(fn ($id) => isset($shown['places'][$id]) ? $id.' '.$shown['places'][$id] : $id)->implode(', ') }}<br><em>{{ implode(', ', $beat['configurations']) ?: '—' }}</em><br>Đang dùng: {{ implode(', ', $beat['in_use'] ?? []) ?: '—' }}</td>
                                         <td>@if($beat['situation'] !== null){{ $beat['situation']['mode'] }} · máy {{ $beat['situation']['engine'] ?? '—' }} · chân chống {{ $beat['situation']['side_stand'] ?? '—' }} · {{ $beat['situation']['speed_kmh'] ?? '—' }} km/h · nghiêng {{ isset($beat['situation']['lean_angle_deg']) ? $beat['situation']['lean_angle_deg'].'°' : '—' }} · đường {{ ($beat['situation']['dry_road'] ?? null) === null ? '—' : ($beat['situation']['dry_road'] ? 'khô' : 'không khô') }} · quy trình {{ implode(', ', $beat['situation']['procedures'] ?? []) ?: '—' }}@else — @endif</td>
@@ -183,10 +202,10 @@
 
                     <div class="vs-script-scroll">
                         <table class="vr-needs">
-                            <thead><tr><th>Card</th><th>Beat</th><th>Từ giây</th><th>Loại</th><th>s</th><th>Nguồn</th></tr></thead>
+                            <thead><tr><th>Card</th><th>Beat</th><th>{{ $eventful ? 'Sự kiện' : 'Từ giây' }}</th><th>Loại</th><th>{{ $eventful ? 'Mã' : 's' }}</th><th>Nguồn</th></tr></thead>
                             <tbody>
                                 @foreach($doc['text_cards'] as $card)
-                                    <tr><td>{{ $card['text'] }}</td><td>{{ $card['beat'] }}</td><td>{{ $card['offset_s'] }}</td><td>{{ $card['type'] }}</td><td>{{ $card['sec'] }}</td><td>{{ $card['source_ref'] ?? '—' }}</td></tr>
+                                    <tr><td>{{ $card['text'] }}</td><td>{{ $card['beat'] }}</td><td>{{ $eventful ? ($card['event'] ?? '—') : $card['offset_s'] }}</td><td>{{ $card['type'] }}</td><td>{{ $eventful ? $card['id'] : $card['sec'] }}</td><td>{{ $card['source_ref'] ?? '—' }}</td></tr>
                                 @endforeach
                             </tbody>
                         </table>
