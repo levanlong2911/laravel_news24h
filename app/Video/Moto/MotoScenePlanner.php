@@ -11,7 +11,7 @@ final class MotoScenePlanner
     /**
      * @param  array<string, mixed>  $document  a moto Phase 6 document that passed its schema
      * @param  array<string, mixed>  $context  the check context pinned with the run
-     * @return array{version: string, total_ms: int, scenes: list<array<string, mixed>>, conflicts: list<array<string, mixed>>, source_conflicts: list<array<string, mixed>>} every scene with the timing, places, plates, characters and build state code derives from its beats and what the answer wrote for it, its work items with the id code gives them (null for an answer written before work existed); every beat keeps its own times, characters, state, configurations, situation, plate uses and unplated parts from the pinned input; the background text's blocking conflicts stay with the beats they name
+     * @return array{version: string, total_ms: ?int, scenes: list<array<string, mixed>>, conflicts: list<array<string, mixed>>, source_conflicts: list<array<string, mixed>>} every scene with the timing, places, plates, characters and build state code derives from its beats and what the answer wrote for it, its work items with the id code gives them (null for an answer written before work existed); every beat keeps its own times, characters, state, configurations, situation, plate uses and unplated parts from the pinned input; the background text's blocking conflicts stay with the beats they name
      */
     public static function plan(array $document, array $context): array
     {
@@ -24,6 +24,7 @@ final class MotoScenePlanner
         $places = array_column((array) $input['locations']['places'], null, 'id');
         $conflicts = array_values((array) $data['conflicts']);
         $sourceConflicts = array_values((array) ($context['source_blocking'] ?? []));
+        $timed = ($context['timing'] ?? null) !== MotoScenes::ORDINAL;
         $rows = [];
 
         foreach ((array) $data['scenes'] as $scene) {
@@ -35,9 +36,9 @@ final class MotoScenePlanner
                 $beat = $script[$id];
                 $beatRows[] = [
                     'id' => $id,
-                    'start_ms' => $fact['start_ms'],
-                    'end_ms' => $fact['end_ms'],
-                    'duration_ms' => $fact['end_ms'] - $fact['start_ms'],
+                    'start_ms' => $timed ? $fact['start_ms'] : null,
+                    'end_ms' => $timed ? $fact['end_ms'] : null,
+                    'duration_ms' => $timed ? $fact['end_ms'] - $fact['start_ms'] : null,
                     'characters' => $fact['on_screen'],
                     'state' => $fact['state'],
                     'time_jump' => $fact['time_jump'],
@@ -57,7 +58,7 @@ final class MotoScenePlanner
                         'light' => $plates[$use['background']]['light'],
                     ], (array) ($assigned[$id]['uses'] ?? [])),
                     'unplated' => array_values((array) ($assigned[$id]['unplated'] ?? [])),
-                ];
+                ] + ($timed ? [] : ['events' => array_values((array) ($beat['events'] ?? []))]);
             }
 
             $first = $beatRows[0] ?? null;
@@ -68,13 +69,17 @@ final class MotoScenePlanner
                 'beats' => array_values((array) $scene['beats']),
                 'start_ms' => $first['start_ms'] ?? null,
                 'end_ms' => $last['end_ms'] ?? null,
-                'duration_ms' => $first === null ? null : $last['end_ms'] - $first['start_ms'],
+                'duration_ms' => $first === null || ! $timed ? null : $last['end_ms'] - $first['start_ms'],
                 'places' => array_values(array_unique(array_merge([], ...array_map(static fn (string $id): array => $facts[$id]['places'], $ids)))),
                 'backgrounds' => array_values(array_unique(array_merge([], ...array_map(static fn (string $id): array => $facts[$id]['backgrounds'], $ids)))),
                 'state' => count($states) === 1 ? $states[0] : null,
                 'characters' => array_values(array_unique(array_merge([], ...array_column($beatRows, 'characters')))),
                 'purpose' => $scene['purpose'],
                 'set_brief' => $scene['set_brief'],
+            ] + ($timed ? [] : [
+                'blocking' => $scene['blocking'] ?? null,
+                'event_ids' => array_values(array_merge([], ...array_map(static fn (string $id): array => (array) ($facts[$id]['events'] ?? []), $ids))),
+            ]) + [
                 'continuity_from' => $scene['continuity_from'],
                 'continuity_start' => $scene['continuity_start'],
                 'continuity_end' => $scene['continuity_end'],
@@ -91,7 +96,7 @@ final class MotoScenePlanner
 
         return [
             'version' => self::VERSION,
-            'total_ms' => (int) $context['total_ms'],
+            'total_ms' => $timed ? (int) $context['total_ms'] : null,
             'scenes' => $rows,
             'conflicts' => $conflicts,
             'source_conflicts' => $sourceConflicts,

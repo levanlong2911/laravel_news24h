@@ -15,8 +15,19 @@ use App\Video\Superyacht\Spec\ResolvedPhase;
 use App\Video\Superyacht\Support\CanonicalJson;
 use RuntimeException;
 
-final class MotoScenes implements SceneWorkflow
+final class MotoScenes implements ReleaseBound, SceneWorkflow
 {
+    /** @var string the timing of beats that carry no screen time: each beat counts as one step, only to keep the order of scenes */
+    public const ORDINAL = 'ordinal';
+
+    /** @var bool whether the project tells its story as events, with screen time set by the shot plan */
+    private bool $eventful = false;
+
+    public function bind(VideoProject $project): void
+    {
+        $this->eventful = MotoPipelineRelease::cinematic($project);
+    }
+
     public const LOCATIONS_TOKEN = 'moto-scenes-locations-token-v1';
 
     /** @var list<string> */
@@ -29,7 +40,7 @@ final class MotoScenes implements SceneWorkflow
 
     public function format(): string
     {
-        return MotoContract::SCENES_FORMAT;
+        return $this->eventful ? MotoContract::SCENES_FORMAT_V2 : MotoContract::SCENES_FORMAT;
     }
 
     public function checkVersion(): string
@@ -44,7 +55,7 @@ final class MotoScenes implements SceneWorkflow
 
     public function inputsVersion(): string
     {
-        return MotoContract::SCENES_INPUT;
+        return $this->eventful ? MotoContract::SCENES_INPUT_V3 : MotoContract::SCENES_INPUT;
     }
 
     public function settings(): array
@@ -66,15 +77,18 @@ final class MotoScenes implements SceneWorkflow
         $projectId = (string) $project->id;
         $script = $this->scripts->approvedSource($projectId);
 
-        if (($script['document']['format'] ?? null) !== MotoContract::SCRIPT_FORMAT) {
-            throw new RuntimeException('Kịch bản đang chọn không theo định dạng '.MotoContract::SCRIPT_FORMAT.' — không chia scene moto từ nó.');
+        $scriptFormat = $this->eventful ? MotoContract::SCRIPT_FORMAT_V2 : MotoContract::SCRIPT_FORMAT;
+        $locationsFormat = $this->eventful ? MotoContract::LOCATIONS_FORMAT_V2 : MotoContract::LOCATIONS_FORMAT;
+
+        if (($script['document']['format'] ?? null) !== $scriptFormat) {
+            throw new RuntimeException('Kịch bản đang chọn không theo định dạng '.$scriptFormat.' — không chia scene moto từ nó.');
         }
 
         $text = $this->locations->approvedText($projectId);
         $document = (array) $text['evaluation']['document'];
 
-        if (($document['format'] ?? null) !== MotoContract::LOCATIONS_FORMAT) {
-            throw new RuntimeException('Bộ bối cảnh đang dùng không theo định dạng '.MotoContract::LOCATIONS_FORMAT.' — không chia scene moto từ nó.');
+        if (($document['format'] ?? null) !== $locationsFormat) {
+            throw new RuntimeException('Bộ bối cảnh đang dùng không theo định dạng '.$locationsFormat.' — không chia scene moto từ nó.');
         }
 
         $designSource = (array) ($this->locations->source($text['stage'])['design'] ?? []);
@@ -86,7 +100,7 @@ final class MotoScenes implements SceneWorkflow
             throw new RuntimeException('Kịch bản đã duyệt không còn payload đã ghim — không chia được scene.');
         }
 
-        $built = self::build((array) $script['document']['data'], (array) $document['data'], $design, (array) $pinned['variables']);
+        $built = self::build((array) $script['document']['data'], (array) $document['data'], $design, (array) $pinned['variables'], $this->eventful);
 
         return [
             'payload' => $built['payload'],
@@ -161,10 +175,12 @@ final class MotoScenes implements SceneWorkflow
      * @param  array<string, mixed>  $locations  the data of the approved background text
      * @param  array<string, mixed>  $design  the data of the design the background text pinned
      * @param  array<string, mixed>  $variables  the variables the script was written with
+     * @param  bool  $eventful  whether the script tells its beats as events without screen time: the beats then carry their events, no times are sent, and each beat counts as one step of an ordinal timing
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} the beats with their times; the places, plates and uses of every beat with the background text's continuity and conflicts; the parts present and in progress, the exceptions, configurations and lights of the build states the beats use; every part with the part it is mounted on and its first build state on the motorcycle; no full design, image prompt or model-sheet prompt
      */
-    public static function build(array $script, array $locations, array $design, array $variables): array
+    public static function build(array $script, array $locations, array $design, array $variables, bool $eventful = false): array
     {
+        $beatKeys = $eventful ? [...array_values(array_diff(self::BEAT_KEYS, ['duration_s'])), 'events'] : self::BEAT_KEYS;
         $facts = MotoScriptCheck::facts($design);
         $records = array_column((array) ($design['build_states'] ?? []), null, 'id');
         $plates = array_column((array) ($locations['backgrounds'] ?? []), null, 'id');
@@ -176,7 +192,7 @@ final class MotoScenes implements SceneWorkflow
 
         foreach ((array) ($script['beats'] ?? []) as $beat) {
             $id = (string) $beat['id'];
-            $length = (int) round((float) $beat['duration_s'] * 1000);
+            $length = $eventful ? 1 : (int) round((float) $beat['duration_s'] * 1000);
             $uses = [];
 
             foreach ($plates as $plateId => $plate) {
@@ -196,7 +212,7 @@ final class MotoScenes implements SceneWorkflow
                 ...array_filter(array_column($unplated, 'location'), 'is_string'),
             ]));
 
-            $beats[] = array_combine(self::BEAT_KEYS, array_map(static fn (string $key): mixed => $beat[$key] ?? null, self::BEAT_KEYS));
+            $beats[] = array_combine($beatKeys, array_map(static fn (string $key): mixed => $beat[$key] ?? null, $beatKeys));
             $times[] = ['beat' => $id, 'start_ms' => $cursor, 'end_ms' => $cursor + $length];
             $assigned[] = ['beat' => $id, 'uses' => $uses, 'unplated' => $unplated];
             $beatFacts[] = [
@@ -208,7 +224,7 @@ final class MotoScenes implements SceneWorkflow
                 'end_ms' => $cursor + $length,
                 'places' => $places,
                 'backgrounds' => array_values(array_unique(array_column($uses, 'background'))),
-            ];
+            ] + ($eventful ? ['events' => array_values(array_column((array) ($beat['events'] ?? []), 'id'))] : []);
             $cursor += $length;
         }
 
@@ -271,7 +287,7 @@ final class MotoScenes implements SceneWorkflow
             ],
             'beat_times' => $times,
             'locations' => [
-                'places' => array_values(array_map(static fn (array $place): array => ['id' => $place['id'], 'name' => $place['name'], 'kind' => $place['kind']], (array) ($locations['locations'] ?? []))),
+                'places' => array_values(array_map(static fn (array $place): array => ['id' => $place['id'], 'name' => $place['name'], 'kind' => $place['kind']] + ($eventful ? array_intersect_key($place, array_flip(['subject_zone', 'entry_routes', 'camera_access', 'fixed_landmarks'])) : []), (array) ($locations['locations'] ?? []))),
                 'backgrounds' => array_values(array_map(static fn (array $plate): array => [
                     'id' => $plate['id'],
                     'location' => $plate['location'],
@@ -292,9 +308,13 @@ final class MotoScenes implements SceneWorkflow
             ],
         ];
 
+        if ($eventful) {
+            unset($payload['beat_times']);
+        }
+
         return [
             'payload' => $payload,
-            'context' => [
+            'context' => ($eventful ? ['timing' => self::ORDINAL] : []) + [
                 'input' => $payload,
                 'beats' => $beatFacts,
                 'states' => $known,

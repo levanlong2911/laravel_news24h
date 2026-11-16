@@ -30,12 +30,26 @@ final class MotoScenesCheck
      */
     public static function evaluate(?array $response, array $context, array $schema): array
     {
+        $format = ($context['format'] ?? null) === MotoContract::SCENES_FORMAT_V2 ? MotoContract::SCENES_FORMAT_V2 : MotoContract::SCENES_FORMAT;
+
+        return ['format' => $format] + self::scored($response, $context, $schema, $format);
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $response
+     * @param  array<string, mixed>  $context
+     * @param  list<array{code: string, path: string, message: string}>  $schema
+     * @param  string  $format  the answer format the run pinned
+     * @return array{version: string, format: string, verdict: string, status: ?string, error: ?string, schema: list<string>, issues: list<string>, warnings: list<string>, judge: string}
+     */
+    private static function scored(?array $response, array $context, array $schema, string $format): array
+    {
         if ($response === null) {
             return self::result(self::UNSCORED, null, 'Phản hồi không đọc được JSON.');
         }
 
-        if (($response['format'] ?? null) !== MotoContract::SCENES_FORMAT) {
-            return self::result(self::UNSCORED, null, 'Phản hồi không theo định dạng '.MotoContract::SCENES_FORMAT.'.');
+        if (($response['format'] ?? null) !== $format) {
+            return self::result(self::UNSCORED, null, 'Phản hồi không theo định dạng '.$format.'.');
         }
 
         $status = is_string($response['status'] ?? null) ? $response['status'] : null;
@@ -147,7 +161,9 @@ final class MotoScenesCheck
                 $last = $beats[$scene['beats'][count($scene['beats']) - 1]];
 
                 if ($first['start_ms'] !== $cursor) {
-                    $issues[] = "{$scene['id']} bắt đầu ở {$first['start_ms']} ms; scene trước kết thúc ở {$cursor} ms.";
+                    $issues[] = ($context['timing'] ?? null) === MotoScenes::ORDINAL
+                        ? "{$scene['id']} không nối tiếp scene trước theo thứ tự beat của kịch bản."
+                        : "{$scene['id']} bắt đầu ở {$first['start_ms']} ms; scene trước kết thúc ở {$cursor} ms.";
                 }
 
                 $cursor = $last['end_ms'];
@@ -156,7 +172,9 @@ final class MotoScenesCheck
             $total = $beats === [] ? 0 : (int) end($beats)['end_ms'];
 
             if ($cursor !== $total) {
-                $issues[] = "Các scene phủ tới {$cursor} ms; phim dài {$total} ms.";
+                $issues[] = ($context['timing'] ?? null) === MotoScenes::ORDINAL
+                    ? 'Các scene chưa phủ hết các beat của kịch bản.'
+                    : "Các scene phủ tới {$cursor} ms; phim dài {$total} ms.";
             }
         }
 
