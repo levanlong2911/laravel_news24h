@@ -16,20 +16,34 @@ use App\Video\Locations\LocationWorkflow;
 use App\Video\Superyacht\Spec\ResolvedPhase;
 use RuntimeException;
 
-final class MotoLocations implements LocationWorkflow
+final class MotoLocations implements LocationWorkflow, ReleaseBound
 {
     /** @var list<string> */
     private const BEAT_KEYS = ['id', 'state', 'duration_s', 'location', 'time_light', 'visual', 'purpose', 'reveal', 'link'];
+
+    /** @var list<string> the fields of a beat that is told as events and has no screen time of its own */
+    private const EVENTFUL_BEAT_KEYS = ['id', 'state', 'location', 'time_light', 'visual', 'purpose', 'reveal', 'link', 'on_screen'];
+
+    /** @var list<string> the story fields every build state of a themed design carries */
+    private const STORY_KEYS = ['text', 'setting_brief', 'participant_roles', 'outcome'];
 
     private const FIRST_BUILT_STATE = 6;
 
     private const LAST_STATE = 12;
 
+    /** @var bool whether the project tells its story as events, with screen time set by the shot plan */
+    private bool $eventful = false;
+
     public function __construct(private readonly ScriptSourceService $scripts) {}
+
+    public function bind(VideoProject $project): void
+    {
+        $this->eventful = MotoPipelineRelease::cinematic($project);
+    }
 
     public function format(): string
     {
-        return MotoContract::LOCATIONS_FORMAT;
+        return $this->eventful ? MotoContract::LOCATIONS_FORMAT_V2 : MotoContract::LOCATIONS_FORMAT;
     }
 
     public function checkVersion(): string
@@ -44,7 +58,7 @@ final class MotoLocations implements LocationWorkflow
 
     public function inputsVersion(): string
     {
-        return MotoContract::LOCATIONS_INPUT;
+        return $this->eventful ? MotoContract::LOCATIONS_INPUT_V2 : MotoContract::LOCATIONS_INPUT;
     }
 
     public function settings(): array
@@ -69,8 +83,10 @@ final class MotoLocations implements LocationWorkflow
         $projectId = (string) $project->id;
         $script = $this->scripts->approvedSource($projectId);
 
-        if (($script['document']['format'] ?? null) !== MotoContract::SCRIPT_FORMAT) {
-            throw new RuntimeException('Kịch bản đang chọn không theo định dạng '.MotoContract::SCRIPT_FORMAT.' — không lập địa điểm moto từ nó.');
+        $scriptFormat = $this->eventful ? MotoContract::SCRIPT_FORMAT_V2 : MotoContract::SCRIPT_FORMAT;
+
+        if (($script['document']['format'] ?? null) !== $scriptFormat) {
+            throw new RuntimeException('Kịch bản đang chọn không theo định dạng '.$scriptFormat.' — không lập địa điểm moto từ nó.');
         }
 
         $stage = VideoPlanningStage::query()->whereKey($script['stage_id'])->where('project_id', $projectId)->firstOrFail();
@@ -85,7 +101,7 @@ final class MotoLocations implements LocationWorkflow
 
         $design = self::pinnedDesign($projectId, $source);
         $names = array_values(array_map('strval', (array) ($scriptContext['source_names'] ?? [])));
-        $built = self::build((array) $script['document']['data'], $design, (array) $pinned['variables'], $names);
+        $built = self::build((array) $script['document']['data'], $design, (array) $pinned['variables'], $names, $this->eventful);
 
         return [
             'payload' => $built['payload'],
@@ -150,21 +166,25 @@ final class MotoLocations implements LocationWorkflow
      * @param  array<string, mixed>  $design  the data of the design the script pinned
      * @param  array<string, mixed>  $variables  the variables the script was written with
      * @param  list<string>  $names  the source names the script pinned
+     * @param  bool  $eventful  whether the script tells its beats as events without screen time, from a design that tells every build state
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} what a place needs from the script and the design: the beats with the subjects they show and their sizes, the operations they perform and the environment the design sets for them; the setting of each design stage; the surface, work in progress, temporary equipment and exceptions of each build state; no part record, coordinate, limit or model-sheet prompt
      */
-    public static function build(array $script, array $design, array $variables, array $names): array
+    public static function build(array $script, array $design, array $variables, array $names, bool $eventful = false): array
     {
         $parts = array_column((array) ($design['parts'] ?? []), null, 'id');
         $states = array_column((array) ($design['build_states'] ?? []), null, 'id');
+        $roles = array_column((array) ($design['participant_roles'] ?? []), 'name', 'id');
         $present = self::present($parts, $states);
         $finished = self::box(array_intersect_key($parts, $present[sprintf('BS%02d', self::LAST_STATE)] ?? []), 'part_boxes');
         $beats = [];
+        $keys = $eventful ? self::EVENTFUL_BEAT_KEYS : self::BEAT_KEYS;
 
         foreach ((array) ($script['beats'] ?? []) as $beat) {
             $situation = is_array($beat['situation'] ?? null)
                 ? ['mode' => $beat['situation']['mode'], 'dry_road' => $beat['situation']['dry_road'], 'procedures' => array_values((array) ($beat['situation']['procedures'] ?? []))]
                 : null;
-            $beats[] = array_combine(self::BEAT_KEYS, array_map(static fn (string $key): mixed => $beat[$key] ?? null, self::BEAT_KEYS)) + [
+            $events = $eventful ? ['events' => array_map(static fn (array $event): array => array_intersect_key($event, array_flip(['id', 'action', 'result', 'character_ids'])), (array) ($beat['events'] ?? []))] : [];
+            $beats[] = array_combine($keys, array_map(static fn (string $key): mixed => $beat[$key] ?? null, $keys)) + $events + [
                 'situation' => $situation,
                 'subjects' => self::subjects($beat, $parts, $states, $present, $finished, $design['motorcycle']['name'] ?? null),
                 'operations' => self::operations($beat, $design),
@@ -177,7 +197,11 @@ final class MotoLocations implements LocationWorkflow
         $shown = [];
 
         foreach ($states as $id => $state) {
-            if (isset($state['setting_brief'])) {
+            if (isset($state['participant_roles']) && $roles !== []) {
+                $state['participant_roles'] = array_values(array_map(static fn (string $role): string => $roles[$role] ?? $role, (array) $state['participant_roles']));
+            }
+
+            if (! isset($state['surfaces'])) {
                 $keys = ['id', 'kind', 'setting_brief', 'participant_roles', 'model_medium', 'scale_denominator'];
                 $shown[] = array_filter(array_combine($keys, array_map(static fn (string $key): mixed => $state[$key] ?? null, $keys)), static fn (mixed $value): bool => $value !== null);
                 $facts[$id] = ['kind' => $state['kind'], 'temporary' => [], 'setting_brief' => (string) $state['setting_brief']];
@@ -190,6 +214,7 @@ final class MotoLocations implements LocationWorkflow
             $shown[] = [
                 'id' => $id,
                 'kind' => $state['kind'],
+            ] + array_intersect_key($state, array_flip(self::STORY_KEYS)) + [
                 'surface' => $state['surface'] ?? null,
                 'in_progress' => $work,
                 'temporary' => array_values((array) ($state['temporary'] ?? [])),

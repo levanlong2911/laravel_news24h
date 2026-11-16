@@ -157,7 +157,17 @@
                                     <tr>
                                         <td><b>{{ $location['id'] ?? '—' }}</b><br><em>{{ $location['name'] ?? '' }}</em></td>
                                         <td>{{ $location['kind'] ?? '—' }}</td>
-                                        <td>{{ $location['space'] ?? '—' }}</td>
+                                        <td>{{ $location['space'] ?? '—' }}
+                                            @if(isset($location['spatial_layers']))
+                                                <br><em>Tiền cảnh:</em> {{ $location['spatial_layers']['foreground'] }}
+                                                <br><em>Trung cảnh:</em> {{ $location['spatial_layers']['midground'] }}
+                                                <br><em>Hậu cảnh:</em> {{ $location['spatial_layers']['background'] }}
+                                                <br><em>Vùng chủ thể:</em> {{ $location['subject_zone'] }}
+                                                <br><em>Đường tiếp cận:</em> {{ implode('; ', (array) $location['entry_routes']) }}
+                                                <br><em>Vùng máy quay:</em> {{ $location['camera_access'] }}
+                                                <br><em>Mốc cố định:</em> {{ implode('; ', (array) $location['fixed_landmarks']) }}
+                                            @endif
+                                        </td>
                                         <td>@foreach(['length_m' => 'dài', 'width_m' => 'rộng', 'height_m' => 'cao'] as $axis => $word){{ $word }} {{ $location['dimensions'][$axis]['value'] ?? '—' }} <em>({{ $location['dimensions'][$axis]['basis'] ?? '—' }})</em><br>@endforeach</td>
                                         <td>@if($fit !== null)<b>{{ $fit['subject'] }}</b>{{ $fit['beats'] !== [] ? ' · '.implode(', ', $fit['beats']) : '' }}<br>
                                             <em>{{ $fit['footprint'] }} · trên đầu {{ $fit['overhead'] }} · thông thủy {{ $fit['clear_height_m']['value'] ?? '—' }} ({{ $fit['clear_height_m']['basis'] }})</em><br>
@@ -414,7 +424,6 @@
                                                                     @csrf
                                                                     <input type="hidden" name="request_id" value="{{ $key }}">
                                                                     <input type="hidden" name="artifact_id" value="{{ $candidate['id'] }}">
-                                                                    <input type="hidden" name="selection_version" value="{{ $step['selection']['version'] }}">
                                                                     <button class="vp-btn ok sm">✓ Duyệt</button>
                                                                 </form>
                                                             @endif

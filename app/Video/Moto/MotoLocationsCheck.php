@@ -33,12 +33,26 @@ final class MotoLocationsCheck
      */
     public static function evaluate(?array $response, array $context, array $schema): array
     {
+        $format = ($context['format'] ?? null) === MotoContract::LOCATIONS_FORMAT_V2 ? MotoContract::LOCATIONS_FORMAT_V2 : MotoContract::LOCATIONS_FORMAT;
+
+        return ['format' => $format] + self::scored($response, $context, $schema, $format);
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $response
+     * @param  array<string, mixed>  $context
+     * @param  list<array{code: string, path: string, message: string}>  $schema
+     * @param  string  $format  the answer format the run pinned
+     * @return array{version: string, format: string, verdict: string, status: ?string, error: ?string, schema: list<string>, issues: list<string>, warnings: list<string>, judge: string}
+     */
+    private static function scored(?array $response, array $context, array $schema, string $format): array
+    {
         if ($response === null) {
             return self::result(self::UNSCORED, null, 'Phản hồi không đọc được JSON.');
         }
 
-        if (($response['format'] ?? null) !== MotoContract::LOCATIONS_FORMAT) {
-            return self::result(self::UNSCORED, null, 'Phản hồi không theo định dạng '.MotoContract::LOCATIONS_FORMAT.'.');
+        if (($response['format'] ?? null) !== $format) {
+            return self::result(self::UNSCORED, null, 'Phản hồi không theo định dạng '.$format.'.');
         }
 
         $status = is_string($response['status'] ?? null) ? $response['status'] : null;

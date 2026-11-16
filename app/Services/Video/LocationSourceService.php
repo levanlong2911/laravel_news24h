@@ -49,6 +49,10 @@ final class LocationSourceService
             throw new RuntimeException("Adapter Phase 5 của workflow {$workflow} không hợp lệ.");
         }
 
+        if ($adapter instanceof \App\Video\Moto\ReleaseBound) {
+            $adapter->bind($project);
+        }
+
         return ['workflow' => $workflow, 'action' => (string) $entry['action'], 'adapter' => $adapter, 'category_id' => (string) $category->id, 'category_slug' => (string) $category->slug];
     }
 
@@ -259,8 +263,10 @@ final class LocationSourceService
         return ['stage' => $stage, 'evaluation' => $evaluation, 'flow' => $flow, 'selection' => $selection, 'prompts' => $prompts, 'stale' => $stale, 'current' => $current];
     }
 
-    /** @return array{0: bool, 1: string} */
-    public function choose(string $projectId, string $requestId, string $artifactId, int $expectedVersion): array
+    /**
+     * @return array{0: bool, 1: string} whether the image is now the one in use for its background. Each background is chosen on its own: choices of other backgrounds made since the page was drawn do not stop this one, and every choice is written under the project lock from the selection as it stands then
+     */
+    public function choose(string $projectId, string $requestId, string $artifactId): array
     {
         try {
             $text = $this->approvedText($projectId);
@@ -278,12 +284,12 @@ final class LocationSourceService
             return [false, "Bối cảnh {$requestId} còn xung đột kịch bản / thiết kế chưa giải quyết — không duyệt ảnh."];
         }
 
-        return DB::transaction(function () use ($projectId, $requestId, $artifactId, $expectedVersion, $text): array {
+        return DB::transaction(function () use ($projectId, $requestId, $artifactId, $text): array {
             $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
             $selection = $this->selectionOf($project);
 
-            if ($selection['version'] !== $expectedVersion) {
-                return [false, 'Bộ bối cảnh đã đổi ở một tab khác — tải lại trang rồi chọn lại.'];
+            if (($selection['text'] ?? null) != ($text['selection']['text'] ?? null)) {
+                return [false, 'Bộ bối cảnh đang dùng vừa đổi — tải lại trang rồi chọn lại.'];
             }
 
             $artifact = VideoArtifact::query()->whereKey($artifactId)->where('project_id', $projectId)->first();
