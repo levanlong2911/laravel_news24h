@@ -42,8 +42,21 @@ final class MotoDesign implements DesignWorkflow
         return MotoSheetPrompt::config(self::themed($manifest));
     }
 
+    /**
+     * @param  ?array<string, mixed>  $manifest  the bundle the run was sent with
+     * @return list<array{label: string, json_schema_id: string, sha256: string, content: string}> the output schemas that run pinned, as the check reads them
+     *
+     * @throws RuntimeException when the run kept no manifest or the manifest does not hold its schemas
+     */
+    public static function schemas(?array $manifest): array
+    {
+        return MotoContract::technicalSchemas(PhaseResolver::fromConfig((array) config('video.superyacht'))
+            ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
+            ->outputSchemas());
+    }
+
     /** @param  ?array<string, mixed>  $manifest  the bundle a run is sent with */
-    private static function themed(?array $manifest): bool
+    public static function themed(?array $manifest): bool
     {
         return MotoContract::generation($manifest ?? [], 'MotoDesign') >= 2;
     }
@@ -94,15 +107,13 @@ final class MotoDesign implements DesignWorkflow
             return [null, MotoDesignCheck::evaluate(null, $run['project_id'], $run['prompt_version'], $run['dna'], $run['source_identity'], $run['model_sheet'], [], [], $format)];
         }
 
+        $response = json_decode((string) json_encode($decoded), true);
+
         try {
-            $schemaErrors = PhaseOneEvidence::schemaErrors($decoded, MotoContract::technicalSchemas(PhaseResolver::fromConfig((array) config('video.superyacht'))
-                ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
-                ->outputSchemas()));
+            $schemaErrors = MotoDesignRefs::schemaIssues(PhaseOneEvidence::schemaDiagnostics($decoded, self::schemas($manifest)), (array) (is_array($response) ? ($response['data'] ?? []) : []), $format === MotoContract::DESIGN_FORMAT_V2);
         } catch (\Throwable $e) {
             $schemaErrors = ['không kiểm được schema: '.$e->getMessage()];
         }
-
-        $response = json_decode((string) json_encode($decoded), true);
 
         return [$decoded, MotoDesignCheck::evaluate(
             is_array($response) ? $response : null,

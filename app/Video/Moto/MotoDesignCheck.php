@@ -96,7 +96,7 @@ final class MotoDesignCheck
         $issues = [
             ...$issues,
             ...$ids['issues'],
-            ...self::referenceIssues($data, $ids),
+            ...self::referenceIssues($data, $ids, $themed),
             ...self::dnaIssues($data, $dna),
             ...$geometry['issues'],
             ...self::configurationIssues($data, $ids, $themed),
@@ -263,9 +263,10 @@ final class MotoDesignCheck
     /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $ids  the result of ids()
+     * @param  bool  $themed  the record is themed: the refs of its build states follow MotoDesignRefs, by kind and by the list of that kind
      * @return list<string>
      */
-    private static function referenceIssues(array $data, array $ids): array
+    private static function referenceIssues(array $data, array $ids, bool $themed = false): array
     {
         $issues = [];
         $known = [
@@ -366,8 +367,15 @@ final class MotoDesignCheck
         $check('rider_interface.contact_points', array_column($data['rider_interface']['contact_points'], 'part'));
         $check('rider_interface.passenger.parts', $data['rider_interface']['passenger']['parts']);
 
+        if ($themed) {
+            $issues = [...$issues, ...array_column(MotoDesignRefs::storyRefProblems($data), 'message')];
+        }
+
         foreach ($data['build_states'] as $state) {
-            $check("{$state['id']}.refs", $state['refs'] ?? []);
+            if (! $themed) {
+                $check("{$state['id']}.refs", $state['refs'] ?? []);
+            }
+
             $check("{$state['id']}.in_progress", array_column($state['in_progress'] ?? [], 'part'));
             $check("{$state['id']}.exceptions", array_column($state['exceptions'] ?? [], 'part'));
             $check("{$state['id']}.exceptions.configuration", array_column($state['exceptions'] ?? [], 'configuration'));
@@ -706,6 +714,12 @@ final class MotoDesignCheck
         }
 
         return $issues;
+    }
+
+    /** @return list<string> every id of a design record a text holds, each once, as the model-sheet prompt check finds them */
+    public static function promptIds(string $text): array
+    {
+        return preg_match_all(self::PROMPT_IDS, $text, $match) > 0 ? array_values(array_unique($match[0])) : [];
     }
 
     /** @param  array<string, mixed>  $part */

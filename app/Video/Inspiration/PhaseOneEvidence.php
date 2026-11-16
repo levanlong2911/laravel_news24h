@@ -6,6 +6,8 @@ namespace App\Video\Inspiration;
 
 use App\Video\Moto\MotoContract;
 use Opis\JsonSchema\Errors\ErrorFormatter;
+use Opis\JsonSchema\Errors\ValidationError;
+use Opis\JsonSchema\JsonPointer;
 use Opis\JsonSchema\Uri;
 use Opis\JsonSchema\Validator;
 
@@ -39,6 +41,9 @@ final class PhaseOneEvidence
     private const IDENTITY = ['builder', 'designers', 'silhouette', 'bow', 'superstructure', 'colors'];
 
     private const MAX_ERRORS = 100;
+
+    /** @var list<string> the keywords whose failure only says a value has another form, so the branches of a choice that fail by them alone are one problem of that value */
+    private const FORM_KEYWORDS = ['pattern', 'type', 'const', 'enum', 'format', 'minLength', 'maxLength', 'not'];
 
     /** @param  ?array<string, mixed>  $answer */
     public static function format(?array $answer): ?string
@@ -98,6 +103,87 @@ final class PhaseOneEvidence
         }
 
         return $errors;
+    }
+
+    /**
+     * The violations of schemaErrors() as records that keep the value the answer holds at each path.
+     *
+     * An anyOf or oneOf whose every failing branch only says the one value has another form is one
+     * record, its branches kept apart for debugging; every other violation stays a record of its own,
+     * so a missing field, a duplicate or a wrong type is never folded into a choice of form.
+     *
+     * @param  list<array{json_schema_id: string, content: string, label?: string}>  $schemas  the pinned schemas, the answer's own first
+     * @return list<array{code: string, path: string, value: mixed, message: string, branches: list<string>, schema: ?string}> the path is a JSON Pointer as RFC 6901 writes it; value is what the answer holds there; schema is the label of the answer's schema when the run pinned one
+     */
+    public static function schemaDiagnostics(object $answer, array $schemas): array
+    {
+        if ($schemas === []) {
+            return [['code' => 'no_schema', 'path' => '', 'value' => null, 'message' => 'không có JSON Schema đã ghim để kiểm', 'branches' => [], 'schema' => null]];
+        }
+
+        $validator = new Validator;
+        $validator->setMaxErrors(self::MAX_ERRORS);
+
+        foreach ($schemas as $schema) {
+            $validator->resolver()->registerRaw($schema['content'], $schema['json_schema_id']);
+        }
+
+        $result = $validator->validate($answer, Uri::parse($schemas[0]['json_schema_id'], true));
+
+        if ($result->isValid() || $result->error() === null) {
+            return [];
+        }
+
+        $label = is_string($schemas[0]['label'] ?? null) ? $schemas[0]['label'] : null;
+        $diagnostics = [];
+        self::collect($result->error(), new ErrorFormatter, $label, $diagnostics);
+
+        return $diagnostics;
+    }
+
+    /** @param  list<array{code: string, path: string, value: mixed, message: string, branches: list<string>, schema: ?string}>  $out */
+    private static function collect(ValidationError $error, ErrorFormatter $formatter, ?string $label, array &$out): void
+    {
+        $path = JsonPointer::pathToString($error->data()->fullPath());
+        $subErrors = $error->subErrors();
+
+        if ($subErrors !== [] && in_array($error->keyword(), ['anyOf', 'oneOf'], true)) {
+            $leaves = self::leaves($error);
+            $formOnly = $leaves !== [] && array_reduce($leaves, static fn (bool $all, ValidationError $leaf): bool => $all
+                && in_array($leaf->keyword(), self::FORM_KEYWORDS, true)
+                && JsonPointer::pathToString($leaf->data()->fullPath()) === $path, true);
+
+            if ($formOnly) {
+                $out[] = [
+                    'code' => 'no_branch',
+                    'path' => $path,
+                    'value' => $error->data()->value(),
+                    'message' => 'không khớp dạng nào trong '.count($leaves).' dạng được phép',
+                    'branches' => array_values(array_unique(array_map(static fn (ValidationError $leaf): string => $formatter->formatErrorMessage($leaf), $leaves))),
+                    'schema' => $label,
+                ];
+
+                return;
+            }
+        }
+
+        if ($subErrors === []) {
+            $out[] = ['code' => $error->keyword(), 'path' => $path, 'value' => $error->data()->value(), 'message' => $formatter->formatErrorMessage($error), 'branches' => [], 'schema' => $label];
+
+            return;
+        }
+
+        foreach ($subErrors as $subError) {
+            self::collect($subError, $formatter, $label, $out);
+        }
+    }
+
+    /** @return list<ValidationError> the errors under this one that have none under them */
+    private static function leaves(ValidationError $error): array
+    {
+        $subErrors = $error->subErrors();
+
+        return $subErrors === [] ? [$error] : array_merge(...array_map(self::leaves(...), $subErrors));
     }
 
     /**
