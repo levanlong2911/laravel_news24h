@@ -18,10 +18,7 @@
     $shotShown = $shots['shown'] ?? null;
     $shotCheck = $shotShown['check'] ?? null;
     $shotPlan = $shotShown['plan'] ?? null;
-    $shotsByScene = collect($shotPlan['shots'] ?? [])->groupBy('scene');
-    $shotResources = $shotShown['resources'] ?? [];
     $readinessLabels = ['ready' => ['ok', 'ĐỦ TÀI NGUYÊN'], 'waiting_background' => ['amber', 'CHỜ NỀN'], 'waiting_reference' => ['amber', 'CHỜ ẢNH THAM CHIẾU']];
-    $scaleLabels = ['extreme_wide' => 'Extreme wide', 'wide' => 'Wide', 'medium' => 'Medium', 'close' => 'Close', 'macro' => 'Macro'];
     $presentationLabels = ['installed' => 'đã lắp', 'being_made' => 'đang làm', 'awaiting_install' => 'chờ lắp', 'removed' => 'đã tháo', 'drawing' => 'bản vẽ', 'model' => 'mô hình'];
     $shotNotes = static fn (string $shotId, ?array $check): array => $check === null ? [] : array_values(array_filter([...$check['issues'], ...$check['warnings']], static fn (string $line): bool => str_contains($line, $shotId)));
 @endphp
@@ -184,7 +181,6 @@
             <div class="vs-h"><b>1</b> Scene</div>
             <div class="vs-h"><b>2</b> Beat · nền · trạng thái</div>
             <div class="vs-h"><b>3</b> Continuity</div>
-            <div class="vs-h"><b>4</b> Shot · keyframe · clip</div>
 
             @foreach($plan['scenes'] as $row)
                 <div class="vs-row">
@@ -195,6 +191,7 @@
                         <span class="ph">{{ $row['state'] ?? 'chưa xác lập state' }}</span>
                         <div class="d">Nơi: {{ $row['places'] === [] ? 'chưa xác lập' : implode(', ', $row['places']) }}{{ $row['backgrounds'] === [] ? '' : ' · nền '.implode(', ', $row['backgrounds']) }} · nhân vật: {{ $row['characters'] === [] ? '—' : implode(', ', $row['characters']) }}</div>
                         @if($row['set_brief'] !== null)<div class="d">Bố trí: {{ $row['set_brief'] }}</div>@endif
+                        @if(($row['blocking'] ?? null) !== null)<div class="d">Dàn cảnh: {{ $row['blocking'] }}</div>@endif
                         <div class="d">Vào cảnh: {{ $row['transition_in'] === null ? '—' : $row['transition_in']['kind'].' — '.$row['transition_in']['description'] }}
                             @if($row['transition_in'] !== null && $row['transition_in']['evidence'] !== [])<span style="color:var(--vp-faint)">({{ implode(' / ', array_map($evidence, $row['transition_in']['evidence'])) }})</span>@endif
                         </div>
@@ -209,6 +206,9 @@
                             <div class="d" style="margin-bottom:6px">
                                 <b>{{ $beat['id'] }}</b> {{ $seconds($beat['start_ms']) }}–{{ $seconds($beat['end_ms']) }} s · {{ $beat['state'] ?? 'state null' }}{{ $beat['time_jump'] !== 'none' ? ' · '.$beat['time_jump'] : '' }} · {{ $beat['characters'] === [] ? 'không nhân vật' : implode(', ', $beat['characters']) }}{{ $beat['configurations'] === [] ? '' : ' · '.implode(', ', $beat['configurations']) }}{{ $beat['situation'] === null ? '' : ' · '.$beat['situation']['mode'] }}
                                 <div style="color:var(--vp-dim)">{{ $beat['visual'] }}</div>
+                                @foreach($beat['events'] ?? [] as $event)
+                                    <div>{{ $event['id'] }}{{ $event['character_ids'] === [] ? '' : ' · '.implode(', ', $event['character_ids']) }} — {{ $event['action'] }} → {{ $event['result'] }}</div>
+                                @endforeach
                                 @foreach($beat['uses'] as $use)
                                     <div>{{ $use['background'] }} · {{ $use['location'] }}{{ $use['place'] !== null ? ' '.$use['place'] : '' }} — {{ $use['part'] }}{{ $use['support'] === [] ? '' : ' · support '.implode(', ', $use['support']) }}{{ $use['ground'] === null ? '' : ' · mặt đường '.$use['ground'] }}</div>
                                 @endforeach
@@ -237,48 +237,58 @@
                             @endforeach
                         @endif
                     </div>
-                    <div class="vs-c">
-                        @forelse($shotsByScene->get($row['id'], collect()) as $shot)
-                            @php($resource = $shotResources[$shot['id']] ?? null)
-                            <div class="vs-shot-item">
-                                <b>{{ $shot['id'] }}</b> · {{ $scaleLabels[$shot['camera']['scale']] ?? $shot['camera']['scale'] }} · {{ $seconds($shot['tl_in_ms']) }}–{{ $seconds($shot['tl_out_ms']) }} s
-                                <div class="d">{{ $shot['purpose'] }}</div>
-                                <div class="vs-shot-thumb">Chưa có keyframe</div>
-                                @if($resource !== null)<span class="va-tag {{ $readinessLabels[$resource['readiness']][0] ?? 'mute' }}">{{ $readinessLabels[$resource['readiness']][1] ?? $resource['readiness'] }}</span>@endif
-                                <button type="button" class="vp-btn sm" data-shot-toggle="shot_{{ $shot['id'] }}">Xem storyboard</button>
-                            </div>
-                        @empty
-                            <div style="color:var(--vp-dim)">
-                                <button class="vp-btn sm" disabled title="{{ $step['shot_plan_problem'] }}">Khoá</button>
-                                <div class="d">{{ $step['shot_plan_problem'] }}</div>
-                            </div>
-                        @endforelse
-                    </div>
                 </div>
-                @foreach($shotsByScene->get($row['id'], collect()) as $shot)
-                    @php($resource = $shotResources[$shot['id']] ?? ['readiness' => null, 'needs' => []])
-                    <div class="vs-shot-detail" id="shot_{{ $shot['id'] }}" hidden>
-                        <div class="vs-shot-grid">
-                            <div class="vs-h"><b>1</b> Planning</div>
-                            <div class="vs-h"><b>2</b> Prompt</div>
-                            <div class="vs-h"><b>3</b> References</div>
-                            <div class="vs-h"><b>4</b> Image</div>
+            @endforeach
+        </div>
+    @endif
+    @section('vsShotRows')
+    @if($shotPlan !== null)
+        <div class="vs-grid vs-shots" id="shotRows">
+            <div class="vs-h"><b>1</b> Planning</div>
 
+            @foreach($shotPlan['shots'] as $shot)
+                @php($closesScene = ($shotPlan['shots'][$loop->index + 1]['scene'] ?? null) !== $shot['scene'])
+                <div class="vs-row" id="shot_{{ $shot['id'] }}">
                             <div class="vs-c vs-plan">
                                 <span class="o">{{ $shot['id'] }}</span>
                                 <span class="t">{{ $shot['purpose'] }}</span>
                                 <span class="ph">{{ $seconds($shot['tl_in_ms']) }}–{{ $seconds($shot['tl_out_ms']) }} s</span>
                                 <span class="ph">{{ $shot['state'] ?? 'state null' }}</span>
+                                @foreach($shot['omitted_before'] ?? [] as $gap)
+                                    <div class="d">Lược trước shot: {{ implode(', ', [...$gap['event_ids'], ...$gap['work_ids']]) }} — {{ $gap['reason'] }}</div>
+                                @endforeach
+                                @if($closesScene)
+                                    @foreach(collect($shotPlan['omissions'] ?? [])->where('scene', $shot['scene'])->whereNull('before_shot') as $gap)
+                                        <div class="d">Lược sau shot cuối của scene: {{ implode(', ', [...$gap['event_ids'], ...$gap['work_ids']]) }} — {{ $gap['reason'] }}</div>
+                                    @endforeach
+                                @endif
                                 @foreach($shot['coverage_spans'] as $item)
-                                    <div class="d">{{ $item['beat'] }} · {{ $item['part'] }} · {{ $seconds($item['used_duration_ms']) }} s (clip {{ $item['clip_from_ms'] }}–{{ $item['clip_to_ms'] }} ms){{ $item['result_at_ms'] !== null ? ' · kết quả ở '.$item['result_at_ms'].' ms' : '' }}</div>
+                                    @if(isset($item['event_ids']))
+                                        <div class="d">{{ $item['beat'] }} · sự kiện {{ implode(', ', $item['event_ids']) }}</div>
+                                    @else
+                                        <div class="d">{{ $item['beat'] }} · {{ $item['part'] }} · {{ $seconds($item['used_duration_ms']) }} s (clip {{ $item['clip_from_ms'] }}–{{ $item['clip_to_ms'] }} ms){{ $item['result_at_ms'] !== null ? ' · kết quả ở '.$item['result_at_ms'].' ms' : '' }}</div>
+                                    @endif
                                 @endforeach
                                 <div class="d">Render {{ $seconds($shot['render_duration_ms']) }} s · {{ $shot['mode'] }} · giữ {{ $shot['used_start_ms'] }}–{{ $shot['used_start_ms'] + $shot['used_duration_ms'] }} ms</div>
                                 <div class="d">Chủ thể: {{ $shot['camera']['target'] }}{{ $shot['camera']['target_part'] !== null ? ' '.$shot['camera']['target_part'] : '' }}</div>
                                 @if($shot['parts_named'] !== [])<div class="d">Part: {{ implode('; ', array_map(static fn (array $item): string => $item['part'].' '.($item['name'] ?? '').' ('.($presentationLabels[$item['presentation']] ?? $item['presentation']).')', $shot['parts_named'])) }}</div>@endif
                                 @foreach($shot['work_items'] ?? [] as $item)<div class="d">Công việc {{ $item['id'] }} · {{ $item['operation'] }}: {{ implode('; ', array_map(static fn (array $place): string => $place['part'].' '.$where[$place['start']].' → '.$where[$place['end']], $item['parts'])) }}</div>@endforeach
-                                @if($shot['people'] !== [])<div class="d">Người: {{ implode('; ', array_map(static fn (array $person): string => $person['character'].' ('.$person['view'].')', $shot['people'])) }}</div>@endif
+                                @if($shot['people'] !== [])<div class="d">Người: {{ implode('; ', array_map(static fn (array $person): string => $person['character'].' ('.(isset($person['framing']) ? $person['framing'].', mặt '.$person['face_visibility'] : $person['view']).')', $shot['people'])) }}</div>@endif
                                 <div class="d">Khung đầu: {{ $shot['first_frame'] }}</div>
-                                <div class="d">Hành động: {{ $shot['action'] }} → {{ $shot['result'] }}</div>
+                                @if(isset($shot['action_timeline']))
+                                    @foreach($shot['action_timeline'] as $beatStep)
+                                        <div class="d">{{ $beatStep['start_ms'] }}–{{ $beatStep['end_ms'] }} ms{{ $beatStep['event_ids'] === [] ? '' : ' · '.implode(', ', $beatStep['event_ids']) }}{{ $beatStep['actor_ids'] === [] ? '' : ' · '.implode(', ', $beatStep['actor_ids']) }}: {{ $beatStep['action'] }} → {{ $beatStep['result'] }}</div>
+                                    @endforeach
+                                    <div class="d">Kết quả: {{ $shot['result'] }}</div>
+                                    @foreach($shot['camera']['path'] as $segment)
+                                        <div class="d">Máy quay {{ $segment['start_ms'] }}–{{ $segment['end_ms'] }} ms · {{ $segment['move'] }} · {{ $segment['framing'] }}: {{ $segment['description'] }} — nhìn vào {{ $segment['look_at'] }}</div>
+                                    @endforeach
+                                    @foreach(['operating_start' => 'Vận hành lúc đầu', 'operating_end' => 'Vận hành lúc cuối'] as $key => $label)
+                                        <div class="d">{{ $label }}: {{ $shot[$key]['vehicle_motion'] }} · máy {{ $shot[$key]['engine'] === null ? '—' : $shot[$key]['engine']['part_id'].' '.$shot[$key]['engine']['state'] }}{{ $shot[$key]['configurations'] === [] ? '' : ' · '.implode(', ', $shot[$key]['configurations']) }}{{ $shot[$key]['lights'] === [] ? '' : ' · đèn '.implode(', ', array_map(static fn (array $light): string => $light['light_id'].' '.$light['state'], $shot[$key]['lights'])) }}{{ $shot[$key]['support_refs'] === [] ? '' : ' · đỡ bởi '.implode(', ', $shot[$key]['support_refs']) }}</div>
+                                    @endforeach
+                                @else
+                                    <div class="d">Hành động: {{ $shot['action'] }} → {{ $shot['result'] }}</div>
+                                @endif
                                 @if($shot['end_frame'] !== null)<div class="d">Khung cuối: {{ $shot['end_frame'] }}</div>@endif
                                 @if($shot['continuity']['changes'] !== [])<div class="d">Thay đổi: {{ implode('; ', $shot['continuity']['changes']) }}</div>@endif
                                 @if($shot['continuity']['carries'] !== [])<div class="d">Truyền sang shot sau: {{ implode('; ', $shot['continuity']['carries']) }}</div>@endif
@@ -291,48 +301,17 @@
                                 @foreach($shot['assumptions'] as $assumption)<div class="d">Giả định: {{ $assumption }}</div>@endforeach
                                 @foreach($shotNotes($shot['id'], $shotCheck) as $note)<div class="d" style="color:var(--vp-amber-fg)">{{ $note }}</div>@endforeach
                             </div>
-                            <div class="vs-c vs-prompt">
-                                <div class="d">{{ $shot['camera']['scale'] }} · {{ $shot['camera']['lens_mm'] }} mm · cao {{ $shot['camera']['height_m'] ?? '—' }} m · cách {{ $shot['camera']['distance_m'] ?? '—' }} m · azimuth {{ $shot['camera']['azimuth_deg'] ?? '—' }}° · elevation {{ $shot['camera']['elevation_deg'] ?? '—' }}° · {{ $shot['camera']['move'] }}{{ $shot['camera']['move_value'] !== null ? ' '.$shot['camera']['move_value'].' '.$shot['camera']['move_unit'] : '' }}</div>
-                                <div class="va-lbl">Prompt ảnh (keyframe)</div>
-                                <div class="body">{{ $shot['prompts']['image'] }}</div>
-                                <div class="va-lbl">Prompt video (clip)</div>
-                                <div class="body">{{ $shot['prompts']['video'] }}</div>
-                            </div>
-                            <div class="vs-c">
-                                @if($resource['readiness'] !== null)<span class="va-tag {{ $readinessLabels[$resource['readiness']][0] ?? 'mute' }}">{{ $readinessLabels[$resource['readiness']][1] ?? $resource['readiness'] }}</span>@endif
-                                @forelse($resource['needs'] as $need)
-                                    <div class="vs-shot-ref">
-                                        <b>{{ $need['kind'] }}</b>{{ $need['target'] !== null ? ' · '.$need['target'] : '' }} — {{ $need['purpose'] }}
-                                        @if(($need['candidate']['artifact_id'] ?? null) !== null)
-                                            <img src="{{ route('video-artifacts.show', $need['candidate']['artifact_id']) }}" alt="{{ $need['candidate']['source'] }}" loading="lazy">
-                                            <div class="d">Ứng viên: {{ $need['candidate']['source'] }}</div>
-                                        @elseif(($need['candidate']['source'] ?? null) !== null)
-                                            <div class="d">Dùng keyframe của {{ $need['candidate']['source'] }} khi shot đó có keyframe đã duyệt</div>
-                                        @endif
-                                        @if($need['problem'] !== null)<div class="d" style="color:var(--vp-amber-fg)">{{ $need['problem'] }}</div>@endif
-                                    </div>
-                                @empty
-                                    <div class="d">Không có nhu cầu tham chiếu.</div>
-                                @endforelse
-                            </div>
-                            <div class="vs-c">
-                                <div class="vs-shot-thumb tall">Chưa có keyframe</div>
-                                <button class="vp-btn sm" disabled title="{{ $step['shot_plan_problem'] }}">Tạo keyframe</button>
-                                <button class="vp-btn sm" disabled title="{{ $step['shot_plan_problem'] }}">Render clip</button>
-                                <div class="d" style="color:var(--vp-dim)">{{ $step['shot_plan_problem'] }}</div>
-                            </div>
-                        </div>
-                    </div>
-                @endforeach
+                </div>
             @endforeach
         </div>
     @endif
+    @endsection
     @if($shots !== null)
         <div class="vp-panel" id="shotsText" data-ajax-part>
             <div class="va-head">
                 <span class="n">2</span>
                 <b>KẾ HOẠCH SHOT</b>
-                <em>Phase 7 — thiết kế cách quay từ bản chia scene đã duyệt; thời gian, nguồn, ảnh tham chiếu và prompt do code tính</em>
+                <em>Phase 7 — thiết kế cách quay từ bản chia scene đã duyệt; thời gian, nguồn và ảnh tham chiếu do code tính; prompt keyframe và prompt video do AI viết ở các màn sau</em>
                 <span class="grow"></span>
                 @if($shots['running'])
                     <button class="vp-btn sm" disabled>Đang lập…</button>
@@ -441,18 +420,7 @@
                     @endif
                 @endif
             </div>
+            @yield('vsShotRows')
         </div>
     @endif
 </div>
-
-<script>
-document.addEventListener('click', function (event) {
-    var button = event.target.closest('[data-shot-toggle]');
-
-    if (button === null) { return; }
-
-    var detail = document.getElementById(button.getAttribute('data-shot-toggle'));
-
-    if (detail !== null) { detail.hidden = ! detail.hidden; }
-});
-</script>

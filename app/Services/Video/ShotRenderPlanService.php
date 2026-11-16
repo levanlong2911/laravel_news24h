@@ -7,6 +7,7 @@ namespace App\Services\Video;
 use App\Enums\PlanningStageName;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoRenderScene;
+use App\Video\Moto\MotoShotPlanner;
 use RuntimeException;
 
 final class ShotRenderPlanService
@@ -49,8 +50,8 @@ final class ShotRenderPlanService
             'shot_index' => (int) array_search($shotId, $inScene, true) + 1,
             'purpose' => (string) $shot['purpose'],
             'duration_ms' => (int) $shot['render_duration_ms'],
-            'delta_prompt' => (string) $shot['prompts']['image'],
-            'prompt_version' => (string) $shot['prompts']['composer'],
+            'delta_prompt' => '',
+            'prompt_version' => MotoShotPlanner::VERSION,
             'transition_mode' => $continuity === null ? 'hard_cut_edit' : 'continuation_edit',
             'source_scene_code' => $continuity['target'] ?? null,
             'state_json' => [self::SOURCE_KEY => [

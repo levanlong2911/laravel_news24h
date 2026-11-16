@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Video\Moto;
 
-use App\Video\Superyacht\Support\CanonicalJson;
 
 final class MotoShotPlanner
 {
@@ -16,21 +15,23 @@ final class MotoShotPlanner
     /**
      * @param  array<string, mixed>  $document  a moto Phase 7 document that passed its schema
      * @param  array<string, mixed>  $context  the check context pinned with the run
-     * @return array{version: string, timing?: string, total_ms: int, shots: list<array<string, mixed>>, conflicts: list<array<string, mixed>>, finished_states: list<string>} the timing the run pinned, when it pinned one, and every shot with the screen time MotoShotsCheck::timing() gives it and each coverage part, its film timing, the clip and film span of each coverage part, its build state, environment, incoming transition, scene continuity, the work items it shows, where the work holds each part at its first frame, absent parts, limits, cards, fingerprint and the image and video prompts code composes from it
+     * @return array{version: string, timing?: string, total_ms: int, shots: list<array<string, mixed>>, conflicts: list<array<string, mixed>>, finished_states: list<string>} the timing the run pinned, when it pinned one, and every shot with the screen time MotoShotsCheck::timing() gives it and each coverage part, its film timing, the clip and film span of each coverage part, its build state, environment, incoming transition, scene continuity, the work items it shows, where the work holds each part at its first frame, absent parts, limits, cards and fingerprint. Code composes no prompt from a shot: a keyframe prompt is written by Phase 9 and a video prompt by Phase 10
      */
     public static function plan(array $document, array $context): array
     {
         $data = (array) $document['data'];
         $scenes = array_column((array) $context['scenes'], null, 'id');
         $beats = array_column((array) $context['beats'], null, 'id');
-        $written = array_values((array) $data['shots']);
+        $written = array_map(MotoShotsCheck::legacy(...), array_values((array) $data['shots']));
         $pinned = $context['timing'] ?? null;
+        $fixed = $pinned === MotoShotsCheck::TIMING_FIXED;
         $timing = MotoShotsCheck::timing($written, $beats, $pinned)['shots'];
         $shots = array_map(static fn (array $shot): array => array_replace($shot, [
             'used_duration_ms' => $timing[$shot['id']]['used_duration_ms'],
             'coverage' => array_map(static fn (array $item, int $length): array => array_replace($item, ['used_duration_ms' => $length]), array_values((array) $shot['coverage']), $timing[$shot['id']]['coverage']),
         ]), $written);
-        $placed = is_array($context['work'] ?? null) ? MotoWork::shotPlaces(MotoShotsCheck::workShots($shots), $context['work'])['shots'] : [];
+        $omissions = array_values((array) ($data['omissions'] ?? []));
+        $placed = is_array($context['work'] ?? null) ? MotoWork::shotPlaces(MotoShotsCheck::workShots($shots, $omissions), $context['work'])['shots'] : [];
         $rows = [];
         $cursor = 0;
 
@@ -70,31 +71,34 @@ final class MotoShotPlanner
                 'held_parts' => $placed[$shot['id']] ?? [],
                 'absent_parts' => self::absent($shot, $state, $placed[$shot['id']] ?? [], $context),
                 'limits' => self::limits($covered),
-                'cards' => self::cards($cursor, $cursor + (int) $shot['used_duration_ms'], $beats),
                 'fingerprint' => self::fingerprint($shot, $state),
-            ];
-            $image = MotoShotPrompt::image($row, $context);
-            $video = MotoShotPrompt::video($row, $context);
-            $rows[] = $row + [
-                'prompts' => [
-                    'composer' => MotoShotPrompt::VERSION,
-                    'image' => $image,
-                    'image_sha256' => CanonicalJson::hashString($image),
-                    'video' => $video,
-                    'video_sha256' => CanonicalJson::hashString($video),
-                ],
-            ];
+            ] + ($fixed ? [] : ['cards' => self::cards($cursor, $cursor + (int) $shot['used_duration_ms'], $beats)])
+                + (array_key_exists('omissions', $data) ? ['omitted_before' => array_values(array_map(
+                    static fn (array $omission): array => array_intersect_key($omission, array_flip(['event_ids', 'work_ids', 'reason'])),
+                    array_filter($omissions, static fn (array $omission): bool => ($omission['before_shot'] ?? null) === $shot['id']),
+                ))] : []);
+
+            if ($fixed) {
+                $row['placed_cards'] = $row['cards'];
+                $row['cards'] = array_values(array_map(static fn (array $card): array => [
+                    'type' => (string) ($context['cards'][$card['card']]['type'] ?? ''),
+                    'text' => (string) ($context['cards'][$card['card']]['text'] ?? ''),
+                    'from_ms' => (int) $card['start_ms'],
+                    'to_ms' => (int) $card['end_ms'],
+                ], (array) $row['placed_cards']));
+            }
+            $rows[] = $row;
             $cursor += (int) $shot['used_duration_ms'];
         }
 
         return [
             'version' => self::VERSION,
         ] + ($pinned === null ? [] : ['timing' => $pinned]) + [
-            'total_ms' => (int) $context['total_ms'],
+            'total_ms' => $fixed ? $cursor : (int) $context['total_ms'],
             'shots' => $rows,
             'conflicts' => array_values((array) $data['conflicts']),
             'finished_states' => array_values((array) ($context['finished_states'] ?? [])),
-        ];
+        ] + (array_key_exists('omissions', $data) ? ['omissions' => $omissions] : []);
     }
 
     /**

@@ -42,6 +42,10 @@ final class ShotSourceService
             throw new RuntimeException("Adapter Phase 7 của workflow {$workflow} không hợp lệ.");
         }
 
+        if ($adapter instanceof \App\Video\Moto\ReleaseBound) {
+            $adapter->bind($project);
+        }
+
         return ['workflow' => $workflow, 'action' => (string) $entry['action'], 'adapter' => $adapter, 'category_id' => (string) $category->id, 'category_slug' => (string) $category->slug];
     }
 
@@ -183,7 +187,7 @@ final class ShotSourceService
                     'planner_version' => $evaluation['derived']['version'] ?? null,
                     'planning_revision' => $stage->planning_revision,
                     'selection_version' => $version + 1,
-                ],
+                ] + (isset($check['procedure_evidence']) ? ['procedure_evidence' => $check['procedure_evidence']] : []),
             ]);
 
             $metadata = $project->metadata_json ?? [];
@@ -286,11 +290,23 @@ final class ShotSourceService
     /**
      * @param  mixed  $stored  the derived plan stored with the run
      * @param  ?array<string, mixed>  $derived  the plan derived again from the run now
-     * @return ?string why the plan derived now is not the plan stored with the run, null when both carry the same content; only the planner version label may differ, so a newer planner never changes a stored plan unnoticed
+     * @return ?string why the plan derived now is not the plan stored with the run, null when both carry the same content; only the planner version label may differ, so a newer planner never changes a stored plan unnoticed. The keyframe and clip prompts code once composed into every shot of a plan are no part of that content: a plan stored with them is the same plan without them
      */
     private static function derivedProblem(mixed $stored, ?array $derived): ?string
     {
-        $content = static fn (mixed $plan): array => ['plan' => is_array($plan) ? array_diff_key($plan, ['version' => true]) : $plan];
+        $content = static function (mixed $plan): array {
+            if (! is_array($plan)) {
+                return ['plan' => $plan];
+            }
+
+            $plan = array_diff_key($plan, ['version' => true]);
+
+            if (is_array($plan['shots'] ?? null)) {
+                $plan['shots'] = array_map(static fn (mixed $shot): mixed => is_array($shot) ? array_diff_key($shot, ['prompts' => true]) : $shot, $plan['shots']);
+            }
+
+            return ['plan' => $plan];
+        };
 
         if (CanonicalJson::hash($content($stored)) === CanonicalJson::hash($content($derived))) {
             return null;

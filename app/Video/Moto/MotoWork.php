@@ -147,13 +147,14 @@ final class MotoWork
     }
 
     /**
-     * @param  list<array{id: string, work: list<string>, beats: list<string>}>  $shots  the shots in screen order, each with the work items it shows and the beats it covers
+     * @param  list<array{id: string, work: list<string>, beats: list<string>, done_before?: list<string>, done_after?: list<string>}>  $shots  the shots in screen order, each with the work items it shows and the beats it covers and, in a plan that leaves work between its shots, the work items done outside the picture before its first frame and, for the last shot of a scene, after it
      * @param  array<string, mixed>  $work  trace() of the scene plan
-     * @return array{issues: list<string>, shots: array<string, array<string, array{location: string, status: string, item: string, moment: string}>>} work items a shot shows out of the scene plan's order, within the shot or after a later item an earlier shot showed; and for every shot, where each part the work holds is at its first frame: at the start of the first item the shot shows on it in its first beat, otherwise where the work shown so far left it in that beat
+     * @return array{issues: list<string>, shots: array<string, array<string, array{location: string, status: string, item: string, moment: string}>>} work items shown or done outside the picture out of the scene plan's order, within the shot or after a later item an earlier shot reached, and work done before a shot that belongs to a beat after the one the shot opens in; and for every shot, where each part the work holds is at its first frame: at the start of the first item the shot shows on it in its first beat, otherwise where the work shown or done outside the picture so far left it in that beat
      */
     public static function shotPlaces(array $shots, array $work): array
     {
         $order = array_flip(array_keys((array) $work['items']));
+        $beatOrder = array_flip(array_keys((array) ($work['beats'] ?? [])));
         $issues = [];
         $places = [];
         $current = [];
@@ -165,8 +166,32 @@ final class MotoWork
                 $current = array_map(static fn (array $held): array => $held[0], (array) ($work['beats'][$beat] ?? []));
             }
         };
+        $done = static function (string $shotId, array $keys, ?string $opens) use (&$current, &$reached, &$issues, $order, $beatOrder, $work, $enter): void {
+            $keys = array_values(array_filter($keys, static fn (string $key): bool => isset($order[$key])));
+            usort($keys, static fn (string $a, string $b): int => $order[$a] <=> $order[$b]);
+
+            foreach ($keys as $key) {
+                $beat = (string) $work['items'][$key]['beat'];
+
+                if ($reached !== null && $order[$key] < $order[$reached]) {
+                    $issues[] = "{$shotId}: {$key} khai làm ngoài hình sau {$reached} — work phải theo thứ tự của bản chia scene, kể cả phần lược giữa các shot.";
+                }
+
+                if ($opens !== null && isset($beatOrder[$beat], $beatOrder[$opens]) && $beatOrder[$beat] > $beatOrder[$opens]) {
+                    $issues[] = "{$shotId}: {$key} thuộc {$beat}, sau beat {$opens} mà shot mở đầu — công việc chưa tới không thể đã xong trước shot.";
+                }
+
+                $reached = $reached === null || $order[$key] > $order[$reached] ? $key : $reached;
+                $enter($beat);
+
+                foreach ($work['items'][$key]['parts'] as $part => $place) {
+                    $current[$part] = ['location' => $place['end'], 'status' => $place['end_status'], 'item' => $key, 'moment' => 'end'];
+                }
+            }
+        };
 
         foreach ($shots as $shot) {
+            $done((string) $shot['id'], (array) ($shot['done_before'] ?? []), $shot['beats'][0] ?? null);
             $shown = array_values(array_filter($shot['work'], static fn (string $key): bool => isset($order[$key])));
 
             foreach ($shown as $key) {
@@ -208,6 +233,8 @@ final class MotoWork
                     }
                 }
             }
+
+            $done((string) $shot['id'], (array) ($shot['done_after'] ?? []), null);
         }
 
         return ['issues' => $issues, 'shots' => $places];
