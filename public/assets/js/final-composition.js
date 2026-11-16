@@ -484,9 +484,28 @@
         });
     });
 
+    /** Phim da phat het: dang o clip cuoi va dau phat da toi het phan dung cua no. */
+    function finished() {
+        if (index + 1 < clips.length) {
+            return false;
+        }
+
+        var node = deck(active);
+        var win = windowOf(index);
+        var end = win !== null ? win.from + win.length : node.duration;
+
+        return node.ended || (isFinite(end) && end > 0 && node.currentTime >= end - 0.05);
+    }
+
     if (toggle !== null) {
         toggle.addEventListener('click', function () {
             if (deck(active).paused) {
+                if (finished()) {
+                    go(0, 0, true);
+
+                    return;
+                }
+
                 start(true);
 
                 return;

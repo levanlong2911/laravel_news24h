@@ -43,13 +43,14 @@ final class MotoFilmPlanBuilder
         $fps = (int) $profile['fps'];
         $blockers = $source['blockers'];
         $warnings = [];
+        $leftOut = [];
         $manifest = $source['manifest'];
         $rows = array_values((array) $source['shots']['plan']['shots']);
         $entries = [];
 
         foreach ((array) $manifest['missing'] as $shotId) {
             $why = (string) ($manifest['problems'][$shotId] ?? '');
-            $blockers[] = self::blocker('clip_missing', $shotId, 'Shot '.$shotId.': '.(self::MISSING[$why] ?? 'clip đã duyệt không còn khớp kế hoạch ('.$why.')').'.');
+            $leftOut[] = ['code' => 'shot_left_out', 'subject' => (string) $shotId, 'message' => 'Shot '.$shotId.' không lên phim: '.(self::MISSING[$why] ?? 'clip đã duyệt không còn khớp kế hoạch ('.$why.')').'.', 'value' => null, 'limit' => null];
         }
 
         foreach ((array) $manifest['clips'] as $entry) {
@@ -73,6 +74,8 @@ final class MotoFilmPlanBuilder
         $allowed = (array) $policy['transitions']['allowed'];
         $clips = [];
         $display = [];
+        $placed = [];
+        $planMs = 0;
         $cursorMs = 0;
         $cursorFrame = 0;
 
@@ -92,20 +95,30 @@ final class MotoFilmPlanBuilder
                 return $frame;
             };
 
-            if ($entry === null && ! in_array($shotId, (array) $manifest['missing'], true)) {
-                $blockers[] = self::blocker('clip_missing', $shotId, 'Shot '.$shotId.': manifest Phase 10 không có clip cho shot này.');
-            }
-
             $out = $row['tl_out_ms'] ?? null;
 
-            if ($in !== $cursorMs || $out !== $in + $used) {
-                $blockers[] = self::blocker('timeline_mismatch', $shotId, "Shot {$shotId} nằm {$in}–".json_encode($out)." ms trên timeline, nhưng sau các shot trước nó phải bắt đầu ở {$cursorMs} ms và dài {$used} ms.");
+            if ($in !== $planMs || $out !== $in + $used) {
+                $blockers[] = self::blocker('timeline_mismatch', $shotId, "Shot {$shotId} nằm {$in}–".json_encode($out)." ms trên timeline, nhưng sau các shot trước nó phải bắt đầu ở {$planMs} ms và dài {$used} ms.");
             }
 
+            $planMs += $used;
+
+            if ($entry === null) {
+                if (! in_array($shotId, (array) $manifest['missing'], true)) {
+                    $leftOut[] = ['code' => 'shot_left_out', 'subject' => $shotId, 'message' => 'Shot '.$shotId.' không lên phim: manifest Phase 10 không có clip cho shot này.', 'value' => null, 'limit' => null];
+                }
+
+                $display[] = ['shot_id' => $shotId, 'scene_id' => (string) $row['scene'], 'order' => $index + 1, 'tl_in_ms' => null, 'used_duration_ms' => $used, 'transition' => $row['transition_in']['kind'] ?? null, 'render_id' => null, 'cards' => (array) ($row['cards'] ?? [])];
+
+                continue;
+            }
+
+            $position = count($clips);
+            $placed[] = ['in' => $in, 'out' => $in + $used, 'at' => $cursorMs];
             $startFrame = $exact($cursorMs, 'điểm cắt vào');
             $frames = $exact($used, 'phần dùng');
             $exact($trim, 'điểm bắt đầu cắt trong clip');
-            [$transition, $problem] = self::transition($index, $row['transition_in'] ?? null, $allowed);
+            [$transition, $problem] = self::transition($position, $position === 0 && $index > 0 ? null : ($row['transition_in'] ?? null), $allowed);
 
             if ($problem !== null) {
                 $blockers[] = self::blocker($problem[0], $shotId, "Shot {$shotId}: {$problem[1]}");
@@ -133,14 +146,12 @@ final class MotoFilmPlanBuilder
                 }
             }
 
-            if ($entry !== null) {
-                $blockers = [...$blockers, ...self::entryProblems($shotId, $index + 1, $entry, $trim, $used, $profile)];
-            }
+            $blockers = [...$blockers, ...self::entryProblems($shotId, $index + 1, $entry, $trim, $used, $profile)];
 
             $clips[] = [
                 'shot_id' => $shotId,
                 'scene_id' => (string) $row['scene'],
-                'order' => $index + 1,
+                'order' => $position + 1,
                 'entry' => $entry,
                 'trim_start_ms' => $trim,
                 'used_duration_ms' => $used,
@@ -181,12 +192,16 @@ final class MotoFilmPlanBuilder
 
         $total = (int) $source['shots']['plan']['total_ms'];
 
-        if ($cursorMs !== $total || (int) $manifest['total_ms'] !== $total) {
-            $blockers[] = self::blocker('total_mismatch', 'timeline', "Các shot cộng lại {$cursorMs} ms, kế hoạch shot ghi {$total} ms, manifest Phase 10 ghi {$manifest['total_ms']} ms.");
+        if ($planMs !== $total || (int) $manifest['total_ms'] !== $total) {
+            $blockers[] = self::blocker('total_mismatch', 'timeline', "Các shot cộng lại {$planMs} ms, kế hoạch shot ghi {$total} ms, manifest Phase 10 ghi {$manifest['total_ms']} ms.");
+        }
+
+        if ($clips === []) {
+            $blockers[] = self::blocker('no_clips', 'timeline', 'Chưa có clip nào được duyệt — duyệt ít nhất một clip ở màn Render video.');
         }
 
         $totalFrames = self::frames($cursorMs, $fps);
-        [$cards, $cardBlockers, $cardWarnings] = self::cards($source['cards'], $source['script'], $rows, $clips, $cursorMs, $profile, $policy, $style, $font);
+        [$cards, $cardBlockers, $cardWarnings] = self::cards($source['cards'], $source['script'], $rows, $clips, $cursorMs, $profile, $policy, $style, $font, $placed);
         $blockers = [...$blockers, ...$cardBlockers];
         $warnings = [...$warnings, ...$cardWarnings];
 
@@ -195,7 +210,7 @@ final class MotoFilmPlanBuilder
         }
 
         if ($blockers !== []) {
-            return ['ready' => false, 'blockers' => $blockers, 'warnings' => $warnings, 'plan' => null, 'rows' => $display];
+            return ['ready' => false, 'blockers' => $blockers, 'warnings' => [...$leftOut, ...$warnings], 'plan' => null, 'rows' => $display];
         }
 
         $plan = [
@@ -218,7 +233,34 @@ final class MotoFilmPlanBuilder
             'warnings' => $warnings,
         ];
 
-        return ['ready' => true, 'blockers' => [], 'warnings' => $warnings, 'plan' => $plan, 'rows' => $display];
+        return ['ready' => true, 'blockers' => [], 'warnings' => [...$leftOut, ...$warnings], 'plan' => $plan, 'rows' => $display];
+    }
+
+    /**
+     * @param  list<array{in: int, out: int, at: int}>  $placed  the shots the film holds, in film order
+     * @return list<array{0: int, 1: int}> where a span of the shot plan's time falls in the film: its part on each shot the film holds, moved to where that shot starts, parts that touch in the film joined into one
+     */
+    private static function pieces(int $start, int $end, array $placed): array
+    {
+        $pieces = [];
+
+        foreach ($placed as $slot) {
+            if ($start >= $slot['out'] || $end <= $slot['in']) {
+                continue;
+            }
+
+            $from = max($start, $slot['in']) - $slot['in'] + $slot['at'];
+            $to = min($end, $slot['out']) - $slot['in'] + $slot['at'];
+            $last = count($pieces) - 1;
+
+            if ($last >= 0 && $pieces[$last][1] === $from) {
+                $pieces[$last][1] = $to;
+            } else {
+                $pieces[] = [$from, $to];
+            }
+        }
+
+        return $pieces;
     }
 
     /** @return ?int the frame a millisecond falls on, null when it falls between two */
@@ -320,9 +362,10 @@ final class MotoFilmPlanBuilder
      * @param  array<string, mixed>  $profile
      * @param  array<string, mixed>  $policy
      * @param  array<string, mixed>  $style
-     * @return array{0: list<array<string, mixed>>, 1: list<array{code: string, subject: string, message: string}>, 2: list<array<string, mixed>>}
+     * @param  list<array{in: int, out: int, at: int}>  $placed  the shots the film holds: where each stands in the shot plan and where it starts in the film
+     * @return array{0: list<array<string, mixed>>, 1: list<array{code: string, subject: string, message: string}>, 2: list<array<string, mixed>>} the cards on the time of the film: the part of each card of the script that falls on a shot the film holds, moved with that shot; a card of a shot the film leaves out is left out with it
      */
-    private static function cards(array $source, ?array $script, array $rows, array $clips, int $totalMs, array $profile, array $policy, array $style, MotoFilmFont $font): array
+    private static function cards(array $source, ?array $script, array $rows, array $clips, int $totalMs, array $profile, array $policy, array $style, MotoFilmFont $font, array $placed): array
     {
         $fps = (int) $profile['fps'];
         $cards = [];
@@ -353,7 +396,11 @@ final class MotoFilmPlanBuilder
                 continue;
             }
 
-            if ($start < 0 || $end > $totalMs || $end <= $start) {
+            foreach (self::pieces($start, $end, $placed) as [$start, $end]) {
+            $startFrame = self::frames($start, $fps);
+            $endFrame = self::frames($end, $fps);
+
+            if ($startFrame === null || $endFrame === null || $start < 0 || $end > $totalMs || $end <= $start) {
                 $blockers[] = self::blocker('card_outside_film', $id, "Card {$card['type']} {$start}–{$end} ms nằm ngoài phim 0–{$totalMs} ms.");
 
                 continue;
@@ -409,6 +456,7 @@ final class MotoFilmPlanBuilder
                 'words' => $words,
                 'words_per_second' => $rate,
             ];
+            }
         }
 
         // With no pinned script there is nothing to hold the shot plan's copies against; that blocker is already reported.

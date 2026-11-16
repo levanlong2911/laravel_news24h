@@ -51,7 +51,7 @@ final class MotoFilmRenderService
     ) {}
 
     /**
-     * @return array{0: VideoFinal, 1: string} the final this request queued, or the one an earlier send of the same operation made
+     * @return array{0: VideoFinal, 1: string} the final this request queued for the worker (queued), the one it cut itself because the video queue of the machine is off (composed), or the one an earlier send of the same operation made (replayed)
      *
      * @throws RuntimeException when the queue or the tools are not ready, the page is stale, the plan is blocked, or a film of the project is still being cut
      */
@@ -68,7 +68,7 @@ final class MotoFilmRenderService
             return [$replayed, 'replayed'];
         }
 
-        // A film is only ever cut by a background job: with no queue ready, nothing is taken in.
+        // Where the video queue is on, a film is cut by a background job only: with no worker ready, nothing is taken in.
         $queue = $this->queueProblem();
 
         if ($queue !== null) {
@@ -81,7 +81,8 @@ final class MotoFilmRenderService
             throw new RuntimeException('Chưa nhận lượt dựng: '.$tools);
         }
 
-        return DB::transaction(function () use ($projectId, $expectedHash, $operationId, $payloadHash, $requesterId): array {
+        $queued = VideoQueues::enabled();
+        [$final, $reason] = DB::transaction(function () use ($projectId, $expectedHash, $operationId, $payloadHash, $requesterId, $queued): array {
             // Lock first, read after, as an approval does: the plan frozen below is the one in force when the request is written, read from the revisions held.
             $preview = $this->plans->lockedPreview($projectId);
             $replayed = $this->replayed($projectId, $operationId, $payloadHash);
@@ -128,6 +129,10 @@ final class MotoFilmRenderService
                 'operation_result_json' => ['status' => self::QUEUED, 'final_id' => (string) $final->id],
             ]);
 
+            if (! $queued) {
+                return [$final, 'local'];
+            }
+
             ComposeMotoFilmJob::dispatch((string) $final->id)
                 ->onConnection(VideoQueues::CONNECTION)
                 ->onQueue(VideoQueues::name(VideoQueues::FFMPEG, $requesterId))
@@ -135,15 +140,25 @@ final class MotoFilmRenderService
 
             return [$final, 'queued'];
         }, attempts: 3);
+
+        if ($reason !== 'local') {
+            return [$final, $reason];
+        }
+
+        // With the video queue off the machine has no worker: the frozen film is cut here, after the request is committed.
+        @set_time_limit($this->budget() + 60);
+        $this->compose((string) $final->id);
+
+        return [$final->fresh(), 'composed'];
     }
 
     /**
-     * @return ?string why no film can be taken in now: the video queue is off, its connection cannot hold a job with its final in one transaction, or no supervisor is running to start a worker; null when a job would be picked up
+     * @return ?string why no film can be taken in now, where the video queue is on: its connection cannot hold a job with its final in one transaction, or no supervisor is running to start a worker; null when a job would be picked up, and null where the video queue is off, since the request then cuts the film itself
      */
     public function queueProblem(): ?string
     {
         if (! VideoQueues::enabled()) {
-            return 'hàng đợi video đang tắt (VIDEO_ASYNC_ENABLED) — final chỉ dựng bằng job chạy nền, không dựng trong request.';
+            return null;
         }
 
         $problem = VideoQueues::problem(VideoQueues::jobTimeout($this->budget()));
@@ -339,7 +354,7 @@ final class MotoFilmRenderService
                 'revision' => (int) ($preview['manifest']['source']['revision'] ?? 0),
                 'blocked' => match (true) {
                     $problem !== null => $problem,
-                    $plan === null => 'Kế hoạch phim còn '.count($blockers).' điểm chặn — '.($blockers[0]['message'] ?? 'xem bảng bên dưới').'',
+                    $plan === null => 'Chưa dựng được: '.($blockers[0]['message'] ?? 'kế hoạch phim chưa sẵn sàng').(count($blockers) > 1 ? ' (và '.(count($blockers) - 1).' điểm khác)' : ''),
                     $queue !== null => 'Chưa nhận lượt dựng: '.$queue,
                     $tools !== null => 'Chưa nhận lượt dựng: '.$tools,
                     $active !== null => 'Bản final #'.$active['revision'].' đang '.$active['status'].' — đợi nó xong.',
@@ -353,8 +368,6 @@ final class MotoFilmRenderService
                 'latest_final' => $finals[0] ?? null,
             ],
             'motoFilm' => [
-                'preview' => $preview,
-                'problem' => $problem,
                 'hash' => $preview['hash'] ?? null,
                 'operation_id' => (string) Str::uuid(),
                 'output' => $plan['output'] ?? null,

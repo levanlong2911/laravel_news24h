@@ -106,7 +106,7 @@ final class MotoFilmPlanService
      * Every read here is a locking read. Under REPEATABLE READ the first plain read of a transaction fixes what all its later plain
      * reads see; a plain read here, before the phases are locked, would let the plan read a revision older than the one held.
      *
-     * @return list<array{id: string, phase_code: string, revision: int}> the current revisions held
+     * @return list<array{id: string, phase_code: string, revision: int}> the revisions held: for each phase the one the resolver chooses for the project under the release it pinned, chosen among the rows locked here
      *
      * @throws RuntimeException outside a transaction, or for a project with no film flow
      */
@@ -116,7 +116,7 @@ final class MotoFilmPlanService
             throw new RuntimeException('guard() holds the sources only inside a transaction.');
         }
 
-        $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->first(['id', 'article_id']) ?? throw new RuntimeException('Không tìm thấy dự án.');
+        $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->first(['id', 'article_id', 'metadata_json']) ?? throw new RuntimeException('Không tìm thấy dự án.');
         $category = DB::table('articles')->where('id', $project->article_id)->sharedLock()->value('category_id');
         $slug = $category === null ? null : DB::table('categories')->where('id', $category)->sharedLock()->value('slug');
         $workflow = (string) (config('video.superyacht.contracts.categories')[(string) $slug] ?? '');
@@ -125,16 +125,28 @@ final class MotoFilmPlanService
             throw new RuntimeException('Dự án này không dựng final theo chính sách Phase 11.');
         }
 
-        return AiPhase::query()
+        $rows = AiPhase::query()
             ->where('category_id', $category)
             ->where('workflow_code', $workflow)
             ->whereIn('phase_code', self::LIVE_PHASES)
-            ->where('is_current', true)
             ->orderBy('phase_code')
             ->sharedLock()
-            ->get(['id', 'phase_code', 'revision'])
-            ->map(static fn (AiPhase $phase): array => ['id' => (string) $phase->id, 'phase_code' => (string) $phase->phase_code, 'revision' => (int) $phase->revision])
-            ->all();
+            ->get()
+            ->groupBy('phase_code');
+        $resolver = PhaseResolver::fromConfig((array) config('video.superyacht'));
+        $key = config('video.superyacht.contracts.workflows.'.$workflow.'.release_key');
+        $release = is_string($key) ? ($project->metadata_json[$key] ?? null) : null;
+        $held = [];
+
+        foreach (self::LIVE_PHASES as $code) {
+            $phase = PhaseResolver::choose($rows->get($code, collect())->all(), $resolver->rule($workflow, is_string($release) && $release !== '' ? $release : null, $code));
+
+            if ($phase !== null) {
+                $held[] = ['id' => (string) $phase->id, 'phase_code' => (string) $phase->phase_code, 'revision' => (int) $phase->revision];
+            }
+        }
+
+        return $held;
     }
 
     /**

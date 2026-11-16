@@ -297,7 +297,7 @@
                 <input type="hidden" name="expected_hash" value="{{ $motoFilm['hash'] ?? '' }}">
                 <input type="hidden" name="operation_id" value="{{ $motoFilm['operation_id'] }}">
                 <button class="fcomp-render" type="submit" @disabled(($composition['blocked'] ?? null) !== null)><i class="fas fa-cog"></i> Render Final Video</button>
-                <p>{{ $composition['blocked'] ?? 'Lượt dựng vào hàng đợi FFmpeg và chạy nền; đóng tab không làm dừng nó.' }}</p>
+                <p>{{ $composition['blocked'] ?? (\App\Video\Queue\VideoQueues::enabled() ? 'Lượt dựng vào hàng đợi FFmpeg và chạy nền; đóng tab không làm dừng nó.' : 'Máy này không bật hàng đợi: phim được dựng ngay trong lượt bấm — đừng đóng tab cho tới khi trang tải lại.') }}</p>
 @else
 
                 <label>
@@ -360,79 +360,6 @@
             </form>
         </aside>
 
-@if($motoFilm)
-        @php
-            $filmPreview = $motoFilm['preview'];
-            $filmPlan = $filmPreview['plan'] ?? null;
-            $filmFps = (int) ($filmPlan['timeline']['fps'] ?? 30);
-            $filmSeconds = static fn (int $ms): string => rtrim(rtrim(number_format($ms / 1000, 3, ',', ''), '0'), ',').' s';
-            $filmFrame = static fn (int $ms): string => (($ms * $filmFps) % 1000 === 0) ? (string) intdiv($ms * $filmFps, 1000) : '—';
-            $filmClips = collect($filmPlan['clips'] ?? [])->keyBy('shot_id');
-        @endphp
-        <section class="fcomp-card fcomp-history">
-            <div class="fcomp-card-title">Kế hoạch phim <span>{{ $motoFilm['problem'] !== null ? 'chưa sẵn sàng' : ($filmPlan !== null ? 'sẵn sàng dựng · '.$filmPlan['timeline']['total_frames'].' khung' : count($filmPreview['blockers'] ?? []).' điểm chặn') }}</span></div>
-            @if($motoFilm['problem'] !== null)
-                <div class="fcomp-note"><i class="fas fa-exclamation-triangle"></i> {{ $motoFilm['problem'] }}</div>
-            @else
-                <div class="fcomp-history-scroll">
-                    <table>
-                        <thead><tr><th>#</th><th>Shot</th><th>Vào phim</th><th>Phần dùng</th><th>Khung [vào, +số khung)</th><th>Chuyển cảnh vào</th><th>Dip (khung)</th><th>Mốc kết quả (khung)</th><th>Clip đã duyệt</th></tr></thead>
-                        <tbody>
-                            @foreach($filmPreview['rows'] as $row)
-                                @php $filmClip = $filmClips->get($row['shot_id']); @endphp
-                                <tr>
-                                    <td>{{ $row['order'] }}</td>
-                                    <td>{{ $row['shot_id'] }}</td>
-                                    <td>{{ $filmSeconds($row['tl_in_ms']) }}</td>
-                                    <td>{{ $filmSeconds($row['used_duration_ms']) }}</td>
-                                    <td>{{ $filmFrame($row['tl_in_ms']) }} + {{ $filmFrame($row['used_duration_ms']) }}</td>
-                                    <td>{{ $row['transition'] ?? '—' }}</td>
-                                    <td>{{ $filmClip !== null && ($filmClip['fade_in_frames'] + $filmClip['fade_out_frames']) > 0 ? $filmClip['fade_in_frames'].' vào · '.$filmClip['fade_out_frames'].' ra' : '—' }}</td>
-                                    <td>{{ $filmClip !== null ? (collect($filmClip['protected_results'])->map(static fn (array $r): string => $r['beat'].'@'.$r['film_frame'])->implode(', ') ?: '—') : '—' }}</td>
-                                    <td>{{ $row['render_id'] !== null ? substr($row['render_id'], 0, 8) : 'thiếu' }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-                @if(($filmPreview['blockers'] ?? []) !== [] || ($filmPreview['warnings'] ?? []) !== [])
-                    <div class="fcomp-history-scroll">
-                        <table>
-                            <thead><tr><th>Chặn / cảnh báo</th><th>Ở đâu</th><th>Vì sao</th></tr></thead>
-                            <tbody>
-                                @foreach($filmPreview['blockers'] as $item)
-                                    <tr><td><span class="fcomp-status">chặn</span> <code>{{ $item['code'] }}</code></td><td>{{ $item['subject'] }}</td><td style="white-space:normal">{{ $item['message'] }}</td></tr>
-                                @endforeach
-                                @foreach($filmPreview['warnings'] as $item)
-                                    <tr><td>cảnh báo <code>{{ $item['code'] }}</code></td><td>{{ $item['subject'] }}</td><td style="white-space:normal">{{ $item['message'] }}</td></tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
-                @if(($filmPlan['cards'] ?? []) !== [])
-                    <div class="fcomp-history-scroll">
-                        <table>
-                            <thead><tr><th>Card</th><th>Chữ (nguyên văn kịch bản)</th><th>Thời gian</th><th>Khung [đầu, cuối)</th><th>Dòng</th><th>Từ/giây</th><th>Nguồn</th></tr></thead>
-                            <tbody>
-                                @foreach($filmPlan['cards'] as $card)
-                                    <tr>
-                                        <td>{{ $card['type'] }}</td>
-                                        <td style="white-space:normal">{{ $card['text'] }}</td>
-                                        <td>{{ $filmSeconds($card['start_ms']) }} – {{ $filmSeconds($card['end_ms']) }}</td>
-                                        <td>{{ $card['start_frame'] }} – {{ $card['end_frame'] }}</td>
-                                        <td style="white-space:normal">{{ collect($card['lines'])->pluck('text')->implode(' / ') }}</td>
-                                        <td>{{ $card['words_per_second'] }}</td>
-                                        <td>{{ $card['source_path'] }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
-            @endif
-        </section>
-@endif
         <section class="fcomp-card fcomp-history">
             <div class="fcomp-card-title">Lịch sử render</div>
             <div class="fcomp-history-scroll">

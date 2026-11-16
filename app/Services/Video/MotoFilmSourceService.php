@@ -109,6 +109,10 @@ final class MotoFilmSourceService
             $beats[(string) ($beat['id'] ?? '')] = $beat;
         }
 
+        if (($shots['plan']['timing'] ?? null) === \App\Video\Moto\MotoShotsCheck::TIMING_FIXED) {
+            return [$pinned, ...self::placedCards($pinned['stage_id'], array_values((array) ($evaluation['document']['data']['text_cards'] ?? [])), array_values((array) ($shots['plan']['shots'] ?? [])))];
+        }
+
         $cards = [];
         $problems = [];
         $seen = [];
@@ -162,6 +166,72 @@ final class MotoFilmSourceService
         }
 
         return [$pinned, $cards, $problems];
+    }
+
+    /**
+     * The cards of a script that gives them no time, on the film's time: each where the approved shot plan placed it, the start of its shot on the film plus its start inside the shot.
+     *
+     * @param  list<array<string, mixed>>  $written  the text cards of the pinned script, each with its id
+     * @param  list<array<string, mixed>>  $rows  the shots of the approved plan, each with its place on the film and the cards it placed
+     * @return array{0: list<array<string, mixed>>, 1: list<array{code: string, subject: string, message: string}>} the cards in film order, and what stops them: a card the shot plan places that the pinned script does not have, a time outside its shot, and a card of the script placed in no shot or in more than one
+     */
+    private static function placedCards(string $scriptStageId, array $written, array $rows): array
+    {
+        $byId = [];
+
+        foreach ($written as $index => $card) {
+            $byId[(string) ($card['id'] ?? '')] = ['index' => $index] + $card;
+        }
+
+        $cards = [];
+        $problems = [];
+        $placed = [];
+
+        foreach ($rows as $row) {
+            $in = (int) ($row['tl_in_ms'] ?? 0);
+            $length = (int) ($row['used_duration_ms'] ?? 0);
+
+            foreach ((array) ($row['placed_cards'] ?? []) as $place) {
+                $id = (string) ($place['card'] ?? '');
+                $card = $byId[$id] ?? null;
+                $subject = $scriptStageId.'#'.($card === null ? $id : '/data/text_cards/'.$card['index']);
+
+                if ($card === null) {
+                    $problems[] = self::blocker('card_source_mismatch', $subject, 'Shot '.$row['id'].' đặt card '.$id.' mà kịch bản ghim không có.');
+
+                    continue;
+                }
+
+                $start = $place['start_ms'] ?? null;
+                $end = $place['end_ms'] ?? null;
+
+                if (! is_int($start) || ! is_int($end) || $start < 0 || $end <= $start || $end > $length) {
+                    $problems[] = self::blocker('card_time_not_exact', $subject, 'Card '.$id.' ở shot '.$row['id'].' có khoảng thời gian không nằm trọn trong shot.');
+
+                    continue;
+                }
+
+                $placed[$id][] = (string) $row['id'];
+                $cards[] = [
+                    'source_card_id' => $subject,
+                    'source_path' => '/data/text_cards/'.$card['index'],
+                    'source_script_stage_id' => $scriptStageId,
+                    'beat' => (string) ($card['beat'] ?? ''),
+                    'type' => (string) $card['type'],
+                    'text' => (string) $card['text'],
+                    'start_ms' => $in + $start,
+                    'end_ms' => $in + $end,
+                ];
+            }
+        }
+
+        foreach ($byId as $id => $card) {
+            if (count($placed[$id] ?? []) !== 1) {
+                $problems[] = self::blocker('card_source_mismatch', $scriptStageId.'#/data/text_cards/'.$card['index'], 'Card '.$id.' của kịch bản ghim được đặt vào '.count($placed[$id] ?? []).' shot; cần đúng một.');
+            }
+        }
+
+        return [$cards, $problems];
     }
 
     /** @return ?int seconds as whole milliseconds, null when they are not a number or do not fall on a millisecond */
