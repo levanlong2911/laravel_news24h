@@ -1864,9 +1864,9 @@ return [
                 'harley_custom_v1' => [
                     'release_key' => \App\Video\Moto\MotoPipelineRelease::KEY,
                     'legacy_release' => \App\Video\Moto\MotoPipelineRelease::LEGACY,
-                    'default_release' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V4,
+                    'default_release' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V5,
                     // The release new projects took before the default above: what `video:moto-release` pins a project to that was opened before and has no Phase 2 run and no pin yet, so the default never moves it.
-                    'previous_default_release' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V3,
+                    'previous_default_release' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V4,
                     'releases' => [
                         \App\Video\Moto\MotoPipelineRelease::LEGACY => [
                             'phases' => [
@@ -2090,6 +2090,18 @@ return [
                                         'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '2.0.3', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v2): the story, five characters each playing one fixed role of the design in its order, the beats as ordered events with the operating state before and after each, the shot directives the brief fixed, the text cards and the music brief; no screen time; a motorcycle standing still names what holds it; release moto-cinematic-3s-v4'],
                                     ],
                                 ],
+                            ],
+                            'policy' => [
+                                'script' => ['stationary_requires_support' => true],
+                                'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::EDITING, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                            ],
+                        ],
+                        // The release new projects take from now on. It is the release above with the design revision whose prompt agrees with the refs policy of MotoDesignRefs: the refs of a build state name only ids the answer defines, never a departure or a model-sheet view, an identity rule only by its own id, and no text holds an id. The design schema (MotoDesign 2.2.2) and every other revision stay as above. A policy is read from the pinned release alone, never from the release it extends, so the policy above is written again.
+                        \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V5 => [
+                            'extends' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V4,
+                            'phases' => [
+                                'phase-3' => ['input_format' => 'moto-design-input-v2', 'revisions' => [['id' => '05108488-93bd-4ff9-9077-ed6856570130', 'sha256' => '7d020c3c72da95bc56455415146ed23f5fc17c2e95f7f97b0ec142ea4886c786']]],
                             ],
                             'policy' => [
                                 'script' => ['stationary_requires_support' => true],

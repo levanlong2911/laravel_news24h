@@ -22,11 +22,14 @@ final class MotoPipelineRelease
     /** @var string the release whose design always has the five fixed roles and whose script one character for each, in their order */
     public const CINEMATIC_V4 = 'moto-cinematic-3s-v4';
 
+    /** @var string the release whose design prompt agrees with the refs policy of MotoDesignRefs: refs name only ids the answer defines, and no text holds an id */
+    public const CINEMATIC_V5 = 'moto-cinematic-3s-v5';
+
     /** @var string the key of the project metadata that keeps every change of release made to the project after it was pinned, oldest first */
     public const HISTORY_KEY = 'moto_pipeline_release_history';
 
     /** @var list<string> the releases of three-second takes made from references: every one runs the same eventful pipeline, each with its own catalogue of revisions and its own check policy */
-    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2, self::CINEMATIC_V3, self::CINEMATIC_V4];
+    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2, self::CINEMATIC_V3, self::CINEMATIC_V4, self::CINEMATIC_V5];
 
     /** @return string the release the project pinned, the legacy release when it pinned none */
     public static function of(VideoProject $project): string
@@ -96,20 +99,28 @@ final class MotoPipelineRelease
         return $hasRuns ? self::LEGACY : (string) ($workflow['previous_default_release'] ?? self::LEGACY);
     }
 
-    /** @var array<string, array{stage: string, selection: string}> the steps a change of release may move: the phase whose revision the new release replaces, the planning stage of its runs and the project metadata key of its selection */
+    /** @var array<string, array{stage: string, selection: ?string}> the steps a change of release may move: the phase whose revision the new release replaces, the planning stage of its runs and the project metadata key of its selection; the design has no selection of its own, its approval with the model sheet is what holds it */
     private const MOVABLE = [
+        'phase-3' => ['stage' => 'yacht_design', 'selection' => null],
         'phase-6' => ['stage' => 'scenes', 'selection' => 'scenes_selection'],
         'phase-7' => ['stage' => 'shots', 'selection' => 'shots_selection'],
     ];
+
+    /** @return list<string> the planning stages whose runs keep a project from moving while one waits or runs */
+    public static function movableStages(): array
+    {
+        return array_values(array_unique(array_column(self::MOVABLE, 'stage')));
+    }
 
     /**
      * @param  string  $to  the release the project moves to
      * @param  array<string, ?array<string, mixed>>  $rulesNow  for every phase of the workflow, the catalogue rule of the release the project has
      * @param  array<string, ?array<string, mixed>>  $rulesNext  the same for the release it moves to
      * @param  list<string>  $busy  the planning stages of the project with a run waiting or running
-     * @return list<string> why the project cannot move: it pinned no release, the release is not declared or does not extend the one it has, it replaces a phase other than scenes and shots, or a step it replaces already has a selection or a run in progress
+     * @param  bool  $designApproved  the design of the project was approved with its model sheet, read under the project lock
+     * @return list<string> why the project cannot move: it pinned no release, the release is not declared or does not extend the one it has, it replaces a phase other than design, scenes and shots, or a step it replaces is held — a design approved with its model sheet, a selection — or has a run in progress
      */
-    public static function moveProblems(VideoProject $project, string $to, array $rulesNow, array $rulesNext, array $busy): array
+    public static function moveProblems(VideoProject $project, string $to, array $rulesNow, array $rulesNext, array $busy, bool $designApproved = false): array
     {
         $workflow = (array) config('video.superyacht.contracts.workflows.'.MotoContract::WORKFLOW);
         $pinned = $project->metadata_json[self::KEY] ?? null;
@@ -136,8 +147,10 @@ final class MotoPipelineRelease
             $step = self::MOVABLE[$code] ?? null;
 
             if ($step === null) {
-                $problems[] = "{$to} đổi revision của {$code} — nguồn đã có của dự án ở bước này sẽ không còn khớp; lệnh này chỉ chuyển Scene và Shot.";
-            } elseif (is_array($project->metadata_json[$step['selection']] ?? null)) {
+                $problems[] = "{$to} đổi revision của {$code} — nguồn đã có của dự án ở bước này sẽ không còn khớp; lệnh này chỉ chuyển Design, Scene và Shot.";
+            } elseif ($step['selection'] === null && $designApproved) {
+                $problems[] = 'Bản thiết kế của dự án đã duyệt cùng model sheet — các bước sau đã dựng trên nó, không chuyển sang revision Design khác.';
+            } elseif ($step['selection'] !== null && is_array($project->metadata_json[$step['selection']] ?? null)) {
                 $problems[] = "Dự án đang chọn một bản {$step['stage']} — chuyển bản phát hành sẽ làm bản đó không dùng được.";
             } elseif (in_array($step['stage'], $busy, true)) {
                 $problems[] = "Đang có lượt {$step['stage']} chờ hoặc đang chạy.";

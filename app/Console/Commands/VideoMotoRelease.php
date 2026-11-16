@@ -6,6 +6,7 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Services\Video\DesignApprovalLock;
 use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoPipelineRelease;
 use App\Video\Superyacht\Spec\PhaseResolver;
@@ -90,12 +91,14 @@ class VideoMotoRelease extends Command
                 }
             };
             $busy = VideoPlanningStage::query()->where('project_id', $projectId)
-                ->whereIn('stage', [PlanningStageName::SCENES->value, PlanningStageName::SHOTS->value])
+                ->whereIn('stage', MotoPipelineRelease::movableStages())
                 ->whereIn('status', [VideoPlanningStageStatus::PENDING->value, VideoPlanningStageStatus::RUNNING->value])
                 ->pluck('stage')->unique()->values()->all();
-            $problems = MotoPipelineRelease::moveProblems($locked, $to, $rules($from), $rules($to), $busy);
+            [$now, $next] = [$rules($from), $rules($to)];
+            $problems = MotoPipelineRelease::moveProblems($locked, $to, $now, $next, $busy, app(DesignApprovalLock::class)->holds($projectId));
+            $moved = array_keys(array_filter($next, static fn (?array $rule, string $code): bool => ($now[$code] ?? null) != $rule, ARRAY_FILTER_USE_BOTH));
 
-            return ['from' => $from, 'problems' => $problems, 'change' => $problems === [] && $apply ? MotoPipelineRelease::record($locked, $to, $reason, 'video:moto-release') : null];
+            return ['from' => $from, 'problems' => $problems, 'moved' => $moved, 'change' => $problems === [] && $apply ? MotoPipelineRelease::record($locked, $to, $reason, 'video:moto-release') : null];
         });
 
         $this->line("Dự án {$projectId} · ".mb_substr((string) $project->title, 0, 40));
@@ -110,9 +113,14 @@ class VideoMotoRelease extends Command
             return self::FAILURE;
         }
 
+        $steps = implode(', ', $result['moved']) ?: 'không bước nào';
         $this->info($result['change'] === null
-            ? 'Chuyển được. Chạy lại với --apply để ghi; các lượt cũ giữ nguyên, lượt mới của Scene và Shot dùng prompt, schema và luật của bản mới.'
-            : "Đã chuyển lúc {$result['change']['at']}. Các lượt cũ giữ nguyên; không gọi model.");
+            ? "Chuyển được ({$steps}). Chạy lại với --apply để ghi; các lượt cũ giữ nguyên, lượt mới của các bước này dùng prompt, schema và luật của bản mới."
+            : "Đã chuyển lúc {$result['change']['at']} ({$steps}). Các lượt cũ giữ nguyên; không gọi model.");
+
+        if (in_array('phase-3', $result['moved'], true)) {
+            $this->warn('Bản thiết kế đang có vẫn là bản của revision cũ: muốn dùng revision Design mới phải chạy lại thiết kế (tính phí); bản vá tay (video:design-revise) chỉ sửa trong hợp đồng mà lượt đã ghim nên không áp cho bản cũ sau khi chuyển.');
+        }
 
         return self::SUCCESS;
     }

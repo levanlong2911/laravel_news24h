@@ -1,7 +1,7 @@
 <?php
 
 /**
- * @return array{schemas: list<array<string, mixed>>, phases: list<array<string, mixed>>, links: list<array<string, mixed>>} the revisions written for the releases of three-second takes: those of moto-cinematic-3s-v1 and the later ones only moto-cinematic-3s-v2, moto-cinematic-3s-v3 or moto-cinematic-3s-v4 lists; which release takes which revision is the catalogue of each release in config/video.php, never this file
+ * @return array{schemas: list<array<string, mixed>>, phases: list<array<string, mixed>>, links: list<array<string, mixed>>} the revisions written for the releases of three-second takes: those of moto-cinematic-3s-v1 and the later ones only moto-cinematic-3s-v2, moto-cinematic-3s-v3, moto-cinematic-3s-v4 or moto-cinematic-3s-v5 lists; which release takes which revision is the catalogue of each release in config/video.php, never this file
  */
 $dir = dirname(__DIR__, 3).'/resources/ai/moto/releases/moto-cinematic-3s-v1/';
 $at = '2026-11-12 00:00:00';
@@ -121,6 +121,24 @@ $entries = [
         'note' => 'Phase 3 moto revision 13 (release moto-cinematic-3s-v4, đầu vào moto-design-input-v2, schema MotoDesign@2.2.2): như revision 12, nhưng refs của build state lại nhận id cấu hình và đèn như revision 11 vẫn cho — revision 12 cấm chúng vì cho rằng Phase 4 sẽ kẹt, nhưng bộ kiểm kịch bản chỉ cảnh báo nhầm "không có trong thiết kế" (lỗi tra cứu, đã sửa ở MotoScriptCheck), không chặn. refs vẫn không bao giờ là id mode, limit, moment, màu, vai, build state hay source issue: limit trong refs của BS01–BS05 buộc beat nhắc nó mà schema kịch bản không nhận dạng L.., nên kịch bản không thể đạt; mode bị bộ kiểm Phase 3 từ chối. Giữ hai luật thêm ở revision 12 (luôn liệt kê tám loại part, basis của lốp và số đo feature). Revision 12 chưa từng chạy, chỉ còn là lịch sử.',
         'schema_id' => '4aa00910-7f1b-4b1b-963e-c90fdee7d39b',
         'link_id' => '1d97404e-74d5-41e0-8767-6d1c960cc2fe',
+        'schema_key' => 'MotoDesign',
+        'schema_version' => '2.2.2',
+        'schema_file' => '../moto-cinematic-3s-v4/MotoDesign-2.2.2.schema.json',
+        'schema_name' => 'MotoDesign 2.2.2 (format moto-design-v2, five fixed roles)',
+        'schema_note' => 'MotoDesign 2.2.2: như 2.2.1, nhưng story_refs nhận tường minh id cấu hình (Pxx-Kyy) và đèn (Pxx-Lyy) và chỉ chặn bằng not id mode (Fx-Myy); limit, moment, màu, vai, build state và source issue vẫn không khớp dạng nào nên bị từ chối.',
+        'slot' => 'design',
+    ],
+    [
+        'code' => 'phase-3',
+        'revision' => 14,
+        'phase_id' => '05108488-93bd-4ff9-9077-ed6856570130',
+        'based_on_id' => 'd65a602b-d903-4e8e-9997-5c2d9cb4232e',
+        'name' => 'Phase 3 — Custom motorcycle design',
+        'sort_order' => 3,
+        'prompt' => '../moto-cinematic-3s-v5/phase-3-rev14.md',
+        'note' => 'Phase 3 moto revision 14 (release moto-cinematic-3s-v5, đầu vào moto-design-input-v2, schema MotoDesign@2.2.2 không đổi): đồng bộ prompt với schema và bộ kiểm tham chiếu (MotoDesignRefs) — refs của build state chỉ là id mà chính câu trả lời khai trong parts, systems, lines, connections, features, configurations, lighting hoặc identity_rules; liệt kê thêm id departure và view model sheet vào danh sách cấm, cùng mode, limit, moment, màu, vai, build state và source issue; điều buổi duyệt quyết về màu, departure, moment hay limit thì viết trong text và outcome, không đưa id vào refs (lượt production a33ce88c ngày 16/11 trượt schema ở BS04.refs[4]). Mọi trường khác chỉ gọi quy tắc nhận dạng đúng bằng id nó có trong identity_rules, không bịa id mới (lượt Dark Inferno ngày 16/11 ghi KEEP-KETTLE vào BS01). Không trường text nào chứa id vì code ghép prompt ảnh từ các text đó và từ chối id (lượt Dark Inferno ghi BS03 trong engineering_notes). surface là một câu ở BS06–BS10 và null ở BS11–BS12, surfaces vẫn ghi đủ ở BS06–BS12. Các luật khác giữ nguyên revision 13.',
+        'schema_id' => '4aa00910-7f1b-4b1b-963e-c90fdee7d39b',
+        'link_id' => 'dfde652b-da90-4144-9006-59106bb85f35',
         'schema_key' => 'MotoDesign',
         'schema_version' => '2.2.2',
         'schema_file' => '../moto-cinematic-3s-v4/MotoDesign-2.2.2.schema.json',
