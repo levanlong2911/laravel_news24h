@@ -60,8 +60,10 @@ class PlanningStageStore
      * @param  array<string, mixed>  $input
      * @param  bool|\Closure(VideoPlanningStage): bool  $force  a closure decides inside the claim transaction from the succeeded row that would be reused
      * @param  array<string, mixed>  $metadata  a non-empty `operation_id` here is checked under the project lock: a row already holding it is returned, never claimed again
+     * @param  ?\Closure(): bool  $refuse  read under the project lock, before any claim: true opens no run
+     * @param  bool  $reuseExpired  take over a running row whose lease ran out instead of adding one; false always adds a row, so the answer and cost a run kept stay its own
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string} [$stage, $claimToken, $reason]
-     *                                                              reason: project_not_found|operation_replayed|claimed_by_other|already_succeeded|claimed
+     *                                                              reason: project_not_found|operation_replayed|refused|claimed_by_other|already_succeeded|claimed
      */
     public function claimProjectStage(
         string $projectId,
@@ -69,8 +71,10 @@ class PlanningStageStore
         array $input,
         bool|\Closure $force = false,
         array $metadata = [],
+        ?\Closure $refuse = null,
+        bool $reuseExpired = true,
     ): array {
-        return $this->openProjectStage($projectId, $stage, $input, $force, $metadata, VideoPlanningStageStatus::RUNNING, null, null);
+        return $this->openProjectStage($projectId, $stage, $input, $force, $metadata, VideoPlanningStageStatus::RUNNING, null, null, $refuse, $reuseExpired);
     }
 
     /**
@@ -102,6 +106,7 @@ class PlanningStageStore
      * @param  array<string, mixed>  $metadata
      * @param  ?\Closure(VideoPlanningStage, string): void  $push
      * @param  ?\Closure(): bool  $refuse
+     * @param  bool  $reuseExpired  take over a running row whose lease ran out
      * @return array{0: ?VideoPlanningStage, 1: ?string, 2: string}
      */
     private function openProjectStage(
@@ -114,6 +119,7 @@ class PlanningStageStore
         ?string $snapshot,
         ?\Closure $push,
         ?\Closure $refuse = null,
+        bool $reuseExpired = true,
     ): array {
         if (array_key_exists(self::METADATA_KEY, $input)) {
             throw new \InvalidArgumentException(
@@ -128,7 +134,7 @@ class PlanningStageStore
         try {
             $operationId = is_string($metadata['operation_id'] ?? null) && $metadata['operation_id'] !== '' ? $metadata['operation_id'] : null;
 
-            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force, $operationId, $status, $snapshot, $push, $refuse) {
+            return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force, $operationId, $status, $snapshot, $push, $refuse, $reuseExpired) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
                 $rows = VideoPlanningStage::query()
@@ -181,7 +187,7 @@ class PlanningStageStore
                     'error_message' => null,
                 ];
 
-                $expired = $rows->firstWhere('status', VideoPlanningStageStatus::RUNNING->value);
+                $expired = $reuseExpired ? $rows->firstWhere('status', VideoPlanningStageStatus::RUNNING->value) : null;
 
                 if ($expired !== null) {
                     $expired->update($attributes);

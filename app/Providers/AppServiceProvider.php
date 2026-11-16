@@ -39,6 +39,9 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(ImageProxyService::class, fn () => new ImageProxyService(new Client));
 
+        // A hand revision of a design reads the design runs through the service that makes them.
+        $this->app->bind(\App\Services\Video\DesignRevisionRuns::class, \App\Services\Video\YachtDesignService::class);
+
         $this->app->singleton(
             OpenAiImageClient::class,
             static fn (Application $app): OpenAiImageClient => new OpenAiImageClient(

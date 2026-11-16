@@ -24,7 +24,7 @@ use App\Video\YachtDesign\YachtDesignCheck;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-final class YachtDesignService implements QueuedStageService
+final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
 {
     public const EXECUTION = 'db-phase-3-v2';
 
@@ -108,7 +108,7 @@ final class YachtDesignService implements QueuedStageService
     {
         $design = $this->approval->currentDesign($projectId);
         $locked = $design !== null && $this->approval->approves($projectId, $design);
-        $exact = $design !== null && $run !== null && hash_equals((string) $design->input_hash, $this->stageStore->inputHash($run['input']));
+        $exact = $design !== null && $run !== null && $this->sameInput($design, $run['input']);
         $integrity = $design === null ? null : $this->approval->integrityProblem($projectId, $design, $workflow);
         $check = $design === null ? [] : $this->approval->checkOf($design);
         $usable = $integrity === null && ($check['verdict'] ?? null) === YachtDesignCheck::PASS;
@@ -133,6 +133,52 @@ final class YachtDesignService implements QueuedStageService
             'history_unverified' => $design !== null && ! $exact && $stored === null,
             'evaluated' => $evaluated,
         ] + DesignRunPolicy::decide($run !== null, $design !== null, $locked, $exact, $usable, $clean, $changes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input  the input of the prepared run
+     * @return bool the design was written from this input: a run of the model by its own input hash, a hand revision by the input of the run it revises
+     */
+    public function sameInput(VideoPlanningStage $design, array $input): bool
+    {
+        $wanted = $this->stageStore->inputHash($input);
+
+        if (hash_equals((string) $design->input_hash, $wanted)) {
+            return true;
+        }
+
+        $stored = is_array($design->input_json) ? $design->input_json : [];
+
+        return is_string($stored['revision_of'] ?? null) && hash_equals($this->stageStore->inputHash(DesignRunPolicy::sourceInput($stored)), $wanted);
+    }
+
+    /**
+     * @return array<string, mixed> the run a design of the project is prepared with now, from its current DNA, Phase 1 and pinned release; nothing is written and no model is called
+     *
+     * @throws RuntimeException when the project or its sources cannot give a run
+     */
+    public function runFor(string $projectId): array
+    {
+        return $this->prepare($this->project($projectId));
+    }
+
+    /**
+     * @param  array<string, mixed>  $run  a run of runFor()
+     * @param  ?array<string, mixed>  $manifest  the bundle the answer was written against
+     * @return array{0: ?object, 1: array<string, mixed>} the answer read and checked by the workflow of its manifest, as a run of the model is
+     */
+    public function evaluateAnswer(string $raw, array $run, ?array $manifest): array
+    {
+        return $this->evaluate($raw, $run, $manifest);
+    }
+
+    /**
+     * @param  array<string, mixed>  $run  a run of runFor()
+     * @return array<string, mixed> the output a succeeded design run stores for this answer
+     */
+    public function outputFor(array $run, string $raw): array
+    {
+        return $this->output($run, $raw);
     }
 
     private static function workflowOf(?VideoProject $project): string

@@ -73,15 +73,33 @@ final class MotoSheetPrompt
      */
     public static function composedProblems(array $data): array
     {
-        $config = self::config(true);
-        $pinned = ModelSheetQaService::fixedRules(['views' => self::panelViews($data, $config, new ModelSheetMaster((array) $config['master'])), 'layout_guide' => false], $config);
-
-        $composed = self::composed($data, $config, $pinned, true);
+        [$composed, $pinned] = self::composedThemed($data);
 
         return array_map(
             static fn (string $problem): string => (string) preg_replace('/^final_prompt/u', 'Prompt model sheet ghép từ thiết kế', $problem),
             self::problems($data, $pinned, $composed['prompt'], $composed['sources']),
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data  the data of a themed design that writes no model-sheet prompt
+     * @return array<string, string> every text of the design the model-sheet prompt composed from it takes, by its path with the id of its record — the same composition composedProblems() checks
+     */
+    public static function composedSources(array $data): array
+    {
+        return self::composedThemed($data)[0]['sources'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{0: array{prompt: string, sources: array<string, string>}, 1: array<string, mixed>} the prompt composed from a themed design and the fixed rules it was composed with
+     */
+    private static function composedThemed(array $data): array
+    {
+        $config = self::config(true);
+        $pinned = ModelSheetQaService::fixedRules(['views' => self::panelViews($data, $config, new ModelSheetMaster((array) $config['master'])), 'layout_guide' => false], $config);
+
+        return [self::composed($data, $config, $pinned, true), $pinned];
     }
 
     /**

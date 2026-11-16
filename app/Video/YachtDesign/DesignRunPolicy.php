@@ -32,6 +32,18 @@ final class DesignRunPolicy
 
     public const NO_CHANGES = ['design' => [], 'next_sheet' => [], 'next_run' => [], 'payload_unread' => false];
 
+    /** @var list<string> the input keys a hand revision of a design adds to the input of the run it revises, so the revision is a row of its own: they name that run and the approved patch, never a change of source */
+    public const REVISION_KEYS = ['revision_of', 'patch_hash'];
+
+    /**
+     * @param  array<string, mixed>  $input  the stored input of a design run, with or without its metadata
+     * @return array<string, mixed> the input of the run a hand revision was written from: the same input without the revision keys and the metadata; a run of the model keeps its own
+     */
+    public static function sourceInput(array $input): array
+    {
+        return array_diff_key($input, [PlanningStageStore::METADATA_KEY => true] + array_fill_keys(self::REVISION_KEYS, true));
+    }
+
     /** how a new run would call the model and check its answer; says nothing about a design already written */
     public const NEXT_RUN = ['model', 'effort', 'max_tokens', 'timeout_seconds', 'stream', 'retry_times', 'check_version'];
 
@@ -50,7 +62,7 @@ final class DesignRunPolicy
     public static function changes(array $storedInput, array $currentInput, ?string $storedPayload, string $currentPayload): array
     {
         $changes = self::NO_CHANGES;
-        $ignored = [PlanningStageStore::METADATA_KEY => true, 'payload_sha256' => true];
+        $ignored = [PlanningStageStore::METADATA_KEY => true, 'payload_sha256' => true] + array_fill_keys(self::REVISION_KEYS, true);
 
         foreach (self::differing(array_diff_key($storedInput, $ignored), array_diff_key($currentInput, $ignored)) as $field) {
             $changes[in_array($field, self::NEXT_RUN, true) ? 'next_run' : 'design'][] = $field;
