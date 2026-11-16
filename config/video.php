@@ -2060,8 +2060,8 @@ return [
                         \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V4 => [
                             'extends' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V3,
                             'phases' => [
-                                'phase-3' => ['input_format' => 'moto-design-input-v2', 'revisions' => [['id' => '1e9a279b-f42d-4c27-bd7b-11bbcb7cc0e5', 'sha256' => '687d6175745784c5b6e1f7aa04a7a230ea036dc25cb27dd3bfb8607042f93b72']]],
-                                'phase-4' => ['input_format' => 'moto-script-input-v4', 'revisions' => [['id' => 'f7dcb99f-2209-4878-adcc-ac9dcf7b9ca7', 'sha256' => '6dee60278a34e3e827128f72c6e2cd391bcb3287e7cefc51171052a9cbcd560d']]],
+                                'phase-3' => ['input_format' => 'moto-design-input-v2', 'revisions' => [['id' => 'd65a602b-d903-4e8e-9997-5c2d9cb4232e', 'sha256' => '399bd8d54dab135bbd8894e58bb784f960b80a9d29ebb63f2c5b1fdb720c174a']]],
+                                'phase-4' => ['input_format' => 'moto-script-input-v4', 'revisions' => [['id' => '74a35d38-c0be-44ab-ad8c-6fc3f749630a', 'sha256' => '5f98464d2be7e671c0e2595046294c27d2e44d5c25070ae9fae5765d2dabc120']]],
                             ],
                             'actions' => [
                                 'spec.design' => [
@@ -2074,7 +2074,7 @@ return [
                                         'draft' => ['design'],
                                     ],
                                     'outputs' => [
-                                        'design' => ['namespace' => 'moto', 'schema' => 'MotoDesign', 'version' => '2.2.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 3 Output (format moto-design-v2): one object-based themed Harley-Davidson custom design record — motorcycle with its ornament, parts, systems, rider interface, connections, features, operational limits, the five fixed participant roles, twelve told build states, identity rules, source issues and the model sheet with its displayed configuration and eight views; the model-sheet image prompt is composed from it by code; release moto-cinematic-3s-v4'],
+                                        'design' => ['namespace' => 'moto', 'schema' => 'MotoDesign', 'version' => '2.2.2', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 3 Output (format moto-design-v2): one object-based themed Harley-Davidson custom design record — motorcycle with its ornament, parts, systems, rider interface, connections, features, operational limits, the five fixed participant roles, twelve told build states whose refs name only parts, systems, lines, connections, features, configurations, lights and identity rules, identity rules, source issues and the model sheet with its displayed configuration and eight views; the model-sheet image prompt is composed from it by code; release moto-cinematic-3s-v4'],
                                     ],
                                 ],
                                 'spec.script' => [

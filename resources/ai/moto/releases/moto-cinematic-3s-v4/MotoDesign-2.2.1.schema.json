@@ -1,0 +1,520 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoDesign",
+  "title": "MotoDesign 2.2.1 (format moto-design-v2): one object-based themed Harley-Davidson custom design record with its five fixed roles, its twelve told stages, its ornament and the displayed configuration and views of its model sheet; the model-sheet image prompt is composed from this record by code",
+  "type": "object",
+  "required": ["format", "phase", "prompt_version", "project_id", "status", "data", "flags"],
+  "additionalProperties": false,
+  "properties": {
+    "format": {"const": "moto-design-v2"},
+    "phase": {"const": "3"},
+    "prompt_version": {"$ref": "#/$defs/text"},
+    "project_id": {"$ref": "#/$defs/text"},
+    "status": {"enum": ["ok", "partial", "fail"], "description": "ok: no blocking source issue; partial: a design with at least one blocking source issue; fail: no usable design, data is {} and flags names the input fault"},
+    "data": {"type": "object"},
+    "flags": {"type": "array", "items": {"$ref": "#/$defs/text"}}
+  },
+  "allOf": [
+    {"if": {"required": ["status"], "properties": {"status": {"const": "ok"}}}, "then": {"properties": {"data": {"allOf": [{"$ref": "#/$defs/data"}, {"properties": {"source_issues": {"not": {"contains": {"$ref": "#/$defs/blocking_issue"}}}}}]}}}},
+    {"if": {"required": ["status"], "properties": {"status": {"const": "partial"}}}, "then": {"properties": {"data": {"allOf": [{"$ref": "#/$defs/data"}, {"properties": {"source_issues": {"contains": {"$ref": "#/$defs/blocking_issue"}}}}]}}}},
+    {"if": {"required": ["status"], "properties": {"status": {"const": "fail"}}}, "then": {"properties": {"data": {"type": "object", "maxProperties": 0}, "flags": {"minItems": 1}}}}
+  ],
+  "$defs": {
+    "text": {"type": "string", "pattern": "\\S"},
+    "text_or_null": {"oneOf": [{"$ref": "#/$defs/text"}, {"type": "null"}]},
+    "hex": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+    "snake": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "basis": {"enum": ["CONCEPT_ASSUMPTION", "DERIVED", "BASE_NOMINAL"]},
+
+    "part_id": {"type": "string", "pattern": "^P[0-9]{2,3}$"},
+    "configuration_id": {"type": "string", "pattern": "^P[0-9]{2,3}-K[0-9]{2}$"},
+    "light_id": {"type": "string", "pattern": "^P[0-9]{2,3}-L[0-9]{2}$"},
+    "system_id": {"type": "string", "pattern": "^S[0-9]{2}$"},
+    "line_id": {"type": "string", "pattern": "^S[0-9]{2}-W[0-9]{2}$"},
+    "connection_id": {"type": "string", "pattern": "^J[0-9]{2,3}$"},
+    "feature_id": {"type": "string", "pattern": "^F[1-3]$"},
+    "mode_id": {"type": "string", "pattern": "^F[1-3]-M[0-9]{2}$"},
+    "limit_id": {"type": "string", "pattern": "^L[0-9]{2,3}$"},
+    "moment_id": {"type": "string", "pattern": "^M[0-9]+$"},
+    "color_id": {"type": "string", "pattern": "^C[1-9][0-9]*$"},
+    "role_id": {"type": "string", "pattern": "^ROLE[0-9]{2}$"},
+    "story_refs": {
+      "description": "The ids of the parts, systems, lines, connections, features and identity rules the stage is about; never a configuration, light, mode, limit, moment, colour, role, build state or source issue id.",
+      "type": "array", "uniqueItems": true,
+      "items": {"allOf": [{"$ref": "#/$defs/design_ref"}, {"not": {"anyOf": [{"$ref": "#/$defs/configuration_id"}, {"$ref": "#/$defs/light_id"}, {"$ref": "#/$defs/mode_id"}]}}]}
+    },
+    "story_roles": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/role_id"}},
+    "participant_role": {"type": "object", "required": ["id", "name", "description"], "additionalProperties": false, "properties": {"id": {"$ref": "#/$defs/role_id"}, "name": {"$ref": "#/$defs/text"}, "description": {"$ref": "#/$defs/text"}}},
+    "issue_id": {"type": "string", "pattern": "^SI[0-9]{2,3}$"},
+    "rule_id": {"type": "string", "pattern": "^[A-Z0-9]+-[A-Z0-9-]{1,40}$"},
+    "state": {"type": "string", "pattern": "^BS(0[1-9]|1[0-2])$"},
+    "physical_state": {"type": "string", "pattern": "^BS(0[6-9]|1[0-2])$"},
+    "design_ref": {"anyOf": [{"$ref": "#/$defs/part_id"}, {"$ref": "#/$defs/system_id"}, {"$ref": "#/$defs/line_id"}, {"$ref": "#/$defs/connection_id"}, {"$ref": "#/$defs/feature_id"}, {"$ref": "#/$defs/rule_id"}]},
+    "view_ref": {"anyOf": [{"$ref": "#/$defs/part_id"}, {"$ref": "#/$defs/feature_id"}, {"$ref": "#/$defs/connection_id"}]},
+    "line_end": {"anyOf": [{"$ref": "#/$defs/part_id"}, {"$ref": "#/$defs/connection_id"}]},
+
+    "spec": {
+      "type": "object", "required": ["value", "unit", "basis"], "additionalProperties": false,
+      "properties": {"value": {"type": ["number", "null"]}, "unit": {"type": "string"}, "basis": {"enum": ["CONCEPT_ASSUMPTION", "DERIVED", "BASE_NOMINAL", "UNKNOWN"]}},
+      "allOf": [
+        {"if": {"required": ["basis"], "properties": {"basis": {"const": "UNKNOWN"}}}, "then": {"properties": {"value": {"type": "null"}}}, "else": {"properties": {"value": {"type": "number", "exclusiveMinimum": 0}}}}
+      ]
+    },
+    "spec_mm": {"allOf": [{"$ref": "#/$defs/spec"}, {"properties": {"unit": {"const": "mm"}}}]},
+    "spec_deg": {"allOf": [{"$ref": "#/$defs/spec"}, {"properties": {"unit": {"const": "deg"}}}]},
+    "spec_kg": {"allOf": [{"$ref": "#/$defs/spec"}, {"properties": {"unit": {"const": "kg"}}}]},
+    "spec_cc": {"allOf": [{"$ref": "#/$defs/spec"}, {"properties": {"unit": {"const": "cc"}}}]},
+    "spec_l": {"allOf": [{"$ref": "#/$defs/spec"}, {"properties": {"unit": {"const": "l"}}}]},
+    "spec_in": {"allOf": [{"$ref": "#/$defs/spec"}, {"properties": {"unit": {"const": "in"}}}]},
+    "spec_hp": {"allOf": [{"$ref": "#/$defs/spec"}, {"properties": {"unit": {"const": "hp"}}}]},
+    "spec_nm": {"allOf": [{"$ref": "#/$defs/spec"}, {"properties": {"unit": {"const": "Nm"}}}]},
+    "tyre": {
+      "type": "object", "required": ["value", "basis"], "additionalProperties": false,
+      "properties": {"value": {"$ref": "#/$defs/text_or_null"}, "basis": {"enum": ["CONCEPT_ASSUMPTION", "UNKNOWN"]}},
+      "allOf": [{"if": {"required": ["basis"], "properties": {"basis": {"const": "UNKNOWN"}}}, "then": {"properties": {"value": {"type": "null"}}}, "else": {"properties": {"value": {"type": "string"}}}}]
+    },
+    "measure": {
+      "type": "object", "required": ["value", "unit", "basis"], "additionalProperties": false,
+      "properties": {"value": {"type": "number", "exclusiveMinimum": 0}, "unit": {"enum": ["mm", "deg", "kg", "l", "cc"]}, "basis": {"$ref": "#/$defs/basis"}}
+    },
+
+    "point": {
+      "type": "object", "required": ["x", "z"], "additionalProperties": false,
+      "properties": {"x": {"type": "number", "minimum": -800, "maximum": 3500}, "y": {"type": "number", "minimum": -800, "maximum": 800}, "z": {"type": "number", "minimum": 0, "maximum": 2200}}
+    },
+    "points": {"type": "object", "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"}, "additionalProperties": {"$ref": "#/$defs/point"}},
+    "box": {
+      "type": "object", "required": ["x_from", "x_to", "y_min", "y_max", "z_min", "z_max"], "additionalProperties": false,
+      "properties": {
+        "x_from": {"type": "number", "minimum": -800, "maximum": 3500}, "x_to": {"type": "number", "minimum": -800, "maximum": 3500},
+        "y_min": {"type": "number", "minimum": -800, "maximum": 800}, "y_max": {"type": "number", "minimum": -800, "maximum": 800},
+        "z_min": {"type": "number", "minimum": 0, "maximum": 2200}, "z_max": {"type": "number", "minimum": 0, "maximum": 2200}
+      }
+    },
+
+    "configuration": {
+      "description": "One position of the part. Boxes and points hold the default position; every other position lives only here.",
+      "type": "object", "required": ["id", "name", "description", "default"], "additionalProperties": false,
+      "properties": {"id": {"$ref": "#/$defs/configuration_id"}, "name": {"$ref": "#/$defs/text"}, "description": {"$ref": "#/$defs/text"}, "default": {"type": "boolean"}}
+    },
+    "configurations": {
+      "description": "Every position the part can take, with exactly one default: the position with no condition, such as side stand up or steering straight. A fixed part has [].",
+      "type": "array", "items": {"$ref": "#/$defs/configuration"},
+      "if": {"minItems": 1}, "then": {"contains": {"required": ["default"], "properties": {"default": {"const": true}}}, "minContains": 1, "maxContains": 1}
+    },
+    "light": {
+      "type": "object", "required": ["id", "source", "position", "serves", "installed", "operable"], "additionalProperties": false,
+      "properties": {"id": {"$ref": "#/$defs/light_id"}, "source": {"$ref": "#/$defs/text"}, "position": {"$ref": "#/$defs/text"}, "serves": {"$ref": "#/$defs/text"}, "installed": {"$ref": "#/$defs/physical_state"}, "operable": {"$ref": "#/$defs/physical_state"}}
+    },
+
+    "data": {
+      "type": "object",
+      "required": ["motorcycle", "parts", "systems", "rider_interface", "connections", "features", "operational_limits", "participant_roles", "build_states", "identity_rules", "source_issues", "model_sheet"],
+      "additionalProperties": false,
+      "properties": {
+        "motorcycle": {"$ref": "#/$defs/motorcycle"},
+        "participant_roles": {
+          "description": "The five roles of every build, always in this order with these ids and names; only the description is written for this build. A role is a job, never a named person.",
+          "type": "array", "minItems": 5, "maxItems": 5,
+          "prefixItems": [
+            {"$ref": "#/$defs/participant_role", "properties": {"id": {"const": "ROLE01"}, "name": {"const": "Lead Designer"}}},
+            {"$ref": "#/$defs/participant_role", "properties": {"id": {"const": "ROLE02"}, "name": {"const": "Master Fabricator"}}},
+            {"$ref": "#/$defs/participant_role", "properties": {"id": {"const": "ROLE03"}, "name": {"const": "Engine & Mechanical Specialist"}}},
+            {"$ref": "#/$defs/participant_role", "properties": {"id": {"const": "ROLE04"}, "name": {"const": "Paint & Finishing Artist"}}},
+            {"$ref": "#/$defs/participant_role", "properties": {"id": {"const": "ROLE05"}, "name": {"const": "Test Rider"}}}
+          ],
+          "items": false
+        },
+        "parts": {"$ref": "#/$defs/parts"},
+        "systems": {"type": "array", "minItems": 6, "items": {"$ref": "#/$defs/system"}},
+        "rider_interface": {"$ref": "#/$defs/rider_interface"},
+        "connections": {"type": "array", "minItems": 6, "items": {"$ref": "#/$defs/connection"}},
+        "features": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"$ref": "#/$defs/feature"}, "contains": {"required": ["visible_at_rest"], "properties": {"visible_at_rest": {"const": true}}}},
+        "operational_limits": {"type": "array", "items": {"$ref": "#/$defs/limit"}},
+        "build_states": {"$ref": "#/$defs/build_states"},
+        "identity_rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identity_rule"}},
+        "source_issues": {"type": "array", "items": {"$ref": "#/$defs/source_issue"}},
+        "model_sheet": {"$ref": "#/$defs/model_sheet"}
+      }
+    },
+
+    "motorcycle": {
+      "type": "object",
+      "required": ["name", "concept", "base", "departures", "signature_moments", "fictional_status", "specs", "coordinate_system", "profile_curve", "symmetry", "silhouette", "palette", "materials", "markings", "lighting_signature", "engineering_notes"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 2, "maxLength": 30, "pattern": "\\S"},
+        "concept": {"$ref": "#/$defs/text"},
+        "base": {
+          "type": "object", "required": ["make", "family", "model", "era", "engine_family", "engine"], "additionalProperties": false,
+          "properties": {"make": {"const": "Harley-Davidson"}, "family": {"$ref": "#/$defs/text"}, "model": {"$ref": "#/$defs/text_or_null"}, "era": {"$ref": "#/$defs/text"}, "engine_family": {"$ref": "#/$defs/text"}, "engine": {"$ref": "#/$defs/text"}}
+        },
+        "departures": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "required": ["departure", "refs", "note"], "additionalProperties": false,
+            "properties": {"departure": {"type": "string", "pattern": "^D[1-5]$"}, "refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/design_ref"}}, "note": {"$ref": "#/$defs/text"}}
+          }
+        },
+        "signature_moments": {
+          "type": "array", "minItems": 2, "maxItems": 4,
+          "contains": {"required": ["hero"], "properties": {"hero": {"const": true}}}, "minContains": 1, "maxContains": 1,
+          "items": {
+            "type": "object", "required": ["id", "hero", "description", "parts", "configurations", "limits", "time_light"], "additionalProperties": false,
+            "properties": {
+              "id": {"$ref": "#/$defs/moment_id"}, "hero": {"type": "boolean"}, "description": {"$ref": "#/$defs/text"},
+              "parts": {"type": "array", "items": {"$ref": "#/$defs/part_id"}}, "configurations": {"type": "array", "items": {"$ref": "#/$defs/configuration_id"}},
+              "limits": {"type": "array", "items": {"$ref": "#/$defs/limit_id"}}, "time_light": {"$ref": "#/$defs/text_or_null"}
+            }
+          }
+        },
+        "fictional_status": {"const": "CUSTOM BUILD CONCEPT — NOT A REAL MOTORCYCLE"},
+        "specs": {
+          "type": "object",
+          "required": ["wheelbase", "rake", "trail", "seat_height", "ground_clearance", "dry_weight", "displacement", "fuel_capacity", "front_wheel_diameter", "rear_wheel_diameter", "front_tyre", "rear_tyre", "justifications"],
+          "additionalProperties": false,
+          "properties": {
+            "wheelbase": {"$ref": "#/$defs/spec_mm"}, "rake": {"$ref": "#/$defs/spec_deg"}, "trail": {"$ref": "#/$defs/spec_mm"},
+            "seat_height": {"$ref": "#/$defs/spec_mm"}, "ground_clearance": {"$ref": "#/$defs/spec_mm"}, "dry_weight": {"$ref": "#/$defs/spec_kg"},
+            "displacement": {"$ref": "#/$defs/spec_cc"}, "fuel_capacity": {"$ref": "#/$defs/spec_l"},
+            "front_wheel_diameter": {"$ref": "#/$defs/spec_in"}, "rear_wheel_diameter": {"$ref": "#/$defs/spec_in"},
+            "front_tyre": {"$ref": "#/$defs/tyre"}, "rear_tyre": {"$ref": "#/$defs/tyre"},
+            "power": {"$ref": "#/$defs/spec_hp"}, "torque": {"$ref": "#/$defs/spec_nm"},
+            "justifications": {"type": "object", "propertyNames": {"enum": ["wheelbase", "rake", "trail", "seat_height", "ground_clearance", "dry_weight", "displacement", "fuel_capacity", "front_wheel_diameter", "rear_wheel_diameter", "front_tyre", "rear_tyre", "power", "torque"]}, "additionalProperties": {"$ref": "#/$defs/text"}}
+          }
+        },
+        "coordinate_system": {
+          "type": "object", "required": ["x", "y", "z"], "additionalProperties": false,
+          "properties": {
+            "x": {"const": "millimetres rearward from the front axle centre"},
+            "y": {"const": "millimetres from the centreline, positive to the rider's left"},
+            "z": {"const": "millimetres above the ground plane"}
+          }
+        },
+        "profile_curve": {"type": "array", "minItems": 12, "items": {"type": "array", "prefixItems": [{"type": "number", "minimum": -800, "maximum": 3500}, {"type": "number", "minimum": 0, "maximum": 2200}], "minItems": 2, "maxItems": 2}},
+        "symmetry": {"$ref": "#/$defs/text"},
+        "silhouette": {"$ref": "#/$defs/text"},
+        "palette": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "required": ["id", "role", "name", "hex", "finish", "applied_to"], "additionalProperties": false,
+            "properties": {"id": {"$ref": "#/$defs/color_id"}, "role": {"enum": ["primary", "secondary", "accent"]}, "name": {"$ref": "#/$defs/text"}, "hex": {"$ref": "#/$defs/hex"}, "finish": {"$ref": "#/$defs/text"}, "applied_to": {"$ref": "#/$defs/text"}}
+          }
+        },
+        "materials": {
+          "type": "array", "minItems": 2,
+          "items": {"type": "object", "required": ["element", "material", "finish"], "additionalProperties": false, "properties": {"element": {"$ref": "#/$defs/text"}, "material": {"$ref": "#/$defs/text"}, "finish": {"$ref": "#/$defs/text"}}}
+        },
+        "markings": {
+          "type": "array",
+          "items": {
+            "type": "object", "required": ["part", "kind", "description", "technique", "placement", "coverage", "color_ids", "from_state", "shown_in_model_sheet"], "additionalProperties": false,
+            "properties": {
+              "part": {"$ref": "#/$defs/part_id"},
+              "kind": {"enum": ["graphic", "engraving", "inlay", "surface_pattern", "lettering", "number"]},
+              "description": {"$ref": "#/$defs/text"},
+              "technique": {"$ref": "#/$defs/text"},
+              "placement": {"$ref": "#/$defs/text"},
+              "coverage": {"$ref": "#/$defs/text"},
+              "color_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/color_id"}},
+              "from_state": {"$ref": "#/$defs/physical_state"},
+              "shown_in_model_sheet": {"type": "boolean"}
+            }
+          }
+        },
+        "lighting_signature": {
+          "type": "object", "required": ["text", "sources"], "additionalProperties": false,
+          "properties": {"text": {"$ref": "#/$defs/text"}, "sources": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/light_id"}}}
+        },
+        "engineering_notes": {"$ref": "#/$defs/text"}
+      }
+    },
+
+    "part": {
+      "type": "object",
+      "required": ["id", "kind", "name", "origin", "parent", "present", "description", "extent", "faces", "surfaces", "relations", "elements", "configurations", "lighting", "from_state", "until_state", "points"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/part_id"},
+        "kind": {"enum": ["frame", "front_suspension", "rear_suspension", "swingarm", "front_wheel", "rear_wheel", "front_brake", "rear_brake", "engine", "primary_drive", "transmission", "final_drive", "intake", "exhaust", "fuel_tank", "oil_tank", "seat", "front_fender", "rear_fender", "side_panel", "tail", "fairing", "bags", "handlebar", "hand_controls", "foot_controls", "instruments", "headlight", "taillight", "turn_signal", "mirror", "license_plate", "side_stand", "electrics", "cover", "equipment"]},
+        "name": {"$ref": "#/$defs/text"},
+        "origin": {"description": "base: kept from the base motorcycle; modified: a base part reworked for this build; new: made or sourced for this build.", "enum": ["base", "modified", "new"]},
+        "parent": {"description": "The part it is mounted on; null when it is mounted on no other part.", "oneOf": [{"$ref": "#/$defs/part_id"}, {"type": "null"}]},
+        "present": {"description": "false for a part the design leaves out: it has no box, no state, no configuration or light, and no system, connection or moment lists it.", "type": "boolean"},
+        "description": {"$ref": "#/$defs/text"},
+        "extent": {"oneOf": [{"$ref": "#/$defs/box"}, {"type": "null"}]},
+        "faces": {"type": "array", "items": {"type": "object", "required": ["facing", "description"], "additionalProperties": false, "properties": {"facing": {"enum": ["left", "right", "both_sides", "front", "rear", "top", "bottom"]}, "description": {"$ref": "#/$defs/text"}}}},
+        "surfaces": {"type": "array", "items": {"type": "object", "required": ["element", "color_id", "material", "finish"], "additionalProperties": false, "properties": {"element": {"$ref": "#/$defs/text"}, "color_id": {"oneOf": [{"$ref": "#/$defs/color_id"}, {"type": "null"}]}, "material": {"$ref": "#/$defs/text"}, "finish": {"$ref": "#/$defs/text"}}}},
+        "relations": {"type": "array", "items": {"type": "object", "required": ["type", "target", "note"], "additionalProperties": false, "properties": {"type": {"enum": ["covers", "overhangs", "adjoins", "contains"]}, "target": {"$ref": "#/$defs/part_id"}, "note": {"$ref": "#/$defs/text"}}}},
+        "elements": {"type": "array", "items": {"type": "object", "required": ["element", "count", "arrangement", "size"], "additionalProperties": false, "properties": {"element": {"$ref": "#/$defs/text"}, "count": {"type": "integer", "minimum": 1}, "arrangement": {"$ref": "#/$defs/text"}, "size": {"$ref": "#/$defs/text_or_null"}}}},
+        "configurations": {"$ref": "#/$defs/configurations"},
+        "lighting": {"type": "array", "items": {"$ref": "#/$defs/light"}},
+        "from_state": {"description": "The first physical state, BS06–BS12, in which the complete part exists. Code counts the part on the motorcycle from from_state through until_state, then applies each state's exceptions. null only for an absent part.", "oneOf": [{"$ref": "#/$defs/physical_state"}, {"type": "null"}]},
+        "until_state": {"description": "The last state in which the part still exists on the motorcycle; null when it stays to the finished motorcycle.", "oneOf": [{"$ref": "#/$defs/physical_state"}, {"type": "null"}]},
+        "points": {"$ref": "#/$defs/points"}
+      },
+      "if": {"required": ["present"], "properties": {"present": {"const": false}}},
+      "then": {"properties": {"extent": {"type": "null"}, "from_state": {"type": "null"}, "configurations": {"maxItems": 0}, "lighting": {"maxItems": 0}}},
+      "else": {"properties": {"extent": {"$ref": "#/$defs/box"}, "from_state": {"$ref": "#/$defs/physical_state"}}},
+      "allOf": [
+        {
+          "description": "A present side stand has exactly the two positions up and down, so every situation can say which one holds.",
+          "if": {"required": ["kind", "present"], "properties": {"kind": {"const": "side_stand"}, "present": {"const": true}}},
+          "then": {"properties": {"configurations": {
+            "minItems": 2, "maxItems": 2,
+            "items": {"properties": {"name": {"enum": ["up", "down"]}}},
+            "allOf": [{"contains": {"properties": {"name": {"const": "up"}}}}, {"contains": {"properties": {"name": {"const": "down"}}}}]
+          }}}
+        }
+      ]
+    },
+    "parts": {
+      "type": "array", "minItems": 18, "items": {"$ref": "#/$defs/part"},
+      "allOf": [
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "frame"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "front_suspension"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "front_wheel"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "rear_wheel"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "front_brake"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "rear_brake"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "engine"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "final_drive"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "intake"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "exhaust"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "fuel_tank"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "seat"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "handlebar"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "hand_controls"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "foot_controls"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "headlight"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "taillight"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind", "present"], "properties": {"kind": {"const": "side_stand"}, "present": {"const": true}}}},
+        {"contains": {"required": ["kind"], "properties": {"kind": {"const": "rear_suspension"}}}},
+        {"contains": {"required": ["kind"], "properties": {"kind": {"const": "swingarm"}}}},
+        {"contains": {"required": ["kind"], "properties": {"kind": {"const": "front_fender"}}}},
+        {"contains": {"required": ["kind"], "properties": {"kind": {"const": "rear_fender"}}}},
+        {"contains": {"required": ["kind"], "properties": {"kind": {"const": "mirror"}}}},
+        {"contains": {"required": ["kind"], "properties": {"kind": {"const": "instruments"}}}},
+        {"contains": {"required": ["kind"], "properties": {"kind": {"const": "turn_signal"}}}},
+        {"contains": {"required": ["kind"], "properties": {"kind": {"const": "license_plate"}}}}
+      ]
+    },
+
+    "line": {
+      "type": "object", "required": ["id", "kind", "function", "from", "to", "routing", "exposure"], "additionalProperties": false,
+      "properties": {"id": {"$ref": "#/$defs/line_id"}, "kind": {"enum": ["cable", "hose", "wire", "pipe"]}, "function": {"$ref": "#/$defs/text"}, "from": {"$ref": "#/$defs/line_end"}, "to": {"$ref": "#/$defs/line_end"}, "routing": {"$ref": "#/$defs/text"}, "exposure": {"enum": ["hidden", "partial", "exposed"]}}
+    },
+    "system": {
+      "type": "object", "required": ["id", "kind", "name", "function", "parts", "lines", "service_access"], "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/system_id"},
+        "kind": {"enum": ["powertrain", "drivetrain", "front_suspension", "rear_suspension", "steering", "brakes", "wheels", "fuel", "oil", "cooling", "electrical", "lighting", "intake", "exhaust", "controls"]},
+        "name": {"$ref": "#/$defs/text"}, "function": {"$ref": "#/$defs/text"},
+        "parts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/part_id"}},
+        "lines": {"type": "array", "items": {"$ref": "#/$defs/line"}},
+        "service_access": {"$ref": "#/$defs/text"}
+      }
+    },
+
+    "rider_interface": {
+      "type": "object",
+      "required": ["rider", "seat_point", "grip_points", "peg_points", "riding_position", "contact_points", "controls_use", "passenger", "clearances"],
+      "additionalProperties": false,
+      "properties": {
+        "rider": {"type": "object", "required": ["height_cm", "build"], "additionalProperties": false, "properties": {"height_cm": {"type": "integer", "minimum": 140, "maximum": 210}, "build": {"$ref": "#/$defs/text"}}},
+        "seat_point": {"$ref": "#/$defs/point"},
+        "grip_points": {"type": "object", "required": ["left", "right"], "additionalProperties": false, "properties": {"left": {"$ref": "#/$defs/point"}, "right": {"$ref": "#/$defs/point"}}},
+        "peg_points": {"type": "object", "required": ["left", "right"], "additionalProperties": false, "properties": {"left": {"$ref": "#/$defs/point"}, "right": {"$ref": "#/$defs/point"}}},
+        "riding_position": {"$ref": "#/$defs/text"},
+        "contact_points": {"type": "array", "minItems": 3, "items": {"type": "object", "required": ["part", "contact", "description"], "additionalProperties": false, "properties": {"part": {"$ref": "#/$defs/part_id"}, "contact": {"enum": ["hands", "feet", "seat", "knees", "legs"]}, "description": {"$ref": "#/$defs/text"}}}},
+        "controls_use": {"$ref": "#/$defs/text"},
+        "passenger": {"type": "object", "required": ["allowed", "parts"], "additionalProperties": false, "properties": {"allowed": {"type": "boolean"}, "parts": {"type": "array", "items": {"$ref": "#/$defs/part_id"}}}, "if": {"properties": {"allowed": {"const": false}}}, "then": {"properties": {"parts": {"maxItems": 0}}}},
+        "clearances": {"type": "object", "required": ["lean_angle_left", "lean_angle_right", "steering_lock", "heat"], "additionalProperties": false, "properties": {"lean_angle_left": {"$ref": "#/$defs/spec_deg"}, "lean_angle_right": {"$ref": "#/$defs/spec_deg"}, "steering_lock": {"$ref": "#/$defs/spec_deg"}, "heat": {"$ref": "#/$defs/text"}}}
+      }
+    },
+
+    "connection": {
+      "type": "object", "required": ["id", "kind", "between", "point", "description"], "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/connection_id"},
+        "kind": {"enum": ["mount", "rubber_mount", "pivot", "hinge", "clamp", "bolted_joint", "weld", "quick_release", "interface"]},
+        "between": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/part_id"}},
+        "point": {"$ref": "#/$defs/point"},
+        "description": {"$ref": "#/$defs/text"}
+      }
+    },
+
+    "feature": {
+      "type": "object",
+      "required": ["id", "name", "kind", "purpose", "principle", "visible_expression", "effect", "parts", "modes", "use_sequence", "measures", "visible_at_rest", "from_state", "risks"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/feature_id"}, "name": {"$ref": "#/$defs/text"}, "kind": {"enum": ["form", "function", "mechanism"]},
+        "purpose": {"$ref": "#/$defs/text"}, "principle": {"$ref": "#/$defs/text"}, "visible_expression": {"$ref": "#/$defs/text"}, "effect": {"$ref": "#/$defs/text_or_null"},
+        "parts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/part_id"}},
+        "modes": {"type": "array", "items": {"description": "One set of configurations held at the same time, at most one per part; alternative positions are separate modes. When a mode is available, and its fallback, live in operational_limits.", "type": "object", "required": ["id", "name", "configurations", "effect"], "additionalProperties": false, "properties": {"id": {"$ref": "#/$defs/mode_id"}, "name": {"$ref": "#/$defs/text"}, "configurations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/configuration_id"}}, "effect": {"$ref": "#/$defs/text_or_null"}}}},
+        "use_sequence": {"type": "array", "items": {"$ref": "#/$defs/text"}},
+        "measures": {"type": "object", "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"}, "additionalProperties": {"$ref": "#/$defs/measure"}},
+        "visible_at_rest": {"type": "boolean"},
+        "from_state": {"oneOf": [{"$ref": "#/$defs/physical_state"}, {"type": "null"}]},
+        "risks": {"type": "array", "items": {"$ref": "#/$defs/text"}}
+      }
+    },
+
+    "condition": {
+      "type": "object", "required": ["quantity", "comparator", "value"], "additionalProperties": false,
+      "properties": {"quantity": {"enum": ["speed", "lean_angle"]}, "comparator": {"enum": ["<", "<="]}, "value": {"type": "number", "minimum": 0}},
+      "description": "A strict upper bound of 0 can never hold.",
+      "if": {"required": ["comparator"], "properties": {"comparator": {"const": "<"}}},
+      "then": {"properties": {"value": {"exclusiveMinimum": 0}}}
+    },
+    "limit": {
+      "description": "One real condition of use; a risk alone never creates a limit.",
+      "type": "object",
+      "required": ["id", "feature", "applies_to", "conditions", "requires", "procedures", "governs", "otherwise", "otherwise_configurations", "static_display", "basis"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/limit_id"}, "feature": {"$ref": "#/$defs/snake"},
+        "applies_to": {
+          "type": "object", "required": ["kind", "id"], "additionalProperties": false,
+          "properties": {"kind": {"enum": ["feature", "part", "system", "activity"]}, "id": {"oneOf": [{"$ref": "#/$defs/feature_id"}, {"$ref": "#/$defs/part_id"}, {"$ref": "#/$defs/system_id"}, {"type": "null"}]}},
+          "allOf": [
+            {"if": {"properties": {"kind": {"const": "activity"}}}, "then": {"properties": {"id": {"type": "null"}}}},
+            {"if": {"properties": {"kind": {"const": "feature"}}}, "then": {"properties": {"id": {"$ref": "#/$defs/feature_id"}}}},
+            {"if": {"properties": {"kind": {"const": "part"}}}, "then": {"properties": {"id": {"$ref": "#/$defs/part_id"}}}},
+            {"if": {"properties": {"kind": {"const": "system"}}}, "then": {"properties": {"id": {"$ref": "#/$defs/system_id"}}}}
+          ]
+        },
+        "conditions": {"type": "array", "items": {"$ref": "#/$defs/condition"}},
+        "requires": {
+          "type": "array", "uniqueItems": true, "items": {"enum": ["stationary", "engine_off", "engine_running", "side_stand_down", "dry_road"]},
+          "description": "The engine cannot be off and running in the same situation.",
+          "not": {"allOf": [{"contains": {"const": "engine_off"}}, {"contains": {"const": "engine_running"}}]}
+        },
+        "procedures": {"type": "array", "items": {"$ref": "#/$defs/snake"}},
+        "governs": {"description": "The positions allowed only when every condition and requirement holds — never a default; for a part limit, only that part's positions.", "type": "array", "items": {"$ref": "#/$defs/configuration_id"}},
+        "otherwise": {"$ref": "#/$defs/text"},
+        "otherwise_configurations": {"description": "The positions of the governed parts that no limit governs, held when the conditions do not.", "type": "array", "items": {"$ref": "#/$defs/configuration_id"}},
+        "static_display": {"description": "true only when the governed positions are safe at rest in a studio; never with engine_running; false when in doubt.", "type": "boolean"},
+        "basis": {"$ref": "#/$defs/text"}
+      },
+      "allOf": [
+        {"if": {"required": ["applies_to"], "properties": {"applies_to": {"properties": {"kind": {"const": "activity"}}}}}, "then": {"properties": {"governs": {"maxItems": 0}}}},
+        {
+          "description": "A position shown at rest in a studio cannot need a running engine.",
+          "if": {"required": ["static_display"], "properties": {"static_display": {"const": true}}},
+          "then": {"properties": {"requires": {"not": {"contains": {"const": "engine_running"}}}}}
+        }
+      ]
+    },
+
+    "design_stage": {
+      "type": "object", "required": ["id", "kind", "text", "refs", "setting_brief", "participant_roles", "outcome"], "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/state"},
+        "kind": {"enum": ["concept", "drawings", "model", "design_review", "handover"]},
+        "text": {"$ref": "#/$defs/text"},
+        "refs": {"$ref": "#/$defs/story_refs"},
+        "setting_brief": {"$ref": "#/$defs/text"},
+        "participant_roles": {"$ref": "#/$defs/story_roles"},
+        "outcome": {"$ref": "#/$defs/text"},
+        "model_medium": {"enum": ["physical", "digital"]},
+        "scale_denominator": {"type": "integer", "minimum": 2}
+      },
+      "if": {"required": ["model_medium"], "properties": {"model_medium": {"const": "digital"}}},
+      "then": {"not": {"required": ["scale_denominator"]}}
+    },
+    "plain_design_stage": {"not": {"anyOf": [{"required": ["model_medium"]}, {"required": ["scale_denominator"]}]}},
+    "surface_group": {"oneOf": [{"enum": ["raw_metal", "primer", "powder_coat", "paint", "plated", "polished", "anodised", "final"]}, {"type": "null"}]},
+    "build_state": {
+      "type": "object", "required": ["id", "kind", "text", "refs", "setting_brief", "participant_roles", "outcome", "surfaces", "in_progress", "exceptions", "temporary", "surface"], "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/physical_state"},
+        "kind": {"enum": ["build", "finished"]},
+        "text": {"$ref": "#/$defs/text"},
+        "refs": {"$ref": "#/$defs/story_refs"},
+        "setting_brief": {"$ref": "#/$defs/text"},
+        "participant_roles": {"$ref": "#/$defs/story_roles"},
+        "outcome": {"$ref": "#/$defs/text"},
+        "surfaces": {"description": "How far the finish of each group has come at this state; finishing or painting a part that is already made shows here, not in in_progress.", "type": "object", "required": ["frame", "bodywork", "engine", "wheels"], "additionalProperties": false, "properties": {"frame": {"$ref": "#/$defs/surface_group"}, "bodywork": {"$ref": "#/$defs/surface_group"}, "engine": {"$ref": "#/$defs/surface_group"}, "wheels": {"$ref": "#/$defs/surface_group"}}},
+        "in_progress": {"description": "The parts being made in this state, not every task in the workshop; never a part already complete before this state. Finishing, painting, test-fitting or servicing a made part is not making it.", "type": "array", "items": {"type": "object", "required": ["part", "description"], "additionalProperties": false, "properties": {"part": {"$ref": "#/$defs/part_id"}, "description": {"$ref": "#/$defs/text"}}}},
+        "exceptions": {"description": "Complete parts that depart from their lifespan in this state: removed takes a part that exists off the motorcycle; present puts on a part its lifespan does not have yet, or holds a part that exists in its own configuration.", "type": "array", "items": {"type": "object", "required": ["part", "presence", "configuration", "description"], "additionalProperties": false, "properties": {"part": {"$ref": "#/$defs/part_id"}, "presence": {"enum": ["removed", "present"]}, "configuration": {"oneOf": [{"$ref": "#/$defs/configuration_id"}, {"type": "null"}]}, "description": {"$ref": "#/$defs/text"}}}},
+        "temporary": {"type": "array", "uniqueItems": true, "items": {"enum": ["lift_table", "frame_jig", "engine_stand", "wheel_dolly", "paddock_stand", "mockup_parts"]}},
+        "surface": {"description": "One sentence on how the motorcycle looks at this state, BS06–BS10; null at BS11–BS12.", "$ref": "#/$defs/text_or_null"}
+      }
+    },
+    "build_states": {
+      "type": "array", "minItems": 12, "maxItems": 12,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/design_stage"}, {"$ref": "#/$defs/plain_design_stage"}, {"properties": {"id": {"const": "BS01"}, "kind": {"const": "concept"}}}]},
+        {"allOf": [{"$ref": "#/$defs/design_stage"}, {"$ref": "#/$defs/plain_design_stage"}, {"properties": {"id": {"const": "BS02"}, "kind": {"const": "drawings"}}}]},
+        {"allOf": [{"$ref": "#/$defs/design_stage"}, {"required": ["model_medium"], "properties": {"id": {"const": "BS03"}, "kind": {"const": "model"}}}]},
+        {"allOf": [{"$ref": "#/$defs/design_stage"}, {"$ref": "#/$defs/plain_design_stage"}, {"properties": {"id": {"const": "BS04"}, "kind": {"const": "design_review"}}}]},
+        {"allOf": [{"$ref": "#/$defs/design_stage"}, {"$ref": "#/$defs/plain_design_stage"}, {"properties": {"id": {"const": "BS05"}, "kind": {"const": "handover"}}}]},
+        {"allOf": [{"$ref": "#/$defs/build_state"}, {"properties": {"id": {"const": "BS06"}, "kind": {"const": "build"}, "surface": {"$ref": "#/$defs/text"}}}]},
+        {"allOf": [{"$ref": "#/$defs/build_state"}, {"properties": {"id": {"const": "BS07"}, "kind": {"const": "build"}, "surface": {"$ref": "#/$defs/text"}}}]},
+        {"allOf": [{"$ref": "#/$defs/build_state"}, {"properties": {"id": {"const": "BS08"}, "kind": {"const": "build"}, "surface": {"$ref": "#/$defs/text"}}}]},
+        {"allOf": [{"$ref": "#/$defs/build_state"}, {"properties": {"id": {"const": "BS09"}, "kind": {"const": "build"}, "surface": {"$ref": "#/$defs/text"}}}]},
+        {"allOf": [{"$ref": "#/$defs/build_state"}, {"properties": {"id": {"const": "BS10"}, "kind": {"const": "build"}, "surface": {"$ref": "#/$defs/text"}}}]},
+        {"allOf": [{"$ref": "#/$defs/build_state"}, {"properties": {"id": {"const": "BS11"}, "kind": {"const": "finished"}, "surface": {"type": "null"}}}]},
+        {"allOf": [{"$ref": "#/$defs/build_state"}, {"properties": {"id": {"const": "BS12"}, "kind": {"const": "finished"}, "surface": {"type": "null"}, "temporary": {"maxItems": 0}}}]}
+      ],
+      "items": false
+    },
+
+    "identity_rule": {
+      "type": "object", "required": ["id", "kind", "scope", "description", "refs", "from_state"], "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/rule_id"},
+        "kind": {"enum": ["must_keep", "must_not"]},
+        "scope": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"anyOf": [{"const": "MOTORCYCLE"}, {"$ref": "#/$defs/part_id"}]}},
+        "description": {"type": "string", "minLength": 1, "maxLength": 240, "pattern": "^(?!([Dd]o [Nn]ot|[Nn]o|[Nn]ot)\\b)\\S"},
+        "refs": {"type": "array", "uniqueItems": true, "items": {"anyOf": [{"$ref": "#/$defs/part_id"}, {"$ref": "#/$defs/feature_id"}, {"$ref": "#/$defs/system_id"}]}},
+        "from_state": {"oneOf": [{"$ref": "#/$defs/state"}, {"type": "null"}]}
+      }
+    },
+    "source_issue": {
+      "type": "object", "required": ["id", "paths", "problem", "impact", "blocking"], "additionalProperties": false,
+      "properties": {"id": {"$ref": "#/$defs/issue_id"}, "paths": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}}, "problem": {"$ref": "#/$defs/text"}, "impact": {"$ref": "#/$defs/text"}, "blocking": {"type": "boolean"}}
+    },
+    "blocking_issue": {"type": "object", "required": ["blocking"], "properties": {"blocking": {"const": true}}},
+
+    "camera": {
+      "type": "object", "required": ["azimuth_deg", "elevation_deg", "projection"], "additionalProperties": false,
+      "properties": {"azimuth_deg": {"type": ["number", "null"]}, "elevation_deg": {"type": ["number", "null"]}, "projection": {"enum": ["orthographic", "perspective"]}, "lens_mm": {"type": "number", "exclusiveMinimum": 0}, "front": {"$ref": "#/$defs/text"}}
+    },
+    "view": {
+      "description": "One panel. visible, partial and uncertain list the main parts, features and connections its camera shows fully, partly or uncertainly, decided from the boxes, faces and displayed configuration; each id appears in at most one of them.",
+      "type": "object", "required": ["id", "camera", "target", "visible", "partial", "uncertain", "issues"], "additionalProperties": false,
+      "properties": {
+        "id": {"enum": ["MS1", "MS2", "MS3", "MS4", "MS5", "MS6", "MS7", "MS8"]},
+        "camera": {"$ref": "#/$defs/camera"},
+        "target": {"$ref": "#/$defs/text"},
+        "visible": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/view_ref"}},
+        "partial": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/view_ref"}},
+        "uncertain": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/view_ref"}},
+        "issues": {"type": "array", "items": {"$ref": "#/$defs/issue_id"}}
+      }
+    },
+    "model_sheet": {
+      "type": "object", "required": ["display_configuration", "views"], "additionalProperties": false,
+      "properties": {
+        "display_configuration": {"description": "Exactly one configuration of every present part that has configurations, the same in every panel: a position no limit governs, a fallback, or a governed position whose every limit allows static_display; together they meet every limit.", "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/configuration_id"}},
+        "views": {
+          "type": "array", "minItems": 8, "maxItems": 8,
+          "prefixItems": [
+            {"allOf": [{"$ref": "#/$defs/view"}, {"properties": {"id": {"const": "MS1"}}}]},
+            {"allOf": [{"$ref": "#/$defs/view"}, {"properties": {"id": {"const": "MS2"}}}]},
+            {"allOf": [{"$ref": "#/$defs/view"}, {"properties": {"id": {"const": "MS3"}}}]},
+            {"allOf": [{"$ref": "#/$defs/view"}, {"properties": {"id": {"const": "MS4"}}}]},
+            {"allOf": [{"$ref": "#/$defs/view"}, {"properties": {"id": {"const": "MS5"}}}]},
+            {"allOf": [{"$ref": "#/$defs/view"}, {"properties": {"id": {"const": "MS6"}}}]},
+            {"allOf": [{"$ref": "#/$defs/view"}, {"properties": {"id": {"const": "MS7"}}}]},
+            {"allOf": [{"$ref": "#/$defs/view"}, {"properties": {"id": {"const": "MS8"}, "camera": {"properties": {"azimuth_deg": {"type": "number"}, "elevation_deg": {"type": "number"}}}}}]}
+          ],
+          "items": false
+        }
+      }
+    }
+  }
+}

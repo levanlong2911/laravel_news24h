@@ -418,7 +418,11 @@ final class MotoScriptCheck
                 $record = $records[$ref[0]][$ref] ?? null;
 
                 if ($record === null) {
-                    if (! in_array($ref, (array) ($design['other_refs'] ?? []), true)) {
+                    $known = in_array($ref, (array) ($design['other_refs'] ?? []), true)
+                        || isset($design['configurations'][$ref])
+                        || in_array($ref, (array) ($design['lights'] ?? []), true);
+
+                    if (! $known) {
                         $issues[] = "{$beat['id']} nhắc {$ref}, không có trong thiết kế.";
                     }
                 } elseif ($ref[0] === 'P' && $at !== null && ! $present($ref) && ! in_array($ref, $at['in_progress'], true)) {
