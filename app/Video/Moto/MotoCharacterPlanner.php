@@ -99,7 +99,7 @@ final class MotoCharacterPlanner
      * @param  array<string, mixed>  $settings  video.moto.reference.character
      * @param  list<string>  $scriptOutfit  the characters of the project shown in the clothes of the script where the source names no protective equipment: their look cell lists no equipment and is marked script_outfit, and the source keeps its null; every other character with no equipment stated stays unresolved
      * @param  list<string>  $lapsedOutfit  the characters whose decision was made from sources that changed since: unresolved until it is confirmed again
-     * @return array{version: string, prompt_version: string, cells: list<array<string, mixed>>, bindings: array<string, list<array<string, mixed>>>, problems: list<string>} for every character the shots show: the angles of the settings, each item of protective equipment the shots list, then one cell for every view and list of protective equipment the shots need, with the shots that use it kept apart from its fingerprint; for each shot and person, the cell that answers it, the keyframe it continues or why nothing can be decided from the data
+     * @return array{version: string, prompt_version: string, cells: list<array<string, mixed>>, bindings: array<string, list<array<string, mixed>>>, problems: list<string>} for every character of the script that has a description, whether a shot shows it or not and whatever the shots state it wears: the angles of the settings, each item of protective equipment the shots list, then one cell for every view and list of protective equipment the shots need, with the shots that use it kept apart from its fingerprint; for each shot and person, the cell that answers it, the keyframe it continues or why nothing can be decided from the data
      */
     public static function plan(array $shots, array $characters, array $settings, array $scriptOutfit = [], array $lapsedOutfit = []): array
     {
@@ -154,6 +154,12 @@ final class MotoCharacterPlanner
         $prefixes = self::prefixes(array_keys($found));
         $settingsHash = CanonicalJson::hash($settings);
         $cells = [];
+
+        foreach ($characters as $character => $description) {
+            if (is_string($description) && trim($description) !== '') {
+                $found[(string) $character] ??= [];
+            }
+        }
 
         foreach ($found as $character => $views) {
             $description = (string) $characters[$character];
