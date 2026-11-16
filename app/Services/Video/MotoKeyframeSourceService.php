@@ -11,6 +11,7 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
 use App\Video\Moto\MotoCharacterPlanner;
+use App\Video\Moto\MotoPipelineRelease;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
@@ -49,6 +50,9 @@ final class MotoKeyframeSourceService
     /** @var array<string, ?string> what reading the file of each keyframe found in this round of checks, by artifact id */
     private array $outputs = [];
 
+    /** @var array<string, array{source: ?array<string, mixed>, problem: ?string}> the identity master found for a character in this read, by character and whether the face is shown */
+    private array $identities = [];
+
     public function __construct(
         private readonly ShotSourceService $shots,
         private readonly ShotRenderPlanService $plans,
@@ -67,6 +71,7 @@ final class MotoKeyframeSourceService
     {
         $this->files = [];
         $this->outputs = [];
+        $this->identities = [];
 
         return ModelSheetService::readOnce(function () use ($projectId): array {
             $approved = $this->shots->approvedSource($projectId);
@@ -98,12 +103,16 @@ final class MotoKeyframeSourceService
             $plates = $this->plates($projectId);
             $ids = array_filter([$sheet['source']['artifact_id'] ?? null, ...array_keys($reference['masters']), ...array_column($plates, 'artifact_id')]);
             $stored = array_values((array) ($stage->output_json['derived']['shots'] ?? []));
-            $people = MotoCharacterPlanner::plan($stored, (array) ($metadata['context']['characters'] ?? []), (array) config('video.moto.reference.character'));
+            $people = MotoCharacterPlanner::planFor($stored, (array) ($metadata['context']['characters'] ?? []), MotoCharacterPlanner::settingsFor($stored), VideoProject::query()->whereKey($projectId)->value('metadata_json'));
 
             return [
                 'people' => $people,
                 'people_cells' => array_column($people['cells'], null, 'id'),
                 'people_images' => $this->characters->approvedMasterCells($projectId, $people),
+                'people_descriptions' => (array) ($metadata['context']['characters'] ?? []),
+                'people_settings' => MotoCharacterPlanner::settingsFor($stored),
+                'people_shots' => $stored,
+                'identity_masters' => MotoPipelineRelease::cinematic(VideoProject::query()->findOrFail($projectId)),
                 'project_id' => $projectId,
                 'approved' => $approved,
                 'stage' => $stage,
@@ -129,20 +138,25 @@ final class MotoKeyframeSourceService
      * @param  array<string, mixed>  $context  what context() returned
      * @param  array<string, mixed>  $shot  a stored shot
      * @param  bool  $deep  read and hash every file, not only see that it is there
-     * @return array{cards: list<array<string, mixed>>, slots: list<array<string, mixed>>, sources: list<array<string, mixed>>, problems: list<string>} the whole images of the shot, each with the other images a person may put in its place: the approved model sheet for every shot, the others as its reference needs ask; the same cards in the four cells of the screen, a cell with no image empty and sending nothing; the manifest they send in order, and why the shot cannot render
+     * @param  bool  $keyframe  whether the images are for the keyframe of the shot: a part master a person left out on the Keyframes screen is left out of a keyframe only, and a clip made from reference images keeps it until that screen leaves it out itself
+     * @return array{cards: list<array<string, mixed>>, slots: list<array<string, mixed>>, sources: list<array<string, mixed>>, problems: list<string>} the whole images of the shot, each with theother images a person may put in its place: the approved model sheet for every shot, the others as its reference needs ask; the same cards in the four cells of the screen, a cell with no image empty and sending nothing; the manifest they send in order, and why the shot cannot render
      */
-    public function cards(array $context, array $shot, bool $deep = false): array
+    public function cards(array $context, array $shot, bool $deep = false, bool $keyframe = true): array
     {
         $needs = collect((array) $shot['reference_needs'])->groupBy('kind');
         $choice = (array) ($context['choices'][$shot['id']]['sources'] ?? []);
+
+        if (! $keyframe) {
+            unset($choice['design_off']);
+        }
         $planned = $needs->has('environment');
         $places = array_values(array_map('strval', (array) ($shot['places'] ?? [])));
         $cards = [
             ...($needs->has('identity') || $context['sheet']['source'] !== null ? [$this->identityCard($context, $needs->get('identity', collect())->all())] : []),
-            ...($needs->has('design') ? $this->designCards($context, $needs->get('design')->all(), $choice) : []),
+            ...$this->designCards($context, $shot, $needs->get('design', collect())->all(), $choice),
             ...($planned || is_string($choice['environment'] ?? null) ? [$this->environmentCard($context, $needs->get('environment', collect())->all(), $choice, $planned, $places)] : []),
             ...array_map(fn (array $need): array => $this->continuityCard($context, $need, $deep), $needs->get('continuity', collect())->all()),
-            ...$this->characterCards($context, (string) $shot['id']),
+            ...$this->characterCards($context, $shot, $keyframe),
         ];
         $sources = [];
         $problems = [];
@@ -156,7 +170,7 @@ final class MotoKeyframeSourceService
                 continue;
             }
 
-            if (in_array($card['source']['artifact_id'], array_column($sources, 'artifact_id'), true)) {
+            if (($card['left_out'] ?? false) || in_array($card['source']['artifact_id'], array_column($sources, 'artifact_id'), true)) {
                 continue;
             }
 
@@ -165,17 +179,18 @@ final class MotoKeyframeSourceService
                 + ($card['kind'] === 'design' ? ['parts' => $card['parts']] : [])
                 + ($card['kind'] === 'environment' ? ['title' => (string) ($card['source']['name'] ?? '')] : [])
                 + ($card['kind'] === 'continuity' ? ['shot' => $card['target'], 'image_id' => (string) $card['source']['image_id'], 'decision_id' => $card['source']['decision_id']] : [])
-                + ($card['kind'] === 'character' ? array_intersect_key($card['source'], array_flip(['cell_id', 'cell_code', 'cell_row', 'cell_column', 'character', 'view', 'items', 'fingerprint', 'master_artifact_id', 'master_sha256', 'decision_id'])) : []);
+                + ($card['kind'] === 'character' ? array_intersect_key($card['source'], array_flip(['cell_id', 'cell_code', 'cell_row', 'cell_column', 'character', 'view', 'reference_mode', 'items', 'protection_source', 'master_cells', 'fingerprint', 'master_artifact_id', 'master_sha256', 'decision_id'])) : []);
         }
 
         if ($cards === []) {
             $problems[] = 'Shot không có nhu cầu ảnh tham chiếu — không có ảnh đầu vào để gửi.';
         }
 
-        $wanted = array_unique(array_filter(array_map(static fn (array $card): ?string => $card['source']['artifact_id'] ?? null, $cards)));
+        $kept = array_values(array_filter($cards, static fn (array $card): bool => ! ($card['left_out'] ?? false)));
+        $wanted = array_unique(array_filter(array_map(static fn (array $card): ?string => $card['source']['artifact_id'] ?? null, $kept)));
 
         if (count($wanted) > $context['limit']) {
-            $problems[] = 'Shot cần '.count($wanted).' ảnh, vượt giới hạn '.$context['limit'].': '.implode(', ', array_map(static fn (array $card): string => $card['name'], $cards)).'.';
+            $problems[] = 'Shot cần '.count($wanted).' ảnh, vượt giới hạn '.$context['limit'].': '.implode(', ', array_map(static fn (array $card): string => $card['name'], $kept)).' — bỏ bớt một Reference master ở cột References.';
         }
 
         $slots = [];
@@ -393,17 +408,25 @@ final class MotoKeyframeSourceService
 
     /**
      * @param  array<string, mixed>  $context
-     * @param  list<array<string, mixed>>  $needs
+     * @param  array<string, mixed>  $shot  a stored shot
+     * @param  list<array<string, mixed>>  $needs  the design needs the shot names, read for their purpose only
      * @param  array<string, mixed>  $choice
-     * @return list<array<string, mixed>> one card for each master that answers parts of the shot, and one without an image for the parts none answers
+     * @return list<array<string, mixed>> for the parts in the frame of the shot, one card for each master that answers some of them, and one without an image for the parts none answers; each card says how every part of it stands in the shot, and a master a person left out of this shot is shown and not sent
      */
-    private function designCards(array $context, array $needs, array $choice): array
+    private function designCards(array $context, array $shot, array $needs, array $choice): array
     {
         $chosen = is_array($choice['design'] ?? null) ? array_values($choice['design']) : null;
         $byMaster = [];
         $missing = [];
+        $shown = [];
 
-        foreach (array_values(array_unique(array_column($needs, 'target'))) as $part) {
+        foreach ((array) ($shot['parts'] ?? []) as $item) {
+            if (is_string($item['part'] ?? null)) {
+                $shown[$item['part']] ??= (string) ($item['presentation'] ?? '');
+            }
+        }
+
+        foreach (array_keys($shown) as $part) {
             $master = $chosen === null
                 ? ($context['part_masters'][$part] ?? null)
                 : collect($chosen)->first(static fn (string $id): bool => in_array($part, $context['masters'][$id]['parts'] ?? [], true));
@@ -416,16 +439,18 @@ final class MotoKeyframeSourceService
         }
 
         $partsOf = static fn (array $parts): array => array_values(array_filter($needs, static fn (array $need): bool => in_array($need['target'], $parts, true)));
+        $shownAs = static fn (array $parts): array => ['presentations' => array_intersect_key($shown, array_flip($parts))];
         $cards = [];
 
         foreach ($byMaster as $artifactId => $parts) {
-            $card = $this->card('design', null, $parts, $partsOf($parts), array_intersect_key($context['masters'][$artifactId], array_flip(['image_id', 'artifact_id', 'sha256', 'code'])), null, $this->masterOptions($context, $parts, (string) $artifactId));
+            $card = $this->card('design', null, $parts, $partsOf($parts), array_intersect_key($context['masters'][$artifactId], array_flip(['image_id', 'artifact_id', 'sha256', 'code'])), null, $this->masterOptions($context, $parts, (string) $artifactId)) + $shownAs($parts)
+                + ['left_out' => in_array((string) $artifactId, array_map('strval', (array) ($choice['design_off'] ?? [])), true)];
             $cards[] = $chosen === null ? $card : array_replace($card, ['chosen' => 'person', 'reset' => 'Về master mặc định']);
         }
 
         if ($missing !== []) {
             $problem = $context['reference_problem'] ?? 'chưa có Reference master đã duyệt chứa '.implode(', ', $missing);
-            $cards[] = $this->card('design', null, $missing, $partsOf($missing), null, $problem, $this->masterOptions($context, $missing, null));
+            $cards[] = $this->card('design', null, $missing, $partsOf($missing), null, $problem, $this->masterOptions($context, $missing, null)) + $shownAs($missing);
         }
 
         return $cards;
@@ -545,12 +570,19 @@ final class MotoKeyframeSourceService
      * @param  array<string, mixed>  $context
      * @return list<array<string, mixed>> one card for each person of the shot no keyframe before it already holds: the approved image of its cell, or why the shot waits; a person whose state the data does not settle stays a problem, never another cell
      */
-    private function characterCards(array $context, string $shotId): array
+    private function characterCards(array $context, array $shot, bool $keyframe = true): array
     {
+        $shotId = (string) $shot['id'];
         $cards = [];
 
         foreach ((array) ($context['people']['bindings'][$shotId] ?? []) as $binding) {
             if ($binding['type'] === 'continuity') {
+                continue;
+            }
+
+            if (! $keyframe && ($context['identity_masters'] ?? false) && ($binding['type'] === 'unresolved' || ! isset($context['people_images'][$binding['cell']]))) {
+                $cards[] = $this->personIdentityCard($context, $shot, $binding);
+
                 continue;
             }
 
@@ -562,7 +594,7 @@ final class MotoKeyframeSourceService
 
             $cell = $context['people_cells'][$binding['cell']];
             $image = $context['people_images'][$binding['cell']] ?? null;
-            $worn = $cell['items'] === [] ? 'không' : implode(', ', $cell['items']);
+            $worn = isset($cell['outfit']) ? 'nguồn chưa nêu bảo hộ bổ sung — dùng trang phục kịch bản làm ảnh nhận diện' : ($cell['items'] === [] ? 'không' : implode(', ', $cell['items']));
             $source = $image === null ? null : [
                 'image_id' => $image['image_id'],
                 'candidate_id' => $image['image_id'],
@@ -576,6 +608,7 @@ final class MotoKeyframeSourceService
                 'character' => $cell['character'],
                 'view' => $cell['view'],
                 'items' => $cell['items'],
+                ...(isset($cell['outfit']) ? ['protection_source' => 'not_stated'] : []),
                 'fingerprint' => $cell['fingerprint'],
                 'master_artifact_id' => $image['master_artifact_id'],
                 'master_sha256' => $image['master_sha256'],
@@ -586,6 +619,51 @@ final class MotoKeyframeSourceService
         }
 
         return $cards;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $shot  a stored shot
+     * @param  array<string, mixed>  $binding  the binding of a person of the shot that has no approved cell of its own look
+     * @return array<string, mixed> the card of a person in a clip made from reference images: the approved master that gives who the person is, sent whole, with the cells it holds; what the person wears in the shot is what the source states, kept as it is, null when nothing says. No approved look cell of the shot is needed, and what is missing about the clothes is never shown as a missing image
+     */
+    private function personIdentityCard(array $context, array $shot, array $binding): array
+    {
+        $character = (string) $binding['character'];
+        $person = collect((array) ($shot['people'] ?? []))->firstWhere('character', $character) ?? [];
+        $face = ($person['face_visibility'] ?? null) === 'visible' || ($person['view'] ?? null) === 'face_visible';
+        $found = $this->identities[$character.'|'.(int) $face] ??= $this->characters->identityMaster((string) $context['project_id'], $character, $context['people_descriptions'][$character] ?? null, (array) $context['people_settings'], $face);
+
+        if ($found['source'] === null) {
+            return $this->card('character', $character, [], [], null, (string) $found['problem'], []);
+        }
+
+        $items = MotoCharacterPlanner::statedItems($shot, $character, (array) $context['people_shots']);
+        $master = $found['source'];
+        $source = [
+            'image_id' => $master['image_id'],
+            'candidate_id' => $master['image_id'],
+            'artifact_id' => $master['master_artifact_id'],
+            'sha256' => $master['master_sha256'],
+            'code' => $master['master_code'],
+            'character' => $character,
+            'view' => (string) $binding['view'],
+            'reference_mode' => 'identity_master',
+            'items' => $items,
+            'protection_source' => $items === null ? 'not_stated' : 'stated',
+            'master_cells' => $master['master_cells'],
+            'fingerprint' => $master['identity_fingerprint'],
+            'master_artifact_id' => $master['master_artifact_id'],
+            'master_sha256' => $master['master_sha256'],
+            'decision_id' => $master['decision_id'],
+        ];
+        $worn = match (true) {
+            $items === null => 'nguồn chưa nêu bảo hộ — trang phục lấy theo nội dung shot',
+            $items === [] => 'nguồn ghi không có',
+            default => 'theo nguồn: '.implode(', ', $items),
+        };
+
+        return ['detail' => $character.' · '.$binding['view'].' · master nhận diện nguyên tấm · bảo hộ: '.$worn] + $this->card('character', $character, [], [], $source, null, []);
     }
 
     /**

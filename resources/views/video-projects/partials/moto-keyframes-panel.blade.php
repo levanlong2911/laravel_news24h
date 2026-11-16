@@ -154,7 +154,7 @@
                                     <div class="vs-slot">{{ $card['name'] }}</div>
                                     <div class="d">Trống — không gửi</div>
                                 @elseif($card['source'] !== null)
-                                    <div class="vs-slot filled {{ $card['problem'] === null ? 'sent' : '' }}" title="{{ $card['source']['code'] }} · {{ $card['source']['sha256'] }}">
+                                    <div class="vs-slot filled {{ $card['problem'] === null && ! ($card['left_out'] ?? false) ? 'sent' : '' }}" title="{{ $card['source']['code'] }} · {{ $card['source']['sha256'] }}">
                                         <a href="{{ route('video-artifacts.show', $card['source']['artifact_id']) }}" target="_blank" rel="noopener"><img src="{{ route('video-artifacts.show', $card['source']['artifact_id']) }}" alt="{{ $card['source']['code'] }}" loading="lazy"></a>
                                         <span class="cap">
                                             @if($sent !== null)<b class="n">{{ $sent['position'] + 1 }}</b>@endif
@@ -194,6 +194,17 @@
                                             @endforeach
                                         </div>
                                     </details>
+                                @endif
+                                @if(! $card['empty'] && $card['kind'] === 'design' && $card['source'] !== null)
+                                    @php
+                                        $off = $card['left_out'] ?? false;
+                                    @endphp
+                                    @if($off)<div class="d" style="color:var(--vp-amber-fg)">Đang bỏ — {{ implode(', ', $card['parts']) }} không có nguồn chi tiết trong shot này</div>@endif
+                                    <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], $off ? 'source-on' : 'source-off']) }}" onsubmit="return vpLockForm(this)">
+                                        @csrf
+                                        <input type="hidden" name="from" value="{{ $card['source']['artifact_id'] }}">
+                                        <button class="vp-btn sm" data-busy="Đang lưu…">{{ $off ? 'Gửi lại master này' : 'Bỏ master này' }}</button>
+                                    </form>
                                 @endif
                                 @if($card['reset'] !== null)
                                     <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'source-reset']) }}" onsubmit="return vpLockForm(this)">

@@ -324,6 +324,39 @@ final class MotoKeyframeService implements QueuedImageService
         });
     }
 
+    /**
+     * @param  bool  $leaveOut  true leaves the master out of what the shot sends, false sends it again
+     * @return void the choice is stored for the shot of the approved plan; the master stays on the screen with the parts that lose their detail image, and nothing is sent
+     *
+     * @throws RuntimeException when the shot is not in the approved plan or the master is not a part master of the shot
+     */
+    public function leaveOutMaster(string $projectId, string $shotId, string $artifactId, bool $leaveOut): void
+    {
+        DB::transaction(function () use ($projectId, $shotId, $artifactId, $leaveOut): void {
+            $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+            $context = $this->sources->context($projectId);
+            $shot = $context['shots'][$shotId] ?? throw new RuntimeException("Shot {$shotId} không có trong kế hoạch shot đã duyệt.");
+            $card = collect($this->sources->cards($context, $shot)['cards'])->first(static fn (array $row): bool => $row['kind'] === 'design' && ($row['source']['artifact_id'] ?? null) === $artifactId);
+
+            if ($card === null || ($card['left_out'] ?? false) === $leaveOut) {
+                throw new RuntimeException('Master này không phải Reference master đang '.($leaveOut ? 'gửi' : 'bỏ').' của shot — tải lại trang.');
+            }
+
+            $meta = $project->metadata_json ?? [];
+            $stageId = (string) $context['stage']->id;
+            $off = array_map('strval', (array) ($meta[MotoKeyframeSourceService::CHOICES][$stageId][$shotId]['sources']['design_off'] ?? []));
+            $off = $leaveOut ? array_values(array_unique([...$off, $artifactId])) : array_values(array_diff($off, [$artifactId]));
+
+            if ($off === []) {
+                unset($meta[MotoKeyframeSourceService::CHOICES][$stageId][$shotId]['sources']['design_off']);
+            } else {
+                $meta[MotoKeyframeSourceService::CHOICES][$stageId][$shotId]['sources']['design_off'] = $off;
+            }
+
+            $project->forceFill(['metadata_json' => $meta])->save();
+        });
+    }
+
     /** @throws RuntimeException when the model does not offer the size or the quality for the frame of the film */
     public function saveSettings(string $projectId, string $shotId, string $model, string $quality, string $size): void
     {
