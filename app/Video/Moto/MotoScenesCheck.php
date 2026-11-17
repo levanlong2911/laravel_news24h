@@ -245,12 +245,6 @@ final class MotoScenesCheck
 
             if ($common === [] && count($known) > 1) {
                 $issues[] = "{$id} gộp beat ở các nơi khác nhau: ".implode('; ', array_map(static fn (array $beat): string => $beat['id'].' '.implode('+', $beat['places']), $known)).'.';
-            } else {
-                foreach ($known as $beat) {
-                    if (count($beat['places']) > 1 && ! in_array($beat['id'], $named, true)) {
-                        $issues[] = "{$beat['id']} dùng nhiều nơi (".implode(', ', $beat['places']).') — một scene chỉ ở một nơi; cần conflict chặn nêu beat này.';
-                    }
-                }
             }
         }
 

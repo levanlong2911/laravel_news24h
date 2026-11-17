@@ -1578,7 +1578,7 @@ return [
         ],
 
         'dna' => [
-            'model' => env('SUPERYACHT_DNA_MODEL', 'opus55'),
+            'model' => env('SUPERYACHT_DNA_MODEL', 'sonnet55'),
             'effort' => env('SUPERYACHT_DNA_EFFORT', 'high'),
             'max_tokens' => (int) env('SUPERYACHT_DNA_MAX_TOKENS', 32000),
             'timeout_seconds' => (int) env('SUPERYACHT_DNA_TIMEOUT_SECONDS', 1200),
