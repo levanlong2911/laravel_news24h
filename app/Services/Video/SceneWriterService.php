@@ -207,7 +207,33 @@ final class SceneWriterService implements QueuedStageService
     }
 
     /**
-     * @param  array{reason?: mixed, scenes?: mixed}  $patch
+     * @return array{selected: bool, reason: string, check: ?array<string, mixed>, selection_stage_id: ?string} a stored scene run checked again as the page does and, with $write, chosen by rule pass exactly as a run that just finished is: only one that passes with status ok and whose sources still stand; no model is called and the run is not changed
+     */
+    public function selectPassed(string $projectId, string $stageId, bool $write): array
+    {
+        $stage = $this->sources->sceneStage($projectId, $stageId);
+
+        if ($stage === null) {
+            return ['selected' => false, 'reason' => 'Bản chia scene này không thuộc dự án hoặc chưa chạy thành công.', 'check' => null, 'selection_stage_id' => $this->sources->selection($projectId)['stage_id'] ?? null];
+        }
+
+        [$evaluation, $problem] = $this->sources->inspect($projectId, $stage);
+        $check = $problem === null ? $evaluation['check'] : null;
+        $problem ??= $this->sources->staleSource($projectId, $stage);
+        $ready = $problem === null && ($check['verdict'] ?? null) === 'PASS' && ($check['status'] ?? null) === 'ok';
+        $reason = $problem ?? ($ready ? 'preview' : 'Bản chia scene này chưa đạt kiểm hoặc còn xung đột chặn — không chọn được.');
+
+        if ($write && $ready) {
+            $reason = $this->sources->approvePassed($projectId, $stageId)[1];
+        }
+
+        $selected = $this->sources->selection($projectId)['stage_id'] ?? null;
+
+        return ['selected' => $ready && $selected === $stageId, 'reason' => $reason, 'check' => $check, 'selection_stage_id' => $selected];
+    }
+
+    /**
+     * @param  array{reason?: mixed, scenes?: mixed, remove_conflicts?: mixed, remove_flags?: mixed}  $patch  scenes by id with the fields to replace; remove_conflicts and remove_flags name, by index, entries of data.conflicts and flags to drop. When a conflict is dropped the status is set from what remains: partial while a blocking conflict of the answer or of the approved backgrounds stands, ok otherwise; a patch never names a status
      * @return array<string, mixed> what revise() reports
      */
     private function revision(string $projectId, string $stageId, array $patch, bool $write, ?string $expected, ?string $actor): array
@@ -225,12 +251,29 @@ final class SceneWriterService implements QueuedStageService
             return ['reason' => $problem] + $report;
         }
 
-        $scenes = $patch['scenes'] ?? null;
+        if (($stale = $this->sources->staleSource($projectId, $stage)) !== null) {
+            return ['reason' => $stale.' Bản sửa tay giữ nguồn của lượt gốc, không chuyển kế hoạch sang nguồn khác — chia lại scene theo nguồn hiện hành.'] + $report;
+        }
+
         $document = (array) $evaluation['document'];
         $ids = array_column((array) $document['data']['scenes'], 'id');
+        $removals = [];
 
-        if (! is_string($patch['reason'] ?? null) || trim($patch['reason']) === '' || ! is_array($scenes) || $scenes === [] || array_is_list($scenes)) {
-            return ['reason' => 'Bản sửa cần reason và scenes theo mã scene.'] + $report;
+        foreach (['remove_conflicts' => array_values((array) ($document['data']['conflicts'] ?? [])), 'remove_flags' => array_values((array) ($document['flags'] ?? []))] as $key => $entries) {
+            $indexes = $patch[$key] ?? [];
+
+            if (! is_array($indexes) || ! array_is_list($indexes) || count($indexes) !== count(array_unique($indexes, SORT_REGULAR)) || array_filter($indexes, static fn (mixed $index): bool => ! is_int($index) || ! array_key_exists($index, $entries)) !== []) {
+                return ['reason' => "Bản sửa {$key}: cần danh sách chỉ số (từ 0, không lặp) của các mục đang có trong bản chia scene."] + $report;
+            }
+
+            $removals[$key] = ['indexes' => $indexes, 'entries' => $entries];
+        }
+
+        $removing = $removals['remove_conflicts']['indexes'] !== [] || $removals['remove_flags']['indexes'] !== [];
+        $scenes = $patch['scenes'] ?? ($removing ? [] : null);
+
+        if (! is_string($patch['reason'] ?? null) || trim($patch['reason']) === '' || ! is_array($scenes) || ($scenes === [] && ! $removing) || ($scenes !== [] && array_is_list($scenes))) {
+            return ['reason' => 'Bản sửa cần reason và scenes theo mã scene, hoặc remove_conflicts / remove_flags theo chỉ số.'] + $report;
         }
 
         foreach ($scenes as $id => $fields) {
@@ -275,6 +318,28 @@ final class SceneWriterService implements QueuedStageService
         }
 
         unset($scene);
+
+        foreach (['remove_conflicts' => 'conflicts', 'remove_flags' => 'flags'] as $key => $name) {
+            foreach ($removals[$key]['indexes'] as $index) {
+                $report['changes'][] = ['path' => "{$name}[{$index}]", 'before' => (string) json_encode($removals[$key]['entries'][$index], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'after' => '(gỡ)'];
+            }
+        }
+
+        if ($removing) {
+            $revised['data']['conflicts'] = array_values(array_diff_key($removals['remove_conflicts']['entries'], array_flip($removals['remove_conflicts']['indexes'])));
+            $revised['flags'] = array_values(array_diff_key($removals['remove_flags']['entries'], array_flip($removals['remove_flags']['indexes'])));
+        }
+
+        if ($removals['remove_conflicts']['indexes'] !== []) {
+            $blocking = array_filter($revised['data']['conflicts'], static fn (mixed $conflict): bool => is_array($conflict) && ($conflict['blocking'] ?? false) === true) !== []
+                || (array) ($run['metadata']['context']['source_blocking'] ?? []) !== [];
+            $revised['status'] = $blocking ? 'partial' : 'ok';
+
+            if (($document['status'] ?? null) !== $revised['status']) {
+                $report['changes'][] = ['path' => 'status', 'before' => (string) json_encode($document['status'] ?? null), 'after' => (string) json_encode($revised['status'])];
+            }
+        }
+
         $raw = (string) json_encode($revised, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $result = ScriptEvaluation::of($raw, $run['metadata']['manifest'], $run['metadata']['context'], $run['metadata']['source'], $run['adapter']);
         $report['check'] = $result['check'];

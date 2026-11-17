@@ -139,6 +139,10 @@ final class SceneSourceService
             return [null, $problem];
         }
 
+        if (($stale = $this->staleSource($projectId, $stage)) !== null) {
+            return [null, $stale];
+        }
+
         $selection = $this->selection($projectId);
 
         if (($selection['stage_id'] ?? null) === $stageId && ($selection['content_hash'] ?? null) === $evaluation['content_hash']) {
@@ -146,6 +150,18 @@ final class SceneSourceService
         }
 
         return $this->approve($projectId, $stageId, (string) $evaluation['content_hash'], (int) ($selection['version'] ?? 0), (string) Str::uuid(), null);
+    }
+
+    /** @return ?string why the sources a scene run pinned — the approved script, the approved backgrounds and the design they pin — are no longer the ones in use, null while they are; a newer prompt revision is no change of source */
+    public function staleSource(string $projectId, VideoPlanningStage $stage): ?string
+    {
+        try {
+            $problem = $this->workflowFor($projectId)['adapter']->sourceProblem($projectId, $this->source($stage));
+        } catch (RuntimeException $e) {
+            return $e->getMessage();
+        }
+
+        return $problem === null ? null : 'Nguồn của bản chia scene cần cập nhật: '.$problem;
     }
 
     /** @return array{0: ?VideoReviewDecision, 1: string} */

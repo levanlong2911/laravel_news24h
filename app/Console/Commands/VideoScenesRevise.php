@@ -10,11 +10,12 @@ class VideoScenesRevise extends Command
     protected $signature = 'video:scenes-revise
         {project : Video project id}
         {stage : Scene plan stage id the revision is written against}
-        {patch : Path to the revision JSON file (reason, scenes by id with work, continuity_start, continuity_end or assumptions)}
-        {--apply : Store the revised scene plan as a new run when every check passes}
-        {--expected= : With --apply, the patch hash of the approved preview}';
+        {patch? : Path to the revision JSON file (reason; scenes by id with work, continuity_start, continuity_end or assumptions; remove_conflicts and remove_flags as lists of indexes into data.conflicts and flags)}
+        {--apply : Store the revised scene plan as a new run when every check passes; with --select, choose the stored run}
+        {--expected= : With --apply, the patch hash of the approved preview}
+        {--select : No patch: check the stored run again as the page does and, with --apply, choose it by rule pass when it passes with status ok}';
 
-    protected $description = 'Preview (or with --apply store) a hand revision of a moto scene plan, checked against the current contract and sources; no model is called, and a stored revision takes the selection by rule pass like any run';
+    protected $description = 'Preview (or with --apply store) a hand revision of a moto scene plan, checked against the current contract and sources; no model is called, and a stored revision takes the selection by rule pass like any run. With --select, choose a stored run that now passes, unchanged';
 
     public function __construct(private readonly SceneWriterService $writer)
     {
@@ -25,6 +26,49 @@ class VideoScenesRevise extends Command
     {
         $apply = (bool) $this->option('apply');
         $expected = $this->option('expected');
+
+        if ($this->option('select')) {
+            if ($this->argument('patch') !== null) {
+                $this->error('--select takes no patch: it chooses the stored run as it is.');
+
+                return self::FAILURE;
+            }
+
+            $report = $this->writer->selectPassed((string) $this->argument('project'), (string) $this->argument('stage'), $apply);
+            $this->line($apply ? 'Mode: SELECT' : 'Mode: PREVIEW (read-only, nothing written)');
+
+            if ($report['check'] !== null) {
+                $this->line('Check now: '.$report['check']['verdict'].' · status '.($report['check']['status'] ?? '—').' · '.$report['check']['version']);
+
+                foreach ([...$report['check']['schema'], ...$report['check']['issues']] as $issue) {
+                    $this->line('  issue: '.$issue);
+                }
+            }
+
+            $this->line('Selected scene plan: '.($report['selection_stage_id'] ?? '—'));
+
+            if ($report['selected']) {
+                $this->info('This run is the selected scene plan.');
+
+                return self::SUCCESS;
+            }
+
+            if ($report['reason'] === 'preview') {
+                $this->info('This run passes with status ok. Run again with --select --apply to choose it.');
+
+                return self::SUCCESS;
+            }
+
+            $this->error('Stopped: '.$report['reason']);
+
+            return self::FAILURE;
+        }
+
+        if ($this->argument('patch') === null) {
+            $this->error('Give a patch file, or --select to choose the stored run as it is.');
+
+            return self::FAILURE;
+        }
 
         if ($apply && ! is_string($expected)) {
             $this->error('--apply needs --expected=<patch hash> from the approved preview.');

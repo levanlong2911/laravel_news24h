@@ -2033,7 +2033,7 @@ return [
                         \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V3 => [
                             'extends' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V2,
                             'phases' => [
-                                'phase-6' => ['input_format' => 'moto-scenes-input-v4', 'revisions' => [['id' => '85207e55-550d-4eef-8120-4bf34f583f90', 'sha256' => '002a0fb390137c646e74105f3e0efb7ecd97e4a0d9016309ea52b8ab6d2f4fde'], ['id' => '74a6013c-14b4-4670-bc84-950be47f2e21', 'sha256' => '171760f2ac2d60c239b5d2c4da55e3152ee3151f1e86307ba8f417b759fc1808']]],
+                                'phase-6' => ['input_format' => 'moto-scenes-input-v4', 'revisions' => [['id' => '85207e55-550d-4eef-8120-4bf34f583f90', 'sha256' => '002a0fb390137c646e74105f3e0efb7ecd97e4a0d9016309ea52b8ab6d2f4fde'], ['id' => '74a6013c-14b4-4670-bc84-950be47f2e21', 'sha256' => '171760f2ac2d60c239b5d2c4da55e3152ee3151f1e86307ba8f417b759fc1808'], ['id' => 'fdb14b6f-b144-4498-a45d-1902fcaf8992', 'sha256' => 'da80081dddab3af1c85729128cd3d3d2001a3d1b62cbcfac3eed0fefca44069f']]],
                                 'phase-7' => ['input_format' => 'moto-shots-input-v8', 'revisions' => [['id' => 'f8bf95c6-e615-43b9-a354-6be876d86ea0', 'sha256' => 'd63526336894927e6ba8385e5471dc7836acd9c671ca3612ece34e26288fc6c0']]],
                             ],
                             'actions' => [
