@@ -176,7 +176,8 @@ final class ClipPromptWriterService extends ShotPromptWriterService
         $sources = $references
             ? array_map(static fn (array $image): array => ['position' => (int) $image['position'], 'artifact_id' => (string) $image['artifact_id'], 'sha256' => (string) $image['sha256'], 'image_code' => (string) ($image['image_code'] ?? '')], $images)
             : [['position' => 0, 'artifact_id' => (string) $keyframe['artifact_id'], 'sha256' => (string) $keyframe['sha256'], 'image_code' => 'keyframe '.$shotId]];
-        $payload = MotoClipPrompt::inputs($shot, (array) $source['context'], $pins['design'], $pins['script'], ['mode' => $references ? MotoClipSourceService::REFERENCES : MotoClipSourceService::KEYFRAME, 'keyframe' => $keyframe, 'images' => $images], $audio, '', (int) $settings['max_prompt_chars']);
+        $order = array_map(static fn (array $row): array => ['id' => (string) $row['id'], 'scene' => (string) ($row['scene'] ?? '')], array_values((array) $source['plan']['shots']));
+        $payload = MotoClipPrompt::inputs($shot, ['shot_order' => $order] + (array) $source['context'], $pins['design'], $pins['script'], ['mode' => $references ? MotoClipSourceService::REFERENCES : MotoClipSourceService::KEYFRAME, 'keyframe' => $keyframe, 'images' => $images], $audio, '', (int) $settings['max_prompt_chars'], $flow['adapter']->inputsVersion());
         $pin = [
             'inputs' => (string) $payload['payload']['input_format'],
             'phase' => ['id' => (string) $pins['phase']->id, 'prompt_sha256' => (string) $pins['phase']->content_sha256],

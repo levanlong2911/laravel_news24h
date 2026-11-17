@@ -286,12 +286,20 @@
                                 @if($shot['parts_named'] !== [])<div class="d">Part: {{ implode('; ', array_map(static fn (array $item): string => $item['part'].' '.($item['name'] ?? '').' ('.($presentationLabels[$item['presentation']] ?? $item['presentation']).')', $shot['parts_named'])) }}</div>@endif
                                 @foreach($shot['work_items'] ?? [] as $item)<div class="d">Công việc {{ $item['id'] }} · {{ $item['operation'] }}: {{ implode('; ', array_map(static fn (array $place): string => $place['part'].' '.$where[$place['start']].' → '.$where[$place['end']], $item['parts'])) }}</div>@endforeach
                                 @if($shot['people'] !== [])<div class="d">Người: {{ implode('; ', array_map(static fn (array $person): string => $person['character'].' ('.(isset($person['framing']) ? $person['framing'].', mặt '.$person['face_visibility'] : $person['view']).')', $shot['people'])) }}</div>@endif
+                                @foreach($shot['event_progress'] ?? [] as $progress)
+                                    <div class="d">Tiến trình {{ $progress['event_id'] }}: {{ $progress['phase'] }} · {{ implode(', ', $progress['step_ids']) }}</div>
+                                @endforeach
+                                @if(isset($shot['composition']))
+                                    @foreach(['primary_focus' => 'Tâm điểm', 'foreground' => 'Tiền cảnh', 'background' => 'Hậu cảnh', 'spatial_relationship' => 'Quan hệ không gian', 'depth_and_framing' => 'Chiều sâu và khung hình'] as $key => $label)
+                                        @if($shot['composition'][$key] !== null)<div class="d">{{ $label }}: {{ $shot['composition'][$key] }}</div>@endif
+                                    @endforeach
+                                @endif
                                 <div class="d">Khung đầu: {{ $shot['first_frame'] }}</div>
                                 @if(isset($shot['action_timeline']))
                                     @foreach($shot['action_timeline'] as $beatStep)
                                         <div class="d">{{ $beatStep['start_ms'] }}–{{ $beatStep['end_ms'] }} ms{{ $beatStep['event_ids'] === [] ? '' : ' · '.implode(', ', $beatStep['event_ids']) }}{{ $beatStep['actor_ids'] === [] ? '' : ' · '.implode(', ', $beatStep['actor_ids']) }}: {{ $beatStep['action'] }} → {{ $beatStep['result'] }}</div>
                                     @endforeach
-                                    <div class="d">Kết quả: {{ $shot['result'] }}</div>
+                                    @if(isset($shot['result']))<div class="d">Kết quả: {{ $shot['result'] }}</div>@endif
                                     @foreach($shot['camera']['path'] as $segment)
                                         <div class="d">Máy quay {{ $segment['start_ms'] }}–{{ $segment['end_ms'] }} ms · {{ $segment['move'] }} · {{ $segment['framing'] }}: {{ $segment['description'] }} — nhìn vào {{ $segment['look_at'] }}</div>
                                     @endforeach

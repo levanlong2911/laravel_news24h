@@ -20,12 +20,43 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
         'S20' => 'shot.assumptions',
     ];
 
+    /** @var array<string, string> the source ids the seventh input adds: the composition of the shot, how far it takes each event, the scene it belongs to and the events it plays as the approved script wrote them */
+    private const COVERAGE_SOURCES = [
+        'S21' => 'shot.composition',
+        'S22' => 'shot.event_progress',
+        'S23' => 'scene',
+        'S24' => 'events',
+    ];
+
+    /** @var list<string> the fields of a shot of MotoShots 2.3.0 the seventh input hands on beside the others */
+    private const COVERAGE_FIELDS = ['composition', 'event_progress'];
+
+    /** @var list<string> what the seventh input hands on of the scene the shot belongs to, as the shot run pinned it */
+    private const SCENE_FIELDS = ['id', 'places', 'set_brief', 'blocking', 'continuity_start', 'continuity_end', 'transition_in'];
+
+    /** @var list<string> what the seventh input hands on of an event the shot plays, word for word from the approved script */
+    private const EVENT_FIELDS = ['id', 'action', 'result', 'character_ids', 'design_refs', 'operating_start', 'operating_end'];
+
     /** @var bool whether the project plans shots with an action timeline and a camera path */
     private bool $timeline = false;
+
+    /** @var bool whether the release of the project plans its shots under MotoShotsCheck::COVERAGE, whose shots carry the fields of the seventh input */
+    private bool $coverage = false;
 
     public function bind(\App\Models\VideoProject $project): void
     {
         $this->timeline = MotoPipelineRelease::cinematic($project);
+        $this->coverage = self::inputFormatFor($project) === MotoContract::CLIP_PROMPT_INPUT_V7;
+    }
+
+    /** @return string the input format a video prompt of the project is written from: the release of the project decides it, so one prompt revision is read by every shot of the project */
+    public static function inputFormatFor(\App\Models\VideoProject $project): string
+    {
+        return match (true) {
+            ! MotoPipelineRelease::cinematic($project) => MotoContract::CLIP_PROMPT_INPUT,
+            (MotoPipelineRelease::policy($project, 'shots')['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE => MotoContract::CLIP_PROMPT_INPUT_V7,
+            default => MotoContract::CLIP_PROMPT_INPUT_V5,
+        };
     }
 
     public const CONTRACT = 'moto/MotoClipPrompt@1.0.0';
@@ -91,7 +122,11 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
 
     public function inputsVersion(): string
     {
-        return $this->timeline ? MotoContract::CLIP_PROMPT_INPUT_V5 : MotoContract::CLIP_PROMPT_INPUT;
+        return match (true) {
+            $this->coverage => MotoContract::CLIP_PROMPT_INPUT_V7,
+            $this->timeline => MotoContract::CLIP_PROMPT_INPUT_V5,
+            default => MotoContract::CLIP_PROMPT_INPUT,
+        };
     }
 
     public function checkVersion(): string
@@ -169,8 +204,9 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
      * @param  array{policy: string, prefix: string, closing: list<string>}  $sound  soundPolicy() of the clip flow
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} what the model reads to write the video prompt of the shot, from the records of the shot alone with a source id for every group, and what the check reads back
      */
-    public static function inputs(array $shot, array $pinned, array $design, array $script, array $opening, array $sound, string $fingerprint, int $maxPromptChars): array
+    public static function inputs(array $shot, array $pinned, array $design, array $script, array $opening, array $sound, string $fingerprint, int $maxPromptChars, ?string $format = null): array
     {
+        $seventh = $format === MotoContract::CLIP_PROMPT_INPUT_V7;
         $keyframe = $opening['keyframe'] ?? null;
         $configurations = array_column((array) ($pinned['configurations'] ?? []), null, 'id');
         $partIds = MotoKeyframePrompt::partIds($shot, $configurations);
@@ -183,18 +219,21 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
         $limits = array_values(array_filter((array) ($pinned['limits'] ?? []), static fn (array $limit): bool => in_array($limit['id'] ?? null, (array) ($shot['limits'] ?? []), true)));
         $records = static fn (array $ids): array => array_values(array_filter(array_map(static fn (string $id): ?array => $configurations[$id] ?? null, array_map('strval', $ids))));
         $shotFields = array_intersect_key($shot, array_flip([...self::SHOT_FIELDS, ...($timeline ? ['action_timeline', 'operating_start', 'operating_end', 'cards', 'assumptions'] : [])]));
+        $shotFields += $seventh ? array_map(static fn (string $field): mixed => $shot[$field] ?? null, array_combine(self::COVERAGE_FIELDS, self::COVERAGE_FIELDS)) : [];
+        $siblings = array_values(array_filter((array) ($pinned['shot_order'] ?? []), static fn (mixed $row): bool => is_array($row) && ($row['scene'] ?? null) === ($shot['scene'] ?? null)));
+        $scene = collect((array) ($pinned['scenes'] ?? []))->firstWhere('id', $shot['scene'] ?? null);
         $whole = ($shot['reveal'] ?? null) === 'whole';
         $themed = $timeline ? [
             'markings' => array_values(array_filter((array) ($design['motorcycle']['markings'] ?? []), static fn (array $marking): bool => $whole || in_array($marking['part'] ?? null, $named, true))),
             'identity_rules' => array_values(array_filter((array) ($design['identity_rules'] ?? []), static fn (array $rule): bool => $whole || in_array('MOTORCYCLE', (array) ($rule['scope'] ?? []), true) || array_intersect([...(array) ($rule['scope'] ?? []), ...(array) ($rule['refs'] ?? [])], $named) !== [])),
             'features' => array_values(array_map(static fn (array $feature): array => array_intersect_key($feature, array_flip(['id', 'name', 'parts', 'visible_expression', 'effect', 'modes', 'use_sequence'])), array_filter((array) ($design['features'] ?? []), static fn (array $feature): bool => $whole || array_intersect((array) ($feature['parts'] ?? []), $named) !== []))),
         ] : [];
-        $sourceMap = $timeline ? self::SOURCES + self::TIMELINE_SOURCES : self::SOURCES;
+        $sourceMap = self::SOURCES + ($timeline ? self::TIMELINE_SOURCES : []) + ($seventh ? self::COVERAGE_SOURCES : []);
         $shotFields['parts'] = array_map(static fn (array $item): array => $item + ['name' => $designParts[$item['part']]['name'] ?? null], (array) ($shot['parts'] ?? []));
         $shotFields['configurations'] = ['start' => $records((array) ($shot['configurations']['start'] ?? [])), 'end' => $records((array) ($shot['configurations']['end'] ?? []))];
 
         $payload = [
-            'input_format' => $timeline ? MotoContract::CLIP_PROMPT_INPUT_V5 : MotoContract::CLIP_PROMPT_INPUT,
+            'input_format' => $format ?? ($timeline ? MotoContract::CLIP_PROMPT_INPUT_V5 : MotoContract::CLIP_PROMPT_INPUT),
             'shot_id' => (string) $shot['id'],
             'source_fingerprint' => $fingerprint,
             'input_mode' => (string) $opening['mode'],
@@ -232,8 +271,11 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
                 'description' => $characters[$person['character']] ?? null,
             ], (array) ($shot['people'] ?? [])),
             'sound_policy' => $sound,
-        ];
-        $payload['sources'] = array_map(static fn (string $path): array => ['path' => $path, 'value' => data_get($payload, $path)], $sourceMap);
+        ] + ($seventh ? ['scene' => is_array($scene) ? array_intersect_key($scene, array_flip(self::SCENE_FIELDS)) + [
+            'shot_position' => ($at = array_search($shot['id'], array_column($siblings, 'id'), true)) === false ? null : $at + 1,
+            'shot_count' => $siblings === [] ? null : count($siblings),
+        ] : null, 'events' => self::events($shot, $beats)] : []);
+        $payload['sources'] =array_map(static fn (string $path): array => ['path' => $path, 'value' => data_get($payload, $path)], $sourceMap);
         $internal = [
             (string) $shot['id'],
             (string) ($shot['scene'] ?? ''),
@@ -255,6 +297,10 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
                 ...array_map('strval', array_column((array) ($shot['placed_cards'] ?? []), 'card')),
                 ...array_map('strval', array_column((array) ($design['participant_roles'] ?? []), 'id')),
             ] : []),
+            ...($seventh ? [
+                ...array_map('strval', array_merge([], ...array_map(static fn (array $event): array => array_filter((array) ($event['design_refs'] ?? []), 'is_string'), (array) $payload['events']))),
+                ...array_map('strval', (array) ($payload['scene']['places'] ?? [])),
+            ] : []),
         ];
         $internal = array_values(array_unique(array_filter($internal, static fn (string $id): bool => $id !== '')));
 
@@ -274,6 +320,30 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
                 'max_prompt_chars' => $maxPromptChars,
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $shot  the stored shot
+     * @param  list<array<string, mixed>>  $beats  the beats of the approved script the shot covers
+     * @return list<array<string, mixed>> every event the shot plays, in the order it covers them: its beat, the record of the event as the approved script wrote it and how far this shot takes it; an event the script does not have is left out, never written by code
+     */
+    private static function events(array $shot, array $beats): array
+    {
+        $beats = array_column($beats, null, 'id');
+        $phases = array_column((array) ($shot['event_progress'] ?? []), 'phase', 'event_id');
+        $events = [];
+
+        foreach ((array) ($shot['coverage'] ?? []) as $item) {
+            $own = array_column((array) ($beats[$item['beat']]['events'] ?? []), null, 'id');
+
+            foreach (array_map('strval', (array) ($item['event_ids'] ?? [])) as $id) {
+                if (is_array($own[$id] ?? null)) {
+                    $events[] = ['beat' => (string) $item['beat']] + array_intersect_key($own[$id], array_flip(self::EVENT_FIELDS)) + ['progress' => $phases[$id] ?? null];
+                }
+            }
+        }
+
+        return $events;
     }
 
     public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array

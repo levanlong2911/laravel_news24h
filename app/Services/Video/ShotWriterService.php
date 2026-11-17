@@ -16,6 +16,7 @@ use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -39,7 +40,7 @@ final class ShotWriterService implements QueuedStageService
     /** @return array{0: ?VideoPlanningStage, 1: string} */
     public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null): array
     {
-        return (new SpecStageRunner($this->stageStore))->submit(
+        return $this->approvedWhenPassed($projectId, (new SpecStageRunner($this->stageStore))->submit(
             'shots',
             $projectId,
             PlanningStageName::SHOTS,
@@ -51,7 +52,24 @@ final class ShotWriterService implements QueuedStageService
             'lập kế hoạch shot',
             'shots',
             $requester,
-        );
+        ));
+    }
+
+    /**
+     * @param  array{0: ?VideoPlanningStage, 1: string}  $result  what the run became; a run still waiting, one that failed its check and a failed approval leave it as it is
+     * @return array{0: ?VideoPlanningStage, 1: string}
+     */
+    private function approvedWhenPassed(string $projectId, array $result): array
+    {
+        if ($result[0] !== null) {
+            try {
+                $this->sources->approvePassed($projectId, (string) $result[0]->id);
+            } catch (\Throwable $e) {
+                Log::error('shots: could not record the rule-pass approval', ['stage_id' => $result[0]->id, 'exception' => $e]);
+            }
+        }
+
+        return $result;
     }
 
     /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
@@ -63,7 +81,7 @@ final class ShotWriterService implements QueuedStageService
             return [null, 'Lượt lập kế hoạch shot không còn — bỏ qua.'];
         }
 
-        return (new SpecStageRunner($this->stageStore))->execute(
+        return $this->approvedWhenPassed($projectId, (new SpecStageRunner($this->stageStore))->execute(
             $stageId,
             $token,
             fn (): array => $this->prepare($projectId),
@@ -71,7 +89,7 @@ final class ShotWriterService implements QueuedStageService
             fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
             'lập kế hoạch shot',
             'shots',
-        );
+        ));
     }
 
     /** @return array{0: bool, 1: string} reason pending when a run still waiting in the queue was cancelled */
@@ -169,7 +187,7 @@ final class ShotWriterService implements QueuedStageService
                 'purpose' => (string) $shot['purpose'],
                 'first_frame' => (string) $shot['first_frame'],
                 'action' => (string) $shot['action'],
-                'result' => (string) $shot['result'],
+                'result' => (string) ($shot['result'] ?? $shot['end_frame'] ?? ''),
                 'before' => $encode($before),
                 'after' => $encode($after),
             ];

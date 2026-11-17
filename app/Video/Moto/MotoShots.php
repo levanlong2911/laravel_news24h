@@ -47,7 +47,10 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
     private const PLAN_ELEVATION = 60;
 
     /** @var array<string, ?string> for each MotoShots major.minor version, the timing a run of it pins: none before 1.2, where the model writes every screen time; MotoShotsCheck::TIMING from 1.2, where code sets whole and closing parts and the shot */
-    private const TIMINGS = ['1.0' => null, '1.1' => null, '1.2' => MotoShotsCheck::TIMING, '1.3' => MotoShotsCheck::TIMING, '2.0' => MotoShotsCheck::TIMING_FIXED, '2.1' => MotoShotsCheck::TIMING_FIXED];
+    private const TIMINGS = ['1.0' => null, '1.1' => null, '1.2' => MotoShotsCheck::TIMING, '1.3' => MotoShotsCheck::TIMING, '2.0' => MotoShotsCheck::TIMING_FIXED, '2.1' => MotoShotsCheck::TIMING_FIXED, '2.2' => MotoShotsCheck::TIMING_FIXED, '2.3' => MotoShotsCheck::TIMING_FIXED];
+
+    /** @var int the most action steps the shot schema takes in one shot */
+    private const STEPS_PER_SHOT = 6;
 
     /** @var list<string> the fields of a build state the keyframe prompt resolves a part's surface from */
     private const SURFACE_STATE_KEYS = ['id', 'kind', 'model_medium', 'surface', 'surfaces', 'in_progress', 'exceptions'];
@@ -82,6 +85,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
     {
         return match (true) {
             ! $this->eventful => MotoContract::SHOTS_INPUT,
+            ($this->releasePolicy['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE => MotoContract::SHOTS_INPUT_V9,
             $this->law !== null => MotoContract::SHOTS_INPUT_V8,
             isset($this->releasePolicy['shot_editing_policy']) => MotoContract::SHOTS_INPUT_V6,
             default => MotoContract::SHOTS_INPUT_V5,
@@ -145,6 +149,12 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
             $planLaw,
         );
         $pinned = array_intersect_key($this->releasePolicy, array_flip(['shot_grouping_policy', 'shot_editing_policy', 'shot_budget']));
+
+        if (($pinned['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE) {
+            $built['payload']['film']['coverage_policy'] = MotoShotsCheck::COVERAGE;
+            $built['context']['input']['film']['coverage_policy'] = MotoShotsCheck::COVERAGE;
+        }
+
         $problems = self::precheck($built['context'] + $pinned);
 
         if ($problems !== []) {
@@ -508,6 +518,23 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
                 $problems[] = 'Bản phát hành ghim chính sách biên tập shot nhưng không khai shot_budget.max là số nguyên dương.';
             } elseif (count((array) $context['scenes']) > $max) {
                 $problems[] = 'Bản chia scene có '.count((array) $context['scenes'])." scene nhưng ngân sách chỉ cho {$max} shot — mỗi scene cần ít nhất một shot; đổi ngân sách hoặc bản chia scene.";
+            }
+
+            if ($context['shot_editing_policy'] === MotoShotsCheck::COVERAGE) {
+                $events = array_sum(array_map(static fn (array $beat): int => count((array) ($beat['events'] ?? [])), (array) $context['beats']));
+                $room = is_int($max) ? $max * self::STEPS_PER_SHOT : 0;
+
+                if ($events > $room) {
+                    $problems[] = "Kịch bản có {$events} sự kiện nhưng {$max} shot chỉ chứa được {$room} bước hành động (".self::STEPS_PER_SHOT.' bước mỗi shot) — không thể diễn đủ mọi sự kiện; đổi ngân sách hoặc kịch bản.';
+                }
+
+                $problems = [...$problems, ...MotoShotsCheck::unlinkedWorkIssues((array) $context['scenes'])];
+            }
+        }
+
+        foreach ((array) ($context['directives'] ?? []) as $directive) {
+            if (count((array) ($directive['event_anchors'] ?? [])) > self::STEPS_PER_SHOT) {
+                $problems[] = "Chỉ dẫn {$directive['id']} chốt ".count((array) $directive['event_anchors']).' mốc cho một shot, hợp đồng shot chỉ nhận '.self::STEPS_PER_SHOT.' bước hành động — sửa chỉ dẫn trong kịch bản trước khi lập shot.';
             }
         }
 

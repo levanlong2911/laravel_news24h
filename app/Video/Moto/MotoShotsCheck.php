@@ -20,6 +20,15 @@ final class MotoShotsCheck
     /** @var string the editing policy a run pins as shot_editing_policy: the plan is a selection within shot_budget.max shots, and every event and work item of the source is either shown by a shot or listed in data.omissions, never both. A run that pins none must show every event and every work item */
     public const EDITING = 'editorial-20-v1';
 
+    /** @var string the policy a run pins as shot_editing_policy from MotoShots@2.2.0 on: the plan stays within shot_budget.max shots and plays every event of the source — data.omissions is empty, an event may run on through neighbouring shots as its event_progress says, and the work on a part a shot completes is derived from the events it completes, never written by the model */
+    public const COVERAGE = 'full-coverage-budget-v1';
+
+    /** @var list<string> the editing policies code can check */
+    private const EDITING_POLICIES = [self::EDITING, self::COVERAGE];
+
+    /** @var list<string> the phases of event_progress that complete an event */
+    private const COMPLETES = ['whole', 'finish'];
+
     /** @var string the pattern of a design reference that is a custom feature or a signature moment, which an edited film must show somewhere */
     private const IDENTITY_REF = '/^[FM]\d+$/';
 
@@ -100,9 +109,11 @@ final class MotoShotsCheck
 
         $editing = ($context['shot_editing_policy'] ?? null) !== null;
 
-        if ($editing && $context['shot_editing_policy'] !== self::EDITING) {
-            return self::result(self::UNSCORED, null, 'Lượt chạy ghim shot_editing_policy '.json_encode($context['shot_editing_policy']).'; code chỉ tính '.self::EDITING.' hoặc lượt không ghim chính sách biên tập.');
+        if ($editing && ! in_array($context['shot_editing_policy'], self::EDITING_POLICIES, true)) {
+            return self::result(self::UNSCORED, null, 'Lượt chạy ghim shot_editing_policy '.json_encode($context['shot_editing_policy']).'; code chỉ tính '.implode(', ', self::EDITING_POLICIES).' hoặc lượt không ghim chính sách biên tập.');
         }
+
+        $full = $editing && $context['shot_editing_policy'] === self::COVERAGE;
 
         $status = is_string($response['status'] ?? null) ? $response['status'] : null;
         $schemaLines = array_map(static fn (array $v): string => trim($v['path'].' '.$v['message']), $schema);
@@ -127,16 +138,25 @@ final class MotoShotsCheck
 
         $data = (array) $response['data'];
         $written = array_values((array) $data['shots']);
+        $written = $full ? self::withCompletedWork($written, (array) $context['scenes']) : $written;
         $shots = array_map(self::legacy(...), $written);
         $conflicts = array_values((array) $data['conflicts']);
         $beats = array_column((array) $context['beats'], null, 'id');
         $scenes = array_column((array) $context['scenes'], null, 'id');
         $order = array_column($shots, 'id');
         $timing = self::timing($shots, $beats, $context['timing'] ?? null);
-        $omissions = $editing ? array_values((array) ($data['omissions'] ?? [])) : [];
+        $omissions = $editing && ! $full ? array_values((array) ($data['omissions'] ?? [])) : [];
         $issues = [...$issues, ...self::idIssues($shots, $scenes), ...$timing['issues'], ...($fixed
-            ? [...self::eventCoverageIssues($written, $beats, $scenes, $editing ? array_merge([], ...array_column($omissions, 'event_ids')) : null), ...self::timelineIssues($written, $beats, $context)]
+            ? [...self::eventCoverageIssues($written, $beats, $scenes, $editing && ! $full ? array_merge([], ...array_column($omissions, 'event_ids')) : null), ...self::timelineIssues($written, $beats, $context)]
             : self::coverageIssues($shots, $beats, $scenes, (int) $context['total_ms'], $timing['shots']))];
+
+        if ($full) {
+            if ((array) ($data['omissions'] ?? []) !== []) {
+                $issues[] = 'data.omissions phải rỗng: chính sách '.self::COVERAGE.' không để sự kiện hay công việc nào của nguồn ngoài hình.';
+            }
+
+            $issues = [...$issues, ...self::progressIssues($written), ...self::unlinkedWorkIssues((array) $context['scenes'])];
+        }
 
         if ($editing) {
             $max = $context['shot_budget']['max'] ?? null;
@@ -149,7 +169,9 @@ final class MotoShotsCheck
                 $issues[] = 'Kế hoạch có '.count($shots)." shot, vượt ngân sách {$max} shot của phim.";
             }
 
-            $issues = [...$issues, ...self::omissionIssues($omissions, $written, $beats, $scenes, $context)];
+            if (! $full) {
+                $issues = [...$issues, ...self::omissionIssues($omissions, $written, $beats, $scenes, $context)];
+            }
         }
 
         $warnings = [];
@@ -183,7 +205,11 @@ final class MotoShotsCheck
                 if (in_array($key, $shown, true) && in_array($key, $left, true)) {
                     $issues[] = "{$label} vừa có shot thể hiện vừa nằm trong omissions — mỗi công việc chỉ ở một nơi.";
                 } elseif (! in_array($key, $shown, true) && ! in_array($key, $left, true)) {
-                    $issues[] = $editing ? "{$label} không có shot nào thể hiện và cũng không nằm trong omissions." : "{$label} không có shot nào thể hiện.";
+                    $issues[] = match (true) {
+                        $full => "{$label} chưa hoàn tất ở shot nào: các sự kiện gắn với công việc này chưa được shot nào diễn tới whole hoặc finish.",
+                        $editing => "{$label} không có shot nào thể hiện và cũng không nằm trong omissions.",
+                        default => "{$label} không có shot nào thể hiện.",
+                    };
                 }
             }
         }
@@ -461,6 +487,268 @@ final class MotoShotsCheck
 
         if ($issues === [] && $sum !== $total) {
             $issues[] = "Các shot giữ tổng {$sum} ms; phim dài {$total} ms.";
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the shots as written under COVERAGE
+     * @param  list<array<string, mixed>>  $scenes  the scenes of the pinned scene plan, each work item with its id and the events its evidence names
+     * @return array<string, list<string>> by shot id, the work items of the scene plan the shot completes, in the scene plan's order: a work item is completed in the shot that completes the last of its events (event_progress whole or finish), and by no shot while one of its events is not completed. A work item with no event is completed by none
+     */
+    public static function completedWork(array $shots, array $scenes): array
+    {
+        $doneAt = [];
+
+        foreach (array_values($shots) as $index => $shot) {
+            foreach ((array) ($shot['event_progress'] ?? []) as $entry) {
+                if (in_array($entry['phase'] ?? null, self::COMPLETES, true)) {
+                    $doneAt[(string) $entry['event_id']] ??= $index;
+                }
+            }
+        }
+
+        $ids = array_column(array_values($shots), 'id');
+        $completed = [];
+
+        foreach ($scenes as $scene) {
+            foreach ((array) ($scene['work'] ?? []) as $item) {
+                $events = array_column((array) ($item['events'] ?? []), 'id');
+                $at = array_map(static fn (string $event): ?int => $doneAt[$event] ?? null, array_map('strval', $events));
+
+                if ($events !== [] && ! in_array(null, $at, true)) {
+                    $completed[(string) $ids[max($at)]][] = (string) $item['id'];
+                }
+            }
+        }
+
+        return $completed;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the shots of a plan written under COVERAGE, as written or as derived
+     * @param  array<string, mixed>  $context  the check context the run pinned: scenes with their beats and work, beats with their events
+     * @return array{scenes: list<array<string, mixed>>, shot_count: int, duration_ms: int, problems: list<string>} for every scene of the pinned plan: the events of its beats in the script's order with the shots that show each and its chain of progress, the events missing, played out of order or completed more than once, the events the shots name that the scene does not have, every work item with the events tied to it and the shot that completes it, and the number and length of its shots; it reads only, the verdict of the plan stays with evaluate()
+     */
+    public static function coverageReport(array $shots, array $context): array
+    {
+        $shots = array_values($shots);
+        $events = [];
+
+        foreach ((array) ($context['beats'] ?? []) as $beat) {
+            $events[(string) $beat['id']] = array_map('strval', array_column((array) ($beat['events'] ?? []), 'id'));
+        }
+
+        $completed = self::completedWork($shots, array_values((array) ($context['scenes'] ?? [])));
+        $doneIn = [];
+
+        foreach ($completed as $shotId => $items) {
+            $doneIn += array_fill_keys($items, $shotId);
+        }
+
+        $scenes = [];
+        $problems = [];
+
+        foreach ((array) ($context['scenes'] ?? []) as $scene) {
+            $id = (string) $scene['id'];
+            $own = array_values(array_filter($shots, static fn (array $shot): bool => ($shot['scene'] ?? null) === $id));
+            $source = array_merge([], ...array_map(static fn (string $beat): array => $events[$beat] ?? [], array_map('strval', (array) $scene['beats'])));
+            $chains = [];
+            $played = [];
+
+            foreach ($own as $shot) {
+                foreach ((array) ($shot['event_progress'] ?? []) as $entry) {
+                    $event = (string) $entry['event_id'];
+                    $chains[$event][] = ['shot' => (string) $shot['id'], 'phase' => (string) $entry['phase'], 'step_ids' => array_values((array) $entry['step_ids'])];
+
+                    if (! in_array($event, $played, true)) {
+                        $played[] = $event;
+                    }
+                }
+            }
+
+            $rows = [];
+            $missing = [];
+            $repeated = [];
+
+            foreach ($source as $event) {
+                $chain = $chains[$event] ?? [];
+                $done = count(array_filter($chain, static fn (array $link): bool => in_array($link['phase'], self::COMPLETES, true)));
+                $rows[] = ['event' => $event, 'shots' => array_column($chain, 'shot'), 'progress' => $chain, 'completed' => $done];
+
+                if ($done === 0) {
+                    $missing[] = $event;
+                } elseif ($done > 1) {
+                    $repeated[] = $event;
+                }
+            }
+
+            $extra = array_values(array_diff($played, $source));
+            $expected = array_values(array_intersect($source, $played));
+            $shown = array_values(array_intersect($played, $source));
+            $disordered = $shown === $expected ? [] : $shown;
+            $work = array_map(static fn (array $item): array => [
+                'id' => (string) $item['id'],
+                'beat' => $item['beat'] ?? null,
+                'part' => $item['part'] ?? null,
+                'operation' => $item['operation'] ?? null,
+                'events' => array_map('strval', array_column((array) ($item['events'] ?? []), 'id')),
+                'completed_in' => $doneIn[(string) $item['id']] ?? null,
+            ], array_values((array) ($scene['work'] ?? [])));
+
+            foreach ($missing as $event) {
+                $problems[] = "{$id}: {$event} chưa hoàn tất ở shot nào.";
+            }
+
+            foreach ($repeated as $event) {
+                $problems[] = "{$id}: {$event} hoàn tất hơn một lần.";
+            }
+
+            foreach ($extra as $event) {
+                $problems[] = "{$id}: {$event} không phải sự kiện của scene.";
+            }
+
+            if ($disordered !== []) {
+                $problems[] = "{$id}: sự kiện diễn theo thứ tự ".implode(', ', $disordered).'; nguồn là '.implode(', ', $expected).'.';
+            }
+
+            foreach ($work as $item) {
+                if ($item['events'] === []) {
+                    $problems[] = "{$id}: công việc {$item['id']} không gắn với sự kiện nào.";
+                } elseif ($item['completed_in'] === null) {
+                    $problems[] = "{$id}: công việc {$item['id']} chưa hoàn tất ở shot nào.";
+                }
+            }
+
+            $scenes[] = [
+                'scene' => $id,
+                'events' => $rows,
+                'missing' => $missing,
+                'extra' => $extra,
+                'out_of_order' => $disordered,
+                'completed_twice' => $repeated,
+                'work' => $work,
+                'shots' => array_column($own, 'id'),
+                'shot_count' => count($own),
+                'duration_ms' => array_sum(array_map(static fn (array $shot): int => (int) ($shot['used_duration_ms'] ?? $shot['render_duration_ms'] ?? 0), $own)),
+            ];
+        }
+
+        return [
+            'scenes' => $scenes,
+            'shot_count' => count($shots),
+            'duration_ms' => array_sum(array_column($scenes, 'duration_ms')),
+            'problems' => $problems,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the shots as written under COVERAGE
+     * @param  list<array<string, mixed>>  $scenes
+     * @return list<array<string, mixed>> the shots, each with what code states under this policy and the model does not write: `work` set to the work items it completes, and the one take the policy allows — MotoContract::SHOT_MS rendered from reference images, all of it used
+     */
+    public static function withCompletedWork(array $shots, array $scenes): array
+    {
+        $completed = self::completedWork($shots, $scenes);
+        $take = ['render_duration_ms' => MotoContract::SHOT_MS, 'mode' => MotoContract::REFERENCE_TO_VIDEO, 'used_start_ms' => 0, 'used_duration_ms' => MotoContract::SHOT_MS];
+
+        return array_map(static fn (array $shot): array => ['work' => $completed[(string) $shot['id']] ?? []] + $take + $shot, array_values($shots));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $scenes
+     * @return list<string> a work item of the scene plan whose evidence names no event: its completion cannot be derived, and it is never guessed from its words
+     */
+    public static function unlinkedWorkIssues(array $scenes): array
+    {
+        $issues = [];
+
+        foreach ($scenes as $scene) {
+            foreach ((array) ($scene['work'] ?? []) as $item) {
+                if ((array) ($item['events'] ?? []) === []) {
+                    $issues[] = ($item['id'] ?? '?')." ({$item['beat']} {$item['part']} {$item['operation']}) không gắn với sự kiện nào của kịch bản — không suy ra được shot hoàn tất công việc này.";
+                }
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the shots as written under COVERAGE
+     * @return list<string> by shot: an entry of event_progress for an event the shot does not cover or named twice, a covered event with no entry, steps the entry names that the timeline does not have or that do not play that event, a step of the event the entry leaves out; and by event across the shots: a chain that is not whole, or start, any continue, then finish, in shots that follow one another in one scene
+     */
+    private static function progressIssues(array $shots): array
+    {
+        $issues = [];
+        $chains = [];
+
+        foreach (array_values($shots) as $index => $shot) {
+            $id = (string) $shot['id'];
+            $covered = array_map('strval', array_merge([], ...array_column((array) $shot['coverage'], 'event_ids')));
+            $steps = array_column(array_values((array) $shot['action_timeline']), null, 'id');
+            $entered = [];
+
+            foreach (array_values((array) ($shot['event_progress'] ?? [])) as $entry) {
+                $event = (string) $entry['event_id'];
+
+                if (! in_array($event, $covered, true)) {
+                    $issues[] = "{$id}: event_progress nêu {$event}, không nằm trong coverage của shot.";
+
+                    continue;
+                }
+
+                if (isset($entered[$event])) {
+                    $issues[] = "{$id}: event_progress nêu {$event} hai lần — mỗi sự kiện một mục trong một shot.";
+
+                    continue;
+                }
+
+                $entered[$event] = true;
+                $named = array_map('strval', (array) $entry['step_ids']);
+
+                foreach ($named as $step) {
+                    if (! isset($steps[$step])) {
+                        $issues[] = "{$id}: event_progress của {$event} nêu {$step}, không có trong action_timeline.";
+                    } elseif (array_map('strval', (array) $steps[$step]['event_ids']) !== [$event]) {
+                        $issues[] = "{$id}: {$step} không diễn {$event} nhưng event_progress của {$event} nêu nó.";
+                    }
+                }
+
+                foreach ($steps as $stepId => $step) {
+                    if (in_array($event, array_map('strval', (array) $step['event_ids']), true) && ! in_array((string) $stepId, $named, true)) {
+                        $issues[] = "{$id}: {$stepId} diễn {$event} nhưng event_progress của {$event} không nêu nó.";
+                    }
+                }
+
+                $chains[$event][] = ['index' => $index, 'shot' => $id, 'scene' => (string) $shot['scene'], 'phase' => (string) $entry['phase']];
+            }
+
+            foreach (array_diff($covered, array_keys($entered)) as $event) {
+                $issues[] = "{$id}: {$event} có trong coverage nhưng không có mục event_progress.";
+            }
+        }
+
+        foreach ($chains as $event => $chain) {
+            $phases = array_column($chain, 'phase');
+            $shown = implode(' → ', array_map(static fn (array $link): string => "{$link['shot']} {$link['phase']}", $chain));
+            $valid = $phases === ['whole']
+                || (count($phases) >= 2 && $phases[0] === 'start' && $phases[count($phases) - 1] === 'finish' && array_diff(array_slice($phases, 1, -1), ['continue']) === []);
+
+            if (! $valid) {
+                $issues[] = "{$event}: tiến trình {$shown} không hợp lệ — một sự kiện là whole trong một shot, hoặc start, các continue rồi finish.";
+
+                continue;
+            }
+
+            foreach (array_slice($chain, 1) as $at => $link) {
+                if ($link['index'] !== $chain[$at]['index'] + 1 || $link['scene'] !== $chain[$at]['scene']) {
+                    $issues[] = "{$event}: tiến trình {$shown} đi qua các shot không liền nhau hoặc khác scene.";
+
+                    break;
+                }
+            }
         }
 
         return $issues;

@@ -97,6 +97,42 @@ final class ShotSourceService
         return (array) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['source'] ?? []);
     }
 
+    /**
+     * @return array{0: ?VideoReviewDecision, 1: string} RULE PASS is the approval of a shot plan: nobody is asked. A run that passes its check with status ok, whose derived plan is the one it stored and whose sources are still the ones in use, takes the selection; the decision keeps reviewer_id empty and basis rule_pass. Any other run stays as it is, with why
+     */
+    public function approvePassed(string $projectId, string $stageId): array
+    {
+        $stage = $this->shotStage($projectId, $stageId);
+
+        if ($stage === null) {
+            return [null, 'Kế hoạch shot này không thuộc dự án hoặc chưa chạy thành công.'];
+        }
+
+        [$evaluation, $problem] = $this->inspect($projectId, $stage);
+
+        if ($problem !== null) {
+            return [null, $problem];
+        }
+
+        try {
+            $stale = $this->workflowFor($projectId)['adapter']->sourceProblem($projectId, $this->source($stage));
+        } catch (RuntimeException $e) {
+            $stale = $e->getMessage();
+        }
+
+        if ($stale !== null) {
+            return [null, 'Nguồn của kế hoạch shot cần cập nhật: '.$stale];
+        }
+
+        $selection = $this->selection($projectId);
+
+        if (($selection['stage_id'] ?? null) === $stageId && ($selection['content_hash'] ?? null) === $evaluation['content_hash']) {
+            return [null, 'already_approved'];
+        }
+
+        return $this->approve($projectId, $stageId, (string) $evaluation['content_hash'], (int) ($selection['version'] ?? 0), (string) Str::uuid(), null);
+    }
+
     /** @return array{0: ?VideoReviewDecision, 1: string} */
     public function approve(string $projectId, string $stageId, string $expectedHash, int $expectedVersion, string $operationId, ?string $reviewerId): array
     {
@@ -187,6 +223,7 @@ final class ShotSourceService
                     'planner_version' => $evaluation['derived']['version'] ?? null,
                     'planning_revision' => $stage->planning_revision,
                     'selection_version' => $version + 1,
+                    'basis' => $reviewerId === null ? 'rule_pass' : 'reviewer',
                 ],
             ]);
 

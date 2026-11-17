@@ -2062,8 +2062,23 @@ return [
                             'phases' => [
                                 'phase-3' => ['input_format' => 'moto-design-input-v2', 'revisions' => [['id' => 'd65a602b-d903-4e8e-9997-5c2d9cb4232e', 'sha256' => '399bd8d54dab135bbd8894e58bb784f960b80a9d29ebb63f2c5b1fdb720c174a']]],
                                 'phase-4' => ['input_format' => 'moto-script-input-v4', 'revisions' => [['id' => '74a35d38-c0be-44ab-ad8c-6fc3f749630a', 'sha256' => '5f98464d2be7e671c0e2595046294c27d2e44d5c25070ae9fae5765d2dabc120']]],
+                                'phase-7' => ['input_format' => 'moto-shots-input-v9', 'revisions' => [['id' => 'b8d022ac-d1f3-4e48-b0a5-823d3ac6bc77', 'sha256' => 'cec8f0896f34f9bb8d5877fc038c0bfe9887def6d28f2d38eccc48a987cedf32']]],
+                                'phase-10' => ['input_format' => 'moto-clip-prompt-input-v7', 'revisions' => [['id' => '51b1c615-5859-4b23-9ce1-091f7276c752', 'sha256' => '089a00b80cd2f6c2ff44345e8603d0ed9c60237f93e72e97a6651ed85e026b17']]],
                             ],
                             'actions' => [
+                                'spec.shots' => [
+                                    'phase' => 'phase-7',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['shots'],
+                                    ],
+                                    'outputs' => [
+                                        'shots' => ['namespace' => 'moto', 'schema' => 'MotoShots', 'version' => '2.3.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 7 Output (format moto-shots-v2, policy full-coverage-budget-v1): how every approved scene is filmed within the shot budget, playing every event of the source with no omission — each shot with its camera and camera path, composition, action timeline, event progress, first frame, end frame, operating states, parts, people by character id, background and cards; the length and the mode of a take are set by code'],
+                                    ],
+                                ],
                                 'spec.design' => [
                                     'phase' => 'phase-3',
                                     'instructions' => [],
@@ -2094,7 +2109,7 @@ return [
                             'policy' => [
                                 'script' => ['stationary_requires_support' => true],
                                 'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
-                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::EDITING, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 20, 'target' => 20]],
                             ],
                         ],
                         // The release new projects take from now on. It is the release above with the design revision whose prompt agrees with the refs policy of MotoDesignRefs: the refs of a build state name only ids the answer defines, never a departure or a model-sheet view, an identity rule only by its own id, and no text holds an id. The design schema (MotoDesign 2.2.2) and every other revision stay as above. A policy is read from the pinned release alone, never from the release it extends, so the policy above is written again.
@@ -2106,7 +2121,7 @@ return [
                             'policy' => [
                                 'script' => ['stationary_requires_support' => true],
                                 'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
-                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::EDITING, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 20, 'target' => 20]],
                             ],
                         ],
                     ],

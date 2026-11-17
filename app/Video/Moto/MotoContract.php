@@ -75,6 +75,9 @@ final class MotoContract
     /** @var string the input of a shot plan that also carries the signature moments of the design: the seventh input with motorcycle.signature_moments, each record as the design holds it, and no confirmation of procedures */
     public const SHOTS_INPUT_V8 = 'moto-shots-input-v8';
 
+    /** @var string the input of a shot plan that plays every event of the source within the shot budget (MotoShotsCheck::COVERAGE): the eighth input with film.coverage_policy; its answer is a MotoShots 2.3.0 document */
+    public const SHOTS_INPUT_V9 = 'moto-shots-input-v9';
+
     /** @var string the way of making the clip of a shot from reference images, with no keyframe */
     public const REFERENCE_TO_VIDEO = 'reference_to_video';
 
@@ -101,6 +104,9 @@ final class MotoContract
 
     /** @var string the input of a clip prompt of the cinematic releases from phase-10 revision 16: as v4, with what the shot plan assumed for the shot, the ids the prompt must not hold, and for a person either the cell of a look or the whole identity master with the cells it holds */
     public const CLIP_PROMPT_INPUT_V5 = 'moto-clip-prompt-input-v5';
+
+    /** @var string the input of a video prompt for a project whose shots are planned under MotoShotsCheck::COVERAGE: the fifth input with the shot's composition and event progress, the scene the shot belongs to and the events it plays as the approved script wrote them */
+    public const CLIP_PROMPT_INPUT_V7 = 'moto-clip-prompt-input-v7';
 
     public const CLIP_PROMPT_FORMAT = 'moto-clip-prompt-v1';
 

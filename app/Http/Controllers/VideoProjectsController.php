@@ -584,7 +584,9 @@ class VideoProjectsController extends Controller
             PlanningStageName::LOCATIONS->value => route('video-projects.locations', $succeeded ? ['id' => $id, 'stage' => $row->id] : ['id' => $id]),
             PlanningStageName::SCRIPT->value => route('video-projects.anchor', $succeeded ? ['id' => $id, 'script' => $row->id] : ['id' => $id]).'#scriptPanel',
             PlanningStageName::SCENES->value => route('video-projects.scene', $succeeded ? ['id' => $id, 'stage' => $row->id] : ['id' => $id]),
-            PlanningStageName::SHOTS->value => route('video-projects.scene', $succeeded ? ['id' => $id, 'shots' => $row->id] : ['id' => $id]),
+            PlanningStageName::SHOTS->value => $this->shotPlanChosen($id, $row)
+                ? route('video-projects.reference', ['id' => $id, 'shots_approved' => (string) $row->id])
+                : route('video-projects.scene', $succeeded ? ['id' => $id, 'shots' => $row->id] : ['id' => $id]),
             PlanningStageName::YACHT_DESIGN->value => route('video-projects.anchor', $id).($succeeded && ($row->output_json['check']['verdict'] ?? null) === YachtDesignCheck::PASS ? '#modelSheetPanel' : ''),
             PlanningStageName::MODEL_SHEET_PROMPT->value => route('video-projects.anchor', $id).'#modelSheetPanel',
             default => route('video-projects.anchor', $id),
@@ -645,11 +647,24 @@ class VideoProjectsController extends Controller
             return $this->queued($request, $id, $stage, 'lập kế hoạch shot', route('video-projects.scene', $id));
         }
 
+        if ($this->shotPlanChosen($id, $stage)) {
+            return redirect()->route('video-projects.reference', $id)->with('success', self::SHOT_PLAN_APPROVED);
+        }
+
         return redirect()->route('video-projects.scene', ['id' => $id, 'shots' => $stage->id])->with('success', match ($reason) {
             'cached' => 'Nguồn và prompt không đổi — dùng lại kế hoạch shot đã lưu, không gọi model.',
             'replayed' => 'Thao tác này đã chạy trước đó — không gọi model lần nữa.',
-            default => 'Đã lưu kế hoạch shot — xem kết quả kiểm rồi duyệt.',
+            default => 'Đã lưu kế hoạch shot — chưa đạt kiểm nên chưa được duyệt; xem kết quả kiểm bên dưới.',
         });
+    }
+
+    private const SHOT_PLAN_APPROVED = 'Đã duyệt kế hoạch shot thành công — kế hoạch đạt kiểm nên được duyệt tự động.';
+
+    /** @return bool whether the shot run is the shot plan the project uses now: a run that passed was approved by rule pass when it finished */
+    private function shotPlanChosen(string $id, VideoPlanningStage $stage): bool
+    {
+        return $stage->status === VideoPlanningStageStatus::SUCCEEDED->value
+            && (app(ShotSourceService::class)->selection($id)['stage_id'] ?? null) === (string) $stage->id;
     }
 
     public function resetShots(string $id)
@@ -962,6 +977,10 @@ class VideoProjectsController extends Controller
         if ($parts->supports($id)) {
             if ($request->isMethod('post')) {
                 return redirect()->route('video-projects.reference', $id)->with('error', 'Dùng các thao tác của bảng Reference.');
+            }
+
+            if (is_string($request->query('shots_approved')) && (app(ShotSourceService::class)->selection($id)['stage_id'] ?? null) === $request->query('shots_approved') && ! session()->has('success')) {
+                session()->now('success', self::SHOT_PLAN_APPROVED);
             }
 
             $panel = $parts->panel($id);

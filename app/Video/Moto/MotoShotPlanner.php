@@ -22,7 +22,8 @@ final class MotoShotPlanner
         $data = (array) $document['data'];
         $scenes = array_column((array) $context['scenes'], null, 'id');
         $beats = array_column((array) $context['beats'], null, 'id');
-        $written = array_map(MotoShotsCheck::legacy(...), array_values((array) $data['shots']));
+        $authored = array_values((array) $data['shots']);
+        $written = array_map(MotoShotsCheck::legacy(...), ($context['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE ? MotoShotsCheck::withCompletedWork($authored, (array) $context['scenes']) : $authored);
         $pinned = $context['timing'] ?? null;
         $fixed = $pinned === MotoShotsCheck::TIMING_FIXED;
         $timing = MotoShotsCheck::timing($written, $beats, $pinned)['shots'];

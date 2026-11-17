@@ -49,7 +49,7 @@ final class MotoClipPlanService
         $text = (string) (collect($resolved->parts())->firstWhere('code', $manifest['phase']['code'])['content'] ?? '');
 
         $project = \App\Models\VideoProject::query()->find($projectId);
-        $inputFormat = $project !== null && \App\Video\Moto\MotoPipelineRelease::cinematic($project) ? MotoContract::CLIP_PROMPT_INPUT_V5 : MotoContract::CLIP_PROMPT_INPUT;
+        $inputFormat = $project === null ? MotoContract::CLIP_PROMPT_INPUT : \App\Video\Moto\MotoClipPrompt::inputFormatFor($project);
 
         if (! str_contains($text, MotoContract::CLIP_PROMPT_FORMAT) || ! str_contains($text, 'Input format: `'.$inputFormat.'`')) {
             throw new RuntimeException('Phase 10 revision '.$manifest['phase']['revision'].' không phải bản AI viết prompt video ('.MotoContract::CLIP_PROMPT_FORMAT.', đầu vào '.$inputFormat.') code đang dùng — chạy php artisan db:seed --class=AiPhaseSeeder.');
