@@ -66,6 +66,12 @@ class VideoScriptRevise extends Command
                 $this->line("  {$key}: ".(is_bool($value) ? ($value ? 'yes' : 'no') : $value));
             }
             $this->line('  contract: '.($report['prompt'] ?? '—'));
+            $this->line('  validation policy: '.(is_array($report['validation'] ?? null) ? $report['validation']['version'].' (support by '.$report['validation']['support'].', references '.($report['validation']['references'] ?? 'as written').')' : '—'));
+
+            foreach ((array) ($report['sources'] ?? []) as $key => $value) {
+                $this->line("  source {$key}: ".(is_scalar($value) ? $value : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
+            }
+
             $this->newLine();
         }
 

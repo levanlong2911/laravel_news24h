@@ -12,6 +12,7 @@ use App\Models\VideoProject;
 use App\Services\Admin\ClaudeWriterService;
 use App\Video\Llm\LlmClient;
 use App\Video\Moto\MotoContract;
+use App\Video\Script\ProjectsScriptDocument;
 use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Support\CanonicalJson;
@@ -80,7 +81,7 @@ final class ScriptWriterService implements QueuedStageService
      */
     public function revise(string $projectId, string $stageId, array $patch, bool $write, ?string $expected, ?string $actor): array
     {
-        $report = ['passed' => false, 'reason' => '', 'source' => null, 'prompt' => null, 'changes' => [], 'check' => null, 'content_hash' => null, 'patch_hash' => null, 'revision_stage_id' => null, 'revision' => null];
+        $report = ['passed' => false, 'reason' => '', 'source' => null, 'prompt' => null, 'validation' => null, 'changes' => [], 'check' => null, 'content_hash' => null, 'patch_hash' => null, 'revision_stage_id' => null, 'revision' => null];
         $stage = $this->sources->scriptStage($projectId, $stageId);
 
         if ($stage === null) {
@@ -136,6 +137,7 @@ final class ScriptWriterService implements QueuedStageService
         }
 
         $report['prompt'] = 'Prompt '.$run['phase']->phase_code.' revision '.$run['phase']->revision;
+        $report['sources'] = $current;
         $revised = $document;
         $revised['prompt_version'] = $run['prompt_version'];
 
@@ -164,9 +166,12 @@ final class ScriptWriterService implements QueuedStageService
 
         $raw = (string) json_encode($revised, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $result = ScriptEvaluation::of($raw, $run['metadata']['manifest'], $run['metadata']['context'], $current, $run['adapter']);
+        // The policy the revision is checked by: the one a run made now pins, never one sent with the request.
+        $report['validation'] = $run['adapter'] instanceof ProjectsScriptDocument ? $run['adapter']->validation((array) $run['metadata']['context']) : null;
         $report['check'] = $result['check'];
         $report['content_hash'] = $result['content_hash'];
-        $report['patch_hash'] = CanonicalJson::hash(['of' => $report['source'], 'patch' => $patch, 'contract' => $result['contract'], 'source' => $current, 'content_hash' => $result['content_hash']]);
+        // The hash binds what the reviewer saw: the run input it was checked with (brief, settings, sources) and its validation policy, so an apply under anything else is refused.
+        $report['patch_hash'] = CanonicalJson::hash(['of' => $report['source'], 'patch' => $patch, 'contract' => $result['contract'], 'source' => $current, 'content_hash' => $result['content_hash'], 'input' => $this->stageStore->inputHash($run['input']), 'validation' => $report['validation']]);
         $report['passed'] = $result['content_hash'] !== null && ($result['check']['verdict'] ?? null) === 'PASS' && ($result['check']['status'] ?? null) === 'ok';
 
         if (! $report['passed']) {
@@ -190,23 +195,134 @@ final class ScriptWriterService implements QueuedStageService
             'actor' => $actor,
             'revised_at' => now()->toIso8601String(),
         ]];
-        [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::SCRIPT, $run['input'] + ['revision_of' => (string) $stage->id, 'patch_hash' => $report['patch_hash']], false, $metadata);
+        $sourceRaw = hash('sha256', (string) $stage->raw_response);
+        $previewInput = $this->stageStore->inputHash($run['input']);
+        $input = $run['input'] + ['revision_of' => (string) $stage->id, 'patch_hash' => $report['patch_hash']];
+        // The same approved patch sent again names the revision it stored, before the newer-run rule would refuse it as newer than its source.
+        $existing = $this->storedRevision($projectId, $input);
+
+        if ($existing !== null) {
+            return ['reason' => 'already_applied', 'revision_stage_id' => (string) $existing->id, 'revision' => (int) $existing->planning_revision] + $report;
+        }
+
+        $refusal = null;
+        // A new row every time (a script run whose lease ran out keeps its own answer and cost); the source is read again under the project lock.
+        [$claimed, $token, $claimReason] = $this->stageStore->claimProjectStage($projectId, PlanningStageName::SCRIPT, $input, false, $metadata, function () use ($projectId, $stage, $sourceRaw, &$refusal): bool {
+            $refusal = $this->sourceChanged($projectId, (string) $stage->id, $sourceRaw) ?? $this->newerProblem($projectId, $stage, null);
+
+            return $refusal !== null;
+        }, reuseExpired: false);
 
         if ($token === null) {
-            return $claimReason === 'already_succeeded'
-                ? ['reason' => 'already_applied', 'revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision] + $report
-                : ['reason' => $claimReason === 'claimed_by_other' ? 'Đang có một lượt viết kịch bản chạy cho dự án này — đợi xong rồi thử lại.' : $claimReason] + $report;
+            $existing = $this->storedRevision($projectId, $input);
+
+            return match (true) {
+                $existing !== null => ['reason' => 'already_applied', 'revision_stage_id' => (string) $existing->id, 'revision' => (int) $existing->planning_revision] + $report,
+                $claimReason === 'refused' => ['reason' => (string) $refusal] + $report,
+                $claimReason === 'claimed_by_other' => ['reason' => 'Đang có một lượt viết kịch bản chạy cho dự án này — đợi xong rồi thử lại.'] + $report,
+                default => ['reason' => $claimReason] + $report,
+            };
         }
 
         try {
-            $recorded = $this->stageStore->finishSucceeded((string) $claimed->id, $token, $raw, $this->output($run, $result), ['instruction_version' => $run['prompt_version'], 'tokens_in' => 0, 'tokens_out' => 0, 'cost_usd' => 0]);
+            $output = $this->output($run, $result);
+            // The claim only reserved the row: the revision is published here, under the project lock, from the sources as they are now.
+            $previewValidation = $report['validation'];
+            $problem = DB::transaction(function () use ($projectId, $stage, $sourceRaw, $previewInput, $previewValidation, $claimed, $token, $raw, $output, $run): ?string {
+                VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+                $problem = $this->publishProblem($projectId, $stage, (string) $claimed->id, $sourceRaw, $previewInput, $previewValidation);
+
+                if ($problem !== null) {
+                    return $problem;
+                }
+
+                return $this->stageStore->finishSucceeded((string) $claimed->id, (string) $token, $raw, $output, ['instruction_version' => $run['prompt_version'], 'tokens_in' => 0, 'tokens_out' => 0, 'cost_usd' => 0])
+                    ? null
+                    : 'Lượt lưu bị giành mất — tải lại rồi thử lại.';
+            });
         } catch (\Throwable $e) {
-            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kịch bản không lưu được');
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kịch bản không lưu được: '.$e->getMessage());
 
             throw $e;
         }
 
-        return ['reason' => $recorded ? 'applied' : 'Lượt lưu bị giành mất — tải lại rồi thử lại.', 'revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision] + $report;
+        if ($problem !== null) {
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kịch bản không được công bố: '.$problem);
+
+            return ['reason' => $problem] + $report;
+        }
+
+        return ['reason' => 'applied', 'revision_stage_id' => (string) $claimed->id, 'revision' => (int) $claimed->planning_revision] + $report;
+    }
+
+    /**
+     * Read under the project lock, just before a revision is published.
+     *
+     * @param  string  $claimedId  the row the revision is published in, never counted as a newer script
+     * @param  string  $previewInput  the input hash of the run the approved preview was checked with
+     * @param  ?array<string, mixed>  $previewValidation  the validation policy that preview was checked by
+     * @return ?string why the revision may no longer be published: its source changed, a newer script was stored since, or the run the project would make now — sources, contract, brief, settings, validation policy — is not the one the preview was checked with
+     */
+    private function publishProblem(string $projectId, VideoPlanningStage $source, string $claimedId, string $sourceRaw, string $previewInput, ?array $previewValidation): ?string
+    {
+        $problem = $this->sourceChanged($projectId, (string) $source->id, $sourceRaw) ?? $this->newerProblem($projectId, $source, $claimedId);
+
+        if ($problem !== null) {
+            return $problem;
+        }
+
+        try {
+            $fresh = $this->prepare($projectId);
+        } catch (\Throwable $e) {
+            return 'Không dựng lại được nguồn hiện hành của dự án ('.$e->getMessage().') — không lưu bản sửa.';
+        }
+
+        $validation = $fresh['adapter'] instanceof ProjectsScriptDocument ? $fresh['adapter']->validation((array) $fresh['metadata']['context']) : null;
+
+        return hash_equals($previewInput, $this->stageStore->inputHash($fresh['input'])) && $validation == $previewValidation
+            ? null
+            : 'Nguồn, hợp đồng hoặc chính sách của dự án đã đổi sau bản xem trước — không lưu bản sửa; xem trước lại.';
+    }
+
+    /** @return ?string why the run a revision is written from can no longer be its source: it is gone, no longer succeeded or its answer changed */
+    private function sourceChanged(string $projectId, string $stageId, string $rawSha256): ?string
+    {
+        $now = $this->sources->scriptStage($projectId, $stageId);
+
+        return $now === null || ! hash_equals($rawSha256, hash('sha256', (string) $now->raw_response))
+            ? 'Bản kịch bản nguồn đã đổi hoặc không còn sau bản xem trước — không lưu bản sửa; xem trước lại.'
+            : null;
+    }
+
+    /**
+     * @param  ?string  $claimedId  the row a revision is being published in, left out of the count
+     * @return ?string why a revision of this script would no longer be written from the newest one: a newer script — a run of the model or another revision — was stored since
+     */
+    private function newerProblem(string $projectId, VideoPlanningStage $source, ?string $claimedId): ?string
+    {
+        $newer = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::SCRIPT->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->whereNull('input_json->orphan_of_stage_id')
+            ->where('planning_revision', '>', (int) $source->planning_revision)
+            ->when($claimedId !== null, static fn ($query) => $query->whereKeyNot($claimedId))
+            ->orderByDesc('planning_revision')
+            ->first();
+
+        return $newer === null
+            ? null
+            : "Dự án đã có bản kịch bản mới hơn (rev {$newer->planning_revision}) — chỉ sửa tay bản mới nhất.";
+    }
+
+    /** @param  array<string, mixed>  $input  the input of a revision run */
+    private function storedRevision(string $projectId, array $input): ?VideoPlanningStage
+    {
+        return VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::SCRIPT->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->where('input_hash', $this->stageStore->inputHash($input))
+            ->orderByDesc('planning_revision')
+            ->first();
     }
 
     /** @return ?array{revision: int, reason: string, changes: list<array<string, string>>} the run a hand revision revises, why and what it changed; null for a run of the model */
@@ -515,7 +631,8 @@ final class ScriptWriterService implements QueuedStageService
                 'max_tokens' => $settings['max_tokens'],
                 'check_version' => $adapter->checkVersion(),
                 'projection_version' => $adapter->projectionVersion(),
-            ],
+            // The validation policy the run pins names it too: a run checked by other rules is never served from the cache, and a queued run is refused when the policy moved.
+            ] + ($adapter instanceof ProjectsScriptDocument ? $adapter->validationInput($context) : []),
             'metadata' => [
                 'manifest' => $manifest,
                 'source' => $inputs['source'],

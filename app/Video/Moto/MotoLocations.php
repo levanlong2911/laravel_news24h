@@ -113,7 +113,10 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound
                 'format' => $this->format(),
                 'source_names' => $names,
                 'base_names' => array_values(array_filter([$design['motorcycle']['base']['family'] ?? null, $design['motorcycle']['base']['model'] ?? null], 'is_string')),
-            ],
+            ] + (is_array($script['validation'] ?? null) && $script['validation']['version'] !== MotoScriptValidation::LEGACY
+                // The policy of the script these locations are made from, so one chain never mixes two.
+                ? [MotoScriptValidation::KEY => $script['validation']]
+                : []),
         ];
     }
 

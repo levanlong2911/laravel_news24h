@@ -154,7 +154,9 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
         return [
             'payload' => $built['payload'],
             'source' => ['scenes' => $scenes['token']],
-            'context' => $built['context'] + ['format' => $this->format()] + $pinned,
+            'context' => $built['context'] + ['format' => $this->format()] + $pinned
+                // The policy of the approved script the scenes and shots are made from, so one chain never mixes two.
+                + (is_array($script['validation'] ?? null) && $script['validation']['version'] !== MotoScriptValidation::LEGACY ? [MotoScriptValidation::KEY => $script['validation']] : []),
         ];
     }
 

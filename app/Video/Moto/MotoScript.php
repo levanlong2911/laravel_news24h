@@ -11,11 +11,12 @@ use App\Models\VideoProject;
 use App\Services\Video\ModelSheetService;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
+use App\Video\Script\ProjectsScriptDocument;
 use App\Video\Script\ScriptWorkflow;
 use App\Video\Superyacht\Spec\ResolvedPhase;
 use RuntimeException;
 
-final class MotoScript implements ReleaseBound, ScriptWorkflow
+final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWorkflow
 {
     public const PROJECTION_VERSION = 'moto-script-timeline-v1';
 
@@ -136,7 +137,7 @@ final class MotoScript implements ReleaseBound, ScriptWorkflow
                 'design' => $facts,
                 'source_names' => self::sourceNames($identity),
                 'policy' => array_replace((array) $config['check'], $this->releasePolicy),
-            ],
+            ] + ($this->eventful ? [MotoScriptValidation::KEY => MotoScriptValidation::current()] : []),
         ];
     }
 
@@ -182,12 +183,22 @@ final class MotoScript implements ReleaseBound, ScriptWorkflow
     public function derive(array $document, array $context): array
     {
         if (($context['format'] ?? null) === MotoContract::SCRIPT_FORMAT_V2) {
-            return [
+            $derived = [
                 'version' => self::EVENT_PROJECTION_VERSION,
                 'duration_s' => null,
                 'hero_beat' => (string) ($document['data']['story']['hero_beat'] ?? ''),
                 'beats' => array_map(static fn (array $beat): array => ['id' => (string) $beat['id'], 'act' => (string) $beat['act'], 'events' => array_column((array) $beat['events'], 'id')], (array) ($document['data']['beats'] ?? [])),
             ];
+
+            // Only a run that pinned a projecting policy gets one: the derived data of an older run stays as it was stored.
+            if (MotoScriptValidation::projectsReferences($context)) {
+                $derived['references'] = [
+                    'version' => MotoScriptReferences::VERSION,
+                    'beats' => MotoScriptReferences::project(array_values((array) ($document['data']['beats'] ?? [])), (array) ($context['design'] ?? []))['references'],
+                ];
+            }
+
+            return $derived;
         }
 
         $start = 0.0;
@@ -205,6 +216,27 @@ final class MotoScript implements ReleaseBound, ScriptWorkflow
             'hero_beat' => (string) ($document['data']['story']['hero_beat'] ?? ''),
             'beats' => $beats,
         ];
+    }
+
+    public function consumerDocument(array $document, array $derived): array
+    {
+        $references = $derived['references'] ?? null;
+
+        if (! is_array($references) || ($references['version'] ?? null) !== MotoScriptReferences::VERSION || ! is_array($references['beats'] ?? null)) {
+            return $document;
+        }
+
+        return MotoScriptReferences::apply($document, $references['beats']);
+    }
+
+    public function validation(array $context): array
+    {
+        return MotoScriptValidation::of($context);
+    }
+
+    public function validationInput(array $context): array
+    {
+        return MotoScriptValidation::input($context);
     }
 
     public function systemText(array $parts, array $schemas): string

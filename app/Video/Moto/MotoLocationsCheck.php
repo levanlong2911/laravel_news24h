@@ -79,7 +79,7 @@ final class MotoLocationsCheck
             $places[$place['id']] = $place;
         }
 
-        [$backgroundIssues, $served] = self::backgroundIssues((array) $data['backgrounds'], $places, $beats, (array) ($context['build_states'] ?? []));
+        [$backgroundIssues, $served] = self::backgroundIssues((array) $data['backgrounds'], $places, $beats, (array) ($context['build_states'] ?? []), MotoScriptValidation::supportsByDesign($context));
         $used = [...array_column((array) $data['backgrounds'], 'location'), ...array_filter(array_column((array) $data['unplated'], 'location'), 'is_string')];
         $held = array_merge([], ...array_map(static fn (array $conflict): array => $conflict['blocking'] ? (array) $conflict['beats'] : [], (array) $data['conflicts']));
         $covered = [...array_merge([], ...array_values($served)), ...array_column((array) $data['unplated'], 'beat'), ...$held];
@@ -147,7 +147,40 @@ final class MotoLocationsCheck
      * @param  array<string, array<string, mixed>>  $states
      * @return array{0: list<string>, 1: array<string, list<string>>} the issues and the beats each background serves
      */
-    private static function backgroundIssues(array $backgrounds, array $places, array $beats, array $states): array
+    /**
+     * @param  list<string>  $support  the temporary items the plate holds
+     * @param  list<string>  $mine  the beats the plate serves
+     * @param  array<string, array<string, mixed>>  $beats  the beats of the context by id
+     * @param  array<string, array<string, mixed>>  $states  the build states of the context by id
+     * @param  bool  $supportByDesign  the run pinned moto-validation-v2: any temporary item the design lists; otherwise the items of the state of every beat the plate serves
+     * @return list<string>
+     */
+    public static function supportIssues(string $id, array $support, array $mine, array $beats, array $states, bool $supportByDesign): array
+    {
+        $issues = [];
+        $temporaryByState = array_map(static fn (mixed $state): array => (array) (is_array($state) ? ($state['temporary'] ?? []) : []), $states);
+
+        if ($supportByDesign) {
+            // A plate may hold any temporary item the design lists; where it belongs is the prompt's and the reviewer's call.
+            foreach (array_diff($support, MotoSupportReferences::designTemporary($temporaryByState)) as $item) {
+                $issues[] = "{$id} có {$item}, nhưng thiết kế không có thiết bị tạm này ở build state nào.";
+            }
+
+            return $issues;
+        }
+
+        foreach ($mine as $beat) {
+            $state = $beats[$beat]['state'] ?? null;
+
+            foreach (array_diff($support, MotoSupportReferences::allowed($temporaryByState, is_string($state) ? $state : null, false)) as $item) {
+                $issues[] = "{$id} có {$item}, nhưng {$beat} ở ".($state ?? 'không giai đoạn')." không có thiết bị tạm này.";
+            }
+        }
+
+        return $issues;
+    }
+
+    private static function backgroundIssues(array $backgrounds, array $places, array $beats, array $states, bool $supportByDesign = false): array
     {
         $issues = [];
         $served = [];
@@ -201,14 +234,7 @@ final class MotoLocationsCheck
                 }
             }
 
-            foreach ($mine as $beat) {
-                $state = $beats[$beat]['state'] ?? null;
-                $temporary = is_string($state) ? (array) ($states[$state]['temporary'] ?? []) : [];
-
-                foreach (array_diff($background['support'], $temporary) as $item) {
-                    $issues[] = "{$id} có {$item}, nhưng {$beat} ở ".($state ?? 'không giai đoạn')." không có thiết bị tạm này.";
-                }
-            }
+            $issues = [...$issues, ...self::supportIssues((string) $id, (array) $background['support'], $mine, $beats, $states, $supportByDesign)];
 
         }
 

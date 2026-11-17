@@ -565,6 +565,30 @@ final class MotoShotsCheck
     }
 
     /**
+     * @param  list<mixed>  $supports  the support_refs of one operating state of a shot
+     * @param  array<string, mixed>  $context  the context the shot run pinned
+     * @param  ?string  $state  the build state of the shot's scene
+     * @param  list<string>  $people  the characters the shot shows
+     * @return list<string> every support that is a part the design does not have, a person the shot does not show or a temporary item the pinned policy does not allow: any the design lists under moto-validation-v2, the items of the scene's build state otherwise
+     */
+    public static function supportIssues(string $at, array $supports, array $context, ?string $state, array $people): array
+    {
+        $byDesign = MotoScriptValidation::supportsByDesign($context);
+        $temporary = MotoSupportReferences::allowed((array) ($context['temporary'] ?? []), $state, $byDesign);
+        $issues = [];
+
+        foreach ($supports as $support) {
+            $problem = MotoSupportReferences::problem($support, (array) ($context['parts'] ?? []), $people, $temporary, 'people của shot', $byDesign ? 'temporary của thiết kế' : 'temporary của build state của scene');
+
+            if ($problem !== null) {
+                $issues[] = "{$at}.support_refs: ".(is_scalar($support) ? $support : json_encode($support))." {$problem}.";
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $shots  the shots as written
      * @param  array<string, array<string, mixed>>  $beats  the beats with their events
      * @param  array<string, mixed>  $context
@@ -667,17 +691,7 @@ final class MotoShotsCheck
                     $issues[] = "{$id}.{$key}.engine: {$state['engine']['part_id']} không có trong thiết kế.";
                 }
 
-                foreach ((array) $state['support_refs'] as $support) {
-                    $problem = match (true) {
-                        preg_match('/^P\d{2,3}$/', (string) $support) === 1 => isset($context['parts'][$support]) ? null : 'không có trong parts của thiết kế',
-                        preg_match('/^CH\d{2}$/', (string) $support) === 1 => in_array($support, $people, true) ? null : 'không có trong people của shot',
-                        default => in_array($support, (array) ($context['temporary'][(string) ($sceneStates[$shot['scene']] ?? '')] ?? []), true) ? null : 'không có trong temporary của build state của scene',
-                    };
-
-                    if ($problem !== null) {
-                        $issues[] = "{$id}.{$key}.support_refs: {$support} {$problem}.";
-                    }
-                }
+                $issues = [...$issues, ...self::supportIssues("{$id}.{$key}", (array) $state['support_refs'], $context, is_string($sceneStates[$shot['scene']] ?? null) ? $sceneStates[$shot['scene']] : null, $people)];
 
                 foreach (array_diff((array) $shot['configurations'][$moment], (array) $state['configurations']) as $configuration) {
                     $issues[] = "{$id}: configurations.{$moment} nêu {$configuration} nhưng {$key} không có vị trí này.";

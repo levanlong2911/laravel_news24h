@@ -114,15 +114,26 @@ final class MotoScriptCheck
             $byId[$beat['id']] = $index;
         }
 
+        // The policy the run pinned: under moto-validation-v2 every later rule reads the beats with the refs code projects from their events and in_use.
+        $validation = $eventful ? MotoScriptValidation::of($context) : null;
+        $projects = $validation !== null && $validation['references'] !== null;
+
+        if ($projects) {
+            $projected = MotoScriptReferences::project($beats, $design);
+            $beats = $projected['beats'];
+            $data['beats'] = $beats;
+            $issues = [...$issues, ...$projected['issues']];
+        }
+
         $total = $eventful ? 0.0 : array_sum(array_map(static fn (array $beat): float => (float) $beat['duration_s'], $beats));
         $length = (float) ($context['video_length'] ?? 0);
         $advisory = [
             ...(! $eventful && abs($total - $length) > (float) ($policy['length_tolerance_sec'] ?? 0.1) + self::EPSILON ? ['Các beat dài tổng '.self::s($total)." s; phim phải dài {$length} s."] : []),
             ...self::heroIssues($data, $byId),
-            ...self::designIssues($beats, $design),
+            ...self::designIssues($beats, $design, $projects),
             ...($eventful ? self::eventCardIssues((array) $data['text_cards'], $beats, $byId, $design) : self::cardIssues((array) $data['text_cards'], $beats, $byId, $design, $context, $policy, $total)),
         ];
-        $issues = [...$issues, ...self::referenceIssues($data, $byId), ...($eventful ? self::eventIssues($data, $beats, $byId, $design, (bool) ($policy['stationary_requires_support'] ?? false)) : [])];
+        $issues = [...$issues, ...self::referenceIssues($data, $byId), ...($eventful ? self::eventIssues($data, $beats, $byId, $design, (bool) ($policy['stationary_requires_support'] ?? false), $projects, $validation !== null && $validation['support'] === MotoScriptValidation::SUPPORT_BY_DESIGN) : [])];
 
         if ((bool) ($policy['cover_build_states'] ?? false)) {
             $issues = [...$issues, ...self::coverageIssues($beats, $design)];
@@ -398,9 +409,10 @@ final class MotoScriptCheck
     /**
      * @param  list<array<string, mixed>>  $beats
      * @param  array<string, mixed>  $design
+     * @param  bool  $projected  the refs of every beat were projected: each in_use id the design holds is in them, and one it does not hold already failed at its path
      * @return list<string>
      */
-    private static function designIssues(array $beats, array $design): array
+    private static function designIssues(array $beats, array $design, bool $projected = false): array
     {
         $issues = [];
         $records = [
@@ -418,11 +430,7 @@ final class MotoScriptCheck
                 $record = $records[$ref[0]][$ref] ?? null;
 
                 if ($record === null) {
-                    $known = in_array($ref, (array) ($design['other_refs'] ?? []), true)
-                        || isset($design['configurations'][$ref])
-                        || in_array($ref, (array) ($design['lights'] ?? []), true);
-
-                    if (! $known) {
+                    if (! MotoScriptReferences::known($ref, $design)) {
                         $issues[] = "{$beat['id']} nhắc {$ref}, không có trong thiết kế.";
                     }
                 } elseif ($ref[0] === 'P' && $at !== null && ! $present($ref) && ! in_array($ref, $at['in_progress'], true)) {
@@ -430,7 +438,7 @@ final class MotoScriptCheck
                 }
             }
 
-            foreach ($beat['in_use'] as $ref) {
+            foreach ($projected ? [] : $beat['in_use'] as $ref) {
                 if (! in_array($ref, $beat['design_refs'], true)) {
                     $issues[] = "{$beat['id']}: {$ref} trong in_use phải có trong design_refs.";
                 }
@@ -570,7 +578,7 @@ final class MotoScriptCheck
      * @param  bool  $heldWhenStill  the policy the run pinned: a motorcycle that stands still names what holds it. A run pinned without it is checked as before
      * @return list<string> what breaks the links of characters, events, operating states and shot directives: an id out of sequence or unknown, a role nobody plays, a character or a design id an event names that its beat does not, an operating state that names what the design does not hold or two configurations of one part, a motorcycle standing still with nothing named to hold it when the policy asks, an event that does not start where the one before ended, a beat that does not end where its last event ends, and a directive whose anchors are unknown, out of order or outside its beats
      */
-    private static function eventIssues(array $data, array $beats, array $byId, array $design, bool $heldWhenStill = false): array
+    private static function eventIssues(array $data, array $beats, array $byId, array $design, bool $heldWhenStill = false, bool $projected = false, bool $supportByDesign = false): array
     {
         $issues = [];
         $roles = array_fill_keys((array) ($design['roles'] ?? []), false);
@@ -621,12 +629,17 @@ final class MotoScriptCheck
                     }
                 }
 
-                foreach (array_diff((array) $event['design_refs'], (array) $beat['design_refs']) as $ref) {
-                    $issues[] = "{$event['id']}.design_refs: {$ref} không nằm trong design_refs của {$beat['id']}.";
+                // Projected beats already hold every known ref of their events; an unknown one was reported at its own path.
+                if (! $projected) {
+                    foreach (array_diff((array) $event['design_refs'], (array) $beat['design_refs']) as $ref) {
+                        $issues[] = "{$event['id']}.design_refs: {$ref} không nằm trong design_refs của {$beat['id']}.";
+                    }
                 }
 
+                $temporary = MotoSupportReferences::allowed((array) ($design['temporary'] ?? []), is_string($beat['state'] ?? null) ? $beat['state'] : null, $supportByDesign);
+
                 foreach (['operating_start', 'operating_end'] as $moment) {
-                    $issues = [...$issues, ...self::operatingIssues("{$event['id']}.{$moment}", (array) $event[$moment], $design, array_keys($characters), (array) ($design['temporary'][(string) ($beat['state'] ?? '')] ?? []))];
+                    $issues = [...$issues, ...self::operatingIssues("{$event['id']}.{$moment}", (array) $event[$moment], $design, array_keys($characters), $temporary, $supportByDesign ? 'temporary của thiết kế' : 'temporary của build state này')];
                 }
 
                 $previous = $event;
@@ -688,19 +701,16 @@ final class MotoScriptCheck
      * @param  array<string, mixed>  $state  one operating state
      * @param  array<string, mixed>  $design  the design facts of facts()
      * @param  list<string>  $characters  the ids of the characters of the script
-     * @param  list<string>  $temporary  the temporary items the build state of the beat or scene lists
-     * @return list<string> the engine part, configurations and lights the design does not hold, two configurations of one part, and a support that is a part the design does not have, a character the script does not have or a temporary item the build state does not list
+     * @param  list<string>  $temporary  the temporary items a support may name there (MotoSupportReferences::allowed)
+     * @param  string  $temporarySource  where those items come from, for the message
+     * @return list<string> the engine part, configurations and lights the design does not hold, two configurations of one part, and a support that is a part the design does not have, a character the script does not have or a temporary item it may not name
      */
-    public static function operatingIssues(string $at, array $state, array $design, array $characters = [], array $temporary = []): array
+    public static function operatingIssues(string $at, array $state, array $design, array $characters = [], array $temporary = [], string $temporarySource = 'temporary của build state này'): array
     {
         $issues = [];
 
         foreach ((array) ($state['support_refs'] ?? []) as $support) {
-            $problem = match (true) {
-                preg_match('/^P\d{2,3}$/', (string) $support) === 1 => isset($design['parts'][$support]) ? null : 'không có trong parts của thiết kế',
-                preg_match('/^CH\d{2}$/', (string) $support) === 1 => in_array($support, $characters, true) ? null : 'không có trong characters',
-                default => in_array($support, $temporary, true) ? null : 'không có trong temporary của build state này',
-            };
+            $problem = MotoSupportReferences::problem($support, (array) ($design['parts'] ?? []), $characters, $temporary, 'characters', $temporarySource);
 
             if ($problem !== null) {
                 $issues[] = "{$at}.support_refs: {$support} {$problem}.";

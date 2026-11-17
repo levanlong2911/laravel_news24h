@@ -9,6 +9,7 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Video\Script\ProjectsScriptDocument;
 use App\Video\Script\ScriptEvaluation;
 use App\Video\Script\ScriptWorkflow;
 use App\Video\Superyacht\Support\CanonicalJson;
@@ -176,7 +177,7 @@ final class ScriptSourceService
     }
 
     /**
-     * @return array{stage_id: string, document: array<string, mixed>, derived: array<string, mixed>, token: array{version: string, stage_id: string, content_hash: string, selection_version: int, source_fingerprint: string}}
+     * @return array{stage_id: string, document: array<string, mixed>, answer: array<string, mixed>, derived: array<string, mixed>, validation: ?array<string, mixed>, token: array{version: string, stage_id: string, content_hash: string, selection_version: int, source_fingerprint: string, projection_hash?: string}} document is what the later steps read — the answer with the refs the run projected, when it projected any; answer is the document as the model wrote it
      *
      * @throws RuntimeException when there is no usable approved script
      */
@@ -220,17 +221,30 @@ final class ScriptSourceService
             throw new RuntimeException('Nguồn của kịch bản đang chọn không còn hợp lệ: '.$problem);
         }
 
+        $adapter = $flow['adapter'];
+        $projects = $adapter instanceof ProjectsScriptDocument;
+        $references = $projects && is_array($evaluation['derived']['references'] ?? null) ? $evaluation['derived']['references'] : null;
+        $token = [
+            'version' => self::TOKEN_VERSION,
+            'stage_id' => (string) $stage->id,
+            'content_hash' => $evaluation['content_hash'],
+            'selection_version' => (int) $selection['version'],
+            'source_fingerprint' => CanonicalJson::hash($source),
+        ];
+
         return [
             'stage_id' => (string) $stage->id,
-            'document' => $evaluation['document'],
+            // The later steps read the projection the run derived; the answer itself stays as the model wrote it.
+            'document' => $projects ? $adapter->consumerDocument($evaluation['document'], $evaluation['derived']) : $evaluation['document'],
+            'answer' => $evaluation['document'],
             'derived' => $evaluation['derived'],
-            'token' => [
-                'version' => self::TOKEN_VERSION,
-                'stage_id' => (string) $stage->id,
+            'validation' => $projects ? $adapter->validation((array) ($meta['context'] ?? [])) : null,
+            // A run with projected refs binds its consumers to that projection too: its version, its result and the content and source it came from.
+            'token' => $token + ($references === null ? [] : ['projection_hash' => CanonicalJson::hash([
+                'references' => $references,
                 'content_hash' => $evaluation['content_hash'],
-                'selection_version' => (int) $selection['version'],
-                'source_fingerprint' => CanonicalJson::hash($source),
-            ],
+                'source_fingerprint' => $token['source_fingerprint'],
+            ])]),
         ];
     }
 
