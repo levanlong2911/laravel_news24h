@@ -60,11 +60,11 @@ final class MotoLocationsCheck
         $issues = [];
 
         if (($response['project_id'] ?? null) !== ($context['project_id'] ?? null)) {
-            $issues[] = 'project_id không khớp lượt chạy.';
+            $issues[] = Finding::blocking('MotoLocationsCheck.scored.1', 'project_id không khớp lượt chạy.');
         }
 
         if (($response['prompt_version'] ?? null) !== ($context['prompt_version'] ?? null)) {
-            $issues[] = 'prompt_version là "'.($response['prompt_version'] ?? '').'"; lượt chạy này dùng '.($context['prompt_version'] ?? '').'.';
+            $issues[] = Finding::blocking('MotoLocationsCheck.scored.2', 'prompt_version là "'.($response['prompt_version'] ?? '').'"; lượt chạy này dùng '.($context['prompt_version'] ?? '').'.');
         }
 
         $data = (array) $response['data'];
@@ -73,7 +73,7 @@ final class MotoLocationsCheck
 
         foreach ((array) $data['locations'] as $place) {
             if (isset($places[$place['id']])) {
-                $issues[] = "{$place['id']} khai hai lần.";
+                $issues[] = Finding::requirement('MotoLocationsCheck.scored.3', "{$place['id']} khai hai lần.");
             }
 
             $places[$place['id']] = $place;
@@ -86,23 +86,23 @@ final class MotoLocationsCheck
 
         foreach (array_keys($places) as $id) {
             if (! in_array($id, $used, true)) {
-                $issues[] = "{$id} không có ảnh nền hay beat nào dùng.";
+                $issues[] = Finding::note('MotoLocationsCheck.scored.4', "{$id} không có ảnh nền hay beat nào dùng.");
             }
         }
 
         foreach (array_keys($beats) as $id) {
             if (! in_array($id, $covered, true)) {
-                $issues[] = "{$id} không đứng trên ảnh nền nào, không có trong unplated và không có xung đột chặn nào nêu nó.";
+                $issues[] = Finding::requirement('MotoLocationsCheck.scored.5', "{$id} không đứng trên ảnh nền nào, không có trong unplated và không có xung đột chặn nào nêu nó.");
             }
         }
 
         foreach ((array) $data['unplated'] as $entry) {
             if (! isset($beats[$entry['beat']])) {
-                $issues[] = "unplated nhắc {$entry['beat']}, không có trong kịch bản.";
+                $issues[] = Finding::requirement('MotoLocationsCheck.scored.6', "unplated nhắc {$entry['beat']}, không có trong kịch bản.");
             }
 
             if (is_string($entry['location']) && ! isset($places[$entry['location']])) {
-                $issues[] = "unplated {$entry['beat']} nhắc {$entry['location']}, không có trong locations.";
+                $issues[] = Finding::requirement('MotoLocationsCheck.scored.7', "unplated {$entry['beat']} nhắc {$entry['location']}, không có trong locations.");
             }
         }
 
@@ -111,7 +111,7 @@ final class MotoLocationsCheck
 
             foreach ($entry['backgrounds'] as $id) {
                 if (! isset($served[$id])) {
-                    $issues[] = "continuity nhắc {$id}, không có trong backgrounds.";
+                    $issues[] = Finding::requirement('MotoLocationsCheck.scored.8', "continuity nhắc {$id}, không có trong backgrounds.");
                 }
 
                 $reach = [...$reach, ...($served[$id] ?? [])];
@@ -119,7 +119,7 @@ final class MotoLocationsCheck
 
             foreach ($entry['beats'] as $id) {
                 if (! in_array($id, $reach, true)) {
-                    $issues[] = "continuity: {$id} không phải beat của ".implode(', ', $entry['backgrounds']).'.';
+                    $issues[] = Finding::requirement('MotoLocationsCheck.scored.9', "continuity: {$id} không phải beat của ".implode(', ', $entry['backgrounds']).'.');
                 }
             }
         }
@@ -127,7 +127,7 @@ final class MotoLocationsCheck
         [$conflictIssues, $conflictWarnings, $blocking] = self::conflictIssues((array) $data['conflicts'], $beats, $served, (array) ($context['build_states'] ?? []));
 
         if ($blocking && $status !== 'partial') {
-            $issues[] = 'Còn xung đột chặn nhưng status không phải partial.';
+            $issues[] = Finding::requirement('MotoLocationsCheck.scored.10', 'Còn xung đột chặn nhưng status không phải partial.');
         }
 
         $issues = [
@@ -163,7 +163,7 @@ final class MotoLocationsCheck
         if ($supportByDesign) {
             // A plate may hold any temporary item the design lists; where it belongs is the prompt's and the reviewer's call.
             foreach (array_diff($support, MotoSupportReferences::designTemporary($temporaryByState)) as $item) {
-                $issues[] = "{$id} có {$item}, nhưng thiết kế không có thiết bị tạm này ở build state nào.";
+                $issues[] = Finding::requirement('MotoLocationsCheck.supportIssues.1', "{$id} có {$item}, nhưng thiết kế không có thiết bị tạm này ở build state nào.");
             }
 
             return $issues;
@@ -173,7 +173,7 @@ final class MotoLocationsCheck
             $state = $beats[$beat]['state'] ?? null;
 
             foreach (array_diff($support, MotoSupportReferences::allowed($temporaryByState, is_string($state) ? $state : null, false)) as $item) {
-                $issues[] = "{$id} có {$item}, nhưng {$beat} ở ".($state ?? 'không giai đoạn')." không có thiết bị tạm này.";
+                $issues[] = Finding::requirement('MotoLocationsCheck.supportIssues.2', "{$id} có {$item}, nhưng {$beat} ở ".($state ?? 'không giai đoạn')." không có thiết bị tạm này.");
             }
         }
 
@@ -189,11 +189,11 @@ final class MotoLocationsCheck
             $id = $background['id'];
 
             if (isset($served[$id])) {
-                $issues[] = "{$id} khai hai lần.";
+                $issues[] = Finding::requirement('MotoLocationsCheck.backgroundIssues.1', "{$id} khai hai lần.");
             }
 
             if (! isset($places[$background['location']])) {
-                $issues[] = "{$id} đứng trên {$background['location']}, không có trong locations.";
+                $issues[] = Finding::requirement('MotoLocationsCheck.backgroundIssues.2', "{$id} đứng trên {$background['location']}, không có trong locations.");
             }
 
             $mine = [];
@@ -201,7 +201,7 @@ final class MotoLocationsCheck
 
             foreach ($background['uses'] as $use) {
                 if (! isset($beats[$use['beat']])) {
-                    $issues[] = "{$id} dùng cho {$use['beat']}, không có trong kịch bản.";
+                    $issues[] = Finding::requirement('MotoLocationsCheck.backgroundIssues.3', "{$id} dùng cho {$use['beat']}, không có trong kịch bản.");
 
                     continue;
                 }
@@ -209,7 +209,7 @@ final class MotoLocationsCheck
                 $key = $use['beat'].'|'.$use['part'];
 
                 if (isset($seen[$key])) {
-                    $issues[] = "{$id} khai hai lần cùng phần \"{$use['part']}\" của {$use['beat']}.";
+                    $issues[] = Finding::requirement('MotoLocationsCheck.backgroundIssues.4', "{$id} khai hai lần cùng phần \"{$use['part']}\" của {$use['beat']}.");
                 }
 
                 $seen[$key] = true;
@@ -230,7 +230,7 @@ final class MotoLocationsCheck
 
             foreach ($background['shot_changes'] as $change) {
                 foreach (array_diff($change['beats'], $mine) as $beat) {
-                    $issues[] = "{$id}: shot_changes nhắc {$beat}, không phải beat của ảnh nền này.";
+                    $issues[] = Finding::requirement('MotoLocationsCheck.backgroundIssues.5', "{$id}: shot_changes nhắc {$beat}, không phải beat của ảnh nền này.");
                 }
             }
 
@@ -250,12 +250,12 @@ final class MotoLocationsCheck
     private static function quoteIssues(string $label, array $evidence, array $mine, array $beats): array
     {
         if (! in_array($evidence['beat'], $mine, true)) {
-            return ["{$label}: trích {$evidence['beat']}, không phải beat của ảnh nền này."];
+            return [Finding::requirement('MotoLocationsCheck.quoteIssues.beat', "{$label}: trích {$evidence['beat']}, không phải beat của ảnh nền này.")];
         }
 
         return array_key_exists($evidence['field'], (array) ($beats[$evidence['beat']] ?? []))
             ? []
-            : ["{$label}: {$evidence['beat']}.{$evidence['field']} không có trong dữ liệu đã ghim."];
+            : [Finding::requirement('MotoLocationsCheck.quoteIssues.field', "{$label}: {$evidence['beat']}.{$evidence['field']} không có trong dữ liệu đã ghim.")];
     }
 
     /**
@@ -275,18 +275,18 @@ final class MotoLocationsCheck
             $label = 'Xung đột '.($index + 1);
 
             if ($conflict['beats'] === [] && $conflict['backgrounds'] === []) {
-                $issues[] = "{$label} không nêu beat hay ảnh nền nào bị ảnh hưởng.";
+                $issues[] = Finding::note('MotoLocationsCheck.conflictIssues.1', "{$label} không nêu beat hay ảnh nền nào bị ảnh hưởng.");
             }
 
             foreach ($conflict['beats'] as $beat) {
                 if (! isset($beats[$beat])) {
-                    $issues[] = "{$label} nhắc {$beat}, không có trong kịch bản.";
+                    $issues[] = Finding::note('MotoLocationsCheck.conflictIssues.2', "{$label} nhắc {$beat}, không có trong kịch bản.");
                 }
             }
 
             foreach ($conflict['backgrounds'] as $background) {
                 if (! isset($served[$background])) {
-                    $issues[] = "{$label} nhắc {$background}, không có trong backgrounds.";
+                    $issues[] = Finding::note('MotoLocationsCheck.conflictIssues.3', "{$label} nhắc {$background}, không có trong backgrounds.");
                 }
             }
 
@@ -294,7 +294,7 @@ final class MotoLocationsCheck
                 $problem = self::evidenceProblem($evidence, $beats, $states);
 
                 if ($problem !== null) {
-                    $issues[] = "{$label}: {$problem}";
+                    $issues[] = Finding::note('MotoLocationsCheck.conflictIssues.4', "{$label}: {$problem}");
                 }
             }
 
@@ -377,8 +377,7 @@ final class MotoLocationsCheck
             'status' => $status,
             'error' => $error,
             'schema' => $schema,
-            'issues' => array_values(array_unique($issues)),
-            'warnings' => array_values(array_unique($warnings)),
+            ...Finding::fields($issues, $warnings),
             'judge' => self::JUDGE,
         ];
     }

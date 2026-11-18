@@ -54,7 +54,7 @@ final class MotoScriptReferences
             // Each of the three groups is checked on its own: an id with no source fails at every path that names it, however often it is repeated, and is never projected.
             $take = static function (mixed $ref, string $at) use (&$refs, &$issues, $design): void {
                 if (! self::known($ref, $design)) {
-                    $issues[] = $at.': '.self::text($ref).' không có trong thiết kế.';
+                    $issues[] = Finding::requirement('MotoScriptReferences.project.1', $at.': '.self::text($ref).' không có trong thiết kế.');
                 } elseif (! in_array($ref, $refs, true)) {
                     $refs[] = $ref;
                 }

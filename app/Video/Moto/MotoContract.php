@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Video\Moto;
 
+use App\Video\Inspiration\PhaseOneEvidence;
+use App\Video\Schema\JsonStructureSchema;
+use App\Video\Schema\JsonStructureSchemaException;
+use Opis\JsonSchema\Exceptions\SchemaException;
+
 final class MotoContract
 {
     public const WORKFLOW = 'harley_custom_v1';
@@ -166,67 +171,58 @@ final class MotoContract
         return (string) json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR);
     }
 
-    public const TECHNICAL_SCHEMA_VERSION = 'moto-technical-schema-v1';
-
-    /** @var array<string, array<string, list<string>>> by schema name, the keywords of a released schema that count creative content, by the pointer of the node that carries them */
-    private const CREATIVE_COUNTS = [
-        'MotoDna' => [
-            '/properties/dna/properties/visual_identity/properties/identity_cues' => ['minItems', 'maxItems'],
-            '/properties/dna/properties/departures' => ['minItems', 'maxItems'],
-            '/properties/dna/properties/features' => ['maxItems'],
-            '/properties/dna/properties/must_avoid' => ['minItems'],
-        ],
-        'MotoDesign' => [
-            '/$defs/data/properties/systems' => ['minItems'],
-            '/$defs/data/properties/connections' => ['minItems'],
-            '/$defs/data/properties/features' => ['maxItems'],
-            '/$defs/motorcycle/properties/name' => ['minLength', 'maxLength'],
-            '/$defs/motorcycle/properties/signature_moments' => ['minItems', 'maxItems'],
-            '/$defs/motorcycle/properties/palette' => ['maxItems'],
-            '/$defs/motorcycle/properties/materials' => ['minItems'],
-            '/$defs/parts' => ['minItems'],
-            '/$defs/rider_interface/properties/contact_points' => ['minItems'],
-            '/$defs/identity_rule/properties/description' => ['maxLength'],
-        ],
-        'MotoScript' => [
-            '/$defs/data/properties/beats' => ['minItems'],
-            '/$defs/data/properties/text_cards' => ['minItems'],
-            '/$defs/story/properties/loops' => ['maxItems'],
-        ],
-        'MotoLocations' => [
-            '/$defs/location/properties/palette' => ['maxItems'],
-            '/$defs/background/properties/must_show' => ['maxItems'],
-        ],
-    ];
+    /** @var string the check of a moto AI answer against its pinned schema: structure only (JsonStructureSchema); v1 left out the counts of creative content alone */
+    public const TECHNICAL_SCHEMA_VERSION = 'moto-technical-schema-v2';
 
     /**
-     * @param  list<array{json_schema_id: string, content: string}>  $schemas  the output schemas a run pinned, as released
-     * @return list<array{json_schema_id: string, content: string}> the same set for the check of an answer: every structural rule kept, the counts of creative content (CREATIVE_COUNTS) left out; the released schemas and their hashes are not touched
+     * The one check every moto AI answer (Phase 1 to 10) is held to: its JSON structure — types,
+     * fields, required fields, extra fields, nested shapes — never what a value says. Plans code builds
+     * (clip plan, film plan) are not checked through here.
+     *
+     * @param  list<array{json_schema_id: string, content: string, label?: string}>  $schemas  the output schemas a run pinned, as released
+     * @return list<array{json_schema_id: string, content: string}> the same set, each reduced to its structure in memory; the released schemas, their hashes and the manifest are not touched
+     *
+     * @throws JsonStructureSchemaException when a pinned schema holds a form the structure check does not support: a fault of the check, never of the answer
      */
     public static function technicalSchemas(array $schemas): array
     {
-        return array_map(static function (array $schema): array {
-            $rules = self::CREATIVE_COUNTS[basename((string) ($schema['json_schema_id'] ?? ''))] ?? [];
-            $document = $rules === [] ? null : json_decode((string) $schema['content']);
+        return array_map(
+            static fn (array $schema): array => ['content' => JsonStructureSchema::content((string) $schema['content'], (string) ($schema['label'] ?? basename((string) ($schema['json_schema_id'] ?? '?'))))] + $schema,
+            $schemas,
+        );
+    }
 
-            if (! is_object($document)) {
-                return $schema;
-            }
+    /**
+     * The structure errors of an answer: building the structure and running the validator both read
+     * the pinned schemas, so a fault in either is a fault of the check (thrown, see structureFault()).
+     *
+     * @param  list<array{json_schema_id: string, content: string, label?: string}>  $schemas  the pinned schemas the answer is held to, its own first
+     * @return list<string> the violations of the answer, by path
+     *
+     * @throws \Throwable a configuration fault of the check (structureFault() names it) or any other error
+     */
+    public static function structureErrors(object $decoded, array $schemas): array
+    {
+        return PhaseOneEvidence::schemaErrors($decoded, self::technicalSchemas($schemas));
+    }
 
-            foreach ($rules as $pointer => $keywords) {
-                $node = $document;
+    /**
+     * @param  list<array{json_schema_id?: string, label?: string}>  $schemas  the schemas the check read
+     * @return ?string why the check could not run, when the error is a fault of its configuration — a schema form it does not support, a reference it cannot resolve, a schema it cannot parse — never a verdict on the answer; null for any other error
+     */
+    public static function structureFault(\Throwable $e, array $schemas = []): ?string
+    {
+        if ($e instanceof JsonStructureSchemaException) {
+            return $e->getMessage();
+        }
 
-                foreach (explode('/', ltrim($pointer, '/')) as $step) {
-                    $node = is_object($node) ? ($node->{$step} ?? null) : null;
-                }
+        if (! $e instanceof SchemaException) {
+            return null;
+        }
 
-                foreach (is_object($node) ? $keywords : [] as $keyword) {
-                    unset($node->{$keyword});
-                }
-            }
+        $labels = implode(', ', array_map(static fn (array $schema): string => (string) ($schema['label'] ?? basename((string) ($schema['json_schema_id'] ?? '?'))), $schemas));
 
-            return ['content' => (string) json_encode($document, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION)] + $schema;
-        }, $schemas);
+        return 'Bộ kiểm cấu trúc không chạy được trên schema đã ghim'.($labels === '' ? '' : " ({$labels})").': '.$e->getMessage().' — lỗi cấu hình bộ kiểm, không phải lỗi câu trả lời AI.';
     }
 
     /** @return list<string> the name with its spaces collapsed and, when it starts with the make, the same name without it */

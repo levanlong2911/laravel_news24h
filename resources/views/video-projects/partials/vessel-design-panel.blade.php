@@ -94,6 +94,12 @@
                                 @foreach($yachtCheck['issues'] as $issue)
                                     <div class="line"><span class="v" style="color:var(--vp-red)">{{ $issue }}</span></div>
                                 @endforeach
+                                @foreach((array) ($yachtCheck['requirements'] ?? []) as $requirement)
+                                    <div class="line"><span class="v" style="color:var(--vp-amber-fg)">Điều kiện để dùng ở bước sau: {{ $requirement }}</span></div>
+                                @endforeach
+                                @foreach((array) ($yachtCheck['notes'] ?? []) as $note)
+                                    <div class="line"><span class="v" style="color:var(--vp-dim)">Ghi chú nội dung (không chặn): {{ $note }}</span></div>
+                                @endforeach
                                 @foreach($yachtWarnings as $warning)
                                     <div class="line"><span class="v" style="color:var(--vp-amber-fg)">{{ $warning }}</span></div>
                                 @endforeach

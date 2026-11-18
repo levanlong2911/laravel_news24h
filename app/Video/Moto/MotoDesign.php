@@ -112,10 +112,17 @@ final class MotoDesign implements DesignWorkflow
         try {
             $schemaErrors = MotoDesignRefs::schemaIssues(PhaseOneEvidence::schemaDiagnostics($decoded, self::schemas($manifest)), (array) (is_array($response) ? ($response['data'] ?? []) : []), $format === MotoContract::DESIGN_FORMAT_V2);
         } catch (\Throwable $e) {
+            $fault = MotoContract::structureFault($e);
+
+            if ($fault !== null) {
+                // A fault of the check itself leaves the answer unscored with that cause; it is never a verdict on the answer.
+                return [$decoded, ['error' => $fault, 'config_fault' => true] + MotoDesignCheck::evaluate(null, $run['project_id'], $run['prompt_version'], $run['dna'], $run['source_identity'], $run['model_sheet'], [], [], $format) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION]];
+            }
+
             $schemaErrors = ['không kiểm được schema: '.$e->getMessage()];
         }
 
-        return [$decoded, MotoDesignCheck::evaluate(
+        return [$decoded, MotoCheckRules::apply(MotoDesignCheck::evaluate(
             is_array($response) ? $response : null,
             $run['project_id'],
             $run['prompt_version'],
@@ -125,6 +132,6 @@ final class MotoDesign implements DesignWorkflow
             $run['forbidden'],
             $schemaErrors,
             $format,
-        ) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION]];
+        )) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION]];
     }
 }

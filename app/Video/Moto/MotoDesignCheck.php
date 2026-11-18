@@ -69,7 +69,8 @@ final class MotoDesignCheck
         }
 
         $status = is_string($response['status'] ?? null) ? $response['status'] : null;
-        $issues = array_map(static fn (string $error): string => "Schema: {$error}", $schemaErrors);
+        // A schema error is an error of the JSON structure: a RULE failure.
+        $issues = array_map(static fn (string $error): Finding => Finding::blocking('MotoDesignCheck.schema', "Schema: {$error}"), $schemaErrors);
 
         if ($status === 'fail') {
             $reasons = array_values(array_filter(array_map(static fn (mixed $flag): string => is_string($flag) ? rtrim(trim($flag), '.') : '', (array) ($response['flags'] ?? []))));
@@ -78,11 +79,11 @@ final class MotoDesignCheck
         }
 
         if (($response['project_id'] ?? null) !== $projectId) {
-            $issues[] = 'project_id không phải dự án này.';
+            $issues[] = Finding::blocking('MotoDesignCheck.scored.1', 'project_id không phải dự án này.');
         }
 
         if (($response['prompt_version'] ?? null) !== $promptVersion) {
-            $issues[] = 'prompt_version là '.json_encode($response['prompt_version'] ?? null, JSON_UNESCAPED_UNICODE)."; lượt chạy này dùng {$promptVersion}.";
+            $issues[] = Finding::blocking('MotoDesignCheck.scored.2', 'prompt_version là '.json_encode($response['prompt_version'] ?? null, JSON_UNESCAPED_UNICODE)."; lượt chạy này dùng {$promptVersion}.");
         }
 
         if ($schemaErrors !== []) {
@@ -108,7 +109,7 @@ final class MotoDesignCheck
 
         if ($status === 'partial') {
             $blocking = array_values(array_filter($data['source_issues'], static fn (array $issue): bool => $issue['blocking'] === true));
-            $issues[] = 'AI báo status partial — hồ sơ được lưu nhưng không render model sheet: '.implode('; ', array_map(static fn (array $issue): string => "{$issue['id']} {$issue['problem']}", $blocking)).'.';
+            $issues[] = Finding::requirement('MotoDesignCheck.scored.3', 'AI báo status partial — hồ sơ được lưu nhưng không render model sheet: '.implode('; ', array_map(static fn (array $issue): string => "{$issue['id']} {$issue['problem']}", $blocking)).'.');
         }
 
         return self::result($issues === [] ? self::PASS : self::FAIL, $status, $issues, null, CanonicalJson::hash($data), self::partsByState($data), $warnings);
@@ -154,7 +155,7 @@ final class MotoDesignCheck
         $seen = [];
         $add = static function (string $kind, string $id) use (&$seen, &$issues): void {
             if (isset($seen[$kind][$id])) {
-                $issues[] = "{$kind} {$id} khai trùng ID.";
+                $issues[] = Finding::requirement('MotoDesignCheck.ids.1', "{$kind} {$id} khai trùng ID.");
             }
 
             $seen[$kind][$id] = true;
@@ -188,7 +189,7 @@ final class MotoDesignCheck
                 $lines[$line['id']] = true;
 
                 if (! str_starts_with($line['id'], $system['id'].'-')) {
-                    $issues[] = "line {$line['id']} không thuộc hệ {$system['id']} theo tiền tố ID.";
+                    $issues[] = Finding::requirement('MotoDesignCheck.ids.2', "line {$line['id']} không thuộc hệ {$system['id']} theo tiền tố ID.");
                 }
             }
         }
@@ -216,7 +217,7 @@ final class MotoDesignCheck
                 $modes[$mode['id']] = $mode;
 
                 if (! str_starts_with($mode['id'], $feature['id'].'-')) {
-                    $issues[] = "mode {$mode['id']} không thuộc {$feature['id']} theo tiền tố ID.";
+                    $issues[] = Finding::requirement('MotoDesignCheck.ids.3', "mode {$mode['id']} không thuộc {$feature['id']} theo tiền tố ID.");
                 }
             }
         }
@@ -239,7 +240,7 @@ final class MotoDesignCheck
 
         foreach ($configurations + $lights as $id => $partId) {
             if (! str_starts_with($id, $partId.'-')) {
-                $issues[] = "{$id} khai ở {$partId} nhưng tiền tố ID là bộ phận khác.";
+                $issues[] = Finding::requirement('MotoDesignCheck.ids.4', "{$id} khai ở {$partId} nhưng tiền tố ID là bộ phận khác.");
             }
         }
 
@@ -302,9 +303,9 @@ final class MotoDesignCheck
                 }
 
                 if (! isset($known[$kindOf($ref)][$ref])) {
-                    $issues[] = "{$path}: {$ref} không có trong hồ sơ.";
+                    $issues[] = Finding::requirement('MotoDesignCheck.referenceIssues.1', "{$path}: {$ref} không có trong hồ sơ.");
                 } elseif ($present && isset($ids['parts'][$ref]) && ! $ids['parts'][$ref]['present']) {
-                    $issues[] = "{$path}: {$ref} là bộ phận không có trên xe (present false).";
+                    $issues[] = Finding::requirement('MotoDesignCheck.referenceIssues.2', "{$path}: {$ref} là bộ phận không có trên xe (present false).");
                 }
             }
         };
@@ -315,7 +316,7 @@ final class MotoDesignCheck
             $check("{$part['id']}.surfaces", array_column($part['surfaces'], 'color_id'));
 
             if ($part['parent'] === $part['id']) {
-                $issues[] = "{$part['id']}.parent: bộ phận không thể là cha của chính nó.";
+                $issues[] = Finding::requirement('MotoDesignCheck.referenceIssues.3', "{$part['id']}.parent: bộ phận không thể là cha của chính nó.");
             }
         }
 
@@ -332,7 +333,7 @@ final class MotoDesignCheck
             $check("{$connection['id']}.between", $connection['between'], true);
 
             if ($connection['between'][0] === $connection['between'][1]) {
-                $issues[] = "{$connection['id']}.between: nối một bộ phận với chính nó.";
+                $issues[] = Finding::requirement('MotoDesignCheck.referenceIssues.4', "{$connection['id']}.between: nối một bộ phận với chính nó.");
             }
         }
 
@@ -368,7 +369,8 @@ final class MotoDesignCheck
         $check('rider_interface.passenger.parts', $data['rider_interface']['passenger']['parts']);
 
         if ($themed) {
-            $issues = [...$issues, ...array_column(MotoDesignRefs::storyRefProblems($data), 'message')];
+            // A story ref is an id the next steps look up in the design.
+            $issues = [...$issues, ...Finding::each(MotoCheckRules::USE, 'MotoDesignRefs.storyRefProblems', array_column(MotoDesignRefs::storyRefProblems($data), 'message'))];
         }
 
         foreach ($data['build_states'] as $state) {
@@ -409,22 +411,22 @@ final class MotoDesignCheck
         $found = array_column($data['features'], null, 'id');
 
         foreach (array_diff_key($found, $wanted) as $id => $feature) {
-            $issues[] = "features có {$id}, không phải signature feature của DNA (".implode(', ', array_keys($wanted)).').';
+            $issues[] = Finding::note('MotoDesignCheck.dnaIssues.1', "features có {$id}, không phải signature feature của DNA (".implode(', ', array_keys($wanted)).').');
         }
 
         foreach (array_diff_key($wanted, $found) as $id => $feature) {
-            $issues[] = "features thiếu {$id} của DNA.";
+            $issues[] = Finding::note('MotoDesignCheck.dnaIssues.2', "features thiếu {$id} của DNA.");
         }
 
         $departures = array_column((array) ($dna['departures'] ?? []), 'id');
         $covered = array_column($data['motorcycle']['departures'], 'departure');
 
         foreach (array_diff($covered, $departures) as $id) {
-            $issues[] = "motorcycle.departures có {$id}, không phải departure của DNA.";
+            $issues[] = Finding::note('MotoDesignCheck.dnaIssues.3', "motorcycle.departures có {$id}, không phải departure của DNA.");
         }
 
         foreach (array_diff($departures, $covered) as $id) {
-            $issues[] = "motorcycle.departures chưa nói {$id} của DNA nằm ở đâu trong thiết kế.";
+            $issues[] = Finding::note('MotoDesignCheck.dnaIssues.4', "motorcycle.departures chưa nói {$id} của DNA nằm ở đâu trong thiết kế.");
         }
 
         return $issues;
@@ -445,7 +447,7 @@ final class MotoDesignCheck
             $box = $part['extent'];
 
             if ($box['x_from'] >= $box['x_to'] || $box['y_min'] >= $box['y_max'] || $box['z_min'] >= $box['z_max']) {
-                $issues[] = "{$id}.extent rỗng hoặc đảo cận (cận dưới không nhỏ hơn cận trên).";
+                $issues[] = Finding::requirement('MotoDesignCheck.geometryIssues.1', "{$id}.extent rỗng hoặc đảo cận (cận dưới không nhỏ hơn cận trên).");
             }
         }
 
@@ -454,7 +456,7 @@ final class MotoDesignCheck
                 $y = $data['rider_interface'][$group][$side]['y'] ?? null;
 
                 if (! is_int($y) && ! is_float($y)) {
-                    $issues[] = "rider_interface.{$group}.{$side} thiếu y — không xác định được bên trái/phải của người lái.";
+                    $issues[] = Finding::requirement('MotoDesignCheck.geometryIssues.2', "rider_interface.{$group}.{$side} thiếu y — không xác định được bên trái/phải của người lái.");
                 }
             }
         }
@@ -472,7 +474,7 @@ final class MotoDesignCheck
         }
 
         foreach (array_diff(self::FACINGS, array_keys($facings)) as $facing) {
-            $issues[] = "Không bộ phận nào tả mặt {$facing} — các panel model sheet cần mặt này.";
+            $issues[] = Finding::requirement('MotoDesignCheck.geometryIssues.3', "Không bộ phận nào tả mặt {$facing} — các panel model sheet cần mặt này.");
         }
 
         return ['issues' => $issues, 'warnings' => $warnings];
@@ -491,7 +493,7 @@ final class MotoDesignCheck
 
         foreach ($roles as $index => $id) {
             if ($id !== sprintf('ROLE%02d', $index + 1)) {
-                $issues[] = "participant_roles[{$index}] có ID {$id}; ID phải đánh số liên tiếp từ ROLE01.";
+                $issues[] = Finding::requirement('MotoDesignCheck.storyIssues.1', "participant_roles[{$index}] có ID {$id}; ID phải đánh số liên tiếp từ ROLE01.");
             }
         }
 
@@ -500,19 +502,19 @@ final class MotoDesignCheck
                 $used[$role] = true;
 
                 if (! in_array($role, $roles, true)) {
-                    $issues[] = "{$state['id']}.participant_roles: {$role} không có trong danh mục participant_roles.";
+                    $issues[] = Finding::requirement('MotoDesignCheck.storyIssues.2', "{$state['id']}.participant_roles: {$role} không có trong danh mục participant_roles.");
                 }
             }
         }
 
         foreach (array_diff($roles, array_keys($used)) as $role) {
-            $issues[] = "participant_roles: {$role} không được giai đoạn nào dùng.";
+            $issues[] = Finding::note('MotoDesignCheck.storyIssues.3', "participant_roles: {$role} không được giai đoạn nào dùng.");
         }
 
         foreach ($data['motorcycle']['markings'] as $index => $marking) {
             foreach ($marking['color_ids'] as $color) {
                 if (! isset($ids['colors'][$color])) {
-                    $issues[] = "motorcycle.markings[{$index}].color_ids: {$color} không có trong palette.";
+                    $issues[] = Finding::requirement('MotoDesignCheck.storyIssues.4', "motorcycle.markings[{$index}].color_ids: {$color} không có trong palette.");
                 }
             }
         }
@@ -536,14 +538,14 @@ final class MotoDesignCheck
                 $owner = $ids['configurations'][$id] ?? null;
 
                 if ($owner !== null && $owners !== [] && ! in_array($owner, $owners, true)) {
-                    $issues[] = "{$limit['id']}: vị trí dự phòng {$id} thuộc {$owner}, không phải bộ phận mà giới hạn này kiểm soát (".implode(', ', $owners).').';
+                    $issues[] = Finding::requirement('MotoDesignCheck.configurationIssues.1', "{$limit['id']}: vị trí dự phòng {$id} thuộc {$owner}, không phải bộ phận mà giới hạn này kiểm soát (".implode(', ', $owners).').');
                 }
             }
 
             if ($limit['applies_to']['kind'] === 'part') {
                 foreach ($limit['governs'] as $id) {
                     if (($ids['configurations'][$id] ?? null) !== $limit['applies_to']['id']) {
-                        $issues[] = "{$limit['id']} áp cho bộ phận {$limit['applies_to']['id']} nhưng governs {$id} của bộ phận khác.";
+                        $issues[] = Finding::requirement('MotoDesignCheck.configurationIssues.2', "{$limit['id']} áp cho bộ phận {$limit['applies_to']['id']} nhưng governs {$id} của bộ phận khác.");
                     }
                 }
             }
@@ -556,7 +558,7 @@ final class MotoDesignCheck
                 $shown = array_filter($display, static fn (string $configuration): bool => ($ids['configurations'][$configuration] ?? null) === $id);
 
                 if (count($shown) !== 1) {
-                    $issues[] = 'model_sheet.display_configuration chọn '.count($shown)." vị trí của {$id}, cần đúng một.";
+                    $issues[] = Finding::requirement('MotoDesignCheck.configurationIssues.3', 'model_sheet.display_configuration chọn '.count($shown)." vị trí của {$id}, cần đúng một.");
                 }
             }
         }
@@ -565,7 +567,7 @@ final class MotoDesignCheck
             $partId = $ids['configurations'][$id] ?? null;
 
             if ($partId !== null && ! $ids['parts'][$partId]['present']) {
-                $issues[] = "model_sheet.display_configuration: {$id} thuộc {$partId}, bộ phận không có trên xe.";
+                $issues[] = Finding::requirement('MotoDesignCheck.configurationIssues.4', "model_sheet.display_configuration: {$id} thuộc {$partId}, bộ phận không có trên xe.");
             }
         }
 
@@ -573,7 +575,7 @@ final class MotoDesignCheck
             $owners = array_map(static fn (string $id): string => $ids['configurations'][$id] ?? $id, $configurations);
 
             if (count($owners) !== count(array_unique($owners))) {
-                $issues[] = "{$where} đặt hai vị trí cho cùng một bộ phận.";
+                $issues[] = Finding::requirement('MotoDesignCheck.configurationIssues.5', "{$where} đặt hai vị trí cho cùng một bộ phận.");
             }
         };
 
@@ -600,7 +602,7 @@ final class MotoDesignCheck
 
         foreach ($ids['parts'] as $id => $part) {
             if ($part['until_state'] !== null && ($part['from_state'] === null || $order[$part['until_state']] < $order[$part['from_state']])) {
-                $issues[] = "{$id}: until_state {$part['until_state']} đứng trước from_state.";
+                $issues[] = Finding::requirement('MotoDesignCheck.stateIssues.1', "{$id}: until_state {$part['until_state']} đứng trước from_state.");
             }
         }
 
@@ -615,7 +617,7 @@ final class MotoDesignCheck
                 }
 
                 if (is_string($exception['configuration']) && ($ids['configurations'][$exception['configuration']] ?? null) !== $exception['part']) {
-                    $issues[] = "{$state['id']}: cấu hình {$exception['configuration']} không thuộc {$exception['part']}.";
+                    $issues[] = Finding::requirement('MotoDesignCheck.stateIssues.2', "{$state['id']}: cấu hình {$exception['configuration']} không thuộc {$exception['part']}.");
                 }
             }
         }
@@ -638,7 +640,7 @@ final class MotoDesignCheck
             $pinned = $cameras[$view['id']] ?? null;
 
             if (! is_array($pinned)) {
-                $issues[] = "{$view['id']}: không có camera đã ghim để đối chiếu.";
+                $issues[] = Finding::requirement('MotoDesignCheck.viewIssues.1', "{$view['id']}: không có camera đã ghim để đối chiếu.");
             } else {
                 $fields = in_array($view['id'], self::FIXED_VIEWS, true)
                     ? array_keys(array_diff_key($pinned, ['target' => true]) + $view['camera'])
@@ -650,7 +652,7 @@ final class MotoDesignCheck
                     $same = is_int($written) || is_float($written) ? (is_int($expected) || is_float($expected)) && (float) $written === (float) $expected : $written === $expected;
 
                     if (! $same) {
-                        $issues[] = "{$view['id']}.camera.{$field} là ".json_encode($written, JSON_UNESCAPED_UNICODE).'; camera đã ghim là '.json_encode($expected, JSON_UNESCAPED_UNICODE).'.';
+                        $issues[] = Finding::requirement('MotoDesignCheck.viewIssues.2', "{$view['id']}.camera.{$field} là ".json_encode($written, JSON_UNESCAPED_UNICODE).'; camera đã ghim là '.json_encode($expected, JSON_UNESCAPED_UNICODE).'.');
                     }
                 }
             }
@@ -658,7 +660,7 @@ final class MotoDesignCheck
             $listed = [...$view['visible'], ...$view['partial'], ...$view['uncertain']];
 
             if (count($listed) !== count(array_unique($listed))) {
-                $issues[] = "{$view['id']}: một ID nằm ở hai danh sách visible/partial/uncertain.";
+                $issues[] = Finding::requirement('MotoDesignCheck.viewIssues.3', "{$view['id']}: một ID nằm ở hai danh sách visible/partial/uncertain.");
             }
 
         }
@@ -681,8 +683,8 @@ final class MotoDesignCheck
         $max = (int) ($modelSheet['max_chars'] ?? 0);
 
         if ($max > 0 && mb_strlen($prompt) > $max) {
-            $issues[] = 'final_prompt dài '.mb_strlen($prompt).' ký tự, '.self::LENGTH_ISSUE." {$max}."
-                .($blocks === [] ? '' : ' Các khối dài nhất: '.implode(', ', array_map(static fn (string $title, int $chars): string => "{$title} ({$chars})", array_keys($blocks), $blocks)).'.');
+            $issues[] = Finding::requirement('MotoDesignCheck.promptIssues.1', 'final_prompt dài '.mb_strlen($prompt).' ký tự, '.self::LENGTH_ISSUE." {$max}."
+                .($blocks === [] ? '' : ' Các khối dài nhất: '.implode(', ', array_map(static fn (string $title, int $chars): string => "{$title} ({$chars})", array_keys($blocks), $blocks)).'.'));
         }
 
         $position = -1;
@@ -691,26 +693,26 @@ final class MotoDesignCheck
             $at = strpos($prompt, (string) $line);
 
             if ($at === false) {
-                $issues[] = 'final_prompt thiếu nguyên văn dòng panel '.($index + 1).": \"{$line}\".";
+                $issues[] = Finding::requirement('MotoDesignCheck.promptIssues.2', 'final_prompt thiếu nguyên văn dòng panel '.($index + 1).": \"{$line}\".");
             } elseif ($at < $position) {
-                $issues[] = 'final_prompt đặt dòng panel '.($index + 1).' sai thứ tự.';
+                $issues[] = Finding::requirement('MotoDesignCheck.promptIssues.3', 'final_prompt đặt dòng panel '.($index + 1).' sai thứ tự.');
             } else {
                 $position = $at;
             }
         }
 
         if (preg_match_all(self::PROMPT_IDS, $prompt, $match) > 0) {
-            $issues[] = 'final_prompt chứa ID: '.implode(', ', array_unique($match[0])).' — prompt ảnh không được có ID.';
+            $issues[] = Finding::note('MotoDesignCheck.promptIssues.4', 'final_prompt chứa ID: '.implode(', ', array_unique($match[0])).' — prompt ảnh không được có ID.');
         }
 
         $fields = array_values(array_filter(self::keys($data), static fn (string $key): bool => str_contains($key, '_') && str_contains($prompt, $key)));
 
         if ($fields !== []) {
-            $issues[] = 'final_prompt chứa tên trường: '.implode(', ', $fields).'.';
+            $issues[] = Finding::note('MotoDesignCheck.promptIssues.5', 'final_prompt chứa tên trường: '.implode(', ', $fields).'.');
         }
 
         if (preg_match(self::PLACEHOLDER, $prompt, $match) === 1) {
-            $issues[] = "final_prompt còn chỗ trống \"{$match[0]}\".";
+            $issues[] = Finding::requirement('MotoDesignCheck.promptIssues.6', "final_prompt còn chỗ trống \"{$match[0]}\".");
         }
 
         return $issues;
@@ -766,8 +768,7 @@ final class MotoDesignCheck
             'format' => MotoContract::DESIGN_FORMAT,
             'verdict' => $verdict,
             'status' => $status,
-            'issues' => array_values($issues),
-            'warnings' => array_values($warnings),
+            ...Finding::fields($issues, $warnings, false),
             'error' => $error,
             'design_hash' => $hash,
             'parts_by_state' => $partsByState,

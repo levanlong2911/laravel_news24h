@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
+use App\Video\Moto\MotoCheckRules;
 use App\Enums\ImageQuality;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
@@ -171,6 +172,7 @@ final class LocationWriterService implements QueuedStageService
                 'integrity_error' => $integrity,
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
+                'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version', 'technical_schema'])),
                 'legacy' => $legacy,
                 'locations' => $readable ? array_values(array_filter((array) ($document['data']['locations'] ?? []), 'is_array')) : [],
                 'flags' => array_values(array_filter(is_array($document['flags'] ?? null) ? $document['flags'] : [], 'is_string')),
@@ -180,7 +182,7 @@ final class LocationWriterService implements QueuedStageService
                 'images_error' => $preview['error'],
                 'cells' => $preview['rows'] === [] ? [] : collect($this->images->locationCellsFor($projectId, (string) $shown->id))->groupBy('environment_key')->map(static fn ($cells): array => $cells->values()->all())->all(),
                 'source_problem' => $sourceProblem,
-                'renderable' => $legacy === null && $check !== null && $check['verdict'] === 'PASS' && in_array($check['status'], ['ok', 'partial'], true) && $preview['error'] === null && $preview['rows'] !== [] && $sourceProblem === null,
+                'renderable' => $legacy === null && $check !== null && MotoCheckRules::usable($check) && in_array($check['status'], ['ok', 'partial'], true) && $preview['error'] === null && $preview['rows'] !== [] && $sourceProblem === null,
                 'text_approved' => $approvedShown,
                 'stale' => $approvedShown ? $text['stale'] : [],
                 'tokens' => ['in' => (int) $shown->tokens_in, 'out' => (int) $shown->tokens_out],

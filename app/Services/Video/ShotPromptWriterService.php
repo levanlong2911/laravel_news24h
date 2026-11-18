@@ -277,6 +277,8 @@ abstract class ShotPromptWriterService implements QueuedStageService
                 'status' => $document['status'] ?? null,
                 'verdict' => $check['verdict'] ?? null,
                 'issues' => array_values((array) ($check['issues'] ?? [])),
+                'requirements' => array_values((array) ($check['requirements'] ?? [])),
+                'notes' => array_values((array) ($check['notes'] ?? [])),
                 'schema' => array_values((array) ($check['schema'] ?? [])),
                 'error' => $check['error'] ?? null,
                 'gaps' => array_values((array) ($document['gaps'] ?? [])),

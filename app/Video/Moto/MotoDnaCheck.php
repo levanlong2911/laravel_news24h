@@ -53,14 +53,14 @@ final class MotoDnaCheck
 
         foreach ($dna['departures'] as $departure) {
             if (! in_array($departure['from_id'], $sourceIds, true)) {
-                $issues[] = "{$departure['id']}: from_id \"{$departure['from_id']}\" không phải ID signature, styling, chassis, powertrain, technology hay visual nào của nguồn.";
+                $issues[] = Finding::requirement('MotoDnaCheck.evaluate.1', "{$departure['id']}: from_id \"{$departure['from_id']}\" không phải ID signature, styling, chassis, powertrain, technology hay visual nào của nguồn.");
             }
         }
 
         foreach (['departures' => 'D', 'features' => 'F'] as $list => $prefix) {
             foreach (array_column($dna[$list], 'id') as $index => $id) {
                 if ($id !== $prefix.($index + 1)) {
-                    $issues[] = "{$list}[{$index}] có ID {$id}; ID phải đánh số liên tiếp từ {$prefix}1.";
+                    $issues[] = Finding::requirement('MotoDnaCheck.evaluate.2', "{$list}[{$index}] có ID {$id}; ID phải đánh số liên tiếp từ {$prefix}1.");
                 }
             }
         }
@@ -71,7 +71,7 @@ final class MotoDnaCheck
             'version' => self::VERSION,
             'format' => $format,
             'verdict' => $issues === [] ? DnaCheck::PASS : DnaCheck::FAIL,
-            'issues' => $issues,
+            ...Finding::fields($issues, null, false),
             'schema_errors' => [],
             'error' => null,
         ];
@@ -111,21 +111,21 @@ final class MotoDnaCheck
 
             foreach ($fixed as $field => $value) {
                 if (($written[$group][$field] ?? null) !== $value) {
-                    $issues[] = "brief.{$group}.{$field}: phải chép đúng giá trị đã cho ".json_encode($value, JSON_UNESCAPED_UNICODE).'.';
+                    $issues[] = Finding::blocking('MotoDnaCheck.briefIssues.1', "brief.{$group}.{$field}: phải chép đúng giá trị đã cho ".json_encode($value, JSON_UNESCAPED_UNICODE).'.');
                 }
             }
 
             $basis = $fixed === [] ? 'decided' : 'provided';
 
             if (($written[$group]['basis'] ?? null) !== $basis) {
-                $issues[] = "brief.{$group}.basis: phải là {$basis}.";
+                $issues[] = Finding::blocking('MotoDnaCheck.briefIssues.2', "brief.{$group}.basis: phải là {$basis}.");
             }
         }
 
         foreach (['keep', 'change_scope'] as $list) {
             foreach (is_array($given[$list] ?? null) ? $given[$list] : [] as $value) {
                 if (! in_array($value, $written[$list], true)) {
-                    $issues[] = "brief.{$list}: thiếu mục đã cho ".json_encode($value, JSON_UNESCAPED_UNICODE).'.';
+                    $issues[] = Finding::blocking('MotoDnaCheck.briefIssues.3', "brief.{$list}: thiếu mục đã cho ".json_encode($value, JSON_UNESCAPED_UNICODE).'.');
                 }
             }
         }
@@ -133,7 +133,7 @@ final class MotoDnaCheck
         $limits = is_string($given['limits'] ?? null) ? $given['limits'] : null;
 
         if ($written['limits'] !== ['text' => $limits, 'basis' => $limits === null ? 'none' : 'provided']) {
-            $issues[] = $limits === null ? 'brief.limits: chưa có giới hạn nào được cho — phải là text null, basis none.' : 'brief.limits: phải chép đúng giới hạn đã cho, basis provided.';
+            $issues[] = Finding::blocking('MotoDnaCheck.briefIssues.4', $limits === null ? 'brief.limits: chưa có giới hạn nào được cho — phải là text null, basis none.' : 'brief.limits: phải chép đúng giới hạn đã cho, basis provided.');
         }
 
         return $issues;

@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Video\Moto;
 
-use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Script\CheckedWorkflow;
-use App\Video\Superyacht\Spec\ResolvedPhase;
+use App\Video\Script\StructureChecked;
 
-final class MotoReference implements CheckedWorkflow
+final class MotoReference implements CheckedWorkflow, StructureChecked
 {
+    use ChecksJsonStructure;
+
     public const CONTRACT = 'moto/MotoReferencePrompt@1.2.1';
 
     public function format(): string
@@ -91,14 +92,6 @@ final class MotoReference implements CheckedWorkflow
         ];
     }
 
-    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
-    {
-        return array_map(
-            static fn (string $error): array => ['code' => 'SCHEMA', 'path' => '', 'message' => $error],
-            PhaseOneEvidence::schemaErrors($decoded, $bundle->outputSchemas()),
-        );
-    }
-
     public function check(?array $response, array $context, array $schema): array
     {
         return MotoReferenceCheck::evaluate($response, $context, $schema);
@@ -107,7 +100,11 @@ final class MotoReference implements CheckedWorkflow
     /** @return array{envelope: list<string>, cells: list<array<string, mixed>>} what makes the whole answer unusable, and every checked cell; a cell of an unusable answer is never ready */
     public function derive(array $document, array $context): array
     {
-        return ['envelope' => MotoReferenceCheck::envelopeIssues($document, $context), 'cells' => MotoReferenceCheck::cells($document, $context)];
+        // What is derived and stored keeps its messages as text, exactly as it always did; the decision of each stays with the check.
+        return [
+            'envelope' => array_map('strval', MotoReferenceCheck::envelopeIssues($document, $context)),
+            'cells' => array_map(static fn (array $cell): array => ['issues' => array_map('strval', $cell['issues']), 'notes' => array_map('strval', $cell['notes'])] + $cell, MotoReferenceCheck::cells($document, $context)),
+        ];
     }
 
     /**

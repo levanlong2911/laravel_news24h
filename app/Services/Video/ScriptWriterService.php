@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
+use App\Video\Moto\MotoCheckRules;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
@@ -172,7 +173,7 @@ final class ScriptWriterService implements QueuedStageService
         $report['content_hash'] = $result['content_hash'];
         // The hash binds what the reviewer saw: the run input it was checked with (brief, settings, sources) and its validation policy, so an apply under anything else is refused.
         $report['patch_hash'] = CanonicalJson::hash(['of' => $report['source'], 'patch' => $patch, 'contract' => $result['contract'], 'source' => $current, 'content_hash' => $result['content_hash'], 'input' => $this->stageStore->inputHash($run['input']), 'validation' => $report['validation']]);
-        $report['passed'] = $result['content_hash'] !== null && ($result['check']['verdict'] ?? null) === 'PASS' && ($result['check']['status'] ?? null) === 'ok';
+        $report['passed'] = $result['content_hash'] !== null && MotoCheckRules::usable((array) $result['check']) && ($result['check']['status'] ?? null) === 'ok';
 
         if (! $report['passed']) {
             return ['reason' => 'Bản sửa chưa qua kiểm của hợp đồng hiện hành.'] + $report;
@@ -557,8 +558,9 @@ final class ScriptWriterService implements QueuedStageService
                 'places' => self::places($shown),
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
+                'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version', 'technical_schema'])),
                 'document' => $integrity === null ? ($evaluation['document'] ?? null) : null,
-                'approvable' => $check !== null && $check['verdict'] === 'PASS' && $check['status'] === 'ok' && $sourceProblem === null,
+                'approvable' => $check !== null && MotoCheckRules::usable($check) && $check['status'] === 'ok' && $sourceProblem === null,
                 'tokens' => ['in' => (int) $shown->tokens_in, 'out' => (int) $shown->tokens_out],
                 'cost_usd' => $shown->cost_usd === null ? null : (float) $shown->cost_usd,
             ],

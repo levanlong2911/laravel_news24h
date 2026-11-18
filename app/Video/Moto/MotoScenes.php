@@ -9,14 +9,15 @@ use App\Models\VideoProject;
 use App\Services\Video\LocationSourceService;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\ScriptSourceService;
-use App\Video\Inspiration\PhaseOneEvidence;
+use App\Video\Script\StructureChecked;
 use App\Video\Scenes\SceneWorkflow;
-use App\Video\Superyacht\Spec\ResolvedPhase;
 use App\Video\Superyacht\Support\CanonicalJson;
 use RuntimeException;
 
-final class MotoScenes implements ReleaseBound, SceneWorkflow
+final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
 {
+    use ChecksJsonStructure;
+
     /** @var string the timing of beats that carry no screen time: each beat counts as one step, only to keep the order of scenes */
     public const ORDINAL = 'ordinal';
 
@@ -166,14 +167,6 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow
         return ['design_stage_id' => (string) ($design['design_stage_id'] ?? ''), 'design_raw_sha256' => (string) ($design['design_raw_sha256'] ?? '')] == ($source['design'] ?? null)
             ? null
             : 'Bản thiết kế mà bộ bối cảnh ghim đã đổi so với lúc chia scene này.';
-    }
-
-    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
-    {
-        return array_map(
-            static fn (string $error): array => ['code' => 'SCHEMA', 'path' => '', 'message' => $error],
-            PhaseOneEvidence::schemaErrors($decoded, $bundle->outputSchemas()),
-        );
     }
 
     public function check(?array $response, array $context, array $schema): array

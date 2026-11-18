@@ -146,6 +146,9 @@
                                                 Đúng JSON Schema; {{ $check['evidence']['checked'] ?? 0 }} trích dẫn đều có nguyên văn trên dòng nguồn đã khai.
                                             @endif
                                         </span></div>
+                                        @foreach((array) ($check['notes'] ?? []) as $note)
+                                            <div class="line"><span class="k">Ghi chú nội dung</span><span class="v">{{ $note }} (không chặn)</span></div>
+                                        @endforeach
                                         @if(isset($check['subject']))
                                             <div class="line"><span class="k">Đối tượng chính</span><span class="v">{{ $check['subject']['primary'] ?? '—' }} · {{ $check['subject']['article_kind'] }} · {{ $check['subject']['status'] }}</span></div>
                                         @endif

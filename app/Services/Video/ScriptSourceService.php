@@ -15,6 +15,7 @@ use App\Video\Script\ScriptWorkflow;
 use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Video\Moto\MotoCheckRules;
 use RuntimeException;
 
 final class ScriptSourceService
@@ -124,8 +125,8 @@ final class ScriptSourceService
 
             $check = $evaluation['check'];
 
-            if ($check['verdict'] !== 'PASS') {
-                return [null, 'Bản kịch bản này chưa đạt kiểm RULE — không duyệt được.'];
+            if (! MotoCheckRules::usable($check)) {
+                return [null, $check['verdict'] !== 'PASS' ? 'Bản kịch bản này chưa đạt kiểm RULE — không duyệt được.' : 'Bản kịch bản này còn điều kiện chưa đạt để dùng cho bước sau: '.implode('; ', (array) $check['requirements']).' — không duyệt được.'];
             }
 
             if ($check['status'] !== 'ok') {
@@ -209,6 +210,9 @@ final class ScriptSourceService
         if (! hash_equals($evaluation['content_hash'], (string) ($selection['content_hash'] ?? '')) || ! hash_equals($evaluation['content_hash'], (string) ($decision->metadata_json['content_hash'] ?? ''))) {
             throw new RuntimeException('Nội dung bản kịch bản đang chọn không khớp bản đã duyệt.');
         }
+
+        // The next step reads this script only when every condition it needs still holds — before any paid call.
+        MotoCheckRules::requireUsable((array) $evaluation['check'], 'Bản kịch bản đã duyệt');
 
         if ($evaluation['derived'] === null || $evaluation['derived'] != ($stage->output_json['derived'] ?? null)) {
             throw new RuntimeException('Dữ liệu dẫn xuất (reveal_plan, emotion_curve) không khớp nội dung đã duyệt.');

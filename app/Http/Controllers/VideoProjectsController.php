@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Video\Moto\MotoCheckRules;
 use App\Enums\DesignImageStatus;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
@@ -232,7 +233,7 @@ class VideoProjectsController extends Controller
             default => 'Đã lưu bản thiết kế Phase 3 (draft) — xem kết quả kiểm RULE.',
         };
 
-        return ($stage->output_json['check']['verdict'] ?? null) === YachtDesignCheck::PASS
+        return MotoCheckRules::usable((array) ($stage->output_json['check'] ?? []))
             ? redirect()->to(route('video-projects.anchor', $id).'#modelSheetPanel')->with('success', $message.' Thiết kế đạt kiểm — render model sheet.')
             : back()->with('success', $message);
     }
@@ -587,7 +588,7 @@ class VideoProjectsController extends Controller
             PlanningStageName::SHOTS->value => $this->shotPlanChosen($id, $row)
                 ? route('video-projects.reference', ['id' => $id, 'shots_approved' => (string) $row->id])
                 : route('video-projects.scene', $succeeded ? ['id' => $id, 'shots' => $row->id] : ['id' => $id]),
-            PlanningStageName::YACHT_DESIGN->value => route('video-projects.anchor', $id).($succeeded && ($row->output_json['check']['verdict'] ?? null) === YachtDesignCheck::PASS ? '#modelSheetPanel' : ''),
+            PlanningStageName::YACHT_DESIGN->value => route('video-projects.anchor', $id).($succeeded && MotoCheckRules::usable((array) ($row->output_json['check'] ?? [])) ? '#modelSheetPanel' : ''),
             PlanningStageName::MODEL_SHEET_PROMPT->value => route('video-projects.anchor', $id).'#modelSheetPanel',
             default => route('video-projects.anchor', $id),
         };

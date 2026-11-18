@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Video\Moto;
 
-use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Script\CheckedWorkflow;
-use App\Video\Superyacht\Spec\ResolvedPhase;
+use App\Video\Script\StructureChecked;
 use App\Video\Superyacht\Support\CanonicalJson;
 
-final class MotoKeyframePrompt implements CheckedWorkflow
+final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
 {
+    use ChecksJsonStructure;
+
     public const CONTRACT = 'moto/MotoKeyframePrompt@1.0.1';
 
     /** @var list<string> every output contract this check reads: the current one, and the one earlier runs were written to, whose fields are the same */
@@ -170,14 +171,6 @@ final class MotoKeyframePrompt implements CheckedWorkflow
         ];
     }
 
-    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
-    {
-        return array_map(
-            static fn (string $error): array => ['code' => 'SCHEMA', 'path' => '', 'message' => $error],
-            PhaseOneEvidence::schemaErrors($decoded, $bundle->outputSchemas()),
-        );
-    }
-
     public function check(?array $response, array $context, array $schema): array
     {
         if ($response === null) {
@@ -202,7 +195,7 @@ final class MotoKeyframePrompt implements CheckedWorkflow
 
         foreach (['project_id', 'prompt_version', 'shot_id', 'source_fingerprint'] as $key) {
             if (($response[$key] ?? null) !== ($context[$key] ?? null)) {
-                $issues[] = "{$key} của phản hồi không khớp yêu cầu.";
+                $issues[] = Finding::blocking('MotoKeyframePrompt.check.1', "{$key} của phản hồi không khớp yêu cầu.");
             }
         }
 
@@ -215,23 +208,23 @@ final class MotoKeyframePrompt implements CheckedWorkflow
         $outside = array_values(array_unique(array_filter([...$positions, ...array_map('intval', $mentions[1])], static fn (int $position): bool => $position < 1 || $position > $count)));
 
         if ($unknownParts !== []) {
-            $issues[] = 'source_refs.parts có ID không thuộc thiết kế: '.implode(', ', $unknownParts).'.';
+            $issues[] = Finding::requirement('MotoKeyframePrompt.check.2', 'source_refs.parts có ID không thuộc thiết kế: '.implode(', ', $unknownParts).'.');
         }
 
         if ($unknownWork !== []) {
-            $issues[] = 'source_refs.work có ID không thuộc shot hoặc scene: '.implode(', ', $unknownWork).'.';
+            $issues[] = Finding::requirement('MotoKeyframePrompt.check.3', 'source_refs.work có ID không thuộc shot hoặc scene: '.implode(', ', $unknownWork).'.');
         }
 
         if (count($positions) !== count(array_unique($positions))) {
-            $issues[] = 'source_refs.image_positions có vị trí lặp.';
+            $issues[] = Finding::requirement('MotoKeyframePrompt.check.4', 'source_refs.image_positions có vị trí lặp.');
         }
 
         if ($outside !== []) {
-            $issues[] = 'Vị trí ảnh '.implode(', ', $outside).' nằm ngoài '.$count.' ảnh gửi kèm.';
+            $issues[] = Finding::requirement('MotoKeyframePrompt.check.5', 'Vị trí ảnh '.implode(', ', $outside).' nằm ngoài '.$count.' ảnh gửi kèm.');
         }
 
         if (mb_strlen((string) $response['image_prompt']) > (int) $context['max_prompt_chars']) {
-            $issues[] = 'Prompt dài '.mb_strlen((string) $response['image_prompt']).' ký tự, vượt giới hạn '.$context['max_prompt_chars'].' của model ảnh.';
+            $issues[] = Finding::requirement('MotoKeyframePrompt.check.6', 'Prompt dài '.mb_strlen((string) $response['image_prompt']).' ký tự, vượt giới hạn '.$context['max_prompt_chars'].' của model ảnh.');
         }
 
         $warnings = [
@@ -269,7 +262,7 @@ final class MotoKeyframePrompt implements CheckedWorkflow
      */
     public static function usable(array $check): bool
     {
-        return ($check['verdict'] ?? null) === self::PASS && ($check['status'] ?? null) === 'ok';
+        return MotoCheckRules::usable($check) && ($check['status'] ?? null) === 'ok';
     }
 
     /**
@@ -323,8 +316,7 @@ final class MotoKeyframePrompt implements CheckedWorkflow
             'status' => $status,
             'error' => $error,
             'schema' => $schema,
-            'issues' => array_values(array_unique($issues)),
-            'warnings' => array_values(array_unique($warnings)),
+            ...Finding::fields($issues, $warnings),
             'judge' => 'not_run',
         ];
     }

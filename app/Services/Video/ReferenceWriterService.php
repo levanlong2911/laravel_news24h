@@ -120,6 +120,8 @@ final class ReferenceWriterService implements QueuedStageService
                 'status' => (string) $latest->status,
                 'verdict' => $latest->output_json['check']['verdict'] ?? null,
                 'issues' => array_values((array) ($latest->output_json['check']['issues'] ?? [])),
+                'requirements' => array_values((array) ($latest->output_json['check']['requirements'] ?? [])),
+                'notes' => array_values((array) ($latest->output_json['check']['notes'] ?? [])),
                 'cells' => array_values(array_map(static fn (array $cell): string => (string) $cell['id'], (array) ($latest->input_json['cells'] ?? []))),
                 'tokens' => ['in' => (int) $latest->tokens_in, 'out' => (int) $latest->tokens_out],
                 'cost_usd' => $latest->cost_usd === null ? null : (float) $latest->cost_usd,

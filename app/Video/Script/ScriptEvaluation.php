@@ -30,7 +30,7 @@ final class ScriptEvaluation
             $schema = $adapter->schemaViolations($decoded, PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest), (string) $context['project_id']);
         }
 
-        $check = $adapter->check($document, $context, $schema);
+        $check = self::checkOf($document, $context, $schema, $adapter);
         $derived = $document !== null && $check['schema'] === [] && $check['status'] !== 'fail' && $check['verdict'] !== 'UNSCORED'
             ? $adapter->derive($document, $context)
             : null;
@@ -43,6 +43,47 @@ final class ScriptEvaluation
             'contract' => $contract,
             'content_hash' => $document === null ? null : ScriptContentHash::of($contract, $document, $source),
         ];
+    }
+
+    /**
+     * The check of an answer from its schema violations: a fault of the check itself never reaches
+     * the rules of the phase — the answer is unscored with that cause, never failed.
+     *
+     * @param  ?array<string, mixed>  $document
+     * @param  array<string, mixed>  $context
+     * @param  list<array{code: string, path: string, message: string}>  $schema  the schema violations of the answer
+     * @return array<string, mixed>
+     */
+    public static function checkOf(?array $document, array $context, array $schema, CheckedWorkflow $adapter): array
+    {
+        $fault = self::configFault($schema);
+        $check = $fault === null
+            ? $adapter->check($document, $context, $schema)
+            : ['error' => $fault, 'config_fault' => true] + $adapter->check(null, $context, []);
+
+        if ($adapter instanceof StructureChecked) {
+            // RULE judges the structure and the run the answer belongs to; what the next step needs becomes a requirement and a judgement of the content a warning.
+            $check = $adapter->sortFindings($check);
+            // Which version of the structure check judged the answer, recorded beside the result.
+            $check['technical_schema'] = $adapter->structurePolicy();
+        }
+
+        return $check;
+    }
+
+    /**
+     * @param  list<array{code: string, path: string, message: string}>  $schema
+     * @return ?string why the check could not run on the pinned schemas (StructureChecked::CONFIG_FAULT), null when it ran
+     */
+    private static function configFault(array $schema): ?string
+    {
+        foreach ($schema as $violation) {
+            if (($violation['code'] ?? null) === StructureChecked::CONFIG_FAULT) {
+                return (string) $violation['message'];
+            }
+        }
+
+        return null;
     }
 
     /**

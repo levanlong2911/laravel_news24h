@@ -15,6 +15,7 @@ use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Video\Moto\MotoCheckRules;
 use RuntimeException;
 
 final class SceneSourceService
@@ -219,8 +220,8 @@ final class SceneSourceService
 
             $check = $evaluation['check'];
 
-            if ($check['verdict'] !== 'PASS') {
-                return [null, 'Bản chia scene này chưa đạt kiểm RULE — không duyệt được.'];
+            if (! MotoCheckRules::usable($check)) {
+                return [null, $check['verdict'] !== 'PASS' ? 'Bản chia scene này chưa đạt kiểm RULE — không duyệt được.' : 'Bản chia scene này còn điều kiện chưa đạt để dùng cho bước sau: '.implode('; ', (array) $check['requirements']).' — không duyệt được.'];
             }
 
             if ($check['status'] !== 'ok') {
@@ -295,6 +296,9 @@ final class SceneSourceService
         if (! hash_equals((string) $evaluation['content_hash'], (string) ($selection['content_hash'] ?? ''))) {
             throw new RuntimeException('Nội dung bản chia scene không khớp bản đã duyệt.');
         }
+
+        // The next step reads this scene plan only when every condition it needs still holds — before any paid call.
+        MotoCheckRules::requireUsable((array) $evaluation['check'], 'Bản chia scene đã duyệt');
 
         $source = $this->source($stage);
 

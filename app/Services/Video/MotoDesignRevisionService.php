@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
+use App\Video\Moto\MotoCheckRules;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
@@ -163,7 +164,7 @@ final class MotoDesignRevisionService
             'content_sha256' => hash('sha256', $raw),
             'tools' => [self::VERSION, MotoDesignPatch::VERSION, MotoDesignRefs::VERSION, (string) ($check['version'] ?? '')],
         ]);
-        $report['passed'] = ($check['verdict'] ?? null) === YachtDesignCheck::PASS && ($check['status'] ?? null) === 'ok';
+        $report['passed'] = MotoCheckRules::usable((array) $check) && ($check['status'] ?? null) === 'ok';
 
         if (! $report['passed']) {
             return ['reason' => 'Bản sửa chưa qua kiểm của hợp đồng mà lượt gốc đã ghim — chưa tạo revision.'] + $report;

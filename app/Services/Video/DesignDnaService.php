@@ -15,6 +15,7 @@ use App\Video\DesignDna\DnaCheck;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Llm\LlmClient;
+use App\Video\Moto\MotoCheckRules;
 use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoDnaCheck;
 use App\Video\Moto\MotoPipelineRelease;
@@ -189,7 +190,7 @@ final class DesignDnaService implements QueuedStageService
             : (is_array($stored['check'] ?? null) ? $stored['check'] : null);
         [$parsed, $parseError] = $succeeded ? JsonAnswer::parse($raw) : [null, null];
         $recorded = is_array($latest->input_json) ? $latest->input_json : [];
-        $phase3Ready = $current && ($check['verdict'] ?? null) === DnaCheck::PASS;
+        $phase3Ready = $current && MotoCheckRules::usable((array) $check);
 
         return [
             'stage_id' => (string) $latest->id,
@@ -355,19 +356,32 @@ final class DesignDnaService implements QueuedStageService
      */
     private static function checkV2(string $raw, array $run, mixed $manifest, string $execution): array
     {
+        $moto = $execution === MotoContract::DNA_EXECUTION;
+        $schemas = [];
+        $fault = null;
+
         try {
             [$decoded] = JsonAnswer::parse($raw);
             $schemas = PhaseResolver::fromConfig((array) config('video.superyacht'))
                 ->fromManifest(is_array($manifest) ? $manifest : throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
                 ->outputSchemas();
-            $errors = is_object($decoded) ? PhaseOneEvidence::schemaErrors($decoded, $execution === MotoContract::DNA_EXECUTION ? MotoContract::technicalSchemas($schemas) : $schemas) : ['phản hồi không phải một object JSON'];
+            $errors = is_object($decoded) ? ($moto ? MotoContract::structureErrors($decoded, $schemas) : PhaseOneEvidence::schemaErrors($decoded, $schemas)) : ['phản hồi không phải một object JSON'];
         } catch (\Throwable $e) {
+            $fault = $moto ? MotoContract::structureFault($e, $schemas) : null;
             $errors = ['không kiểm được JSON Schema đã ghim: '.$e->getMessage()];
         }
 
-        return $execution === MotoContract::DNA_EXECUTION
-            ? MotoDnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $run['brief'], $run['history'], $errors, MotoContract::generation(is_array($manifest) ? $manifest : [], 'MotoDna') >= 2 ? MotoContract::DNA_FORMAT_V2 : MotoContract::DNA_FORMAT) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION]
-            : DnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $errors, DnaCheck::FORMAT_V2);
+        if (! $moto) {
+            return DnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $errors, DnaCheck::FORMAT_V2);
+        }
+
+        $format = MotoContract::generation(is_array($manifest) ? $manifest : [], 'MotoDna') >= 2 ? MotoContract::DNA_FORMAT_V2 : MotoContract::DNA_FORMAT;
+        // A fault of the check itself leaves the answer unscored with that cause; it is never a verdict on the answer.
+        $check = $fault === null
+            ? MotoCheckRules::apply(MotoDnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $run['brief'], $run['history'], $errors, $format))
+            : ['error' => $fault, 'config_fault' => true] + MotoDnaCheck::evaluate(null, $run['inspiration'], $run['flags'], $run['brief'], $run['history'], [], $format);
+
+        return $check + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION];
     }
 
     /**
@@ -398,7 +412,9 @@ final class DesignDnaService implements QueuedStageService
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->where('input_json->execution', MotoContract::DNA_EXECUTION)
             ->whereNull('input_json->orphan_of_stage_id')
-            ->where('output_json->check->verdict', DnaCheck::PASS);
+            ->where('output_json->check->verdict', DnaCheck::PASS)
+            // A DNA that passed RULE with a condition still open is not one the design may be built from.
+            ->where(static fn ($query) => $query->whereNull('output_json->check->requirements')->orWhereJsonLength('output_json->check->requirements', 0));
         $pinned = $queued ?? $passed()
             ->where('project_id', $project->id)
             ->where('input_json->phase_id', $contract['phase_id'])
@@ -439,7 +455,7 @@ final class DesignDnaService implements QueuedStageService
     /** @param array{inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>, history: list<array<string, mixed>>} $run */
     private function replaceable(VideoPlanningStage $served, array $run): bool
     {
-        return self::checkOf($served, $run)['verdict'] !== DnaCheck::PASS;
+        return ! MotoCheckRules::usable(self::checkOf($served, $run));
     }
 
     /** @return array{judge_score: mixed, closest_known: mixed} */

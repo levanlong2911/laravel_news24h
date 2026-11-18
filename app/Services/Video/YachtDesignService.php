@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
+use App\Video\Moto\MotoCheckRules;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
@@ -111,13 +112,13 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
         $exact = $design !== null && $run !== null && $this->sameInput($design, $run['input']);
         $integrity = $design === null ? null : $this->approval->integrityProblem($projectId, $design, $workflow);
         $check = $design === null ? [] : $this->approval->checkOf($design);
-        $usable = $integrity === null && ($check['verdict'] ?? null) === YachtDesignCheck::PASS;
+        $usable = $integrity === null && MotoCheckRules::usable($check);
         $clean = ($check['warnings'] ?? []) === [];
         $evaluated = null;
 
         if ($exact && $live && ! $locked) {
             $evaluated = $this->evaluate((string) ($design->output_json['raw_text'] ?? ''), $run, self::manifestOf($design));
-            $clean = $evaluated[1]['verdict'] === YachtDesignCheck::PASS && $evaluated[1]['warnings'] === [];
+            $clean = MotoCheckRules::usable($evaluated[1]) && $evaluated[1]['warnings'] === [];
             $usable = $integrity === null && $clean;
         }
 
@@ -483,7 +484,7 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
 
         $check = $this->evaluate((string) (is_array($served->output_json) ? ($served->output_json['raw_text'] ?? '') : ''), $run, self::manifestOf($served))[1];
 
-        return $check['verdict'] !== YachtDesignCheck::PASS || $check['warnings'] !== [];
+        return ! MotoCheckRules::usable($check) || $check['warnings'] !== [];
     }
 
     /** @return ?array<string, mixed> */

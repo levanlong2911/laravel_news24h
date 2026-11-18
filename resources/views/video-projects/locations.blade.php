@@ -124,6 +124,9 @@
                     @if($check !== null)<span class="va-tag {{ $check['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $check['verdict'] }}</span><span class="va-tag mute">VISION: not_run</span>@if($shown['legacy'] === null)<span class="va-tag mute">KIỂM NGHĨA: {{ $step['semantic_review'] === 'manual' ? 'người duyệt' : $step['semantic_review'] }}</span>@endif @endif
                     @if($shown['cost_usd'] !== null)<em>{{ $shown['tokens']['in'] }}/{{ $shown['tokens']['out'] }} token · ${{ number_format($shown['cost_usd'], 3) }}</em>@endif
                 </div>
+                @if($check !== null)
+                    @include('video-projects.partials.check-versions', ['check' => $check, 'stored' => $shown['stored_check'] ?? null])
+                @endif
                 @if($shown['integrity_error'] !== null)
                     <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Không dùng được bản này: {{ $shown['integrity_error'] }}</div>
                 @endif
@@ -132,6 +135,7 @@
                     @foreach(array_merge($check['schema'], $check['issues']) as $issue)
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">RULE: {{ $issue }}</div>
                     @endforeach
+                    @include('video-projects.partials.check-findings', ['check' => $check])
                     @foreach($check['warnings'] as $warning)
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-amber-fg)">WARN: {{ $warning }}</div>
                     @endforeach

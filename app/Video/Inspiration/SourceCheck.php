@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Video\Inspiration;
 
+use App\Video\Moto\Finding;
+use App\Video\Moto\MotoCheckRules;
 use App\Video\Moto\MotoContract;
 
 final class SourceCheck
@@ -14,8 +16,8 @@ final class SourceCheck
 
     public const VERSION_V2 = 'source-check-v2';
 
-    /** @var string the technical check of a moto source: the pinned schema, ids once each, issue paths that exist and what the model itself states about the subject. It gives no points and compares no quote with the article: what the source says is content the model reads and the reviewer judges */
-    public const VERSION_MOTO = 'source-check-moto-v2';
+    /** @var string the technical check of a moto source: the pinned JSON structure, ids once each, issue paths that exist and what the model itself states about the subject. It gives no points and compares no quote with the article: what the source says is content the model reads and the reviewer judges. Each rule decides by its code (Finding): an id or a path the next step reads is a requirement, an empty text a note */
+    public const VERSION_MOTO = 'source-check-moto-v3';
 
     public const SOURCE_CONFLICT = 'SOURCE_CONFLICT';
 
@@ -315,12 +317,14 @@ final class SourceCheck
                 $id = (string) ($item['id'] ?? '');
                 $paths["{$base}.{$id}"] = true;
 
+                // An empty text is a judgement of the content: shown, never a hold on the source.
                 if (trim((string) ($item[$field] ?? '')) === '') {
-                    $structure[] = "{$list}[{$index}] ({$id}): nội dung trống.";
+                    $structure[] = Finding::note('SourceCheck.motoEvidence.empty', "{$list}[{$index}] ({$id}): nội dung trống.");
                 }
 
+                // Phase 2 reads the source by these ids: each must name one item.
                 if (isset($ids[$id])) {
-                    $structure[] = "{$list}[{$index}]: ID {$id} lặp.";
+                    $structure[] = Finding::requirement('SourceCheck.motoEvidence.duplicate_id', "{$list}[{$index}]: ID {$id} lặp.");
                 }
 
                 $ids[$id] = true;
@@ -331,10 +335,14 @@ final class SourceCheck
         $issuePaths = [];
 
         foreach ($issues as $index => $issue) {
+            // The code routes the source by the path an issue names (a conflict on the subject holds it): the path must exist.
             if (! isset($paths[(string) $issue['field']])) {
-                $issuePaths[] = "issues[{$index}]: \"{$issue['field']}\" không phải đường dẫn đầy đủ của câu trả lời này.";
+                $issuePaths[] = Finding::requirement('SourceCheck.motoEvidence.issue_path', "issues[{$index}]: \"{$issue['field']}\" không phải đường dẫn đầy đủ của câu trả lời này.");
             }
         }
+
+        $held = array_values(array_filter($structure, static fn (Finding $finding): bool => $finding->kind !== MotoCheckRules::NOTE));
+        $notes = array_values(array_filter($structure, static fn (Finding $finding): bool => $finding->kind === MotoCheckRules::NOTE));
 
         $conflicts = array_values(array_filter($issues, static fn (array $issue): bool => $issue['kind'] === 'conflict'));
         $identityConflicts = array_values(array_filter($conflicts, static fn (array $issue): bool => in_array($issue['field'], self::MOTO_IDENTITY_FIELDS, true)));
@@ -349,7 +357,9 @@ final class SourceCheck
             count($conflicts) > count($identityConflicts) ? self::SOURCE_CONFLICT : null,
             $subject['platform'] !== 'harley_davidson' ? self::NOT_HARLEY_SOURCE : null,
         ]));
-        $blocking = self::blocking($structure, $issuePaths, []);
+        // A requirement holds the source as before (unscored, a new answer may fix it); a note never does.
+        $blocking = self::blocking(array_map('strval', $held), array_map('strval', $issuePaths), []);
+        $requirements = [...$held, ...$issuePaths];
 
         return [
             'version' => self::VERSION_MOTO,
@@ -361,8 +371,12 @@ final class SourceCheck
             'criteria' => [],
             'error' => $blocking === [] ? $error : implode(' ', $blocking),
             'schema_errors' => [],
-            'structure' => $structure,
-            'issue_paths' => $issuePaths,
+            'structure' => array_map('strval', $held),
+            'issue_paths' => array_map('strval', $issuePaths),
+            'requirements' => array_map('strval', $requirements),
+            'notes' => array_map('strval', $notes),
+            'codes' => ['requirements' => array_map(static fn (Finding $finding): string => $finding->code, $requirements), 'notes' => array_map(static fn (Finding $finding): string => $finding->code, $notes)],
+            'rules' => MotoCheckRules::VERSION,
             'evidence' => ['checked' => 0, 'missing' => []],
             'subject' => ['article_kind' => $subject['article_kind'], 'status' => $subject['status'], 'primary' => $subject['primary'], 'platform' => $subject['platform']],
         ];

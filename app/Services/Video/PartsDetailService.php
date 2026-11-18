@@ -275,10 +275,7 @@ class PartsDetailService implements QueuedImageService
                 ($reference['kind'] ?? null) === 'part' => 'prompt_ready',
                 in_array($reference['fingerprint'], $running, true) => 'reviewing',
                 $review === null => 'needs_review',
-                $review['review_status'] === MotoReferenceCheck::READY => 'prompt_ready',
-                $review['review_status'] === MotoReferenceCheck::NEEDS_CONFIRM => $confirmed ? 'prompt_ready' : 'prompt_confirm',
-                $review['review_status'] === MotoReferenceCheck::NEEDS_CHECK => 'prompt_check',
-                default => 'prompt_failed',
+                default => self::reviewedStatus($review, $confirmed),
             };
             $before = is_array($selection[$id] ?? null) && (($selection[$id]['fingerprint'] ?? null) !== $reference['fingerprint'] || isset($unread[$reference['part'] ?? '']));
             $state[$id] = ['status' => $status, 'review' => $review, 'confirmed' => $confirmed ? $accepted[$reference['fingerprint']] : null, 'crop' => $crop, 'master' => $held[$id]['master'] ?? null,
@@ -286,6 +283,21 @@ class PartsDetailService implements QueuedImageService
         }
 
         return $state;
+    }
+
+    /**
+     * @param  array<string, mixed>  $review  the newest checked cell of a reference (MotoReferenceCheck::cells, as stored with its run)
+     * @param  bool  $confirmed  whether a person confirmed the prompt of that run
+     * @return string the state the check leaves the reference in: prompt_ready renders; a rewritten prompt waits for the person, a gap for a check, and a cell a finding holds (RULE or a requirement — never a note) fails
+     */
+    public static function reviewedStatus(array $review, bool $confirmed): string
+    {
+        return match ($review['review_status'] ?? null) {
+            MotoReferenceCheck::READY => 'prompt_ready',
+            MotoReferenceCheck::NEEDS_CONFIRM => $confirmed ? 'prompt_ready' : 'prompt_confirm',
+            MotoReferenceCheck::NEEDS_CHECK => 'prompt_check',
+            default => 'prompt_failed',
+        };
     }
 
     /**

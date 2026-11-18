@@ -118,8 +118,8 @@
                     @if($check !== null)<span class="va-tag {{ $check['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $check['verdict'] }}</span><span class="va-tag mute">STATUS: {{ $check['status'] ?? '—' }}</span><span class="va-tag mute">Nội dung: người duyệt đánh giá</span>@endif
                     @if($shown['cost_usd'] !== null)<em>{{ $shown['tokens']['in'] }}/{{ $shown['tokens']['out'] }} token · ${{ number_format($shown['cost_usd'], 3) }}</em>@endif
                 </div>
-                @if($check !== null && (($shown['stored_check']['version'] ?? $check['version']) !== $check['version'] || ($shown['stored_check']['verdict'] ?? $check['verdict']) !== $check['verdict']))
-                    <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Lúc chạy: {{ $shown['stored_check']['verdict'] ?? '—' }} — bộ kiểm phiên bản cũ ({{ $shown['stored_check']['version'] ?? '—' }}). Kiểm hiện tại: {{ $check['verdict'] === 'PASS' ? 'Đạt kỹ thuật' : $check['verdict'] }} ({{ $check['version'] }}).</div>
+                @if($check !== null)
+                    @include('video-projects.partials.check-versions', ['check' => $check, 'stored' => $shown['stored_check'] ?? null])
                 @endif
                 @if($shown['integrity_error'] !== null)
                     <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Không dùng được bản này: {{ $shown['integrity_error'] }}</div>
@@ -141,6 +141,7 @@
                     @foreach(array_merge($check['schema'], $check['issues']) as $issue)
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">RULE: {{ $issue }}</div>
                     @endforeach
+                    @include('video-projects.partials.check-findings', ['check' => $check])
                 @endif
                 @if($shown['flags'] !== [])
                     <div class="va-lbl">GHI CHÚ CỦA MODEL (FLAGS — chưa được hệ thống kiểm chứng)</div>
@@ -395,8 +396,8 @@
                         @foreach($shotShown['readiness'] as $state => $count)<span class="va-tag {{ $readinessLabels[$state][0] ?? 'mute' }}">{{ $count }} {{ $readinessLabels[$state][1] ?? $state }}</span>@endforeach
                         @if($shotShown['cost_usd'] !== null)<em>{{ $shotShown['tokens']['in'] }}/{{ $shotShown['tokens']['out'] }} token · ${{ number_format($shotShown['cost_usd'], 3) }}</em>@endif
                     </div>
-                    @if($shotCheck !== null && (($shotShown['stored_check']['version'] ?? $shotCheck['version']) !== $shotCheck['version'] || ($shotShown['stored_check']['verdict'] ?? $shotCheck['verdict']) !== $shotCheck['verdict']))
-                        <div class="va-lbl" style="font-weight:400;color:var(--vp-dim)">Lúc chạy: {{ $shotShown['stored_check']['verdict'] ?? '—' }} — bộ kiểm phiên bản cũ ({{ $shotShown['stored_check']['version'] ?? '—' }}). Kiểm hiện tại: {{ $shotCheck['verdict'] === 'PASS' ? 'Đạt kỹ thuật' : $shotCheck['verdict'] }} ({{ $shotCheck['version'] }}).</div>
+                    @if($shotCheck !== null)
+                        @include('video-projects.partials.check-versions', ['check' => $shotCheck, 'stored' => $shotShown['stored_check'] ?? null])
                     @endif
                     @if($shotShown['integrity_error'] !== null)
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Không dùng được bản này: {{ $shotShown['integrity_error'] }}</div>
@@ -418,6 +419,7 @@
                         @foreach(array_merge($shotCheck['schema'], $shotCheck['issues']) as $issue)
                             <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">RULE: {{ $issue }}</div>
                         @endforeach
+                        @include('video-projects.partials.check-findings', ['check' => $shotCheck])
                         @foreach($shotCheck['warnings'] as $warning)
                             <div class="va-lbl" style="font-weight:400;color:var(--vp-amber-fg)">WARN: {{ $warning }}</div>
                         @endforeach

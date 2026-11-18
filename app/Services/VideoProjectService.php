@@ -4993,15 +4993,30 @@ class VideoProjectService implements QueuedStageService
             return SourceCheck::evaluate($answer, $articleBlock, null, SourceCheck::FORMAT);
         }
 
+        $moto = $execution === MotoContract::EVIDENCE_EXECUTION;
+        $schemas = [];
+        $fault = null;
+
         try {
             [$decoded] = JsonAnswer::parse($rawText);
             $schemas = PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))->outputSchemas();
-            $errors = PhaseOneEvidence::schemaErrors($decoded, $schemas);
+            // A moto evidence answer is held to its JSON structure only, like every moto AI answer.
+            $errors = $moto ? MotoContract::structureErrors($decoded, $schemas) : PhaseOneEvidence::schemaErrors($decoded, $schemas);
         } catch (\Throwable $e) {
+            $fault = $moto ? MotoContract::structureFault($e, $schemas) : null;
             $errors = ['không kiểm được JSON Schema đã ghim: '.$e->getMessage()];
         }
 
-        return SourceCheck::evaluate($answer, $articleBlock, $errors, $contract);
+        if (! $moto) {
+            return SourceCheck::evaluate($answer, $articleBlock, $errors, $contract);
+        }
+
+        // A fault of the check itself leaves the answer unscored with that cause; it is never a verdict on the answer.
+        $check = $fault === null
+            ? SourceCheck::evaluate($answer, $articleBlock, $errors, $contract)
+            : ['error' => $fault, 'config_fault' => true] + SourceCheck::evaluate(null, $articleBlock, null, $contract);
+
+        return $check + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION];
     }
 
     /** @return array{0: ?int, 1: string} [$shotCount, $reason] */

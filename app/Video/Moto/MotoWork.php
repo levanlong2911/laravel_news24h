@@ -43,6 +43,23 @@ final class MotoWork
      */
     public static function follow(?string $law, array $scenes, array $beatStates, array $states, array $design): array
     {
+        $trace = self::traced($law, $scenes, $beatStates, $states, $design);
+
+        // What code derives, pins and plans from keeps the messages as text, exactly as it always read them.
+        return ['issues' => array_map('strval', $trace['issues']), 'contradictions' => array_map('strval', $trace['contradictions'])] + $trace;
+    }
+
+    /**
+     * follow(), with each finding still carrying the decision and the code of its rule: for the scene check only.
+     *
+     * @param  list<array<string, mixed>>  $scenes
+     * @param  array<string, ?string>  $beatStates
+     * @param  array<string, array<string, mixed>>  $states
+     * @param  array{first_states: array<string, ?string>, parents: array<string, ?string>, finished: list<string>}  $design
+     * @return array<string, mixed>
+     */
+    public static function traced(?string $law, array $scenes, array $beatStates, array $states, array $design): array
+    {
         return match ($law) {
             null, self::LAW_V1 => self::trace($scenes, $beatStates, $states, $design),
             self::LAW_V2 => self::traceConnected($scenes, $beatStates, $states, $design),
@@ -146,9 +163,9 @@ final class MotoWork
                 $label = self::key($sceneId, $index)." ({$item['beat']} {$item['part']} {$item['operation']})";
 
                 if ($at === false) {
-                    $ids[] = "{$label}: {$item['beat']} không thuộc {$sceneId}.";
+                    $ids[] = Finding::requirement('MotoWork.ids.beat_scene', "{$label}: {$item['beat']} không thuộc {$sceneId}.");
                 } elseif ($at < $position) {
-                    $ids[] = "{$label}: work của {$sceneId} phải theo thứ tự beat.";
+                    $ids[] = Finding::requirement('MotoWork.ids.beat_order', "{$label}: work của {$sceneId} phải theo thứ tự beat.");
                 }
 
                 $position = $at === false ? $position : max($position, $at);
@@ -173,19 +190,19 @@ final class MotoWork
                     $unknown = self::unknownParts($named, $design);
 
                     if ($unknown !== []) {
-                        $ids[] = "{$label}: ".implode(', ', $unknown).' không có trong thiết kế.';
+                        $ids[] = Finding::requirement('MotoWork.ids.part', "{$label}: ".implode(', ', $unknown).' không có trong thiết kế.');
                     }
 
                     foreach (array_values((array) ($item['connection_changes'] ?? [])) as $change) {
                         $strangers = self::unknownParts([(string) $change['part'], (string) $change['parent']], $design);
 
                         if ($strangers !== []) {
-                            $ids[] = "{$label}: connection_changes nêu ".implode(', ', $strangers).', không có trong thiết kế.';
+                            $ids[] = Finding::requirement('MotoWork.ids.connection', "{$label}: connection_changes nêu ".implode(', ', $strangers).', không có trong thiết kế.');
                         }
                     }
 
                     if (! is_array($facts) || ! isset($facts['present']) || ($facts['physical'] ?? true) === false) {
-                        $issues[] = "{$label}: {$beat} ở ".($state ?? 'state null').' chưa có xe thật — không có công việc trên part.';
+                        $issues[] = Finding::requirement('MotoWork.traceConnected.1', "{$label}: {$beat} ở ".($state ?? 'state null').' chưa có xe thật — không có công việc trên part.');
 
                         continue;
                     }
@@ -219,20 +236,20 @@ final class MotoWork
                         }
 
                         if ($child === $parent) {
-                            $issues[] = "{$label}: connection_changes nối {$child} với chính nó.";
+                            $issues[] = Finding::requirement('MotoWork.traceConnected.2', "{$label}: connection_changes nối {$child} với chính nó.");
                         } elseif (! in_array($child, $named, true) && ! in_array($parent, $named, true)) {
-                            $issues[] = "{$label}: connection_changes {$change['change']} {$child} — {$parent} nhưng công việc này không nêu part nào trong hai part đó (part hoặc with).";
+                            $issues[] = Finding::requirement('MotoWork.traceConnected.3', "{$label}: connection_changes {$change['change']} {$child} — {$parent} nhưng công việc này không nêu part nào trong hai part đó (part hoặc with).");
                         } elseif ($absent !== []) {
-                            $issues[] = "{$label}: connection_changes {$change['change']} {$child} — {$parent} nhưng ".implode(', ', $absent)." chưa có ở {$state} (không có trên xe, không đang chế tạo) — không nối hay tách part chưa tồn tại; bằng chứng {$cited}.";
+                            $issues[] = Finding::requirement('MotoWork.traceConnected.4', "{$label}: connection_changes {$change['change']} {$child} — {$parent} nhưng ".implode(', ', $absent)." chưa có ở {$state} (không có trên xe, không đang chế tạo) — không nối hay tách part chưa tồn tại; bằng chứng {$cited}.");
                         } elseif ($change['change'] === 'detach') {
                             if ($existing !== null && $existing['parent'] !== $parent) {
-                                $issues[] = "{$label}: connection_changes tách {$child} khỏi {$parent} nhưng {$child} đang gắn vào {$existing['parent']} (xác lập ở {$existing['item']}) — không ghi nhận; bằng chứng {$cited}.";
+                                $issues[] = Finding::requirement('MotoWork.traceConnected.5', "{$label}: connection_changes tách {$child} khỏi {$parent} nhưng {$child} đang gắn vào {$existing['parent']} (xác lập ở {$existing['item']}) — không ghi nhận; bằng chứng {$cited}.");
 
                                 continue;
                             }
 
                             if ($existing === null && $loose !== null) {
-                                $issues[] = "{$label}: connection_changes tách {$child} khỏi {$parent} nhưng {$child} đã được tách khỏi {$loose['parent']} ở {$loose['item']} và chưa gắn lại — hiện không gắn vào part nào; bằng chứng {$cited}.";
+                                $issues[] = Finding::requirement('MotoWork.traceConnected.6', "{$label}: connection_changes tách {$child} khỏi {$parent} nhưng {$child} đã được tách khỏi {$loose['parent']} ở {$loose['item']} và chưa gắn lại — hiện không gắn vào part nào; bằng chứng {$cited}.");
 
                                 continue;
                             }
@@ -253,15 +270,15 @@ final class MotoWork
                         $link = ($links[$part]['state'] ?? null) === $state ? $links[$part] : null;
 
                         if ($before !== null && $before['state'] === $state && $before['location'] !== $from) {
-                            $issues[] = in_array($part, $named, true)
+                            $issues[] = Finding::requirement('MotoWork.traceConnected.7', in_array($part, $named, true)
                                 ? "{$label}: {$part} rời {$before['beat']} ở {$before['location']} nhưng bắt đầu ở {$from} trong cùng {$state} mà không có công việc nào ở giữa."
-                                : "{$label}: {$part} đang gắn vào {$link['parent']} (xác lập ở {$link['item']}) nên đi cùng công việc này, nhưng {$part} rời {$before['beat']} ở {$before['location']} còn công việc bắt đầu ở {$from}.";
+                                : "{$label}: {$part} đang gắn vào {$link['parent']} (xác lập ở {$link['item']}) nên đi cùng công việc này, nhưng {$part} rời {$before['beat']} ở {$before['location']} còn công việc bắt đầu ở {$from}.");
                         }
 
                         $wasOn = self::wasOn($on, $part, $state, $design);
 
                         if ($item['operation'] === self::ALIGN_CHECK && in_array($part, $named, true) && $wasOn && $present($part) && ($before === null || $before['state'] !== $state)) {
-                            $issues[] = "{$label}: {$part} đang ở trên xe tại {$state} — align_check chỉ đối chiếu khi chi tiết còn ngoài xe.";
+                            $issues[] = Finding::requirement('MotoWork.traceConnected.8', "{$label}: {$part} đang ở trên xe tại {$state} — align_check chỉ đối chiếu khi chi tiết còn ngoài xe.");
                         }
 
                         $startStatus = self::status($from, $making($part), $wasOn);
@@ -286,7 +303,7 @@ final class MotoWork
                         $anchor = $link === null || in_array($link['parent'], $moved, true) ? null : $place($link['parent']);
 
                         if ($anchor !== null && $anchor['location'] !== $to) {
-                            $issues[] = "{$label}: {$part} đang gắn vào {$link['parent']} (xác lập ở {$link['item']}) nhưng công việc này để {$part} ở {$to} trong khi {$link['parent']} ở {$anchor['location']} — tách thì phải khai connection_changes detach có bằng chứng.";
+                            $issues[] = Finding::requirement('MotoWork.traceConnected.9', "{$label}: {$part} đang gắn vào {$link['parent']} (xác lập ở {$link['item']}) nhưng công việc này để {$part} ở {$to} trong khi {$link['parent']} ở {$anchor['location']} — tách thì phải khai connection_changes detach có bằng chứng.");
                         }
                     }
 
@@ -297,11 +314,11 @@ final class MotoWork
                         $unplaced = array_values(array_filter([$a === null ? $attach['part'] : null, $b === null ? $attach['parent'] : null]));
 
                         if ($existing !== null && $existing['parent'] !== $attach['parent']) {
-                            $issues[] = "{$label}: connection_changes gắn {$attach['part']} vào {$attach['parent']} nhưng {$attach['part']} đang gắn vào {$existing['parent']} (xác lập ở {$existing['item']}) — phải detach trước; bằng chứng {$attach['evidence']}.";
+                            $issues[] = Finding::requirement('MotoWork.traceConnected.10', "{$label}: connection_changes gắn {$attach['part']} vào {$attach['parent']} nhưng {$attach['part']} đang gắn vào {$existing['parent']} (xác lập ở {$existing['item']}) — phải detach trước; bằng chứng {$attach['evidence']}.");
                         } elseif ($unplaced !== []) {
-                            $issues[] = "{$label}: connection_changes gắn {$attach['part']} vào {$attach['parent']} nhưng vị trí của ".implode(', ', $unplaced)." ở {$state} chưa được xác lập (đang chế tạo, chưa công việc nào cho biết trên xe hay ngoài xe) — không nối được với part chưa rõ ở đâu; bằng chứng {$attach['evidence']}.";
+                            $issues[] = Finding::requirement('MotoWork.traceConnected.11', "{$label}: connection_changes gắn {$attach['part']} vào {$attach['parent']} nhưng vị trí của ".implode(', ', $unplaced)." ở {$state} chưa được xác lập (đang chế tạo, chưa công việc nào cho biết trên xe hay ngoài xe) — không nối được với part chưa rõ ở đâu; bằng chứng {$attach['evidence']}.");
                         } elseif ($a['location'] !== $b['location']) {
-                            $issues[] = "{$label}: connection_changes gắn {$attach['part']} vào {$attach['parent']} nhưng {$attach['part']} ở {$a['location']} ({$a['basis']}) còn {$attach['parent']} ở {$b['location']} ({$b['basis']}) — hai part khác chỗ thì không nối được; bằng chứng {$attach['evidence']}.";
+                            $issues[] = Finding::requirement('MotoWork.traceConnected.12', "{$label}: connection_changes gắn {$attach['part']} vào {$attach['parent']} nhưng {$attach['part']} ở {$a['location']} ({$a['basis']}) còn {$attach['parent']} ở {$b['location']} ({$b['basis']}) — hai part khác chỗ thì không nối được; bằng chứng {$attach['evidence']}.");
                         } else {
                             $links[$attach['part']] = ['parent' => $attach['parent'], 'state' => $state, 'item' => $key];
                             unset($freed[$attach['part']]);
@@ -310,7 +327,7 @@ final class MotoWork
                     }
 
                     if (in_array($state, $design['finished'], true) && $to !== self::ON) {
-                        $issues[] = "{$label}: {$state} là xe hoàn thiện — part không được kết thúc ngoài xe.";
+                        $issues[] = Finding::requirement('MotoWork.traceConnected.13', "{$label}: {$state} là xe hoàn thiện — part không được kết thúc ngoài xe.");
                     }
 
                     if ($doubted || count($issues) > $mark) {
@@ -408,9 +425,9 @@ final class MotoWork
                 $label = self::key($sceneId, $index)." ({$item['beat']} {$item['part']} {$item['operation']})";
 
                 if ($at === false) {
-                    $ids[] = "{$label}: {$item['beat']} không thuộc {$sceneId}.";
+                    $ids[] = Finding::requirement('MotoWork.ids.beat_scene', "{$label}: {$item['beat']} không thuộc {$sceneId}.");
                 } elseif ($at < $position) {
-                    $ids[] = "{$label}: work của {$sceneId} phải theo thứ tự beat.";
+                    $ids[] = Finding::requirement('MotoWork.ids.beat_order', "{$label}: work của {$sceneId} phải theo thứ tự beat.");
                 }
 
                 $position = $at === false ? $position : max($position, $at);
@@ -435,11 +452,11 @@ final class MotoWork
                     $unknown = self::unknownParts($named, $design);
 
                     if ($unknown !== []) {
-                        $ids[] = "{$label}: ".implode(', ', $unknown).' không có trong thiết kế.';
+                        $ids[] = Finding::requirement('MotoWork.ids.part', "{$label}: ".implode(', ', $unknown).' không có trong thiết kế.');
                     }
 
                     if (! is_array($facts) || ! isset($facts['present']) || ($facts['physical'] ?? true) === false) {
-                        $issues[] = "{$label}: {$beat} ở ".($state ?? 'state null').' chưa có xe thật — không có công việc trên part.';
+                        $issues[] = Finding::requirement('MotoWork.trace.1', "{$label}: {$beat} ở ".($state ?? 'state null').' chưa có xe thật — không có công việc trên part.');
 
                         continue;
                     }
@@ -460,15 +477,15 @@ final class MotoWork
                         $before = $last[$part] ?? null;
 
                         if ($before !== null && $before['state'] === $state && $before['location'] !== $from) {
-                            $issues[] = "{$label}: {$part} rời {$before['beat']} ở {$before['location']} nhưng bắt đầu ở {$from} trong cùng {$state} mà không có công việc nào ở giữa.";
+                            $issues[] = Finding::requirement('MotoWork.trace.2', "{$label}: {$part} rời {$before['beat']} ở {$before['location']} nhưng bắt đầu ở {$from} trong cùng {$state} mà không có công việc nào ở giữa.");
                         } elseif (($before === null || $before['state'] !== $state) && $making($part) && ! $present($part) && $from !== self::OFF) {
-                            $issues[] = "{$label}: {$part} đang chế tạo ở {$state} và chưa có công việc nào trong build state này đặt nó lên xe — công việc đầu tiên trên nó phải bắt đầu ở off_motorcycle.";
+                            $issues[] = Finding::requirement('MotoWork.trace.3', "{$label}: {$part} đang chế tạo ở {$state} và chưa có công việc nào trong build state này đặt nó lên xe — công việc đầu tiên trên nó phải bắt đầu ở off_motorcycle.");
                         }
 
                         $wasOn = self::wasOn($on, $part, $state, $design);
 
                         if ($item['operation'] === self::ALIGN_CHECK && in_array($part, $named, true) && $wasOn && $present($part) && ($before === null || $before['state'] !== $state)) {
-                            $issues[] = "{$label}: {$part} đang ở trên xe tại {$state} — align_check chỉ đối chiếu khi chi tiết còn ngoài xe.";
+                            $issues[] = Finding::requirement('MotoWork.trace.4', "{$label}: {$part} đang ở trên xe tại {$state} — align_check chỉ đối chiếu khi chi tiết còn ngoài xe.");
                         }
 
                         $startStatus = self::status($from, $making($part), $wasOn);
@@ -482,7 +499,7 @@ final class MotoWork
                     }
 
                     if (in_array($state, $design['finished'], true) && $to !== self::ON) {
-                        $issues[] = "{$label}: {$state} là xe hoàn thiện — part không được kết thúc ngoài xe.";
+                        $issues[] = Finding::requirement('MotoWork.trace.5', "{$label}: {$state} là xe hoàn thiện — part không được kết thúc ngoài xe.");
                     }
 
                     $items[$key] = ['beat' => $beat, 'part' => (string) $item['part'], 'operation' => (string) $item['operation'], 'parts' => $parts];
@@ -523,11 +540,11 @@ final class MotoWork
                 $beat = (string) $work['items'][$key]['beat'];
 
                 if ($reached !== null && $order[$key] < $order[$reached]) {
-                    $issues[] = "{$shotId}: {$key} khai làm ngoài hình sau {$reached} — work phải theo thứ tự của bản chia scene, kể cả phần lược giữa các shot.";
+                    $issues[] = Finding::requirement('MotoWork.shotPlaces.1', "{$shotId}: {$key} khai làm ngoài hình sau {$reached} — work phải theo thứ tự của bản chia scene, kể cả phần lược giữa các shot.");
                 }
 
                 if ($opens !== null && isset($beatOrder[$beat], $beatOrder[$opens]) && $beatOrder[$beat] > $beatOrder[$opens]) {
-                    $issues[] = "{$shotId}: {$key} thuộc {$beat}, sau beat {$opens} mà shot mở đầu — công việc chưa tới không thể đã xong trước shot.";
+                    $issues[] = Finding::requirement('MotoWork.shotPlaces.2', "{$shotId}: {$key} thuộc {$beat}, sau beat {$opens} mà shot mở đầu — công việc chưa tới không thể đã xong trước shot.");
                 }
 
                 $reached = $reached === null || $order[$key] > $order[$reached] ? $key : $reached;
@@ -545,7 +562,7 @@ final class MotoWork
 
             foreach ($shown as $key) {
                 if ($reached !== null && $order[$key] < $order[$reached]) {
-                    $issues[] = "{$shot['id']}: {$key} thể hiện sau {$reached} — work phải theo thứ tự của bản chia scene, trong một shot và giữa các shot.";
+                    $issues[] = Finding::requirement('MotoWork.shotPlaces.3', "{$shot['id']}: {$key} thể hiện sau {$reached} — work phải theo thứ tự của bản chia scene, trong một shot và giữa các shot.");
                 }
 
                 $reached = $reached === null || $order[$key] > $order[$reached] ? $key : $reached;
@@ -603,11 +620,11 @@ final class MotoWork
             $given = $listed[$part] ?? null;
 
             if ($place['location'] === self::OFF && $listed === null) {
-                $issues[] = "{$label}.detached_parts là null nhưng work để {$part} ngoài xe ({$place['status']}) — phải liệt kê.";
+                $issues[] = Finding::requirement('MotoWork.detachedIssues.1', "{$label}.detached_parts là null nhưng work để {$part} ngoài xe ({$place['status']}) — phải liệt kê.");
             } elseif ($place['location'] === self::OFF && $given !== $place['status']) {
-                $issues[] = "{$label}.detached_parts: work để {$part} ngoài xe — cần {$part} {$place['status']}".($given === null ? '' : ", không phải {$given}").'.';
+                $issues[] = Finding::requirement('MotoWork.detachedIssues.2', "{$label}.detached_parts: work để {$part} ngoài xe — cần {$part} {$place['status']}".($given === null ? '' : ", không phải {$given}").'.');
             } elseif ($place['location'] === self::ON && $given !== null) {
-                $issues[] = "{$label}.detached_parts nêu {$part} ({$given}) nhưng work để nó trên xe lúc này.";
+                $issues[] = Finding::requirement('MotoWork.detachedIssues.3', "{$label}.detached_parts nêu {$part} ({$given}) nhưng work để nó trên xe lúc này.");
             }
         }
 
@@ -718,20 +735,20 @@ final class MotoWork
         $part = (string) $item['part'];
 
         if ($item['operation'] === 'make' && ! $making($part)) {
-            $issues[] = "{$label}: {$part} không có trong in_progress của {$state} — part đã làm xong thì không ghi make.";
+            $issues[] = Finding::requirement('MotoWork.basisIssues.1', "{$label}: {$part} không có trong in_progress của {$state} — part đã làm xong thì không ghi make.");
         }
 
         if ($item['operation'] !== 'make' && ! $present($part) && ! $making($part)) {
-            $issues[] = "{$label}: {$part} chưa có ở {$state} — không có công việc trên nó.";
+            $issues[] = Finding::requirement('MotoWork.basisIssues.2', "{$label}: {$part} chưa có ở {$state} — không có công việc trên nó.");
         } elseif ($item['operation'] === 'install' && ! $present($part)) {
-            $issues[] = "{$label}: {$part} đang chế tạo ở {$state} — install chỉ lắp part mà build state ghi đã có trên xe; part đang chế tạo thì thử lắp bằng test_fit và lắp lại bằng reinstall.";
+            $issues[] = Finding::requirement('MotoWork.basisIssues.3', "{$label}: {$part} đang chế tạo ở {$state} — install chỉ lắp part mà build state ghi đã có trên xe; part đang chế tạo thì thử lắp bằng test_fit và lắp lại bằng reinstall.");
         }
 
         foreach ((array) ($item['with'] ?? []) as $other) {
             if (! $present((string) $other) && ! $making((string) $other)) {
-                $issues[] = "{$label}: {$other} chưa có ở {$state}.";
+                $issues[] = Finding::requirement('MotoWork.basisIssues.4', "{$label}: {$other} chưa có ở {$state}.");
             } elseif ($item['operation'] === 'install' && ! $present((string) $other)) {
-                $issues[] = "{$label}: {$other} đang chế tạo ở {$state} — không install cùng được.";
+                $issues[] = Finding::requirement('MotoWork.basisIssues.5', "{$label}: {$other} đang chế tạo ở {$state} — không install cùng được.");
             }
         }
 
@@ -750,33 +767,33 @@ final class MotoWork
         $operation = (string) $item['operation'];
 
         if (! in_array($operation, self::OPERATIONS, true)) {
-            return ["{$label}: {$operation} không phải thao tác được hỗ trợ — chọn một trong ".implode(', ', self::OPERATIONS).'.'];
+            return [Finding::requirement('MotoWork.moveIssues.operation', "{$label}: {$operation} không phải thao tác được hỗ trợ — chọn một trong ".implode(', ', self::OPERATIONS).'.')];
         }
 
         if ($operation === 'test_fit' && $move !== [self::OFF, self::ON]) {
-            $issues[] = "{$label}: test_fit nghĩa là đặt thử chi tiết lên xe: cần off_motorcycle → on_motorcycle. Nếu chỉ cầm tới đối chiếu, dùng align_check.";
+            $issues[] = Finding::requirement('MotoWork.moveIssues.1', "{$label}: test_fit nghĩa là đặt thử chi tiết lên xe: cần off_motorcycle → on_motorcycle. Nếu chỉ cầm tới đối chiếu, dùng align_check.");
         } elseif (in_array($operation, self::FITTING, true) && $move !== [self::OFF, self::ON]) {
-            $issues[] = "{$label}: {$operation} đưa part từ ngoài xe lên xe — cần off_motorcycle → on_motorcycle.";
+            $issues[] = Finding::requirement('MotoWork.moveIssues.2', "{$label}: {$operation} đưa part từ ngoài xe lên xe — cần off_motorcycle → on_motorcycle.");
         }
 
         if ($operation === self::ALIGN_CHECK && $move !== [self::OFF, self::OFF]) {
-            $issues[] = "{$label}: align_check chỉ đối chiếu khi chi tiết còn ngoài xe: cần off_motorcycle → off_motorcycle.";
+            $issues[] = Finding::requirement('MotoWork.moveIssues.3', "{$label}: align_check chỉ đối chiếu khi chi tiết còn ngoài xe: cần off_motorcycle → off_motorcycle.");
         }
 
         if ($operation === 'remove' && $move !== [self::ON, self::OFF]) {
-            $issues[] = "{$label}: remove đưa part từ trên xe ra ngoài — cần on_motorcycle → off_motorcycle.";
+            $issues[] = Finding::requirement('MotoWork.moveIssues.4', "{$label}: remove đưa part từ trên xe ra ngoài — cần on_motorcycle → off_motorcycle.");
         }
 
         if (in_array($operation, self::IN_PLACE, true) && $move[0] !== $move[1]) {
-            $issues[] = "{$label}: {$operation} không đổi vị trí part — đầu và cuối phải giống nhau.";
+            $issues[] = Finding::requirement('MotoWork.moveIssues.5', "{$label}: {$operation} không đổi vị trí part — đầu và cuối phải giống nhau.");
         }
 
         if (in_array($operation, self::FIRST_FITTING, true) && $wasOn) {
-            $issues[] = "{$label}: {$item['part']} đã từng ở trên xe — lắp lại là reinstall.";
+            $issues[] = Finding::requirement('MotoWork.moveIssues.6', "{$label}: {$item['part']} đã từng ở trên xe — lắp lại là reinstall.");
         }
 
         if ($operation === 'reinstall' && ! $wasOn) {
-            $issues[] = "{$label}: {$item['part']} chưa từng ở trên xe — không reinstall.";
+            $issues[] = Finding::requirement('MotoWork.moveIssues.7', "{$label}: {$item['part']} chưa từng ở trên xe — không reinstall.");
         }
 
         return $issues;

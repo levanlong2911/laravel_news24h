@@ -21,6 +21,7 @@ use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Video\Moto\MotoCheckRules;
 use RuntimeException;
 
 final class LocationSourceService
@@ -162,8 +163,8 @@ final class LocationSourceService
 
             $check = $evaluation['check'];
 
-            if ($check['verdict'] !== 'PASS') {
-                return [null, 'Bộ bối cảnh chưa đạt kiểm RULE — không render được.'];
+            if (! MotoCheckRules::usable($check)) {
+                return [null, $check['verdict'] !== 'PASS' ? 'Bộ bối cảnh chưa đạt kiểm RULE — không render được.' : 'Bộ bối cảnh còn điều kiện chưa đạt để dùng cho bước sau: '.implode('; ', (array) $check['requirements']).' — không render được.'];
             }
 
             if (! in_array($check['status'], ['ok', 'partial'], true)) {
@@ -243,6 +244,9 @@ final class LocationSourceService
         if (! hash_equals((string) $evaluation['content_hash'], (string) ($text['content_hash'] ?? ''))) {
             throw new RuntimeException('Nội dung bộ bối cảnh không khớp bộ đang dùng.');
         }
+
+        // The next step reads this location set only when every condition it needs still holds — before any paid call.
+        MotoCheckRules::requireUsable((array) $evaluation['check'], 'Bộ bối cảnh đang dùng');
 
         $prompts = (array) ($decision->metadata_json['prompts'] ?? []);
 

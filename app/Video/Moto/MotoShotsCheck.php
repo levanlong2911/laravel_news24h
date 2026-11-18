@@ -129,11 +129,11 @@ final class MotoShotsCheck
         $issues = [];
 
         if (($response['project_id'] ?? null) !== ($context['project_id'] ?? null)) {
-            $issues[] = 'project_id không khớp lượt chạy.';
+            $issues[] = Finding::blocking('MotoShotsCheck.scored.1', 'project_id không khớp lượt chạy.');
         }
 
         if (($response['prompt_version'] ?? null) !== ($context['prompt_version'] ?? null)) {
-            $issues[] = 'prompt_version là "'.($response['prompt_version'] ?? '').'"; lượt chạy này dùng '.($context['prompt_version'] ?? '').'.';
+            $issues[] = Finding::blocking('MotoShotsCheck.scored.2', 'prompt_version là "'.($response['prompt_version'] ?? '').'"; lượt chạy này dùng '.($context['prompt_version'] ?? '').'.');
         }
 
         $data = (array) $response['data'];
@@ -152,7 +152,7 @@ final class MotoShotsCheck
 
         if ($full) {
             if ((array) ($data['omissions'] ?? []) !== []) {
-                $issues[] = 'data.omissions phải rỗng: chính sách '.self::COVERAGE.' không để sự kiện hay công việc nào của nguồn ngoài hình.';
+                $issues[] = Finding::note('MotoShotsCheck.scored.3', 'data.omissions phải rỗng: chính sách '.self::COVERAGE.' không để sự kiện hay công việc nào của nguồn ngoài hình.');
             }
 
             $issues = [...$issues, ...self::progressIssues($written), ...self::unlinkedWorkIssues((array) $context['scenes'])];
@@ -166,7 +166,7 @@ final class MotoShotsCheck
             }
 
             if (count($shots) > $max) {
-                $issues[] = 'Kế hoạch có '.count($shots)." shot, vượt ngân sách {$max} shot của phim.";
+                $issues[] = Finding::requirement('MotoShotsCheck.scored.4', 'Kế hoạch có '.count($shots)." shot, vượt ngân sách {$max} shot của phim.");
             }
 
             if (! $full) {
@@ -203,13 +203,13 @@ final class MotoShotsCheck
                 $label = "{$key} ({$item['beat']} {$item['part']} {$item['operation']})";
 
                 if (in_array($key, $shown, true) && in_array($key, $left, true)) {
-                    $issues[] = "{$label} vừa có shot thể hiện vừa nằm trong omissions — mỗi công việc chỉ ở một nơi.";
+                    $issues[] = Finding::note('MotoShotsCheck.scored.5', "{$label} vừa có shot thể hiện vừa nằm trong omissions — mỗi công việc chỉ ở một nơi.");
                 } elseif (! in_array($key, $shown, true) && ! in_array($key, $left, true)) {
-                    $issues[] = match (true) {
+                    $issues[] = Finding::note('MotoShotsCheck.scored.6', match (true) {
                         $full => "{$label} chưa hoàn tất ở shot nào: các sự kiện gắn với công việc này chưa được shot nào diễn tới whole hoặc finish.",
                         $editing => "{$label} không có shot nào thể hiện và cũng không nằm trong omissions.",
                         default => "{$label} không có shot nào thể hiện.",
-                    };
+                    });
                 }
             }
         }
@@ -222,11 +222,11 @@ final class MotoShotsCheck
         $blocking = array_filter($conflicts, static fn (array $conflict): bool => (bool) $conflict['blocking']) !== [];
 
         if ($status === 'ok' && $blocking) {
-            $issues[] = 'Còn xung đột chặn nhưng status là ok.';
+            $issues[] = Finding::requirement('MotoShotsCheck.scored.7', 'Còn xung đột chặn nhưng status là ok.');
         }
 
         if ($status === 'partial' && ! $blocking) {
-            $issues[] = 'Status partial nhưng không còn xung đột chặn nào.';
+            $issues[] = Finding::note('MotoShotsCheck.scored.8', 'Status partial nhưng không còn xung đột chặn nào.');
         }
 
         return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings);
@@ -272,7 +272,7 @@ final class MotoShotsCheck
                 };
 
                 if ($problem !== null) {
-                    $issues[] = "{$id}: off_frame {$part} {$problem}.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.designRefIssues.1', "{$id}: off_frame {$part} {$problem}.");
                 }
             }
         }
@@ -284,7 +284,7 @@ final class MotoShotsCheck
                 $group = $context['ref_parts'][$ref] ?? null;
 
                 if (is_array($group) && preg_match(self::IDENTITY_REF, (string) $ref) === 1 && array_intersect($group, $film) === []) {
-                    $issues[] = "Kịch bản nêu {$ref} nhưng không shot nào của phim có part của {$ref} trong khung — tính năng và khoảnh khắc đặc trưng phải lên hình ít nhất một lần.";
+                    $issues[] = Finding::note('MotoShotsCheck.designRefIssues.2', "Kịch bản nêu {$ref} nhưng không shot nào của phim có part của {$ref} trong khung — tính năng và khoảnh khắc đặc trưng phải lên hình ít nhất một lần.");
                 }
             }
 
@@ -296,9 +296,9 @@ final class MotoShotsCheck
                 $group = $context['ref_parts'][$ref] ?? null;
 
                 if (is_array($group) && array_intersect($group, $inFrame[$id] ?? []) === []) {
-                    $issues[] = "{$id} nêu {$ref} nhưng không shot nào phủ beat này có part của {$ref} trong khung.";
+                    $issues[] = Finding::note('MotoShotsCheck.designRefIssues.3', "{$id} nêu {$ref} nhưng không shot nào phủ beat này có part của {$ref} trong khung.");
                 } elseif (isset($context['parts'][$ref]) && ! in_array($ref, $seen[$id] ?? [], true)) {
-                    $issues[] = "{$id} nêu {$ref} nhưng không shot nào phủ beat này ghi {$ref} trong parts hoặc off_frame.";
+                    $issues[] = Finding::note('MotoShotsCheck.designRefIssues.4', "{$id} nêu {$ref} nhưng không shot nào phủ beat này ghi {$ref} trong parts hoặc off_frame.");
                 }
             }
         }
@@ -322,13 +322,13 @@ final class MotoShotsCheck
             $scene = (string) $shot['scene'];
 
             if (! isset($position[$scene])) {
-                $issues[] = "{$shot['id']} thuộc {$scene}, không có trong bản chia scene.";
+                $issues[] = Finding::requirement('MotoShotsCheck.idIssues.1', "{$shot['id']} thuộc {$scene}, không có trong bản chia scene.");
 
                 continue;
             }
 
             if ($position[$scene] < $last) {
-                $issues[] = "{$shot['id']} đứng sau shot của scene muộn hơn — shot phải theo thứ tự scene.";
+                $issues[] = Finding::requirement('MotoShotsCheck.idIssues.2', "{$shot['id']} đứng sau shot của scene muộn hơn — shot phải theo thứ tự scene.");
             }
 
             $last = max($last, $position[$scene]);
@@ -336,13 +336,13 @@ final class MotoShotsCheck
             $expected = sprintf('%s_SH%02d', $scene, $numbers[$scene]);
 
             if ($shot['id'] !== $expected) {
-                $issues[] = "Shot thứ {$numbers[$scene]} của {$scene} là {$shot['id']}; cần {$expected}.";
+                $issues[] = Finding::requirement('MotoShotsCheck.idIssues.3', "Shot thứ {$numbers[$scene]} của {$scene} là {$shot['id']}; cần {$expected}.");
             }
         }
 
         foreach (array_keys($scenes) as $scene) {
             if (! isset($numbers[$scene])) {
-                $issues[] = "{$scene} không có shot nào.";
+                $issues[] = Finding::note('MotoShotsCheck.idIssues.4', "{$scene} không có shot nào.");
             }
         }
 
@@ -388,7 +388,7 @@ final class MotoShotsCheck
                 }
 
                 if ($timing !== null && $item['part'] === 'closing' && isset($beats[$beat]) && $length <= 0) {
-                    $issues[] = "{$shot['id']}: phần mở/giữa của {$beat} đã chiếm ".($given[$beat] ?? 0)." ms trong {$duration} ms của beat — không còn thời gian cho phần đóng.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timing.1', "{$shot['id']}: phần mở/giữa của {$beat} đã chiếm ".($given[$beat] ?? 0)." ms trong {$duration} ms của beat — không còn thời gian cho phần đóng.");
                     $length = 0;
                 }
 
@@ -425,13 +425,13 @@ final class MotoShotsCheck
                 $length = $kept['coverage'][$index];
 
                 if (! isset($beats[$beat])) {
-                    $issues[] = "{$shot['id']} phủ {$beat}, không có trong kịch bản.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.coverageIssues.1', "{$shot['id']} phủ {$beat}, không có trong kịch bản.");
                 } elseif ($beats[$beat]['scene'] !== $shot['scene']) {
-                    $issues[] = "{$shot['id']} phủ {$beat} của {$beats[$beat]['scene']} — shot không vượt ranh giới scene.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.coverageIssues.2', "{$shot['id']} phủ {$beat} của {$beats[$beat]['scene']} — shot không vượt ranh giới scene.");
                 }
 
                 if ($item['result_at_ms'] !== null && ($item['result_at_ms'] < $at || $item['result_at_ms'] > $at + $length)) {
-                    $issues[] = "{$shot['id']}: kết quả của {$beat} ở {$item['result_at_ms']} ms, ngoài phần {$at}–".($at + $length).' ms của nó trong clip.';
+                    $issues[] = Finding::requirement('MotoShotsCheck.coverageIssues.3', "{$shot['id']}: kết quả của {$beat} ở {$item['result_at_ms']} ms, ngoài phần {$at}–".($at + $length).' ms của nó trong clip.');
                 }
 
                 $group = $groups[$shot['scene']] ?? [];
@@ -449,11 +449,11 @@ final class MotoShotsCheck
             }
 
             if ($used !== $kept['used_duration_ms']) {
-                $issues[] = "{$shot['id']}: coverage cộng lại {$used} ms; shot giữ {$kept['used_duration_ms']} ms.";
+                $issues[] = Finding::requirement('MotoShotsCheck.coverageIssues.4', "{$shot['id']}: coverage cộng lại {$used} ms; shot giữ {$kept['used_duration_ms']} ms.");
             }
 
             if ((int) $shot['used_start_ms'] + $kept['used_duration_ms'] > (int) $shot['render_duration_ms']) {
-                $issues[] = "{$shot['id']}: đoạn giữ {$shot['used_start_ms']}–".((int) $shot['used_start_ms'] + $kept['used_duration_ms'])." ms vượt clip {$shot['render_duration_ms']} ms.";
+                $issues[] = Finding::requirement('MotoShotsCheck.coverageIssues.5', "{$shot['id']}: đoạn giữ {$shot['used_start_ms']}–".((int) $shot['used_start_ms'] + $kept['used_duration_ms'])." ms vượt clip {$shot['render_duration_ms']} ms.");
             }
 
             $sum += $kept['used_duration_ms'];
@@ -463,7 +463,7 @@ final class MotoShotsCheck
             $covered = array_column($groups[$id] ?? [], 'beat');
 
             if ($covered !== array_values((array) $scene['beats'])) {
-                $issues[] = "{$id} phủ beat theo thứ tự ".(implode(', ', $covered) ?: '—').'; cần '.implode(', ', (array) $scene['beats']).', mỗi beat đúng một lần.';
+                $issues[] = Finding::requirement('MotoShotsCheck.coverageIssues.6', "{$id} phủ beat theo thứ tự ".(implode(', ', $covered) ?: '—').'; cần '.implode(', ', (array) $scene['beats']).', mỗi beat đúng một lần.');
             }
 
             foreach ($groups[$id] ?? [] as $group) {
@@ -472,7 +472,7 @@ final class MotoShotsCheck
                     || (count($parts) >= 2 && $parts[0] === 'opening' && $parts[count($parts) - 1] === 'closing' && array_diff(array_slice($parts, 1, -1), ['middle']) === []);
 
                 if (! $valid) {
-                    $issues[] = "{$group['beat']} được phủ theo ".implode(' → ', $parts).'; cần whole, hoặc opening → middle… → closing.';
+                    $issues[] = Finding::requirement('MotoShotsCheck.coverageIssues.7', "{$group['beat']} được phủ theo ".implode(' → ', $parts).'; cần whole, hoặc opening → middle… → closing.');
                 }
             }
         }
@@ -481,12 +481,12 @@ final class MotoShotsCheck
             $length = (int) $beat['end_ms'] - (int) $beat['start_ms'];
 
             if (isset($timeOf[$id]) && $timeOf[$id] !== $length) {
-                $issues[] = "{$id} chiếm {$timeOf[$id]} ms trên màn hình; beat đã duyệt dài {$length} ms.";
+                $issues[] = Finding::requirement('MotoShotsCheck.coverageIssues.8', "{$id} chiếm {$timeOf[$id]} ms trên màn hình; beat đã duyệt dài {$length} ms.");
             }
         }
 
         if ($issues === [] && $sum !== $total) {
-            $issues[] = "Các shot giữ tổng {$sum} ms; phim dài {$total} ms.";
+            $issues[] = Finding::requirement('MotoShotsCheck.coverageIssues.9', "Các shot giữ tổng {$sum} ms; phim dài {$total} ms.");
         }
 
         return $issues;
@@ -667,7 +667,7 @@ final class MotoShotsCheck
         foreach ($scenes as $scene) {
             foreach ((array) ($scene['work'] ?? []) as $item) {
                 if ((array) ($item['events'] ?? []) === []) {
-                    $issues[] = ($item['id'] ?? '?')." ({$item['beat']} {$item['part']} {$item['operation']}) không gắn với sự kiện nào của kịch bản — không suy ra được shot hoàn tất công việc này.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.unlinkedWorkIssues.1', ($item['id'] ?? '?')." ({$item['beat']} {$item['part']} {$item['operation']}) không gắn với sự kiện nào của kịch bản — không suy ra được shot hoàn tất công việc này.");
                 }
             }
         }
@@ -694,13 +694,13 @@ final class MotoShotsCheck
                 $event = (string) $entry['event_id'];
 
                 if (! in_array($event, $covered, true)) {
-                    $issues[] = "{$id}: event_progress nêu {$event}, không nằm trong coverage của shot.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.progressIssues.1', "{$id}: event_progress nêu {$event}, không nằm trong coverage của shot.");
 
                     continue;
                 }
 
                 if (isset($entered[$event])) {
-                    $issues[] = "{$id}: event_progress nêu {$event} hai lần — mỗi sự kiện một mục trong một shot.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.progressIssues.2', "{$id}: event_progress nêu {$event} hai lần — mỗi sự kiện một mục trong một shot.");
 
                     continue;
                 }
@@ -710,15 +710,15 @@ final class MotoShotsCheck
 
                 foreach ($named as $step) {
                     if (! isset($steps[$step])) {
-                        $issues[] = "{$id}: event_progress của {$event} nêu {$step}, không có trong action_timeline.";
+                        $issues[] = Finding::requirement('MotoShotsCheck.progressIssues.3', "{$id}: event_progress của {$event} nêu {$step}, không có trong action_timeline.");
                     } elseif (array_map('strval', (array) $steps[$step]['event_ids']) !== [$event]) {
-                        $issues[] = "{$id}: {$step} không diễn {$event} nhưng event_progress của {$event} nêu nó.";
+                        $issues[] = Finding::requirement('MotoShotsCheck.progressIssues.4', "{$id}: {$step} không diễn {$event} nhưng event_progress của {$event} nêu nó.");
                     }
                 }
 
                 foreach ($steps as $stepId => $step) {
                     if (in_array($event, array_map('strval', (array) $step['event_ids']), true) && ! in_array((string) $stepId, $named, true)) {
-                        $issues[] = "{$id}: {$stepId} diễn {$event} nhưng event_progress của {$event} không nêu nó.";
+                        $issues[] = Finding::requirement('MotoShotsCheck.progressIssues.5', "{$id}: {$stepId} diễn {$event} nhưng event_progress của {$event} không nêu nó.");
                     }
                 }
 
@@ -726,7 +726,7 @@ final class MotoShotsCheck
             }
 
             foreach (array_diff($covered, array_keys($entered)) as $event) {
-                $issues[] = "{$id}: {$event} có trong coverage nhưng không có mục event_progress.";
+                $issues[] = Finding::requirement('MotoShotsCheck.progressIssues.6', "{$id}: {$event} có trong coverage nhưng không có mục event_progress.");
             }
         }
 
@@ -737,14 +737,14 @@ final class MotoShotsCheck
                 || (count($phases) >= 2 && $phases[0] === 'start' && $phases[count($phases) - 1] === 'finish' && array_diff(array_slice($phases, 1, -1), ['continue']) === []);
 
             if (! $valid) {
-                $issues[] = "{$event}: tiến trình {$shown} không hợp lệ — một sự kiện là whole trong một shot, hoặc start, các continue rồi finish.";
+                $issues[] = Finding::requirement('MotoShotsCheck.progressIssues.7', "{$event}: tiến trình {$shown} không hợp lệ — một sự kiện là whole trong một shot, hoặc start, các continue rồi finish.");
 
                 continue;
             }
 
             foreach (array_slice($chain, 1) as $at => $link) {
                 if ($link['index'] !== $chain[$at]['index'] + 1 || $link['scene'] !== $chain[$at]['scene']) {
-                    $issues[] = "{$event}: tiến trình {$shown} đi qua các shot không liền nhau hoặc khác scene.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.progressIssues.8', "{$event}: tiến trình {$shown} đi qua các shot không liền nhau hoặc khác scene.");
 
                     break;
                 }
@@ -772,13 +772,13 @@ final class MotoShotsCheck
                 $beat = (string) $item['beat'];
 
                 if (! isset($beats[$beat])) {
-                    $issues[] = "{$shot['id']} phủ {$beat}, không có trong kịch bản.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.eventCoverageIssues.1', "{$shot['id']} phủ {$beat}, không có trong kịch bản.");
 
                     continue;
                 }
 
                 if ($beats[$beat]['scene'] !== $shot['scene']) {
-                    $issues[] = "{$shot['id']} phủ {$beat} của {$beats[$beat]['scene']} — shot không vượt ranh giới scene.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.eventCoverageIssues.2', "{$shot['id']} phủ {$beat} của {$beats[$beat]['scene']} — shot không vượt ranh giới scene.");
                 }
 
                 $own = array_column((array) ($beats[$beat]['events'] ?? []), 'id');
@@ -787,13 +787,13 @@ final class MotoShotsCheck
                     $index = array_search($event, $own, true);
 
                     if ($index === false) {
-                        $issues[] = "{$shot['id']}: {$event} không phải sự kiện của {$beat}.";
+                        $issues[] = Finding::requirement('MotoShotsCheck.eventCoverageIssues.3', "{$shot['id']}: {$event} không phải sự kiện của {$beat}.");
 
                         continue;
                     }
 
                     if ($index < ($reached[$beat] ?? 0)) {
-                        $issues[] = "{$shot['id']}: {$event} của {$beat} được diễn sau một sự kiện muộn hơn — giữ thứ tự sự kiện của kịch bản.";
+                        $issues[] = Finding::note('MotoShotsCheck.eventCoverageIssues.4', "{$shot['id']}: {$event} của {$beat} được diễn sau một sự kiện muộn hơn — giữ thứ tự sự kiện của kịch bản.");
                     }
 
                     $reached[$beat] = max($reached[$beat] ?? 0, $index);
@@ -810,7 +810,7 @@ final class MotoShotsCheck
 
         foreach ($scenes as $id => $scene) {
             if (($groups[$id] ?? []) !== array_values((array) $scene['beats'])) {
-                $issues[] = "{$id} phủ beat theo thứ tự ".(implode(', ', $groups[$id] ?? []) ?: '—').'; cần '.implode(', ', (array) $scene['beats']).', mỗi beat một lượt liền nhau.';
+                $issues[] = Finding::requirement('MotoShotsCheck.eventCoverageIssues.5', "{$id} phủ beat theo thứ tự ".(implode(', ', $groups[$id] ?? []) ?: '—').'; cần '.implode(', ', (array) $scene['beats']).', mỗi beat một lượt liền nhau.');
             }
         }
 
@@ -819,9 +819,9 @@ final class MotoShotsCheck
                 $left = $omitted !== null && in_array($event, $omitted, true);
 
                 if (isset($played[$event]) && $left) {
-                    $issues[] = "{$event} của {$id} vừa có shot diễn vừa nằm trong omissions — mỗi sự kiện chỉ ở một nơi.";
+                    $issues[] = Finding::note('MotoShotsCheck.eventCoverageIssues.6', "{$event} của {$id} vừa có shot diễn vừa nằm trong omissions — mỗi sự kiện chỉ ở một nơi.");
                 } elseif (! isset($played[$event]) && ! $left) {
-                    $issues[] = $omitted === null ? "{$event} của {$id} chưa có shot nào diễn." : "{$event} của {$id} không có shot nào diễn và cũng không nằm trong omissions — không sự kiện nào của nguồn được mất dấu.";
+                    $issues[] = Finding::note('MotoShotsCheck.eventCoverageIssues.7', $omitted === null ? "{$event} của {$id} chưa có shot nào diễn." : "{$event} của {$id} không có shot nào diễn và cũng không nằm trong omissions — không sự kiện nào của nguồn được mất dấu.");
                 }
             }
         }
@@ -869,7 +869,7 @@ final class MotoShotsCheck
             $problem = MotoSupportReferences::problem($support, (array) ($context['parts'] ?? []), $people, $temporary, 'people của shot', $byDesign ? 'temporary của thiết kế' : 'temporary của build state của scene');
 
             if ($problem !== null) {
-                $issues[] = "{$at}.support_refs: ".(is_scalar($support) ? $support : json_encode($support))." {$problem}.";
+                $issues[] = Finding::requirement('MotoShotsCheck.supportIssues.1', "{$at}.support_refs: ".(is_scalar($support) ? $support : json_encode($support))." {$problem}.");
             }
         }
 
@@ -917,7 +917,7 @@ final class MotoShotsCheck
 
             foreach ($timeline as $index => $step) {
                 if ($step['id'] !== sprintf('STEP%02d', $index + 1)) {
-                    $issues[] = "{$id}: nhịp thứ ".($index + 1).' phải là '.sprintf('STEP%02d', $index + 1).", không phải {$step['id']}.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.1', "{$id}: nhịp thứ ".($index + 1).' phải là '.sprintf('STEP%02d', $index + 1).", không phải {$step['id']}.");
                 }
 
                 foreach ((array) $step['event_ids'] as $event) {
@@ -926,36 +926,36 @@ final class MotoShotsCheck
                     $place = array_search($event, $covered, true);
 
                     if ($place === false) {
-                        $issues[] = "{$id} {$step['id']}: {$event} không nằm trong coverage của shot.";
+                        $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.2', "{$id} {$step['id']}: {$event} không nằm trong coverage của shot.");
 
                         continue;
                     }
 
                     if ($place < $reached) {
-                        $issues[] = "{$id} {$step['id']}: diễn {$event} sau khi {$covered[$reached]} đã bắt đầu — các nhịp phải theo thứ tự sự kiện của coverage.";
+                        $issues[] = Finding::note('MotoShotsCheck.timelineIssues.3', "{$id} {$step['id']}: diễn {$event} sau khi {$covered[$reached]} đã bắt đầu — các nhịp phải theo thứ tự sự kiện của coverage.");
                     }
 
                     $reached = max($reached, $place);
                 }
 
                 foreach (array_diff((array) $step['actor_ids'], $people) as $actor) {
-                    $issues[] = "{$id} {$step['id']}: {$actor} không có trong people của shot.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.4', "{$id} {$step['id']}: {$actor} không có trong people của shot.");
                 }
             }
 
             foreach (array_diff($covered, array_keys($stepped)) as $event) {
-                $issues[] = "{$id}: {$event} có trong coverage nhưng không nhịp nào của action_timeline diễn.";
+                $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.5', "{$id}: {$event} có trong coverage nhưng không nhịp nào của action_timeline diễn.");
             }
 
             foreach ($path as $index => $segment) {
                 if ($segment['id'] !== sprintf('SEG%02d', $index + 1)) {
-                    $issues[] = "{$id}: đoạn máy quay thứ ".($index + 1).' phải là '.sprintf('SEG%02d', $index + 1).", không phải {$segment['id']}.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.6', "{$id}: đoạn máy quay thứ ".($index + 1).' phải là '.sprintf('SEG%02d', $index + 1).", không phải {$segment['id']}.");
                 }
             }
 
             foreach (['action_timeline' => $timeline, 'camera.path' => $path] as $label => $spans) {
                 if (($problem = self::spanProblem($spans)) !== null) {
-                    $issues[] = "{$id}: {$label} {$problem} — các khoảng phải nối liền từ 0 đến ".MotoContract::SHOT_MS.' ms.';
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.7', "{$id}: {$label} {$problem} — các khoảng phải nối liền từ 0 đến ".MotoContract::SHOT_MS.' ms.');
                 }
             }
 
@@ -967,22 +967,22 @@ final class MotoShotsCheck
                     $part = $context['configurations'][$configuration]['part'] ?? null;
 
                     if ($part === null) {
-                        $issues[] = "{$id}.{$key}: cấu hình {$configuration} không có trong thiết kế.";
+                        $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.8', "{$id}.{$key}: cấu hình {$configuration} không có trong thiết kế.");
                     } elseif (isset($byPart[$part])) {
-                        $issues[] = "{$id}.{$key}: {$part} có hai vị trí cùng lúc ({$byPart[$part]}, {$configuration}).";
+                        $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.9', "{$id}.{$key}: {$part} có hai vị trí cùng lúc ({$byPart[$part]}, {$configuration}).");
                     } else {
                         $byPart[$part] = $configuration;
                     }
                 }
 
                 if (is_array($state['engine']) && ! isset($context['parts'][$state['engine']['part_id']])) {
-                    $issues[] = "{$id}.{$key}.engine: {$state['engine']['part_id']} không có trong thiết kế.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.10', "{$id}.{$key}.engine: {$state['engine']['part_id']} không có trong thiết kế.");
                 }
 
                 $issues = [...$issues, ...self::supportIssues("{$id}.{$key}", (array) $state['support_refs'], $context, is_string($sceneStates[$shot['scene']] ?? null) ? $sceneStates[$shot['scene']] : null, $people)];
 
                 foreach (array_diff((array) $shot['configurations'][$moment], (array) $state['configurations']) as $configuration) {
-                    $issues[] = "{$id}: configurations.{$moment} nêu {$configuration} nhưng {$key} không có vị trí này.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.11', "{$id}: configurations.{$moment} nêu {$configuration} nhưng {$key} không có vị trí này.");
                 }
             }
 
@@ -995,31 +995,31 @@ final class MotoShotsCheck
                 $placed[$card['card']][] = $id;
 
                 if ($record === null) {
-                    $issues[] = "{$id}: {$card['card']} không có trong text_cards của kịch bản.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.12', "{$id}: {$card['card']} không có trong text_cards của kịch bản.");
 
                     continue;
                 }
 
                 if (! in_array($record['beat'], $coveredBeats, true)) {
-                    $issues[] = "{$id}: {$card['card']} thuộc {$record['beat']}, shot không phủ beat này.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.13', "{$id}: {$card['card']} thuộc {$record['beat']}, shot không phủ beat này.");
                 } elseif ($record['event'] !== null && ! in_array($record['event'], $covered, true)) {
-                    $issues[] = "{$id}: {$card['card']} gắn {$record['event']}, shot không diễn sự kiện này.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.14', "{$id}: {$card['card']} gắn {$record['event']}, shot không diễn sự kiện này.");
                 }
 
                 $fps = is_int($context['card_fps'] ?? null) ? $context['card_fps'] : null;
 
                 if ($fps === null) {
-                    $issues[] = "{$id}: lượt chạy không ghim số khung hình mỗi giây của phim — không kiểm được mốc của {$card['card']}.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.15', "{$id}: lượt chạy không ghim số khung hình mỗi giây của phim — không kiểm được mốc của {$card['card']}.");
                 } elseif ((((int) $card['start_ms'] * $fps) % 1000 !== 0 || ((int) $card['end_ms'] * $fps) % 1000 !== 0)) {
-                    $issues[] = "{$id}: {$card['card']} {$card['start_ms']}–{$card['end_ms']} ms không rơi đúng khung hình ở {$fps} fps của phim — dùng mốc là bội số của ".MotoShots::frameStepMs($fps).' ms.';
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.16', "{$id}: {$card['card']} {$card['start_ms']}–{$card['end_ms']} ms không rơi đúng khung hình ở {$fps} fps của phim — dùng mốc là bội số của ".MotoShots::frameStepMs($fps).' ms.');
                 }
 
                 if ((int) $card['end_ms'] - (int) $card['start_ms'] < self::CARD_MIN_MS) {
-                    $issues[] = "{$id}: {$card['card']} hiện ".((int) $card['end_ms'] - (int) $card['start_ms']).' ms; cần ít nhất '.self::CARD_MIN_MS.' ms.';
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.17', "{$id}: {$card['card']} hiện ".((int) $card['end_ms'] - (int) $card['start_ms']).' ms; cần ít nhất '.self::CARD_MIN_MS.' ms.');
                 }
 
                 if ((int) $card['start_ms'] < $until) {
-                    $issues[] = "{$id}: {$card['card']} chồng lên card trước trong shot.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.18', "{$id}: {$card['card']} chồng lên card trước trong shot.");
                 }
 
                 $until = max($until, (int) $card['end_ms']);
@@ -1030,7 +1030,10 @@ final class MotoShotsCheck
             $count = count($placed[$card] ?? []);
 
             if ($count !== 1) {
-                $issues[] = $count === 0 ? "{$card} của kịch bản chưa được đặt vào shot nào." : "{$card} được đặt vào {$count} shot (".implode(', ', $placed[$card]).'); mỗi card một shot.';
+                // A card no shot shows is coverage of the content; a card shown twice cannot be rendered once.
+                $issues[] = $count === 0
+                    ? Finding::note('MotoShotsCheck.timelineIssues.card_unplaced', "{$card} của kịch bản chưa được đặt vào shot nào.")
+                    : Finding::requirement('MotoShotsCheck.timelineIssues.card_twice', "{$card} được đặt vào {$count} shot (".implode(', ', $placed[$card]).'); mỗi card một shot.');
             }
         }
 
@@ -1039,7 +1042,7 @@ final class MotoShotsCheck
                 $span = ['start_ms' => (int) $anchor['start_ms'], 'end_ms' => (int) $anchor['end_ms']];
 
                 if (! in_array($span, $steps[$anchor['event_id']] ?? [], true)) {
-                    $issues[] = "{$directive['id']}: {$anchor['event_id']} phải diễn đúng {$span['start_ms']}–{$span['end_ms']} ms như người dùng đã chốt; không nhịp nào giữ mốc này.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.20', "{$directive['id']}: {$anchor['event_id']} phải diễn đúng {$span['start_ms']}–{$span['end_ms']} ms như người dùng đã chốt; không nhịp nào giữ mốc này.");
                 }
             }
         }
@@ -1062,9 +1065,9 @@ final class MotoShotsCheck
         $capability = collect((array) $context['capabilities'])->firstWhere('duration_ms', (int) $shot['render_duration_ms']);
 
         if ($capability === null) {
-            $issues[] = "{$id}: không có công cụ clip nào render {$shot['render_duration_ms']} ms cho khung ".($context['aspect_ratio'] ?? '—').'.';
+            $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.1', "{$id}: không có công cụ clip nào render {$shot['render_duration_ms']} ms cho khung ".($context['aspect_ratio'] ?? '—').'.');
         } elseif (! in_array($shot['mode'], (array) $capability['modes'], true)) {
-            $issues[] = "{$id}: không có công cụ nào render {$shot['mode']} ở {$shot['render_duration_ms']} ms.";
+            $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.2', "{$id}: không có công cụ nào render {$shot['mode']} ở {$shot['render_duration_ms']} ms.");
         }
 
         $facts = $state === null ? ['physical' => false] : ((array) ($context['states'][$state] ?? ['physical' => false]));
@@ -1072,18 +1075,18 @@ final class MotoShotsCheck
         $parts = array_column((array) $shot['parts'], 'part');
 
         if ($camera['target'] === 'part' && ! in_array($camera['target_part'], $parts, true)) {
-            $issues[] = "{$id}: target_part {$camera['target_part']} không có trong parts của shot.";
+            $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.3', "{$id}: target_part {$camera['target_part']} không có trong parts của shot.");
         }
 
         foreach ((array) ($shot['work'] ?? []) as $key) {
             $record = $context['work']['items'][$key] ?? null;
 
             if ($record === null) {
-                $issues[] = "{$id}: work {$key} không có trong bản chia scene.";
+                $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.4', "{$id}: work {$key} không có trong bản chia scene.");
             } elseif (! in_array($record['beat'], array_column($covered, 'id'), true)) {
-                $issues[] = "{$id}: work {$key} thuộc {$record['beat']}, shot không phủ beat này.";
+                $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.5', "{$id}: work {$key} thuộc {$record['beat']}, shot không phủ beat này.");
             } elseif (! in_array($record['part'], $parts, true)) {
-                $issues[] = "{$id}: work {$key} làm trên {$record['part']} — cần {$record['part']} trong parts của shot.";
+                $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.6', "{$id}: work {$key} làm trên {$record['part']} — cần {$record['part']} trong parts của shot.");
             }
         }
 
@@ -1091,7 +1094,7 @@ final class MotoShotsCheck
             $part = (string) $item['part'];
 
             if (! isset($context['parts'][$part])) {
-                $issues[] = "{$id} nêu {$part}, không có trong parts của thiết kế.";
+                $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.7', "{$id} nêu {$part}, không có trong parts của thiết kế.");
             }
         }
 
@@ -1100,7 +1103,7 @@ final class MotoShotsCheck
 
         foreach ((array) $shot['people'] as $person) {
             if (! in_array($person['character'], $onScreen, true)) {
-                $issues[] = "{$id}: {$person['character']} không có trên màn hình ở beat nào shot phủ.";
+                $issues[] = Finding::note('MotoShotsCheck.shotIssues.8', "{$id}: {$person['character']} không có trên màn hình ở beat nào shot phủ.");
             }
         }
 
@@ -1108,15 +1111,15 @@ final class MotoShotsCheck
         $backgrounds = array_values(array_unique(array_merge([], ...array_column($covered, 'backgrounds'))));
 
         if ($environment['mode'] === 'background' && ! in_array($environment['background'], $backgrounds, true)) {
-            $issues[] = "{$id}: {$environment['background']} không phải nền của beat nào shot phủ (".(implode(', ', $backgrounds) ?: 'không có nền').').';
+            $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.9', "{$id}: {$environment['background']} không phải nền của beat nào shot phủ (".(implode(', ', $backgrounds) ?: 'không có nền').').');
         }
 
         if ($environment['mode'] === 'unplated' && array_filter($covered, static fn (array $beat): bool => $beat['unplated'] !== []) === []) {
-            $issues[] = "{$id}: không beat nào shot phủ là unplated — chọn nền của beat hoặc yêu cầu nền bổ sung.";
+            $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.10', "{$id}: không beat nào shot phủ là unplated — chọn nền của beat hoặc yêu cầu nền bổ sung.");
         }
 
         if (count((array) $shot['reference_needs']) > (int) $context['reference_limit']) {
-            $issues[] = "{$id}: ".count((array) $shot['reference_needs'])." nhu cầu tham chiếu, vượt giới hạn {$context['reference_limit']} ảnh của keyframe.";
+            $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.11', "{$id}: ".count((array) $shot['reference_needs'])." nhu cầu tham chiếu, vượt giới hạn {$context['reference_limit']} ảnh của keyframe.");
         }
 
         $scenes = array_column((array) $context['scenes'], null, 'id');
@@ -1139,14 +1142,14 @@ final class MotoShotsCheck
             };
 
             if ($problem !== null) {
-                $issues[] = "{$id}: {$problem}";
+                $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.12', "{$id}: {$problem}");
             }
         }
 
         $links = (array) $shot['links'];
 
         if ($links['match_from'] !== null && ! in_array($links['match_from'], $earlier, true)) {
-            $issues[] = "{$id}: match_from {$links['match_from']} không phải shot đứng trước.";
+            $issues[] = Finding::requirement('MotoShotsCheck.shotIssues.13', "{$id}: match_from {$links['match_from']} không phải shot đứng trước.");
         }
 
         return $issues;
@@ -1232,7 +1235,7 @@ final class MotoShotsCheck
             $scene = (string) $omission['scene'];
 
             if (! isset($scenes[$scene])) {
-                $issues[] = "{$label} nêu {$scene}, không có trong bản chia scene.";
+                $issues[] = Finding::note('MotoShotsCheck.omissionIssues.1', "{$label} nêu {$scene}, không có trong bản chia scene.");
 
                 continue;
             }
@@ -1241,7 +1244,7 @@ final class MotoShotsCheck
             $at = $omission['before_shot'] === null ? count($rows) : array_search($omission['before_shot'], array_column($rows, 'id'), true);
 
             if ($at === false) {
-                $issues[] = "{$label}: before_shot {$omission['before_shot']} không phải shot của {$scene}.";
+                $issues[] = Finding::note('MotoShotsCheck.omissionIssues.2', "{$label}: before_shot {$omission['before_shot']} không phải shot của {$scene}.");
 
                 continue;
             }
@@ -1265,7 +1268,7 @@ final class MotoShotsCheck
                 };
 
                 if ($problem !== null) {
-                    $issues[] = "{$label}: {$event} {$problem}.";
+                    $issues[] = Finding::note('MotoShotsCheck.omissionIssues.3', "{$label}: {$event} {$problem}.");
                 }
 
                 $seen['event'][$event] = true;
@@ -1281,7 +1284,7 @@ final class MotoShotsCheck
                 };
 
                 if ($problem !== null) {
-                    $issues[] = "{$label}: {$key} {$problem}.";
+                    $issues[] = Finding::note('MotoShotsCheck.omissionIssues.4', "{$label}: {$key} {$problem}.");
                 }
 
                 $seen['work'][$key] = true;
@@ -1289,7 +1292,7 @@ final class MotoShotsCheck
 
             foreach ((array) $omission['evidence'] as $evidence) {
                 if (($problem = MotoScenesCheck::evidencePathProblem($evidence, (array) $context['input'])) !== null) {
-                    $issues[] = "{$label}: {$problem}";
+                    $issues[] = Finding::note('MotoShotsCheck.omissionIssues.5', "{$label}: {$problem}");
                 }
             }
 
@@ -1298,7 +1301,7 @@ final class MotoShotsCheck
             usort($inOrder, static fn (string $a, string $b): int => $index[$a] <=> $index[$b]);
 
             if ($listed !== $inOrder) {
-                $issues[] = "{$label}: event_ids ghi ".implode(', ', $listed).'; thứ tự của kịch bản là '.implode(', ', $inOrder).'.';
+                $issues[] = Finding::note('MotoShotsCheck.omissionIssues.6', "{$label}: event_ids ghi ".implode(', ', $listed).'; thứ tự của kịch bản là '.implode(', ', $inOrder).'.');
             }
 
             $workOrder = array_flip(array_keys((array) ($context['work']['items'] ?? [])));
@@ -1307,7 +1310,7 @@ final class MotoShotsCheck
             usort($doneInOrder, static fn (string $a, string $b): int => $workOrder[$a] <=> $workOrder[$b]);
 
             if ($done !== $doneInOrder) {
-                $issues[] = "{$label}: work_ids ghi ".implode(', ', $done).'; thứ tự của bản chia scene là '.implode(', ', $doneInOrder).'.';
+                $issues[] = Finding::note('MotoShotsCheck.omissionIssues.7', "{$label}: work_ids ghi ".implode(', ', $done).'; thứ tự của bản chia scene là '.implode(', ', $doneInOrder).'.');
             }
         }
 
@@ -1368,21 +1371,21 @@ final class MotoShotsCheck
                 }
 
                 if ($links[$key] === []) {
-                    $issues[] = "{$label}: {$key} không trỏ tới sự kiện nào của kịch bản — không xác định được nó thuộc thời điểm nào nên không lược được; quay công việc này hoặc ghi xung đột.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.workLinkIssues.1', "{$label}: {$key} không trỏ tới sự kiện nào của kịch bản — không xác định được nó thuộc thời điểm nào nên không lược được; quay công việc này hoặc ghi xung đột.");
                 }
 
                 foreach ($links[$key] as $event) {
                     if (isset($playedBy[$event])) {
-                        $issues[] = "{$label}: {$key} khai làm ngoài hình nhưng sự kiện {$event} của nó được {$playedBy[$event]} diễn — một công việc không thể vừa xong ngoài hình vừa diễn trong shot.";
+                        $issues[] = Finding::requirement('MotoShotsCheck.workLinkIssues.2', "{$label}: {$key} khai làm ngoài hình nhưng sự kiện {$event} của nó được {$playedBy[$event]} diễn — một công việc không thể vừa xong ngoài hình vừa diễn trong shot.");
                     } elseif (! in_array($event, $events, true)) {
-                        $issues[] = "{$label}: {$key} khai làm ngoài hình nhưng sự kiện {$event} của nó không nằm trong cùng mục lược này.";
+                        $issues[] = Finding::requirement('MotoShotsCheck.workLinkIssues.3', "{$label}: {$key} khai làm ngoài hình nhưng sự kiện {$event} của nó không nằm trong cùng mục lược này.");
                     }
                 }
             }
 
             foreach ($links as $key => $linked) {
                 if (array_intersect($linked, $events) !== [] && ! in_array($key, $work, true)) {
-                    $issues[] = "{$label}: ".implode(', ', array_values(array_intersect($linked, $events)))." bị lược nhưng công việc {$key} của nó không nằm trong cùng mục lược này.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.workLinkIssues.4', "{$label}: ".implode(', ', array_values(array_intersect($linked, $events)))." bị lược nhưng công việc {$key} của nó không nằm trong cùng mục lược này.");
                 }
             }
         }
@@ -1392,7 +1395,7 @@ final class MotoShotsCheck
 
             foreach ((array) ($shot['work'] ?? []) as $key) {
                 if (($links[$key] ?? []) !== [] && array_intersect($links[$key], $own) === []) {
-                    $issues[] = "{$shot['id']}: thể hiện {$key} nhưng không diễn sự kiện ".implode(', ', $links[$key]).' của nó.';
+                    $issues[] = Finding::requirement('MotoShotsCheck.workLinkIssues.5', "{$shot['id']}: thể hiện {$key} nhưng không diễn sự kiện ".implode(', ', $links[$key]).' của nó.');
                 }
             }
         }
@@ -1427,9 +1430,9 @@ final class MotoShotsCheck
         $issues = [];
 
         if (($environment['mode'] ?? null) !== 'background') {
-            $issues[] = "{$id} phủ {$names} nhưng environment.mode là ".json_encode($environment['mode'] ?? null).' — shot chạy qua nhiều beat phải đứng trên một nền chung của các beat đó; nếu không có thì tách shot ở ranh giới beat.';
+            $issues[] = Finding::requirement('MotoShotsCheck.groupingIssues.1', "{$id} phủ {$names} nhưng environment.mode là ".json_encode($environment['mode'] ?? null).' — shot chạy qua nhiều beat phải đứng trên một nền chung của các beat đó; nếu không có thì tách shot ở ranh giới beat.');
         } elseif (! in_array($environment['background'] ?? null, $shared, true)) {
-            $issues[] = "{$id} phủ {$names} nhưng {$environment['background']} không phải nền chung của các beat đó (".(implode(', ', $shared) ?: 'không có nền chung').') — chọn nền chung hoặc tách shot ở ranh giới beat.';
+            $issues[] = Finding::requirement('MotoShotsCheck.groupingIssues.2', "{$id} phủ {$names} nhưng {$environment['background']} không phải nền chung của các beat đó (".(implode(', ', $shared) ?: 'không có nền chung').') — chọn nền chung hoặc tách shot ở ranh giới beat.');
         }
 
         return $issues;
@@ -1456,7 +1459,7 @@ final class MotoShotsCheck
                 $configuration = $context['configurations'][$configurationId] ?? null;
 
                 if ($configuration === null) {
-                    $issues[] = "{$id}: cấu hình {$configurationId} không có trong thiết kế.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.configurationIssues.1', "{$id}: cấu hình {$configurationId} không có trong thiết kế.");
 
                     continue;
                 }
@@ -1464,11 +1467,11 @@ final class MotoShotsCheck
                 $part = (string) $configuration['part'];
 
                 if (! in_array($part, $parts, true)) {
-                    $issues[] = "{$id}: cấu hình {$configurationId} thuộc {$part}, không có trong parts của shot.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.configurationIssues.2', "{$id}: cấu hình {$configurationId} thuộc {$part}, không có trong parts của shot.");
                 }
 
                 if (isset($byPart[$moment][$part])) {
-                    $issues[] = "{$id}: {$part} có hai cấu hình ở {$moment}.";
+                    $issues[] = Finding::requirement('MotoShotsCheck.configurationIssues.3', "{$id}: {$part} có hai cấu hình ở {$moment}.");
                 }
 
                 $byPart[$moment][$part] = $configurationId;
@@ -1494,19 +1497,19 @@ final class MotoShotsCheck
 
             foreach ((array) $conflict['shots'] as $id) {
                 if (! in_array($id, $shots, true)) {
-                    $issues[] = "{$label} nêu {$id}, không có trong shots.";
+                    $issues[] = Finding::note('MotoShotsCheck.conflictIssues.1', "{$label} nêu {$id}, không có trong shots.");
                 }
             }
 
             foreach ((array) $conflict['beats'] as $id) {
                 if (! isset($beats[$id])) {
-                    $issues[] = "{$label} nêu {$id}, không có trong kịch bản.";
+                    $issues[] = Finding::note('MotoShotsCheck.conflictIssues.2', "{$label} nêu {$id}, không có trong kịch bản.");
                 }
             }
 
             foreach ((array) $conflict['evidence'] as $evidence) {
                 if (($problem = MotoScenesCheck::evidencePathProblem($evidence, $input)) !== null) {
-                    $issues[] = "{$label}: {$problem}";
+                    $issues[] = Finding::note('MotoShotsCheck.conflictIssues.3', "{$label}: {$problem}");
                 }
             }
         }
@@ -1529,8 +1532,7 @@ final class MotoShotsCheck
             'status' => $status,
             'error' => $error,
             'schema' => $schema,
-            'issues' => array_values(array_unique($issues)),
-            'warnings' => array_values(array_unique($warnings)),
+            ...Finding::fields($issues, $warnings),
             'judge' => self::JUDGE,
         ];
     }

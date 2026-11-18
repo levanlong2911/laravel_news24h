@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Video\Moto;
 
-use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Script\CheckedWorkflow;
+use App\Video\Script\StructureChecked;
 use App\Video\Superyacht\Spec\ResolvedPhase;
 use App\Video\Superyacht\Support\CanonicalJson;
 
-final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
+final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureChecked
 {
+    use ChecksJsonStructure;
+
     /** @var array<string, string> the source ids a shot with an action timeline adds: its steps, its camera path, the operating state it opens and ends in, and what the shot plan assumed for it, word for word */
     private const TIMELINE_SOURCES = [
         'S16' => 'shot.action_timeline',
@@ -346,12 +348,10 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
         return $events;
     }
 
-    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
+    /** The answer is held to its own schema alone among those the run pinned. */
+    protected function answerSchemas(ResolvedPhase $bundle): array
     {
-        return array_map(
-            static fn (string $error): array => ['code' => 'SCHEMA', 'path' => '', 'message' => $error],
-            PhaseOneEvidence::schemaErrors($decoded, self::own($bundle->outputSchemas())),
-        );
+        return self::own($bundle->outputSchemas());
     }
 
     public function check(?array $response, array $context, array $schema): array
@@ -378,7 +378,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
 
         foreach (['project_id', 'prompt_version', 'shot_id', 'source_fingerprint'] as $key) {
             if (($response[$key] ?? null) !== ($context[$key] ?? null)) {
-                $issues[] = "{$key} của phản hồi không khớp yêu cầu.";
+                $issues[] = Finding::blocking('MotoClipPrompt.check.1', "{$key} của phản hồi không khớp yêu cầu.");
             }
         }
 
@@ -391,23 +391,24 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
         $unknown = array_values(array_unique(array_diff($cited, (array) $context['source_ids'])));
 
         if ($unknown !== []) {
-            $issues[] = 'Mã nguồn không có trong đầu vào: '.implode(', ', $unknown).'.';
+            $issues[] = Finding::requirement('MotoClipPrompt.check.2', 'Mã nguồn không có trong đầu vào: '.implode(', ', $unknown).'.');
         }
 
         $prompt = (string) $response['video_prompt'];
 
         if ($prompt !== '') {
             $issues = is_array($context['sound_policy'] ?? null)
-                ? [...$issues, ...self::soundProblems($prompt, $context['sound_policy'])]
-                : [...$issues, 'Lượt này viết theo chính sách âm thanh cũ, trước dòng "Sound design:" — viết lại prompt video.'];
+                // How the sound is written is a judgement of the content: shown, never a failure.
+                ? [...$issues, ...Finding::each(MotoCheckRules::NOTE, 'MotoClipPrompt.soundProblems', self::soundProblems($prompt, $context['sound_policy']))]
+                : [...$issues, Finding::note('MotoClipPrompt.soundPolicy.legacy', 'Lượt này viết theo chính sách âm thanh cũ, trước dòng "Sound design:" — viết lại prompt video.')];
             $leaked = array_values(array_filter((array) $context['internal_ids'], static fn (string $id): bool => preg_match('/(?<![A-Za-z0-9_])'.preg_quote($id, '/').'(?![A-Za-z0-9_])/', $prompt) === 1));
 
             if ($leaked !== []) {
-                $issues[] = 'Prompt có mã nội bộ '.implode(', ', $leaked).' — model video không biết mã này; viết lại bằng tên mô tả.';
+                $issues[] = Finding::note('MotoClipPrompt.check.3', 'Prompt có mã nội bộ '.implode(', ', $leaked).' — model video không biết mã này; viết lại bằng tên mô tả.');
             }
 
             if (mb_strlen($prompt) > (int) $context['max_prompt_chars']) {
-                $issues[] = 'Prompt dài '.mb_strlen($prompt).' ký tự, vượt giới hạn '.$context['max_prompt_chars'].'.';
+                $issues[] = Finding::requirement('MotoClipPrompt.check.4', 'Prompt dài '.mb_strlen($prompt).' ký tự, vượt giới hạn '.$context['max_prompt_chars'].'.');
             }
         }
 
@@ -469,7 +470,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
      */
     public static function usable(array $check): bool
     {
-        return ($check['verdict'] ?? null) === self::PASS && in_array($check['status'] ?? null, ['ok', 'needs_review'], true);
+        return MotoCheckRules::usable($check) && in_array($check['status'] ?? null, ['ok', 'needs_review'], true);
     }
 
     /**
@@ -496,8 +497,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound
             'status' => $status,
             'error' => $error,
             'schema' => $schema,
-            'issues' => array_values(array_unique($issues)),
-            'warnings' => array_values(array_unique($warnings)),
+            ...Finding::fields($issues, $warnings),
             'judge' => 'not_run',
         ];
     }

@@ -138,7 +138,7 @@ final class MotoScenePlanner
             'input_format' => $context['input_format'] ?? null,
             'work_tracking_version' => $law,
             'work_tracking_sound' => $trace !== null && $trace['contradictions'] === [],
-            'work_contradictions' => $trace === null ? [] : array_values($trace['contradictions']),
+            'work_contradictions' => $trace === null ? [] : array_values(array_map('strval', $trace['contradictions'])),
         ]) + [
             'total_ms' => $timed ? (int) $context['total_ms'] : null,
             'scenes' => $rows,

@@ -92,11 +92,11 @@ final class MotoScriptCheck
         $warnings = [];
 
         if (($response['project_id'] ?? null) !== ($context['project_id'] ?? null)) {
-            $issues[] = 'project_id không khớp lượt chạy.';
+            $issues[] = Finding::blocking('MotoScriptCheck.scored.1', 'project_id không khớp lượt chạy.');
         }
 
         if (($response['prompt_version'] ?? null) !== ($context['prompt_version'] ?? null)) {
-            $issues[] = 'prompt_version là "'.($response['prompt_version'] ?? '').'"; lượt chạy này dùng '.($context['prompt_version'] ?? '').'.';
+            $issues[] = Finding::blocking('MotoScriptCheck.scored.2', 'prompt_version là "'.($response['prompt_version'] ?? '').'"; lượt chạy này dùng '.($context['prompt_version'] ?? '').'.');
         }
 
         $data = (array) $response['data'];
@@ -108,7 +108,7 @@ final class MotoScriptCheck
             $expected = 'B'.($index + 1);
 
             if ($beat['id'] !== $expected) {
-                $issues[] = "Beat thứ ".($index + 1)." phải là {$expected}, không phải {$beat['id']}.";
+                $issues[] = Finding::requirement('MotoScriptCheck.scored.3', "Beat thứ ".($index + 1)." phải là {$expected}, không phải {$beat['id']}.");
             }
 
             $byId[$beat['id']] = $index;
@@ -128,7 +128,7 @@ final class MotoScriptCheck
         $total = $eventful ? 0.0 : array_sum(array_map(static fn (array $beat): float => (float) $beat['duration_s'], $beats));
         $length = (float) ($context['video_length'] ?? 0);
         $advisory = [
-            ...(! $eventful && abs($total - $length) > (float) ($policy['length_tolerance_sec'] ?? 0.1) + self::EPSILON ? ['Các beat dài tổng '.self::s($total)." s; phim phải dài {$length} s."] : []),
+            ...(! $eventful && abs($total - $length) > (float) ($policy['length_tolerance_sec'] ?? 0.1) + self::EPSILON ? [Finding::requirement('MotoScriptCheck.length', 'Các beat dài tổng '.self::s($total)." s; phim phải dài {$length} s.")] : []),
             ...self::heroIssues($data, $byId),
             ...self::designIssues($beats, $design, $projects),
             ...($eventful ? self::eventCardIssues((array) $data['text_cards'], $beats, $byId, $design) : self::cardIssues((array) $data['text_cards'], $beats, $byId, $design, $context, $policy, $total)),
@@ -347,7 +347,7 @@ final class MotoScriptCheck
             $main = array_values(array_filter($beats, static fn (array $beat): bool => $beat['state'] === $id && $beat['time_jump'] === 'none' && ! in_array($beat['act'], ['hook', 'ending'], true)));
 
             if ($main === []) {
-                $issues[] = "Phim chưa có beat ở mạch chính cho {$id}.";
+                $issues[] = Finding::note('MotoScriptCheck.coverageIssues.1', "Phim chưa có beat ở mạch chính cho {$id}.");
 
                 continue;
             }
@@ -357,7 +357,7 @@ final class MotoScriptCheck
             $required = $physical ? self::mustName($design, $id) : (array) $state['refs'];
             $missing = array_values(array_diff($required, $named));
             if ($missing !== []) {
-                $issues[] = "{$id} thiếu ".implode(', ', $missing).'.';
+                $issues[] = Finding::note('MotoScriptCheck.coverageIssues.2', "{$id} thiếu ".implode(', ', $missing).'.');
             }
         }
 
@@ -373,7 +373,7 @@ final class MotoScriptCheck
     {
         $heroId = $data['story']['hero_beat'];
 
-        return isset($byId[$heroId]) ? [] : ["story.hero_beat {$heroId} không có trong beats."];
+        return isset($byId[$heroId]) ? [] : [Finding::requirement('MotoScriptCheck.heroIssues.beat', "story.hero_beat {$heroId} không có trong beats.")];
     }
 
     /**
@@ -387,19 +387,19 @@ final class MotoScriptCheck
 
         foreach ((array) $data['story']['loops'] as $loop) {
             if (! isset($byId[$loop['plant']], $byId[$loop['payoff']])) {
-                $issues[] = "Loop \"{$loop['motif']}\" nhắc beat không có trong beats.";
+                $issues[] = Finding::requirement('MotoScriptCheck.referenceIssues.1', "Loop \"{$loop['motif']}\" nhắc beat không có trong beats.");
             }
         }
 
         foreach ((array) $data['story']['obstacles'] as $obstacle) {
             if (! isset($byId[$obstacle['problem_beat']], $byId[$obstacle['solution_beat']])) {
-                $issues[] = "Trở ngại {$obstacle['id']} nhắc beat không có trong beats.";
+                $issues[] = Finding::requirement('MotoScriptCheck.referenceIssues.2', "Trở ngại {$obstacle['id']} nhắc beat không có trong beats.");
             }
         }
 
         foreach ((array) $data['music_brief']['hits'] as $hit) {
             if (! isset($byId[$hit['beat']])) {
-                $issues[] = "Điểm nhấn nhạc {$hit['moment']} nhắc {$hit['beat']}, không có trong beats.";
+                $issues[] = Finding::requirement('MotoScriptCheck.referenceIssues.3', "Điểm nhấn nhạc {$hit['moment']} nhắc {$hit['beat']}, không có trong beats.");
             }
         }
 
@@ -431,16 +431,16 @@ final class MotoScriptCheck
 
                 if ($record === null) {
                     if (! MotoScriptReferences::known($ref, $design)) {
-                        $issues[] = "{$beat['id']} nhắc {$ref}, không có trong thiết kế.";
+                        $issues[] = Finding::requirement('MotoScriptCheck.designIssues.1', "{$beat['id']} nhắc {$ref}, không có trong thiết kế.");
                     }
                 } elseif ($ref[0] === 'P' && $at !== null && ! $present($ref) && ! in_array($ref, $at['in_progress'], true)) {
-                    $issues[] = "{$beat['id']} dùng {$ref} ở {$beat['state']}, khi bộ phận này chưa có, đã tháo hoặc không đang làm.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.designIssues.2', "{$beat['id']} dùng {$ref} ở {$beat['state']}, khi bộ phận này chưa có, đã tháo hoặc không đang làm.");
                 }
             }
 
             foreach ($projected ? [] : $beat['in_use'] as $ref) {
                 if (! in_array($ref, $beat['design_refs'], true)) {
-                    $issues[] = "{$beat['id']}: {$ref} trong in_use phải có trong design_refs.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.designIssues.3', "{$beat['id']}: {$ref} trong in_use phải có trong design_refs.");
                 }
             }
 
@@ -450,19 +450,19 @@ final class MotoScriptCheck
                 $owner = $design['configurations'][$configuration] ?? null;
 
                 if ($owner === null) {
-                    $issues[] = "{$beat['id']} dùng cấu hình {$configuration}, không có trong thiết kế.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.designIssues.4', "{$beat['id']} dùng cấu hình {$configuration}, không có trong thiết kế.");
 
                     continue;
                 }
 
                 if (isset($owners[$owner])) {
-                    $issues[] = "{$beat['id']} đặt hai vị trí cho {$owner}.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.designIssues.5', "{$beat['id']} đặt hai vị trí cho {$owner}.");
                 }
 
                 $owners[$owner] = $configuration;
 
                 if (! $present($owner)) {
-                    $issues[] = "{$beat['id']} dùng cấu hình {$configuration} ở {$beat['state']}, khi {$owner} chưa có hoặc đã tháo.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.designIssues.6', "{$beat['id']} dùng cấu hình {$configuration} ở {$beat['state']}, khi {$owner} chưa có hoặc đã tháo.");
                 }
             }
         }
@@ -489,13 +489,13 @@ final class MotoScriptCheck
             $index = $byId[$card['beat']] ?? null;
 
             if ($index === null) {
-                $issues[] = "Card \"{$card['text']}\" ở {$card['beat']}, không có trong beats.";
+                $issues[] = Finding::requirement('MotoScriptCheck.cardIssues.1', "Card \"{$card['text']}\" ở {$card['beat']}, không có trong beats.");
 
                 continue;
             }
 
             if ((float) $card['offset_s'] + (float) $card['sec'] > (float) $beats[$index]['duration_s'] + self::EPSILON) {
-                $issues[] = "Card \"{$card['text']}\" vượt ra ngoài {$card['beat']}.";
+                $issues[] = Finding::requirement('MotoScriptCheck.cardIssues.2', "Card \"{$card['text']}\" vượt ra ngoài {$card['beat']}.");
             }
 
             $issues = [...$issues, ...self::sourceIssues($card, $design)];
@@ -507,23 +507,23 @@ final class MotoScriptCheck
 
             for ($i = 1; $i < count($list); $i++) {
                 if ((float) $list[$i - 1]['offset_s'] + (float) $list[$i - 1]['sec'] > (float) $list[$i]['offset_s'] + self::EPSILON) {
-                    $issues[] = "Hai card chồng lên nhau ở {$beat}.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.cardIssues.3', "Hai card chồng lên nhau ở {$beat}.");
                 }
             }
         }
 
         foreach (['DISCLAIMER', 'END'] as $type) {
             if (($types[$type] ?? 0) === 0) {
-                $issues[] = "Thiếu card {$type}.";
+                $issues[] = Finding::note('MotoScriptCheck.cardIssues.4', "Thiếu card {$type}.");
             }
         }
 
         if (($types['BASE'] ?? 0) > 0 && ! (bool) ($context['base_card'] ?? false)) {
-            $issues[] = 'Brief không cho card BASE.';
+            $issues[] = Finding::note('MotoScriptCheck.cardIssues.5', 'Brief không cho card BASE.');
         }
 
         if (($types['BASE'] ?? 0) > 1) {
-            $issues[] = 'Card BASE chỉ được xuất hiện một lần.';
+            $issues[] = Finding::note('MotoScriptCheck.cardIssues.6', 'Card BASE chỉ được xuất hiện một lần.');
         }
 
         return $issues;
@@ -543,19 +543,19 @@ final class MotoScriptCheck
 
         foreach ($cards as $index => $card) {
             if ($card['id'] !== sprintf('CARD%02d', $index + 1)) {
-                $issues[] = 'Card thứ '.($index + 1).' phải là '.sprintf('CARD%02d', $index + 1).", không phải {$card['id']}.";
+                $issues[] = Finding::requirement('MotoScriptCheck.eventCardIssues.1', 'Card thứ '.($index + 1).' phải là '.sprintf('CARD%02d', $index + 1).", không phải {$card['id']}.");
             }
 
             $beat = $byId[$card['beat']] ?? null;
 
             if ($beat === null) {
-                $issues[] = "{$card['id']} ở {$card['beat']}, không có trong beats.";
+                $issues[] = Finding::requirement('MotoScriptCheck.eventCardIssues.2', "{$card['id']} ở {$card['beat']}, không có trong beats.");
 
                 continue;
             }
 
             if ($card['event'] !== null && ! in_array($card['event'], array_column((array) $beats[$beat]['events'], 'id'), true)) {
-                $issues[] = "{$card['id']} gắn {$card['event']}, không phải sự kiện của {$card['beat']}.";
+                $issues[] = Finding::requirement('MotoScriptCheck.eventCardIssues.3', "{$card['id']} gắn {$card['event']}, không phải sự kiện của {$card['beat']}.");
             }
 
             $issues = [...$issues, ...self::sourceIssues($card, $design)];
@@ -563,7 +563,7 @@ final class MotoScriptCheck
 
         foreach (['DISCLAIMER', 'END'] as $type) {
             if (($types[$type] ?? 0) === 0) {
-                $issues[] = "Thiếu card {$type}.";
+                $issues[] = Finding::note('MotoScriptCheck.eventCardIssues.4', "Thiếu card {$type}.");
             }
         }
 
@@ -586,14 +586,14 @@ final class MotoScriptCheck
 
         foreach (array_values((array) $data['characters']) as $index => $character) {
             if ($character['id'] !== sprintf('CH%02d', $index + 1)) {
-                $issues[] = 'Nhân vật thứ '.($index + 1).' phải là '.sprintf('CH%02d', $index + 1).", không phải {$character['id']}.";
+                $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.1', 'Nhân vật thứ '.($index + 1).' phải là '.sprintf('CH%02d', $index + 1).", không phải {$character['id']}.");
             }
 
             $characters[$character['id']] = array_values((array) $character['role_ids']);
 
             foreach ((array) $character['role_ids'] as $role) {
                 if (! array_key_exists($role, $roles)) {
-                    $issues[] = "{$character['id']}.role_ids: {$role} không có trong participant_roles của thiết kế.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.2', "{$character['id']}.role_ids: {$role} không có trong participant_roles của thiết kế.");
                 } else {
                     $roles[$role] = true;
                 }
@@ -601,7 +601,7 @@ final class MotoScriptCheck
         }
 
         foreach (array_keys(array_filter($roles, static fn (bool $played): bool => ! $played)) as $role) {
-            $issues[] = "Vai {$role} của thiết kế chưa có nhân vật nào đảm nhiệm.";
+            $issues[] = Finding::note('MotoScriptCheck.eventIssues.3', "Vai {$role} của thiết kế chưa có nhân vật nào đảm nhiệm.");
         }
 
         $number = 0;
@@ -616,7 +616,7 @@ final class MotoScriptCheck
                 $number++;
 
                 if ($event['id'] !== sprintf('EV%02d', $number)) {
-                    $issues[] = "Sự kiện thứ {$number} phải là ".sprintf('EV%02d', $number).", không phải {$event['id']}.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.4', "Sự kiện thứ {$number} phải là ".sprintf('EV%02d', $number).", không phải {$event['id']}.");
                 }
 
                 $eventBeat[$event['id']] = $beat['id'];
@@ -625,14 +625,14 @@ final class MotoScriptCheck
                     $shown[$id] = true;
 
                     if (! isset($characters[$id])) {
-                        $issues[] = "{$event['id']}.character_ids: {$id} không có trong characters.";
+                        $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.5', "{$event['id']}.character_ids: {$id} không có trong characters.");
                     }
                 }
 
                 // Projected beats already hold every known ref of their events; an unknown one was reported at its own path.
                 if (! $projected) {
                     foreach (array_diff((array) $event['design_refs'], (array) $beat['design_refs']) as $ref) {
-                        $issues[] = "{$event['id']}.design_refs: {$ref} không nằm trong design_refs của {$beat['id']}.";
+                        $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.6', "{$event['id']}.design_refs: {$ref} không nằm trong design_refs của {$beat['id']}.");
                     }
                 }
 
@@ -651,7 +651,7 @@ final class MotoScriptCheck
             sort($named);
 
             if ($onScreen !== $named) {
-                $issues[] = "{$beat['id']}.on_screen phải đúng bằng các nhân vật mà sự kiện của beat nêu: ".($named === [] ? 'không ai' : implode(', ', $named)).'.';
+                $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.7', "{$beat['id']}.on_screen phải đúng bằng các nhân vật mà sự kiện của beat nêu: ".($named === [] ? 'không ai' : implode(', ', $named)).'.');
             }
 
             $ending = (array) ($previous['operating_end']['configurations'] ?? []);
@@ -660,17 +660,17 @@ final class MotoScriptCheck
             sort($held);
 
             if ($ending !== $held) {
-                $issues[] = "{$beat['id']}.configurations phải đúng bằng configurations ở operating_end của sự kiện cuối ({$previous['id']}).";
+                $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.8', "{$beat['id']}.configurations phải đúng bằng configurations ở operating_end của sự kiện cuối ({$previous['id']}).");
             }
         }
 
         foreach (array_values((array) $data['shot_directives']) as $index => $directive) {
             if ($directive['id'] !== sprintf('DIR%02d', $index + 1)) {
-                $issues[] = 'Chỉ dẫn thứ '.($index + 1).' phải là '.sprintf('DIR%02d', $index + 1).", không phải {$directive['id']}.";
+                $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.9', 'Chỉ dẫn thứ '.($index + 1).' phải là '.sprintf('DIR%02d', $index + 1).", không phải {$directive['id']}.");
             }
 
             foreach (array_filter((array) $directive['beat_ids'], static fn (string $id): bool => ! isset($byId[$id])) as $id) {
-                $issues[] = "{$directive['id']}.beat_ids: {$id} không có trong beats.";
+                $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.10', "{$directive['id']}.beat_ids: {$id} không có trong beats.");
             }
 
             $cursor = 0;
@@ -679,15 +679,15 @@ final class MotoScriptCheck
                 $at = "{$directive['id']} {$anchor['event_id']}";
 
                 if (! in_array($eventBeat[$anchor['event_id']] ?? null, (array) $directive['beat_ids'], true)) {
-                    $issues[] = "{$at}: sự kiện không thuộc beat nào của chỉ dẫn.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.11', "{$at}: sự kiện không thuộc beat nào của chỉ dẫn.");
                 }
 
                 if ($anchor['start_ms'] >= $anchor['end_ms']) {
-                    $issues[] = "{$at}: start_ms phải nhỏ hơn end_ms.";
+                    $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.12', "{$at}: start_ms phải nhỏ hơn end_ms.");
                 }
 
                 if ($anchor['start_ms'] < $cursor) {
-                    $issues[] = "{$at}: bắt đầu ở {$anchor['start_ms']} ms, trước khi mốc trước kết thúc ({$cursor} ms).";
+                    $issues[] = Finding::requirement('MotoScriptCheck.eventIssues.13', "{$at}: bắt đầu ở {$anchor['start_ms']} ms, trước khi mốc trước kết thúc ({$cursor} ms).");
                 }
 
                 $cursor = max($cursor, (int) $anchor['end_ms']);
@@ -713,12 +713,12 @@ final class MotoScriptCheck
             $problem = MotoSupportReferences::problem($support, (array) ($design['parts'] ?? []), $characters, $temporary, 'characters', $temporarySource);
 
             if ($problem !== null) {
-                $issues[] = "{$at}.support_refs: {$support} {$problem}.";
+                $issues[] = Finding::requirement('MotoScriptCheck.operatingIssues.1', "{$at}.support_refs: {$support} {$problem}.");
             }
         }
 
         if (is_array($state['engine']) && ! isset($design['parts'][$state['engine']['part_id']])) {
-            $issues[] = "{$at}.engine: {$state['engine']['part_id']} không có trong thiết kế.";
+            $issues[] = Finding::requirement('MotoScriptCheck.operatingIssues.2', "{$at}.engine: {$state['engine']['part_id']} không có trong thiết kế.");
         }
 
         $parts = [];
@@ -727,9 +727,9 @@ final class MotoScriptCheck
             $part = $design['configurations'][$configuration] ?? null;
 
             if ($part === null) {
-                $issues[] = "{$at}.configurations: {$configuration} không có trong thiết kế.";
+                $issues[] = Finding::requirement('MotoScriptCheck.operatingIssues.3', "{$at}.configurations: {$configuration} không có trong thiết kế.");
             } elseif (isset($parts[$part])) {
-                $issues[] = "{$at}.configurations: {$part} có hai vị trí cùng lúc ({$parts[$part]}, {$configuration}).";
+                $issues[] = Finding::requirement('MotoScriptCheck.operatingIssues.4', "{$at}.configurations: {$part} có hai vị trí cùng lúc ({$parts[$part]}, {$configuration}).");
             } else {
                 $parts[$part] = $configuration;
             }
@@ -737,7 +737,7 @@ final class MotoScriptCheck
 
         foreach ((array) $state['lights'] as $light) {
             if (! in_array($light['light_id'], (array) ($design['lights'] ?? []), true)) {
-                $issues[] = "{$at}.lights: {$light['light_id']} không có trong thiết kế.";
+                $issues[] = Finding::requirement('MotoScriptCheck.operatingIssues.5', "{$at}.lights: {$light['light_id']} không có trong thiết kế.");
             }
         }
 
@@ -782,13 +782,13 @@ final class MotoScriptCheck
         if ($card['type'] === 'SPEC') {
             $spec = ($path[1] ?? null) === 'specs' && isset($path[2]) ? ($design['specs'][$path[2]] ?? null) : null;
 
-            return $spec === null || $spec['value'] === null ? ["Card SPEC \"{$card['text']}\" trỏ {$ref}, không có giá trị trong thiết kế."] : [];
+            return $spec === null || $spec['value'] === null ? [Finding::requirement('MotoScriptCheck.cardRef.spec', "Card SPEC \"{$card['text']}\" trỏ {$ref}, không có giá trị trong thiết kế.")] : [];
         }
 
         if ($card['type'] === 'BASE') {
             $value = ($path[1] ?? null) === 'base' && in_array($path[2] ?? null, ['family', 'model'], true) ? ($design['base'][$path[2]] ?? null) : null;
 
-            return is_string($value) ? [] : ["Card BASE \"{$card['text']}\" trỏ {$ref}, không phải family hoặc model của xe nền."];
+            return is_string($value) ? [] : [Finding::requirement('MotoScriptCheck.cardRef.base', "Card BASE \"{$card['text']}\" trỏ {$ref}, không phải family hoặc model của xe nền.")];
         }
 
         return [];
@@ -884,8 +884,7 @@ final class MotoScriptCheck
             'status' => $status,
             'error' => $error,
             'schema' => $schema,
-            'issues' => array_values(array_unique($issues)),
-            'warnings' => array_values(array_unique($warnings)),
+            ...Finding::fields($issues, $warnings),
             'judge' => self::JUDGE,
         ];
     }

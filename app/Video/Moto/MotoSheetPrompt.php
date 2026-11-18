@@ -75,9 +75,12 @@ final class MotoSheetPrompt
     {
         [$composed, $pinned] = self::composedThemed($data);
 
+        // Each finding keeps the decision of its rule; only the words that name the prompt change.
         return array_map(
-            static fn (string $problem): string => (string) preg_replace('/^final_prompt/u', 'Prompt model sheet ghép từ thiết kế', $problem),
-            self::problems($data, $pinned, $composed['prompt'], $composed['sources']),
+            static fn (Finding|string $problem): Finding|string => $problem instanceof Finding
+                ? $problem->retold((string) preg_replace('/^final_prompt/u', 'Prompt model sheet ghép từ thiết kế', $problem->message))
+                : (string) preg_replace('/^final_prompt/u', 'Prompt model sheet ghép từ thiết kế', $problem),
+            self::findings($data, $pinned, $composed['prompt'], $composed['sources']),
         );
     }
 
@@ -273,9 +276,23 @@ final class MotoSheetPrompt
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $pinned
      * @param  array<string, string>  $sources  the design texts composed() wrote into that prompt, so a named source is traced to its fields
-     * @return list<string> what stops the render: a blocking source issue a view names and every fault the design check finds in a final prompt
+     * @return list<string> what stops the render: a blocking source issue a view names and every fault the design check finds in a final prompt that holds it (RULE or a requirement); its notes on wording never do
      */
     public static function problems(array $data, array $pinned, string $prompt, array $sources = []): array
+    {
+        // What stops the render: a note on the wording of the prompt (an id, a field name) is shown by the design check and never holds the render. The render reads the rest as text, as it always did.
+        $holding = array_filter(self::findings($data, $pinned, $prompt, $sources), static fn (Finding|string $finding): bool => ! ($finding instanceof Finding && $finding->kind === MotoCheckRules::NOTE));
+
+        return array_values(array_map('strval', $holding));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $pinned
+     * @param  array<string, string>  $sources
+     * @return list<Finding> problems(), each with the decision and the code of its rule: for the design check
+     */
+    private static function findings(array $data, array $pinned, string $prompt, array $sources = []): array
     {
         $issues = array_column($data['source_issues'], null, 'id');
         $problems = [];
@@ -285,7 +302,8 @@ final class MotoSheetPrompt
                 $issue = $issues[$id] ?? ['problem' => 'không có trong source_issues', 'blocking' => true];
 
                 if ($issue['blocking']) {
-                    $problems[] = "{$view['id']}: {$id}: {$issue['problem']}";
+                    // A blocking source issue the design names stops the model sheet render: a condition of the next step.
+                    $problems[] = Finding::requirement('MotoSheetPrompt.findings.source_issue', "{$view['id']}: {$id}: {$issue['problem']}");
                 }
             }
         }

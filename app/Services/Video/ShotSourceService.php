@@ -14,6 +14,7 @@ use App\Video\Shots\ShotWorkflow;
 use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Video\Moto\MotoCheckRules;
 use RuntimeException;
 
 final class ShotSourceService
@@ -188,8 +189,8 @@ final class ShotSourceService
 
             $check = $evaluation['check'];
 
-            if ($check['verdict'] !== 'PASS') {
-                return [null, 'Kế hoạch shot này chưa đạt kiểm RULE — không duyệt được.'];
+            if (! MotoCheckRules::usable($check)) {
+                return [null, $check['verdict'] !== 'PASS' ? 'Kế hoạch shot này chưa đạt kiểm RULE — không duyệt được.' : 'Kế hoạch shot này còn điều kiện chưa đạt để dùng cho bước sau: '.implode('; ', (array) $check['requirements']).' — không duyệt được.'];
             }
 
             if ($check['status'] !== 'ok') {
@@ -268,6 +269,9 @@ final class ShotSourceService
         if (! hash_equals((string) $evaluation['content_hash'], (string) ($selection['content_hash'] ?? ''))) {
             throw new RuntimeException('Nội dung kế hoạch shot không khớp bản đã duyệt.');
         }
+
+        // The next step reads this shot plan only when every condition it needs still holds — before any paid call.
+        MotoCheckRules::requireUsable((array) $evaluation['check'], 'Kế hoạch shot đã duyệt');
 
         if ($evaluation['derived_problem'] !== null) {
             throw new RuntimeException($evaluation['derived_problem']);

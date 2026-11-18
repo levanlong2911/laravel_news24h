@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
+use App\Video\Moto\MotoCheckRules;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
@@ -246,7 +247,7 @@ final class ShotWriterService implements QueuedStageService
         $report['check'] = $result['check'];
         $report['content_hash'] = $result['content_hash'];
         $report['patch_hash'] = CanonicalJson::hash(['of' => $report['source'], 'patch' => $patch, 'contract' => $result['contract'], 'source' => $current, 'content_hash' => $result['content_hash']]);
-        $report['passed'] = $result['content_hash'] !== null && ($result['check']['verdict'] ?? null) === 'PASS' && ($result['check']['status'] ?? null) === 'ok';
+        $report['passed'] = $result['content_hash'] !== null && MotoCheckRules::usable((array) $result['check']) && ($result['check']['status'] ?? null) === 'ok';
 
         if (! $report['passed']) {
             return ['reason' => 'Bản sửa chưa qua kiểm của hợp đồng hiện hành.'] + $report;
@@ -435,7 +436,7 @@ final class ShotWriterService implements QueuedStageService
                 'integrity_error' => $integrity,
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
-                'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version'])),
+                'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version', 'technical_schema'])),
                 'flags' => array_values(array_filter(is_array($document['flags'] ?? null) ? $document['flags'] : [], 'is_string')),
                 'plan' => $plan,
                 'resources' => $resources,
@@ -443,7 +444,7 @@ final class ShotWriterService implements QueuedStageService
                 'source_problem' => $sourceProblem,
                 'derived_problem' => $derivedProblem,
                 'approved' => $approved,
-                'approvable' => ! $approved && $check !== null && $check['verdict'] === 'PASS' && $check['status'] === 'ok' && $sourceProblem === null && $derivedProblem === null,
+                'approvable' => ! $approved && $check !== null && MotoCheckRules::usable($check) && $check['status'] === 'ok' && $sourceProblem === null && $derivedProblem === null,
                 'tokens' => ['in' => (int) $shown->tokens_in, 'out' => (int) $shown->tokens_out],
                 'cost_usd' => $shown->cost_usd === null ? null : (float) $shown->cost_usd,
             ],

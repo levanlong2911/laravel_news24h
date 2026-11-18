@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
+use App\Video\Moto\MotoCheckRules;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
@@ -177,7 +178,7 @@ final class SceneWriterService implements QueuedStageService
                 'derived_problem' => $integrity === null ? ($evaluation['derived_problem'] ?? null) : null,
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
-                'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version'])),
+                'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version', 'technical_schema'])),
                 'flags' => array_values(array_filter(is_array($document['flags'] ?? null) ? $document['flags'] : [], 'is_string')),
                 'plan' => $plan,
                 'source_problem' => $sourceProblem,
@@ -220,7 +221,7 @@ final class SceneWriterService implements QueuedStageService
         [$evaluation, $problem] = $this->sources->inspect($projectId, $stage);
         $check = $problem === null ? $evaluation['check'] : null;
         $problem ??= $this->sources->staleSource($projectId, $stage);
-        $ready = $problem === null && ($check['verdict'] ?? null) === 'PASS' && ($check['status'] ?? null) === 'ok';
+        $ready = $problem === null && MotoCheckRules::usable((array) $check) && ($check['status'] ?? null) === 'ok';
         $reason = $problem ?? ($ready ? 'preview' : 'Bản chia scene này chưa đạt kiểm hoặc còn xung đột chặn — không chọn được.');
 
         if ($write && $ready) {
@@ -346,7 +347,7 @@ final class SceneWriterService implements QueuedStageService
         $report['content_hash'] = $result['content_hash'];
         $revisionHash = CanonicalJson::hash(['of' => array_diff_key($report['source'], ['approved' => true]), 'patch' => $patch, 'contract' => $result['contract'], 'content_hash' => $result['content_hash']]);
         $report['patch_hash'] = CanonicalJson::hash(['revision' => $revisionHash, 'selection' => ['stage_id' => $selection['stage_id'] ?? null, 'version' => $selection['version'] ?? 0]]);
-        $report['passed'] = $result['content_hash'] !== null && ($result['check']['verdict'] ?? null) === 'PASS' && ($result['check']['status'] ?? null) === 'ok';
+        $report['passed'] = $result['content_hash'] !== null && MotoCheckRules::usable((array) $result['check']) && ($result['check']['status'] ?? null) === 'ok';
 
         if (! $report['passed']) {
             return ['reason' => 'Bản sửa chưa qua kiểm của hợp đồng hiện hành.'] + $report;

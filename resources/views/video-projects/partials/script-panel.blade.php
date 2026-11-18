@@ -120,6 +120,9 @@
                     @endif
                     @if($shown['cost_usd'] !== null)<em>{{ $shown['tokens']['in'] }}/{{ $shown['tokens']['out'] }} token · ${{ number_format($shown['cost_usd'], 3) }}</em>@endif
                 </div>
+                @if($check !== null)
+                    @include('video-projects.partials.check-versions', ['check' => $check, 'stored' => $shown['stored_check'] ?? null])
+                @endif
 
                 @if($shown['integrity_error'] !== null)
                     <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">Không dùng được bản này: {{ $shown['integrity_error'] }}</div>
@@ -142,6 +145,7 @@
                     @foreach($check['issues'] as $line)
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-red)">RULE: {{ $line }}</div>
                     @endforeach
+                    @include('video-projects.partials.check-findings', ['check' => $check])
                     @foreach($check['warnings'] as $line)
                         <div class="va-lbl" style="font-weight:400;color:var(--vp-amber-fg)">WARN: {{ $line }}</div>
                     @endforeach

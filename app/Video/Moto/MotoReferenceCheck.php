@@ -6,7 +6,8 @@ namespace App\Video\Moto;
 
 final class MotoReferenceCheck
 {
-    public const VERSION = 'moto-reference-check-v7';
+    /** v8: a cell fails only for a finding that holds it (RULE or a requirement); a note is kept apart in the cell's notes and never fails it */
+    public const VERSION = 'moto-reference-check-v8';
 
     public const PASS = 'PASS';
 
@@ -58,7 +59,8 @@ final class MotoReferenceCheck
         $warnings = [];
 
         foreach (self::cells($response, $context) as $cell) {
-            $issues = [...$issues, ...array_map(static fn (string $line): string => "{$cell['cell_id']}: {$line}", array_diff($cell['issues'], $envelope))];
+            // A finding of a cell keeps the decision of its rule under the label of the cell.
+            $issues = [...$issues, ...array_map(static fn (Finding|string $line): Finding|string => $line instanceof Finding ? $line->prefixed("{$cell['cell_id']}: ") : "{$cell['cell_id']}: {$line}", array_values(array_diff([...$cell['issues'], ...$cell['notes']], $envelope)))];
 
             if ($cell['gaps'] !== []) {
                 $warnings[] = "{$cell['cell_id']}: AI báo thiếu dữ kiện — ".implode('; ', array_map(static fn (array $gap): string => $gap['missing'], $cell['gaps']));
@@ -75,7 +77,7 @@ final class MotoReferenceCheck
     /**
      * @param  array<string, mixed>  $response
      * @param  array<string, mixed>  $context
-     * @return list<array{cell_id: string, fingerprint: string, edit_status: string, review_status: string, lines: list<array{section: string, text: string}>, changes: list<array<string, mixed>>, left_out: list<array{fact_ref: string, what: string, reason: string, value: string}>, gaps: list<array{missing: string, reason: string}>, issues: list<string>}> every answered cell of the run: ready when it keeps the draft word for word and no draft line had to be rewritten, needs_confirm when a line was rewritten or added and passes every check, needs_check when the model names a gap, failed with the reasons otherwise
+     * @return list<array{cell_id: string, fingerprint: string, edit_status: string, review_status: string, lines: list<array{section: string, text: string}>, changes: list<array<string, mixed>>, left_out: list<array{fact_ref: string, what: string, reason: string, value: string}>, gaps: list<array{missing: string, reason: string}>, issues: list<Finding|string>, notes: list<Finding>}> every answered cell of the run: failed when a finding holds it (RULE or a requirement), needs_check when the model names a gap, needs_confirm when a line was rewritten or added, ready otherwise; a note (a draft line kept that had to be rewritten, a fact left out) is kept in notes and never fails the cell
      */
     public static function cells(array $response, array $context): array
     {
@@ -105,9 +107,9 @@ final class MotoReferenceCheck
                 $fact = $facts[$ref] ?? null;
 
                 if ($fact === null) {
-                    $issues[] = "left_out dẫn dữ kiện {$ref} không có trong ô.";
+                    $issues[] = Finding::requirement('MotoReferenceCheck.cells.1', "left_out dẫn dữ kiện {$ref} không có trong ô.");
                 } elseif (($fact['time'] ?? null) !== MotoReferenceFacts::TARGET) {
-                    $issues[] = "bỏ dữ kiện {$ref} (\"".mb_strimwidth((string) $fact['value'], 0, 80, '…').'") — chỉ dữ kiện mục tiêu mới được bỏ; quyết định của người trái dữ kiện này thì báo gap.';
+                    $issues[] = Finding::note('MotoReferenceCheck.cells.2', "bỏ dữ kiện {$ref} (\"".mb_strimwidth((string) $fact['value'], 0, 80, '…').'") — chỉ dữ kiện mục tiêu mới được bỏ; quyết định của người trái dữ kiện này thì báo gap.');
                 } else {
                     $leftOut[$ref] = ['fact_ref' => $ref, 'what' => (string) ($item['what'] ?? ''), 'reason' => (string) ($item['reason'] ?? ''), 'value' => (string) $fact['value']];
                 }
@@ -119,7 +121,7 @@ final class MotoReferenceCheck
 
                 foreach ($gaps === [] ? $draft : [] as $lineId => $line) {
                     if ($line['must_rewrite']) {
-                        $issues[] = "giữ nguyên dòng nháp {$lineId} — dòng này phải viết lại cho đúng thời điểm của ô.";
+                        $issues[] = Finding::note('MotoReferenceCheck.cells.3', "giữ nguyên dòng nháp {$lineId} — dòng này phải viết lại cho đúng thời điểm của ô.");
                     }
                 }
             }
@@ -132,32 +134,32 @@ final class MotoReferenceCheck
                 $label = 'dòng '.($index + 1);
 
                 foreach (array_diff($sources, array_keys($draft)) as $unknown) {
-                    $issues[] = "{$label} dẫn dòng nháp {$unknown} không có trong ô.";
+                    $issues[] = Finding::requirement('MotoReferenceCheck.cells.4', "{$label} dẫn dòng nháp {$unknown} không có trong ô.");
                 }
 
                 foreach (array_diff($refs, array_keys($facts)) as $unknown) {
-                    $issues[] = "{$label} dẫn dữ kiện {$unknown} không có trong ô.";
+                    $issues[] = Finding::requirement('MotoReferenceCheck.cells.5', "{$label} dẫn dữ kiện {$unknown} không có trong ô.");
                 }
 
                 if ($refs === []) {
-                    $issues[] = "{$label} không dẫn dữ kiện nào.";
+                    $issues[] = Finding::note('MotoReferenceCheck.cells.6', "{$label} không dẫn dữ kiện nào.");
                 }
 
                 if (mb_strlen($text) === 0 || mb_strlen($text) > self::LINE_MAX) {
-                    $issues[] = "{$label} dài ".mb_strlen($text).' ký tự; cho phép 1–'.self::LINE_MAX.'.';
+                    $issues[] = Finding::requirement('MotoReferenceCheck.cells.7', "{$label} dài ".mb_strlen($text).' ký tự; cho phép 1–'.self::LINE_MAX.'.');
                 }
 
                 if (! in_array($section, MotoReferencePlanner::SECTIONS, true)) {
-                    $issues[] = "{$label} có mục ".json_encode($section, JSON_UNESCAPED_UNICODE).' không hợp lệ.';
+                    $issues[] = Finding::requirement('MotoReferenceCheck.cells.8', "{$label} có mục ".json_encode($section, JSON_UNESCAPED_UNICODE).' không hợp lệ.');
                 }
 
                 $kept = count($sources) === 1 && isset($draft[$sources[0]]) && $draft[$sources[0]]['text'] === $text;
 
                 if ($kept && $draft[$sources[0]]['must_rewrite']) {
-                    $issues[] = "{$label} giữ nguyên dòng nháp {$sources[0]} — dòng này phải viết lại cho đúng thời điểm của ô.";
+                    $issues[] = Finding::note('MotoReferenceCheck.cells.9', "{$label} giữ nguyên dòng nháp {$sources[0]} — dòng này phải viết lại cho đúng thời điểm của ô.");
                 }
 
-                $issues = [...$issues, ...array_map(static fn (string $problem): string => "{$label} {$problem}", self::idIssues($text, $sent))];
+                $issues = [...$issues, ...array_map(static fn (Finding|string $problem): Finding|string => $problem instanceof Finding ? $problem->prefixed("{$label} ") : "{$label} {$problem}", self::idIssues($text, $sent))];
                 $changes[] = [
                     'kind' => $kept ? 'kept' : ($sources === [] ? 'added' : 'rewritten'),
                     'section' => $section,
@@ -179,7 +181,7 @@ final class MotoReferenceCheck
                     $kept = $covering[$lineId] ?? [];
 
                     if ($kept === []) {
-                        $issues[] = "bỏ mất dòng nháp {$lineId} — giữ, viết lại hoặc gộp mỗi dòng nháp vào ít nhất một dòng.";
+                        $issues[] = Finding::note('MotoReferenceCheck.cells.10', "bỏ mất dòng nháp {$lineId} — giữ, viết lại hoặc gộp mỗi dòng nháp vào ít nhất một dòng.");
 
                         continue;
                     }
@@ -187,7 +189,7 @@ final class MotoReferenceCheck
                     $refs = array_merge([], ...array_column($kept, 'refs'));
 
                     foreach (array_diff((array) $line['fact_refs'], $refs, array_keys($leftOut)) as $lost) {
-                        $issues[] = "dòng viết lại từ {$lineId} bỏ mất dữ kiện {$lost} (\"".mb_strimwidth((string) ($facts[$lost]['value'] ?? ''), 0, 80, '…').'") mà không ghi vào left_out.';
+                        $issues[] = Finding::note('MotoReferenceCheck.cells.11', "dòng viết lại từ {$lineId} bỏ mất dữ kiện {$lost} (\"".mb_strimwidth((string) ($facts[$lost]['value'] ?? ''), 0, 80, '…').'") mà không ghi vào left_out.');
                     }
                 }
             }
@@ -195,16 +197,19 @@ final class MotoReferenceCheck
             $length = mb_strlen(implode("\n", array_column($lines, 'text')));
 
             if ($length > self::CELL_MAX) {
-                $issues[] = "nội dung ô dài {$length} ký tự; tối đa ".self::CELL_MAX.'.';
+                $issues[] = Finding::requirement('MotoReferenceCheck.cells.12', "nội dung ô dài {$length} ký tự; tối đa ".self::CELL_MAX.'.');
             }
 
             $revised = array_filter($changes, static fn (array $change): bool => $change['kind'] !== 'kept') !== [];
+            // The status of the cell follows the decision of each finding: a note is shown, never a failure. A rewritten prompt still waits for the person to confirm it.
+            $noted = array_values(array_filter($issues, static fn (Finding|string $issue): bool => $issue instanceof Finding && $issue->kind === MotoCheckRules::NOTE));
+            $held = array_values(array_filter($issues, static fn (Finding|string $issue): bool => ! ($issue instanceof Finding && $issue->kind === MotoCheckRules::NOTE)));
             $cells[$id] = [
                 'cell_id' => $id,
                 'fingerprint' => (string) $sent['fingerprint'],
                 'edit_status' => $unchanged ? 'unchanged' : 'revised',
                 'review_status' => match (true) {
-                    $issues !== [] => self::FAILED,
+                    $held !== [] => self::FAILED,
                     $gaps !== [] => self::NEEDS_CHECK,
                     $revised => self::NEEDS_CONFIRM,
                     default => self::READY,
@@ -213,7 +218,8 @@ final class MotoReferenceCheck
                 'changes' => $changes,
                 'left_out' => array_values($leftOut),
                 'gaps' => $gaps,
-                'issues' => array_values(array_unique($issues)),
+                'issues' => array_values(array_unique($held)),
+                'notes' => array_values(array_unique($noted)),
             ];
         }
 
@@ -230,19 +236,19 @@ final class MotoReferenceCheck
         $issues = [];
 
         if (($response['format'] ?? null) !== MotoContract::REFERENCE_FORMAT) {
-            $issues[] = 'Phản hồi không theo định dạng '.MotoContract::REFERENCE_FORMAT.'.';
+            $issues[] = Finding::blocking('MotoReferenceCheck.envelopeIssues.1', 'Phản hồi không theo định dạng '.MotoContract::REFERENCE_FORMAT.'.');
         }
 
         if (($response['status'] ?? null) !== 'ok') {
-            $issues[] = 'Phản hồi có status '.json_encode($response['status'] ?? null, JSON_UNESCAPED_UNICODE).', không phải ok.';
+            $issues[] = Finding::blocking('MotoReferenceCheck.envelopeIssues.2', 'Phản hồi có status '.json_encode($response['status'] ?? null, JSON_UNESCAPED_UNICODE).', không phải ok.');
         }
 
         if (! is_string($context['project_id'] ?? null) || ($response['project_id'] ?? null) !== $context['project_id']) {
-            $issues[] = 'project_id không khớp lượt chạy.';
+            $issues[] = Finding::blocking('MotoReferenceCheck.envelopeIssues.3', 'project_id không khớp lượt chạy.');
         }
 
         if (! is_string($context['prompt_version'] ?? null) || ($response['prompt_version'] ?? null) !== $context['prompt_version']) {
-            $issues[] = 'prompt_version là '.json_encode($response['prompt_version'] ?? null, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES).'; lượt chạy này dùng '.($context['prompt_version'] ?? 'null').'.';
+            $issues[] = Finding::blocking('MotoReferenceCheck.envelopeIssues.4', 'prompt_version là '.json_encode($response['prompt_version'] ?? null, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES).'; lượt chạy này dùng '.($context['prompt_version'] ?? 'null').'.');
         }
 
         $answered = array_map(static fn (mixed $cell): string => is_array($cell) ? (string) ($cell['cell_id'] ?? '') : '', array_values((array) ($response['data']['cells'] ?? [])));
@@ -252,19 +258,19 @@ final class MotoReferenceCheck
         $unknown = array_values(array_diff($answered, $expected));
 
         if ($twice !== []) {
-            $issues[] = 'Ô trả về hai lần: '.implode(', ', $twice).'.';
+            $issues[] = Finding::blocking('MotoReferenceCheck.envelopeIssues.5', 'Ô trả về hai lần: '.implode(', ', $twice).'.');
         }
 
         if ($missing !== []) {
-            $issues[] = 'Thiếu ô đã gửi: '.implode(', ', $missing).'.';
+            $issues[] = Finding::blocking('MotoReferenceCheck.envelopeIssues.6', 'Thiếu ô đã gửi: '.implode(', ', $missing).'.');
         }
 
         if ($unknown !== []) {
-            $issues[] = 'Ô không có trong lượt gửi: '.implode(', ', $unknown).'.';
+            $issues[] = Finding::blocking('MotoReferenceCheck.envelopeIssues.7', 'Ô không có trong lượt gửi: '.implode(', ', $unknown).'.');
         }
 
         if ($twice === [] && $missing === [] && $unknown === [] && $answered !== $expected) {
-            $issues[] = 'Các ô trả về không theo thứ tự đã gửi ('.implode(', ', $expected).').';
+            $issues[] = Finding::blocking('MotoReferenceCheck.envelopeIssues.8', 'Các ô trả về không theo thứ tự đã gửi ('.implode(', ', $expected).').');
         }
 
         return $issues;
@@ -347,15 +353,15 @@ final class MotoReferenceCheck
         preg_match_all('/\bSC\d{2}-W\d+\b/u', $text, $items);
 
         foreach (array_unique(array_diff($parts[0], (array) $cell['parts'])) as $part) {
-            $issues[] = "nhắc {$part}, part không thuộc ô.";
+            $issues[] = Finding::requirement('MotoReferenceCheck.idIssues.1', "nhắc {$part}, part không thuộc ô.");
         }
 
         foreach (array_unique(array_diff($states[0], [(string) $cell['state']])) as $state) {
-            $issues[] = "nhắc build state {$state}, không phải {$cell['state']} của ô.";
+            $issues[] = Finding::requirement('MotoReferenceCheck.idIssues.2', "nhắc build state {$state}, không phải {$cell['state']} của ô.");
         }
 
         foreach (array_unique(array_diff($items[0], (array) $cell['checkpoint'])) as $item) {
-            $issues[] = "nhắc công việc {$item}, không phải mốc của ô.";
+            $issues[] = Finding::requirement('MotoReferenceCheck.idIssues.3', "nhắc công việc {$item}, không phải mốc của ô.");
         }
 
         return $issues;
@@ -378,8 +384,7 @@ final class MotoReferenceCheck
             'status' => $status,
             'error' => $error,
             'schema' => $schema,
-            'issues' => array_values(array_unique($issues)),
-            'warnings' => array_values(array_unique($warnings)),
+            ...Finding::fields($issues, $warnings),
             'judge' => 'not_run',
         ];
     }

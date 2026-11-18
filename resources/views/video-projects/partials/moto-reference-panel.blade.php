@@ -103,6 +103,12 @@
                         <div class="line"><span class="v" style="color:var(--vp-red)">Lỗi kiểm: {{ $issue }}</span></div>
                     @endforeach
                 @endif
+                @foreach($review['latest']['requirements'] ?? [] as $requirement)
+                    <div class="line"><span class="v" style="color:var(--vp-amber-fg)">Điều kiện để dùng ở bước sau: {{ $requirement }}</span></div>
+                @endforeach
+                @foreach($review['latest']['notes'] ?? [] as $note)
+                    <div class="line"><span class="v" style="color:var(--vp-dim)">Ghi chú nội dung (không chặn): {{ $note }}</span></div>
+                @endforeach
             </div>
         </div>
     </div>

@@ -10,14 +10,15 @@ use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\ScriptSourceService;
-use App\Video\Inspiration\PhaseOneEvidence;
+use App\Video\Script\StructureChecked;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Locations\LocationWorkflow;
-use App\Video\Superyacht\Spec\ResolvedPhase;
 use RuntimeException;
 
-final class MotoLocations implements LocationWorkflow, ReleaseBound
+final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureChecked
 {
+    use ChecksJsonStructure;
+
     /** @var list<string> */
     private const BEAT_KEYS = ['id', 'state', 'duration_s', 'location', 'time_light', 'visual', 'purpose', 'reveal', 'link'];
 
@@ -136,17 +137,9 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound
         return $current['token'] == ($source['script'] ?? null) ? null : 'Kịch bản được chọn hoặc nguồn của nó đã đổi so với lúc lập bộ địa điểm và bối cảnh này.';
     }
 
-    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
-    {
-        return array_map(
-            static fn (string $error): array => ['code' => 'SCHEMA', 'path' => '', 'message' => $error],
-            PhaseOneEvidence::schemaErrors($decoded, MotoContract::technicalSchemas($bundle->outputSchemas())),
-        );
-    }
-
     public function check(?array $response, array $context, array $schema): array
     {
-        return MotoLocationsCheck::evaluate($response, $context, $schema) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION];
+        return MotoLocationsCheck::evaluate($response, $context, $schema);
     }
 
     public function derive(array $document, array $context): array

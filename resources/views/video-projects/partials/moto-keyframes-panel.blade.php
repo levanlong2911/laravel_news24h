@@ -100,6 +100,12 @@
                         @foreach([...$shown['schema'], ...$shown['issues']] as $issue)
                             <div class="d" style="color:var(--vp-red)">{{ $issue }}</div>
                         @endforeach
+                        @foreach((array) ($shown['requirements'] ?? []) as $requirement)
+                            <div class="d" style="color:var(--vp-amber-fg)">Điều kiện để dùng ở bước sau: {{ $requirement }}</div>
+                        @endforeach
+                        @foreach((array) ($shown['notes'] ?? []) as $note)
+                            <div class="d" style="color:var(--vp-dim)">Ghi chú nội dung (không chặn): {{ $note }}</div>
+                        @endforeach
                         @foreach($shown['gaps'] as $gap)
                             <div class="d" style="color:var(--vp-amber-fg)">Thiếu dữ kiện: {{ $gap['missing'] }} — {{ $gap['why'] }}</div>
                         @endforeach

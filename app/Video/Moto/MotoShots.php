@@ -15,14 +15,15 @@ use App\Services\Video\PartsDetailService;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\SceneSourceService;
 use App\Services\Video\ScriptSourceService;
-use App\Video\Inspiration\PhaseOneEvidence;
+use App\Video\Script\StructureChecked;
 use App\Video\Media\VideoModelRegistry;
 use App\Video\Shots\ShotWorkflow;
-use App\Video\Superyacht\Spec\ResolvedPhase;
 use RuntimeException;
 
-final class MotoShots implements ReleaseBound, ShotWorkflow
+final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
 {
+    use ChecksJsonStructure;
+
     /** @var bool whether the project plans shots of a fixed length from events, each with its action timeline and camera path */
     private bool $eventful = false;
 
@@ -223,14 +224,6 @@ final class MotoShots implements ReleaseBound, ShotWorkflow
         }
 
         return $current['token'] == ($source['scenes'] ?? null) ? null : 'Bản chia scene đã duyệt hoặc nguồn của nó đã đổi so với lúc lập kế hoạch shot này.';
-    }
-
-    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
-    {
-        return array_map(
-            static fn (string $error): array => ['code' => 'SCHEMA', 'path' => '', 'message' => $error],
-            PhaseOneEvidence::schemaErrors($decoded, $bundle->outputSchemas()),
-        );
     }
 
     public function check(?array $response, array $context, array $schema): array

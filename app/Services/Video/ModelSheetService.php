@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
+use App\Video\Moto\MotoCheckRules;
 use App\Enums\DesignImageStatus;
 use App\Enums\ImageModel;
 use App\Enums\ImageQuality;
@@ -907,7 +908,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
 
         // Ban thiet ke da chay (theo prompt cua chinh no) van la nguon khi prompt Phase 3 len revision
         // moi; chi DNA nguon doi moi lam ban cu het hieu luc.
-        if ($panel['dna_stale'] || ($panel['check']['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($panel['stage_id'])) {
+        if ($panel['dna_stale'] || ! MotoCheckRules::usable((array) ($panel['check'] ?? [])) || ! is_string($panel['stage_id'])) {
             throw new RuntimeException('Chưa có bản thiết kế Phase 3 đạt kiểm tự động cho Design DNA hiện hành.');
         }
 
@@ -979,7 +980,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             $canonicalHash = $stage === null ? null : self::designHash($stage, $workflow);
 
             if (! self::sheetWorkflow($workflow) || $stage === null
-                || ($this->approval->checkOf($stage)['verdict'] ?? null) !== YachtDesignCheck::PASS || ! is_string($canonicalHash) || $canonicalHash === ''
+                || ! MotoCheckRules::usable($this->approval->checkOf($stage)) || ! is_string($canonicalHash) || $canonicalHash === ''
                 || DesignRunPolicy::integrityProblem($stage, $workflow) !== null) {
                 throw $current;
             }

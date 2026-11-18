@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Video;
 
+use App\Video\Moto\MotoCheckRules;
 use App\Enums\DesignImageStatus;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
@@ -114,7 +115,7 @@ final class DesignApprovalLock
             return $problem;
         }
 
-        if (($this->checkOf($design)['verdict'] ?? null) !== YachtDesignCheck::PASS) {
+        if (! MotoCheckRules::usable($this->checkOf($design))) {
             return 'Bản thiết kế nguồn chưa đạt kiểm tự động.';
         }
 
@@ -124,6 +125,7 @@ final class DesignApprovalLock
             ->where('stage', PlanningStageName::DESIGN_DNA->value)
             ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
             ->where('output_json->check->verdict', DnaCheck::PASS)
+            ->where(static fn ($query) => $query->whereNull('output_json->check->requirements')->orWhereJsonLength('output_json->check->requirements', 0))
             ->whereNull('input_json->orphan_of_stage_id')
             ->orderByDesc('planning_revision')
             ->value('id');

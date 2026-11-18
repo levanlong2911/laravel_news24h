@@ -13,11 +13,13 @@ use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Script\ProjectsScriptDocument;
 use App\Video\Script\ScriptWorkflow;
-use App\Video\Superyacht\Spec\ResolvedPhase;
+use App\Video\Script\StructureChecked;
 use RuntimeException;
 
-final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWorkflow
+final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWorkflow, StructureChecked
 {
+    use ChecksJsonStructure;
+
     public const PROJECTION_VERSION = 'moto-script-timeline-v1';
 
     public const EVENT_PROJECTION_VERSION = 'moto-script-events-v1';
@@ -167,17 +169,9 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
         return null;
     }
 
-    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
-    {
-        return array_map(
-            static fn (string $error): array => ['code' => 'SCHEMA', 'path' => '', 'message' => $error],
-            PhaseOneEvidence::schemaErrors($decoded, MotoContract::technicalSchemas($bundle->outputSchemas())),
-        );
-    }
-
     public function check(?array $response, array $context, array $schema): array
     {
-        return MotoScriptCheck::evaluate($response, $context, $schema, (array) $context['policy']) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION];
+        return MotoScriptCheck::evaluate($response, $context, $schema, (array) $context['policy']);
     }
 
     public function derive(array $document, array $context): array
