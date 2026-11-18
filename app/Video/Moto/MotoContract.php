@@ -97,7 +97,11 @@ final class MotoContract
 
     public const REFERENCE_EXECUTION = 'db-moto-phase-8-v3';
 
-    public const KEYFRAME_PROMPT_INPUT = 'moto-keyframe-prompt-input-v4';
+    /** @var string the input a new keyframe prompt is written from: the fourth with the composition of the shot and the description of every character the script gives, whichever shape its characters have */
+    public const KEYFRAME_PROMPT_INPUT = 'moto-keyframe-prompt-input-v5';
+
+    /** @var string the input the keyframe prompts before Phase 9 revision 7 were written from; a stored run that pinned it is prepared again exactly as it was */
+    public const KEYFRAME_PROMPT_INPUT_V4 = 'moto-keyframe-prompt-input-v4';
 
     public const KEYFRAME_PROMPT_FORMAT = 'moto-keyframe-prompt-v1';
 
@@ -112,6 +116,9 @@ final class MotoContract
 
     /** @var string the input of a video prompt for a project whose shots are planned under MotoShotsCheck::COVERAGE: the fifth input with the shot's composition and event progress, the scene the shot belongs to and the events it plays as the approved script wrote them */
     public const CLIP_PROMPT_INPUT_V7 = 'moto-clip-prompt-input-v7';
+
+    /** @var string the input of a video prompt a release names in its clip_prompt policy: the shot, its composition and event progress as the plan stored them or null, the scene it belongs to, every event of its coverage once as the approved script wrote it, and the source map as ids and paths with no copy of the values; a shot plan of any eventful schema is read by it */
+    public const CLIP_PROMPT_INPUT_V8 = 'moto-clip-prompt-input-v8';
 
     public const CLIP_PROMPT_FORMAT = 'moto-clip-prompt-v1';
 

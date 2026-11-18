@@ -12,10 +12,28 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
 {
     use ChecksJsonStructure;
 
-    public const CONTRACT = 'moto/MotoKeyframePrompt@1.0.1';
+    public const CONTRACT = 'moto/MotoKeyframePrompt@1.0.2';
 
-    /** @var list<string> every output contract this check reads: the current one, and the one earlier runs were written to, whose fields are the same */
-    public const CONTRACTS = ['moto/MotoKeyframePrompt@1.0.0', self::CONTRACT];
+    /** @var list<string> every output contract this check reads: the current one, and the ones earlier runs were written to, whose fields are the same */
+    public const CONTRACTS = ['moto/MotoKeyframePrompt@1.0.0', 'moto/MotoKeyframePrompt@1.0.1', self::CONTRACT];
+
+    /** @var list<string> the input formats this code prepares: the current one for a new run, and the one before it for a stored run that pinned it */
+    public const INPUT_FORMATS = [MotoContract::KEYFRAME_PROMPT_INPUT_V4, MotoContract::KEYFRAME_PROMPT_INPUT];
+
+    /** @var ?string the input format the adapter reads while a stored run is verified; none for a new run, which is written from the current one */
+    private ?string $inputFormat = null;
+
+    /**
+     * @param  string  $format  the input format a stored run pinned
+     * @return static the adapter reading that format, whatever a new run is written from now: a stored run is verified under the contract it was written to
+     */
+    public function reading(string $format): static
+    {
+        $adapter = clone $this;
+        $adapter->inputFormat = $format;
+
+        return $adapter;
+    }
 
     public const CHECK_VERSION = 'moto-keyframe-prompt-check-v1';
 
@@ -47,7 +65,7 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
 
     public function inputsVersion(): string
     {
-        return MotoContract::KEYFRAME_PROMPT_INPUT;
+        return $this->inputFormat ?? MotoContract::KEYFRAME_PROMPT_INPUT;
     }
 
     public function checkVersion(): string
@@ -97,10 +115,12 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
      * @param  array<string, mixed>  $script  the data of the approved script
      * @param  list<array<string, mixed>>  $images  the reference images the render sends, in order, each with its position from 1
      * @param  array<string, mixed>  $policy  how the render composes the frame from the images, set by Laravel and pinned with the sources; the aspect ratio, the image model, the quality and the size are chosen for the render and stay out of the prompt
+     * @param  string  $format  the input format to prepare, one of INPUT_FORMATS. The fourth is prepared exactly as the runs that pinned it were: no composition, and a character described only by a script that keys its characters by id. The fifth adds the composition of the shot as the plan wrote it, null when the plan has none, and describes a character from either shape of the script
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} what the model reads for the first frame of the shot, from the records of the shot alone, every record taken whole by its id, and what the check reads back
      */
-    public static function inputs(array $shot, array $pinned, array $design, array $script, array $images, array $policy, string $fingerprint, int $maxPromptChars): array
+    public static function inputs(array $shot, array $pinned, array $design, array $script, array $images, array $policy, string $fingerprint, int $maxPromptChars, string $format = MotoContract::KEYFRAME_PROMPT_INPUT): array
     {
+        $fifth = $format !== MotoContract::KEYFRAME_PROMPT_INPUT_V4;
         $state = (string) ($shot['state'] ?? '');
         $configurations = array_column((array) ($pinned['configurations'] ?? []), null, 'id');
         $partIds = self::partIds($shot, $configurations);
@@ -111,15 +131,15 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
         $sent = collect($images)->firstWhere('kind', 'environment');
         $background = $sent === null ? null : ($sent['background'] ?? null);
         $beats = array_values(array_unique(array_map(static fn (array $item): string => (string) $item['beat'], (array) ($shot['coverage'] ?? []))));
-        $characters = (array) ($script['characters'] ?? []);
+        $characters = $fifth ? self::characterDescriptions((array) ($script['characters'] ?? [])) : (array) ($script['characters'] ?? []);
         $work = array_values(array_unique([...(array) ($shot['work'] ?? []), ...array_column((array) ($shot['work_items'] ?? []), 'id')]));
         $limits = array_values(array_filter((array) ($pinned['limits'] ?? []), static fn (array $limit): bool => in_array($limit['id'] ?? null, (array) ($shot['limits'] ?? []), true)));
 
         $payload = [
-            'input_format' => MotoContract::KEYFRAME_PROMPT_INPUT,
+            'input_format' => $format,
             'shot_id' => (string) $shot['id'],
             'source_fingerprint' => $fingerprint,
-            'shot' => array_intersect_key($shot, array_flip(self::SHOT_FIELDS)),
+            'shot' => array_intersect_key($shot, array_flip(self::SHOT_FIELDS)) + ($fifth ? ['composition' => $shot['composition'] ?? null] : []),
             'opening_frame' => [
                 'first_frame' => $shot['first_frame'] ?? null,
                 'carried_from' => $shot['carried_from'] ?? null,
@@ -169,6 +189,19 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
                 'max_prompt_chars' => $maxPromptChars,
             ],
         ];
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $characters  the characters of the approved script: a list of records with an id and a description, or descriptions keyed by character id
+     * @return array<string, mixed> the description of every character by id, word for word; a character the script does not describe has no entry, so the shot gets null for it and nothing is made up
+     */
+    private static function characterDescriptions(array $characters): array
+    {
+        if (! array_is_list($characters)) {
+            return array_map(static fn (mixed $character): mixed => is_array($character) ? ($character['description'] ?? null) : $character, $characters);
+        }
+
+        return array_column(array_filter($characters, static fn (mixed $character): bool => is_array($character) && is_string($character['id'] ?? null)), 'description', 'id');
     }
 
     public function check(?array $response, array $context, array $schema): array

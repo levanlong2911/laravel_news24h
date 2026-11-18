@@ -22,7 +22,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
         'S20' => 'shot.assumptions',
     ];
 
-    /** @var array<string, string> the source ids the seventh input adds: the composition of the shot, how far it takes each event, the scene it belongs to and the events it plays as the approved script wrote them */
+    /** @var array<string, string> the source ids the seventh and the eighth input add: the composition of the shot, how far it takes each event, the scene it belongs to and the events it plays as the approved script wrote them */
     private const COVERAGE_SOURCES = [
         'S21' => 'shot.composition',
         'S22' => 'shot.event_progress',
@@ -39,23 +39,37 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
     /** @var list<string> what the seventh input hands on of an event the shot plays, word for word from the approved script */
     private const EVENT_FIELDS = ['id', 'action', 'result', 'character_ids', 'design_refs', 'operating_start', 'operating_end'];
 
-    /** @var bool whether the project plans shots with an action timeline and a camera path */
-    private bool $timeline = false;
+    /** @var list<string> the input formats whose payload carries the composition and event progress of the shot, its scene and the events it plays */
+    private const SOURCED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V7, MotoContract::CLIP_PROMPT_INPUT_V8];
 
-    /** @var bool whether the release of the project plans its shots under MotoShotsCheck::COVERAGE, whose shots carry the fields of the seventh input */
-    private bool $coverage = false;
+    /** @var ?string the input format the adapter writes and reads: that of the bound project for a new run, that of a stored run while it is verified; none before either */
+    private ?string $inputFormat = null;
 
     public function bind(\App\Models\VideoProject $project): void
     {
-        $this->timeline = MotoPipelineRelease::cinematic($project);
-        $this->coverage = self::inputFormatFor($project) === MotoContract::CLIP_PROMPT_INPUT_V7;
+        $this->inputFormat = self::inputFormatFor($project);
     }
 
-    /** @return string the input format a video prompt of the project is written from: the release of the project decides it, so one prompt revision is read by every shot of the project */
+    /**
+     * @param  string  $format  the input format a stored run pinned
+     * @return static the adapter reading that format, whatever the release of the project writes now: a stored run is verified under the contract it was written to
+     */
+    public function reading(string $format): static
+    {
+        $adapter = clone $this;
+        $adapter->inputFormat = $format;
+
+        return $adapter;
+    }
+
+    /** @return string the input format a new video prompt of the project is written from: the one the release names in its clip_prompt policy, else the one its shot plan implies, so one prompt revision is read by every shot of the project */
     public static function inputFormatFor(\App\Models\VideoProject $project): string
     {
+        $named = MotoPipelineRelease::cinematic($project) ? (MotoPipelineRelease::policy($project, 'clip_prompt')['input_format'] ?? null) : null;
+
         return match (true) {
             ! MotoPipelineRelease::cinematic($project) => MotoContract::CLIP_PROMPT_INPUT,
+            is_string($named) && $named !== '' => $named,
             (MotoPipelineRelease::policy($project, 'shots')['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE => MotoContract::CLIP_PROMPT_INPUT_V7,
             default => MotoContract::CLIP_PROMPT_INPUT_V5,
         };
@@ -124,11 +138,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
 
     public function inputsVersion(): string
     {
-        return match (true) {
-            $this->coverage => MotoContract::CLIP_PROMPT_INPUT_V7,
-            $this->timeline => MotoContract::CLIP_PROMPT_INPUT_V5,
-            default => MotoContract::CLIP_PROMPT_INPUT,
-        };
+        return $this->inputFormat ?? MotoContract::CLIP_PROMPT_INPUT;
     }
 
     public function checkVersion(): string
@@ -205,10 +215,13 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
      * @param  array{mode: string, keyframe: ?array<string, mixed>, images: list<array<string, mixed>>}  $opening  how the clip is made: from the approved keyframe of the shot as the clip flow pins it, which is Image 1, or from the reference images it sends, Image 1 onwards in their order
      * @param  array{policy: string, prefix: string, closing: list<string>}  $sound  soundPolicy() of the clip flow
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} what the model reads to write the video prompt of the shot, from the records of the shot alone with a source id for every group, and what the check reads back
+     *
+     * @throws \RuntimeException under the eighth input, when the pinned context does not hold the scene of the shot or its coverage names an event the approved script does not have: the link is broken, so no model is called
      */
     public static function inputs(array $shot, array $pinned, array $design, array $script, array $opening, array $sound, string $fingerprint, int $maxPromptChars, ?string $format = null): array
     {
-        $seventh = $format === MotoContract::CLIP_PROMPT_INPUT_V7;
+        $eighth = $format === MotoContract::CLIP_PROMPT_INPUT_V8;
+        $seventh = in_array($format, self::SOURCED_FORMATS, true);
         $keyframe = $opening['keyframe'] ?? null;
         $configurations = array_column((array) ($pinned['configurations'] ?? []), null, 'id');
         $partIds = MotoKeyframePrompt::partIds($shot, $configurations);
@@ -224,6 +237,11 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
         $shotFields += $seventh ? array_map(static fn (string $field): mixed => $shot[$field] ?? null, array_combine(self::COVERAGE_FIELDS, self::COVERAGE_FIELDS)) : [];
         $siblings = array_values(array_filter((array) ($pinned['shot_order'] ?? []), static fn (mixed $row): bool => is_array($row) && ($row['scene'] ?? null) === ($shot['scene'] ?? null)));
         $scene = collect((array) ($pinned['scenes'] ?? []))->firstWhere('id', $shot['scene'] ?? null);
+
+        if ($eighth && ! is_array($scene)) {
+            throw new \RuntimeException("Shot {$shot['id']} không có scene của nó trong ngữ cảnh đã ghim — liên kết nguồn hỏng, không gọi model.");
+        }
+
         $whole = ($shot['reveal'] ?? null) === 'whole';
         $themed = $timeline ? [
             'markings' => array_values(array_filter((array) ($design['motorcycle']['markings'] ?? []), static fn (array $marking): bool => $whole || in_array($marking['part'] ?? null, $named, true))),
@@ -276,8 +294,15 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
         ] + ($seventh ? ['scene' => is_array($scene) ? array_intersect_key($scene, array_flip(self::SCENE_FIELDS)) + [
             'shot_position' => ($at = array_search($shot['id'], array_column($siblings, 'id'), true)) === false ? null : $at + 1,
             'shot_count' => $siblings === [] ? null : count($siblings),
-        ] : null, 'events' => self::events($shot, $beats)] : []);
-        $payload['sources'] =array_map(static fn (string $path): array => ['path' => $path, 'value' => data_get($payload, $path)], $sourceMap);
+        ] : null, 'events' => self::events($shot, $beats, $eighth)] : []);
+
+        foreach ($eighth ? $sourceMap : [] as $path) {
+            if (! \Illuminate\Support\Arr::has($payload, $path)) {
+                data_set($payload, $path, null);
+            }
+        }
+
+        $payload['sources'] = array_map(static fn (string $path): array => $eighth ? ['path' => $path] : ['path' => $path, 'value' => data_get($payload, $path)], $sourceMap);
         $internal = [
             (string) $shot['id'],
             (string) ($shot['scene'] ?? ''),
@@ -327,21 +352,37 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
     /**
      * @param  array<string, mixed>  $shot  the stored shot
      * @param  list<array<string, mixed>>  $beats  the beats of the approved script the shot covers
-     * @return list<array<string, mixed>> every event the shot plays, in the order it covers them: its beat, the record of the event as the approved script wrote it and how far this shot takes it; an event the script does not have is left out, never written by code
+     * @param  bool  $strict  the eighth input: an event the script does not have stops the run, and an event the coverage names twice is given once
+     * @return list<array<string, mixed>> every event the shot plays, in the order it covers them: its beat, the record of the event as the approved script wrote it and how far this shot takes it, null when the shot plan does not say; under the seventh input an event the script does not have is left out. Code never writes an event
+     *
+     * @throws \RuntimeException when strict and the coverage names a beat or an event the approved script does not have
      */
-    private static function events(array $shot, array $beats): array
+    private static function events(array $shot, array $beats, bool $strict = false): array
     {
         $beats = array_column($beats, null, 'id');
         $phases = array_column((array) ($shot['event_progress'] ?? []), 'phase', 'event_id');
         $events = [];
+        $given = [];
 
         foreach ((array) ($shot['coverage'] ?? []) as $item) {
-            $own = array_column((array) ($beats[$item['beat']]['events'] ?? []), null, 'id');
+            $beat = (string) $item['beat'];
+            $own = array_column((array) ($beats[$beat]['events'] ?? []), null, 'id');
 
             foreach (array_map('strval', (array) ($item['event_ids'] ?? [])) as $id) {
-                if (is_array($own[$id] ?? null)) {
-                    $events[] = ['beat' => (string) $item['beat']] + array_intersect_key($own[$id], array_flip(self::EVENT_FIELDS)) + ['progress' => $phases[$id] ?? null];
+                if (! is_array($own[$id] ?? null)) {
+                    if ($strict) {
+                        throw new \RuntimeException("Shot {$shot['id']} phủ sự kiện {$id} của {$beat}, nhưng kịch bản đã duyệt không có sự kiện này — liên kết nguồn hỏng, không gọi model.");
+                    }
+
+                    continue;
                 }
+
+                if ($strict && isset($given["{$beat}/{$id}"])) {
+                    continue;
+                }
+
+                $given["{$beat}/{$id}"] = true;
+                $events[] = ['beat' => $beat] + array_intersect_key($own[$id], array_flip(self::EVENT_FIELDS)) + ['progress' => $phases[$id] ?? null];
             }
         }
 

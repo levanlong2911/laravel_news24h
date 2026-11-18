@@ -55,8 +55,11 @@ abstract class ShotPromptWriterService implements QueuedStageService
     /** @var string the field of the derived answer that holds the prompt sent word for word */
     protected const TEXT_KEY = '';
 
-    /** @var array<string, array<string, mixed>> the design, script and phase each project's runs are read from, once for each instance */
+    /** @var array<string, array<string, mixed>> the phase, bundle and system text each project's new runs are written to, kept until forget() */
     private array $pins = [];
+
+    /** @var array<string, array<string, mixed>> the script and the design each project's runs are read from, kept until forget() */
+    private array $sourcePins = [];
 
     public function __construct(
         protected readonly PlanningStageStore $stageStore,
@@ -74,16 +77,120 @@ abstract class ShotPromptWriterService implements QueuedStageService
     abstract protected function shotStageOf(string $projectId, string $shotId): ?string;
 
     /**
+     * @param  array{inputs: string, phase_id: string, prompt_sha256: string, bundle_hash: string, manifest: array<string, mixed>}  $contract  the contract a stored run pinned: its input format, its phase revision and its manifest
+     * @return array{run: array<string, mixed>, sources: list<array<string, mixed>>, fingerprint: string} the package of the shot prepared under that contract from the sources in use now, with nothing a later input format adds
+     *
+     * @throws RuntimeException when the contract can no longer be read or the package cannot be prepared
+     */
+    abstract protected function contractPackage(string $projectId, string $shotId, array $contract): array;
+
+    /**
+     * @param  VideoPlanningStage  $stage  a stored run of the writer
+     * @return array{run: array<string, mixed>, sources: list<array<string, mixed>>, fingerprint: string} the package of the stored run's shot, prepared from the sources in use now under the contract the run pinned: its phase revision, its manifest and its input format. The sources are read again, never taken from the snapshot of the run, so a source that changed gives another fingerprint, and a later revision or input format alone does not
+     *
+     * @throws RuntimeException when the run does not keep the contract it was written to, that contract is gone or changed, or the package cannot be prepared
+     */
+    protected function storedPackage(string $projectId, VideoPlanningStage $stage): array
+    {
+        if ((string) $stage->project_id !== $projectId || (string) $stage->stage !== static::STAGE->value) {
+            throw new RuntimeException('Lượt '.substr((string) $stage->id, 0, 8).' không phải lượt '.static::LABEL.' của dự án này.');
+        }
+
+        $input = is_array($stage->input_json) ? $stage->input_json : [];
+        $contract = [
+            'inputs' => $input['source']['inputs'] ?? null,
+            'phase_id' => $input['phase_id'] ?? null,
+            'prompt_sha256' => $input['prompt_sha256'] ?? null,
+            'bundle_hash' => $input['bundle_hash'] ?? null,
+            'manifest' => PlanningStageStore::metadataOf($input)['manifest'] ?? null,
+        ];
+
+        foreach ($contract as $key => $value) {
+            if ($value === null || $value === '' || $value === []) {
+                throw new RuntimeException('Lượt '.substr((string) $stage->id, 0, 8)." không lưu {$key} của hợp đồng nó được viết theo — không xác minh được nguồn.");
+            }
+        }
+
+        return $this->contractPackage($projectId, (string) ($input['shot_id'] ?? ''), $contract);
+    }
+
+    /** @return bool whether the stored run, prepared again under the contract it pinned from the sources in use now, has the fingerprint it was stored with; never whether a run written now would be the same run */
+    protected function sourcesHold(string $projectId, VideoPlanningStage $stage): bool
+    {
+        try {
+            return hash_equals($this->storedPackage($projectId, $stage)['fingerprint'], (string) ($stage->input_json['source_fingerprint'] ?? ''));
+        } catch (RuntimeException) {
+            return false;
+        }
+    }
+
+    /**
+     * @param  VideoPlanningStage  $stage  a run of the writer a worker takes from the queue
+     * @return array{run: array<string, mixed>, sources: list<array<string, mixed>>, fingerprint: string} storedPackage() of the queued run with the input it was queued with: the sources are read again and must give the fingerprint the run was queued with, while the model, the effort and the token limit stay the ones it froze, whatever the config says now
+     *
+     * @throws RuntimeException when a source of the run changed since it was queued, or the run cannot be prepared
+     */
+    protected function queuedPackage(string $projectId, VideoPlanningStage $stage): array
+    {
+        $package = $this->storedPackage($projectId, $stage);
+        $input = is_array($stage->input_json) ? $stage->input_json : [];
+
+        if (! hash_equals($package['fingerprint'], (string) ($input['source_fingerprint'] ?? ''))) {
+            throw new RuntimeException('Nguồn của shot đã đổi sau khi xếp hàng — bấm viết lại để chạy theo nguồn mới.');
+        }
+
+        unset($input[PlanningStageStore::METADATA_KEY]);
+        $package['run']['input'] = $input;
+        $package['run']['settings'] = array_intersect_key($input, array_flip(['execution', 'model', 'effort', 'max_tokens'])) + $package['run']['settings'];
+
+        return $package;
+    }
+
+    /**
+     * @param  array<string, mixed>  $pins  sourcePins() of the project: the script and the design in use
+     * @param  array{inputs: string, phase_id: string, prompt_sha256: string, bundle_hash: string, manifest: array<string, mixed>}  $contract  the contract a stored run pinned
+     * @param  object  $adapter  the adapter reading the input format of that contract
+     * @return array<string, mixed> the pins with the phase, the manifest, the bundle hash and the system text of that contract; the catalogue that writes new runs is never read
+     *
+     * @throws RuntimeException when the pinned phase revision is gone or its text is no longer the text the run was written to
+     */
+    protected function pinsUnder(array $pins, array $contract, object $adapter): array
+    {
+        $phase = AiPhase::query()->find((string) $contract['phase_id']);
+
+        if ($phase === null || ! hash_equals((string) $phase->content_sha256, (string) $contract['prompt_sha256'])) {
+            throw new RuntimeException('Revision '.static::PHASE.' mà lượt này được viết theo không còn hoặc đã đổi nội dung — không xác minh được.');
+        }
+
+        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest((array) $contract['manifest']);
+
+        return [
+            'phase' => $phase,
+            'manifest' => (array) $contract['manifest'],
+            'bundle_hash' => (string) $contract['bundle_hash'],
+            'system' => $adapter->systemText(array_column($bundle->parts(), 'content'), $bundle->outputSchemas()),
+        ] + $pins;
+    }
+
+    /** @return void what the instance kept of the project is dropped: the next run, approval or queued run reads the catalogue, the script and the design again */
+    protected function forget(string $projectId): void
+    {
+        unset($this->pins[$projectId], $this->sourcePins[$projectId]);
+    }
+
+    /**
      * @param  ?array{id: string, name: string}  $requester
      * @return array{0: ?VideoPlanningStage, 1: string} reason queued|cached|replayed|ok|requeued, or why nothing ran
      */
     public function run(string $projectId, string $shotId, bool $regenerate, string $operationId, ?array $requester = null): array
     {
+        $this->forget($projectId);
+
         return (new SpecStageRunner($this->stageStore))->submit(
             static::STEP,
             $projectId,
             static::STAGE,
-            fn (): array => $this->prepare($projectId, $shotId),
+            fn (): array => $this->prepared($this->package($projectId, $shotId)),
             $regenerate,
             $operationId,
             $this->llm,
@@ -104,12 +211,12 @@ abstract class ShotPromptWriterService implements QueuedStageService
         }
 
         $projectId = (string) $stage->project_id;
-        $shotId = (string) ($stage->input_json['shot_id'] ?? '');
+        $this->forget($projectId);
 
         return (new SpecStageRunner($this->stageStore))->execute(
             $stageId,
             $token,
-            fn (): array => $this->prepare($projectId, $shotId),
+            fn (): array => $this->prepared($this->queuedPackage($projectId, $stage)),
             $this->llm,
             fn (array $run, array $evaluation): array => $this->output($run, $evaluation),
             static::LABEL,
@@ -132,6 +239,8 @@ abstract class ShotPromptWriterService implements QueuedStageService
      */
     public function approve(string $projectId, string $stageId, ?string $reviewer, ?string $expectedShot = null): void
     {
+        $this->forget($projectId);
+
         DB::transaction(function () use ($projectId, $stageId, $reviewer, $expectedShot): void {
             $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
             $stage = VideoPlanningStage::query()->withoutSnapshot()->whereKey($stageId)->where('project_id', $projectId)
@@ -163,7 +272,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
                 throw new RuntimeException('Prompt này viết cho một kế hoạch shot khác bản đang duyệt — không duyệt được.');
             }
 
-            $fingerprint = $this->package($projectId, $shotId)['fingerprint'];
+            $fingerprint = $this->storedPackage($projectId, $stage)['fingerprint'];
 
             if (! hash_equals($fingerprint, (string) $stage->input_json['source_fingerprint'])) {
                 throw new RuntimeException('Nguồn đã đổi — cần viết hoặc duyệt lại '.static::NOUN.' của '.$shotId.'.');
@@ -236,15 +345,11 @@ abstract class ShotPromptWriterService implements QueuedStageService
      */
     protected function promptScreen(string $projectId, string $shotStageId, string $shotId, ?array $selected, \Closure $package): array
     {
-        $prepared = null;
-        $fingerprint = null;
         $unavailable = null;
         $estimate = null;
 
         try {
-            $prepared = $package();
-            $fingerprint = $prepared['fingerprint'];
-            $estimate = $this->estimate($prepared);
+            $estimate = $this->estimate($package());
         } catch (RuntimeException $e) {
             $unavailable = $e->getMessage();
         }
@@ -256,11 +361,11 @@ abstract class ShotPromptWriterService implements QueuedStageService
         $shown = $succeeded[0] ?? null;
         $check = (array) ($shown?->output_json['check'] ?? []);
         $document = (array) ($shown?->output_json['document'] ?? []);
-        $current = static fn (VideoPlanningStage $stage): bool => $fingerprint !== null && hash_equals($fingerprint, (string) ($stage->input_json['source_fingerprint'] ?? ''));
+        $current = fn (VideoPlanningStage $stage): bool => $this->sourcesHold($projectId, $stage);
 
         return [
             'selected' => $selected,
-            'stale' => $selected !== null && ($prepared === null || ! $this->stillHolds($selected, $prepared)),
+            'stale' => $selected !== null && ! $this->stillHolds($selected),
             'unavailable' => $unavailable,
             'can_write' => $unavailable === null && ! ($latest !== null && in_array($latest->status, [VideoPlanningStageStatus::RUNNING->value, VideoPlanningStageStatus::PENDING->value], true)),
             'estimate' => $estimate,
@@ -307,12 +412,13 @@ abstract class ShotPromptWriterService implements QueuedStageService
 
     /**
      * @param  array<string, mixed>  $selected  the approved prompt of the shot, selected()
-     * @param  array<string, mixed>  $prepared  package() of the shot now
-     * @return bool whether the approved prompt still holds: by default the fingerprint it was approved with is the fingerprint now, the phase revision it was written to included
+     * @return bool whether what the approved run was written from is what the shot gives now, read under the contract the run pinned — its phase revision and its input format. A later revision or input format alone, or a catalogue that cannot write a new run, never takes an approved prompt out of use; a source that really changed does
      */
-    protected function stillHolds(array $selected, array $prepared): bool
+    protected function stillHolds(array $selected): bool
     {
-        return hash_equals((string) $prepared['fingerprint'], (string) $selected['fingerprint']);
+        $stage = VideoPlanningStage::query()->withoutSnapshot()->find((string) $selected['stage_id']);
+
+        return $stage !== null && $this->sourcesHold((string) $stage->project_id, $stage);
     }
 
     /**
@@ -379,13 +485,13 @@ abstract class ShotPromptWriterService implements QueuedStageService
     }
 
     /**
+     * @param  array{run: array<string, mixed>, sources: list<array<string, mixed>>, fingerprint: string}  $package  package() of a new run, or storedPackage() of a queued one
      * @return array<string, mixed> the run of one shot, with the images it sends
      *
-     * @throws RuntimeException when the contract, the prompt, the model, the shot or one of its sources is not ready; no model is called
+     * @throws RuntimeException when a file of the run is gone, changed or unreadable; no model is called
      */
-    private function prepare(string $projectId, string $shotId): array
+    private function prepared(array $package): array
     {
-        $package = $this->package($projectId, $shotId);
         [$images, $sent] = $this->images($package['sources'], $package['run']['settings']);
 
         return $package['run'] + ['images' => $images, 'images_sent' => $sent];
@@ -542,7 +648,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
 
     /**
      * @param  array<string, mixed>  $flow  workflowFor()
-     * @return array<string, mixed> the phase, bundle and system text of the runs, and the design and script they are written from, read once for each project
+     * @return array<string, mixed> the phase, bundle and system text of the runs, and the design and script they are written from, kept for the project until forget()
      *
      * @throws RuntimeException when the contract, the prompt, the model or the sources are not ready
      */
@@ -574,6 +680,25 @@ abstract class ShotPromptWriterService implements QueuedStageService
             throw new RuntimeException('Model '.static::LABEL.' '.$adapter->settings()['model'].' không có trong ClaudeWriterService::MODEL_CATALOG.');
         }
 
+        return $this->pins[$projectId] = [
+            'phase' => $phase,
+            'manifest' => $manifest,
+            'bundle_hash' => $bundle->bundleHash(),
+            'system' => $adapter->systemText(array_column($bundle->parts(), 'content'), $bundle->outputSchemas()),
+        ] + $this->sourcePins($projectId);
+    }
+
+    /**
+     * @return array{script: array<string, mixed>, script_token: array{stage_id: string, content_hash: string}, design: array<string, mixed>, design_pin: array{stage_id: string, raw_sha256: string}} the approved script and the design it pinned, which every run is read from whatever revision the catalogue writes new runs to
+     *
+     * @throws RuntimeException when the script is not approved or the design it pinned is gone or changed
+     */
+    protected function sourcePins(string $projectId): array
+    {
+        if (isset($this->sourcePins[$projectId])) {
+            return $this->sourcePins[$projectId];
+        }
+
         $script = app(ScriptSourceService::class)->approvedSource($projectId);
         $scriptStage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->findOrFail($script['stage_id']);
         $pin = (array) (PlanningStageStore::metadataOf(is_array($scriptStage->input_json) ? $scriptStage->input_json : null)['source'] ?? []);
@@ -584,11 +709,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
             throw new RuntimeException('Thiết kế mà kịch bản đã duyệt ghim không còn hoặc đã đổi — không '.static::LABEL.'.');
         }
 
-        return $this->pins[$projectId] = [
-            'phase' => $phase,
-            'manifest' => $manifest,
-            'bundle_hash' => $bundle->bundleHash(),
-            'system' => $adapter->systemText(array_column($bundle->parts(), 'content'), $bundle->outputSchemas()),
+        return $this->sourcePins[$projectId] = [
             'script' => (array) $script['document']['data'],
             'script_token' => ['stage_id' => (string) $script['token']['stage_id'], 'content_hash' => (string) $script['token']['content_hash']],
             'design' => (array) (json_decode($raw, true)['data'] ?? []),

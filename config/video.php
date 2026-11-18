@@ -2034,6 +2034,7 @@ return [
                             'extends' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V2,
                             'phases' => [
                                 'phase-6' => ['input_format' => 'moto-scenes-input-v4', 'revisions' => [['id' => '85207e55-550d-4eef-8120-4bf34f583f90', 'sha256' => '002a0fb390137c646e74105f3e0efb7ecd97e4a0d9016309ea52b8ab6d2f4fde'], ['id' => '74a6013c-14b4-4670-bc84-950be47f2e21', 'sha256' => '171760f2ac2d60c239b5d2c4da55e3152ee3151f1e86307ba8f417b759fc1808'], ['id' => 'fdb14b6f-b144-4498-a45d-1902fcaf8992', 'sha256' => 'da80081dddab3af1c85729128cd3d3d2001a3d1b62cbcfac3eed0fefca44069f']]],
+                                'phase-10' => ['input_format' => 'moto-clip-prompt-input-v8', 'revisions' => [['id' => 'cc853d95-4399-4d5f-9b80-99e1082eaa96', 'sha256' => '62299b6da6a557c7162764e476c89861403cf9c04097a7c6a291007658f3cb5e']]],
                                 'phase-7' => ['input_format' => 'moto-shots-input-v8', 'revisions' => [['id' => 'f8bf95c6-e615-43b9-a354-6be876d86ea0', 'sha256' => 'd63526336894927e6ba8385e5471dc7836acd9c671ca3612ece34e26288fc6c0']]],
                             ],
                             'actions' => [
@@ -2055,6 +2056,7 @@ return [
                                 'script' => ['stationary_requires_support' => true],
                                 'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
                                 'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::EDITING, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                                'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V8],
                             ],
                         ],
                         \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V4 => [
@@ -2062,8 +2064,8 @@ return [
                             'phases' => [
                                 'phase-3' => ['input_format' => 'moto-design-input-v2', 'revisions' => [['id' => 'd65a602b-d903-4e8e-9997-5c2d9cb4232e', 'sha256' => '399bd8d54dab135bbd8894e58bb784f960b80a9d29ebb63f2c5b1fdb720c174a']]],
                                 'phase-4' => ['input_format' => 'moto-script-input-v4', 'revisions' => [['id' => '74a35d38-c0be-44ab-ad8c-6fc3f749630a', 'sha256' => '5f98464d2be7e671c0e2595046294c27d2e44d5c25070ae9fae5765d2dabc120']]],
-                                'phase-7' => ['input_format' => 'moto-shots-input-v9', 'revisions' => [['id' => 'b8d022ac-d1f3-4e48-b0a5-823d3ac6bc77', 'sha256' => 'cec8f0896f34f9bb8d5877fc038c0bfe9887def6d28f2d38eccc48a987cedf32']]],
-                                'phase-10' => ['input_format' => 'moto-clip-prompt-input-v7', 'revisions' => [['id' => '51b1c615-5859-4b23-9ce1-091f7276c752', 'sha256' => '089a00b80cd2f6c2ff44345e8603d0ed9c60237f93e72e97a6651ed85e026b17']]],
+                                'phase-7' => ['input_format' => 'moto-shots-input-v9', 'revisions' => [['id' => '684bce34-5e39-4878-ad79-2ee7bfb5b2f0', 'sha256' => 'd52cde287d683872d56a4182be5c913ad72a52b97f9c02c422dfb1daf2225c50']]],
+                                'phase-10' => ['input_format' => 'moto-clip-prompt-input-v8', 'revisions' => [['id' => 'cc853d95-4399-4d5f-9b80-99e1082eaa96', 'sha256' => '62299b6da6a557c7162764e476c89861403cf9c04097a7c6a291007658f3cb5e']]],
                             ],
                             'actions' => [
                                 'spec.shots' => [
@@ -2110,6 +2112,7 @@ return [
                                 'script' => ['stationary_requires_support' => true],
                                 'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
                                 'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                                'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V8],
                             ],
                         ],
                         // The release new projects take from now on. It is the release above with the design revision whose prompt agrees with the refs policy of MotoDesignRefs: the refs of a build state name only ids the answer defines, never a departure or a model-sheet view, an identity rule only by its own id, and no text holds an id. The design schema (MotoDesign 2.2.2) and every other revision stay as above. A policy is read from the pinned release alone, never from the release it extends, so the policy above is written again.
@@ -2122,6 +2125,7 @@ return [
                                 'script' => ['stationary_requires_support' => true],
                                 'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
                                 'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                                'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V8],
                             ],
                         ],
                     ],
@@ -2275,7 +2279,7 @@ return [
                                 'draft' => ['keyframe_prompt'],
                             ],
                             'outputs' => [
-                                'keyframe_prompt' => ['namespace' => 'moto', 'schema' => 'MotoKeyframePrompt', 'version' => '1.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 9 Output (format moto-keyframe-prompt-v1): for one shot, the English prompt of its first frame the model wrote from the approved shot, script, design and the reference images sent with the render, the part ids, work ids and image positions it relies on, and what the sources do not give or where they disagree; code checks the ids, positions and length, a person approves the prompt and the render sends it word for word; seeder data database/seeders/data/ai_phases_moto_phase_9_v6.php'],
+                                'keyframe_prompt' => ['namespace' => 'moto', 'schema' => 'MotoKeyframePrompt', 'version' => '1.0.2', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 9 Output (format moto-keyframe-prompt-v1): for one shot, the English prompt of its first frame the model wrote from the approved shot, script, design and the reference images sent with the render, the part ids, work ids and image positions it relies on, and what the sources do not give or where they disagree; code checks the ids, positions and length, a person approves the prompt and the render sends it word for word; seeder data database/seeders/data/ai_phases_moto_phase_9_v7.php'],
                             ],
                         ],
                     ],

@@ -58,11 +58,11 @@ final class ShotWriterService implements QueuedStageService
 
     /**
      * @param  array{0: ?VideoPlanningStage, 1: string}  $result  what the run became; a run still waiting, one that failed its check and a failed approval leave it as it is
-     * @return array{0: ?VideoPlanningStage, 1: string}
+     * @return array{0: ?VideoPlanningStage, 1: string} the run, approved by rule only when the project has no shot plan in use: a project whose approved shot plan can still be read keeps it, and the new run waits as a candidate until a person approves it, so the prompts, images and clips of the plan in use are not left behind by a run alone
      */
     private function approvedWhenPassed(string $projectId, array $result): array
     {
-        if ($result[0] !== null) {
+        if ($result[0] !== null && ! $this->keepsPlanInUse($projectId, (string) $result[0]->id)) {
             try {
                 $this->sources->approvePassed($projectId, (string) $result[0]->id);
             } catch (\Throwable $e) {
@@ -71,6 +71,16 @@ final class ShotWriterService implements QueuedStageService
         }
 
         return $result;
+    }
+
+    /** @return bool whether the project has an approved shot plan, another run than this one, that the next steps can still read: its approval, its content and its sources hold */
+    private function keepsPlanInUse(string $projectId, string $stageId): bool
+    {
+        try {
+            return $this->sources->approvedSource($projectId)['stage_id'] !== $stageId;
+        } catch (RuntimeException) {
+            return false;
+        }
     }
 
     /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
