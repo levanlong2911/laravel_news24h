@@ -14,6 +14,7 @@ use App\Models\VideoShot;
 use App\Video\Media\GeminiOmniVideoClient;
 use App\Video\Media\VideoModelRegistry;
 use App\Video\Moto\MotoClipPlanBuilder;
+use App\Video\Moto\MotoContract;
 use App\Video\Render\Enums\RenderStatus;
 use App\Video\Render\Video\SceneClipDispatchService;
 use App\Video\Render\Video\SceneShotFactory;
@@ -166,7 +167,7 @@ final class MotoClipRenderService
 
     /**
      * @param  array<string, mixed>  $clip  a clip made from reference images
-     * @return array{task: null, references: list<array{artifact: VideoArtifact, role: string, label: string}>} the reference images of the clip in the order the plan gives them, each the very file the plan pins, sent with no task so the approved prompt alone says how each image is used
+     * @return array{task: string, references: list<array{artifact: VideoArtifact, role: string, label: string}>} the reference images of the clip in the order the plan gives them, each the very file the plan pins, sent with the task MotoContract::REFERENCE_TO_VIDEO so the provider takes every image as a reference and none as a frame of the clip
      *
      * @throws RuntimeException when an image is no longer the file the plan pinned
      */
@@ -185,7 +186,7 @@ final class MotoClipRenderService
             $references[] = ['artifact' => $artifact, 'role' => (string) $image['role'], 'label' => 'Image '.((int) $image['position'] + 1).' · '.$image['kind']];
         }
 
-        return ['task' => null, 'references' => $references];
+        return ['task' => MotoContract::REFERENCE_TO_VIDEO, 'references' => $references];
     }
 
     /**
